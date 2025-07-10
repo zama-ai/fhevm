@@ -1,7 +1,8 @@
+import { OperationType } from "@safe-global/types-kit";
 import dotenv from "dotenv";
 import { EventLog, Wallet } from "ethers";
 import fs from "fs";
-import { task } from "hardhat/config";
+import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import path from "path";
 
@@ -60,6 +61,76 @@ async function deployContractImplementation(
 
   console.log(`${name} implementation set successfully at address: ${proxyAddress}\n`);
   return proxyAddress;
+}
+
+async function deployMultisigSmartAccount(
+  name: string,
+  { run, ethers }: HardhatRuntimeEnvironment,
+  threshold: number,
+  owners: Wallet[] = [],
+) {
+  // Get a deployer wallet
+  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+
+  // Deploy a new Safe contract
+  const safeFactory = await ethers.getContractFactory("Safe", deployer);
+  const safe = await safeFactory.deploy();
+  const safeAddress = await safe.getAddress();
+
+  // Deploy a new SafeProxyFactory contract
+  const safeProxyFactoryFactory = await ethers.getContractFactory("SafeProxyFactory", deployer);
+  const safeProxyFactory = await safeProxyFactoryFactory.deploy();
+
+  // Prepare the setup transaction data
+  if (owners.length === 0) {
+    owners.push(deployer);
+  }
+  const ownerAddresses = await Promise.all(owners.map(async (owner) => await owner.getAddress()));
+  const to = ethers.ZeroAddress; // Contract address for optional delegate call.
+  const data = "0x"; // Data payload for optional delegate call.
+  const fallbackHandler = ethers.ZeroAddress; // Handler for fallback calls to this contract.
+  const paymentToken = ethers.ZeroAddress; // Token that should be used for the payment (0 is ETH).
+  const payment = 0; // Value that should be paid.
+  const paymentReceiver = ethers.ZeroAddress; // Address that should receive the payment (or 0 if tx.origin).
+
+  // Encode the setup function data
+  const safeData = safe.interface.encodeFunctionData("setup", [
+    ownerAddresses,
+    threshold,
+    to,
+    data,
+    fallbackHandler,
+    paymentToken,
+    payment,
+    paymentReceiver,
+  ]);
+
+  // Setup the Safe proxy factory
+  const saltNonce = 0n;
+  const txResponse = await safeProxyFactory.createProxyWithNonce(safeAddress, safeData, saltNonce);
+  const txReceipt = await txResponse.wait();
+  if (!txReceipt) {
+    throw new Error("Create Safe proxy transaction receipt not found");
+  }
+
+  // Get the Safe proxy address from the ProxyCreation event
+  const event = txReceipt.logs
+    .filter((l) => l instanceof EventLog)
+    .find((l) => l.eventName === safeProxyFactory.getEvent("ProxyCreation").name);
+  if (!event) {
+    throw new Error("ProxyCreation event not found in transaction receipt");
+  }
+  const safeProxyAddress = event.args.proxy;
+
+  if (safeProxyAddress === ethers.ZeroAddress) {
+    throw new Error("Safe proxy address not found");
+  }
+
+  await run("task:setContractAddress", {
+    name,
+    address: safeProxyAddress,
+  });
 }
 
 // Deploy the GatewayConfig contract
@@ -165,71 +236,138 @@ task("task:deployDecryption").setAction(async function (_, hre) {
   await deployContractImplementation("Decryption", hre);
 });
 
-task("task:deployPauserSmartAccount").setAction(async function (_, { ethers, network, run }) {
-  // Get a deployer wallet
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
-
-  // Deploy a new Safe contract
-  const safeFactory = await ethers.getContractFactory("Safe", deployer);
-  const safe = await safeFactory.deploy();
-  const safeAddress = await safe.getAddress();
-
-  // Deploy a new SafeProxyFactory contract
-  const safeProxyFactoryFactory = await ethers.getContractFactory("SafeProxyFactory", deployer);
-  const safeProxyFactory = await safeProxyFactoryFactory.deploy();
-
-  // Prepare the setup transaction data
-  const owners = [await deployer.getAddress()]; // List of Safe owners.
-  const threshold = 1; // Number of required confirmations for a Safe transaction.
-  const to = ethers.ZeroAddress; // Contract address for optional delegate call.
-  const data = "0x"; // Data payload for optional delegate call.
-  const fallbackHandler = ethers.ZeroAddress; // Handler for fallback calls to this contract.
-  const paymentToken = ethers.ZeroAddress; // Token that should be used for the payment (0 is ETH).
-  const payment = 0; // Value that should be paid.
-  const paymentReceiver = ethers.ZeroAddress; // Address that should receive the payment (or 0 if tx.origin).
-
-  // Encode the setup function data
-  const safeData = safe.interface.encodeFunctionData("setup", [
-    owners,
-    threshold,
-    to,
-    data,
-    fallbackHandler,
-    paymentToken,
-    payment,
-    paymentReceiver,
-  ]);
-
-  // Setup the Safe proxy factory
-  const saltNonce = 0n;
-  const txResponse = await safeProxyFactory.createProxyWithNonce(safeAddress, safeData, saltNonce);
-  const txReceipt = await txResponse.wait();
-  if (!txReceipt) {
-    throw new Error("Create Safe proxy transaction receipt not found");
-  }
-
-  // Get the Safe proxy address from the ProxyCreation event
-  const event = txReceipt.logs
-    .filter((l) => l instanceof EventLog)
-    .find((l) => l.eventName === safeProxyFactory.getEvent("ProxyCreation").name);
-  if (!event) {
-    throw new Error("ProxyCreation event not found in transaction receipt");
-  }
-  const safeProxyAddress = event.args.proxy;
-
-  if (safeProxyAddress === ethers.ZeroAddress) {
-    throw new Error("Safe proxy address not found");
-  }
-
-  await run("task:setContractAddress", {
-    name: "PauserSmartAccount",
-    address: safeProxyAddress,
-  });
+task("task:deployOwnerSmartAccount").setAction(async function (_, hre) {
+  await deployMultisigSmartAccount("OwnerSmartAccount", hre, 1);
 });
+
+task("task:deployPauserSmartAccount").setAction(async function (_, hre) {
+  await deployMultisigSmartAccount("PauserSmartAccount", hre, 1);
+});
+
+task("task:transferOwnershipsToOwnerSmartAccount")
+  .addOptionalParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
+    // Get a deployer wallet
+    const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+
+    const contracts = [
+      "GatewayConfig",
+      "InputVerification",
+      "KmsManagement",
+      "CiphertextCommits",
+      "MultichainAcl",
+      "Decryption",
+    ];
+
+    const nameSnakeCase = pascalCaseToSnakeCase("OwnerSmartAccount");
+    const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
+    const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
+    const parsedEnv = dotenv.parse(fs.readFileSync(envFilePath));
+    const ownerSmartAccountAddress = parsedEnv[addressEnvVarName];
+    const ownerSmartAccount = await ethers.getContractAt("Safe", ownerSmartAccountAddress, deployer);
+
+    console.log(`Transferring ownerships to OwnerSmartAccount at address: ${ownerSmartAccountAddress}`);
+
+    for (const contractName of contracts) {
+      let contractAddress: string;
+
+      const nameSnakeCase = pascalCaseToSnakeCase(contractName);
+      const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
+      if (useInternalProxyAddress) {
+        const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
+
+        if (!fs.existsSync(envFilePath)) {
+          throw new Error(`Environment file not found: ${envFilePath}`);
+        }
+        const parsedEnv = dotenv.parse(fs.readFileSync(envFilePath));
+        contractAddress = parsedEnv[addressEnvVarName];
+      } else {
+        contractAddress = getRequiredEnvVar(addressEnvVarName);
+      }
+
+      if (!contractAddress) {
+        throw new Error(`Address variable ${addressEnvVarName} not found in ${envFilePath}`);
+      }
+
+      const contract = await ethers.getContractAt("Ownable2StepUpgradeable", contractAddress, deployer);
+      await contract.connect(deployer).transferOwnership(ownerSmartAccountAddress);
+
+      // Prepare the Safe transaction to accept ownership
+      const value = 0; // Ether value.
+      const data = contract.interface.encodeFunctionData("acceptOwnership"); // Data payload for the transaction.
+      const operation = OperationType.Call; // Operation type.
+      const safeTxGas = 0; // Gas that should be used for the safe transaction.
+      const baseGas = 0; // Gas costs for that are independent of the transaction execution(e.g. base transaction fee, signature check, payment of the refund)
+      const gasPrice = 0; // Maximum gas price that should be used for this transaction.
+      const gasToken = ethers.ZeroAddress; // Token address (or 0 if ETH) that is used for the payment.
+      const refundReceiver = ethers.ZeroAddress; // Address of receiver of gas payment (or 0 if tx.origin).
+      const nonce = await ownerSmartAccount.nonce();
+
+      // Get the transaction hash for the Safe transaction.
+      const transactionHash = await ownerSmartAccount.getTransactionHash(
+        contractAddress,
+        value,
+        data,
+        operation,
+        safeTxGas,
+        baseGas,
+        gasPrice,
+        gasToken,
+        refundReceiver,
+        nonce,
+      );
+
+      const signers = [deployer];
+
+      let signatureBytes = "0x";
+      const bytesDataHash = ethers.getBytes(transactionHash);
+
+      // Get the addresses of the signers.
+      const addresses = await Promise.all(signers.map((signer) => signer.getAddress()));
+
+      // Sort the signers by their addresses. The `Safe.execTransaction` expects that the signatures
+      // are sorted by owner address. This is required to easily validate no confirmation duplicates exist.
+      const sorted = signers.sort((a, b) => {
+        const addressA = addresses[signers.indexOf(a)];
+        const addressB = addresses[signers.indexOf(b)];
+        return addressA.localeCompare(addressB, "en", { sensitivity: "base" });
+      });
+
+      // Sign the transaction hash with each signer.
+      for (let i = 0; i < sorted.length; i++) {
+        const signedMessage = await sorted[i].signMessage(bytesDataHash);
+        const flatSig = signedMessage.replace(/1b$/, "1f").replace(/1c$/, "20");
+        signatureBytes += flatSig.slice(2);
+      }
+
+      // Execute the transaction on the OwnerSmartAccount contract.
+      await ownerSmartAccount.execTransaction(
+        contractAddress,
+        value,
+        data,
+        operation,
+        safeTxGas,
+        baseGas,
+        gasPrice,
+        gasToken,
+        refundReceiver,
+        signatureBytes,
+      );
+    }
+  });
 
 // Deploy all the contracts
 task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
+  // Deploy Smart Accounts
+  await hre.run("task:deployOwnerSmartAccount");
+  await hre.run("task:deployPauserSmartAccount");
+
   // Deploy the EmptyUUPS proxy contracts
   await hre.run("task:deployEmptyUUPSProxies");
 
@@ -239,9 +377,6 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   // use these addresses. Otherwise, irrelevant addresses will be used and, although deployment will
   // succeed, most transactions made to the contracts will revert as inter-contract calls will fail.
   await hre.run("compile:specific", { contract: "contracts" });
-
-  console.log("Deploy PauserSmartAccount contract:");
-  await hre.run("task:deployPauserSmartAccount");
 
   console.log("Deploy GatewayConfig contract:");
   await hre.run("task:deployGatewayConfig");

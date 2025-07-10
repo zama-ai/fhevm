@@ -3,7 +3,9 @@ include .env.example
 LOCAL_NETWORK_NAME=localGateway
 ENV_PATH=.env.example
 FORGE_DAPP_OUT=artifacts
-SOLIDITY_COVERAGE_PAUSER_ADDRESS=0x172C529a26B7f840FA8e95F10297B06c3B8F6d64
+# This is needed because the Safe library implements CREATE2 opcode which calculates addresses based on bytecode hash.
+# The bytecode is altered by the Solidity coverage tool, making the addresses different on such environment.
+SOLIDITY_COVERAGE_PAUSER_ADDRESS=0x53eA130734f6E6dE1c96debE9dd510c882aa28F9
 
 prettier:
 	npx prettier . --write
