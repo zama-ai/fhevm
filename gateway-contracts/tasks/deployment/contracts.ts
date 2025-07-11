@@ -364,12 +364,12 @@ task("task:transferOwnershipsToOwnerSmartAccount")
 
 // Deploy all the contracts
 task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
+  // Deploy the EmptyUUPS proxy contracts
+  await hre.run("task:deployEmptyUUPSProxies");
+
   // Deploy Smart Accounts
   await hre.run("task:deployOwnerSmartAccount");
   await hre.run("task:deployPauserSmartAccount");
-
-  // Deploy the EmptyUUPS proxy contracts
-  await hre.run("task:deployEmptyUUPSProxies");
 
   // Compile the implementation contracts
   // The deployEmptyUUPSProxies task has generated the contracts' addresses in `addresses/*.sol`.
