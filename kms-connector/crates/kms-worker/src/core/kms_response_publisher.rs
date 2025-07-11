@@ -1,32 +1,56 @@
 use alloy::primitives::U256;
 use connector_utils::types::KmsResponse;
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
-use tracing::{info, warn};
-
-/// Interface used to publish KMS Core's responses in some storage.
-pub trait KmsResponsePublisher {
-    fn publish(&self, response: KmsResponse) -> impl Future<Output = anyhow::Result<()>> + Send;
-}
+use tokio::sync::mpsc::Receiver;
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, error, info, warn};
 
 /// Struct that stores KMS Core's responses in a `Postgres` database.
-#[derive(Clone)]
-pub struct DbKmsResponsePublisher {
+pub struct KmsResponsePublisher {
+    /// The database used to store `KmsResponse`.
     db_pool: Pool<Postgres>,
+
+    /// The `Receiver` channel used to collect `KmsResponse` to publish.
+    receiver: Receiver<KmsResponse>,
 }
 
-impl DbKmsResponsePublisher {
-    pub fn new(db_pool: Pool<Postgres>) -> Self {
-        Self { db_pool }
+impl KmsResponsePublisher {
+    pub fn new(db_pool: Pool<Postgres>, receiver: Receiver<KmsResponse>) -> Self {
+        Self { db_pool, receiver }
     }
-}
 
-impl KmsResponsePublisher for DbKmsResponsePublisher {
-    async fn publish(&self, response: KmsResponse) -> anyhow::Result<()> {
+    /// Starts the `ResponsePublisher`.
+    pub async fn start(self, cancel_token: CancellationToken) {
+        debug!("Starting ResponsePublisher");
+        tokio::select! {
+            _ = cancel_token.cancelled() => debug!("Stopping ResponsePublisher"),
+            _ = self.run() => (),
+        }
+    }
+
+    /// Runs the event handling loop of the `ResponsePublisher`.
+    async fn run(mut self) {
+        loop {
+            match self.receiver.recv().await {
+                Some(response) => {
+                    if let Err(e) = self.publish(response.clone()).await {
+                        error!("Failed to publish response {response}: {e}");
+                        response
+                            .mark_associated_event_as_pending(&self.db_pool)
+                            .await;
+                    }
+                }
+                None => break warn!("Channel closed"),
+            };
+        }
+    }
+
+    /// Publishes the `response` into the database.
+    pub async fn publish(&self, response: KmsResponse) -> anyhow::Result<()> {
         let response_str = response.to_string();
         info!("Storing {response_str} in DB...");
 
-        // Execute sqlx query
-        let sqlx_result = match response.clone() {
+        let query_result = match response.clone() {
             KmsResponse::PublicDecryption {
                 decryption_id: id,
                 decrypted_result: result,
@@ -37,16 +61,7 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
                 user_decrypted_shares: shares,
                 signature,
             } => self.publish_user_decryption(id, shares, signature).await,
-        };
-
-        // Mark event associated to the current response as free on error
-        let query_result = match sqlx_result {
-            Ok(result) => result,
-            Err(e) => {
-                response.free_associated_event(&self.db_pool).await;
-                return Err(e.into());
-            }
-        };
+        }?;
 
         // Check query result is what we expect
         if query_result.rows_affected() == 1 {
@@ -59,9 +74,7 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
         }
         Ok(())
     }
-}
 
-impl DbKmsResponsePublisher {
     async fn publish_public_decryption(
         &self,
         decryption_id: U256,

@@ -5,7 +5,6 @@
 use connector_utils::config::{DeserializeRawConfig, RawContractConfig};
 use serde::{Deserialize, Serialize};
 
-/// Configuration for S3 ciphertext storage.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct S3Config {
     /// AWS S3 region for ciphertext storage.
@@ -29,16 +28,10 @@ pub struct RawConfig {
     pub gateway_config_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
+    #[serde(default)]
+    pub kms_client: RawKmsClientConfig,
     #[serde(default = "default_events_batch_size")]
     pub events_batch_size: u8,
-    #[serde(default = "default_grpc_request_retries")]
-    pub grpc_request_retries: u8,
-    #[serde(default = "default_public_decryption_timeout")]
-    pub public_decryption_timeout_secs: u64,
-    #[serde(default = "default_user_decryption_timeout")]
-    pub user_decryption_timeout_secs: u64,
-    #[serde(default = "default_grpc_poll_interval")]
-    pub grpc_poll_interval_secs: u64,
     #[serde(default)]
     pub s3_config: Option<S3Config>,
     #[serde(default = "default_s3_ciphertext_retrieval_retries")]
@@ -47,6 +40,29 @@ pub struct RawConfig {
     pub s3_connect_timeout: u64,
     #[serde(default = "default_verify_coprocessors")]
     pub verify_coprocessors: bool,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct RawKmsClientConfig {
+    #[serde(default = "default_grpc_request_retries")]
+    pub request_retries: u8,
+    #[serde(default = "default_public_decryption_timeout")]
+    pub public_decryption_timeout: u64,
+    #[serde(default = "default_user_decryption_timeout")]
+    pub user_decryption_timeout: u64,
+    #[serde(default = "default_grpc_poll_interval")]
+    pub poll_interval: u64,
+}
+
+impl Default for RawKmsClientConfig {
+    fn default() -> Self {
+        Self {
+            request_retries: default_grpc_request_retries(),
+            public_decryption_timeout: default_public_decryption_timeout(),
+            user_decryption_timeout: default_user_decryption_timeout(),
+            poll_interval: default_grpc_poll_interval(),
+        }
+    }
 }
 
 fn default_service_name() -> String {
@@ -112,10 +128,12 @@ impl Default for RawConfig {
             },
             service_name: "kms-connector".to_string(),
             events_batch_size: 10,
-            grpc_request_retries: 3,
-            public_decryption_timeout_secs: 300,
-            user_decryption_timeout_secs: 300,
-            grpc_poll_interval_secs: 5,
+            kms_client: RawKmsClientConfig {
+                request_retries: 3,
+                public_decryption_timeout: 300,
+                user_decryption_timeout: 300,
+                poll_interval: 5,
+            },
             s3_ciphertext_retrieval_retries: 3,
             s3_connect_timeout: 2,
             s3_config: None,

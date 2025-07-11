@@ -1,7 +1,7 @@
 use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
-    PublicDecryptionRequest, PublicDecryptionResponse, RequestId, UserDecryptionRequest,
+    PublicDecryptionRequest, PublicDecryptionResponse, UserDecryptionRequest,
     UserDecryptionResponse,
 };
 use tonic::Response;
@@ -25,45 +25,42 @@ impl From<UserDecryptionRequest> for KmsGrpcRequest {
     }
 }
 
-/// The different KMS Core GRPC responses used by the KMS Connector.
+/// Struct representing a KMS Core GRPC responses used by the KMS Connector.
 #[derive(Clone, Debug)]
-pub enum KmsGrpcResponse {
-    PublicDecryption {
-        decryption_id: U256,
-        grpc_response: PublicDecryptionResponse,
-    },
-    UserDecryption {
-        decryption_id: U256,
-        grpc_response: UserDecryptionResponse,
-    },
+pub struct KmsGrpcResponse {
+    /// The ID of the request associated to the response.
+    pub id: U256,
+
+    /// The kind of GRPC response.
+    pub kind: KmsGrpcResponseKind,
 }
 
-impl TryFrom<(RequestId, Response<PublicDecryptionResponse>)> for KmsGrpcResponse {
-    type Error = anyhow::Error;
+/// The different KMS Core GRPC responses used by the KMS Connector.
+#[derive(Clone, Debug)]
+pub enum KmsGrpcResponseKind {
+    PublicDecryption(PublicDecryptionResponse),
+    UserDecryption(UserDecryptionResponse),
+}
 
-    fn try_from(
-        value: (RequestId, Response<PublicDecryptionResponse>),
-    ) -> Result<Self, Self::Error> {
-        let decryption_id = U256::try_from_be_slice(&hex::decode(value.0.request_id)?)
-            .ok_or_else(|| anyhow!("Failed to parse decryption_id"))?;
-
-        Ok(Self::PublicDecryption {
-            decryption_id,
-            grpc_response: value.1.into_inner(),
+impl KmsGrpcResponse {
+    /// Parses a `KmsGrpcResponse`.
+    pub fn parse<T: Into<KmsGrpcResponseKind>>(id: &str, kind: T) -> anyhow::Result<Self> {
+        Ok(Self {
+            id: U256::try_from_be_slice(&hex::decode(id)?)
+                .ok_or_else(|| anyhow!("Failed to parse decryption_id"))?,
+            kind: kind.into(),
         })
     }
 }
 
-impl TryFrom<(RequestId, Response<UserDecryptionResponse>)> for KmsGrpcResponse {
-    type Error = anyhow::Error;
+impl From<Response<PublicDecryptionResponse>> for KmsGrpcResponseKind {
+    fn from(value: Response<PublicDecryptionResponse>) -> Self {
+        Self::PublicDecryption(value.into_inner())
+    }
+}
 
-    fn try_from(value: (RequestId, Response<UserDecryptionResponse>)) -> Result<Self, Self::Error> {
-        let decryption_id = U256::try_from_be_slice(&hex::decode(value.0.request_id)?)
-            .ok_or_else(|| anyhow!("Failed to parse decryption_id"))?;
-
-        Ok(Self::UserDecryption {
-            decryption_id,
-            grpc_response: value.1.into_inner(),
-        })
+impl From<Response<UserDecryptionResponse>> for KmsGrpcResponseKind {
+    fn from(value: Response<UserDecryptionResponse>) -> Self {
+        Self::UserDecryption(value.into_inner())
     }
 }
