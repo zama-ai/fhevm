@@ -11,7 +11,8 @@ use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::compact_hex;
 use sqlx::postgres::PgListener;
-use sqlx::{PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Row, Transaction};
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -25,6 +26,21 @@ use tracing::{debug, error, info};
 
 const RETRY_DB_CONN_INTERVAL: Duration = Duration::from_secs(5);
 const S3_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Debug, Clone, Copy)]
+pub enum Order {
+    Asc,
+    Desc,
+}
+
+impl fmt::Display for Order {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Order::Asc => write!(f, "ASC"),
+            Order::Desc => write!(f, "DESC"),
+        }
+    }
+}
 
 pub struct SwitchNSquashService {
     pool: PgPool,
@@ -249,10 +265,12 @@ async fn fetch_and_execute_sns_tasks(
         }
     };
 
+    let order = if conf.lifo { Order::Desc } else { Order::Asc };
+
     let trx = &mut db_txn;
 
     let mut maybe_remaining = false;
-    if let Some(mut tasks) = query_sns_tasks(trx, conf.batch_limit).await? {
+    if let Some(mut tasks) = query_sns_tasks(trx, conf.batch_limit, order).await? {
         maybe_remaining = conf.batch_limit as usize == tasks.len();
 
         let t = telemetry::tracer("batch_execution");
@@ -279,29 +297,34 @@ async fn fetch_and_execute_sns_tasks(
 }
 
 /// Queries the database for a fixed number of tasks.
-async fn query_sns_tasks(
+pub async fn query_sns_tasks(
     db_txn: &mut Transaction<'_, Postgres>,
     limit: u32,
+    order: Order,
 ) -> Result<Option<Vec<HandleItem>>, ExecutionError> {
     let start_time = SystemTime::now();
-    let records = sqlx::query!(
-        " 
+
+    let query = format!(
+        "
         SELECT a.*, c.ciphertext
         FROM pbs_computations a
         JOIN ciphertexts c 
-        ON a.handle = c.handle          -- fetch handles inserted into the ciphertexts table
-        WHERE c.ciphertext IS NOT NULL  -- filter out tasks with no computed ciphertext64
-        AND a.is_completed = FALSE      -- filter out completed tasks
-        ORDER BY a.created_at           -- quickly find uncompleted tasks
+        ON a.handle = c.handle
+        WHERE c.ciphertext IS NOT NULL
+        AND a.is_completed = FALSE
+        ORDER BY a.created_at {}
         FOR UPDATE SKIP LOCKED
         LIMIT $1;
         ",
-        limit as i64
-    )
-    .fetch_all(db_txn.as_mut())
-    .await?;
+        order
+    );
 
-    info!(target: "sns", { count = records.len()}, "Fetched SnS tasks");
+    let records = sqlx::query(&query)
+        .bind(limit as i64)
+        .fetch_all(db_txn.as_mut())
+        .await?;
+
+    info!(target: "sns", { count = records.len(), order = order.to_string() }, "Fetched SnS tasks");
 
     if records.is_empty() {
         return Ok(None);
@@ -311,16 +334,23 @@ async fn query_sns_tasks(
     t.set_attribute("count", records.len().to_string());
     t.end();
 
+    // Convert the records into HandleItem structs
     let tasks = records
         .into_iter()
-        .map(|record| HandleItem {
-            tenant_id: record.tenant_id,
-            handle: record.handle.clone(),
-            ct64_compressed: Arc::new(record.ciphertext),
-            ct128_uncompressed: Arc::new(Vec::new()), // to be computed
-            otel: telemetry::tracer_with_handle("task", record.handle),
+        .map(|record| {
+            let tenant_id: i32 = record.try_get("tenant_id")?;
+            let handle: Vec<u8> = record.try_get("handle")?;
+            let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
+
+            Ok(HandleItem {
+                tenant_id,
+                handle: handle.clone(),
+                ct64_compressed: Arc::new(ciphertext),
+                ct128_uncompressed: Arc::new(Vec::new()), // to be computed
+                otel: telemetry::tracer_with_handle("task", handle),
+            })
         })
-        .collect();
+        .collect::<Result<Vec<_>, ExecutionError>>()?;
 
     Ok(Some(tasks))
 }

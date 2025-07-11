@@ -47,6 +47,10 @@ pub struct DBConfig {
     pub cleanup_interval: Duration,
     pub max_connections: u32,
     pub timeout: Duration,
+
+    /// Enable LIFO (Last In, First Out) for processing tasks
+    /// This is useful for prioritizing the most recent tasks
+    pub lifo: bool,
 }
 
 #[derive(Clone, Default, Debug)]

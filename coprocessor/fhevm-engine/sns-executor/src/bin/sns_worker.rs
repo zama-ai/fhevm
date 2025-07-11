@@ -39,6 +39,7 @@ fn construct_config() -> Config {
             max_connections: args.pg_pool_connections,
             cleanup_interval: args.cleanup_interval,
             timeout: args.pg_timeout,
+            lifo: args.lifo,
         },
         s3: S3Config {
             bucket_ct128: args.bucket_name_ct128,
