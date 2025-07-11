@@ -124,6 +124,7 @@ jobs:
 
       - name: Install cargo dependencies
         run: |
+          sudo apt-get update
           sudo apt-get install -y protobuf-compiler cmake pkg-config libssl-dev \
                                   libclang-dev docker-compose-v2 docker.io acl
           sudo usermod -aG docker "$USER"
