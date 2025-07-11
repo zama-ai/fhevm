@@ -161,7 +161,11 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
                             for task in &tasks {
                                 task.abort();
                             }
-                            return error!("Task {} failed: {}", idx, e);
+                            error!("Task {} failed: {}", idx, e);
+                            if &e.to_string() == "backend connection task has stopped" {
+                                std::process::exit(1); // Crash if Gateway connection is lost
+                            }
+                            return;
                         }
                         Err(e) => {
                             // Abort other tasks
