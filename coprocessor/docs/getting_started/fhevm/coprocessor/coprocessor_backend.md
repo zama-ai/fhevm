@@ -1,6 +1,6 @@
 # Coprocessor Backend
 
-A Coprocesor backend is needed to run alongside the geth node. The Coprocessor backend executes the actual FHE computation. Please look at [FHE Computation](../../../fundamentals/fhevm/coprocessor/fhe_computation.md) for more info.
+A Coprocessor backend is needed to run alongside the geth node. The Coprocessor backend executes the actual FHE computation. Please look at [FHE Computation](../../../fundamentals/fhevm/coprocessor/fhe_computation.md) for more info.
 
 The coprocessor backend is implemented in the [Coprocessor](../../../../fhevm-engine/coprocessor/README.md) directory of `fhevm-engine`.
 
@@ -10,7 +10,7 @@ It consists of the following components:
     * input insertion requests to the DB from the Gateway
     * FHE ciphertext read requests from the Gateway
  * **PostgreSQL DB** for storing computation requests and FHE ciphertexts
- * **worker** that reads comoutation requests from the DB, does the FHE computation and inserts result FHE ciphertexts into the DB
+ * **worker** that reads computation requests from the DB, does the FHE computation and inserts result FHE ciphertexts into the DB
 
 The server and the worker can be run as separate processes or as a single process. In both cases they communicate with one another through the DB.
 
