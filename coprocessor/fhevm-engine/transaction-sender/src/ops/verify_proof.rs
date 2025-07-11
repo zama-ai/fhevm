@@ -22,6 +22,7 @@ sol! {
         address userAddress;
         address contractAddress;
         uint256 contractChainId;
+        uint256 contextId;
     }
 }
 
@@ -226,7 +227,7 @@ where
             self.remove_proofs_by_retry_count().await?;
         }
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count
+            "SELECT zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified, retry_count
              FROM verify_proofs
              WHERE verified IS NOT NULL AND retry_count < $1
              ORDER BY zk_proof_id
@@ -275,6 +276,7 @@ where
                             .parse()
                             .expect("invalid contract address"),
                         contractChainId: U256::from(row.chain_id),
+                        contextId: U256::from(row.context_id),
                     }
                     .eip712_signing_hash(&domain);
                     let signature = self.signer.sign_hash(&signing_hash).await?;

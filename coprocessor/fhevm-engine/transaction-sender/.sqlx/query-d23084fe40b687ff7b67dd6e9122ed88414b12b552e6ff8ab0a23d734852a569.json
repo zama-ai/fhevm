@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count\n             FROM verify_proofs\n             WHERE verified IS NOT NULL AND retry_count < $1\n             ORDER BY zk_proof_id\n             LIMIT $2",
+  "query": "SELECT zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified, retry_count\n             FROM verify_proofs\n             WHERE verified IS NOT NULL AND retry_count < $1\n             ORDER BY zk_proof_id\n             LIMIT $2",
   "describe": {
     "columns": [
       {
@@ -10,31 +10,36 @@
       },
       {
         "ordinal": 1,
+        "name": "context_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
         "name": "chain_id",
         "type_info": "Int4"
       },
       {
-        "ordinal": 2,
+        "ordinal": 3,
         "name": "contract_address",
         "type_info": "Text"
       },
       {
-        "ordinal": 3,
+        "ordinal": 4,
         "name": "user_address",
         "type_info": "Text"
       },
       {
-        "ordinal": 4,
+        "ordinal": 5,
         "name": "handles",
         "type_info": "Bytea"
       },
       {
-        "ordinal": 5,
+        "ordinal": 6,
         "name": "verified",
         "type_info": "Bool"
       },
       {
-        "ordinal": 6,
+        "ordinal": 7,
         "name": "retry_count",
         "type_info": "Int4"
       }
@@ -50,10 +55,11 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       false
     ]
   },
-  "hash": "8c67f22e32ef89e1812695f3f8e259e135bd825f180eacd72ee341ea94c777f3"
+  "hash": "d23084fe40b687ff7b67dd6e9122ed88414b12b552e6ff8ab0a23d734852a569"
 }
