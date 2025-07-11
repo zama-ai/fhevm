@@ -113,4 +113,11 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
     name: "InputVerification",
     address: inputVerificationAddress,
   });
+
+  console.log("Deploying an EmptyUUPS proxy contract for CoprocessorContexts...");
+  const coprocessorContextsAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run("task:setContractAddress", {
+    name: "CoprocessorContexts",
+    address: coprocessorContextsAddress,
+  });
 });

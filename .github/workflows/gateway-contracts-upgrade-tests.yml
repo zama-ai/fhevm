@@ -156,6 +156,34 @@ jobs:
             --use-internal-proxy-address true \
             --verify-contract false
 
+      - name: Upgrade InputVerification contract
+        working-directory: current-fhevm/gateway-contracts
+        env:
+          DOTENV_CONFIG_PATH: .env
+          HARDHAT_NETWORK: staging
+          CHAIN_ID_GATEWAY: 54321
+          RPC_URL: http://localhost:8546
+        run: |
+          npx hardhat task:upgradeInputVerification \
+            --current-implementation previous-contracts/InputVerification.sol:InputVerification \
+            --new-implementation contracts/InputVerification.sol:InputVerification \
+            --use-internal-proxy-address true \
+            --verify-contract false
+
+      - name: Upgrade MultichainAcl contract
+        working-directory: current-fhevm/gateway-contracts
+        env:
+          DOTENV_CONFIG_PATH: .env
+          HARDHAT_NETWORK: staging
+          CHAIN_ID_GATEWAY: 54321
+          RPC_URL: http://localhost:8546
+        run: |
+          npx hardhat task:upgradeMultichainAcl \
+            --current-implementation previous-contracts/MultichainAcl.sol:MultichainAcl \
+            --new-implementation contracts/MultichainAcl.sol:MultichainAcl \
+            --use-internal-proxy-address true \
+            --verify-contract false
+
       - name: Clean up
         working-directory: previous-fhevm/gateway-contracts
         if: always()

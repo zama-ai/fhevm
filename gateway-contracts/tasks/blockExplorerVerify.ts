@@ -89,6 +89,33 @@ task("task:verifyGatewayConfig")
     });
   });
 
+task("task:verifyCoprocessorContexts")
+  .addOptionalParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    let proxyAddress: string;
+    if (useInternalProxyAddress) {
+      const parsedEnv = dotenv.parse(fs.readFileSync("addresses/.env.coprocessor_contexts"));
+      proxyAddress = parsedEnv.COPROCESSOR_CONTEXTS_ADDRESS;
+    } else {
+      proxyAddress = getRequiredEnvVar("COPROCESSOR_CONTEXTS_ADDRESS");
+    }
+
+    const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await run("verify:verify", {
+      address: proxyAddress,
+      constructorArguments: [],
+    });
+    await run("verify:verify", {
+      address: implementationAddress,
+      constructorArguments: [],
+    });
+  });
+
 task("task:verifyInputVerification")
   .addOptionalParam(
     "useInternalProxyAddress",
