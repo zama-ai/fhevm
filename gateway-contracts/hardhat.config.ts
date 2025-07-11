@@ -56,12 +56,14 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
   .addOptionalParam("skipSetup", "Set to true to skip setup tasks", false, types.boolean)
   .setAction(async ({ skipSetup }, hre, runSuper) => {
     if (!skipSetup) {
+      // Deploy Smart Accounts
+      await hre.run("task:deployOwnerSmartAccount");
+      await hre.run("task:deployPauserSmartAccount");
+
       await hre.run("task:deployAllGatewayContracts");
       // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
       // for local testing
       await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
-
-      // await hre.run("task:transferOwnershipsToOwnerSmartAccount", { useInternalProxyAddress: true });
     } else {
       console.log("Skipping contracts setup.");
     }

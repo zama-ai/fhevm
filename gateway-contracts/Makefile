@@ -5,7 +5,7 @@ ENV_PATH=.env.example
 FORGE_DAPP_OUT=artifacts
 # This is needed because the Safe library implements CREATE2 opcode which calculates addresses based on bytecode hash.
 # The bytecode is altered by the Solidity coverage tool, making the addresses different on such environment.
-SOLIDITY_COVERAGE_PAUSER_ADDRESS=0xA1D96aaf34502ebfF0c65aB723B51B8c5156915F
+SOLIDITY_COVERAGE_PAUSER_ADDRESS=0x53eA130734f6E6dE1c96debE9dd510c882aa28F9
 
 prettier:
 	npx prettier . --write

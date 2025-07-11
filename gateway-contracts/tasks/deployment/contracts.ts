@@ -1,6 +1,6 @@
 import { OperationType } from "@safe-global/types-kit";
 import dotenv from "dotenv";
-import { EventLog, Wallet } from "ethers";
+import { EventLog, Log, Wallet } from "ethers";
 import fs from "fs";
 import { task, types } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
@@ -66,8 +66,8 @@ async function deployContractImplementation(
 async function deployMultisigSmartAccount(
   name: string,
   { run, ethers }: HardhatRuntimeEnvironment,
+  owners: string[],
   threshold: number,
-  owners: Wallet[] = [],
 ) {
   // Get a deployer wallet
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
@@ -84,9 +84,8 @@ async function deployMultisigSmartAccount(
 
   // Prepare the setup transaction data
   if (owners.length === 0) {
-    owners.push(deployer);
+    owners.push(await deployer.getAddress());
   }
-  const ownerAddresses = await Promise.all(owners.map(async (owner) => await owner.getAddress()));
   const to = ethers.ZeroAddress; // Contract address for optional delegate call.
   const data = "0x"; // Data payload for optional delegate call.
   const fallbackHandler = ethers.ZeroAddress; // Handler for fallback calls to this contract.
@@ -96,7 +95,7 @@ async function deployMultisigSmartAccount(
 
   // Encode the setup function data
   const safeData = safe.interface.encodeFunctionData("setup", [
-    ownerAddresses,
+    owners,
     threshold,
     to,
     data,
@@ -116,8 +115,8 @@ async function deployMultisigSmartAccount(
 
   // Get the Safe proxy address from the ProxyCreation event
   const event = txReceipt.logs
-    .filter((l) => l instanceof EventLog)
-    .find((l) => l.eventName === safeProxyFactory.getEvent("ProxyCreation").name);
+    .filter((l: EventLog | Log) => l instanceof EventLog)
+    .find((l: EventLog) => l.eventName === safeProxyFactory.getEvent("ProxyCreation").name);
   if (!event) {
     throw new Error("ProxyCreation event not found in transaction receipt");
   }
@@ -236,13 +235,29 @@ task("task:deployDecryption").setAction(async function (_, hre) {
   await deployContractImplementation("Decryption", hre);
 });
 
-task("task:deployOwnerSmartAccount").setAction(async function (_, hre) {
-  await deployMultisigSmartAccount("OwnerSmartAccount", hre, 1);
-});
+task("task:deployOwnerSmartAccount")
+  .addOptionalParam("owners", "List of addresses that control the OwnerSmartAccount.", [], types.json)
+  .addOptionalParam("threshold", "Number of required confirmations for a OwnerSmartAccount transaction.", 1, types.int)
+  .setAction(async function ({ owners, threshold }, hre) {
+    // Compile contracts from external dependencies (e.g., Safe Smart Account).
+    // These are temporarily stored by `hardhat-dependency-compiler`.
+    // See the `dependencyCompiler` field in `hardhat.config.ts` for configuration details.
+    await hre.run("compile:specific", { contract: "hardhat-dependency-compiler" });
 
-task("task:deployPauserSmartAccount").setAction(async function (_, hre) {
-  await deployMultisigSmartAccount("PauserSmartAccount", hre, 1);
-});
+    await deployMultisigSmartAccount("OwnerSmartAccount", hre, owners, threshold);
+  });
+
+task("task:deployPauserSmartAccount")
+  .addOptionalParam("owners", "List of addresses that control the PauserSmartAccount.", [], types.json)
+  .addOptionalParam("threshold", "Number of required confirmations for a PauserSmartAccount transaction.", 1, types.int)
+  .setAction(async function ({ owners, threshold }, hre) {
+    // Compile contracts from external dependencies (e.g., Safe Smart Account).
+    // These are temporarily stored by `hardhat-dependency-compiler`.
+    // See the `dependencyCompiler` field in `hardhat.config.ts` for configuration details.
+    await hre.run("compile:specific", { contract: "hardhat-dependency-compiler" });
+
+    await deployMultisigSmartAccount("PauserSmartAccount", hre, owners, threshold);
+  });
 
 task("task:transferOwnershipsToOwnerSmartAccount")
   .addOptionalParam(
@@ -252,7 +267,7 @@ task("task:transferOwnershipsToOwnerSmartAccount")
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    // Get a deployer wallet
+    // Get a deployer wallet.
     const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
     const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
@@ -265,12 +280,38 @@ task("task:transferOwnershipsToOwnerSmartAccount")
       "Decryption",
     ];
 
+    let ownerSmartAccountAddress: string;
     const nameSnakeCase = pascalCaseToSnakeCase("OwnerSmartAccount");
-    const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
     const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
-    const parsedEnv = dotenv.parse(fs.readFileSync(envFilePath));
-    const ownerSmartAccountAddress = parsedEnv[addressEnvVarName];
+    if (useInternalProxyAddress) {
+      const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
+
+      if (!fs.existsSync(envFilePath)) {
+        throw new Error(`Environment file not found: ${envFilePath}`);
+      }
+      const parsedEnv = dotenv.parse(fs.readFileSync(envFilePath));
+      ownerSmartAccountAddress = parsedEnv[addressEnvVarName];
+      if (!ownerSmartAccountAddress) {
+        throw new Error(`Address variable ${addressEnvVarName} not found in ${envFilePath}`);
+      }
+    } else {
+      ownerSmartAccountAddress = getRequiredEnvVar(addressEnvVarName);
+    }
     const ownerSmartAccount = await ethers.getContractAt("Safe", ownerSmartAccountAddress, deployer);
+
+    // Setup the signers for the Safe transaction.
+    const signers = [deployer];
+
+    // Get the addresses of the signers.
+    const addresses = await Promise.all(signers.map((signer) => signer.getAddress()));
+
+    // Sort the signers by their addresses. The `Safe.execTransaction` expects that the signatures
+    // are sorted by owner address. This is required to easily validate no confirmation duplicates exist.
+    const sortedSigners = signers.sort((a, b) => {
+      const addressA = addresses[signers.indexOf(a)];
+      const addressB = addresses[signers.indexOf(b)];
+      return addressA.localeCompare(addressB, "en", { sensitivity: "base" });
+    });
 
     console.log(`Transferring ownerships to OwnerSmartAccount at address: ${ownerSmartAccountAddress}`);
 
@@ -287,18 +328,18 @@ task("task:transferOwnershipsToOwnerSmartAccount")
         }
         const parsedEnv = dotenv.parse(fs.readFileSync(envFilePath));
         contractAddress = parsedEnv[addressEnvVarName];
+        if (!contractAddress) {
+          throw new Error(`Address variable ${addressEnvVarName} not found in ${envFilePath}`);
+        }
       } else {
         contractAddress = getRequiredEnvVar(addressEnvVarName);
       }
 
-      if (!contractAddress) {
-        throw new Error(`Address variable ${addressEnvVarName} not found in ${envFilePath}`);
-      }
-
+      // Step 1: Transfer ownership of the contract to the OwnerSmartAccount.
       const contract = await ethers.getContractAt("Ownable2StepUpgradeable", contractAddress, deployer);
       await contract.connect(deployer).transferOwnership(ownerSmartAccountAddress);
 
-      // Prepare the Safe transaction to accept ownership
+      // Prepare the Safe transaction to accept ownership.
       const value = 0; // Ether value.
       const data = contract.interface.encodeFunctionData("acceptOwnership"); // Data payload for the transaction.
       const operation = OperationType.Call; // Operation type.
@@ -322,32 +363,18 @@ task("task:transferOwnershipsToOwnerSmartAccount")
         refundReceiver,
         nonce,
       );
-
-      const signers = [deployer];
-
-      let signatureBytes = "0x";
       const bytesDataHash = ethers.getBytes(transactionHash);
 
-      // Get the addresses of the signers.
-      const addresses = await Promise.all(signers.map((signer) => signer.getAddress()));
-
-      // Sort the signers by their addresses. The `Safe.execTransaction` expects that the signatures
-      // are sorted by owner address. This is required to easily validate no confirmation duplicates exist.
-      const sorted = signers.sort((a, b) => {
-        const addressA = addresses[signers.indexOf(a)];
-        const addressB = addresses[signers.indexOf(b)];
-        return addressA.localeCompare(addressB, "en", { sensitivity: "base" });
-      });
-
       // Sign the transaction hash with each signer.
-      for (let i = 0; i < sorted.length; i++) {
-        const signedMessage = await sorted[i].signMessage(bytesDataHash);
+      let signatureBytes = "0x";
+      for (let i = 0; i < sortedSigners.length; i++) {
+        const signedMessage = await sortedSigners[i].signMessage(bytesDataHash);
         const flatSig = signedMessage.replace(/1b$/, "1f").replace(/1c$/, "20");
         signatureBytes += flatSig.slice(2);
       }
 
-      // Execute the transaction on the OwnerSmartAccount contract.
-      await ownerSmartAccount.execTransaction(
+      // Step 2: Execute the Safe transaction to accept ownership.
+      const execTransactionResponse = await ownerSmartAccount.execTransaction(
         contractAddress,
         value,
         data,
@@ -359,6 +386,7 @@ task("task:transferOwnershipsToOwnerSmartAccount")
         refundReceiver,
         signatureBytes,
       );
+      await execTransactionResponse.wait();
     }
   });
 
@@ -366,10 +394,6 @@ task("task:transferOwnershipsToOwnerSmartAccount")
 task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   // Deploy the EmptyUUPS proxy contracts
   await hre.run("task:deployEmptyUUPSProxies");
-
-  // Deploy Smart Accounts
-  await hre.run("task:deployOwnerSmartAccount");
-  await hre.run("task:deployPauserSmartAccount");
 
   // Compile the implementation contracts
   // The deployEmptyUUPSProxies task has generated the contracts' addresses in `addresses/*.sol`.
