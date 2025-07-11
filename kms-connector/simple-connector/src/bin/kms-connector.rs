@@ -1,12 +1,16 @@
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use chrono::Utc;
 use clap::Parser;
 use kms_connector::{
     core::{
         cli::{Cli, Commands},
         config::Config,
-        connector::KmsCoreConnector,
+        decryption::handler::DecryptionHandler,
+        event_intake::integration::start_event_intake,
+        event_processor::processors::EventProcessor,
     },
     error::{Error, Result},
+    gw_adapters::decryption::DecryptionAdapter,
     kms_core_adapters::service::KmsServiceImpl,
 };
 use std::sync::Arc;
@@ -78,19 +82,30 @@ async fn run_connector(
     info!("Connecting to KMS-Core at {}", kms_core_endpoint);
     let kms_provider = Arc::new(KmsServiceImpl::new(&kms_core_endpoint, config.clone()));
 
-    // Create and start connector
-    let (mut connector, event_rx) = KmsCoreConnector::new(
+    // Create decryption adapter
+    let decryption = DecryptionAdapter::new(config.decryption_address, gw_provider.clone());
+
+    // Create decryption handler
+    let decryption_handler = DecryptionHandler::new(decryption, kms_provider, config.clone());
+
+    // Create event processor
+    let event_processor = EventProcessor::new(
+        decryption_handler,
+        config.clone(),
         gw_provider.clone(),
-        config,
-        kms_provider.clone(),
         shutdown_rx.resubscribe(),
     );
 
-    // Start the connector
-    connector.start(event_rx).await?;
-
-    // Stop the connector gracefully
-    connector.stop().await?;
+    // Start the new polling-based event intake system
+    info!("Starting connector with polling-based event intake");
+    start_event_intake(
+        config,
+        gw_provider,
+        None, // scheduler is created inside EventProcessor
+        event_processor,
+        shutdown_rx,
+    )
+    .await?;
 
     Ok(())
 }
@@ -147,8 +162,41 @@ async fn main() -> Result<()> {
             // Setup signal handlers for graceful shutdown
             let signal_handle = setup_signal_handlers(shutdown_tx.clone()).await?;
 
+            // Handle scheduled start time if configured
+            if let Some(scheduled_time) = config.scheduled_start_time {
+                let now = Utc::now();
+                if scheduled_time > now {
+                    let wait_duration = (scheduled_time - now)
+                        .to_std()
+                        .map_err(|e| Error::Config(format!("Invalid scheduled start time: {e}")))?;
+
+                    info!(
+                        "Connector scheduled to start at {} (in {}s). Waiting...",
+                        scheduled_time.format("%Y-%m-%d %H:%M:%S UTC"),
+                        wait_duration.as_secs()
+                    );
+
+                    // Wait until scheduled time or shutdown signal
+                    let mut shutdown_rx_wait = shutdown_tx.subscribe();
+                    tokio::select! {
+                        _ = sleep(wait_duration) => {
+                            info!("Scheduled start time reached. Starting connector...");
+                        }
+                        _ = shutdown_rx_wait.recv() => {
+                            info!("Shutdown signal received during scheduled wait. Exiting...");
+                            return Ok(());
+                        }
+                    }
+                } else {
+                    info!(
+                        "Scheduled start time {} is in the past. Starting connector immediately.",
+                        scheduled_time.format("%Y-%m-%d %H:%M:%S UTC")
+                    );
+                }
+            }
+
             // Connect to Gateway with shutdown handling
-            let provider = match connect_with_retry(&config, shutdown_tx.subscribe()).await? {
+            let provider = match connect_with_retry(&config, shutdown_rx.resubscribe()).await? {
                 Some(provider) => provider,
                 None => {
                     info!("Shutting down during connection attempt");
@@ -170,7 +218,7 @@ async fn main() -> Result<()> {
                         }
                         Err(e) => {
                             error!("Connector task failed: {}", e);
-                            return Err(Error::Channel(format!("Task join error: {}", e)));
+                            return Err(Error::Channel(format!("Task join error: {e}")));
                         }
                     }
                 }

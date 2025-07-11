@@ -2,20 +2,16 @@ use super::event_processor::processors::EventProcessor;
 use crate::{
     core::{config::Config, decryption::handler::DecryptionHandler},
     error::Result,
-    gw_adapters::{
-        decryption::DecryptionAdapter,
-        events::{EventsAdapter, KmsCoreEvent},
-    },
+    gw_adapters::{decryption::DecryptionAdapter, events::KmsCoreEvent},
     kms_core_adapters::service::KmsServiceImpl,
 };
 use alloy::providers::Provider;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::broadcast;
 use tracing::{error, info};
 
 /// Core KMS connector that handles all interactions with the Gateway
 pub struct KmsCoreConnector<P> {
-    events: EventsAdapter<P>,
     event_processor: EventProcessor<P>,
     kms_client: Arc<KmsServiceImpl>,
     shutdown: Option<broadcast::Receiver<()>>,
@@ -28,15 +24,8 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
         config: Config,
         kms_client: Arc<KmsServiceImpl>,
         shutdown: broadcast::Receiver<()>,
-    ) -> (Self, mpsc::Receiver<KmsCoreEvent>) {
-        let (event_tx, event_rx) = mpsc::channel(config.channel_size);
-
-        let events = EventsAdapter::new(
-            Arc::clone(&provider),
-            config.decryption_address,
-            config.gateway_config_address,
-            event_tx,
-        );
+    ) -> (Self, broadcast::Receiver<KmsCoreEvent>) {
+        let (event_tx, _) = broadcast::channel(config.channel_size);
 
         // Possible gas limit
         let decryption = DecryptionAdapter::new(config.decryption_address, provider.clone());
@@ -52,21 +41,19 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
         );
 
         let connector = Self {
-            events,
             event_processor,
             kms_client,
             shutdown: Some(shutdown),
         };
 
-        (connector, event_rx)
+        (connector, event_tx.subscribe())
     }
 
     /// Start the connector
-    pub async fn start(&mut self, event_rx: mpsc::Receiver<KmsCoreEvent>) -> Result<()> {
+    pub async fn start(&mut self, event_rx: broadcast::Receiver<KmsCoreEvent>) -> Result<()> {
         info!("Starting KMS Core Connector...");
 
-        // Initialize event subscriptions
-        self.events.initialize().await?;
+        // Note: Event intake is now handled by the polling system in start_event_intake()
 
         // Keep trying to initialize KMS client
         loop {
@@ -110,11 +97,7 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
         // 2. Stop KMS client to prevent new operations
         self.kms_client.stop();
 
-        // 3. Stop event adapter and wait for all tasks to complete
-        if let Err(e) = self.events.stop().await {
-            error!("Error during event adapter shutdown: {}", e);
-            // Continue shutdown process despite error
-        }
+        // 3. Event intake is handled by polling system (no explicit stop needed)
 
         info!("KMS Core Connector stopped");
         Ok(())

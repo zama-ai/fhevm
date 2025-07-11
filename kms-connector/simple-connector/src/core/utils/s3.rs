@@ -1,6 +1,6 @@
 use alloy::{hex::encode, primitives::Address, providers::Provider, transports::http::reqwest};
 use dashmap::DashMap;
-use fhevm_gateway_rust_bindings::gatewayconfig::GatewayConfig;
+// use fhevm_gateway_rust_bindings::gatewayconfig::GatewayConfig;
 use sha3::{Digest, Keccak256};
 use std::{
     sync::{Arc, LazyLock},
@@ -30,15 +30,18 @@ fn log_cache_state() {
     }
 }
 
-/// Retrieves the S3 bucket URL for a coprocessor from the GatewayConfig contract
+/// Returns the hardcoded S3 bucket URL for localhost development
 pub async fn get_s3_url_from_gateway_config<P: Provider>(
     coprocessor_address: Address,
-    gateway_config_address: Address,
-    provider: Arc<P>,
+    _gateway_config_address: Address,
+    _provider: Arc<P>,
 ) -> Option<String> {
+    // Hardcoded S3 bucket URL for localhost development
+    let s3_bucket_url = "http://localhost:9000/ct128".to_string();
+
     info!(
-        "Attempting to get S3 bucket URL for coprocessor {:?}",
-        coprocessor_address
+        "Using hardcoded S3 bucket URL for coprocessor {:?}: {}",
+        coprocessor_address, s3_bucket_url
     );
 
     // Try to find a cached S3 bucket URL for any of the coprocessors
@@ -51,41 +54,9 @@ pub async fn get_s3_url_from_gateway_config<P: Provider>(
         return Some(url.value().clone());
     }
 
-    // If no cached URL found, query the GatewayConfig contract for the first available coprocessor
+    // Cache the hardcoded URL for future use
     info!(
-        "CACHE MISS: Querying GatewayConfig contract for coprocessor {:?} S3 bucket URL",
-        coprocessor_address
-    );
-
-    // Create GatewayConfig contract instance
-    let contract = GatewayConfig::new(gateway_config_address, provider);
-
-    // Call getCoprocessor method
-    let coprocessor = match contract.getCoprocessor(coprocessor_address).call().await {
-        Ok(result) => result,
-        Err(e) => {
-            warn!(
-                "GatewayConfig contract call failed for coprocessor {:?}: {}",
-                coprocessor_address, e
-            );
-            return None;
-        }
-    };
-
-    // Extract S3 bucket URL from the coprocessor
-    let s3_bucket_url = coprocessor._0.s3BucketUrl.to_string();
-
-    if s3_bucket_url.is_empty() {
-        warn!(
-            "Coprocessor {:?} returned empty S3 bucket URL",
-            coprocessor_address
-        );
-        return None;
-    }
-
-    // Cache the URL for future use
-    info!(
-        "CACHE UPDATE: Adding S3 bucket URL for coprocessor {:?}: {}",
+        "CACHE UPDATE: Adding hardcoded S3 bucket URL for coprocessor {:?}: {}",
         coprocessor_address, s3_bucket_url
     );
     S3_BUCKET_CACHE.insert(coprocessor_address, s3_bucket_url.clone());
@@ -94,7 +65,7 @@ pub async fn get_s3_url_from_gateway_config<P: Provider>(
     log_cache_state();
 
     info!(
-        "Successfully retrieved and cached S3 bucket URL for coprocessor {:?}: {}",
+        "Successfully set hardcoded S3 bucket URL for coprocessor {:?}: {}",
         coprocessor_address, s3_bucket_url
     );
     Some(s3_bucket_url)
@@ -122,7 +93,7 @@ pub async fn retrieve_s3_ciphertext(
     );
 
     // Direct HTTP retrieval
-    let direct_url = format!("{}/{}", s3_bucket_url, digest_hex);
+    let direct_url = format!("{s3_bucket_url}/{digest_hex}");
     let ciphertext = direct_http_retrieval(&direct_url).await?;
     info!(
         "DIRECT HTTP RETRIEVAL SUCCESS: Retrieved {} bytes",
@@ -153,14 +124,14 @@ async fn direct_http_retrieval(url: &str) -> Result<Vec<u8>> {
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(2))
         .build()
-        .map_err(|e| Error::S3Error(format!("Failed to create HTTP client: {}", e)))?;
+        .map_err(|e| Error::S3Error(format!("Failed to create HTTP client: {e}")))?;
 
     // Send the GET request
     let response = client
         .get(url)
         .send()
         .await
-        .map_err(|e| Error::S3Error(format!("HTTP request failed: {}", e)))?;
+        .map_err(|e| Error::S3Error(format!("HTTP request failed: {e}")))?;
 
     // Check if the request was successful
     if !response.status().is_success() {
@@ -174,7 +145,7 @@ async fn direct_http_retrieval(url: &str) -> Result<Vec<u8>> {
     let body = response
         .bytes()
         .await
-        .map_err(|e| Error::S3Error(format!("Failed to read HTTP response body: {}", e)))?;
+        .map_err(|e| Error::S3Error(format!("Failed to read HTTP response body: {e}")))?;
 
     Ok(body.to_vec())
 }
@@ -363,11 +334,8 @@ mod tests {
 
         let minio_url = "http://localhost:9000";
         let bucket = "ct128";
-        let call_url = format!("{}/{}", minio_url, bucket);
-        println!(
-            "Testing S3 ciphertext retrieval from MinIO at URL: {}",
-            call_url
-        );
+        let call_url = format!("{minio_url}/{bucket}");
+        println!("Testing S3 ciphertext retrieval from MinIO at URL: {call_url}");
 
         let digest_hex = "1c37ba3cfd0151dd03584cd4819c6296d6a8b4d7ac3e31554fb0e842eab8ada9";
         let digest_bytes = alloy::hex::decode(digest_hex).expect("Failed to decode hex digest");
@@ -386,12 +354,12 @@ mod tests {
 
                 let calculated_digest = compute_digest(&data);
                 let calculated_hex = encode(&calculated_digest);
-                println!("Retrieved data digest: {}", calculated_hex);
-                println!("Expected digest: {}", digest_hex);
+                println!("Retrieved data digest: {calculated_hex}");
+                println!("Expected digest: {digest_hex}");
             }
             Err(error) => {
                 // This should only happen if both direct HTTP and S3 SDK retrievals fail completely
-                println!("Failed to retrieve ciphertext from MinIO: {}", error);
+                println!("Failed to retrieve ciphertext from MinIO: {error}");
                 println!(
                     "This is expected if MinIO is not running or the bucket/object doesn't exist"
                 );

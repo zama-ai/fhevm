@@ -1,7 +1,9 @@
 pub mod cli;
 pub mod config;
 pub mod connector;
+pub mod coordination;
 pub mod decryption;
+pub mod event_intake;
 pub mod event_processor;
 pub mod types;
 pub mod utils;

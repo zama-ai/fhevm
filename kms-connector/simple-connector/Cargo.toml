@@ -12,6 +12,7 @@ anyhow.workspace= true
 aws-sdk-kms.workspace= true
 bincode.workspace= true
 bip39.workspace= true
+chrono = { version = "0.4", features = ["serde"] }
 clap.workspace= true
 config.workspace= true
 dashmap.workspace= true

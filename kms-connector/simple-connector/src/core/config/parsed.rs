@@ -5,6 +5,7 @@
 use super::raw::{RawConfig, S3Config};
 use crate::{Error, Result, core::utils::wallet::KmsWallet};
 use alloy::primitives::Address;
+use chrono::{DateTime, Utc};
 use std::{
     fmt::{self, Display},
     path::Path,
@@ -51,6 +52,32 @@ pub struct Config {
     // TODO: implement to increase security
     /// Whether to verify coprocessors against the `GatewayConfig` contract (optional, defaults to true)
     pub verify_coprocessors: Option<bool>,
+    /// Optional scheduled start time - connector will wait until this time to start
+    /// If None or time is in the past, connector starts immediately
+    pub scheduled_start_time: Option<DateTime<Utc>>,
+    /// Delta in milliseconds to add to block time before sending messages
+    /// This ensures coordinated sending across multiple connectors
+    pub message_send_delta: Duration,
+    /// Optional starting block number for parsing (if not provided, starts from latest)
+    pub starting_block_number: Option<u64>,
+    /// Enable coordinated message sending based on block time + delta
+    pub enable_coordinated_sending: bool,
+    /// Fixed interval (in milliseconds) for sending messages to Core (0 = use block-time-based scheduling)
+    pub fixed_send_interval_ms: u64,
+    /// Spacing in milliseconds between individual messages from the same block
+    pub message_spacing_ms: u64,
+    /// Maximum number of pending events before pausing event intake
+    pub max_pending_events: usize,
+    /// Use polling mode instead of WebSocket for event intake
+    pub use_polling_mode: bool,
+    /// Base polling interval when caught up to latest block
+    pub base_poll_interval_secs: u64,
+    /// Fast polling interval when catching up on historical blocks
+    pub catch_up_poll_interval_ms: u64,
+    /// Maximum number of blocks to process in a single batch
+    pub max_blocks_per_batch: u64,
+    /// How far behind latest block to consider "caught up"
+    pub catch_up_threshold: u64,
 }
 
 impl Display for Config {
@@ -94,12 +121,60 @@ impl Display for Config {
             self.user_decryption_timeout.as_secs()
         )?;
         write!(f, "Retry Interval: {}s", self.retry_interval.as_secs())?;
+        if let Some(scheduled_time) = self.scheduled_start_time {
+            write!(
+                f,
+                "Scheduled Start Time: {}",
+                scheduled_time.format("%Y-%m-%d %H:%M:%S UTC")
+            )?;
+        } else {
+            write!(
+                f,
+                "Scheduled Start Time: Not configured (start immediately)"
+            )?;
+        }
 
         Ok(())
     }
 }
 
 impl Config {
+    /// Validate timing configuration parameters for consistency
+    pub fn validate_timing_config(&self) -> Result<()> {
+        // Validate message spacing is reasonable
+        if self.message_spacing_ms > 60000 {
+            // Max 1 minute spacing
+            return Err(Error::Config(
+                "message_spacing_ms cannot exceed 60000ms (1 minute)".to_string(),
+            ));
+        }
+
+        // Validate delta is reasonable
+        if self.message_send_delta > std::time::Duration::from_millis(300000) {
+            // Max 5 minutes delta
+            return Err(Error::Config(
+                "message_send_delta cannot exceed 300000ms (5 minutes)".to_string(),
+            ));
+        }
+
+        // Warn about conflicting configurations
+        if self.enable_coordinated_sending && self.fixed_send_interval_ms > 0 {
+            tracing::warn!(
+                "Both coordinated_sending and fixed_send_interval are enabled. \
+                 Coordinated sending will take precedence."
+            );
+        }
+
+        // Validate backpressure settings
+        if self.max_pending_events == 0 {
+            return Err(Error::Config(
+                "max_pending_events must be greater than 0".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Loads the configuration from environment variables and optionally from a TOML file.
     ///
     /// Environment variables take precedence over file configuration.
@@ -161,7 +236,21 @@ impl Config {
         let user_decryption_timeout = Duration::from_secs(raw_config.user_decryption_timeout_secs);
         let retry_interval = Duration::from_secs(raw_config.retry_interval_secs);
 
-        Ok(Self {
+        // Parse scheduled start time if provided
+        let scheduled_start_time = if let Some(time_str) = raw_config.scheduled_start_time {
+            match DateTime::parse_from_rfc3339(&time_str) {
+                Ok(dt) => Some(dt.with_timezone(&Utc)),
+                Err(e) => {
+                    return Err(Error::Config(format!(
+                        "Invalid scheduled_start_time format '{time_str}': {e}. Expected RFC3339 format (e.g., '2024-01-15T10:30:00Z')"
+                    )));
+                }
+            }
+        } else {
+            None
+        };
+
+        let config = Config {
             gateway_url: raw_config.gateway_url,
             kms_core_endpoint: raw_config.kms_core_endpoint,
             chain_id: raw_config.chain_id,
@@ -179,7 +268,21 @@ impl Config {
             wallet,
             s3_config: raw_config.s3_config,
             verify_coprocessors: raw_config.verify_coprocessors,
-        })
+            scheduled_start_time,
+            message_send_delta: Duration::from_millis(raw_config.message_send_delta_ms),
+            starting_block_number: raw_config.starting_block_number,
+            enable_coordinated_sending: raw_config.enable_coordinated_sending,
+            fixed_send_interval_ms: raw_config.fixed_send_interval_ms,
+            message_spacing_ms: raw_config.message_spacing_ms,
+            max_pending_events: raw_config.max_pending_events,
+            use_polling_mode: raw_config.use_polling_mode,
+            base_poll_interval_secs: raw_config.base_poll_interval_secs,
+            catch_up_poll_interval_ms: raw_config.catch_up_poll_interval_ms,
+            max_blocks_per_batch: raw_config.max_blocks_per_batch,
+            catch_up_threshold: raw_config.catch_up_threshold,
+        };
+
+        Ok(config)
     }
 
     async fn parse_kms_wallet(raw_config: &mut RawConfig) -> Result<KmsWallet> {
@@ -505,10 +608,10 @@ mod tests {
     impl RawConfig {
         pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
             let content = toml::to_string_pretty(self)
-                .map_err(|e| Error::Config(format!("Failed to serialize config: {}", e)))?;
+                .map_err(|e| Error::Config(format!("Failed to serialize config: {e}")))?;
 
             fs::write(path, content)
-                .map_err(|e| Error::Config(format!("Failed to write config file: {}", e)))?;
+                .map_err(|e| Error::Config(format!("Failed to write config file: {e}")))?;
 
             Ok(())
         }
@@ -537,6 +640,18 @@ mod tests {
                 s3_config: None,
                 aws_kms_config: None,
                 verify_coprocessors: Some(true),
+                scheduled_start_time: None,
+                message_send_delta_ms: 1000,
+                starting_block_number: None,
+                enable_coordinated_sending: true,
+                fixed_send_interval_ms: 0,
+                message_spacing_ms: 100,
+                max_pending_events: 10000,
+                use_polling_mode: true,
+                base_poll_interval_secs: 2,
+                catch_up_poll_interval_ms: 100,
+                max_blocks_per_batch: 10,
+                catch_up_threshold: 5,
             }
         }
     }
