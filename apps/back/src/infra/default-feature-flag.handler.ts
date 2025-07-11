@@ -6,9 +6,10 @@ import {
 import { Logger } from '@nestjs/common'
 import { AppError, Task } from 'utils'
 
-const DEFAULTS: Partial<Record<FeatureFlag, boolean>> = {
+const DEFAULTS: Record<FeatureFlag, boolean> = {
   API_KEYS: false,
   GRAPHQL_PLAYGROUND: true,
+  INVITATIONS: false,
 }
 
 export class DefaultFeatureFlagHandler
