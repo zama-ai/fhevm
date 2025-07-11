@@ -348,8 +348,7 @@ impl InfiniteLogIter {
                     if !self.contract_addresses.is_empty() {
                         filter = filter.address(self.contract_addresses.clone())
                     }
-                    info!(url = %self.url, "Listening on");
-                    info!(contracts = ?self.contract_addresses, "Contracts addresses");
+                    info!(contracts = ?self.contract_addresses, "Listening on contracts addresses");
                     // note subcribing to real-time before reading catchup
                     // events to have the minimal gap between the two
                     // TODO: but it does not guarantee no gap for now
@@ -369,14 +368,10 @@ impl InfiniteLogIter {
                         if retry == 0 {
                             // TODO: remove panic and, instead, propagate the error
                             error!(
-                                url = %self.url,
                                 error = %err,
                                 "Cannot connect",
                             );
-                            panic!(
-                                "Cannot connect to {} due to {err}.",
-                                &self.url
-                            )
+                            panic!("Cannot connect due to {err}.",)
                         }
                         5
                     } else {
@@ -384,7 +379,6 @@ impl InfiniteLogIter {
                     };
                     if not_initialized {
                         warn!(
-                            url = %self.url,
                             error = %err,
                             delay_secs = delay,
                             retry = retry,
@@ -392,7 +386,6 @@ impl InfiniteLogIter {
                         );
                     } else {
                         warn!(
-                            url = %self.url,
                             error = %err,
                             delay_secs = delay,
                             "Cannot connect. Will retry infinitely",
