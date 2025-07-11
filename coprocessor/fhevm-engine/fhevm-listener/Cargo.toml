@@ -20,6 +20,7 @@ alloy-sol-types = "1.2.0"
 # workspace dependencies
 alloy = { workspace = true, features = ["contract", "json", "providers", "provider-ws", "pubsub", "rpc-types", "sol-types"] }
 alloy-primitives = { workspace = true }
+anyhow = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
 rustls = { workspace = true }
@@ -40,3 +41,7 @@ serial_test = { workspace = true }
 foundry-compilers = { workspace = true }
 foundry-compilers-artifacts = "0.13"
 semver = { workspace = true }
+
+[features]
+default = []
+test-simulate-reorg = []

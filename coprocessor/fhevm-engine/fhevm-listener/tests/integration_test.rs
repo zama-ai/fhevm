@@ -167,6 +167,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         catchup_margin: 5,
         catchup_paging: 3,
         log_level: Level::INFO,
+        reorg_maximum_duration_in_blocks: 100, // to go beyond chain start
     };
 
     // Start listener in background task

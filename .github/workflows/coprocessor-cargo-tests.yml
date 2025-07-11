@@ -95,3 +95,8 @@ jobs:
       run: |
         DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TXN_SENDER_TEST_GLOBAL_LOCALSTACK=1 cargo test --release -- --test-threads=1
       working-directory: coprocessor/fhevm-engine
+
+    - name: Run tests with incidents
+      run: |
+        DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TXN_SENDER_TEST_GLOBAL_LOCALSTACK=1 cargo test -p fhevm-listener --release --feature test-simulate-reorg -- test_listener_restart
+      working-directory: coprocessor/fhevm-engine
