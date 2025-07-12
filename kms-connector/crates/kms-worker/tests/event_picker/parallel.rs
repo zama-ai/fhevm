@@ -1,8 +1,10 @@
 use std::time::Duration;
 
 use alloy::primitives::U256;
-use connector_tests::{rand::rand_sns_ct, setup::test_instance_with_db_only};
-use connector_utils::types::{GatewayEvent, db::SnsCiphertextMaterialDbItem};
+use connector_utils::{
+    tests::{rand::rand_sns_ct, setup::test_instance_with_db_only},
+    types::{GatewayEvent, db::SnsCiphertextMaterialDbItem},
+};
 use fhevm_gateway_rust_bindings::decryption::Decryption::PublicDecryptionRequest;
 use kms_worker::core::{DbEventPicker, EventPicker};
 use tokio::time::timeout;

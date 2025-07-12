@@ -2,7 +2,7 @@ use alloy::{
     hex,
     providers::{ProviderBuilder, mock::Asserter},
 };
-use connector_tests::setup::{S3_CT, setup_test_s3_instance};
+use connector_utils::tests::setup::{S3_CT, setup_test_s3_instance};
 use kms_worker::core::{Config, event_processor::s3::S3Service};
 
 #[tokio::test]

@@ -33,7 +33,7 @@ pub async fn setup_test_db_instance()
         .await?;
 
     println!("Running migrations...");
-    sqlx::migrate!("../connector-db/migrations")
+    sqlx::migrate!("../../connector-db/migrations")
         .run(&pool)
         .await?;
     println!("KMS Connector DB ready!");

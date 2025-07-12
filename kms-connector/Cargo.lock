@@ -2259,21 +2259,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "connector-tests"
-version = "0.1.0-rc6"
-dependencies = [
- "alloy",
- "anyhow",
- "connector-utils",
- "fhevm_gateway_rust_bindings",
- "rand 0.8.5",
- "sqlx",
- "testcontainers",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "connector-utils"
 version = "0.1.0-rc6"
 dependencies = [
@@ -2286,10 +2271,12 @@ dependencies = [
  "config",
  "fhevm_gateway_rust_bindings",
  "kms-grpc",
+ "rand 0.8.5",
  "serde",
  "serial_test",
  "sqlx",
  "tempfile",
+ "testcontainers",
  "tfhe",
  "thiserror",
  "tokio",
@@ -2297,6 +2284,7 @@ dependencies = [
  "toml 0.9.2",
  "tonic",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3223,7 +3211,6 @@ version = "0.1.0-rc6"
 dependencies = [
  "alloy",
  "anyhow",
- "connector-tests",
  "connector-utils",
  "fhevm_gateway_rust_bindings",
  "serde",
@@ -3963,7 +3950,6 @@ dependencies = [
  "alloy",
  "anyhow",
  "bincode",
- "connector-tests",
  "connector-utils",
  "dashmap",
  "fhevm_gateway_rust_bindings",
@@ -6929,7 +6915,6 @@ version = "0.1.0-rc6"
 dependencies = [
  "alloy",
  "anyhow",
- "connector-tests",
  "connector-utils",
  "fhevm_gateway_rust_bindings",
  "serde",

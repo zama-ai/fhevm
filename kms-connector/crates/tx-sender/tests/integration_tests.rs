@@ -1,16 +1,19 @@
 mod common;
 
+use std::time::Duration;
+
+use crate::common::insert_rand_user_decrypt_response;
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use common::insert_rand_public_decrypt_response;
-use connector_tests::setup::{TestInstance, test_instance_with_db_and_gw};
-use connector_utils::types::KmsResponse;
+use connector_utils::{
+    tests::setup::{TestInstance, test_instance_with_db_and_gw},
+    types::KmsResponse,
+};
 use tokio::task::JoinHandle;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tx_sender::core::{DbKmsResponsePicker, DbKmsResponseRemover, TransactionSender};
-
-use crate::common::insert_rand_user_decrypt_response;
 
 #[tokio::test]
 async fn test_process_public_decryption_response() -> anyhow::Result<()> {
@@ -43,6 +46,7 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
     println!("Response successfully sent to Anvil!");
 
     println!("Checking response has been removed from DB...");
+    tokio::time::sleep(Duration::from_millis(300)).await; // give some time for the removal
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(decryption_id) FROM public_decryption_responses")
             .fetch_one(&test_instance.db)
@@ -85,6 +89,7 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
     println!("Response successfully sent to Anvil!");
 
     println!("Checking response has been removed from DB...");
+    tokio::time::sleep(Duration::from_millis(300)).await; // give some time for the removal
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(decryption_id) FROM user_decryption_responses")
             .fetch_one(&test_instance.db)

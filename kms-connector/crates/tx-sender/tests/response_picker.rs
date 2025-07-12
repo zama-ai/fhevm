@@ -1,7 +1,7 @@
 mod common;
 
 use common::{insert_rand_public_decrypt_response, insert_rand_user_decrypt_response};
-use connector_tests::setup::test_instance_with_db_only;
+use connector_utils::tests::setup::test_instance_with_db_only;
 use tx_sender::core::{DbKmsResponsePicker, KmsResponsePicker};
 
 #[tokio::test]

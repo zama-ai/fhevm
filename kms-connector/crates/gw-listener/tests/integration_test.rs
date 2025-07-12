@@ -2,7 +2,7 @@ use alloy::{
     primitives::{Address, U256},
     providers::Provider,
 };
-use connector_tests::{
+use connector_utils::tests::{
     rand::{rand_address, rand_public_key, rand_u256},
     setup::{
         DECRYPTION_MOCK_ADDRESS, KMS_MANAGEMENT_MOCK_ADDRESS, TestInstance,

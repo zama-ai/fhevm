@@ -1,9 +1,11 @@
 use alloy::primitives::U256;
-use connector_tests::{
-    rand::{rand_signature, rand_u256},
-    setup::test_instance_with_db_only,
+use connector_utils::{
+    tests::{
+        rand::{rand_signature, rand_u256},
+        setup::test_instance_with_db_only,
+    },
+    types::{KmsGrpcResponse, KmsResponse},
 };
-use connector_utils::types::{KmsGrpcResponse, KmsResponse};
 use kms_grpc::kms::v1::{
     PublicDecryptionResponse, PublicDecryptionResponsePayload, UserDecryptionResponse,
     UserDecryptionResponsePayload,

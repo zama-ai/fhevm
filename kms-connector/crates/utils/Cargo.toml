@@ -26,7 +26,20 @@ tokio-util.workspace = true
 tonic.workspace = true
 tracing.workspace = true
 
+rand = { workspace = true, optional = true }
+testcontainers = { workspace = true, optional = true }
+tracing-subscriber = { workspace = true, optional = true }
+
 [dev-dependencies]
 serial_test.workspace = true
 tempfile.workspace = true
 toml.workspace = true
+
+[features]
+tests = [
+    "alloy/node-bindings",
+    "dep:rand",
+    "dep:testcontainers",
+    "dep:tracing-subscriber",
+    "sqlx/migrate",
+]

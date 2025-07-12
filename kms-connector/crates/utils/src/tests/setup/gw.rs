@@ -1,8 +1,8 @@
+use crate::conn::WalletGatewayProvider;
 use alloy::{
     node_bindings::{Anvil, AnvilInstance},
     primitives::{Address, FixedBytes},
 };
-use connector_utils::conn::WalletGatewayProvider;
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     gatewayconfig::GatewayConfig::{self, GatewayConfigInstance},

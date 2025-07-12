@@ -1,5 +1,4 @@
 use std::{path::PathBuf, str::FromStr};
-
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
     core::{ContainerPort, WaitFor, wait::ExitWaitStrategy},
@@ -51,7 +50,12 @@ async fn configure_minio(url: &str) -> anyhow::Result<()> {
         .with_network("host")
         .with_copy_to(
             format!("/data/{S3_CT}"),
-            PathBuf::from_str(&format!("{}/data/{}", env!("CARGO_MANIFEST_DIR"), S3_CT)).unwrap(),
+            PathBuf::from_str(&format!(
+                "{}/../../tests/data/{}",
+                env!("CARGO_MANIFEST_DIR"),
+                S3_CT
+            ))
+            .unwrap(),
         )
         .with_cmd(["-c", &cmd])
         .start()

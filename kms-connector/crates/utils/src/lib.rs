@@ -3,3 +3,6 @@ pub mod config;
 pub mod conn;
 pub mod signal;
 pub mod types;
+
+#[cfg(feature = "tests")]
+pub mod tests;

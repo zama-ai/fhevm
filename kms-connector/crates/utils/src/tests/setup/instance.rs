@@ -1,14 +1,17 @@
-use crate::setup::{
-    CHAIN_ID, DEPLOYER_PRIVATE_KEY,
-    db::setup_test_db_instance,
-    gw::{GatewayInstance, setup_anvil_gateway},
+use crate::{
+    config::KmsWallet,
+    conn::WalletGatewayProvider,
+    tests::setup::{
+        CHAIN_ID, DEPLOYER_PRIVATE_KEY,
+        db::setup_test_db_instance,
+        gw::{GatewayInstance, setup_anvil_gateway},
+    },
 };
 use alloy::{
     node_bindings::AnvilInstance,
     primitives::ChainId,
     providers::{ProviderBuilder, WsConnect},
 };
-use connector_utils::{config::KmsWallet, conn::WalletGatewayProvider};
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::DecryptionInstance,
     gatewayconfig::GatewayConfig::GatewayConfigInstance,

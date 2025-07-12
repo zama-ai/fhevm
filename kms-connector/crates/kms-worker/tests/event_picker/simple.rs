@@ -1,8 +1,10 @@
-use connector_tests::{
-    rand::{rand_address, rand_digest, rand_public_key, rand_sns_ct, rand_u256},
-    setup::test_instance_with_db_only,
+use connector_utils::{
+    tests::{
+        rand::{rand_address, rand_digest, rand_public_key, rand_sns_ct, rand_u256},
+        setup::test_instance_with_db_only,
+    },
+    types::{GatewayEvent, db::SnsCiphertextMaterialDbItem},
 };
-use connector_utils::types::{GatewayEvent, db::SnsCiphertextMaterialDbItem};
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
     kmsmanagement::KmsManagement::{

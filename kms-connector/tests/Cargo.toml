@@ -7,13 +7,3 @@ publish.workspace = true
 version.workspace = true
 
 [dependencies]
-connector-utils.workspace = true
-fhevm_gateway_rust_bindings.workspace = true
-
-alloy = { workspace = true, features = ["node-bindings"] }
-anyhow.workspace = true
-rand.workspace = true
-sqlx = { workspace = true, features = ["migrate"] }
-testcontainers.workspace = true
-tracing.workspace = true
-tracing-subscriber.workspace= true
