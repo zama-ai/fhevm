@@ -115,11 +115,11 @@ fn default_enable_coordinated_sending() -> bool {
 }
 
 fn default_message_send_delta_ms() -> u64 {
-    100 // 100ms delay after block time
+    1000 // 1000ms delay after block time
 }
 
 fn default_message_spacing_ms() -> u64 {
-    10 // 10ms between messages
+    25 // 25ms between messages
 }
 
 fn default_pending_events_max() -> usize {
