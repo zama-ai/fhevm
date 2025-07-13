@@ -272,7 +272,7 @@ impl<P: Provider + Clone + 'static> MessageScheduler<P> {
             // Dynamic processing interval: message_spacing_ms / 2, capped at 100ms for efficiency
             let dynamic_interval_ms = std::cmp::min(100, config.message_spacing_ms / 2);
             let mut processing_interval =
-                tokio::time::interval(Duration::from_millis(dynamic_interval_ms as u64));
+                tokio::time::interval(Duration::from_millis(dynamic_interval_ms));
 
             loop {
                 tokio::select! {
