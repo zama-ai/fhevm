@@ -50,6 +50,23 @@ pub enum KmsCoreEvent {
     KskgenResponse(KmsManagement::KskgenResponse),
 }
 
+/// Event with block timestamp for coordinated sending
+#[derive(Clone, Debug)]
+pub struct TimestampedEvent {
+    pub event: KmsCoreEvent,
+    pub block_timestamp: u64, // Unix timestamp in seconds
+}
+
+impl KmsCoreEvent {
+    /// Wrap event with block timestamp for coordinated sending
+    pub fn with_timestamp(self, block_timestamp: u64) -> TimestampedEvent {
+        TimestampedEvent {
+            event: self,
+            block_timestamp,
+        }
+    }
+}
+
 /// Adapter for handling Gateway events
 #[derive(Debug)]
 pub struct EventsAdapter<P> {
@@ -203,7 +220,7 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
             match tokio::time::timeout(Duration::from_secs(5), handle).await {
                 Ok(result) => {
                     if let Err(e) = result {
-                        errors.push(format!("Task failed: {}", e));
+                        errors.push(format!("Task failed: {e}"));
                     }
                 }
                 Err(_) => {

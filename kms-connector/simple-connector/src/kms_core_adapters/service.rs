@@ -15,8 +15,23 @@ use tonic::{Code, Request, Response, Status, transport::Channel};
 use tracing::{error, info, warn};
 
 use crate::core::config::Config;
+use crate::core::types::fhe_types::fhe_type_to_string;
 use crate::core::utils::eip712::verify_user_decryption_eip712;
 use crate::error::Result;
+
+/// Convert hex RequestId string to decimal for consistent logging
+fn request_id_to_decimal(hex_request_id: &str) -> String {
+    // Try to parse hex string as U256 and convert to decimal
+    if let Ok(bytes) = alloy::hex::decode(hex_request_id) {
+        if bytes.len() == 32 {
+            let mut array = [0u8; 32];
+            array.copy_from_slice(&bytes);
+            return alloy::primitives::U256::from_be_bytes(array).to_string();
+        }
+    }
+    // Fallback to original hex string if parsing fails
+    hex_request_id.to_string()
+}
 
 #[tonic::async_trait]
 pub trait KmsService {
@@ -106,8 +121,7 @@ impl KmsServiceImpl {
                         // Check if we've exceeded the timeout
                         if start.elapsed() >= timeout {
                             return Err(Status::deadline_exceeded(format!(
-                                "Operation timed out after {:?}",
-                                timeout
+                                "Operation timed out after {timeout:?}"
                             )));
                         }
                         // Result not ready yet, wait and retry
@@ -139,22 +153,24 @@ impl KmsService for KmsServiceImpl {
             .ok_or_else(|| Status::invalid_argument("Missing request ID"))?;
 
         // Log the FHE types being processed in this request
+        let request_id_decimal = request_id_to_decimal(&request_id.request_id);
         if let Some(ciphertexts) = request.get_ref().ciphertexts.as_slice().first() {
             info!(
-                "[OUT] 🔑 Sending PublicDecryptionRequest({}) with FHE type: {}",
-                request_id.request_id, ciphertexts.fhe_type
+                "[OUT] 🔑 Sending PublicDecryptionRequest-{} with FHE type: {}",
+                request_id_decimal,
+                fhe_type_to_string(ciphertexts.fhe_type)
             );
         } else {
             info!(
-                "[OUT] Sending PublicDecryptionRequest({}) with no ciphertexts",
-                request_id.request_id
+                "[OUT] Sending PublicDecryptionRequest-{} with no ciphertexts",
+                request_id_decimal
             );
         }
 
         let mut client = self
             .get_client()
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
 
         // Send initial request
         client.public_decrypt(request).await?;
@@ -166,7 +182,7 @@ impl KmsService for KmsServiceImpl {
                 let mut client = self
                     .get_client()
                     .await
-                    .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
+                    .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
                 client.get_public_decryption_result(request).await
             }
         })
@@ -189,7 +205,10 @@ impl KmsService for KmsServiceImpl {
 
         // Verify the EIP-712 signature for the user decryption request
         if let Err(e) = verify_user_decryption_eip712(request.get_ref()) {
-            error!("Failed to verify user decryption request: {e}");
+            error!(
+                "Failed to verify UserDecryptionRequest-{}: {e}",
+                request_id_to_decimal(&request_id.request_id)
+            );
             warn!("Proceeding with user decryption despite verification failure: {e}");
         }
 
@@ -198,13 +217,14 @@ impl KmsService for KmsServiceImpl {
             .get_ref()
             .typed_ciphertexts
             .iter()
-            .map(|ct| ct.fhe_type.to_string())
+            .map(|ct| fhe_type_to_string(ct.fhe_type))
             .collect::<Vec<_>>()
             .join(", ");
 
+        let request_id_decimal = request_id_to_decimal(&request_id.request_id);
         info!(
-            "[OUT] 🔑 Sending UserDecryptionRequest({}) for client {} with FHE types: [{}]",
-            request_id.request_id,
+            "[OUT] 🔑 Sending UserDecryptionRequest-{} for client {} with FHE types: [{}]",
+            request_id_decimal,
             request.get_ref().client_address,
             fhe_types
         );
@@ -212,7 +232,7 @@ impl KmsService for KmsServiceImpl {
         let mut client = self
             .get_client()
             .await
-            .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
+            .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
 
         // Send initial request
         client.user_decrypt(request).await?;
@@ -224,7 +244,7 @@ impl KmsService for KmsServiceImpl {
                 let mut client = self
                     .get_client()
                     .await
-                    .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {}", e)))?;
+                    .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
                 client.get_user_decryption_result(request).await
             }
         })

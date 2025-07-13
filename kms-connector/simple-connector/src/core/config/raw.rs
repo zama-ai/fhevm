@@ -60,6 +60,30 @@ pub struct RawConfig {
     pub aws_kms_config: Option<AwsKmsConfig>,
     #[serde(default = "default_verify_coprocessors")]
     pub verify_coprocessors: Option<bool>,
+    // Coordination parameters
+    #[serde(default = "default_enable_coordinated_sending")]
+    pub enable_coordinated_sending: bool,
+    #[serde(default = "default_message_send_delta_ms")]
+    pub message_send_delta_ms: u64,
+    #[serde(default = "default_message_spacing_ms")]
+    pub message_spacing_ms: u64,
+    #[serde(default = "default_pending_events_max")]
+    pub pending_events_max: usize,
+    #[serde(default = "default_pending_events_queue_slowdown_threshold")]
+    pub pending_events_queue_slowdown_threshold: f32,
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    #[serde(default = "default_starting_block_number")]
+    pub starting_block_number: Option<u64>,
+    #[serde(default = "default_max_concurrent_tasks")]
+    pub max_concurrent_tasks: usize,
+    // Polling parameters
+    #[serde(default = "default_use_polling_mode")]
+    pub use_polling_mode: bool,
+    #[serde(default = "default_base_poll_interval_secs")]
+    pub base_poll_interval_secs: u64,
+    #[serde(default = "default_max_blocks_per_batch")]
+    pub max_blocks_per_batch: u64,
 }
 
 fn default_service_name() -> String {
@@ -79,11 +103,55 @@ fn default_user_decryption_timeout() -> u64 {
 }
 
 fn default_retry_interval() -> u64 {
-    5 // 5 seconds
+    3 // 3 seconds
 }
 
 fn default_verify_coprocessors() -> Option<bool> {
     Some(false)
+}
+
+fn default_enable_coordinated_sending() -> bool {
+    true
+}
+
+fn default_message_send_delta_ms() -> u64 {
+    100 // 100ms delay after block time
+}
+
+fn default_message_spacing_ms() -> u64 {
+    10 // 10ms between messages
+}
+
+fn default_pending_events_max() -> usize {
+    10000 // Maximum 10k pending messages
+}
+
+fn default_pending_events_queue_slowdown_threshold() -> f32 {
+    0.8 // Slow down at 80% capacity
+}
+
+fn default_max_retries() -> u32 {
+    3 // 3 retries per message
+}
+
+fn default_starting_block_number() -> Option<u64> {
+    None // Start from latest block by default
+}
+
+fn default_max_concurrent_tasks() -> usize {
+    100 // Maximum 100 concurrent tasks
+}
+
+fn default_use_polling_mode() -> bool {
+    true // Use WebSocket by default
+}
+
+fn default_base_poll_interval_secs() -> u64 {
+    1 // Poll every 1 second
+}
+
+fn default_max_blocks_per_batch() -> u64 {
+    10 // Process 10 blocks per batch
 }
 
 impl RawConfig {
@@ -107,10 +175,10 @@ impl RawConfig {
 
         let settings = builder
             .build()
-            .map_err(|e| Error::Config(format!("Failed to build config: {}", e)))?;
+            .map_err(|e| Error::Config(format!("Failed to build config: {e}")))?;
 
         settings
             .try_deserialize()
-            .map_err(|e| Error::Config(format!("Failed to deserialize config: {}", e)))
+            .map_err(|e| Error::Config(format!("Failed to deserialize config: {e}")))
     }
 }

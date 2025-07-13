@@ -250,10 +250,10 @@ mod tests {
     impl RawConfig {
         pub fn to_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
             let content = toml::to_string_pretty(self)
-                .map_err(|e| Error::InvalidConfig(format!("Failed to serialize config: {}", e)))?;
+                .map_err(|e| Error::InvalidConfig(format!("Failed to serialize config: {e}")))?;
 
             fs::write(path, content)
-                .map_err(|e| Error::InvalidConfig(format!("Failed to write config file: {}", e)))?;
+                .map_err(|e| Error::InvalidConfig(format!("Failed to write config file: {e}")))?;
 
             Ok(())
         }
