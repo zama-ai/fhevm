@@ -5,8 +5,7 @@ use alloy::{
 use connector_utils::tests::{
     rand::{rand_address, rand_public_key, rand_u256},
     setup::{
-        DECRYPTION_MOCK_ADDRESS, KMS_MANAGEMENT_MOCK_ADDRESS, TestInstance,
-        test_instance_with_db_and_gw,
+        DECRYPTION_MOCK_ADDRESS, KMS_MANAGEMENT_MOCK_ADDRESS, TestInstance, TestInstanceBuilder,
     },
 };
 use connector_utils::types::db::SnsCiphertextMaterialDbItem;
@@ -19,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 
 #[tokio::test]
 async fn test_publish_public_decryption() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_and_gw().await?;
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
@@ -41,7 +40,7 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
     println!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT decryption_id, sns_ct_materials FROM public_decryption_requests")
-        .fetch_one(&test_instance.db)
+        .fetch_one(test_instance.db())
         .await?;
 
     let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
@@ -60,7 +59,7 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_publish_user_decryption() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_and_gw().await?;
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
@@ -92,7 +91,7 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
     println!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT decryption_id, sns_ct_materials, user_address, public_key FROM user_decryption_requests")
-        .fetch_one(&test_instance.db)
+        .fetch_one(test_instance.db())
         .await?;
 
     let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
@@ -116,7 +115,7 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_and_gw().await?;
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
@@ -140,7 +139,7 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
     let row = sqlx::query(
         "SELECT pre_keygen_request_id, fhe_params_digest FROM preprocess_keygen_requests",
     )
-    .fetch_one(&test_instance.db)
+    .fetch_one(test_instance.db())
     .await?;
 
     let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_keygen_request_id")?);
@@ -155,7 +154,7 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_and_gw().await?;
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
@@ -179,7 +178,7 @@ async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
     let row = sqlx::query(
         "SELECT pre_kskgen_request_id, fhe_params_digest FROM preprocess_kskgen_requests",
     )
-    .fetch_one(&test_instance.db)
+    .fetch_one(test_instance.db())
     .await?;
 
     let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_kskgen_request_id")?);
@@ -194,7 +193,7 @@ async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_publish_keygen() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_and_gw().await?;
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
@@ -217,7 +216,7 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
     println!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT pre_key_id, fhe_params_digest FROM keygen_requests")
-        .fetch_one(&test_instance.db)
+        .fetch_one(test_instance.db())
         .await?;
 
     let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_key_id")?);
@@ -232,7 +231,7 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_publish_kskgen() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_and_gw().await?;
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
@@ -259,7 +258,7 @@ async fn test_publish_kskgen() -> anyhow::Result<()> {
     let row = sqlx::query(
         "SELECT pre_ksk_id, source_key_id, dest_key_id, fhe_params_digest FROM kskgen_requests",
     )
-    .fetch_one(&test_instance.db)
+    .fetch_one(test_instance.db())
     .await?;
 
     let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_ksk_id")?);
@@ -278,7 +277,7 @@ async fn test_publish_kskgen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_publish_crsgen() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_and_gw().await?;
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
@@ -300,7 +299,7 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
     println!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT crsgen_request_id, fhe_params_digest FROM crsgen_requests")
-        .fetch_one(&test_instance.db)
+        .fetch_one(test_instance.db())
         .await?;
 
     let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("crsgen_request_id")?);
@@ -317,7 +316,7 @@ fn start_test_listener(
     test_instance: &TestInstance,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<JoinHandle<()>> {
-    let publisher = DbEventPublisher::new(test_instance.db.clone());
+    let publisher = DbEventPublisher::new(test_instance.db().clone());
 
     let mut config = Config::default();
     config.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;

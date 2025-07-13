@@ -7,7 +7,7 @@ use alloy::primitives::U256;
 use anyhow::anyhow;
 use common::insert_rand_public_decrypt_response;
 use connector_utils::{
-    tests::setup::{TestInstance, test_instance_with_db_and_gw},
+    tests::setup::{TestInstance, TestInstanceBuilder},
     types::KmsResponse,
 };
 use tokio::task::JoinHandle;
@@ -17,13 +17,13 @@ use tx_sender::core::{DbKmsResponsePicker, DbKmsResponseRemover, TransactionSend
 
 #[tokio::test]
 async fn test_process_public_decryption_response() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_and_gw().await?;
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     println!("Mocking PublicDecryptionResponse in Postgres...");
-    let inserted_response = insert_rand_public_decrypt_response(&test_instance.db).await?;
+    let inserted_response = insert_rand_public_decrypt_response(&test_instance.db()).await?;
     println!("PublicDecryptionResponse successfully stored!");
 
     println!("Checking response has been sent to Anvil...");
@@ -49,7 +49,7 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_millis(300)).await; // give some time for the removal
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(decryption_id) FROM public_decryption_responses")
-            .fetch_one(&test_instance.db)
+            .fetch_one(test_instance.db())
             .await?;
     assert_eq!(count, 0);
     println!("Response successfully removed from DB! Stopping TransactionSender...");
@@ -60,13 +60,13 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_process_user_decryption_response() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_and_gw().await?;
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
 
     println!("Mocking UserDecryptionResponse in Postgres...");
-    let inserted_response = insert_rand_user_decrypt_response(&test_instance.db).await?;
+    let inserted_response = insert_rand_user_decrypt_response(&test_instance.db()).await?;
     println!("UserDecryptionResponse successfully stored!");
 
     println!("Checking response has been sent to Anvil...");
@@ -92,7 +92,7 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
     tokio::time::sleep(Duration::from_millis(300)).await; // give some time for the removal
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(decryption_id) FROM user_decryption_responses")
-            .fetch_one(&test_instance.db)
+            .fetch_one(test_instance.db())
             .await?;
     assert_eq!(count, 0);
     println!("Response successfully removed from DB! Stopping TransactionSender...");
@@ -104,8 +104,7 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
 #[tokio::test]
 #[ignore = "to enable when performance will be improved"]
 async fn stress_test() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_and_gw().await?;
-    // test_instance.disable_tracing();
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
@@ -114,7 +113,7 @@ async fn stress_test() -> anyhow::Result<()> {
     println!("Mocking {nb_response} UserDecryptionResponse in Postgres...");
     let mut responses_id = Vec::with_capacity(nb_response);
     for _ in 0..nb_response {
-        match insert_rand_user_decrypt_response(&test_instance.db).await? {
+        match insert_rand_user_decrypt_response(&test_instance.db()).await? {
             KmsResponse::UserDecryption { decryption_id, .. } => {
                 responses_id.push(decryption_id);
             }
@@ -145,7 +144,7 @@ async fn stress_test() -> anyhow::Result<()> {
     println!("Checking responses have been removed from DB...");
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(decryption_id) FROM user_decryption_responses")
-            .fetch_one(&test_instance.db)
+            .fetch_one(test_instance.db())
             .await?;
     assert_eq!(count, 0);
     println!("Responses successfully removed from DB! Stopping TransactionSender...");
@@ -158,8 +157,8 @@ async fn start_test_tx_sender(
     test_instance: &TestInstance,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<JoinHandle<()>> {
-    let response_picker = DbKmsResponsePicker::connect(test_instance.db.clone()).await?;
-    let response_remover = DbKmsResponseRemover::new(test_instance.db.clone());
+    let response_picker = DbKmsResponsePicker::connect(test_instance.db().clone()).await?;
+    let response_remover = DbKmsResponseRemover::new(test_instance.db().clone());
 
     let tx_sender = TransactionSender::new(
         response_picker,
