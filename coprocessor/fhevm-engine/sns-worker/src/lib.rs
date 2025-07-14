@@ -300,6 +300,9 @@ pub enum ExecutionError {
 
     #[error("S3 Transient error: {0}")]
     S3TransientError(String),
+
+    #[error("Internal send error: {0}")]
+    InternalSendError(String),
 }
 
 #[derive(Clone)]
