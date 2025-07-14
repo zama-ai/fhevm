@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { task } from 'hardhat/config';
+import { task, types } from 'hardhat/config';
 
 task('task:verifyACL').setAction(async function (taskArguments, { upgrades, run }) {
   const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.host'));
@@ -85,3 +85,32 @@ task('task:verifyDecryptionOracle').setAction(async function (taskArguments, { u
     constructorArguments: [],
   });
 });
+
+task('task:verifyAllGatewayContracts')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, hre) {
+    console.log('Verify ACL contract:');
+    await hre.run('task:verifyACL', { useInternalProxyAddress });
+
+    console.log('Verify FHEVMExecutor contract:');
+    await hre.run('task:verifyFHEVMExecutor', { useInternalProxyAddress });
+
+    console.log('Verify KMSVerifier contract:');
+    await hre.run('task:verifyKMSVerifier', { useInternalProxyAddress });
+
+    console.log('Verify InputVerifier contract:');
+    await hre.run('task:verifyInputVerifier', { useInternalProxyAddress });
+
+    console.log('Verify HCULimit contract:');
+    await hre.run('task:verifyHCULimit', { useInternalProxyAddress });
+
+    console.log('Verify DecryptionOracle contract:');
+    await hre.run('task:verifyDecryptionOracle', { useInternalProxyAddress });
+
+    console.log('Contract verification done!');
+  });

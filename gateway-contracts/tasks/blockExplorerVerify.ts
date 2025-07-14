@@ -24,12 +24,10 @@ task("task:verifyCiphertextCommits")
     await run("verify:verify", {
       address: proxyAddress,
       constructorArguments: [],
-      force: true,
     });
     await run("verify:verify", {
       address: implementationAddress,
       constructorArguments: [],
-      force: true,
     });
   });
 
@@ -53,12 +51,10 @@ task("task:verifyDecryption")
     await run("verify:verify", {
       address: proxyAddress,
       constructorArguments: [],
-      force: true,
     });
     await run("verify:verify", {
       address: implementationAddress,
       constructorArguments: [],
-      force: true,
     });
   });
 
@@ -168,4 +164,33 @@ task("task:verifyMultichainAcl")
       address: implementationAddress,
       constructorArguments: [],
     });
+  });
+
+task("task:verifyAllGatewayContracts")
+  .addOptionalParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, hre) {
+    console.log("Verify GatewayConfig contract:");
+    await hre.run("task:verifyGatewayConfig", { useInternalProxyAddress });
+
+    console.log("Verify InputVerification contract:");
+    await hre.run("task:verifyInputVerification", { useInternalProxyAddress });
+
+    console.log("Verify KmsManagement contract:");
+    await hre.run("task:verifyKmsManagement", { useInternalProxyAddress });
+
+    console.log("Verify CiphertextCommits contract:");
+    await hre.run("task:verifyCiphertextCommits", { useInternalProxyAddress });
+
+    console.log("Verify MultichainAcl contract:");
+    await hre.run("task:verifyMultichainAcl", { useInternalProxyAddress });
+
+    console.log("Verify Decryption contract:");
+    await hre.run("task:verifyDecryption", { useInternalProxyAddress });
+
+    console.log("Contract verification done!");
   });
