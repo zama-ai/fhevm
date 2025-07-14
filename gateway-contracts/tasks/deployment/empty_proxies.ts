@@ -66,7 +66,10 @@ task("task:setContractAddress")
 
 // Deploy all the EmptyUUPS proxy contracts
 task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgrades, run }) {
-  fs.rmSync(ADDRESSES_DIR, { recursive: true, force: true });
+  const envFilePath = path.join(ADDRESSES_DIR, ".env.gateway");
+  const solidityFilePath = path.join(ADDRESSES_DIR, "GatewayAddresses.sol");
+  fs.rmSync(envFilePath, { recursive: true, force: true });
+  fs.rmSync(solidityFilePath, { recursive: true, force: true });
 
   // Compile the EmptyUUPS proxy contract
   await run("compile:specific", { contract: "contracts/emptyProxy" });
