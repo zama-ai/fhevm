@@ -5,10 +5,9 @@ import { task } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import path from "path";
 
+import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../utils/loadVariables";
 import { pascalCaseToSnakeCase } from "../utils/stringOps";
-
-const ADDRESSES_DIR = path.join(__dirname, "../../addresses");
 
 // Helper function to deploy a contract implementation to its proxy
 async function deployContractImplementation(
@@ -26,17 +25,18 @@ async function deployContractImplementation(
   const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
   const newImplem = await ethers.getContractFactory(name, deployer);
 
-  // Determine env file path and env variable name
-  const nameSnakeCase = pascalCaseToSnakeCase(name);
-  const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
-  const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
+  const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
+  dotenv.config({ path: envFilePath });
 
-  // Get the proxy address
   if (!fs.existsSync(envFilePath)) {
     throw new Error(`Environment file not found: ${envFilePath}`);
   }
-  const parsedEnv = dotenv.parse(fs.readFileSync(envFilePath));
-  const proxyAddress = parsedEnv[addressEnvVarName];
+  // Determine env variable name for the proxy contract address
+  const nameSnakeCase = pascalCaseToSnakeCase(name);
+  const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
+
+  // Get the proxy address
+  const proxyAddress = getRequiredEnvVar(addressEnvVarName);
   if (!proxyAddress) {
     throw new Error(`Address variable ${addressEnvVarName} not found in ${envFilePath}`);
   }

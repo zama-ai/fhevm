@@ -1,7 +1,8 @@
 import dotenv from "dotenv";
-import fs from "fs";
 import { task, types } from "hardhat/config";
+import path from "path";
 
+import { ADDRESSES_DIR } from "../hardhat.config";
 import { getRequiredEnvVar } from "./utils/loadVariables";
 
 // Add host chains metadata to the GatewayConfig contract
@@ -29,13 +30,10 @@ task("task:addHostChainsToGatewayConfig")
       });
     }
 
-    let proxyAddress: string;
     if (taskArgs.useInternalGatewayConfigAddress) {
-      const parsedEnvGatewayConfig = dotenv.parse(fs.readFileSync("addresses/.env.gateway_config"));
-      proxyAddress = parsedEnvGatewayConfig.GATEWAY_CONFIG_ADDRESS;
-    } else {
-      proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
+      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway") });
     }
+    const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
     // Add host chains
     const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", proxyAddress, deployer);

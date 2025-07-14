@@ -1,9 +1,10 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import dotenv from "dotenv";
 import { Wallet } from "ethers";
-import fs from "fs";
 import hre from "hardhat";
+import path from "path";
 
+import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
 import { fund } from "./wallets";
 
@@ -135,35 +136,32 @@ export async function loadTestVariablesFixture() {
   // Load the transaction senders and signers
   const fixtureData = await initTestingWallets(nKmsNodes, nCoprocessors, nCustodians);
 
+  // Load the environment variables for the /addresses directory
+  dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway") });
+
   // Load the GatewayConfig contract
-  const parsedEnvGatewayConfig = dotenv.parse(fs.readFileSync("addresses/.env.gateway_config"));
-  const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", parsedEnvGatewayConfig.GATEWAY_CONFIG_ADDRESS);
+  const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS"));
 
   // Load the InputVerification contract
-  const parsedEnvInputVerification = dotenv.parse(fs.readFileSync("addresses/.env.input_verification"));
   const inputVerification = await hre.ethers.getContractAt(
     "InputVerification",
-    parsedEnvInputVerification.INPUT_VERIFICATION_ADDRESS,
+    getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS"),
   );
 
   // Load the KmsManagement contract
-  const parsedEnvKmsManagement = dotenv.parse(fs.readFileSync("addresses/.env.kms_management"));
-  const kmsManagement = await hre.ethers.getContractAt("KmsManagement", parsedEnvKmsManagement.KMS_MANAGEMENT_ADDRESS);
+  const kmsManagement = await hre.ethers.getContractAt("KmsManagement", getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS"));
 
   // Load the CiphertextCommits contract
-  const parsedEnvCiphertextCommits = dotenv.parse(fs.readFileSync("addresses/.env.ciphertext_commits"));
   const ciphertextCommits = await hre.ethers.getContractAt(
     "CiphertextCommits",
-    parsedEnvCiphertextCommits.CIPHERTEXT_COMMITS_ADDRESS,
+    getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS"),
   );
 
   // Load the MultichainAcl contract
-  const parsedEnvMultichainAcl = dotenv.parse(fs.readFileSync("addresses/.env.multichain_acl"));
-  const multichainAcl = await hre.ethers.getContractAt("MultichainAcl", parsedEnvMultichainAcl.MULTICHAIN_ACL_ADDRESS);
+  const multichainAcl = await hre.ethers.getContractAt("MultichainAcl", getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS"));
 
   // Load the Decryption contract
-  const parsedEnvDecryption = dotenv.parse(fs.readFileSync("addresses/.env.decryption"));
-  const decryption = await hre.ethers.getContractAt("Decryption", parsedEnvDecryption.DECRYPTION_ADDRESS);
+  const decryption = await hre.ethers.getContractAt("Decryption", getRequiredEnvVar("DECRYPTION_ADDRESS"));
 
   // Load the FHE parameters
   const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
