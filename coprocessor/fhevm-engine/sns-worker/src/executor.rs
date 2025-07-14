@@ -12,6 +12,7 @@ use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Vers
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::compact_hex;
+use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::fmt;
@@ -42,6 +43,11 @@ impl fmt::Display for Order {
             Order::Desc => write!(f, "DESC"),
         }
     }
+}
+
+enum SchedulePolicy {
+    Sequential,
+    RayonParallel,
 }
 
 pub struct SwitchNSquashService {
@@ -186,7 +192,7 @@ pub(crate) async fn run_loop(
             *value = SystemTime::now();
         }
 
-        match fetch_and_execute_sns_tasks(pool, tx, &keys, conf, enable_compression).await {
+        match fetch_and_execute_sns_tasks(pool, tx, &keys, conf, enable_compression, &token).await {
             Ok(maybe_remaining) => {
                 if maybe_remaining {
                     if token.is_cancelled() {
@@ -286,6 +292,7 @@ async fn fetch_and_execute_sns_tasks(
     keys: &KeySet,
     conf: &DBConfig,
     enable_compression: bool,
+    token: &CancellationToken,
 ) -> Result<bool, ExecutionError> {
     let mut db_txn = match pool.begin().await {
         Ok(txn) => txn,
@@ -306,7 +313,15 @@ async fn fetch_and_execute_sns_tasks(
         let t = telemetry::tracer("batch_execution");
         t.set_attribute("count", tasks.len().to_string());
 
-        process_tasks(&mut tasks, keys, tx, enable_compression)?;
+        process_tasks(
+            &mut tasks,
+            keys,
+            tx,
+            enable_compression,
+            SchedulePolicy::RayonParallel, // TODO: make it configurable
+            token.clone(),
+        )?;
+
         update_computations_status(trx, &tasks).await?;
 
         let s = t.child_span("batch_store_ciphertext128");
@@ -395,75 +410,121 @@ async fn enqueue_upload_tasks(
     Ok(())
 }
 
-/// Processes the tasks by decompressing and transforming ciphertexts.
+/// Processes the tasks by decompressing and converting the ciphertexts.
+///
+/// This uses the `rayon` to parallelize the squash_noise_and_serialize.
+///
+/// The computed ciphertexts are sent to the upload worker via the provided channel.
 fn process_tasks(
-    tasks: &mut [HandleItem],
+    batch: &mut [HandleItem],
     keys: &KeySet,
     tx: &Sender<UploadJob>,
     enable_compression: bool,
+    policy: SchedulePolicy,
+    token: CancellationToken,
 ) -> Result<(), ExecutionError> {
-    for task in tasks.iter_mut() {
-        let ct64_compressed = task.ct64_compressed.as_ref();
-        if ct64_compressed.is_empty() {
-            error!(target: "sns", { handle = ?task.handle }, "Empty ciphertext64, skipping task");
-            continue; // Skip empty ciphertexts
+    set_server_key(keys.server_key.clone());
+
+    match policy {
+        SchedulePolicy::Sequential => {
+            for task in batch.iter_mut() {
+                compute_task(task, tx, false, enable_compression, token.clone(), keys);
+            }
         }
-
-        let s = task.otel.child_span("decompress_ct64");
-        set_server_key(keys.server_key.clone());
-        let ct = decompress_ct(&task.handle, ct64_compressed)?;
-        telemetry::end_span(s);
-
-        let handle = compact_hex(&task.handle);
-        let ct_type = ct.type_name().to_owned();
-        info!(target: "sns",  { handle, ct_type }, "Converting ciphertext");
-
-        let mut span = task.otel.child_span("squash_noise");
-        telemetry::attribute(&mut span, "ct_type", ct_type);
-
-        match ct.squash_noise_and_serialize(enable_compression) {
-            Ok(bytes) => {
-                telemetry::end_span(span);
-                info!(target: "sns", { handle }, "Ciphertext converted, length: {}, compressed: {}", bytes.len(), enable_compression);
-
-                #[cfg(feature = "test_decrypt_128")]
-                decrypt_big_ct(keys, &bytes, &ct, &task.handle, enable_compression);
-
-                let format = if enable_compression {
-                    Ciphertext128Format::CompressedOnCpu
-                } else {
-                    Ciphertext128Format::UncompressedOnCpu
-                };
-
-                task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
-            }
-            Err(err) => {
-                telemetry::end_span_with_err(span, err.to_string());
-                error!(target: "sns", { handle }, "Failed to convert ct: {err}");
-            }
-        };
-
-        // Start uploading the ciphertexts as soon as the ct128 is computed
-        //
-        // The service must continue running the squashed noise algorithm,
-        // regardless of the availability of the upload worker.
-        if let Err(err) = tx.try_send(UploadJob::Normal(task.clone())) {
-            // This could happen if either we are experiencing a burst of tasks
-            // or the upload worker cannot recover the connection to AWS S3
-            //
-            // In this case, we should log the error and rely on the retry mechanism.
-            //
-            // There are three levels of task buffering:
-            // 1. The spawned uploading tasks (size: conf.max_concurrent_uploads)
-            // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
-            // 3. The PostgresDB (size: unlimited)
-
-            error!({target = "worker", action = "review"},  "Failed to send task to upload worker: {err}");
-            telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
+        SchedulePolicy::RayonParallel => {
+            rayon::broadcast(|_| {
+                tfhe::set_server_key(keys.server_key.clone());
+            });
+            batch.par_iter_mut().for_each(|task| {
+                compute_task(task, tx, true, enable_compression, token.clone(), keys);
+            });
         }
     }
 
     Ok(())
+}
+
+fn compute_task(
+    task: &mut HandleItem,
+    tx: &Sender<UploadJob>,
+    blocking_send: bool,
+    enable_compression: bool,
+    token: CancellationToken,
+    keys: &KeySet,
+) {
+    // Check if the task is cancelled
+    if token.is_cancelled() {
+        error!(target: "sns", { handle = ?task.handle }, "Task processing cancelled");
+        return; // Skip empty ciphertexts
+    }
+
+    let ct64_compressed = task.ct64_compressed.as_ref();
+    if ct64_compressed.is_empty() {
+        error!(target: "sns", { handle = ?task.handle }, "Empty ciphertext64, skipping task");
+        return; // Skip empty ciphertexts
+    }
+
+    let s = task.otel.child_span("decompress_ct64");
+
+    let ct = decompress_ct(&task.handle, ct64_compressed).unwrap(); // TODO handle error properly
+    telemetry::end_span(s);
+
+    let handle = compact_hex(&task.handle);
+    let ct_type = ct.type_name().to_owned();
+    info!(target: "sns",  { handle, ct_type }, "Converting ciphertext");
+
+    let mut span = task.otel.child_span("squash_noise");
+    telemetry::attribute(&mut span, "ct_type", ct_type);
+
+    match ct.squash_noise_and_serialize(enable_compression) {
+        // TODO: make configurable
+        Ok(squashed_noise_serialized) => {
+            telemetry::end_span(span);
+            info!(target: "sns", { handle }, "Ciphertext converted, length: {}, compressed: {}", bytes.len(), enable_compression);
+
+            #[cfg(feature = "test_decrypt_128")]
+            decrypt_big_ct(keys, &bytes, &ct, &task.handle, enable_compression);
+
+            let format = if enable_compression {
+                Ciphertext128Format::CompressedOnCpu
+            } else {
+                Ciphertext128Format::UncompressedOnCpu
+            };
+
+            task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
+
+            let res = if blocking_send {
+                tx.blocking_send(UploadJob::Normal(task.clone()))
+                    .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
+            } else {
+                tx.try_send(UploadJob::Normal(task.clone()))
+                    .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
+            };
+
+            // Start uploading the ciphertexts as soon as the ct128 is computed
+            //
+            // The service must continue running the squashed noise algorithm,
+            // regardless of the availability of the upload worker.
+            if let Err(err) = res {
+                // This could happen if either we are experiencing a burst of tasks
+                // or the upload worker cannot recover the connection to AWS S3
+                //
+                // In this case, we should log the error and rely on the retry mechanism.
+                //
+                // There are three levels of task buffering:
+                // 1. The spawned uploading tasks (size: conf.max_concurrent_uploads)
+                // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
+                // 3. The PostgresDB (size: unlimited)
+
+                error!({target = "worker", action = "review"},  "Failed to send task to upload worker: {err}");
+                telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
+            }
+        }
+        Err(err) => {
+            telemetry::end_span_with_err(span, err.to_string());
+            error!(target: "sns", { handle }, "Failed to convert ct: {err}");
+        }
+    };
 }
 
 /// Updates the database with the computed large ciphertexts.
