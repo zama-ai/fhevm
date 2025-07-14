@@ -6,7 +6,7 @@ import "@typechain/hardhat";
 import dotenv from "dotenv";
 import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task, types } from "hardhat/config";
-import path, { resolve } from "path";
+import { resolve } from "path";
 import "solidity-coverage";
 
 import "./tasks/accounts";
@@ -22,7 +22,7 @@ const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 export const NUM_ACCOUNTS = 30;
-export const ADDRESSES_DIR = path.join(process.cwd(), "addresses");
+export const ADDRESSES_DIR = resolve(__dirname, "addresses");
 
 const chainIds = {
   hardhat: 31337,
