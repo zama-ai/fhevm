@@ -84,7 +84,8 @@ async fn run_connector(
         config,
         kms_provider.clone(),
         shutdown_rx.resubscribe(),
-    );
+    )
+    .await?;
 
     // Start the connector
     connector.start(event_rx).await?;
@@ -170,7 +171,7 @@ async fn main() -> Result<()> {
                         }
                         Err(e) => {
                             error!("Connector task failed: {}", e);
-                            return Err(Error::Channel(format!("Task join error: {}", e)));
+                            return Err(Error::Channel(format!("Task join error: {e}")));
                         }
                     }
                 }
