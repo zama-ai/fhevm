@@ -130,7 +130,7 @@ jobs:
       - start-runner
       - test-connector
     runs-on: ubuntu-latest
-    if: ${{ always() }} # required to stop the runner even if the error happened in the previous jobs
+    if: ${{ always() && needs.start-runner.result != 'skipped' }} # required to stop the runner even if the error happened in the previous jobs, but only if start-runner was not skipped
     steps:
       - name: Stop EC2 runner
         uses: zama-ai/slab-github-runner@79939325c3c429837c10d6041e4fd8589d328bac # v1.4.1
