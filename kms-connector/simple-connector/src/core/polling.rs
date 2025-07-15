@@ -322,14 +322,13 @@ where
                             } else {
                                 // No new blocks: gradually slow down but don't go below base interval
                                 current_interval_ms = (current_interval_ms * 11 / 10).min(base_interval_ms * 2).max(base_interval_ms);
-                                info!("Idle polling: {}ms (no new blocks)", current_interval_ms);
+                                debug!("Idle polling: {}ms (no new blocks)", current_interval_ms);
                             }
                         }
                         Err(e) => {
                             error!("Polling error: {}", e);
-                            // Slow down on errors to avoid spam
-                            current_interval_ms = base_interval_ms;
-                            sleep(Duration::from_millis(500)).await;
+                            let _ = self.shutdown_tx.send(());
+                            break;
                         }
                     }
 
