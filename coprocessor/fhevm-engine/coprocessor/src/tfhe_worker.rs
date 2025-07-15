@@ -14,7 +14,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
@@ -117,15 +117,42 @@ async fn tfhe_worker_cycle(
         let now = std::time::SystemTime::now();
         let the_work = query!(
             "
-            SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar
-            FROM computations
-            WHERE is_completed = false
-            AND is_error = false
-            ORDER BY schedule_order
+            WITH selected_computations AS (
+              SELECT c.tenant_id, c.output_handle, ah.handle
+              FROM computations c LEFT JOIN allowed_handles ah ON c.output_handle = ah.handle
+              WHERE c.schedule_order IN (
+                -- Find immediately computable computations
+                SELECT schedule_order
+                FROM computations
+                WHERE is_completed = false
+                AND is_error = false
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM unnest(dependencies) WITH ORDINALITY AS elems(v, dep_index)
+                    WHERE (tenant_id, elems.v) NOT IN ( SELECT tenant_id, handle FROM ciphertexts )
+                    -- don't select scalar operands
+                    AND (
+                        NOT is_scalar
+                        OR is_scalar AND NOT elems.dep_index = 2
+                    )
+                    -- ignore fhe random, trivial encrypt operations, all inputs are scalars
+                    AND NOT fhe_operation = ANY(ARRAY[24, 26, 27])
+                )
+                ORDER BY created_at
+                LIMIT $2
+              )
+            )
+            -- Acquire the buckets of these schedulable computations. 
+            SELECT c.tenant_id, c.output_handle, c.dependencies, c.fhe_operation, c.is_scalar,
+                   sc.handle IS NOT NULL AS is_allowed, c.schedule_order
+            FROM computations c, selected_computations sc
+            WHERE c.tenant_id = sc.tenant_id
+            AND c.output_handle = sc.output_handle
             LIMIT $1
             FOR UPDATE SKIP LOCKED
         ",
-            args.work_items_batch_size as i32
+            args.work_items_batch_size as i32,
+            args.dependence_chains_per_worker as i32,
         )
         .fetch_all(trx.as_mut())
         .await?;
@@ -276,6 +303,13 @@ async fn tfhe_worker_cycle(
                     w.output_handle.clone(),
                     w.fhe_operation.into(),
                     input_ciphertexts.clone(),
+                    if let Some(is_allowed) = w.is_allowed {
+                        is_allowed
+                    } else {
+                        // Default to true - but should never be possible given query
+                        warn!("is_allowed missing");
+                        true
+                    },
                 )?;
                 producer_indexes.insert(&w.output_handle, n.index());
                 consumer_indexes.insert(widx, n.index());
@@ -318,6 +352,7 @@ async fn tfhe_worker_cycle(
                     }
                 }
             }
+            graph.finalize();
             s_schedule.end();
 
             // Execute the DFG with the current tenant's keys
@@ -343,33 +378,22 @@ async fn tfhe_worker_cycle(
                 // Filter out computations that could not complete
                 if uncomputable.contains_key(&idx) {
                     // Update timestamp of uncomputable computation
-                    let mut s =
-                        tracer.start_with_context("update_unschedulable_computation", &loop_ctx);
+                    let mut s = tracer.start_with_context("unschedulable_computation", &loop_ctx);
                     s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
                     s.set_attribute(KeyValue::new(
                         "handle",
                         format!("0x{}", hex::encode(&w.output_handle)),
                     ));
-                    let _ = query!(
-                        "
-                            UPDATE computations
-                            SET schedule_order = CURRENT_TIMESTAMP
-                            WHERE tenant_id = $1
-                            AND output_handle = $2
-                        ",
-                        w.tenant_id,
-                        w.output_handle
-                    )
-                    .execute(trx.as_mut())
-                    .await?;
                     s.end();
                     continue;
                 }
-                let r = &mut res
-                    .iter_mut()
-                    .find(|(h, _)| *h == w.output_handle)
-                    .unwrap()
-                    .1;
+                // If no result or error is present, this computation
+                // is missing.
+                let Some(r) = &mut res.iter_mut().find(|(h, _)| *h == w.output_handle) else {
+                    warn!("missing computation");
+                    continue;
+                };
+                let r = &mut r.1;
 
                 let finished_work_unit: Result<
                     _,
@@ -404,28 +428,40 @@ async fn tfhe_worker_cycle(
                     });
                 match finished_work_unit {
                     Ok((w, db_type, db_bytes)) => {
-                        let mut s = tracer.start_with_context("insert_ct_into_db", &loop_ctx);
-                        s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
-                        s.set_attribute(KeyValue::new(
-                            "handle",
-                            format!("0x{}", hex::encode(&w.output_handle)),
-                        ));
-                        s.set_attribute(KeyValue::new("ciphertext_type", db_type as i64));
-                        let _ = query!("
-                        INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
-                        VALUES($1, $2, $3, $4, $5)
-                        ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
-                    ", w.tenant_id, w.output_handle, &db_bytes, current_ciphertext_version(), db_type)
-                    .execute(trx.as_mut())
-                    .await?;
-
-                        // Notify all workers that new ciphertext is inserted
-                        // For now, it's only the SnS workers that are listening for these events
-                        let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
-                            .execute(trx.as_mut())
-                            .await?;
-
-                        s.end();
+                        let is_allowed = if let Some(is_allowed) = w.is_allowed {
+                            is_allowed
+                        } else {
+                            // Default to false - but should never be possible given query
+                            warn!("is_allowed missing");
+                            false
+                        };
+                        if db_type >= 0 {
+                            let mut s = tracer.start_with_context("insert_ct_into_db", &loop_ctx);
+                            s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
+                            s.set_attribute(KeyValue::new(
+                                "handle",
+                                format!("0x{}", hex::encode(&w.output_handle)),
+                            ));
+                            s.set_attribute(KeyValue::new("ciphertext_type", db_type as i64));
+                            let _ = query!(
+				"
+                                INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+                                VALUES($1, $2, $3, $4, $5)
+                                ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
+                                ",
+				w.tenant_id, w.output_handle, &db_bytes, current_ciphertext_version(), db_type)
+				.execute(trx.as_mut())
+				.await?;
+                            // Notify all workers that new ciphertext is inserted
+                            // For now, it's only the SnS workers that are listening for these events
+                            let _ =
+                                sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
+                                    .execute(trx.as_mut())
+                                    .await?;
+                            s.end();
+                        }
+                        // Non allowed handles are still marked as
+                        // complete but we don't upload the CT
                         let mut s = tracer.start_with_context("update_computation", &loop_ctx);
                         s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
                         s.set_attribute(KeyValue::new(

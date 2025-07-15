@@ -8,11 +8,15 @@ use fhevm_listener::database::tfhe_event_propagate::{
 };
 
 use crate::tests::operators::{generate_binary_test_cases, generate_unary_test_cases};
-use crate::tests::utils::{decrypt_ciphertexts, wait_until_all_ciphertexts_computed};
+use crate::tests::utils::{
+    allow_handle, decrypt_ciphertexts, wait_until_all_allowed_handles_computed,
+};
 use crate::tests::utils::{default_api_key, setup_test_app, TestInstance};
 
 use crate::tests::operators::BinaryOperatorTestCase;
 use crate::tests::operators::UnaryOperatorTestCase;
+
+use super::utils::default_dependence_cache_size;
 
 pub fn supported_types() -> &'static [i32] {
     &[
@@ -231,7 +235,13 @@ async fn listener_event_to_db(app: &TestInstance) -> ListenerDatabase {
     let coprocessor_api_key = sqlx::types::Uuid::parse_str(default_api_key()).unwrap();
     let url = app.db_url().to_string();
     let chain_id = 0;
-    ListenerDatabase::new(&url, &coprocessor_api_key, chain_id).await
+    ListenerDatabase::new(
+        &url,
+        &coprocessor_api_key,
+        chain_id,
+        default_dependence_cache_size(),
+    )
+    .await
 }
 
 #[tokio::test]
@@ -255,6 +265,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         let lhs_handle = next_handle();
         let rhs_handle = next_handle();
         let output_handle = next_handle();
+        allow_handle(&output_handle.to_vec(), &pool).await?;
 
         let lhs_bytes = as_scalar_uint(&op.lhs);
         let rhs_bytes = as_scalar_uint(&op.rhs);
@@ -297,7 +308,7 @@ async fn test_fhe_binary_operands_events() -> Result<(), Box<dyn std::error::Err
         cases.push((op, output_handle));
     }
 
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
     for (op, output_handle) in cases {
         let decrypt_request = vec![output_handle.to_vec()];
         let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -397,7 +408,8 @@ async fn test_fhe_unary_operands_events() -> Result<(), Box<dyn std::error::Erro
         listener_event_to_db
             .insert_tfhe_event(&tfhe_event(op_event))
             .await?;
-        wait_until_all_ciphertexts_computed(&app).await?;
+        allow_handle(&output_handle.to_vec(), &pool).await?;
+        wait_until_all_allowed_handles_computed(&app).await?;
 
         let decrypt_request = vec![output_handle.to_vec()];
         let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -518,7 +530,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                     },
                 )))
                 .await?;
-            wait_until_all_ciphertexts_computed(&app).await?;
+            allow_handle(&output_handle.to_vec(), &pool).await?;
+            wait_until_all_allowed_handles_computed(&app).await?;
             let decrypt_request = vec![output_handle.to_vec()];
             let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
             let decr_response = &resp[0];
@@ -537,7 +550,7 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
             );
         }
     }
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     Ok(())
 }
@@ -591,8 +604,9 @@ async fn test_fhe_cast_events() -> Result<(), Box<dyn std::error::Error>> {
                     result: output_handle,
                 })))
                 .await?;
+            allow_handle(&output_handle.to_vec(), &pool).await?;
 
-            wait_until_all_ciphertexts_computed(&app).await?;
+            wait_until_all_allowed_handles_computed(&app).await?;
             let decrypt_request = vec![output_handle.to_vec()];
             let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
             let decr_response = &resp[0];
@@ -678,7 +692,7 @@ async fn test_fhe_rand_events() -> Result<(), Box<dyn std::error::Error>> {
             )))
             .await?;
 
-        wait_until_all_ciphertexts_computed(&app).await?;
+        wait_until_all_allowed_handles_computed(&app).await?;
 
         let decrypt_request = vec![
             output1_handle.to_vec(),

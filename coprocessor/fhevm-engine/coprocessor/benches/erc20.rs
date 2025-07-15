@@ -1,8 +1,8 @@
 #[path = "./utils.rs"]
 mod utils;
 use crate::utils::{
-    default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app,
-    wait_until_all_ciphertexts_computed, write_to_json, OperatorType,
+    allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
+    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, OperatorType,
 };
 use coprocessor::server::common::FheOperation;
 use coprocessor::server::coprocessor::{async_computation_input::Input, AsyncComputationInput};
@@ -257,6 +257,9 @@ async fn schedule_erc20_whitepaper(
                 bals.clone(),
             ],
         });
+
+        allow_handle(&new_to_amount_handle, &pool).await?;
+        allow_handle(&new_from_amount_handle, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -274,9 +277,11 @@ async fn schedule_erc20_whitepaper(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -438,6 +443,9 @@ async fn schedule_erc20_no_cmux(
                 },
             ],
         });
+
+        allow_handle(&new_to_amount_handle, &pool).await?;
+        allow_handle(&new_from_amount_handle, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -455,9 +463,11 @@ async fn schedule_erc20_no_cmux(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -636,6 +646,9 @@ async fn schedule_dependent_erc20_whitepaper(
             ],
         });
 
+        allow_handle(&new_to_amount_handle, &pool).await?;
+        allow_handle(&new_from_amount_handle, &pool).await?;
+
         bald = AsyncComputationInput {
             input: Some(Input::InputHandle(new_to_amount_handle.clone())),
         };
@@ -656,9 +669,11 @@ async fn schedule_dependent_erc20_whitepaper(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -844,6 +859,9 @@ async fn schedule_dependent_erc20_no_cmux(
             ],
         });
 
+        allow_handle(&new_to_amount_handle, &pool).await?;
+        allow_handle(&new_from_amount_handle, &pool).await?;
+
         bald = AsyncComputationInput {
             input: Some(Input::InputHandle(new_to_amount_handle.clone())),
         };
@@ -864,9 +882,11 @@ async fn schedule_dependent_erc20_no_cmux(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),

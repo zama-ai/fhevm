@@ -93,6 +93,13 @@ pub struct Args {
 
     #[arg(long, default_value = "8080", help = "Health check port")]
     pub health_port: u16,
+
+    #[arg(
+        long,
+        default_value = "128",
+        help = "Pre-computation dependence chain cache size"
+    )]
+    pub dependence_cache_size: u16,
 }
 
 type RProvider = FillProvider<
@@ -575,6 +582,7 @@ pub async fn main(args: Args) {
                 &args.database_url,
                 &coprocessor_api_key,
                 chain_id,
+                args.dependence_cache_size,
             )
             .await;
             if log_iter.start_at_block.is_none() {
