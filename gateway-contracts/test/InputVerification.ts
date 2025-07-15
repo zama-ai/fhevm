@@ -209,6 +209,7 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
+        contextId,
       );
 
       // Get the EIP712 signatures
@@ -290,6 +291,7 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
+        contextId,
       );
 
       // Get the EIP712 signatures
@@ -545,6 +547,7 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
+        contextId,
       );
 
       // Get the EIP712 signatures
@@ -598,6 +601,7 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
+        contextId,
       );
 
       // Get the EIP712 signatures

@@ -40,6 +40,8 @@ contract InputVerification is
         address contractAddress;
         /// @notice The host chain's chain ID of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
+        /// @notice The coprocessor context ID associated to the input verification request.
+        uint256 contextId;
     }
 
     /// @notice The stored structure for the received ZK Proof verification request inputs.
@@ -57,7 +59,7 @@ contract InputVerification is
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,uint256 contextId)";
 
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
@@ -182,7 +184,8 @@ contract InputVerification is
             ctHandles,
             zkProofInput.userAddress,
             zkProofInput.contractAddress,
-            zkProofInput.contractChainId
+            zkProofInput.contractChainId,
+            contextId
         );
 
         /// @dev Compute the digest of the CiphertextVerification structure.
@@ -335,7 +338,8 @@ contract InputVerification is
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
-                        ctVerification.contractChainId
+                        ctVerification.contractChainId,
+                        ctVerification.contextId
                     )
                 )
             );
