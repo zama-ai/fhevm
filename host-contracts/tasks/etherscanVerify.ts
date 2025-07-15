@@ -86,7 +86,7 @@ task('task:verifyDecryptionOracle').setAction(async function (taskArguments, { u
   });
 });
 
-task('task:verifyAllGatewayContracts')
+task('task:verifyAllHostContracts')
   .addOptionalParam(
     'useInternalProxyAddress',
     'If proxy address from the /addresses directory should be used',
