@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "simple-connector"]
+members = ["crates/*", "simple-connector", "tests"]
 
 [workspace.package]
 authors = ["Zama"]
@@ -12,6 +12,9 @@ version = "0.1.0-rc6"
 [workspace.dependencies]
 
 # Internal dependencies
+gw-listener.path = "crates/gw-listener"
+kms-worker.path = "crates/kms-worker"
+tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_rust_bindings = { path = "../gateway-contracts/rust_bindings" }
 kms-grpc = { git = "ssh://git@github.com/zama-ai/kms-core.git", tag = "v0.11.0-rc15", default-features = true, features = [
@@ -54,7 +57,7 @@ sqlx = { version = "=0.8.6", default-features = false, features = [
     "runtime-tokio",
 ] }
 thiserror = { version = "=2.0.12", default-features = false }
-tokio = { version = "=1.44.2", default-features = false, features = [
+tokio = { version = "=1.46.1", default-features = false, features = [
     "macros",
     "rt-multi-thread",
     "signal",
@@ -62,7 +65,7 @@ tokio = { version = "=1.44.2", default-features = false, features = [
 ] }
 tokio-util = { version = "=0.7.15", default-features = false }
 tokio-stream = { version = "=0.1.17", default-features = false }
-toml = { version = "=0.8.23", default-features = true }
+toml = { version = "=0.9.2", default-features = true }
 tonic = { version = "=0.13.0", default-features = true, features = [
     "tls-ring",
     "tls-native-roots",
@@ -76,6 +79,7 @@ url = { version = "=2.5.4", default-features = false }
 # Testing dependencies
 connector-tests.path = "tests"
 rand = "=0.8.5"
+rstest = "=0.25.0"
 serial_test = "3.2.0"
 tempfile = "=3.19.1"
 testcontainers = "=0.24.0"

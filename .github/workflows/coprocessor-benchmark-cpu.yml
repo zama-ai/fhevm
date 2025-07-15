@@ -113,6 +113,7 @@ jobs:
           DEBIAN_FRONTEND=noninteractive sudo apt-get remove -y docker docker-engine docker.io containerd runc
           DEBIAN_FRONTEND=noninteractive sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-compose-plugin docker-compose
           sudo rm -rf /etc/bash_completion.d/docker /usr/local/bin/docker-compose /etc/bash_completion.d/docker-compose
+          DEBIAN_FRONTEND=noninteractive sudo apt-get update
           DEBIAN_FRONTEND=noninteractive sudo apt-get install -y protobuf-compiler cmake \
                                                                  pkg-config libssl-dev \
                                                                  libclang-dev docker-compose-v2 \

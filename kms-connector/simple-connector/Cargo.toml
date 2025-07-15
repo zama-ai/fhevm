@@ -38,6 +38,7 @@ tracing-subscriber.workspace= true
 # TODO: replace git submodule and path import by git import when fhevm-gateway and kms-core becomes open-source
 fhevm_gateway_rust_bindings.workspace= true
 kms-grpc.workspace= true
+chrono = { version = "0.4.41", features = ["serde"] }
 
 [dev-dependencies]
 tempfile.workspace = true
