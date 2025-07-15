@@ -116,6 +116,13 @@ impl Config {
             ))
         }
     }
+
+    // Default implementation for testing purpose
+    pub async fn default() -> Self {
+        Self::parse(RawConfig::default())
+            .await
+            .expect("Failed to parse default RawConfig")
+    }
 }
 
 #[cfg(test)]

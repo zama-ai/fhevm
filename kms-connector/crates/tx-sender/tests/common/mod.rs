@@ -1,5 +1,7 @@
-use connector_tests::rand::{rand_signature, rand_u256};
-use connector_utils::types::KmsResponse;
+use connector_utils::{
+    tests::rand::{rand_signature, rand_u256},
+    types::KmsResponse,
+};
 use sqlx::{Pool, Postgres};
 
 pub async fn insert_rand_public_decrypt_response(

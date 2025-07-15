@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use crate::core::{
     KmsResponsePublisher,
     config::Config,
@@ -10,6 +8,7 @@ use crate::core::{
     kms_response_publisher::DbKmsResponsePublisher,
 };
 use connector_utils::conn::{GatewayProvider, connect_to_db, connect_to_gateway};
+use std::fmt::Display;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
@@ -108,8 +107,10 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use connector_tests::rand::{rand_signature, rand_u256};
-    use connector_utils::types::{GatewayEvent, KmsResponse};
+    use connector_utils::{
+        tests::rand::{rand_signature, rand_u256},
+        types::{GatewayEvent, KmsResponse},
+    };
     use std::time::Duration;
     use tracing_test::traced_test;
 
