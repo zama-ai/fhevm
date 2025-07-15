@@ -1,11 +1,18 @@
 use alloy::{hex, providers::Provider};
+use chrono::Utc;
 use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
 use tracing::{error, info, warn};
 
 use crate::{
-    core::{config::Config, decryption::handler::DecryptionHandler, utils::s3},
+    core::{
+        config::Config,
+        coordination::{MessageScheduler, scheduler::BackpressureSignal},
+        decryption::handler::DecryptionHandler,
+        polling::{get_block_timestamp, remove_block_timestamp},
+        utils::s3,
+    },
     error::Result,
     gw_adapters::events::KmsCoreEvent,
 };
@@ -16,22 +23,53 @@ pub struct EventProcessor<P> {
     config: Config,
     provider: Arc<P>,
     shutdown: Option<broadcast::Receiver<()>>,
+    message_scheduler: Option<Arc<MessageScheduler<P>>>,
+    backpressure_rx: Option<broadcast::Receiver<BackpressureSignal>>,
 }
 
-impl<P: Provider + Clone> EventProcessor<P> {
+impl<P: Provider + Clone + 'static> EventProcessor<P> {
     /// Create a new event processor
-    pub fn new(
+    pub async fn new(
         decryption_handler: DecryptionHandler<P>,
         config: Config,
         provider: Arc<P>,
         shutdown: broadcast::Receiver<()>,
-    ) -> Self {
-        Self {
+    ) -> Result<Self> {
+        // Create MessageScheduler if coordinated sending is enabled
+        let (message_scheduler, backpressure_rx) = if config.enable_coordinated_sending {
+            info!("🔂 Coordinated sending enabled - starting MessageScheduler");
+
+            // Use the same shutdown receiver as the EventProcessor to coordinate shutdown
+            let scheduler_shutdown_rx = shutdown.resubscribe();
+
+            let (scheduler, backpressure_rx) = MessageScheduler::new(
+                decryption_handler.clone(),
+                config.clone(),
+                provider.clone(),
+                scheduler_shutdown_rx,
+            );
+
+            // IMPORTANT: Start the scheduler background task
+            scheduler.start_scheduler().await?;
+
+            (Some(Arc::new(scheduler)), Some(backpressure_rx))
+        } else {
+            (None, None)
+        };
+
+        Ok(Self {
             decryption_handler,
             config,
             provider,
             shutdown: Some(shutdown),
-        }
+            message_scheduler,
+            backpressure_rx,
+        })
+    }
+
+    /// Get a backpressure receiver for polling system integration
+    pub fn get_backpressure_receiver(&self) -> Option<broadcast::Receiver<BackpressureSignal>> {
+        self.backpressure_rx.as_ref().map(|rx| rx.resubscribe())
     }
 
     /// Helper method to retrieve ciphertext materials from S3
@@ -126,7 +164,7 @@ impl<P: Provider + Clone> EventProcessor<P> {
                     let result = match event {
                         KmsCoreEvent::PublicDecryptionRequest(req) => {
                             info!(
-                                "Processing PublicDecryptionRequest: {}",
+                                "Processing PublicDecryptionRequest-{}",
                                 req.decryptionId
                             );
 
@@ -135,18 +173,21 @@ impl<P: Provider + Clone> EventProcessor<P> {
                                 let extracted_key_id = req.snsCtMaterials.first().unwrap().keyId;
                                 let key_id_hex = alloy::hex::encode(extracted_key_id.to_be_bytes::<32>());
                                 info!(
-                                    "Extracted key_id {} from snsCtMaterials[0] for public decryption request {}",
+                                    "Extracted key_id {} from snsCtMaterials[0] for PublicDecryptionRequest-{}",
                                     key_id_hex, req.decryptionId
                                 );
                                 key_id_hex
                             } else {
                                 // Fail the request if no materials available
                                 error!(
-                                    "No snsCtMaterials found for public decryption request {}, cannot proceed without a valid key_id",
+                                    "No snsCtMaterials found for PublicDecryptionRequest-{}, cannot proceed without a valid key_id",
                                     req.decryptionId
                                 );
                                 continue;
                             };
+
+                            // Clone the request first to avoid borrow checker issues
+                            let req_clone = req.clone();
 
                             // Retrieve ciphertext materials from S3
                             let sns_ciphertext_materials = self.retrieve_sns_ciphertext_materials(req.snsCtMaterials).await;
@@ -154,25 +195,47 @@ impl<P: Provider + Clone> EventProcessor<P> {
                             // If we couldn't retrieve any materials, fail the request
                             if sns_ciphertext_materials.is_empty() {
                                 error!(
-                                    "Failed to retrieve any ciphertext materials for public decryption request {}",
-                                    req.decryptionId
+                                    "Failed to retrieve any ciphertext materials for PublicDecryptionRequest-{}",
+                                    req_clone.decryptionId
                                 );
                                 continue;
                             }
 
-                            self.decryption_handler.handle_decryption_request_response(
-                                req.decryptionId,
-                                key_id,
-                                sns_ciphertext_materials,
-                                None,
-                                None,
-                            )
-                            .await
+                            // Use MessageScheduler if coordinated sending is enabled
+                            if let Some(scheduler) = &self.message_scheduler {
+                                info!("Scheduling PublicDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
+
+                                // Get block timestamp for coordinated sending - this fixes the critical timing bug
+                                let event_id = req_clone.decryptionId.to_string();
+                                let block_timestamp = get_block_timestamp(&event_id)
+                                    .unwrap_or_else(|| {
+                                        warn!("No block timestamp found for event {}, using current UTC time", event_id);
+                                        Utc::now().timestamp() as u64
+                                    });
+
+                                // Clean up timestamp to prevent memory leaks
+                                remove_block_timestamp(&event_id);
+
+                                scheduler.schedule_message(
+                                    KmsCoreEvent::PublicDecryptionRequest(req_clone.clone()),
+                                    block_timestamp,
+                                ).await
+                            } else {
+                                // Immediate processing for non-coordinated mode
+                                self.decryption_handler.handle_decryption_request_response(
+                                    req.decryptionId,
+                                    key_id,
+                                    sns_ciphertext_materials,
+                                    None,
+                                    None,
+                                )
+                                .await
+                            }
                         }
 
                         KmsCoreEvent::UserDecryptionRequest(req) => {
                             info!(
-                                "Processing UserDecryptionRequest: {}",
+                                "Processing UserDecryptionRequest-{}",
                                 req.decryptionId
                             );
 
@@ -181,18 +244,21 @@ impl<P: Provider + Clone> EventProcessor<P> {
                                 let extracted_key_id = req.snsCtMaterials.first().unwrap().keyId;
                                 let key_id_hex = alloy::hex::encode(extracted_key_id.to_be_bytes::<32>());
                                 info!(
-                                    "Extracted key_id {} from snsCtMaterials[0] for user decryption request {} (contract: {})",
-                                    key_id_hex, req.decryptionId, req.publicKey
+                                    "Extracted key_id {} from snsCtMaterials[0] for UserDecryptionRequest-{}",
+                                    key_id_hex, req.decryptionId
                                 );
                                 key_id_hex
                             } else {
                                 // Fail the request if no materials available
                                 error!(
-                                    "No snsCtMaterials found for user decryption request {} (contract: {}), cannot proceed without a valid key_id",
+                                    "No snsCtMaterials found for UserDecryptionRequest-{} (contract: {}), cannot proceed without a valid key_id",
                                     req.decryptionId, req.publicKey
                                 );
                                 continue;
                             };
+
+                            // Clone the request first to avoid borrow checker issues
+                            let req_clone = req.clone();
 
                             // Retrieve ciphertext materials from S3
                             let sns_ciphertext_materials = self.retrieve_sns_ciphertext_materials(req.snsCtMaterials).await;
@@ -200,38 +266,57 @@ impl<P: Provider + Clone> EventProcessor<P> {
                             // If we couldn't retrieve any materials, fail the request
                             if sns_ciphertext_materials.is_empty() {
                                 error!(
-                                    "Failed to retrieve any ciphertext materials for user decryption request {}",
-                                    req.decryptionId
+                                    "Failed to retrieve any ciphertext materials for UserDecryptionRequest {}",
+                                    req_clone.decryptionId
                                 );
                                 continue;
                             }
 
-                            let user_key_prefixed = hex::encode_prefixed(req.userAddress);
-                            let public_key_string = hex::encode_prefixed(&req.publicKey);
+                            let user_key_prefixed = hex::encode_prefixed(req_clone.userAddress);
 
                             info!(
-                                "UserDecryptionRequest {} was received with:\nuserAddress: {}\npublicKey: {}\nkeyId: {}",
-                                req.decryptionId,
+                                "UserDecryptionRequest-{} was received with userAddress: {}",
+                                req_clone.decryptionId,
                                 user_key_prefixed,
-                                public_key_string,
-                                key_id
                             );
 
-                            match self.decryption_handler.handle_decryption_request_response(
-                                req.decryptionId,
-                                key_id,
-                                sns_ciphertext_materials,
-                                Some(req.userAddress),
-                                Some(req.publicKey)
-                            ).await {
-                                Ok(_) => Ok(()),
-                                Err(e) => {
-                                    error!(
-                                        "Error processing user decryption request {}: {}",
-                                        req.decryptionId, e
-                                    );
-                                    // Log error but continue processing other events
-                                    Ok(())
+                            // Use MessageScheduler if coordinated sending is enabled
+                            if let Some(scheduler) = &self.message_scheduler {
+                                info!("Scheduling UserDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
+
+                                // Get block timestamp for coordinated sending - this fixes the critical timing bug
+                                let event_id = req_clone.decryptionId.to_string();
+                                let block_timestamp = get_block_timestamp(&event_id)
+                                    .unwrap_or_else(|| {
+                                        warn!("No block timestamp found for event {}, using current UTC time", event_id);
+                                        Utc::now().timestamp() as u64
+                                    });
+
+                                // Clean up timestamp to prevent memory leaks
+                                remove_block_timestamp(&event_id);
+
+                                scheduler.schedule_message(
+                                    KmsCoreEvent::UserDecryptionRequest(req_clone.clone()),
+                                    block_timestamp,
+                                ).await
+                            } else {
+                                // Immediate processing for non-coordinated mode
+                                match self.decryption_handler.handle_decryption_request_response(
+                                    req.decryptionId,
+                                    key_id,
+                                    sns_ciphertext_materials,
+                                    Some(req.userAddress),
+                                    Some(req.publicKey)
+                                ).await {
+                                    Ok(_) => Ok(()),
+                                    Err(e) => {
+                                        error!(
+                                            "Error processing UserDecryptionRequest-{}: {}",
+                                            req.decryptionId, e
+                                        );
+                                        // Log error but continue processing other events
+                                        Ok(())
+                                    }
                                 }
                             }
                         }

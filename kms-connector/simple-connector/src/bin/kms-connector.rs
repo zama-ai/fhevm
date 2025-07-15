@@ -84,7 +84,8 @@ async fn run_connector(
         config,
         kms_provider.clone(),
         shutdown_rx.resubscribe(),
-    );
+    )
+    .await?;
 
     // Start the connector
     connector.start(event_rx).await?;
