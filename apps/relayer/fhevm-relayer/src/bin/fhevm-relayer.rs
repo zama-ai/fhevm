@@ -35,7 +35,10 @@
 use alloy::primitives::Address;
 use alloy::signers::Signer;
 use clap::Parser;
-use fhevm_relayer::store::{BlockNumberStore, PublicDecryptCacheStore};
+use fhevm_relayer::store::{
+    BlockNumberStore, PublicDecryptCacheStore, UserDecryptRequestCacheStore,
+    UserDecryptResponseCacheStore,
+};
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::{str::FromStr, sync::Arc};
@@ -216,13 +219,18 @@ async fn main() -> eyre::Result<()> {
             info!("using rocks db databse at: {}", path_rocks_db.display());
             let kv_store = Arc::new(kv_store);
             let event_store = Arc::new(EventStore::<RelayerEvent>::new(kv_store.clone()));
-            let public_decrypt_cache = Arc::new(PublicDecryptCacheStore::new(kv_store.clone()));
             let fhevm_block_store =
                 Arc::new(BlockNumberStore::new(kv_store.clone(), "fhevm".to_string()));
             let gateway_block_store = Arc::new(BlockNumberStore::new(
                 kv_store.clone(),
                 "gateway".to_string(),
             ));
+            let public_decrypt_responses_cache =
+                Arc::new(PublicDecryptCacheStore::new(kv_store.clone()));
+            let user_decrypt_responses_cache =
+                Arc::new(UserDecryptResponseCacheStore::new(kv_store.clone()));
+            let user_decrypt_requests_cache =
+                Arc::new(UserDecryptRequestCacheStore::new(kv_store.clone()));
 
             // Register event logging hook to capture all events
             orchestrator.register_pre_dispatch_hook(EventLoggingHook::new(
@@ -280,7 +288,7 @@ async fn main() -> eyre::Result<()> {
             let public_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
                 Arc::new(PublicDecryptGatewayHandler::new(
                     Arc::clone(&orchestrator),
-                    public_decrypt_cache,
+                    public_decrypt_responses_cache,
                     tx_service_gateway.clone(),
                     tx_config.clone(),
                     settings.contracts.clone(),
@@ -291,6 +299,8 @@ async fn main() -> eyre::Result<()> {
             let user_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
                 Arc::new(UserDecryptGatewayHandler::new(
                     Arc::clone(&orchestrator),
+                    user_decrypt_responses_cache,
+                    user_decrypt_requests_cache,
                     tx_service_gateway,
                     tx_config,
                     settings.contracts,
@@ -477,7 +487,6 @@ fn init_tracing(log_config: &LogConfig) -> eyre::Result<Option<FlushGuard>> {
     // Build subscriber with common settings
 
     let fmt_layer = tracing_subscriber::fmt::layer()
-        .with_ansi(true)
         .with_file(log_config.show_file_line)
         .with_line_number(log_config.show_file_line)
         .with_thread_ids(log_config.show_thread_ids)

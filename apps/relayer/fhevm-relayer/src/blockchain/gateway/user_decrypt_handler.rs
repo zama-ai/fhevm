@@ -7,7 +7,7 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            GenericEventData, HandleContractPair, RelayerEvent, RelayerEventData,
+            ApiVersion, GenericEventData, HandleContractPair, RelayerEvent, RelayerEventData,
             UserDecryptEventData, UserDecryptRequest, UserDecryptResponse,
         },
     },
@@ -15,6 +15,7 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
+    store::{UserDecryptRequestCacheStore, UserDecryptResponseCacheStore},
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
 };
 
@@ -41,8 +42,11 @@ use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::task;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 use uuid::Uuid;
+
+// NOTE: I wonder if we should store the full Event instead of just the request and the response
+// We could choose not to cache hit if the version of the payload doesn't match for example.
 
 struct UserDecryptionRequestProcessor {
     handler: Arc<GatewayHandler>,
@@ -63,7 +67,9 @@ impl ReceiptProcessor for UserDecryptionRequestProcessor {
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    user_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Uuid>>,
+    user_decryption_responses_cache: Arc<UserDecryptResponseCacheStore>,
+    user_decryption_requests_cache: Arc<UserDecryptRequestCacheStore>,
+    user_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
     gateway_http_url: String,
@@ -71,8 +77,11 @@ pub struct GatewayHandler {
 }
 
 impl GatewayHandler {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
+        user_decryption_responses_cache: Arc<UserDecryptResponseCacheStore>,
+        user_decryption_requests_cache: Arc<UserDecryptRequestCacheStore>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
@@ -82,6 +91,8 @@ impl GatewayHandler {
         Self {
             dispatcher,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
+            user_decryption_responses_cache,
+            user_decryption_requests_cache,
             user_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
             gateway_http_url,
@@ -120,13 +131,26 @@ impl GatewayHandler {
         let self_clone = self.clone();
         let event_clone = event.clone();
 
+        // Store hash(user-decrypt-request) => request-id for the last request-id that
+        // requested a decryption matching this hash
         // Spawn a blocking task to make a transaction to gateway
         task::spawn(async move {
             match self_clone
-                .process_user_decryption_request(user_decrypt_request)
+                .process_user_decryption_request(user_decrypt_request.clone())
                 .await
             {
                 Ok(user_decryption_id) => {
+                    if let Err(err) = self_clone
+                        .user_decryption_requests_cache
+                        .persist_value(&user_decrypt_request, user_decryption_id)
+                        .await
+                    {
+                        error!(
+                            "Error: {err} trying to store user-decrypt request for request: {}",
+                            event.request_id
+                        );
+                    }
+
                     self_clone
                         .handle_successful_user_decryption_request(event_clone, user_decryption_id)
                         .await;
@@ -156,7 +180,9 @@ impl GatewayHandler {
     ) {
         // Store the mapping
         self.user_decryption_id_to_request_id
-            .insert(user_decryption_id, event.request_id);
+            .entry(user_decryption_id)
+            .or_default()
+            .push(event.request_id);
 
         info!(
             ?event.request_id,
@@ -223,49 +249,76 @@ impl GatewayHandler {
     ///
     /// # Events
     /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGw`]
-    async fn handle_user_decrypt_reponse_event_log(&self, event: RelayerEvent) {
+    async fn handle_user_decrypt_response_event_log(&self, event: RelayerEvent) {
         info!("User Decryption response received: {:?}", event.request_id,);
 
         if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
             if let Some(topic) = log.topic0() {
                 if *topic == Decryption::UserDecryptionResponse::SIGNATURE_HASH {
                     match Decryption::UserDecryptionResponse::decode_log_data(log.data()) {
-                        Ok(req) => {
-                            let user_decryption_id = req.userDecryptionId;
+                        Ok(user_decrypt_response) => {
+                            let user_decryption_id = user_decrypt_response.userDecryptionId;
                             info!(?user_decryption_id, "User decryption id from event");
 
+                            // Store response even if we didn't emit the request
+                            let req = user_decrypt_response.clone();
+                            if let Err(err) = self
+                                .user_decryption_responses_cache
+                                .persist_value(
+                                    user_decryption_id,
+                                    UserDecryptResponse {
+                                        gateway_request_id: user_decryption_id,
+                                        reencrypted_shares: req.reencryptedShares,
+                                        signatures: req.signatures,
+                                    },
+                                )
+                                .await
+                            {
+                                error!(
+                                    "Error: {err} trying to store user-decrypt request for request: {}",
+                                    event.request_id
+                                );
+                            } else {
+                                debug!(
+                                    "Successfuly stored user-decrypt response for request: {}",
+                                    event.request_id
+                                );
+                            };
+
+                            // If we manage this request handle it
                             if let Some(entry) = self
                                 .user_decryption_id_to_request_id
                                 .get(&user_decryption_id)
                             {
-                                let original_request_id = *entry.value(); // Dereference the Ref<Uuid>
+                                // For all requests that match this request-on-chain-id
+                                for original_request_id in entry.value() {
+                                    let req = user_decrypt_response.clone();
+                                    info!(
+                                        ?original_request_id,
+                                        ?user_decryption_id,
+                                        "Found original request ID for user decryption response"
+                                    );
 
-                                info!(
-                                    ?original_request_id,
-                                    ?user_decryption_id,
-                                    "Found original request ID for user decryption response"
-                                );
-
-                                let next_event_data = RelayerEventData::UserDecrypt(
-                                    UserDecryptEventData::RespRcvdFromGw {
-                                        decrypt_response: UserDecryptResponse {
-                                            gateway_request_id: user_decryption_id,
-                                            reencrypted_shares: req.reencryptedShares,
-                                            signatures: req.signatures,
+                                    let next_event_data = RelayerEventData::UserDecrypt(
+                                        UserDecryptEventData::RespRcvdFromGw {
+                                            decrypt_response: UserDecryptResponse {
+                                                gateway_request_id: user_decryption_id,
+                                                reencrypted_shares: req.reencryptedShares,
+                                                signatures: req.signatures,
+                                            },
                                         },
-                                    },
-                                );
+                                    );
 
-                                info!("Dispatching UserDecryptEventData::RespRcvdFromGw event");
+                                    info!("Dispatching UserDecryptEventData::RespRcvdFromGw event");
+                                    // Now we can use original_request_id directly
+                                    let next_event = RelayerEvent::new(
+                                        *original_request_id,
+                                        event.api_version,
+                                        next_event_data,
+                                    );
 
-                                // Now we can use original_request_id directly
-                                let next_event = RelayerEvent::new(
-                                    original_request_id,
-                                    event.api_version,
-                                    next_event_data,
-                                );
-
-                                let _ = self.dispatcher.dispatch_event(next_event).await;
+                                    let _ = self.dispatcher.dispatch_event(next_event).await;
+                                }
                             } else {
                                 error!(
                                     ?user_decryption_id,
@@ -346,7 +399,7 @@ impl GatewayHandler {
         ))
     }
 
-    async fn noop_handle_decrypt_reponse_event_log(&self, _event: &RelayerEvent) {}
+    async fn noop_handle_decrypt_response_event_log(&self, _event: &RelayerEvent) {}
 
     async fn process_user_decryption_request(
         &self,
@@ -449,6 +502,90 @@ impl GatewayHandler {
             )
             .await
     }
+
+    /// Checks cache system to know if we can skip transaction making
+    #[instrument(skip_all, fields(%request_id))]
+    async fn user_decrypt_cache_check(
+        &self,
+        decrypt_request: &UserDecryptRequest,
+        request_id: &Uuid,
+        api_version: &ApiVersion,
+    ) -> bool {
+        // Check user-decrypt request cache
+        // hash(request) -> decryption-id
+        match self
+            .user_decryption_requests_cache
+            .get_value(decrypt_request)
+            .await
+        {
+            Ok(optional_decryption_id) => {
+                if let Some(decryption_id) = optional_decryption_id {
+                    // Check response cache
+                    // decryption-id -> response
+                    match self
+                        .user_decryption_responses_cache
+                        .get_value(decryption_id)
+                        .await
+                    {
+                        Ok(optional_decryption_response) => {
+                            if let Some(decryption_response) = optional_decryption_response {
+                                let next_event_data = RelayerEventData::UserDecrypt(
+                                    UserDecryptEventData::RespRcvdFromGw {
+                                        decrypt_response: UserDecryptResponse {
+                                            gateway_request_id: decryption_response
+                                                .gateway_request_id,
+                                            reencrypted_shares: decryption_response
+                                                .reencrypted_shares,
+                                            signatures: decryption_response.signatures,
+                                        },
+                                    },
+                                );
+                                info!("Dispatching UserDecryptEventData::RespRcvdFromGw event");
+                                // Now we can use original_request_id directly
+                                let next_event =
+                                    RelayerEvent::new(*request_id, *api_version, next_event_data);
+                                // We dispatch the return value
+                                let _ = self.dispatcher.dispatch_event(next_event).await;
+                                debug!("Returning prematurely user-decryption response was found for the request");
+                                return true;
+                            }
+                        }
+                        Err(err) => {
+                            error!(
+                                "Failed to access cache for user_decryption_responses_cache for request: {} with error: {}",
+                                request_id, err
+                            );
+                        }
+                    };
+
+                    // If request was already made but there is no hit on the response cache
+                    // then we add the current request-id to matching with decryption ids and
+                    // just wait for response
+                    // decryption-id => relayer-request-id[]
+                    self.user_decryption_id_to_request_id
+                        .entry(decryption_id)
+                        .or_default()
+                        .push(*request_id);
+                    info!(
+                        ?request_id,
+                        ?decryption_id,
+                        "Stored mapping between decryption ID and request ID"
+                    );
+                    debug!(
+                        "Returning prematurely because user-decryption request was already made."
+                    );
+                    return true;
+                }
+            }
+            Err(err) => {
+                error!(
+                    "Failed to access cache for user_decryption_requests_cache for request: {} with error: {}",
+                    request_id, err
+                );
+            }
+        };
+        false
+    }
 }
 
 #[async_trait]
@@ -459,9 +596,26 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 ref decrypt_request,
                 ..
             }) => {
-                let cloned_request = decrypt_request.clone();
-                self.send_user_decryption_request_to_gateway(event.clone(), cloned_request)
-                    .await;
+                // If the cache system tells use not to procede we just return
+                // Cases where that should happen are:
+                // 1. Response already present and we dispatched the response
+                // 2. Request already made and we wait for the response
+                if self
+                    .user_decrypt_cache_check(
+                        decrypt_request,
+                        &event.request_id,
+                        &event.api_version,
+                    )
+                    .await
+                {
+                    return;
+                }
+
+                self.send_user_decryption_request_to_gateway(
+                    event.clone(),
+                    decrypt_request.clone(),
+                )
+                .await;
             }
             RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
                 if let Some(topic0) = log.topic0() {
@@ -473,9 +627,9 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                             log.topic0(),
                             Decryption::UserDecryptionResponse::SIGNATURE_HASH
                         );
-                        self.noop_handle_decrypt_reponse_event_log(&event).await;
+                        self.noop_handle_decrypt_response_event_log(&event).await;
                     } else {
-                        self.handle_user_decrypt_reponse_event_log(event).await;
+                        self.handle_user_decrypt_response_event_log(event).await;
                     }
                 };
             }
@@ -485,7 +639,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 self.handle_user_decrypt_request_sent(gw_req_reference_id);
             }
             _ => {
-                self.noop_handle_decrypt_reponse_event_log(&event).await;
+                self.noop_handle_decrypt_response_event_log(&event).await;
             }
         }
     }

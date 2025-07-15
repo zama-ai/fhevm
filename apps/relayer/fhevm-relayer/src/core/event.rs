@@ -12,6 +12,7 @@ use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::{primitives::U256, rpc::types::Log};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+use std::hash::Hash;
 use std::num::ParseIntError;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -355,7 +356,7 @@ pub struct PublicDecryptRequest {
     pub ct_handles: Vec<[u8; 32]>,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 pub struct UserDecryptRequest {
     pub ct_handle_contract_pairs: Vec<HandleContractPair>,
     pub request_validity: RequestValidity,
@@ -367,7 +368,7 @@ pub struct UserDecryptRequest {
 }
 
 #[allow(non_snake_case)]
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 pub struct HandleContractPair {
     #[serde(rename = "handle")]
     pub ct_handle: U256,
@@ -375,7 +376,7 @@ pub struct HandleContractPair {
     pub contract_address: Address,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
 #[allow(non_snake_case)]
 pub struct RequestValidity {
     #[serde(rename = "startTimestamp")]
@@ -391,11 +392,17 @@ pub struct PublicDecryptResponse {
     pub signatures: Vec<Bytes>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UserDecryptResponse {
     pub gateway_request_id: U256,
     pub reencrypted_shares: Vec<Bytes>,
     pub signatures: Vec<Bytes>,
+}
+
+impl Display for UserDecryptResponse {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "UserDecryptResponse({})", self.gateway_request_id)
+    }
 }
 
 impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {

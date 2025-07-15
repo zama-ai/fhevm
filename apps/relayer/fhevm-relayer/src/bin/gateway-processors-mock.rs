@@ -153,7 +153,6 @@ fn init_tracing(log_config: &LogConfig) -> eyre::Result<()> {
     // Build subscriber with common settings
     let builder = SubscriberBuilder::default()
         .with_env_filter(env_filter)
-        .with_ansi(true)
         .with_file(log_config.show_file_line)
         .with_line_number(log_config.show_file_line)
         .with_thread_ids(log_config.show_thread_ids)

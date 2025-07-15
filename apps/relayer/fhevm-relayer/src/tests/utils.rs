@@ -17,7 +17,19 @@ pub mod test_utils {
     static GATEWAY_PROCESSORS_MOCK_SERVICE: Mutex<Option<Child>> = Mutex::new(None);
     static RELAYER_MOCK_SERVICE: Mutex<Option<Child>> = Mutex::new(None);
 
+    const DB_PATH: &str = ".test_database";
+
     use ctor::{ctor, dtor};
+
+    fn remove_folder_if_exists(path: &str) -> std::io::Result<()> {
+        if Path::new(path).exists() {
+            fs::remove_dir_all(path)?;
+            println!("Folder removed: {}", path);
+        } else {
+            println!("Folder does not exist: {}", path);
+        }
+        Ok(())
+    }
 
     pub fn kill_gracefully(mut child_process: Child) -> Result<(), String> {
         let child_pid_raw = child_process.id();
@@ -160,8 +172,10 @@ pub mod test_utils {
             // We build services before launching them to avoid not knowing how long it would take
             // to start the services. Indeed if the binaries are already built then `cargo run`
             // should start the services pretty quickly
+            // TODO: add specific target when building and running to avoid conflicts with others
+            // local targets
             let mut gateway_mock_build = Command::new("cargo")
-                .args(["build", "--bin", "gateway-processors-mock"])
+                .args(["build", "--bin", "gateway-processors-mock", "--target-dir", "target-test"])
                 .current_dir(&project_root)
                 .spawn()
                 .expect("Failed to build gateway mock");
@@ -171,7 +185,7 @@ pub mod test_utils {
             assert!(ecode.success());
 
             let mut relayer_mock_build = Command::new("cargo")
-                .args(["build", "--bin", "fhevm-relayer"])
+                .args(["build", "--bin", "fhevm-relayer", "--target-dir", "target-test"])
                 .current_dir(&project_root)
                 .spawn()
                 .expect("Failed to build relayer");
@@ -188,7 +202,7 @@ pub mod test_utils {
             let mut mock_service_changer = GATEWAY_PROCESSORS_MOCK_SERVICE.lock().unwrap();
             *mock_service_changer = Some(
                 Command::new("cargo")
-                    .args(["run", "--bin", "gateway-processors-mock"])
+                    .args(["run", "--bin", "gateway-processors-mock", "--target-dir", "target-test"])
                     .env(
                         "RUST_LOG", // NOTE: maybe it would be more appropriate to have a
                         // specific env-var instead of inheriting from `RUST_LOG`
@@ -206,13 +220,16 @@ pub mod test_utils {
             // Because we'll need to make sure that there is no conflict between tests
             // (i.e. make sure that the port used is different for example)
 
+            // TODO: grep contract values from logs of docker container and set values here
+
             // Run fhevm-relayer
             // APP_TRANSACTION__RETRY__MOCK_MODE=true cargo run --bin fhevm-relayer
             let mut mock_service_changer = RELAYER_MOCK_SERVICE.lock().unwrap();
             *mock_service_changer = Some(
                 Command::new("cargo")
-                    .args(["run", "--bin", "fhevm-relayer"])
+                    .args(["run", "--bin", "fhevm-relayer", "--target-dir", "target-test"])
                     .env("APP_TRANSACTION__RETRY__MOCK_MODE", "true")
+                    .env("APP_DB_PATH_ROCKSDB", DB_PATH)
                     .env(
                         "RUST_LOG",
                         env::var("RUST_LOG").unwrap_or("info,fhevm_relayer=debug".to_string()),
@@ -235,22 +252,23 @@ pub mod test_utils {
             );
             std::mem::drop(mock_service_changer);
 
+            // TODO: implement service check instead of relying on this sleep
             // Give the services time to start
-            thread::sleep(Duration::from_secs(3));
+            thread::sleep(Duration::from_secs(5));
 
-            println!("Test environment is ready!");
-        });
+            println!("Test environment is ready!"); });
     }
 
     /// Teardown function that cleans up resources after tests finish
     #[dtor]
     pub fn teardown() {
         // Use mutex to kill long-running processes
-
         let mut relayer_service_changer = RELAYER_MOCK_SERVICE.lock().unwrap();
         if let Some(mut child) = relayer_service_changer.take() {
             kill_gracefully(child);
         }
+
+        remove_folder_if_exists(DB_PATH);
 
         let mut mock_service_changer = GATEWAY_PROCESSORS_MOCK_SERVICE.lock().unwrap();
         if let Some(mut child) = mock_service_changer.take() {
@@ -261,26 +279,34 @@ pub mod test_utils {
         let project_root = env::var("CARGO_MANIFEST_DIR")
             .expect("CARGO_MANIFEST_DIR environment variable not set");
 
-        // TODO: remove condition
-        let docker_compose_command = Some(
-            Command::new("docker")
-                .current_dir(&project_root)
-                .args([
-                    "compose",
-                    "-f",
-                    "./mock/docker-compose.yaml",
-                    "down",
-                    "--volumes",
-                    "--remove-orphans",
-                ])
-                .spawn()
-                .expect("Failed to shutdown docker compose"),
-        );
-        if let Some(mut docker_compose_exit) = docker_compose_command {
-            let ecode = docker_compose_exit
-                .wait()
-                .expect("failed to shutdown docker compose");
-            assert!(ecode.success());
+        if env::var("SHUTDOWN_TEST_DOCKER_COMPOSE")
+            .ok()
+            .and_then(|v| v.parse::<bool>().ok())
+            .unwrap_or(true)
+        {
+            println!("Shutting down test docker compose");
+            let docker_compose_command = Some(
+                Command::new("docker")
+                    .current_dir(&project_root)
+                    .args([
+                        "compose",
+                        "-f",
+                        "./mock/docker-compose.yaml",
+                        "down",
+                        "--volumes",
+                        "--remove-orphans",
+                    ])
+                    .spawn()
+                    .expect("Failed to shutdown docker compose"),
+            );
+            if let Some(mut docker_compose_exit) = docker_compose_command {
+                let ecode = docker_compose_exit
+                    .wait()
+                    .expect("failed to shutdown docker compose");
+                assert!(ecode.success());
+            }
+        } else {
+            println!("Keeping test docker compose alive.")
         }
     }
 }

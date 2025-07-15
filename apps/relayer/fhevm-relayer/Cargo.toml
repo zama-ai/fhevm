@@ -14,6 +14,7 @@ tracing-chrome = ["dep:tracing-chrome"]
 ci = []
 
 [dependencies]
+xxhash-rust = { version = "0.8.12", features = ["xxh3", "const_xxh3"] }
 alloy = { version = "1.0.3", features = ["full"] }
 alloy-sol-types = "1.1.0"
 base64ct = "=1.6.0"

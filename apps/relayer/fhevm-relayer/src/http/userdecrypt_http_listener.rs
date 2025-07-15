@@ -9,6 +9,7 @@ use alloy::primitives::Bytes;
 use axum::{extract::Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+use std::hash::Hash;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::info;
@@ -28,7 +29,7 @@ pub struct UserDecryptRequestJson {
     pub publicKey: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Serialize)]
+#[derive(Debug, Deserialize, Clone, Serialize, Hash)]
 #[allow(non_snake_case)]
 pub struct HandleContractPairJson {
     pub handle: String,
