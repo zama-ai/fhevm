@@ -100,7 +100,9 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
                 let poller = poller.clone();
                 tokio::spawn(async move {
                     if let Err(e) = poller.start().await {
-                        error!("Polling system error: {}", e);
+                        error!("Critical polling system error: {}", e);
+                        // Force exit with error code for restart
+                        std::process::exit(1);
                     }
                 })
             };
