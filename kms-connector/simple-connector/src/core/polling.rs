@@ -125,7 +125,7 @@ pub struct BlockPoller<P> {
     current_block: Arc<AtomicU64>,
     /// Latest known block number
     latest_block: Arc<AtomicU64>,
-    /// Shutdown signal sender (we'll create receivers from this)
+    /// Shutdown signal sender
     shutdown_tx: broadcast::Sender<()>,
     /// Running state
     is_running: Arc<AtomicBool>,
@@ -169,14 +169,10 @@ where
         provider: Arc<P>,
         config: Arc<Config>,
         event_tx: mpsc::Sender<KmsCoreEvent>,
-        _shutdown_tx: broadcast::Sender<()>,
+        shutdown_tx: broadcast::Sender<()>,
         backpressure_rx: Option<broadcast::Receiver<BackpressureSignal>>,
     ) -> Self {
         let starting_block = config.starting_block_number.unwrap_or(0);
-
-        // Create our own shutdown sender - we'll use this to coordinate shutdown
-        // The connector will need to call our shutdown method to trigger shutdown
-        let (shutdown_tx, _) = broadcast::channel(1);
 
         Self {
             provider,
@@ -210,6 +206,46 @@ where
         Ok(())
     }
 
+    /// Backpressure monitoring with graceful shutdown
+    async fn run_backpressure_monitor(
+        mut backpressure_rx: broadcast::Receiver<BackpressureSignal>,
+        backpressure_state: Arc<AtomicBool>,
+        mut shutdown: broadcast::Receiver<()>,
+    ) {
+        info!("Starting backpressure monitoring task");
+
+        loop {
+            tokio::select! {
+                signal = backpressure_rx.recv() => {
+                    match signal {
+                        Ok(BackpressureSignal::QueueFull) => {
+                            debug!("Received QueueFull signal, activating moderate backpressure");
+                            backpressure_state.store(true, Ordering::Relaxed);
+                        }
+                        Ok(BackpressureSignal::QueueCritical) => {
+                            warn!("Received QueueCritical signal, activating strong backpressure");
+                            backpressure_state.store(true, Ordering::Relaxed);
+                        }
+                        Ok(BackpressureSignal::QueueAvailable) => {
+                            info!("Received QueueAvailable signal, releasing backpressure");
+                            backpressure_state.store(false, Ordering::Relaxed);
+                        }
+                        Err(e) => {
+                            debug!("Backpressure channel error: {}, stopping monitor", e);
+                            break;
+                        }
+                    }
+                }
+                _ = shutdown.recv() => {
+                    info!("Backpressure monitoring task received shutdown signal");
+                    break;
+                }
+            }
+        }
+
+        info!("Backpressure monitoring task stopped");
+    }
+
     /// Start the polling loop
     pub async fn start(&self) -> Result<()> {
         if self.is_running.swap(true, Ordering::SeqCst) {
@@ -238,44 +274,15 @@ where
         }
 
         // Start backpressure monitoring task if backpressure receiver is available
-        if let Some(mut backpressure_rx) = self.backpressure_rx.as_ref().map(|rx| rx.resubscribe())
-        {
+        if let Some(backpressure_rx) = self.backpressure_rx.as_ref().map(|rx| rx.resubscribe()) {
             let backpressure_state = Arc::clone(&self.is_backpressure_active);
-            let mut shutdown_rx_bp = self.shutdown_tx.subscribe();
+            let shutdown = self.shutdown_tx.subscribe();
 
-            tokio::spawn(async move {
-                info!("Starting backpressure monitoring task");
-
-                loop {
-                    tokio::select! {
-                        signal = backpressure_rx.recv() => {
-                            match signal {
-                                Ok(BackpressureSignal::QueueFull) => {
-                                    debug!("Received QueueFull signal, activating moderate backpressure");
-                                    backpressure_state.store(true, Ordering::Relaxed);
-                                }
-                                Ok(BackpressureSignal::QueueCritical) => {
-                                    warn!("Received QueueCritical signal, activating strong backpressure");
-                                    backpressure_state.store(true, Ordering::Relaxed);
-                                }
-                                Ok(BackpressureSignal::QueueAvailable) => {
-                                    info!("Received QueueAvailable signal, releasing backpressure");
-                                    backpressure_state.store(false, Ordering::Relaxed);
-                                }
-                                Err(e) => {
-                                    debug!("Backpressure channel error: {}, continuing", e);
-                                }
-                            }
-                        }
-                        _ = shutdown_rx_bp.recv() => {
-                            info!("Backpressure monitoring task received shutdown signal");
-                            break;
-                        }
-                    }
-                }
-
-                info!("Backpressure monitoring task stopped");
-            });
+            tokio::spawn(Self::run_backpressure_monitor(
+                backpressure_rx,
+                backpressure_state,
+                shutdown,
+            ));
         }
 
         // Adaptive polling for sub-second block times
@@ -327,8 +334,7 @@ where
                         }
                         Err(e) => {
                             error!("Polling error: {}", e);
-                            let _ = self.shutdown_tx.send(());
-                            break;
+                            return Err(e);
                         }
                     }
 
