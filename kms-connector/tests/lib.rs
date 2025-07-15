@@ -8,9 +8,9 @@ use connector_utils::{
     config::KmsWallet,
     conn::{GatewayProvider, WalletGatewayProvider},
     tests::setup::{
-        CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, DbInstance,
-        GATEWAY_CONFIG_MOCK_ADDRESS, GatewayInstance, KMS_MANAGEMENT_MOCK_ADDRESS, KmsInstance,
-        S3_CT, S3Instance, TestInstance,
+        CHAIN_ID, COPROCESSOR_CONTEXTS_MOCK_ADDRESS, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY,
+        DbInstance, GatewayInstance, KMS_MANAGEMENT_MOCK_ADDRESS, KmsInstance, S3_CT, S3Instance,
+        TestInstance,
     },
 };
 use gw_listener::core::{DbEventPublisher, GatewayListener};
@@ -113,7 +113,7 @@ impl KmsConnector {
             ..Default::default()
         };
         kms_worker_conf.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
-        kms_worker_conf.gateway_config_contract.address = GATEWAY_CONFIG_MOCK_ADDRESS;
+        kms_worker_conf.copro_contexts_contract.address = COPROCESSOR_CONTEXTS_MOCK_ADDRESS;
         let kms_worker = KmsWorker::from_config(kms_worker_conf).await?;
 
         let mut tx_sender_conf = tx_sender::core::Config::default().await;

@@ -4,8 +4,8 @@ use crate::{
 };
 use alloy::node_bindings::AnvilInstance;
 use fhevm_gateway_rust_bindings::{
+    coprocessorcontexts::CoprocessorContexts::CoprocessorContextsInstance,
     decryption::Decryption::DecryptionInstance,
-    gatewayconfig::GatewayConfig::GatewayConfigInstance,
     kmsmanagement::KmsManagement::KmsManagementInstance,
 };
 use sqlx::{Pool, Postgres};
@@ -54,8 +54,10 @@ impl TestInstance {
         &self.gateway().decryption_contract
     }
 
-    pub fn gateway_config_contract(&self) -> &GatewayConfigInstance<(), WalletGatewayProvider> {
-        &self.gateway().gateway_config_contract
+    pub fn copro_contexts_contract(
+        &self,
+    ) -> &CoprocessorContextsInstance<(), WalletGatewayProvider> {
+        &self.gateway().copro_contexts_contract
     }
 
     pub fn kms_management_contract(&self) -> &KmsManagementInstance<(), WalletGatewayProvider> {

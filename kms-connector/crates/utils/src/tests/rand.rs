@@ -24,6 +24,7 @@ pub fn rand_digest() -> FixedBytes<32> {
 
 pub fn rand_sns_ct() -> SnsCiphertextMaterial {
     SnsCiphertextMaterial {
+        coprocessorContextId: rand_u256(),
         keyId: rand_u256(),
         ctHandle: rand::thread_rng().r#gen::<[u8; 32]>().into(),
         snsCiphertextDigest: rand::thread_rng().r#gen::<[u8; 32]>().into(),

@@ -35,17 +35,17 @@ address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 # ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
 # domain_version = "1"
 
-# Configuration of the GatewayConfig contract (required)
-[gateway_config_contract]
-# Address of the GatewayConfig contract (required)
+[copro_contexts_contract]
+# Configuration of the CoprocessorContexts contract (required)
+# Address of the CoprocessorContexts contract (required)
 # Format: hex string with 0x prefix
-# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
+# ENV: KMS_CONNECTOR_COPRO_CONTEXTS_CONTRACT__ADDRESS
 address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
-# EIP-712 domain name for GatewayConfig contract (optional, defaults to "GatewayConfig")
-# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_NAME
-# domain_name = "GatewayConfig"
-# EIP-712 domain version for GatewayConfig contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_VERSION
+# EIP-712 domain name for CoprocessorContexts contract (optional, defaults to "CoprocessorContexts")
+# ENV: KMS_CONNECTOR_COPRO_CONTEXTS_CONTRACT__DOMAIN_NAME
+# domain_name = "CoprocessorContexts"
+# EIP-712 domain version for CoprocessorContexts contract (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_COPRO_CONTEXTS_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
 # Configuration of the KmsManagement contract (required)
@@ -112,7 +112,7 @@ private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 # ENV: KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT
 # endpoint = "https://kms.us-east-1.amazonaws.com"
 
-# Whether to verify coprocessors against the GatewayConfig contract (optional, defaults to false)
+# Whether to verify coprocessors against the CoprocessorContexts contract (optional, defaults to false)
 # ENV: KMS_CONNECTOR_VERIFY_COPROCESSORS
 # verify_coprocessors = true
 

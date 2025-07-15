@@ -5,6 +5,7 @@
 -- Create SnsCiphertextMaterial type representation
 DO $$ BEGIN
     CREATE TYPE sns_ciphertext_material AS (
+        coprocessor_context_id BYTEA,
         ct_handle BYTEA,
         key_id BYTEA,
         sns_ciphertext_digest BYTEA,

@@ -26,8 +26,8 @@ pub struct Config {
     pub chain_id: u64,
     /// The `Decryption` contract configuration.
     pub decryption_contract: ContractConfig,
-    /// The `GatewayConfig` contract configuration.
-    pub gateway_config_contract: ContractConfig,
+    /// The `CoprocessorContexts` contract configuration.
+    pub copro_contexts_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
 
@@ -67,7 +67,7 @@ impl Display for Config {
         writeln!(f, "Gateway URL: {}", self.gateway_url)?;
         writeln!(f, "Chain ID: {}", self.chain_id)?;
         writeln!(f, "{}", self.decryption_contract)?;
-        writeln!(f, "{}", self.gateway_config_contract)?;
+        writeln!(f, "{}", self.copro_contexts_contract)?;
         writeln!(f, "Events batch size: {}", self.events_batch_size)?;
         writeln!(f, "GRPC Requests Retries: {}", self.grpc_request_retries)?;
         writeln!(
@@ -119,8 +119,8 @@ impl Config {
     fn parse(raw_config: RawConfig) -> Result<Self> {
         let decryption_contract =
             ContractConfig::parse("Decryption", raw_config.decryption_contract)?;
-        let gateway_config_contract =
-            ContractConfig::parse("GatewayConfig", raw_config.gateway_config_contract)?;
+        let copro_contexts_contract =
+            ContractConfig::parse("CoprocessorContexts", raw_config.copro_contexts_contract)?;
 
         // Validate critical configuration parts
         if raw_config.gateway_url.is_empty() {
@@ -144,7 +144,7 @@ impl Config {
             kms_core_endpoint: raw_config.kms_core_endpoint,
             chain_id: raw_config.chain_id,
             decryption_contract,
-            gateway_config_contract,
+            copro_contexts_contract,
             service_name: raw_config.service_name,
             events_batch_size: raw_config.events_batch_size,
             grpc_request_retries: raw_config.grpc_request_retries,
@@ -182,7 +182,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT");
             env::remove_var("KMS_CONNECTOR_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
-            env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_COPRO_CONTEXTS_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_S3_CONFIG__REGION");
             env::remove_var("KMS_CONNECTOR_S3_CONFIG__BUCKET");
@@ -215,8 +215,8 @@ mod tests {
             config.decryption_contract.address,
         );
         assert_eq!(
-            Address::from_str(&raw_config.gateway_config_contract.address).unwrap(),
-            config.gateway_config_contract.address,
+            Address::from_str(&raw_config.copro_contexts_contract.address).unwrap(),
+            config.copro_contexts_contract.address,
         );
         assert_eq!(raw_config.kms_core_endpoint, config.kms_core_endpoint);
         assert_eq!(raw_config.service_name, config.service_name);
@@ -241,12 +241,12 @@ mod tests {
             config.decryption_contract.domain_version,
         );
         assert_eq!(
-            raw_config.gateway_config_contract.domain_name.unwrap(),
-            config.gateway_config_contract.domain_name,
+            raw_config.copro_contexts_contract.domain_name.unwrap(),
+            config.copro_contexts_contract.domain_name,
         );
         assert_eq!(
-            raw_config.gateway_config_contract.domain_version.unwrap(),
-            config.gateway_config_contract.domain_version,
+            raw_config.copro_contexts_contract.domain_version.unwrap(),
+            config.copro_contexts_contract.domain_version,
         );
         assert_eq!(raw_config.s3_config, config.s3_config);
         assert_eq!(raw_config.verify_coprocessors, config.verify_coprocessors);
@@ -271,7 +271,7 @@ mod tests {
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var(
-                "KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS",
+                "KMS_CONNECTOR_COPRO_CONTEXTS_CONTRACT__ADDRESS",
                 "0x0000000000000000000000000000000000000001",
             );
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
@@ -296,7 +296,7 @@ mod tests {
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(
-            config.gateway_config_contract.address,
+            config.copro_contexts_contract.address,
             Address::from_str("0x0000000000000000000000000000000000000001").unwrap()
         );
         assert_eq!(config.service_name, "kms-connector-test");
@@ -353,7 +353,7 @@ mod tests {
                 address: "0x0000".to_string(),
                 ..Default::default()
             },
-            gateway_config_contract: RawContractConfig {
+            copro_contexts_contract: RawContractConfig {
                 address: "0x000010".to_string(),
                 ..Default::default()
             },
