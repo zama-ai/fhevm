@@ -303,6 +303,12 @@ async fn tfhe_worker_cycle(
                     w.output_handle.clone(),
                     w.fhe_operation.into(),
                     input_ciphertexts.clone(),
+                    if let Some(is_allowed) = w.is_allowed {
+                        is_allowed
+                    } else {
+                        // Default to true - but should never be possible given query
+                        true
+                    },
                 )?;
                 producer_indexes.insert(&w.output_handle, n.index());
                 consumer_indexes.insert(widx, n.index());
@@ -345,6 +351,7 @@ async fn tfhe_worker_cycle(
                     }
                 }
             }
+            graph.finalize();
             s_schedule.end();
 
             // Execute the DFG with the current tenant's keys
@@ -379,11 +386,12 @@ async fn tfhe_worker_cycle(
                     s.end();
                     continue;
                 }
-                let r = &mut res
-                    .iter_mut()
-                    .find(|(h, _)| *h == w.output_handle)
-                    .unwrap()
-                    .1;
+                // If no result or error is present, this computation
+                // was either not needed or not allowed
+                let Some(r) = &mut res.iter_mut().find(|(h, _)| *h == w.output_handle) else {
+                    continue;
+                };
+                let r = &mut r.1;
 
                 let finished_work_unit: Result<
                     _,

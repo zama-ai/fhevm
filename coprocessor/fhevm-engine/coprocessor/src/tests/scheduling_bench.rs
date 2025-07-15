@@ -6,8 +6,8 @@ use crate::server::coprocessor::{
     InputToUpload, InputUploadBatch,
 };
 use crate::tests::utils::{
-    decrypt_ciphertexts, default_api_key, default_tenant_id, random_handle, setup_test_app,
-    wait_until_all_ciphertexts_computed,
+    allow_handle, decrypt_ciphertexts, default_api_key, default_tenant_id, random_handle,
+    setup_test_app, wait_until_all_allowed_handles_computed,
 };
 use fhevm_engine_common::utils::safe_serialize;
 use std::str::FromStr;
@@ -162,8 +162,12 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
     );
     let _resp = client.async_compute(compute_request).await?;
 
+    for h in output_handles.iter() {
+        allow_handle(h, &pool).await?;
+    }
+
     println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -331,8 +335,12 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
     );
     let _resp = client.async_compute(compute_request).await?;
 
+    for h in output_handles.iter() {
+        allow_handle(h, &pool).await?;
+    }
+
     println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -527,8 +535,12 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
     );
     let _resp = client.async_compute(compute_request).await?;
 
+    for h in output_handles.iter() {
+        allow_handle(h, &pool).await?;
+    }
+
     println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -644,8 +656,11 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
     );
     let _resp = client.async_compute(compute_request).await?;
 
+    for h in output_handles.iter() {
+        allow_handle(h, &pool).await?;
+    }
     println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -766,8 +781,12 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
     );
     let _resp = client.async_compute(compute_request).await?;
 
+    for h in output_handles.iter() {
+        allow_handle(h, &pool).await?;
+    }
+
     println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;

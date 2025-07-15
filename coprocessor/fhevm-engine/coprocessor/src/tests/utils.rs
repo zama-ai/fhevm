@@ -1,8 +1,10 @@
 use crate::daemon_cli::Args;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
+use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::utils::{safe_deserialize, safe_deserialize_key};
 use rand::Rng;
+use sqlx::Postgres;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
@@ -177,7 +179,7 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     })
 }
 
-pub async fn wait_until_all_ciphertexts_computed(
+pub async fn wait_until_all_allowed_handles_computed(
     test_instance: &TestInstance,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -187,7 +189,7 @@ pub async fn wait_until_all_ciphertexts_computed(
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        let count = sqlx::query!("SELECT count(*) FROM computations WHERE NOT is_completed")
+        let count = sqlx::query!("SELECT count(1) FROM computations JOIN allowed_handles ON output_handle = handle WHERE NOT is_completed")
             .fetch_one(&pool)
             .await?;
         let current_count = count.count.unwrap();
@@ -331,4 +333,23 @@ pub async fn decrypt_ciphertexts(
 
     let values = values.into_iter().map(|i| i.1).collect::<Vec<_>>();
     Ok(values)
+}
+
+pub async fn allow_handle(
+    handle: &Vec<u8>,
+    pool: &sqlx::Pool<Postgres>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let tenant_id = default_tenant_id();
+    let account_address = String::new();
+    let event_type = AllowEvents::AllowedForDecryption;
+    let _query =
+            sqlx::query!(
+                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+                     ON CONFLICT DO NOTHING;",
+                tenant_id,
+                handle,
+                account_address,
+                event_type as i16,
+            ).execute(pool).await?;
+    Ok(())
 }

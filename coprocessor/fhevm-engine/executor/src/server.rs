@@ -364,6 +364,7 @@ pub fn build_taskgraph_from_request(
                 res_handle.clone(),
                 computation.operation,
                 std::mem::take(&mut inputs),
+                true,
             )
             .map_err(|_| SyncComputeError::ComputationFailed)?;
         produced_handles.insert(res_handle, n.index());

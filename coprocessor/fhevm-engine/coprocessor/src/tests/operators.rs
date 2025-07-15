@@ -4,7 +4,7 @@ use crate::server::coprocessor::{
     AsyncComputation, AsyncComputeRequest, TrivialEncryptBatch, TrivialEncryptRequestSingle,
 };
 use crate::tests::utils::{
-    decrypt_ciphertexts, random_handle, wait_until_all_ciphertexts_computed,
+    allow_handle, decrypt_ciphertexts, random_handle, wait_until_all_allowed_handles_computed,
 };
 use crate::{
     server::coprocessor::{async_computation_input::Input, AsyncComputationInput},
@@ -148,9 +148,10 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
         }
         async_computations.push(AsyncComputation {
             operation: op.operator,
-            output_handle,
+            output_handle: output_handle.clone(),
             inputs,
         });
+        allow_handle(&output_handle, &pool).await?;
     }
 
     println!("Encrypting inputs...");
@@ -175,7 +176,7 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Computations scheduled, waiting upon completion...");
 
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -254,11 +255,12 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
         );
         async_computations.push(AsyncComputation {
             operation: op.operand,
-            output_handle,
+            output_handle: output_handle.clone(),
             inputs: vec![AsyncComputationInput {
                 input: Some(Input::InputHandle(input_handle)),
             }],
         });
+        allow_handle(&output_handle, &pool).await?;
     }
 
     println!("Encrypting inputs...");
@@ -283,7 +285,7 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Computations scheduled, waiting upon completion...");
 
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -382,7 +384,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
             output_handles.push(output_handle.clone());
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
-                output_handle,
+                output_handle: output_handle.clone(),
                 inputs: vec![
                     AsyncComputationInput {
                         input: Some(Input::InputHandle(input_handle.clone())),
@@ -392,6 +394,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 ],
             });
+            allow_handle(&output_handle, &pool).await?;
         }
     }
 
@@ -417,7 +420,7 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Computations scheduled, waiting upon completion...");
 
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -498,7 +501,7 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
         output_handles.push(output_handle.clone());
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheTrivialEncrypt.into(),
-            output_handle,
+            output_handle: output_handle.clone(),
             inputs: vec![
                 AsyncComputationInput {
                     input: Some(Input::Scalar(be_bytes)),
@@ -508,6 +511,7 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
                 },
             ],
         });
+        allow_handle(&output_handle, &pool).await?;
     }
 
     println!("Scheduling computations...");
@@ -522,7 +526,7 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Computations scheduled, waiting upon completion...");
 
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -646,7 +650,7 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
             output_handles.push(output_handle.clone());
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheIfThenElse.into(),
-                output_handle,
+                output_handle: output_handle.clone(),
                 inputs: vec![
                     AsyncComputationInput {
                         input: Some(Input::InputHandle(input_handle.clone())),
@@ -659,6 +663,7 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
                     },
                 ],
             });
+            allow_handle(&output_handle, &pool).await?;
         }
     }
 
@@ -684,7 +689,7 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Computations scheduled, waiting upon completion...");
 
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
