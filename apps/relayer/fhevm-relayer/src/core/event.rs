@@ -351,7 +351,7 @@ impl UserDecryptEventData {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct PublicDecryptRequest {
     pub ct_handles: Vec<[u8; 32]>,
 }

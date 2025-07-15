@@ -36,7 +36,7 @@ use alloy::primitives::Address;
 use alloy::signers::Signer;
 use clap::Parser;
 use fhevm_relayer::store::{
-    BlockNumberStore, PublicDecryptCacheStore, UserDecryptRequestCacheStore,
+    BlockNumberStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore, UserDecryptRequestCacheStore,
     UserDecryptResponseCacheStore,
 };
 use std::net::SocketAddr;
@@ -227,7 +227,9 @@ async fn main() -> eyre::Result<()> {
                 "gateway".to_string(),
             ));
             let public_decrypt_responses_cache =
-                Arc::new(PublicDecryptCacheStore::new(kv_store.clone()));
+                Arc::new(PublicDecryptResponseCacheStore::new(kv_store.clone()));
+            let public_decrypt_requests_cache =
+                Arc::new(PublicDecryptRequestCacheStore::new(kv_store.clone()));
             let user_decrypt_responses_cache =
                 Arc::new(UserDecryptResponseCacheStore::new(kv_store.clone()));
             let user_decrypt_requests_cache =
@@ -290,6 +292,7 @@ async fn main() -> eyre::Result<()> {
                 Arc::new(PublicDecryptGatewayHandler::new(
                     Arc::clone(&orchestrator),
                     public_decrypt_responses_cache,
+                    public_decrypt_requests_cache,
                     tx_service_gateway.clone(),
                     tx_config.clone(),
                     settings.contracts.clone(),

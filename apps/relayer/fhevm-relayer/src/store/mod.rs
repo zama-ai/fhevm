@@ -14,5 +14,5 @@ mod user_decrypt_cache;
 // Re-export for easier access
 pub use block_number::BlockNumberStore;
 pub use event::EventStore;
-pub use pub_decrypt_cache::PublicDecryptCacheStore;
+pub use pub_decrypt_cache::{PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore};
 pub use user_decrypt_cache::{UserDecryptRequestCacheStore, UserDecryptResponseCacheStore};

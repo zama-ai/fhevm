@@ -39,6 +39,9 @@ sol! {
     }
 }
 
+pub const PARTIAL_MOCKED_PROCESSING_TIME: Duration = Duration::from_millis(1500);
+pub const MOCKED_PROCESSING_TIME: Duration = Duration::from_millis(2000);
+
 #[derive(Clone)]
 pub struct GatewayProcessorsHandler {
     tx_helper: Arc<TransactionHelper>,
@@ -94,7 +97,7 @@ impl GatewayProcessorsHandler {
 
                     // Simulate some computation time
                     // TODO: make it configurable
-                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    tokio::time::sleep(MOCKED_PROCESSING_TIME).await;
 
                     // Generate mock handles
                     // In real implementation, this would involve actual cryptographic operations

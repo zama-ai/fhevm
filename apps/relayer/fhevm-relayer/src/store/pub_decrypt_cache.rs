@@ -1,55 +1,164 @@
 use crate::{
-    core::event::PublicDecryptResponse,
+    core::event::{PublicDecryptRequest, PublicDecryptResponse},
     metrics::{cache_operation, CacheOperation, CacheType},
     store::key_value_db::KVStore,
 };
+use alloy::primitives::U256;
 use anyhow::Result;
+use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tracing::debug;
+use xxhash_rust::xxh3::Xxh3;
 
-const PUB_DECRYPT_CACHE_PREFIX: &str = "PUB-DECRYPT-CACHE";
+const PUB_DECRYPT_RESPONSE_CACHE_PREFIX: &str = "PUB-DECRYPT-RESPONSE-CACHE";
+const PUB_DECRYPT_REQUEST_CACHE_PREFIX: &str = "PUB-DECRYPT-REQUEST-CACHE";
 
-pub struct PublicDecryptCacheStore {
+/// PublicDecryptRequest -> U256 (on-chain decryption ID)
+use dashmap::DashMap;
+use tokio::sync::{Mutex, Notify};
+
+pub struct PublicDecryptRequestCacheStore {
+    kv_store: Arc<dyn KVStore>,
+    in_flight: DashMap<String, Arc<Notify>>,
+    key_locks: DashMap<String, Arc<Mutex<()>>>,
+}
+
+impl PublicDecryptRequestCacheStore {
+    pub fn new(kv_store: Arc<dyn KVStore>) -> Self {
+        Self {
+            kv_store,
+            in_flight: DashMap::new(),
+            key_locks: DashMap::new(),
+        }
+    }
+
+    fn make_key(request: &PublicDecryptRequest) -> String {
+        let mut hasher = Xxh3::with_seed(0);
+        request.hash(&mut hasher);
+        let hashed = hasher.finish();
+        format!("{PUB_DECRYPT_REQUEST_CACHE_PREFIX}:{hashed}")
+    }
+
+    /// Persist the decryption ID and notify all waiters.
+    pub async fn persist_value(
+        &self,
+        request: &PublicDecryptRequest,
+        on_chain_decryption_id: U256,
+    ) -> Result<()> {
+        let key = Self::make_key(request);
+        let value = serde_json::to_string(&on_chain_decryption_id)?;
+        self.kv_store.put(&key, &value).await?;
+        debug!("Cache added for {key} with {on_chain_decryption_id}");
+
+        // Notify all waiters and clean up
+        if let Some((_, notify)) = self.in_flight.remove(&key) {
+            notify.notify_waiters();
+        }
+        if let Some((_, lock)) = self.key_locks.remove(&key) {
+            // Drop the lock
+            drop(lock);
+        }
+        Ok(())
+    }
+
+    /// Get the decryption ID for a request, deduplicating concurrent requests.
+    /// Returns Ok(Some(decryption_id)) if found, Ok(None) if leader (should send request), and Ok(Some(decryption_id)) after notification for followers.
+    pub async fn get_value(&self, request: &PublicDecryptRequest) -> Result<Option<U256>> {
+        let key = Self::make_key(request);
+
+        // Acquire per-key lock to serialize check/insert
+        let lock = self
+            .key_locks
+            .entry(key.clone())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone();
+        let _guard = lock.lock().await;
+
+        // Check persistent cache first
+        if let Some(value) = self.kv_store.get(&key).await? {
+            let on_chain_decryption_id = serde_json::from_str(&value)?;
+            debug!("Cache hit on {key} with {on_chain_decryption_id}");
+            cache_operation(CacheType::PublicDecrypt, CacheOperation::Hit);
+            return Ok(Some(on_chain_decryption_id));
+        }
+
+        // If not present, set up Notify for in-flight requests
+        let entry = self.in_flight.entry(key.clone());
+        let is_leader;
+        let notify = match entry {
+            dashmap::mapref::entry::Entry::Occupied(e) => {
+                is_leader = false;
+                e.get().clone()
+            }
+            dashmap::mapref::entry::Entry::Vacant(e) => {
+                is_leader = true;
+                e.insert(Arc::new(Notify::new())).clone()
+            }
+        };
+
+        // Release lock before waiting
+        drop(_guard);
+
+        if is_leader {
+            // Leader: do not wait, caller should send request and later call persist_value
+            debug!("Cache miss on {key}, leader elected, caller should send request");
+            cache_operation(CacheType::PublicDecrypt, CacheOperation::Miss);
+            return Ok(None);
+        } else {
+            // Follower: wait for notification
+            notify.notified().await;
+
+            // After notification, check persistent cache again
+            if let Some(value) = self.kv_store.get(&key).await? {
+                let on_chain_decryption_id = serde_json::from_str(&value)?;
+                debug!("Cache hit after notify on {key} with {on_chain_decryption_id}");
+                cache_operation(CacheType::PublicDecrypt, CacheOperation::Hit);
+                return Ok(Some(on_chain_decryption_id));
+            }
+            anyhow::bail!("Cache miss after notify on {key}");
+        }
+    }
+}
+
+/// U256 (on-chain decryption ID) -> PublicDecryptResponse
+pub struct PublicDecryptResponseCacheStore {
     kv_store: Arc<dyn KVStore>,
 }
 
-impl PublicDecryptCacheStore {
+impl PublicDecryptResponseCacheStore {
     pub fn new(kv_store: Arc<dyn KVStore>) -> Self {
         Self { kv_store }
     }
 
-    fn make_key(handles: &[[u8; 32]]) -> String {
-        let flattened_handles: Vec<u8> = handles.iter().flat_map(|arr| arr.to_vec()).collect();
-        format!(
-            "{}:{}",
-            PUB_DECRYPT_CACHE_PREFIX,
-            hex::encode(flattened_handles)
-        )
+    fn make_key(on_chain_decryption_id: U256) -> String {
+        format!("{PUB_DECRYPT_RESPONSE_CACHE_PREFIX}:{on_chain_decryption_id}")
     }
 
-    /// Store a PublicDecryptResponse for a given handle.
+    /// Store a PublicDecryptResponse for a given decryption ID.
     pub async fn persist_value(
         &self,
-        handles: &[[u8; 32]],
+        on_chain_decryption_id: U256,
         gw_response: PublicDecryptResponse,
     ) -> Result<()> {
-        let key = Self::make_key(handles);
+        let key = Self::make_key(on_chain_decryption_id);
         let value = serde_json::to_string(&gw_response)?;
         self.kv_store.put(&key, &value).await?;
+        debug!("Cache added for {key} with {gw_response:?}");
         Ok(())
     }
 
-    /// Retrieve a PublicDecryptResponse for a given handle.
-    pub async fn get_value(&self, handles: &[[u8; 32]]) -> Result<Option<PublicDecryptResponse>> {
-        let key = Self::make_key(handles);
+    /// Retrieve a PublicDecryptResponse for a given decryption ID.
+    pub async fn get_value(
+        &self,
+        on_chain_decryption_id: U256,
+    ) -> Result<Option<PublicDecryptResponse>> {
+        let key = Self::make_key(on_chain_decryption_id);
         if let Some(value) = self.kv_store.get(&key).await? {
             let gw_response = serde_json::from_str(&value)?;
-            debug!("Cache hit on {key}");
-            cache_operation(CacheType::PublicDecrypt, CacheOperation::Hit);
+            debug!("Cache hit on {key} with {gw_response:?}");
             return Ok(Some(gw_response));
         }
         debug!("Cache miss on {key}");
-        cache_operation(CacheType::PublicDecrypt, CacheOperation::Miss);
         Ok(None)
     }
 }
@@ -77,60 +186,56 @@ mod tests {
         }
     }
 
+    // Helper function to construct a dummy PublicDecryptRequest.
+    fn dummy_request(handles: Vec<[u8; 32]>) -> PublicDecryptRequest {
+        PublicDecryptRequest {
+            ct_handles: handles,
+        }
+    }
+
     #[tokio::test]
-    async fn test_pub_decrypt_cache_store() {
+    async fn test_pub_decrypt_request_cache_store() {
         init_metrics_for_test();
         let kv_store = Arc::new(InMemoryKVStore::default());
-        let cache_store = PublicDecryptCacheStore::new(kv_store);
-        let handles: Vec<[u8; 32]> = vec![[1u8; 32]];
+        let cache_store = PublicDecryptRequestCacheStore::new(kv_store);
+        let request = dummy_request(vec![[1u8; 32]]);
+        let decryption_id = U256::from(42);
 
         // Initially, the value should not exist.
-        let retrieved = cache_store.get_value(&handles).await.unwrap();
+        let retrieved = cache_store.get_value(&request).await.unwrap();
         assert!(retrieved.is_none());
 
-        // Store a dummy response.
-        let response = dummy_response(U256::from(1u64), b"test_value");
+        // Store a dummy decryption ID.
         cache_store
-            .persist_value(&handles, response.clone())
+            .persist_value(&request, decryption_id)
             .await
             .unwrap();
 
         // Retrieve and verify.
-        let retrieved = cache_store.get_value(&handles).await.unwrap();
-        assert_eq!(retrieved, Some(response.clone()));
-
-        // Overwrite with a new response.
-        let new_response = dummy_response(U256::from(2u64), b"new_value");
-        cache_store
-            .persist_value(&handles, new_response.clone())
-            .await
-            .unwrap();
-        let retrieved = cache_store.get_value(&handles).await.unwrap();
-        assert_eq!(retrieved, Some(new_response));
+        let retrieved = cache_store.get_value(&request).await.unwrap();
+        assert_eq!(retrieved, Some(decryption_id));
     }
 
     #[tokio::test]
-    async fn test_pub_decrypt_cache_store_handles_multiple() {
+    async fn test_pub_decrypt_response_cache_store() {
         init_metrics_for_test();
         let kv_store = Arc::new(InMemoryKVStore::default());
-        let cache_store = PublicDecryptCacheStore::new(kv_store);
-        let handles1: Vec<[u8; 32]> = vec![[1u8; 32]];
-        let response1 = dummy_response(U256::from(1u64), b"value1");
-        let handles2: Vec<[u8; 32]> = vec![[2u8; 32]];
-        let response2 = dummy_response(U256::from(2u64), b"value2");
+        let cache_store = PublicDecryptResponseCacheStore::new(kv_store);
+        let decryption_id = U256::from(42);
 
+        // Initially, the value should not exist.
+        let retrieved = cache_store.get_value(decryption_id).await.unwrap();
+        assert!(retrieved.is_none());
+
+        // Store a dummy response.
+        let response = dummy_response(decryption_id, b"test_value");
         cache_store
-            .persist_value(&handles1, response1.clone())
+            .persist_value(decryption_id, response.clone())
             .await
             .unwrap();
-        cache_store
-            .persist_value(&handles2, response2.clone())
-            .await
-            .unwrap();
 
-        let retrieved1 = cache_store.get_value(&handles1).await.unwrap();
-        let retrieved2 = cache_store.get_value(&handles2).await.unwrap();
-        assert_eq!(retrieved1, Some(response1));
-        assert_eq!(retrieved2, Some(response2));
+        // Retrieve and verify.
+        let retrieved = cache_store.get_value(decryption_id).await.unwrap();
+        assert_eq!(retrieved, Some(response.clone()));
     }
 }

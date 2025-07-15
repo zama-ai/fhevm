@@ -6,7 +6,10 @@ mod tests {
     use reqwest;
     use serde_json::json;
 
-    use crate::sqs::sqs_listener::{send_message_to_sqs_queue, wait_for_response_with_id};
+    use crate::{
+        gateway_processors_mock::handler::PARTIAL_MOCKED_PROCESSING_TIME,
+        sqs::sqs_listener::{send_message_to_sqs_queue, wait_for_response_with_id},
+    };
     use aws_credential_types::Credentials;
 
     #[tokio::test]
@@ -396,15 +399,153 @@ mod tests {
 
     #[tokio::test]
     async fn test_public_decrypt_url_endpoint() {
+        let payload_1 = helpers::random_payload_for_public_decrypt();
+        let payload_2 = helpers::random_payload_for_public_decrypt();
+        let payload_3 = helpers::random_payload_for_public_decrypt();
+
+        tokio::join!(
+            // test_single_request(payload_1),
+            // test_sequential_requests(payload_2),
+            test_parallel_requests(payload_3),
+        );
+    }
+
+    async fn test_single_request(payload: serde_json::Value) {
         let client = reqwest::Client::new();
-        let res = client
-            .post("http://localhost:3000/v1/public-decrypt")
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(5))
-            .json(&json!({"ciphertextHandles": ["0x5a88e7aa46f312ff70df6e84c85eb40cdfd42b18a9ff00000000000030390500"]}))
-            .send()
-            .await
-            .unwrap();
+        let (res, response_time) = helpers::post_public_decrypt(&client, &payload, 10).await;
         assert_eq!(res.status(), 200);
+        println!("Simple public decrypt request took: {:?}", response_time);
+    }
+
+    async fn test_sequential_requests(payload: serde_json::Value) {
+        let client = reqwest::Client::new();
+        let (res, response_time) = helpers::post_public_decrypt(&client, &payload, 10).await;
+        assert_eq!(res.status(), 200);
+        println!("First public decrypt request took: {:?}", response_time);
+
+        let mut response_times_micros = Vec::new();
+        for i in 0..3 {
+            let (res, elapsed) = helpers::post_public_decrypt(&client, &payload, 1).await;
+            response_times_micros.push(elapsed.as_micros());
+            assert_eq!(res.status(), 200);
+            println!(
+                "Sequential public decrypt request {} took: {:?}",
+                i + 1,
+                elapsed
+            );
+        }
+        assert!(
+            response_times_micros.iter().all(|x| *x < 1_000_000),
+            "All subsequent requests should take less than 1s"
+        );
+    }
+
+    async fn test_parallel_requests(payload: serde_json::Value) {
+        let number_of_queries = 5;
+        let mut response_times_micros = Vec::new();
+
+        // Send the first request and wait for it to complete
+        let first_request = {
+            let payload_clone = payload.clone();
+            tokio::spawn(async move {
+                let client = reqwest::Client::new();
+                let (res, response_time) =
+                    helpers::post_public_decrypt(&client, &payload_clone, 10).await;
+                assert_eq!(res.status(), 200);
+                println!(
+                    "Parallel public decrypt request 1 (payload) took: {:?}",
+                    response_time
+                );
+                response_time
+            })
+        };
+
+        tokio::time::sleep(PARTIAL_MOCKED_PROCESSING_TIME).await;
+
+        // Send the remaining requests in parallel
+        let mut remaining_set = tokio::task::JoinSet::new();
+        for i in 1..number_of_queries {
+            remaining_set.spawn({
+                let payload_clone = payload.clone();
+                async move {
+                    let client = reqwest::Client::new();
+                    let (res, response_time) =
+                        helpers::post_public_decrypt(&client, &payload_clone, 10).await;
+                    assert_eq!(res.status(), 200);
+                    println!(
+                        "Parallel public decrypt request {} (payload) took: {:?}",
+                        i + 1,
+                        response_time
+                    );
+                    response_time
+                }
+            });
+        }
+
+        // Collect the first request result
+        let first_elapsed = first_request.await.unwrap();
+        let first_elapsed = first_elapsed.as_micros();
+
+        // Collect the remaining request results
+        while let Some(res) = remaining_set.join_next().await {
+            let elapsed = res.unwrap();
+            response_times_micros.push(elapsed.as_micros());
+        }
+
+        response_times_micros.sort();
+
+        // Add PARTIAL_MOCKED_PROCESSING_TIME to each following value
+        let response_times_micros: Vec<_> = response_times_micros
+            .iter()
+            .map(|&x| x + PARTIAL_MOCKED_PROCESSING_TIME.as_micros())
+            .collect();
+
+        println!("ONE: {response_times_micros:?}");
+
+        // Assert delta between each following and first is 250ms (250_000 micros)
+        for (i, &val) in response_times_micros.iter().enumerate() {
+            let delta = val as i128 - first_elapsed as i128;
+            assert!(
+                (delta - 250_000).abs() < 10_000, // allow 10ms tolerance
+                "Request {}: Delta between (following + mock) and first is not ~250ms, got {}μs",
+                i + 2,
+                delta
+            );
+        }
+
+        // Print for debug
+        println!("First timing: {}μs", first_elapsed);
+        println!("Following timings (+mock): {:?}μs", response_times_micros);
+    }
+
+    mod helpers {
+        use rand::{rng, Rng};
+        use serde_json::json;
+        pub fn random_payload_for_public_decrypt() -> serde_json::Value {
+            let mut rng = rng();
+            let random_handle: String = (0..64)
+                .map(|_| rng.random_range(0..16))
+                .map(|digit| format!("{:x}", digit))
+                .collect();
+            json!({"ciphertextHandles": [random_handle]})
+        }
+
+        pub async fn post_public_decrypt(
+            client: &reqwest::Client,
+            payload: &serde_json::Value,
+            timeout_secs: u64,
+        ) -> (reqwest::Response, std::time::Duration) {
+            let start = tokio::time::Instant::now();
+            let res = client
+                .post("http://localhost:3000/v1/public-decrypt")
+                .header("Content-Type", "application/json")
+                .timeout(std::time::Duration::from_secs(timeout_secs))
+                .json(payload)
+                .send()
+                .await
+                .unwrap();
+            let elapsed = start.elapsed();
+            (res, elapsed)
+        }
     }
 }

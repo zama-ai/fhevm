@@ -4,15 +4,15 @@ use crate::{
     core::{
         errors::EventProcessingError,
         event::{
-            GenericEventData, PublicDecryptEventData, PublicDecryptResponse, RelayerEvent,
-            RelayerEventData,
+            ApiVersion, GenericEventData, PublicDecryptEventData, PublicDecryptRequest,
+            PublicDecryptResponse, RelayerEvent, RelayerEventData,
         },
     },
     orchestrator::{
         traits::{EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
-    store::PublicDecryptCacheStore,
+    store::{PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore},
     transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
 };
 use std::{str::FromStr, time::Duration};
@@ -36,11 +36,6 @@ struct PublicDecryptionRequestProcessor {
     handler: Arc<GatewayHandler>,
 }
 
-struct ContextData {
-    request_id: Uuid,
-    handles: Vec<[u8; 32]>,
-}
-
 impl ReceiptProcessor for PublicDecryptionRequestProcessor {
     type Output = U256;
 
@@ -56,8 +51,9 @@ impl ReceiptProcessor for PublicDecryptionRequestProcessor {
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    public_decryption_responses_cache: Arc<PublicDecryptCacheStore>,
-    public_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, ContextData>>,
+    public_decryption_responses_cache: Arc<PublicDecryptResponseCacheStore>,
+    public_decryption_requests_cache: Arc<PublicDecryptRequestCacheStore>,
+    public_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
     gateway_http_url: String,
@@ -67,7 +63,8 @@ pub struct GatewayHandler {
 impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        public_decryption_responses_cache: Arc<PublicDecryptCacheStore>,
+        public_decryption_responses_cache: Arc<PublicDecryptResponseCacheStore>,
+        public_decryption_requests_cache: Arc<PublicDecryptRequestCacheStore>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
@@ -77,12 +74,90 @@ impl GatewayHandler {
         Self {
             dispatcher,
             public_decryption_responses_cache,
+            public_decryption_requests_cache,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
             public_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
             gateway_http_url,
             retry_config,
         }
+    }
+
+    /// Checks cache system to know if we can skip transaction making
+    async fn public_decrypt_cache_check(
+        &self,
+        decrypt_request: &PublicDecryptRequest,
+        request_id: &Uuid,
+        api_version: &ApiVersion,
+    ) -> bool {
+        // Uses deduplication logic: get_value will block if another request is in-flight and return once the original request is sent and updated in cache.
+        match self
+            .public_decryption_requests_cache
+            .get_value(decrypt_request)
+            .await
+        {
+            Ok(None) => {
+                // First request for this payload. Nothing to do with regards to cache.
+                return false;
+            }
+            Ok(optional_decryption_id) => {
+                // Duplicate requests.
+                // Look for response and use if found.
+                // If not, queue decryption_id. Response will be routed once available.
+                if let Some(decryption_id) = optional_decryption_id {
+                    match self
+                        .public_decryption_responses_cache
+                        .get_value(decryption_id)
+                        .await
+                    {
+                        Ok(optional_decryption_response) => {
+                            if let Some(decryption_response) = optional_decryption_response {
+                                let next_event_data = RelayerEventData::PublicDecrypt(
+                                    PublicDecryptEventData::RespRcvdFromGw {
+                                        decrypt_response: decryption_response,
+                                    },
+                                );
+                                let next_event =
+                                    RelayerEvent::new(*request_id, *api_version, next_event_data);
+                                let _ = self.dispatcher.dispatch_event(next_event).await;
+                                info!(
+                                    "using cached response for public decrypt with request-id = {}",
+                                    request_id
+                                );
+                                return true;
+                            }
+                        }
+                        Err(err) => {
+                            error!(
+                                "Failed to access cache for public_decryption_responses_cache for request: {} with error: {}",
+                                request_id, err
+                            );
+                        }
+                    };
+
+                    self.public_decryption_id_to_request_id
+                        .entry(decryption_id)
+                        .or_default()
+                        .push(*request_id);
+                    info!(
+                        ?request_id,
+                        ?decryption_id,
+                        "Stored mapping between decryption ID and request ID"
+                    );
+                    debug!(
+                        "duplicate public decrypt request id = {}, result from original request will be used once available", request_id
+                    );
+                    return true;
+                }
+            }
+            Err(err) => {
+                error!(
+                    "Failed to access cache for public_decryption_requests_cache for request: {} with error: {}",
+                    request_id, err
+                );
+            }
+        };
+        false
     }
 
     /// Prepares and sends a decryption request transaction to the gateway.
@@ -105,51 +180,9 @@ impl GatewayHandler {
     async fn send_public_decryption_request_to_gateway(
         &self,
         event: RelayerEvent,
-        handles: Vec<[u8; 32]>,
+        public_decryption_request: &PublicDecryptRequest,
     ) {
-        match self
-            .public_decryption_responses_cache
-            .get_value(&handles)
-            .await
-        {
-            Ok(Some(gateway_response)) => {
-                info!(
-                    request_id = %event.request_id,
-                    handles = ?handles.iter().map(hex::encode).collect::<Vec<_>>(),
-                    "using cached response"
-                );
-                let next_event_data =
-                    RelayerEventData::PublicDecrypt(PublicDecryptEventData::RespRcvdFromGw {
-                        decrypt_response: gateway_response,
-                    });
-
-                let next_event =
-                    RelayerEvent::new(event.request_id, event.api_version, next_event_data);
-
-                if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
-                    error!(?e, "Failed to dispatch DecryptRequestProcessed event");
-                }
-                return;
-            }
-            Ok(None) => {
-                info!(
-                    request_id = %event.request_id,
-                    handles = ?handles.iter().map(hex::encode).collect::<Vec<_>>(),
-                    "no cached response found. forwarding request to KMS"
-                );
-                // No cached response, continue as normal
-            }
-            Err(_) => {
-                info!(
-                    request_id = %event.request_id,
-                    handles = ?handles.iter().map(hex::encode).collect::<Vec<_>>(),
-                    "error checking for cached response. forwarding request to KMS"
-                );
-                // No cached response, continue as normal
-            }
-        }
-
-        // Check if the responses
+        let handles = public_decryption_request.ct_handles.clone();
         let handles_fixed_bytes: Vec<FixedBytes<32>> = handles
             .iter()
             .map(|bytes| FixedBytes::from(*bytes))
@@ -165,7 +198,7 @@ impl GatewayHandler {
             Ok(url) => url,
             Err(e) => {
                 let error = EventProcessingError::HandlerError(format!("Invalid URL: {e}"));
-                self.handle_failed_request(event, error).await;
+                self.handle_failed_request(event.clone(), error).await;
                 return;
             }
         };
@@ -182,7 +215,7 @@ impl GatewayHandler {
                         "contracts.decryption_address".to_owned(),
                     ),
                 );
-                self.handle_failed_request(event, error).await;
+                self.handle_failed_request(event.clone(), error).await;
                 return;
             }
         };
@@ -244,16 +277,15 @@ impl GatewayHandler {
                     let error = EventProcessingError::HandlerError(format!(
                         "Gateway not ready after {max_retries} retries"
                     ));
-                    self.handle_failed_request(event, error).await;
+                    self.handle_failed_request(event.clone(), error).await;
                     return;
                 }
             }
         }
 
-        let self_clone = self.clone();
-        let event_clone = event.clone();
-
+        let public_decryption_request_clone = public_decryption_request.clone();
         // Spawn a blocking task to make a transaction to gateway
+        let self_clone = self.clone();
         task::spawn(async move {
             match self_clone
                 .process_decryption_request(handles_fixed_bytes)
@@ -262,14 +294,14 @@ impl GatewayHandler {
                 Ok(decryption_public_id) => {
                     self_clone
                         .handle_successful_public_request(
-                            event_clone,
-                            handles,
+                            event.clone(),
+                            public_decryption_request_clone,
                             decryption_public_id,
                         )
                         .await;
                 }
                 Err(e) => {
-                    self_clone.handle_failed_request(event_clone, e).await;
+                    self_clone.handle_failed_request(event.clone(), e).await;
                 }
             }
         });
@@ -279,33 +311,43 @@ impl GatewayHandler {
     ///
     /// # Arguments
     /// * `event` - The original [`RelayerEvent`] containing request information
+    /// * `decrypt_request` - The [`PublicDecryptRequest`] that was processed
     /// * `decryption_public_id` - The [`U256`] ID received from the decryption request
     ///
     /// # State Changes
-    /// Stores mapping in `decryption_id_to_request_id`
+    /// Stores mapping in `decryption_id_to_request_id` and caches the request
     ///
     /// # Events
     /// Dispatches [`RelayerEventData::DecryptionRequestSentToGw`]
     async fn handle_successful_public_request(
         &self,
         event: RelayerEvent,
-        handles: Vec<[u8; 32]>,
+        decrypt_request: PublicDecryptRequest,
         decryption_public_id: U256,
     ) {
-        // Store the mapping
-        self.public_decryption_id_to_request_id.insert(
-            decryption_public_id,
-            ContextData {
-                request_id: event.request_id,
-                handles,
-            },
-        );
+        // Store the mapping between decryption ID and request ID (for multiple waiting requests)
+        self.public_decryption_id_to_request_id
+            .entry(decryption_public_id)
+            .or_default()
+            .push(event.request_id);
 
         info!(
             ?event.request_id,
             ?decryption_public_id,
             "Stored mapping between decryption ID and request ID"
         );
+
+        // Cache the request -> decryption_id mapping for future requests and notify waiters
+        if let Err(e) = self
+            .public_decryption_requests_cache
+            .persist_value(&decrypt_request, decryption_public_id)
+            .await
+        {
+            warn!(
+                ?event.request_id,
+                "error persisting public decrypt request to cache: {}", e
+            );
+        }
 
         // Create and dispatch the new event
         let next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
@@ -375,49 +417,52 @@ impl GatewayHandler {
                             let public_decryption_id = req.publicDecryptionId;
                             info!(?public_decryption_id, "Public decryption id from event");
 
-                            if let Some(context_data) = self
+                            let decrypt_response = PublicDecryptResponse {
+                                gateway_request_id: public_decryption_id,
+                                decrypted_value: req.decryptedResult,
+                                signatures: req.signatures,
+                            };
+
+                            // Store response in cache for future requests
+                            if let Err(e) = self
+                                .public_decryption_responses_cache
+                                .persist_value(public_decryption_id, decrypt_response.clone())
+                                .await
+                            {
+                                warn!(
+                                    ?public_decryption_id,
+                                    "error persisting public decrypt response to cache: {}", e
+                                );
+                            }
+
+                            if let Some(entry) = self
                                 .public_decryption_id_to_request_id
                                 .get(&public_decryption_id)
                             {
-                                let request_id = context_data.request_id;
-                                let handles = &context_data.handles;
+                                // For all requests that match this request-on-chain-id
+                                for original_request_id in entry.value() {
+                                    let req_response = decrypt_response.clone();
+                                    info!(
+                                        ?original_request_id,
+                                        ?public_decryption_id,
+                                        "Found original request ID for public decryption response"
+                                    );
 
-                                info!(
-                                    ?request_id,
-                                    ?public_decryption_id,
-                                    "Found original request ID for decryption response"
-                                );
+                                    let next_event_data = RelayerEventData::PublicDecrypt(
+                                        PublicDecryptEventData::RespRcvdFromGw {
+                                            decrypt_response: req_response,
+                                        },
+                                    );
 
-                                let decrypt_response = PublicDecryptResponse {
-                                    gateway_request_id: public_decryption_id,
-                                    decrypted_value: req.decryptedResult,
-                                    signatures: req.signatures,
-                                };
-                                let next_event_data = RelayerEventData::PublicDecrypt(
-                                    PublicDecryptEventData::RespRcvdFromGw {
-                                        decrypt_response: decrypt_response.clone(),
-                                    },
-                                );
+                                    // Now we can use original_request_id directly
+                                    let next_event = RelayerEvent::new(
+                                        *original_request_id,
+                                        event.api_version,
+                                        next_event_data,
+                                    );
 
-                                if let Err(e) = self
-                                    .public_decryption_responses_cache
-                                    .persist_value(handles, decrypt_response)
-                                    .await
-                                {
-                                    warn!(
-                                        ?request_id,
-                                        "error persisting public decrypt response to cache: {}", e
-                                    )
+                                    let _ = self.dispatcher.dispatch_event(next_event).await;
                                 }
-
-                                // Now we can use original_request_id directly
-                                let next_event = RelayerEvent::new(
-                                    request_id,
-                                    event.api_version,
-                                    next_event_data,
-                                );
-
-                                let _ = self.dispatcher.dispatch_event(next_event).await;
                             } else {
                                 error!(
                                     ?public_decryption_id,
@@ -553,8 +598,20 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 ref decrypt_request,
                 ..
             }) => {
-                let handles = decrypt_request.ct_handles.clone();
-                self.send_public_decryption_request_to_gateway(event, handles)
+                // Check cache first to see if we can skip transaction making
+                if self
+                    .public_decrypt_cache_check(
+                        &decrypt_request,
+                        &event.request_id,
+                        &event.api_version,
+                    )
+                    .await
+                {
+                    return;
+                }
+
+                // Clone the decrypt_request to avoid borrowing issues
+                self.send_public_decryption_request_to_gateway(event.clone(), &decrypt_request)
                     .await;
             }
             RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
