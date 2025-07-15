@@ -45,6 +45,8 @@ jobs:
 
   start-runner:
     name: kms-connector-tests/start-runner
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-connector == 'true' }}
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
