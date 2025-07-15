@@ -107,7 +107,8 @@ jobs:
 
       # Executing task:deployEmptyUUPSProxies is required to generate the proxy contract addresses, which are then used
       # for compiling the current and new implementations during the upgrade task.
-      # The docker cp command is required until previous-contracts uses separated .env and addresses files.
+      # The docker cp command is required until previous-contracts uses separated .env and addresses files,
+      # see https://github.com/zama-ai/fhevm-internal/issues/217.
       - name: Prepare and copy previous contract into current directory
         working-directory: current-fhevm/gateway-contracts
         run: |
