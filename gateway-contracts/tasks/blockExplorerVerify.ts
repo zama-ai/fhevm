@@ -219,5 +219,8 @@ task("task:verifyAllGatewayContracts")
     console.log("Verify Decryption contract:");
     await hre.run("task:verifyDecryption", { useInternalProxyAddress });
 
+    console.log("Verify CoprocessorContexts contract:");
+    await hre.run("task:verifyCoprocessorContexts", { useInternalProxyAddress });
+
     console.log("Contract verification done!");
   });
