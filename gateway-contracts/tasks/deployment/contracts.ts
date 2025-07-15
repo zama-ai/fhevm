@@ -26,11 +26,11 @@ async function deployContractImplementation(
   const newImplem = await ethers.getContractFactory(name, deployer);
 
   const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
-  dotenv.config({ path: envFilePath });
-
   if (!fs.existsSync(envFilePath)) {
     throw new Error(`Environment file not found: ${envFilePath}`);
   }
+  dotenv.config({ path: envFilePath, override: true });
+
   // Determine env variable name for the proxy contract address
   const nameSnakeCase = pascalCaseToSnakeCase(name);
   const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;

@@ -14,7 +14,7 @@ task("task:verifyCiphertextCommits")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway") });
+      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
     }
     const proxyAddress = getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS");
 
@@ -40,7 +40,7 @@ task("task:verifyDecryption")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway") });
+      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
     }
     const proxyAddress = getRequiredEnvVar("DECRYPTION_ADDRESS");
 
@@ -66,7 +66,7 @@ task("task:verifyGatewayConfig")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway") });
+      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
@@ -90,7 +90,7 @@ task("task:verifyInputVerification")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway") });
+      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
     }
     const proxyAddress = getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS");
 
@@ -114,7 +114,7 @@ task("task:verifyKmsManagement")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway") });
+      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
     }
     const proxyAddress = getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS");
 
@@ -138,7 +138,7 @@ task("task:verifyMultichainAcl")
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway") });
+      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
     }
     const proxyAddress = getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS");
 
