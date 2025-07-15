@@ -128,18 +128,26 @@ impl DFGraph {
                 node.is_needed = true;
             }
         }
-        // Prune graph of all unneeded nodes and edges
-        let edges = self.graph.map(|_, _| (), |_, edge| *edge);
+        // Normally we shld prune the graph of all unneeded nodes and
+        // edges, but as we approximate dependence chains in the
+        // listener, we can end up in cases where we can't make
+        // progress with buckets containing no allowed handle.
+
+        // Instead we mark as allowed (just in the scheduler, not in
+        // DB) all dangling operations as they are possibly required
+        // in separate buckets
+        //let edges = self.graph.map(|_, _| (), |_, edge| *edge);
         for index in 0..self.graph.node_count() {
             let node_index = NodeIndex::new(index);
-            let Some(node) = self.graph.node_weight(node_index) else {
+            let Some(node) = self.graph.node_weight_mut(node_index) else {
                 continue;
             };
             if !node.is_needed {
-                for edge in edges.edges(node_index) {
-                    self.graph.remove_edge(edge.id());
-                }
-                self.graph.remove_node(node_index);
+                node.is_allowed = true;
+                // for edge in edges.edges(node_index) {
+                //     self.graph.remove_edge(edge.id());
+                // }
+                // self.graph.remove_node(node_index);
             }
         }
     }
