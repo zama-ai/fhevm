@@ -137,7 +137,7 @@ export async function loadTestVariablesFixture() {
   const fixtureData = await initTestingWallets(nKmsNodes, nCoprocessors, nCustodians);
 
   // Load the environment variables for the /addresses directory
-  dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway") });
+  dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
 
   // Load the GatewayConfig contract
   const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS"));
