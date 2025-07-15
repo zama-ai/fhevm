@@ -188,7 +188,14 @@ pub(crate) async fn run_loop(
                     if token.is_cancelled() {
                         return Ok(());
                     }
+
                     info!(target: "worker", "More tasks to process, continuing...");
+
+                    gc_ticker.reset();
+                    if let Err(err) = garbage_collect(pool, conf.gc_batch_limit).await {
+                        error!(target: "worker", "Failed to garbage collect: {}", err);
+                    }
+
                     continue;
                 }
             }
@@ -215,8 +222,8 @@ pub(crate) async fn run_loop(
             },
             // Garbage collecting
             _ = gc_ticker.tick() => {
-                if let Err(err) = garbage_collect(pool).await {
-                    error!(target: "worker", "Failed to garbage collect: {err}");
+                if let Err(err) = garbage_collect(pool, conf.gc_batch_limit).await {
+                    error!(target: "worker", "Failed to garbage collect: {}", err);
                 }
             }
         }
@@ -224,27 +231,38 @@ pub(crate) async fn run_loop(
 }
 
 // Clean up the database by removing old ciphertexts128 already uploaded to S3.
-async fn garbage_collect(pool: &PgPool) -> Result<(), ExecutionError> {
+pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionError> {
+    // Limit the number of rows to update in case of a large backlog due to catchup or burst
+    // Skip Locked to prevent concurrent updates
     let start = SystemTime::now();
-    let rows = sqlx::query!(
-        "UPDATE ciphertexts c
-        SET ciphertext128 = NULL
-        WHERE ciphertext128 is NOT NULL -- needed for getting an accurate rows_affected
-        AND EXISTS (
-            SELECT 1
-            FROM ciphertext_digest d
-            WHERE d.tenant_id = c.tenant_id
+    let rows_affected: u64 = sqlx::query!(
+        "
+        WITH to_update AS (
+            SELECT c.ctid
+            FROM ciphertexts c
+            JOIN ciphertext_digest d
+            ON d.tenant_id = c.tenant_id
             AND d.handle = c.handle
+            WHERE c.ciphertext128 IS NOT NULL
             AND d.ciphertext128 IS NOT NULL
-        );"
+            ORDER BY c.created_at
+            FOR UPDATE SKIP LOCKED
+            LIMIT $1::INT
+        )
+
+        UPDATE ciphertexts
+            SET ciphertext128 = NULL
+            WHERE ctid IN (SELECT ctid FROM to_update);
+        ",
+        limit as i32
     )
     .execute(pool)
     .await?
     .rows_affected();
 
-    if rows > 0 {
+    if rows_affected > 0 {
         let _s = telemetry::tracer_with_start_time("cleanup_ct128", start);
-        info!(target: "worker", "Cleaning up old ciphertexts128, rows_affected: {}", rows);
+        info!(target: "worker", "Cleaning up old ciphertexts128, rows_affected: {}", rows_affected);
     }
 
     Ok(())
