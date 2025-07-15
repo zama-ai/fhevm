@@ -82,12 +82,13 @@ impl DFGraph {
         let mut res = Vec::with_capacity(self.graph.node_count());
         for index in 0..self.graph.node_count() {
             let node = self.graph.node_weight_mut(NodeIndex::new(index)).unwrap();
-            if !node.is_allowed {
-                continue;
-            }
             if let Some(ct) = std::mem::take(&mut node.result) {
                 if let Ok(ct) = ct {
-                    res.push((node.result_handle.clone(), Ok((ct.1, ct.2))));
+                    if node.is_allowed {
+                        res.push((node.result_handle.clone(), Ok((ct.1, ct.2))));
+                    } else {
+                        res.push((node.result_handle.clone(), Ok((-1, vec![]))));
+                    }
                 } else {
                     res.push((node.result_handle.clone(), Err(ct.err().unwrap())));
                 }

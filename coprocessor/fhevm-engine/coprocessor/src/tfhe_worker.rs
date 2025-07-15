@@ -14,7 +14,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
@@ -307,6 +307,7 @@ async fn tfhe_worker_cycle(
                         is_allowed
                     } else {
                         // Default to true - but should never be possible given query
+                        warn!("is_allowed missing");
                         true
                     },
                 )?;
@@ -387,8 +388,9 @@ async fn tfhe_worker_cycle(
                     continue;
                 }
                 // If no result or error is present, this computation
-                // was either not needed or not allowed
+                // is missing.
                 let Some(r) = &mut res.iter_mut().find(|(h, _)| *h == w.output_handle) else {
+                    warn!("missing computation");
                     continue;
                 };
                 let r = &mut r.1;
@@ -426,28 +428,40 @@ async fn tfhe_worker_cycle(
                     });
                 match finished_work_unit {
                     Ok((w, db_type, db_bytes)) => {
-                        let mut s = tracer.start_with_context("insert_ct_into_db", &loop_ctx);
-                        s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
-                        s.set_attribute(KeyValue::new(
-                            "handle",
-                            format!("0x{}", hex::encode(&w.output_handle)),
-                        ));
-                        s.set_attribute(KeyValue::new("ciphertext_type", db_type as i64));
-                        let _ = query!("
-                        INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
-                        VALUES($1, $2, $3, $4, $5)
-                        ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
-                    ", w.tenant_id, w.output_handle, &db_bytes, current_ciphertext_version(), db_type)
-                    .execute(trx.as_mut())
-                    .await?;
-
-                        // Notify all workers that new ciphertext is inserted
-                        // For now, it's only the SnS workers that are listening for these events
-                        let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
-                            .execute(trx.as_mut())
-                            .await?;
-
-                        s.end();
+                        let is_allowed = if let Some(is_allowed) = w.is_allowed {
+                            is_allowed
+                        } else {
+                            // Default to false - but should never be possible given query
+                            warn!("is_allowed missing");
+                            false
+                        };
+                        if db_type >= 0 {
+                            let mut s = tracer.start_with_context("insert_ct_into_db", &loop_ctx);
+                            s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
+                            s.set_attribute(KeyValue::new(
+                                "handle",
+                                format!("0x{}", hex::encode(&w.output_handle)),
+                            ));
+                            s.set_attribute(KeyValue::new("ciphertext_type", db_type as i64));
+                            let _ = query!(
+				"
+                                INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+                                VALUES($1, $2, $3, $4, $5)
+                                ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
+                                ",
+				w.tenant_id, w.output_handle, &db_bytes, current_ciphertext_version(), db_type)
+				.execute(trx.as_mut())
+				.await?;
+                            // Notify all workers that new ciphertext is inserted
+                            // For now, it's only the SnS workers that are listening for these events
+                            let _ =
+                                sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
+                                    .execute(trx.as_mut())
+                                    .await?;
+                            s.end();
+                        }
+                        // Non allowed handles are still marked as
+                        // complete but we don't upload the CT
                         let mut s = tracer.start_with_context("update_computation", &loop_ctx);
                         s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
                         s.set_attribute(KeyValue::new(
