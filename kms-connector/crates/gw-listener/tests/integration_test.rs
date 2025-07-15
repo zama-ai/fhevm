@@ -15,6 +15,7 @@ use sqlx::Row;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 #[tokio::test]
 async fn test_publish_public_decryption() -> anyhow::Result<()> {
@@ -23,7 +24,7 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
-    println!("Mocking PublicDecryptionRequest on Anvil...");
+    info!("Mocking PublicDecryptionRequest on Anvil...");
     let pending_tx = test_instance
         .decryption_contract()
         .publicDecryptionRequest(vec![])
@@ -35,10 +36,10 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
         .get_transaction_by_hash(receipt.transaction_hash)
         .await?
         .unwrap();
-    println!("Tx successfully sent!");
+    info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
-    println!("Checking event is stored in DB...");
+    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    info!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT decryption_id, sns_ct_materials FROM public_decryption_requests")
         .fetch_one(test_instance.db())
         .await?;
@@ -51,7 +52,7 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
         sns_ct_materials,
         vec![SnsCiphertextMaterialDbItem::default()]
     );
-    println!("Event successfully stored! Stopping GatewayListener...");
+    info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
     Ok(gw_listener_task?.await?)
@@ -64,7 +65,7 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
-    println!("Mocking UserDecryptionRequest on Anvil...");
+    info!("Mocking UserDecryptionRequest on Anvil...");
     let rand_user_addr = rand_address();
     let rand_pub_key = rand_public_key();
     let pending_tx = test_instance
@@ -86,10 +87,10 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
         .get_transaction_by_hash(receipt.transaction_hash)
         .await?
         .unwrap();
-    println!("Tx successfully sent!");
+    info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
-    println!("Checking event is stored in DB...");
+    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    info!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT decryption_id, sns_ct_materials, user_address, public_key FROM user_decryption_requests")
         .fetch_one(test_instance.db())
         .await?;
@@ -107,7 +108,7 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
     );
     assert_eq!(rand_user_addr, user_address);
     assert_eq!(rand_pub_key, pub_key);
-    println!("Event successfully stored! Stopping GatewayListener...");
+    info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
     Ok(gw_listener_task?.await?)
@@ -120,7 +121,7 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
-    println!("Mocking PreprocessKeygenRequest on Anvil...");
+    info!("Mocking PreprocessKeygenRequest on Anvil...");
     let pending_tx = test_instance
         .kms_management_contract()
         .preprocessKeygenRequest(String::new())
@@ -132,10 +133,10 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
         .get_transaction_by_hash(receipt.transaction_hash)
         .await?
         .unwrap();
-    println!("Tx successfully sent!");
+    info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
-    println!("Checking event is stored in DB...");
+    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    info!("Checking event is stored in DB...");
     let row = sqlx::query(
         "SELECT pre_keygen_request_id, fhe_params_digest FROM preprocess_keygen_requests",
     )
@@ -146,7 +147,7 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
     let digest = U256::from_le_bytes(row.try_get::<[u8; 32], _>("fhe_params_digest")?);
     assert_eq!(id, U256::ONE);
     assert_eq!(digest, U256::default());
-    println!("Event successfully stored! Stopping GatewayListener...");
+    info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
     Ok(gw_listener_task?.await?)
@@ -159,7 +160,7 @@ async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
-    println!("Mocking PreprocessKskgenRequest on Anvil...");
+    info!("Mocking PreprocessKskgenRequest on Anvil...");
     let pending_tx = test_instance
         .kms_management_contract()
         .preprocessKskgenRequest(String::new())
@@ -171,10 +172,10 @@ async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
         .get_transaction_by_hash(receipt.transaction_hash)
         .await?
         .unwrap();
-    println!("Tx successfully sent!");
+    info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
-    println!("Checking event is stored in DB...");
+    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    info!("Checking event is stored in DB...");
     let row = sqlx::query(
         "SELECT pre_kskgen_request_id, fhe_params_digest FROM preprocess_kskgen_requests",
     )
@@ -185,7 +186,7 @@ async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
     let digest = U256::from_le_bytes(row.try_get::<[u8; 32], _>("fhe_params_digest")?);
     assert_eq!(id, U256::ONE);
     assert_eq!(digest, U256::default());
-    println!("Event successfully stored! Stopping GatewayListener...");
+    info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
     Ok(gw_listener_task?.await?)
@@ -198,7 +199,7 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
-    println!("Mocking KeygenRequest on Anvil...");
+    info!("Mocking KeygenRequest on Anvil...");
     let rand_id = rand_u256();
     let pending_tx = test_instance
         .kms_management_contract()
@@ -211,10 +212,10 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
         .get_transaction_by_hash(receipt.transaction_hash)
         .await?
         .unwrap();
-    println!("Tx successfully sent!");
+    info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
-    println!("Checking event is stored in DB...");
+    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    info!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT pre_key_id, fhe_params_digest FROM keygen_requests")
         .fetch_one(test_instance.db())
         .await?;
@@ -223,7 +224,7 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
     let digest = U256::from_le_bytes(row.try_get::<[u8; 32], _>("fhe_params_digest")?);
     assert_eq!(id, rand_id);
     assert_eq!(digest, U256::default());
-    println!("Event successfully stored! Stopping GatewayListener...");
+    info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
     Ok(gw_listener_task?.await?)
@@ -236,7 +237,7 @@ async fn test_publish_kskgen() -> anyhow::Result<()> {
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
-    println!("Mocking KskgenRequest on Anvil...");
+    info!("Mocking KskgenRequest on Anvil...");
     let rand_id = rand_u256();
     let rand_source_key_id = rand_u256();
     let rand_dest_key_id = rand_u256();
@@ -251,10 +252,10 @@ async fn test_publish_kskgen() -> anyhow::Result<()> {
         .get_transaction_by_hash(receipt.transaction_hash)
         .await?
         .unwrap();
-    println!("Tx successfully sent!");
+    info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
-    println!("Checking event is stored in DB...");
+    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    info!("Checking event is stored in DB...");
     let row = sqlx::query(
         "SELECT pre_ksk_id, source_key_id, dest_key_id, fhe_params_digest FROM kskgen_requests",
     )
@@ -269,7 +270,7 @@ async fn test_publish_kskgen() -> anyhow::Result<()> {
     assert_eq!(rand_source_key_id, source_key_id);
     assert_eq!(rand_dest_key_id, dest_key_id);
     assert_eq!(digest, U256::default());
-    println!("Event successfully stored! Stopping GatewayListener...");
+    info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
     Ok(gw_listener_task?.await?)
@@ -282,7 +283,7 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
-    println!("Mocking CrsgenRequest on Anvil...");
+    info!("Mocking CrsgenRequest on Anvil...");
     let pending_tx = test_instance
         .kms_management_contract()
         .crsgenRequest(String::new())
@@ -294,10 +295,10 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
         .get_transaction_by_hash(receipt.transaction_hash)
         .await?
         .unwrap();
-    println!("Tx successfully sent!");
+    info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(400)).await; // Waiting for the gw_listener to process event
-    println!("Checking event is stored in DB...");
+    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    info!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT crsgen_request_id, fhe_params_digest FROM crsgen_requests")
         .fetch_one(test_instance.db())
         .await?;
@@ -306,7 +307,7 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
     let digest = U256::from_le_bytes(row.try_get::<[u8; 32], _>("fhe_params_digest")?);
     assert_eq!(id, U256::ONE);
     assert_eq!(digest, U256::default());
-    println!("Event successfully stored! Stopping GatewayListener...");
+    info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
     Ok(gw_listener_task?.await?)

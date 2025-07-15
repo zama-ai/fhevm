@@ -1,6 +1,6 @@
 use crate::{
     conn::WalletGatewayProvider,
-    tests::setup::{DbInstance, S3Instance, gw::GatewayInstance},
+    tests::setup::{DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
 };
 use alloy::node_bindings::AnvilInstance;
 use fhevm_gateway_rust_bindings::{
@@ -9,6 +9,7 @@ use fhevm_gateway_rust_bindings::{
     kmsmanagement::KmsManagement::KmsManagementInstance,
 };
 use sqlx::{Pool, Postgres};
+use tracing_subscriber::EnvFilter;
 
 /// The integration test environment.
 pub struct TestInstance {
@@ -17,6 +18,7 @@ pub struct TestInstance {
     db: Option<DbInstance>,
     gateway: Option<GatewayInstance>,
     s3: Option<S3Instance>,
+    kms: Option<KmsInstance>,
 }
 
 impl TestInstance {
@@ -26,6 +28,18 @@ impl TestInstance {
 
     pub fn db(&self) -> &Pool<Postgres> {
         &self.db.as_ref().expect("DB is not setup").db
+    }
+
+    pub fn db_url(&self) -> &str {
+        &self.db.as_ref().expect("DB is not setup").url
+    }
+
+    pub fn kms_url(&self) -> &str {
+        &self
+            .kms
+            .as_ref()
+            .expect("KmsInstance has not been setup")
+            .url
     }
 
     pub fn anvil(&self) -> &AnvilInstance {
@@ -64,12 +78,15 @@ pub struct TestInstanceBuilder {
     db: Option<DbInstance>,
     gateway: Option<GatewayInstance>,
     s3: Option<S3Instance>,
+    kms: Option<KmsInstance>,
 }
 
 impl Default for TestInstanceBuilder {
     fn default() -> Self {
         let subscriber = tracing_subscriber::fmt()
-            .with_max_level(tracing::Level::INFO)
+            .with_env_filter(
+                EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            )
             .with_test_writer()
             .finish();
 
@@ -78,6 +95,7 @@ impl Default for TestInstanceBuilder {
             db: None,
             gateway: None,
             s3: None,
+            kms: None,
         }
     }
 }
@@ -98,6 +116,11 @@ impl TestInstanceBuilder {
         self
     }
 
+    pub fn with_kms(mut self, kms_instance: KmsInstance) -> Self {
+        self.kms = Some(kms_instance);
+        self
+    }
+
     pub fn with_tracing(mut self, tracing: Option<tracing::subscriber::DefaultGuard>) -> Self {
         self._tracing_default_guard = tracing;
         self
@@ -109,6 +132,7 @@ impl TestInstanceBuilder {
             db: self.db,
             gateway: self.gateway,
             s3: self.s3,
+            kms: self.kms,
         }
     }
 

@@ -30,4 +30,4 @@ tracing-test.workspace = true
 
 [[bin]]
 name = "gw-listener"
-path = "src/bin/gw-listener.rs"
+path = "src/bin/gw_listener.rs"

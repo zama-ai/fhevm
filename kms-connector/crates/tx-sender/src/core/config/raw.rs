@@ -34,7 +34,6 @@ fn default_database_pool_size() -> u32 {
 impl DeserializeRawConfig for RawConfig {}
 
 // Default implementation for testing purpose
-#[cfg(test)]
 impl Default for RawConfig {
     fn default() -> Self {
         Self {

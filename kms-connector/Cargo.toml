@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "simple-connector"]
+members = ["crates/*", "simple-connector", "tests"]
 
 [workspace.package]
 authors = ["Zama"]
@@ -12,6 +12,9 @@ version = "0.1.0-rc6"
 [workspace.dependencies]
 
 # Internal dependencies
+gw-listener.path = "crates/gw-listener"
+kms-worker.path = "crates/kms-worker"
+tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_rust_bindings = { path = "../gateway-contracts/rust_bindings" }
 kms-grpc = { git = "ssh://git@github.com/zama-ai/kms-core.git", tag = "v0.11.0-rc15", default-features = true, features = [
@@ -76,6 +79,7 @@ url = { version = "=2.5.4", default-features = false }
 # Testing dependencies
 connector-tests.path = "tests"
 rand = "=0.8.5"
+rstest = "=0.25.0"
 serial_test = "3.2.0"
 tempfile = "=3.19.1"
 testcontainers = "=0.24.0"

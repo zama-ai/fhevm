@@ -6,6 +6,7 @@ pub struct DbInstance {
     /// Use to keep the database container running during the tests.
     _db_container: ContainerAsync<GenericImage>,
     pub db: Pool<Postgres>,
+    pub url: String,
 }
 
 impl DbInstance {
@@ -51,6 +52,7 @@ impl DbInstance {
         Ok(DbInstance {
             _db_container: container,
             db: pool,
+            url: db_url,
         })
     }
 }

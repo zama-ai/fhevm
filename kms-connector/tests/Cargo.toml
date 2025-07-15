@@ -6,4 +6,21 @@ license.workspace = true
 publish.workspace = true
 version.workspace = true
 
+[[test]]
+name = "connector-tests"
+path = "lib.rs"
+
 [dependencies]
+gw-listener.workspace = true
+kms-worker.workspace = true
+tx-sender.workspace = true
+connector-utils = { workspace = true, features = ["tests"] }
+
+alloy.workspace = true
+anyhow.workspace = true
+rstest.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true

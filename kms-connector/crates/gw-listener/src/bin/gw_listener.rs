@@ -1,10 +1,9 @@
 use std::process::ExitCode;
 
-use gw_listener::core::{Config, DbEventPublisher, GatewayListener};
+use gw_listener::core::{Config, GatewayListener};
 
 use connector_utils::{
     cli::{Cli, Subcommands},
-    conn::{connect_to_db, connect_to_gateway},
     signal::install_signal_handlers,
 };
 use tokio_util::sync::CancellationToken;
@@ -39,16 +38,11 @@ async fn run() -> anyhow::Result<()> {
                 info!("Using custom service name: {}", config.service_name);
             }
 
-            let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-            let publisher = DbEventPublisher::new(db_pool);
-
-            let provider = connect_to_gateway(&config.gateway_url).await?;
-            let gw_listener = GatewayListener::new(&config, provider, publisher);
-
             let cancel_token = CancellationToken::new();
             install_signal_handlers(cancel_token.clone())?;
 
             info!("Starting GatewayListener with config:\n{}", config);
+            let gw_listener = GatewayListener::from_config(config).await?;
             gw_listener.start(cancel_token).await
         }
     }

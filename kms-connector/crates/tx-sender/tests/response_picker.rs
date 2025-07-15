@@ -11,7 +11,7 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
     let mut response_picker = DbKmsResponsePicker::connect(test_instance.db().clone()).await?;
 
     println!("Triggering Postgres notification with PublicDecryptionResponse insertion...");
-    let inserted_response = insert_rand_public_decrypt_response(&test_instance.db()).await?;
+    let inserted_response = insert_rand_public_decrypt_response(test_instance.db()).await?;
 
     println!("Picking PublicDecryptionResponse...");
     let response = response_picker.pick_response().await?;
@@ -29,7 +29,7 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
     let mut response_picker = DbKmsResponsePicker::connect(test_instance.db().clone()).await?;
 
     println!("Triggering Postgres notification with UserDecryptionResponse insertion...");
-    let inserted_response = insert_rand_user_decrypt_response(&test_instance.db()).await?;
+    let inserted_response = insert_rand_user_decrypt_response(test_instance.db()).await?;
     println!("Picking UserDecryptionResponse...");
     let response = response_picker.pick_response().await?;
 

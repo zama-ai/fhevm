@@ -22,6 +22,7 @@ tracing-subscriber.workspace = true
 
 [dev-dependencies]
 connector-utils = { workspace = true, features = ["tests"] }
+rstest.workspace = true
 serial_test.workspace = true
 tempfile.workspace = true
 tokio-stream.workspace = true

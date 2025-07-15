@@ -1,6 +1,11 @@
+use crate::core::DbEventPublisher;
+
 use super::{Config, EventPublisher};
 use alloy::{contract::Event, network::Ethereum, providers::Provider, sol_types::SolEvent};
-use connector_utils::types::GatewayEvent;
+use connector_utils::{
+    conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    types::GatewayEvent,
+};
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     kmsmanagement::KmsManagement::{self, KmsManagementInstance},
@@ -148,6 +153,17 @@ where
         let crsgen_filter = self.kms_management_contract.CrsgenRequest_filter();
         self.subscribe_to_events("CrsgenRequest", crsgen_filter)
             .await;
+    }
+}
+
+impl GatewayListener<GatewayProvider, DbEventPublisher> {
+    /// Creates a new `GatewayListener` instance from a valid `Config`.
+    pub async fn from_config(config: Config) -> anyhow::Result<Self> {
+        let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
+        let publisher = DbEventPublisher::new(db_pool);
+
+        let provider = connect_to_gateway(&config.gateway_url).await?;
+        Ok(GatewayListener::new(&config, provider, publisher))
     }
 }
 

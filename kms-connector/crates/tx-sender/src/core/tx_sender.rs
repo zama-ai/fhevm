@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::core::{
     Config, DbKmsResponsePicker, DbKmsResponseRemover, KmsResponsePicker, KmsResponseRemover,
 };
@@ -15,6 +13,7 @@ use connector_utils::{
     types::KmsResponse,
 };
 use fhevm_gateway_rust_bindings::decryption::Decryption::{self, DecryptionInstance};
+use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
