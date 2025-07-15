@@ -456,26 +456,35 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         uint256 contextId = $.coprocessorContextCount;
 
         // Solidity doesn't support directly copying complex data structures like `coprocessors`
-        // (array of structs), so we need to instead create the struct field by field
+        // (array of structs), so we need to instead create the struct field by field.
+        // The coprocessors themselves are copied in the loop below
         $.coprocessorContexts[contextId].contextId = contextId;
         $.coprocessorContexts[contextId].previousContextId = previousContextId;
         $.coprocessorContexts[contextId].featureSet = featureSet;
 
-        // Then, we need to copy each coprocessor struct one by one
-        for (uint256 i = 0; i < coprocessors.length; i++) {
-            $.coprocessorContexts[contextId].coprocessors.push(coprocessors[i]);
-        }
-
-        // Register several additional mappings for faster lookups (in getters and checks)
         for (uint256 i = 0; i < coprocessors.length; i++) {
             if (coprocessors[i].txSenderAddress == address(0)) {
-                revert NullCoprocessorTxSenderAddress(contextId, i);
+                revert NullCoprocessorTxSenderAddress(i, coprocessors);
             }
 
             if (coprocessors[i].signerAddress == address(0)) {
-                revert NullCoprocessorSignerAddress(contextId, i);
+                revert NullCoprocessorSignerAddress(i, coprocessors);
             }
 
+            // All coprocessors must have a unique transaction sender address
+            if ($.isCoprocessorTxSender[contextId][coprocessors[i].txSenderAddress]) {
+                revert CoprocessorTxSenderAddressesNotUnique(coprocessors[i].txSenderAddress, i, coprocessors);
+            }
+
+            // All coprocessors must have a unique signer address
+            if ($.isCoprocessorSigner[contextId][coprocessors[i].signerAddress]) {
+                revert CoprocessorSignerAddressesNotUnique(coprocessors[i].signerAddress, i, coprocessors);
+            }
+
+            // Store the coprocessor struct in the context struct
+            $.coprocessorContexts[contextId].coprocessors.push(coprocessors[i]);
+
+            // Register several additional mappings for faster lookups (in getters and checks)
             $.coprocessors[contextId][coprocessors[i].txSenderAddress] = coprocessors[i];
             $.isCoprocessorTxSender[contextId][coprocessors[i].txSenderAddress] = true;
             $.coprocessorTxSenderAddresses[contextId].push(coprocessors[i].txSenderAddress);

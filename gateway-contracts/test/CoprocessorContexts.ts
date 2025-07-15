@@ -82,41 +82,101 @@ describe("CoprocessorContexts", function () {
     });
 
     it("Should revert because a coprocessor has a null transaction sender address", async function () {
-      const coprocessorsWithNullTxSender: CoprocessorStruct[] = [
+      const coprocessorsWithNullTxSenderAddress: CoprocessorStruct[] = [
         {
           name: "Coprocessor 1",
           txSenderAddress: nullAddress,
           signerAddress: coprocessorSigners[0].address,
-          s3BucketUrl: "https://s3.amazonaws.com/bucket/key",
+          s3BucketUrl: "s3://bucket-1",
         },
       ];
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newCoprocessorContextsFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [featureSet, coprocessorsWithNullTxSender],
+            args: [featureSet, coprocessorsWithNullTxSenderAddress],
           },
         }),
-      ).to.be.revertedWithCustomError(coprocessorContexts, "NullCoprocessorTxSenderAddress");
+      )
+        .to.be.revertedWithCustomError(coprocessorContexts, "NullCoprocessorTxSenderAddress")
+        .withArgs(0, toValues(coprocessorsWithNullTxSenderAddress));
     });
 
     it("Should revert because a coprocessor has a null signer address", async function () {
-      const coprocessorsWithNullSigner: CoprocessorStruct[] = [
+      const coprocessorsWithNullSignerAddress: CoprocessorStruct[] = [
         {
           name: "Coprocessor 1",
           txSenderAddress: coprocessorTxSenders[0].address,
           signerAddress: nullAddress,
-          s3BucketUrl: "https://s3.amazonaws.com/bucket/key",
+          s3BucketUrl: "s3://bucket-1",
         },
       ];
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newCoprocessorContextsFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [featureSet, coprocessorsWithNullSigner],
+            args: [featureSet, coprocessorsWithNullSignerAddress],
           },
         }),
-      ).to.be.revertedWithCustomError(coprocessorContexts, "NullCoprocessorSignerAddress");
+      )
+        .to.be.revertedWithCustomError(coprocessorContexts, "NullCoprocessorSignerAddress")
+        .withArgs(0, toValues(coprocessorsWithNullSignerAddress));
+    });
+
+    it("Should revert because 2 coprocessors have the same transaction sender address", async function () {
+      const firstTxSenderAddress = coprocessorTxSenders[0].address;
+      const coprocessorsWithSameTxSenderAddress: CoprocessorStruct[] = [
+        {
+          name: "Coprocessor 1",
+          txSenderAddress: firstTxSenderAddress,
+          signerAddress: coprocessorSigners[0].address,
+          s3BucketUrl: "s3://bucket-1",
+        },
+        {
+          name: "Coprocessor 2",
+          txSenderAddress: firstTxSenderAddress,
+          signerAddress: coprocessorSigners[1].address,
+          s3BucketUrl: "s3://bucket-2",
+        },
+      ];
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newCoprocessorContextsFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [featureSet, coprocessorsWithSameTxSenderAddress],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(coprocessorContexts, "CoprocessorTxSenderAddressesNotUnique")
+        .withArgs(firstTxSenderAddress, 1, toValues(coprocessorsWithSameTxSenderAddress));
+    });
+
+    it("Should revert because 2 coprocessors have the same signer address", async function () {
+      const firstSignerAddress = coprocessorSigners[0].address;
+      const coprocessorsWithSameSignerAddress: CoprocessorStruct[] = [
+        {
+          name: "Coprocessor 1",
+          txSenderAddress: coprocessorTxSenders[0].address,
+          signerAddress: firstSignerAddress,
+          s3BucketUrl: "s3://bucket-1",
+        },
+        {
+          name: "Coprocessor 2",
+          txSenderAddress: coprocessorTxSenders[1].address,
+          signerAddress: firstSignerAddress,
+          s3BucketUrl: "s3://bucket-2",
+        },
+      ];
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newCoprocessorContextsFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [featureSet, coprocessorsWithSameSignerAddress],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(coprocessorContexts, "CoprocessorSignerAddressesNotUnique")
+        .withArgs(firstSignerAddress, 1, toValues(coprocessorsWithSameSignerAddress));
     });
   });
 

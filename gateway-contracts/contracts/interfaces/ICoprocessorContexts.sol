@@ -80,23 +80,51 @@ interface ICoprocessorContexts {
     error CoprocessorContextNotInitialized(uint256 contextId);
 
     /**
-     * @notice Error indicating that the coprocessors list is empty.
+     * @notice Error indicating that the list of coprocessors to register in the context is empty.
      */
     error EmptyCoprocessors();
 
     /**
-     * @notice Error indicating that a coprocessor has a null transaction sender address.
-     * @param contextId The ID of the coprocessor context.
+     * @notice Error indicating that the list of coprocessors in the context to register has at
+     * least one coprocessor with a null transaction sender address.
      * @param coprocessorIndex The index of the coprocessor in the coprocessors list.
+     * @param coprocessors The list of coprocessors to register in the context.
      */
-    error NullCoprocessorTxSenderAddress(uint256 contextId, uint256 coprocessorIndex);
+    error NullCoprocessorTxSenderAddress(uint256 coprocessorIndex, Coprocessor[] coprocessors);
 
     /**
-     * @notice Error indicating that a coprocessor has a null signer address.
-     * @param contextId The ID of the coprocessor context.
+     * @notice Error indicating that the list of coprocessors in the context to register has at
+     * least one coprocessor with a null signer address.
      * @param coprocessorIndex The index of the coprocessor in the coprocessors list.
+     * @param coprocessors The list of coprocessors to register in the context.
      */
-    error NullCoprocessorSignerAddress(uint256 contextId, uint256 coprocessorIndex);
+    error NullCoprocessorSignerAddress(uint256 coprocessorIndex, Coprocessor[] coprocessors);
+
+    /**
+     * @notice Error indicating that the list of coprocessors in the context to register has at
+     * least two coprocessors with the same transaction sender address.
+     * @param txSenderAddress The first transaction sender address that is not unique.
+     * @param coprocessorIndex The index of the first coprocessor with the same transaction sender address as another one.
+     * @param coprocessors The list of coprocessors to register in the context.
+     */
+    error CoprocessorTxSenderAddressesNotUnique(
+        address txSenderAddress,
+        uint256 coprocessorIndex,
+        Coprocessor[] coprocessors
+    );
+
+    /**
+     * @notice Error indicating that the list of coprocessors in the context to register has at
+     * least two coprocessors with the same signer address.
+     * @param signerAddress The first signer address that is not unique.
+     * @param coprocessorIndex The index of the first coprocessor with the same signer address as another one.
+     * @param coprocessors The list of coprocessors to register in the context.
+     */
+    error CoprocessorSignerAddressesNotUnique(
+        address signerAddress,
+        uint256 coprocessorIndex,
+        Coprocessor[] coprocessors
+    );
 
     /**
      * @notice Error indicating that there is no pre-activation coprocessor context.

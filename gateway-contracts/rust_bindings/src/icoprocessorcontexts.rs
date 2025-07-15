@@ -22,6 +22,8 @@ interface ICoprocessorContexts {
     }
 
     error CoprocessorContextNotInitialized(uint256 contextId);
+    error CoprocessorSignerAddressesNotUnique(address signerAddress, uint256 coprocessorIndex, Coprocessor[] coprocessors);
+    error CoprocessorTxSenderAddressesNotUnique(address txSenderAddress, uint256 coprocessorIndex, Coprocessor[] coprocessors);
     error EmptyCoprocessors();
     error NoActiveCoprocessorContext();
     error NoPreActivationCoprocessorContext();
@@ -29,8 +31,8 @@ interface ICoprocessorContexts {
     error NotCoprocessorFromContext(uint256 contextId, address coprocessorTxSenderAddress);
     error NotCoprocessorSignerFromContext(uint256 contextId, address signerAddress);
     error NotCoprocessorTxSenderFromContext(uint256 contextId, address txSenderAddress);
-    error NullCoprocessorSignerAddress(uint256 contextId, uint256 coprocessorIndex);
-    error NullCoprocessorTxSenderAddress(uint256 contextId, uint256 coprocessorIndex);
+    error NullCoprocessorSignerAddress(uint256 coprocessorIndex, Coprocessor[] coprocessors);
+    error NullCoprocessorTxSenderAddress(uint256 coprocessorIndex, Coprocessor[] coprocessors);
 
     event ActivateCoprocessorContext(uint256 contextId);
     event CompromiseCoprocessorContext(uint256 contextId);
@@ -801,6 +803,92 @@ interface ICoprocessorContexts {
   },
   {
     "type": "error",
+    "name": "CoprocessorSignerAddressesNotUnique",
+    "inputs": [
+      {
+        "name": "signerAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "coprocessorIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "coprocessors",
+        "type": "tuple[]",
+        "internalType": "struct Coprocessor[]",
+        "components": [
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "s3BucketUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "CoprocessorTxSenderAddressesNotUnique",
+    "inputs": [
+      {
+        "name": "txSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "coprocessorIndex",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "coprocessors",
+        "type": "tuple[]",
+        "internalType": "struct Coprocessor[]",
+        "components": [
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "s3BucketUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "EmptyCoprocessors",
     "inputs": []
   },
@@ -872,14 +960,36 @@ interface ICoprocessorContexts {
     "name": "NullCoprocessorSignerAddress",
     "inputs": [
       {
-        "name": "contextId",
+        "name": "coprocessorIndex",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "coprocessorIndex",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "coprocessors",
+        "type": "tuple[]",
+        "internalType": "struct Coprocessor[]",
+        "components": [
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "s3BucketUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
       }
     ]
   },
@@ -888,14 +998,36 @@ interface ICoprocessorContexts {
     "name": "NullCoprocessorTxSenderAddress",
     "inputs": [
       {
-        "name": "contextId",
+        "name": "coprocessorIndex",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "coprocessorIndex",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "coprocessors",
+        "type": "tuple[]",
+        "internalType": "struct Coprocessor[]",
+        "components": [
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "s3BucketUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
       }
     ]
   }
@@ -1926,6 +2058,208 @@ error CoprocessorContextNotInitialized(uint256 contextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorSignerAddressesNotUnique(address,uint256,(string,address,address,string)[])` and selector `0xc826e1a2`.
+```solidity
+error CoprocessorSignerAddressesNotUnique(address signerAddress, uint256 coprocessorIndex, Coprocessor[] coprocessors);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorSignerAddressesNotUnique {
+        #[allow(missing_docs)]
+        pub signerAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub coprocessorIndex: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub coprocessors: alloy::sol_types::private::Vec<
+            <Coprocessor as alloy::sol_types::SolType>::RustType,
+        >,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Array<Coprocessor>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::Address,
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::Vec<
+                <Coprocessor as alloy::sol_types::SolType>::RustType,
+            >,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorSignerAddressesNotUnique>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorSignerAddressesNotUnique) -> Self {
+                (value.signerAddress, value.coprocessorIndex, value.coprocessors)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorSignerAddressesNotUnique {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    signerAddress: tuple.0,
+                    coprocessorIndex: tuple.1,
+                    coprocessors: tuple.2,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorSignerAddressesNotUnique {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorSignerAddressesNotUnique(address,uint256,(string,address,address,string)[])";
+            const SELECTOR: [u8; 4] = [200u8, 38u8, 225u8, 162u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.signerAddress,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorIndex),
+                    <alloy::sol_types::sol_data::Array<
+                        Coprocessor,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessors),
+                )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorTxSenderAddressesNotUnique(address,uint256,(string,address,address,string)[])` and selector `0x64d52759`.
+```solidity
+error CoprocessorTxSenderAddressesNotUnique(address txSenderAddress, uint256 coprocessorIndex, Coprocessor[] coprocessors);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorTxSenderAddressesNotUnique {
+        #[allow(missing_docs)]
+        pub txSenderAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub coprocessorIndex: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub coprocessors: alloy::sol_types::private::Vec<
+            <Coprocessor as alloy::sol_types::SolType>::RustType,
+        >,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Array<Coprocessor>,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::Address,
+            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::Vec<
+                <Coprocessor as alloy::sol_types::SolType>::RustType,
+            >,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorTxSenderAddressesNotUnique>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorTxSenderAddressesNotUnique) -> Self {
+                (value.txSenderAddress, value.coprocessorIndex, value.coprocessors)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorTxSenderAddressesNotUnique {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    txSenderAddress: tuple.0,
+                    coprocessorIndex: tuple.1,
+                    coprocessors: tuple.2,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorTxSenderAddressesNotUnique {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorTxSenderAddressesNotUnique(address,uint256,(string,address,address,string)[])";
+            const SELECTOR: [u8; 4] = [100u8, 213u8, 39u8, 89u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSenderAddress,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessorIndex),
+                    <alloy::sol_types::sol_data::Array<
+                        Coprocessor,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessors),
+                )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EmptyCoprocessors()` and selector `0x8af082ef`.
 ```solidity
 error EmptyCoprocessors();
@@ -2463,17 +2797,19 @@ error NotCoprocessorTxSenderFromContext(uint256 contextId, address txSenderAddre
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NullCoprocessorSignerAddress(uint256,uint256)` and selector `0x8a7488f4`.
+    /**Custom error with signature `NullCoprocessorSignerAddress(uint256,(string,address,address,string)[])` and selector `0x4a6c5974`.
 ```solidity
-error NullCoprocessorSignerAddress(uint256 contextId, uint256 coprocessorIndex);
+error NullCoprocessorSignerAddress(uint256 coprocessorIndex, Coprocessor[] coprocessors);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NullCoprocessorSignerAddress {
         #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
         pub coprocessorIndex: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub coprocessors: alloy::sol_types::private::Vec<
+            <Coprocessor as alloy::sol_types::SolType>::RustType,
+        >,
     }
     #[allow(
         non_camel_case_types,
@@ -2486,12 +2822,14 @@ error NullCoprocessorSignerAddress(uint256 contextId, uint256 coprocessorIndex);
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
-            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Array<Coprocessor>,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::Vec<
+                <Coprocessor as alloy::sol_types::SolType>::RustType,
+            >,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -2509,7 +2847,7 @@ error NullCoprocessorSignerAddress(uint256 contextId, uint256 coprocessorIndex);
         impl ::core::convert::From<NullCoprocessorSignerAddress>
         for UnderlyingRustTuple<'_> {
             fn from(value: NullCoprocessorSignerAddress) -> Self {
-                (value.contextId, value.coprocessorIndex)
+                (value.coprocessorIndex, value.coprocessors)
             }
         }
         #[automatically_derived]
@@ -2518,8 +2856,8 @@ error NullCoprocessorSignerAddress(uint256 contextId, uint256 coprocessorIndex);
         for NullCoprocessorSignerAddress {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    contextId: tuple.0,
-                    coprocessorIndex: tuple.1,
+                    coprocessorIndex: tuple.0,
+                    coprocessors: tuple.1,
                 }
             }
         }
@@ -2529,8 +2867,8 @@ error NullCoprocessorSignerAddress(uint256 contextId, uint256 coprocessorIndex);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NullCoprocessorSignerAddress(uint256,uint256)";
-            const SELECTOR: [u8; 4] = [138u8, 116u8, 136u8, 244u8];
+            const SIGNATURE: &'static str = "NullCoprocessorSignerAddress(uint256,(string,address,address,string)[])";
+            const SELECTOR: [u8; 4] = [74u8, 108u8, 89u8, 116u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2542,27 +2880,29 @@ error NullCoprocessorSignerAddress(uint256 contextId, uint256 coprocessorIndex);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
                     > as alloy_sol_types::SolType>::tokenize(&self.coprocessorIndex),
+                    <alloy::sol_types::sol_data::Array<
+                        Coprocessor,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessors),
                 )
             }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NullCoprocessorTxSenderAddress(uint256,uint256)` and selector `0x4c1006f3`.
+    /**Custom error with signature `NullCoprocessorTxSenderAddress(uint256,(string,address,address,string)[])` and selector `0x9edb7861`.
 ```solidity
-error NullCoprocessorTxSenderAddress(uint256 contextId, uint256 coprocessorIndex);
+error NullCoprocessorTxSenderAddress(uint256 coprocessorIndex, Coprocessor[] coprocessors);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NullCoprocessorTxSenderAddress {
         #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
         pub coprocessorIndex: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub coprocessors: alloy::sol_types::private::Vec<
+            <Coprocessor as alloy::sol_types::SolType>::RustType,
+        >,
     }
     #[allow(
         non_camel_case_types,
@@ -2575,12 +2915,14 @@ error NullCoprocessorTxSenderAddress(uint256 contextId, uint256 coprocessorIndex
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
-            alloy::sol_types::sol_data::Uint<256>,
+            alloy::sol_types::sol_data::Array<Coprocessor>,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::primitives::aliases::U256,
-            alloy::sol_types::private::primitives::aliases::U256,
+            alloy::sol_types::private::Vec<
+                <Coprocessor as alloy::sol_types::SolType>::RustType,
+            >,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -2598,7 +2940,7 @@ error NullCoprocessorTxSenderAddress(uint256 contextId, uint256 coprocessorIndex
         impl ::core::convert::From<NullCoprocessorTxSenderAddress>
         for UnderlyingRustTuple<'_> {
             fn from(value: NullCoprocessorTxSenderAddress) -> Self {
-                (value.contextId, value.coprocessorIndex)
+                (value.coprocessorIndex, value.coprocessors)
             }
         }
         #[automatically_derived]
@@ -2607,8 +2949,8 @@ error NullCoprocessorTxSenderAddress(uint256 contextId, uint256 coprocessorIndex
         for NullCoprocessorTxSenderAddress {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    contextId: tuple.0,
-                    coprocessorIndex: tuple.1,
+                    coprocessorIndex: tuple.0,
+                    coprocessors: tuple.1,
                 }
             }
         }
@@ -2618,8 +2960,8 @@ error NullCoprocessorTxSenderAddress(uint256 contextId, uint256 coprocessorIndex
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NullCoprocessorTxSenderAddress(uint256,uint256)";
-            const SELECTOR: [u8; 4] = [76u8, 16u8, 6u8, 243u8];
+            const SIGNATURE: &'static str = "NullCoprocessorTxSenderAddress(uint256,(string,address,address,string)[])";
+            const SELECTOR: [u8; 4] = [158u8, 219u8, 120u8, 97u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2631,10 +2973,10 @@ error NullCoprocessorTxSenderAddress(uint256 contextId, uint256 coprocessorIndex
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
                     > as alloy_sol_types::SolType>::tokenize(&self.coprocessorIndex),
+                    <alloy::sol_types::sol_data::Array<
+                        Coprocessor,
+                    > as alloy_sol_types::SolType>::tokenize(&self.coprocessors),
                 )
             }
         }
@@ -6994,6 +7336,10 @@ function refreshCoprocessorContextStatuses() external;
         #[allow(missing_docs)]
         CoprocessorContextNotInitialized(CoprocessorContextNotInitialized),
         #[allow(missing_docs)]
+        CoprocessorSignerAddressesNotUnique(CoprocessorSignerAddressesNotUnique),
+        #[allow(missing_docs)]
+        CoprocessorTxSenderAddressesNotUnique(CoprocessorTxSenderAddressesNotUnique),
+        #[allow(missing_docs)]
         EmptyCoprocessors(EmptyCoprocessors),
         #[allow(missing_docs)]
         NoActiveCoprocessorContext(NoActiveCoprocessorContext),
@@ -7024,25 +7370,33 @@ function refreshCoprocessorContextStatuses() external;
             [4u8, 101u8, 147u8, 234u8],
             [33u8, 251u8, 8u8, 249u8],
             [41u8, 169u8, 147u8, 193u8],
-            [76u8, 16u8, 6u8, 243u8],
+            [74u8, 108u8, 89u8, 116u8],
             [85u8, 79u8, 140u8, 95u8],
-            [138u8, 116u8, 136u8, 244u8],
+            [100u8, 213u8, 39u8, 89u8],
             [138u8, 240u8, 130u8, 239u8],
+            [158u8, 219u8, 120u8, 97u8],
             [171u8, 249u8, 231u8, 176u8],
             [185u8, 232u8, 97u8, 178u8],
             [195u8, 18u8, 231u8, 62u8],
+            [200u8, 38u8, 225u8, 162u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for ICoprocessorContextsErrors {
         const NAME: &'static str = "ICoprocessorContextsErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 10usize;
+        const COUNT: usize = 12usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::CoprocessorContextNotInitialized(_) => {
                     <CoprocessorContextNotInitialized as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CoprocessorSignerAddressesNotUnique(_) => {
+                    <CoprocessorSignerAddressesNotUnique as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CoprocessorTxSenderAddressesNotUnique(_) => {
+                    <CoprocessorTxSenderAddressesNotUnique as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::EmptyCoprocessors(_) => {
                     <EmptyCoprocessors as alloy_sol_types::SolError>::SELECTOR
@@ -7136,19 +7490,19 @@ function refreshCoprocessorContextStatuses() external;
                     NotCoprocessorTxSenderFromContext
                 },
                 {
-                    fn NullCoprocessorTxSenderAddress(
+                    fn NullCoprocessorSignerAddress(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<ICoprocessorContextsErrors> {
-                        <NullCoprocessorTxSenderAddress as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NullCoprocessorSignerAddress as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                                 validate,
                             )
                             .map(
-                                ICoprocessorContextsErrors::NullCoprocessorTxSenderAddress,
+                                ICoprocessorContextsErrors::NullCoprocessorSignerAddress,
                             )
                     }
-                    NullCoprocessorTxSenderAddress
+                    NullCoprocessorSignerAddress
                 },
                 {
                     fn NotCoprocessorSignerFromContext(
@@ -7166,19 +7520,19 @@ function refreshCoprocessorContextStatuses() external;
                     NotCoprocessorSignerFromContext
                 },
                 {
-                    fn NullCoprocessorSignerAddress(
+                    fn CoprocessorTxSenderAddressesNotUnique(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<ICoprocessorContextsErrors> {
-                        <NullCoprocessorSignerAddress as alloy_sol_types::SolError>::abi_decode_raw(
+                        <CoprocessorTxSenderAddressesNotUnique as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                                 validate,
                             )
                             .map(
-                                ICoprocessorContextsErrors::NullCoprocessorSignerAddress,
+                                ICoprocessorContextsErrors::CoprocessorTxSenderAddressesNotUnique,
                             )
                     }
-                    NullCoprocessorSignerAddress
+                    CoprocessorTxSenderAddressesNotUnique
                 },
                 {
                     fn EmptyCoprocessors(
@@ -7192,6 +7546,21 @@ function refreshCoprocessorContextStatuses() external;
                             .map(ICoprocessorContextsErrors::EmptyCoprocessors)
                     }
                     EmptyCoprocessors
+                },
+                {
+                    fn NullCoprocessorTxSenderAddress(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<ICoprocessorContextsErrors> {
+                        <NullCoprocessorTxSenderAddress as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                ICoprocessorContextsErrors::NullCoprocessorTxSenderAddress,
+                            )
+                    }
+                    NullCoprocessorTxSenderAddress
                 },
                 {
                     fn CoprocessorContextNotInitialized(
@@ -7236,6 +7605,21 @@ function refreshCoprocessorContextStatuses() external;
                     }
                     NotCoprocessorFromContext
                 },
+                {
+                    fn CoprocessorSignerAddressesNotUnique(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<ICoprocessorContextsErrors> {
+                        <CoprocessorSignerAddressesNotUnique as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                ICoprocessorContextsErrors::CoprocessorSignerAddressesNotUnique,
+                            )
+                    }
+                    CoprocessorSignerAddressesNotUnique
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -7252,6 +7636,16 @@ function refreshCoprocessorContextStatuses() external;
             match self {
                 Self::CoprocessorContextNotInitialized(inner) => {
                     <CoprocessorContextNotInitialized as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::CoprocessorSignerAddressesNotUnique(inner) => {
+                    <CoprocessorSignerAddressesNotUnique as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::CoprocessorTxSenderAddressesNotUnique(inner) => {
+                    <CoprocessorTxSenderAddressesNotUnique as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -7307,6 +7701,18 @@ function refreshCoprocessorContextStatuses() external;
             match self {
                 Self::CoprocessorContextNotInitialized(inner) => {
                     <CoprocessorContextNotInitialized as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::CoprocessorSignerAddressesNotUnique(inner) => {
+                    <CoprocessorSignerAddressesNotUnique as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::CoprocessorTxSenderAddressesNotUnique(inner) => {
+                    <CoprocessorTxSenderAddressesNotUnique as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
