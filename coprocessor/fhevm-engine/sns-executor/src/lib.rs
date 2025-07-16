@@ -43,6 +43,7 @@ pub struct DBConfig {
     pub listen_channels: Vec<String>,
     pub notify_channel: String,
     pub batch_limit: u32,
+    pub gc_batch_limit: u32,
     pub polling_interval: u32,
     pub cleanup_interval: Duration,
     pub max_connections: u32,

@@ -1,6 +1,6 @@
 use crate::{
     create_s3_client,
-    executor::{query_sns_tasks, Order},
+    executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_keys,
     squash_noise::safe_deserialize,
     Config, DBConfig, UploadJob,
@@ -108,6 +108,7 @@ async fn test_lifo_mode() {
             1,
             &Vec::from([i as u8; 32]),
             &Vec::from([i as u8; 32]),
+            &[i as u8; 32],
         )
         .await
         .unwrap();
@@ -164,6 +165,94 @@ async fn test_lifo_mode() {
     }
 }
 
+#[tokio::test]
+async fn test_garbage_collect() {
+    let test_instance = test_harness::instance::setup_test_db(false)
+        .await
+        .expect("valid db instance");
+
+    const CONCURRENT_TASKS: usize = 20;
+    const HANDLES_COUNT: u32 = 1000;
+
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(CONCURRENT_TASKS as u32)
+        .connect(test_instance.db_url())
+        .await
+        .unwrap();
+
+    let tenant_id = 1;
+    for i in 0..HANDLES_COUNT {
+        // insert into ciphertexts
+        let mut handle = [0u8; 32];
+        handle[..4].copy_from_slice(&i.to_le_bytes());
+
+        test_harness::db_utils::insert_ciphertext64(
+            &pool,
+            tenant_id,
+            &handle.to_vec(),
+            &handle.to_vec(),
+            &[i as u8; 32],
+        )
+        .await
+        .unwrap();
+
+        test_harness::db_utils::insert_ciphertext_digest(
+            &pool,
+            tenant_id,
+            &handle,
+            &[i as u8; 32],
+            &[i as u8; 32],
+            0,
+        )
+        .await
+        .unwrap();
+    }
+
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts where ciphertext128 IS not NULL")
+            .fetch_one(&pool)
+            .await
+            .expect("count ciphertext_digest");
+    assert_eq!(
+        count, HANDLES_COUNT as i64,
+        "ciphertext128 should not be empty before garbage_collect"
+    );
+
+    let handles: Vec<_> = (0..CONCURRENT_TASKS)
+        .map(|_| {
+            let pool = pool.clone();
+            tokio::spawn(async move {
+                garbage_collect(&pool, 100)
+                    .await
+                    .expect("garbage_collect should succeed");
+            })
+        })
+        .collect();
+
+    // Wait for all tasks to complete or a timeout
+    let res_ = tokio::time::timeout(Duration::from_secs(5), async {
+        for handle in handles {
+            handle.await.expect("Task failed");
+        }
+    })
+    .await;
+
+    assert!(
+        res_.is_ok(),
+        "garbage_collect tasks did not complete in time"
+    );
+
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ciphertexts where ciphertext128 IS NULL")
+            .fetch_one(&pool)
+            .await
+            .expect("count ciphertext_digest");
+    assert_eq!(
+        count, HANDLES_COUNT as i64,
+        "ciphertext128 should be empty after garbage_collect"
+    );
+}
+
 async fn setup() -> anyhow::Result<(
     sqlx::PgPool,
     Option<ClientKey>,
@@ -182,6 +271,7 @@ async fn setup() -> anyhow::Result<(
             listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),
             batch_limit: 10,
+            gc_batch_limit: 30,
             polling_interval: 60000,
             cleanup_interval: Duration::from_secs(10),
             max_connections: 5,
@@ -274,7 +364,7 @@ async fn insert_ciphertext64(
     ciphertext: &Vec<u8>,
 ) -> anyhow::Result<()> {
     let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
-    test_harness::db_utils::insert_ciphertext64(pool, tenant_id, handle, ciphertext).await?;
+    test_harness::db_utils::insert_ciphertext64(pool, tenant_id, handle, ciphertext, &[]).await?;
 
     // Notify sns_worker
     sqlx::query("SELECT pg_notify($1, '')")
