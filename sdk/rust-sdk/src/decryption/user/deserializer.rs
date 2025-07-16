@@ -99,7 +99,7 @@ fn decode_hex_field(hex_str: &str, field_name: &str) -> Result<Vec<u8>> {
 fn deserialize_payload(buf: &[u8]) -> Result<UserDecryptionResponsePayload> {
     debug!("Deserializing payload of {} bytes", buf.len());
 
-    bincode::deserialize(buf)
+    bc2wrap::deserialize(buf)
         .map_err(|e| FhevmError::DecryptionError(format!("Bincode deserialize error: {}", e)))
 }
 
