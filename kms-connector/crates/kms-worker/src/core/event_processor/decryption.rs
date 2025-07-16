@@ -58,29 +58,18 @@ where
         sns_materials: Vec<SnsCiphertextMaterial>,
         user_decrypt_data: Option<UserDecryptionExtraData>,
     ) -> anyhow::Result<KmsGrpcRequest> {
-        let decryption_type = if user_decrypt_data.is_some() {
-            "UserDecryptionRequest"
-        } else {
-            "PublicDecryptionRequest"
-        };
-
-        info!("Processing {decryption_type}: {decryption_id}");
-
         // Extract keyId from the first SNS ciphertext material if available
         let key_id = sns_materials
             .first()
             .map(|m| hex::encode(m.keyId.to_be_bytes::<32>()))
-            .ok_or_else(|| anyhow!(
-                "No snsCtMaterials found for {decryption_type} {decryption_id}, cannot proceed without a valid key_id"
-            ))?;
-        info!(
-            "Extracted key_id {key_id} from snsCtMaterials[0] for {decryption_type} {decryption_id}"
-        );
+            .ok_or_else(|| {
+                anyhow!("No snsCtMaterials found, cannot proceed without a valid key_id")
+            })?;
+        info!("Extracted key_id {key_id} from snsCtMaterials[0]");
 
         let ciphertexts = self
             .prepare_ciphertexts(decryption_id, &key_id, sns_materials)
-            .await
-            .map_err(|e| anyhow!("{decryption_type} {decryption_id}: {e}"))?;
+            .await?;
 
         // Convert alloy domain to protobuf domain
         let domain_msg = alloy_to_protobuf_domain(&self.domain)?;

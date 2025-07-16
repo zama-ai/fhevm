@@ -4,10 +4,7 @@
 
 use super::raw::RawConfig;
 use connector_utils::config::{ContractConfig, DeserializeRawConfig, Error, Result};
-use std::{
-    fmt::{self, Display},
-    path::Path,
-};
+use std::{net::SocketAddr, path::Path};
 use tracing::info;
 
 /// Configuration of the `GatewayListener`.
@@ -17,6 +14,8 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
+    /// The endpoint used to collect metrics of the `GatewayListener`.
+    pub metrics_endpoint: SocketAddr,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The Chain ID of the Gateway.
@@ -27,23 +26,6 @@ pub struct Config {
     pub kms_management_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
-}
-
-impl Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Service Name: {}", self.service_name)?;
-        writeln!(f, "Database URL: {}", self.database_url)?;
-        writeln!(
-            f,
-            "  Database connection pool size: {}",
-            self.database_pool_size
-        )?;
-        writeln!(f, "Gateway URL: {}", self.gateway_url)?;
-        writeln!(f, "Chain ID: {}", self.chain_id)?;
-        writeln!(f, "{}", self.decryption_contract)?;
-        writeln!(f, "{}", self.kms_management_contract)?;
-        Ok(())
-    }
 }
 
 impl Config {
@@ -63,6 +45,10 @@ impl Config {
     }
 
     fn parse(raw_config: RawConfig) -> Result<Self> {
+        let metrics_endpoint = raw_config
+            .metrics_endpoint
+            .parse::<SocketAddr>()
+            .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let decryption_contract =
             ContractConfig::parse("Decryption", raw_config.decryption_contract)?;
         let kms_management_contract =
@@ -76,6 +62,7 @@ impl Config {
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
+            metrics_endpoint,
             gateway_url: raw_config.gateway_url,
             chain_id: raw_config.chain_id,
             decryption_contract,

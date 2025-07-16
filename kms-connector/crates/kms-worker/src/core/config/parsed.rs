@@ -4,11 +4,7 @@
 
 use crate::core::config::raw::{RawConfig, S3Config};
 use connector_utils::config::{ContractConfig, DeserializeRawConfig, Error, Result};
-use std::{
-    fmt::{self, Display},
-    path::Path,
-    time::Duration,
-};
+use std::{net::SocketAddr, path::Path, time::Duration};
 use tracing::info;
 
 /// Configuration of the `KmsWorker`.
@@ -18,6 +14,8 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
+    /// The endpoint used to collect metrics of the `KmsWorker`.
+    pub metrics_endpoint: SocketAddr,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The KMS Core endpoint.
@@ -54,52 +52,6 @@ pub struct Config {
     pub verify_coprocessors: bool,
 }
 
-impl Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Service Name: {}", self.service_name)?;
-        writeln!(f, "Database URL: {}", self.database_url)?;
-        writeln!(
-            f,
-            "  Database connection pool size: {}",
-            self.database_pool_size
-        )?;
-        writeln!(f, "KMS Core Endpoint: {}", self.kms_core_endpoint)?;
-        writeln!(f, "Gateway URL: {}", self.gateway_url)?;
-        writeln!(f, "Chain ID: {}", self.chain_id)?;
-        writeln!(f, "{}", self.decryption_contract)?;
-        writeln!(f, "{}", self.gateway_config_contract)?;
-        writeln!(f, "Events batch size: {}", self.events_batch_size)?;
-        writeln!(f, "GRPC Requests Retries: {}", self.grpc_request_retries)?;
-        writeln!(
-            f,
-            "Public Decryption Timeout: {}s",
-            self.public_decryption_timeout.as_secs()
-        )?;
-        writeln!(
-            f,
-            "User Decryption Timeout: {}s",
-            self.user_decryption_timeout.as_secs()
-        )?;
-        writeln!(
-            f,
-            "GRPC Poll Interval: {}s",
-            self.grpc_poll_interval.as_secs()
-        )?;
-        writeln!(
-            f,
-            "Number of retries for S3 ciphertext retrieval: {}",
-            self.s3_ciphertext_retrieval_retries
-        )?;
-        writeln!(
-            f,
-            "S3 ciphertext retrieval timeout: {}s",
-            self.s3_connect_timeout.as_secs()
-        )?;
-
-        Ok(())
-    }
-}
-
 impl Config {
     /// Loads the configuration from environment variables and optionally from a TOML file.
     ///
@@ -117,6 +69,10 @@ impl Config {
     }
 
     fn parse(raw_config: RawConfig) -> Result<Self> {
+        let metrics_endpoint = raw_config
+            .metrics_endpoint
+            .parse::<SocketAddr>()
+            .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let decryption_contract =
             ContractConfig::parse("Decryption", raw_config.decryption_contract)?;
         let gateway_config_contract =
@@ -140,6 +96,7 @@ impl Config {
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
+            metrics_endpoint,
             gateway_url: raw_config.gateway_url,
             kms_core_endpoint: raw_config.kms_core_endpoint,
             chain_id: raw_config.chain_id,

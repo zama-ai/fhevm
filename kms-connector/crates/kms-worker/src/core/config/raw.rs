@@ -2,7 +2,10 @@
 //!
 //! The `RawConfig` can then be parsed into a `Config` in the `parsed` module.
 
-use connector_utils::config::{DeserializeRawConfig, RawContractConfig};
+use connector_utils::{
+    config::{DeserializeRawConfig, RawContractConfig},
+    otlp::default_metrics_endpoint,
+};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for S3 ciphertext storage.
@@ -22,6 +25,8 @@ pub struct RawConfig {
     pub database_url: String,
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
+    #[serde(default = "default_metrics_endpoint")]
+    pub metrics_endpoint: String,
     pub gateway_url: String,
     pub kms_core_endpoint: String,
     pub chain_id: u64,
@@ -50,7 +55,7 @@ pub struct RawConfig {
 }
 
 fn default_service_name() -> String {
-    "kms-connector".to_string()
+    "kms-connector-kms-worker".to_string()
 }
 
 fn default_database_pool_size() -> u32 {
@@ -97,6 +102,7 @@ impl Default for RawConfig {
         Self {
             database_url: "postgres://postgres:postgres@localhost".to_string(),
             database_pool_size: 16,
+            metrics_endpoint: "0.0.0.0:9100".to_string(),
             gateway_url: "ws://localhost:8545".to_string(),
             kms_core_endpoint: "http://localhost:50052".to_string(),
             chain_id: 1,

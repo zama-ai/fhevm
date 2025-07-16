@@ -12,6 +12,7 @@ fhevm_gateway_rust_bindings.workspace = true
 
 alloy.workspace = true
 anyhow.workspace = true
+prometheus.workspace = true
 sqlx.workspace = true
 serde.workspace = true
 tokio.workspace = true

@@ -1,5 +1,11 @@
-use crate::core::{
-    Config, DbKmsResponsePicker, DbKmsResponseRemover, KmsResponsePicker, KmsResponseRemover,
+use crate::{
+    core::{
+        Config, DbKmsResponsePicker, DbKmsResponseRemover, KmsResponsePicker, KmsResponseRemover,
+    },
+    metrics::{
+        GATEWAY_TX_SENT_COUNTER, GATEWAY_TX_SENT_ERRORS, RESPONSE_RECEIVED_COUNTER,
+        RESPONSE_RECEIVED_ERRORS,
+    },
 };
 use alloy::{
     network::Ethereum,
@@ -75,10 +81,12 @@ where
             let response = match self.response_picker.pick_response().await {
                 Ok(response) => response,
                 Err(e) => {
+                    RESPONSE_RECEIVED_ERRORS.inc();
                     error!("Error while picking response: {e}");
                     continue;
                 }
             };
+            RESPONSE_RECEIVED_COUNTER.inc();
 
             let response_identifier = response.to_string();
             if let Err(e) = self.process(response).await {
@@ -88,16 +96,26 @@ where
     }
 
     /// Processes a KMS Core response.
+    #[tracing::instrument(skip(self), fields(response = %response))]
     async fn process(&self, response: KmsResponse) -> anyhow::Result<()> {
-        info!("Processing {response}...");
-        match response.clone() {
+        info!("Processing response: {response:?}");
+        self.send_to_gateway(response.clone()).await?;
+        GATEWAY_TX_SENT_COUNTER.inc();
+
+        self.response_remover.remove_response(&response).await
+    }
+
+    #[tracing::instrument(skip_all)]
+    /// Sends a KMS Core's response to the Gateway.
+    async fn send_to_gateway(&self, response: KmsResponse) -> anyhow::Result<()> {
+        match response {
             KmsResponse::PublicDecryption {
                 decryption_id: id,
                 decrypted_result,
                 signature,
             } => {
                 self.send_public_decryption_response(id, decrypted_result.into(), signature)
-                    .await?;
+                    .await
             }
             KmsResponse::UserDecryption {
                 decryption_id: id,
@@ -105,12 +123,10 @@ where
                 signature,
             } => {
                 self.send_user_decryption_response(id, user_decrypted_shares.into(), signature)
-                    .await?;
+                    .await
             }
         }
-        info!("{response} successfully sent to the Gateway!");
-
-        self.response_remover.remove_response(&response).await
+        .inspect_err(|_| GATEWAY_TX_SENT_ERRORS.inc())
     }
 
     /// Sends a PublicDecryptionResponse to the Gateway.
@@ -127,32 +143,21 @@ where
             ));
         }
 
-        info!(
-            decryption_id = ?id,
-            signature = ?signature,
-            "Using Core's EIP-712 signature for public decryption"
-        );
-
-        debug!(
-            decryption_id = ?id,
-            result_len = result.len(),
-            signature = ?signature,
-            "Sending public decryption response"
-        );
-
         // Create and send transaction
+        info!("Sending public decryption response to the Gateway...");
         let call_builder =
             self.decryption_contract
                 .publicDecryptionResponse(id, result, signature.into());
-        info!(decryption_id = ?id, "public decryption calldata length {}", call_builder.calldata().len());
+        debug!("Calldata length {}", call_builder.calldata().len());
 
         let mut call = call_builder.into_transaction_request();
-        self.estimate_gas(id, &mut call).await;
+        self.estimate_gas(&mut call).await;
         let tx = self.send_tx_with_retry(call).await?;
 
         // TODO: optimize for low latency
         let receipt = tx.get_receipt().await?;
-        info!(decryption_id = ?id, "🎯 Public Decryption response sent with tx receipt: {:?}", receipt);
+        info!("🎯 response sent successfully!");
+        debug!("Transaction receipt: {:?}", receipt);
         Ok(())
     }
 
@@ -170,37 +175,26 @@ where
             ));
         }
 
-        info!(
-            decryption_id = ?id,
-            signature = ?signature,
-            "Using Core's EIP-712 signature for user decryption"
-        );
-
-        debug!(
-            decryption_id = ?id,
-            result_len = result.len(),
-            signature = ?signature,
-            "Sending user decryption response"
-        );
-
         // Create and send transaction
+        info!("Sending user decryption response to the Gateway...");
         let call_builder =
             self.decryption_contract
                 .userDecryptionResponse(id, result, signature.into());
-        info!(decryption_id = ?id, "user decryption calldata length {}", call_builder.calldata().len());
+        debug!("Calldata length {}", call_builder.calldata().len());
 
         let mut call = call_builder.into_transaction_request();
-        self.estimate_gas(id, &mut call).await;
+        self.estimate_gas(&mut call).await;
         let tx = self.send_tx_with_retry(call).await?;
 
         // TODO: optimize for low latency
         let receipt = tx.get_receipt().await?;
-        info!(decryption_id = ?id, "🎯 User Decryption response sent with tx receipt: {:?}", receipt);
+        info!("🎯 response sent successfully!");
+        debug!("Transaction receipt: {:?}", receipt);
         Ok(())
     }
 
     /// Estimates the `gas_limit` for the upcoming transaction.
-    async fn estimate_gas(&self, id: U256, call: &mut TransactionRequest) {
+    async fn estimate_gas(&self, call: &mut TransactionRequest) {
         let gas_estimation = match self
             .decryption_contract
             .provider()
@@ -208,9 +202,9 @@ where
             .await
         {
             Ok(estimation) => estimation,
-            Err(e) => return warn!(decryption_id = ?id, "Failed to estimate gas for the tx: {e}"),
+            Err(e) => return warn!("Failed to estimate gas for the tx: {e}"),
         };
-        info!(decryption_id = ?id, "Initial gas estimation for the tx: {gas_estimation}");
+        info!("Initial gas estimation for the tx: {gas_estimation}");
 
         // Increase estimation to 300%
         // TODO: temporary workaround for out-of-gas errors
@@ -218,7 +212,7 @@ where
         // (see https://zama-ai.slack.com/archives/C0915Q59CKG/p1749843623276629?thread_ts=1749828466.079719&cid=C0915Q59CKG)
         let new_gas_value = gas_estimation.saturating_mul(3);
 
-        info!(decryption_id = ?id, "Updating `gas_limit` to {new_gas_value}");
+        info!("Updating `gas_limit` to {new_gas_value}");
         call.gas = Some(new_gas_value);
     }
 

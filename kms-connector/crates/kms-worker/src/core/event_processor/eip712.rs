@@ -1,8 +1,9 @@
 use alloy::{
+    hex,
     primitives::{Address, B256, U256},
     sol_types::Eip712Domain,
 };
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use kms_grpc::kms::v1::{Eip712DomainMsg, UserDecryptionRequest};
 use tracing::warn;
 
@@ -87,48 +88,22 @@ pub fn verify_user_decryption_eip712(req: &UserDecryptionRequest) -> Result<()> 
 
     // Check domain
     let Some(domain_msg) = req.domain.as_ref() else {
-        warn!("Domain is missing in user decryption request");
-        return Ok(());
+        return Err(anyhow!("Domain is missing in user decryption request"));
     };
 
-    // Convert protobuf domain to alloy domain
-    let domain = match protobuf_to_alloy_domain(domain_msg) {
-        Ok(d) => d,
-        Err(e) => {
-            // Following non-failable design, log error but continue
-            warn!("Failed to convert domain for verification: {}", e);
-            return Ok(());
-        }
-    };
+    let domain = protobuf_to_alloy_domain(domain_msg)
+        .map_err(|e| anyhow!("Failed to convert domain for verification: {e}"))?;
 
     // Parse client address - handle non-standard address lengths
     let client_address_str = req.client_address.trim_start_matches("0x");
-
-    // Try to decode the hex string
-    let client_bytes = match alloy::hex::decode(client_address_str) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            warn!("Failed to decode client address hex: {}", e);
-            return Ok(());
-        }
-    };
-
-    // Check if we have a valid Ethereum address (20 bytes)
-    if client_bytes.len() != 20 {
-        warn!(
-            "Client address has non-standard length: {} bytes (expected 20)",
-            client_bytes.len()
-        );
-        return Ok(());
-    }
-
-    // Create the address from bytes
-    let client_address = Address::try_from(client_bytes.as_slice())?;
+    let client_bytes = hex::decode(client_address_str)
+        .map_err(|e| anyhow!("Failed to decode client address hex: {e}"))?;
+    let client_address = Address::try_from(client_bytes.as_slice())
+        .map_err(|e| anyhow!("Invalid Ethereum address: {e}"))?;
 
     // Get verifying contract
     let Some(verifying_contract) = domain.verifying_contract else {
-        warn!("Missing verifying contract in domain");
-        return Ok(());
+        return Err(anyhow!("Missing verifying contract in domain"));
     };
 
     // Verify client address is not the same as verifying contract
