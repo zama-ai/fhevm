@@ -164,7 +164,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
                     let result = match event {
                         KmsCoreEvent::PublicDecryptionRequest(req) => {
                             info!(
-                                "Processing PublicDecryptionRequest-{}",
+                                "📭 Received PublicDecryptionRequest-{}",
                                 req.decryptionId
                             );
 
@@ -203,7 +203,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
 
                             // Use MessageScheduler if coordinated sending is enabled
                             if let Some(scheduler) = &self.message_scheduler {
-                                info!("Scheduling PublicDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
+                                info!("📋 Queuing PublicDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
 
                                 // Get block timestamp for coordinated sending - this fixes the critical timing bug
                                 let event_id = req_clone.decryptionId.to_string();
@@ -235,7 +235,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
 
                         KmsCoreEvent::UserDecryptionRequest(req) => {
                             info!(
-                                "Processing UserDecryptionRequest-{}",
+                                "📭 Received UserDecryptionRequest-{}",
                                 req.decryptionId
                             );
 
@@ -282,7 +282,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
 
                             // Use MessageScheduler if coordinated sending is enabled
                             if let Some(scheduler) = &self.message_scheduler {
-                                info!("Scheduling UserDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
+                                info!("📋 Queuing UserDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
 
                                 // Get block timestamp for coordinated sending - this fixes the critical timing bug
                                 let event_id = req_clone.decryptionId.to_string();
