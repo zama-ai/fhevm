@@ -1,11 +1,11 @@
 //! Signature module for FHEVM SDK
 //!
-//! This module provides EIP-712 signature generation and cryptobox keypair functionality.
+//! This module provides EIP-712 signature generation and ML-KEM keypair functionality.
 
 use crate::{FhevmError, Result};
 use alloy::primitives::{Address, B256, Bytes};
 use alloy::signers::local::PrivateKeySigner;
-use kms_lib::client::js_api::{self, cryptobox_pk_to_u8vec, cryptobox_sk_to_u8vec};
+use kms_lib::client::js_api::{self, ml_kem_pke_pk_to_u8vec, ml_kem_pke_sk_to_u8vec};
 use serde::{Deserialize, Serialize};
 
 // Sub-modules
@@ -14,23 +14,23 @@ pub mod eip712;
 // Re-export main types
 pub use self::eip712::{Eip712Config, Eip712Result, Eip712SignatureBuilder};
 
-/// Keypair for cryptobox operations
+/// Keypair for ML-KEM operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Keypair {
     pub public_key: String,
     pub private_key: String,
 }
 
-/// Generate a new keypair for cryptobox operations
+/// Generate a new keypair for ML-KEM operations
 pub fn generate_keypair() -> Result<Keypair> {
     // Generate private key using the JS API
-    let private_key = js_api::cryptobox_keygen();
-    let public_key = js_api::cryptobox_get_pk(&private_key);
+    let private_key = js_api::ml_kem_pke_keygen();
+    let public_key = js_api::ml_kem_pke_get_pk(&private_key);
 
-    let priv_key = cryptobox_sk_to_u8vec(&private_key)
+    let priv_key = ml_kem_pke_sk_to_u8vec(&private_key)
         .map_err(|_| FhevmError::SignatureError("Failed to convert private key to bytes".into()))?;
 
-    let pub_key = cryptobox_pk_to_u8vec(&public_key)
+    let pub_key = ml_kem_pke_pk_to_u8vec(&public_key)
         .map_err(|_| FhevmError::SignatureError("Failed to convert public key to bytes".into()))?;
 
     Ok(Keypair {
