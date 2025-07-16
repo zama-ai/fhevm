@@ -171,6 +171,7 @@ pub(crate) async fn run_loop(
     info!(target: "worker", "Fetched keyset for tenant");
 
     let mut gc_ticker = interval(conf.cleanup_interval);
+    let mut gc_timestamp = SystemTime::now();
     let mut polling_ticker = interval(Duration::from_secs(conf.polling_interval.into()));
 
     loop {
@@ -189,11 +190,16 @@ pub(crate) async fn run_loop(
                         return Ok(());
                     }
 
-                    info!(target: "worker", "More tasks to process, continuing...");
-
-                    gc_ticker.reset();
-                    if let Err(err) = garbage_collect(pool, conf.gc_batch_limit).await {
-                        error!(target: "worker", "Failed to garbage collect: {}", err);
+                    info!(target: "worker", "more tasks to process, continuing");
+                    if let Ok(elapsed) = gc_timestamp.elapsed() {
+                        if elapsed >= conf.cleanup_interval {
+                            info!(target: "worker", "gc interval, cleaning up");
+                            gc_ticker.reset();
+                            gc_timestamp = SystemTime::now();
+                            if let Err(err) = garbage_collect(pool, conf.gc_batch_limit).await {
+                                error!(target: "worker", "Failed to garbage collect: {}", err);
+                            }
+                        }
                     }
 
                     continue;
@@ -222,6 +228,8 @@ pub(crate) async fn run_loop(
             },
             // Garbage collecting
             _ = gc_ticker.tick() => {
+                info!(target: "worker", "gc tick, on_idle");
+                gc_timestamp = SystemTime::now();
                 if let Err(err) = garbage_collect(pool, conf.gc_batch_limit).await {
                     error!(target: "worker", "Failed to garbage collect: {}", err);
                 }
