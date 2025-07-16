@@ -43,6 +43,17 @@ Since there might be failures in sending, we require persistence of the transact
 
 Sending an async transaction returns an unique identifier to the user that can later be used to query the state of the transaction, cancel it if not already sent, etc.
 
+### transaction-sdk
+
+The transaction-sdk is a high-level library that abstracts most of the details of how sending works under the hood. For example, wallet configuration would happen on the transaction-manager side and users won't be concerned with it. Also, nonce management is transparent to transaction-sdk users.
+
+At a minumum, the user supplies the following pieces of data when sending:
+
+- destination contract address (and potentially chain)
+- calldata
+- optional retry settings
+- optional error handling settings
+
 #### Error Handling
 
 When sending async transactions, some errors returned from the destination smart contract can be treated as non-errors. For example, if an action has already been done, there's no need to retry the transaction anymore. For such cases, the transaction-sdk allows users to specify such errors when sending the transaction.
