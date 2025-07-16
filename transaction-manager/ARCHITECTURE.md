@@ -25,7 +25,7 @@ graph LR;
     mng --- bc
 ```
 
-Transaction Manager supports two types of trasaction sending - `sync` and `async`.
+Transaction Manager supports two types of transaction sending - `sync` and `async`.
 
 ### Sync Transaction Sending
 
