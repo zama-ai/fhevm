@@ -73,7 +73,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
             .collect();
 
         info!(
-            "⚙️ Processing {}DecryptionRequest-{} with {} ciphertexts, key_id: {}, FHE types: [{}]",
+            "🔄 Processing {}DecryptionRequest-{} with {} ciphertexts, key_id: {}, FHE types: [{}]",
             request_type,
             request_id.to_string(),
             sns_ciphertext_materials.len(),
