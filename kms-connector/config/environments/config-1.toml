@@ -17,9 +17,9 @@ address = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
 # domain_name = "Decryption"
 # domain_version = "1"
 
-[gateway_config_contract]
+[copro_contexts_contract]
 address = "0x0000000000000000000000000000000000000001"
-# domain_name = "GatewayConfig"
+# domain_name = "CoprocessorContexts"
 # domain_version = "1"
 
 [kms_management_contract]

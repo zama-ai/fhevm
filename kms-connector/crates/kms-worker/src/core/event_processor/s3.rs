@@ -1,10 +1,15 @@
 use crate::core::config::{Config, S3Config};
-use alloy::{hex, primitives::Address, providers::Provider, transports::http::reqwest};
+use alloy::{
+    hex,
+    primitives::{Address, U256},
+    providers::Provider,
+    transports::http::reqwest,
+};
 use anyhow::anyhow;
 use dashmap::DashMap;
 use fhevm_gateway_rust_bindings::{
+    coprocessorcontexts::CoprocessorContexts::{self, CoprocessorContextsInstance},
     decryption::Decryption::SnsCiphertextMaterial,
-    gatewayconfig::GatewayConfig::{self, GatewayConfigInstance},
 };
 use sha3::{Digest, Keccak256};
 use std::{sync::LazyLock, time::Duration};
@@ -16,8 +21,8 @@ static S3_BUCKET_CACHE: LazyLock<DashMap<Address, String>> = LazyLock::new(DashM
 /// Struct used to fetch ciphertext from S3 buckets.
 #[derive(Clone)]
 pub struct S3Service<P: Provider> {
-    /// The instance of the `GatewayConfig` contract.
-    gateway_config_contract: GatewayConfigInstance<(), P>,
+    /// The instance of the `CoprocessorContexts` contract.
+    copro_contexts_contract: CoprocessorContextsInstance<(), P>,
 
     /// An optional S3 bucket fallback configuration.
     fallback_config: Option<S3Config>,
@@ -34,19 +39,19 @@ where
     P: Provider,
 {
     pub fn new(config: &Config, provider: P) -> Self {
-        let gateway_config_contract =
-            GatewayConfig::new(config.gateway_config_contract.address, provider);
+        let copro_contexts_contract =
+            CoprocessorContexts::new(config.copro_contexts_contract.address, provider);
 
         Self {
-            gateway_config_contract,
+            copro_contexts_contract,
             fallback_config: config.s3_config.clone(),
             s3_ciphertext_retrieval_retries: config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: config.s3_connect_timeout,
         }
     }
 
-    /// Retrieves the S3 bucket URL for a coprocessor from the GatewayConfig contract.
-    async fn get_s3_url(&self, copro_addr: Address) -> Option<String> {
+    /// Retrieves the S3 bucket URL for a coprocessor from the CoprocessorContexts contract.
+    async fn get_s3_url(&self, copro_ctx: U256, copro_addr: Address) -> Option<String> {
         info!(
             "Attempting to get S3 bucket URL for coprocessor {:?}",
             copro_addr
@@ -62,23 +67,23 @@ where
             return Some(url.value().clone());
         }
 
-        // If no cached URL found, query the GatewayConfig contract for the first available coprocessor
+        // If no cached URL found, query the CoprocessorContexts contract for the first available coprocessor
         info!(
-            "CACHE MISS: Querying GatewayConfig contract for coprocessor {:?} S3 bucket URL",
-            copro_addr
+            "CACHE MISS: Querying CoprocessorContexts contract for coprocessor {:?} S3 bucket URL with context {}",
+            copro_addr, copro_ctx
         );
 
         // Call getCoprocessor method to retrieve S3 bucket URL of the coprocessor
         let s3_bucket_url = match self
-            .gateway_config_contract
-            .getCoprocessor(copro_addr)
+            .copro_contexts_contract
+            .getCoprocessorFromContext(copro_ctx, copro_addr)
             .call()
             .await
         {
             Ok(coprocessor) => coprocessor._0.s3BucketUrl.to_string(),
             Err(e) => {
                 warn!(
-                    "GatewayConfig contract call failed for coprocessor {:?}: {}",
+                    "CoprocessorContexts  contract call failed for coprocessor {:?}: {}",
                     copro_addr, e
                 );
                 return None;
@@ -110,6 +115,7 @@ where
     /// Prefetches and caches S3 bucket URLs to return a list of coprocessor s3 urls.
     async fn prefetch_coprocessor_buckets(
         &self,
+        copro_ctx: U256,
         coprocessor_addresses: Vec<Address>,
     ) -> Vec<String> {
         info!(
@@ -154,7 +160,7 @@ where
                 address
             );
 
-            match self.get_s3_url(*address).await {
+            match self.get_s3_url(copro_ctx, *address).await {
                 Some(s3_url) => {
                     info!(
                         "Successfully fetched S3 bucket URL for coprocessor {:?}: {}",
@@ -228,7 +234,10 @@ where
             // 2. Once we successfully retrieve a ciphertext from any of those URLs, we break out of the S3 URLs loop
             // 3. Then we continue processing the next SNS material in the outer loop
             let s3_urls = self
-                .prefetch_coprocessor_buckets(sns_material.coprocessorTxSenderAddresses)
+                .prefetch_coprocessor_buckets(
+                    sns_material.coprocessorContextId,
+                    sns_material.coprocessorTxSenderAddresses,
+                )
                 .await;
 
             let ct_digest = sns_material.snsCiphertextDigest.as_slice();

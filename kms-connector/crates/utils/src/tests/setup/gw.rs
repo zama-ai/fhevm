@@ -5,22 +5,22 @@ use alloy::{
     providers::{ProviderBuilder, WsConnect},
 };
 use fhevm_gateway_rust_bindings::{
+    coprocessorcontexts::CoprocessorContexts::CoprocessorContextsInstance,
     decryption::Decryption::{self, DecryptionInstance},
-    gatewayconfig::GatewayConfig::{self, GatewayConfigInstance},
     kmsmanagement::KmsManagement::{self, KmsManagementInstance},
 };
 use std::sync::LazyLock;
 use testcontainers::{GenericImage, ImageExt, core::WaitFor, runners::AsyncRunner};
 use tracing::info;
 
-pub const DECRYPTION_MOCK_ADDRESS: Address = Address(FixedBytes([
+pub const COPROCESSOR_CONTEXTS_MOCK_ADDRESS: Address = Address(FixedBytes([
     184, 174, 68, 54, 92, 69, 167, 197, 37, 107, 20, 246, 7, 202, 226, 59, 192, 64, 195, 84,
 ]));
-pub const GATEWAY_CONFIG_MOCK_ADDRESS: Address = Address(FixedBytes([
+pub const DECRYPTION_MOCK_ADDRESS: Address = Address(FixedBytes([
     159, 167, 153, 249, 90, 114, 37, 140, 4, 21, 223, 237, 216, 207, 118, 210, 97, 60, 117, 15,
 ]));
 pub const KMS_MANAGEMENT_MOCK_ADDRESS: Address = Address(FixedBytes([
-    200, 27, 227, 169, 24, 21, 210, 212, 9, 109, 174, 8, 26, 113, 22, 201, 250, 123, 223, 8,
+    40, 111, 83, 57, 147, 66, 121, 199, 77, 241, 1, 35, 189, 190, 239, 60, 174, 147, 44, 34,
 ]));
 
 pub const TEST_MNEMONIC: &str =
@@ -35,15 +35,15 @@ pub struct GatewayInstance {
     pub anvil: AnvilInstance,
     pub provider: WalletGatewayProvider,
     pub decryption_contract: DecryptionInstance<(), WalletGatewayProvider>,
-    pub gateway_config_contract: GatewayConfigInstance<(), WalletGatewayProvider>,
+    pub copro_contexts_contract: CoprocessorContextsInstance<(), WalletGatewayProvider>,
     pub kms_management_contract: KmsManagementInstance<(), WalletGatewayProvider>,
 }
 
 impl GatewayInstance {
     pub fn new(anvil: AnvilInstance, provider: WalletGatewayProvider) -> Self {
         let decryption_contract = Decryption::new(DECRYPTION_MOCK_ADDRESS, provider.clone());
-        let gateway_config_contract =
-            GatewayConfig::new(GATEWAY_CONFIG_MOCK_ADDRESS, provider.clone());
+        let copro_contexts_contract =
+            CoprocessorContextsInstance::new(COPROCESSOR_CONTEXTS_MOCK_ADDRESS, provider.clone());
         let kms_management_contract =
             KmsManagement::new(KMS_MANAGEMENT_MOCK_ADDRESS, provider.clone());
 
@@ -51,7 +51,7 @@ impl GatewayInstance {
             anvil,
             provider,
             decryption_contract,
-            gateway_config_contract,
+            copro_contexts_contract,
             kms_management_contract,
         }
     }
@@ -83,7 +83,7 @@ pub async fn setup_anvil_gateway() -> anyhow::Result<AnvilInstance> {
 
     info!("Deploying Gateway mock contracts...");
     let _deploy_mock_container =
-        GenericImage::new("ghcr.io/zama-ai/fhevm/gateway-contracts", "v0.7.6")
+        GenericImage::new("ghcr.io/zama-ai/fhevm/gateway-contracts", "2f62fa0")
             .with_wait_for(WaitFor::message_on_stdout("Mock contract deployment done!"))
             .with_env_var("HARDHAT_NETWORK", "staging")
             .with_env_var("RPC_URL", anvil.endpoint_url().as_str())
