@@ -29,7 +29,7 @@ Transaction Manager supports two types of transaction sending - `sync` and `asyn
 
 ### Sync Transaction Sending
 
-Some use cases require that a transaction is sent and the outcome is known immediately. For such cases, sync sending works by the transaction-sdk sending a RPC call to the transaction-manager and waiting for the response. On the transaction-manager side, gas estimation will be done and the transacttion will be broadcast to the blockchain. Once the receipt is received, the response will be returned over RPC to the user.
+Some use cases require that a transaction is sent and the outcome is known immediately. For such cases, sync sending works by the transaction-sdk sending a RPC call to the transaction-manager and waiting for the response. On the transaction-manager side, gas estimation will be done and the transaction will be broadcast to the blockchain. Once the receipt is received, the response will be returned over RPC to the user.
 
 Sync sending doesn't require persistence and, therefore, no interaction with the DB is needed.
 
