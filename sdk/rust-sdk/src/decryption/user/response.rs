@@ -236,9 +236,7 @@ impl ResponseProcessor {
                     &ml_kem_pub_key,
                     &ml_kem_priv_key,
                 )
-                .map_err(|e| {
-                    FhevmError::DecryptionError(format!("KMS decryption failed: {e:?}"))
-                })?
+                .map_err(|e| FhevmError::DecryptionError(format!("KMS decryption failed: {e:?}")))?
         } else {
             client
                 .insecure_process_user_decryption_resp(
@@ -246,9 +244,7 @@ impl ResponseProcessor {
                     &ml_kem_pub_key,
                     &ml_kem_priv_key,
                 )
-                .map_err(|e| {
-                    FhevmError::DecryptionError(format!("KMS decryption failed: {e:?}"))
-                })?
+                .map_err(|e| FhevmError::DecryptionError(format!("KMS decryption failed: {e:?}")))?
         };
 
         info!(
