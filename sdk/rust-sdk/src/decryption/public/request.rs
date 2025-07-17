@@ -62,7 +62,7 @@ impl PublicDecryptRequestBuilder {
         validate_handles_count(hex_handles.len())?;
 
         for (i, hex_handle) in hex_handles.iter().enumerate() {
-            let handle_bytes = parse_hex_string(hex_handle, &format!("handle {}", i))?;
+            let handle_bytes = parse_hex_string(hex_handle, &format!("handle {i}"))?;
             validate_handle_size(&handle_bytes, i)?;
             let fixed_bytes = FixedBytes::<32>::from_slice(&handle_bytes);
             self.ct_handles.push(fixed_bytes);
@@ -150,8 +150,7 @@ fn validate_handles(handles: &[Vec<u8>]) -> Result<()> {
 fn validate_handles_count(count: usize) -> Result<()> {
     if count > MAX_HANDLES {
         return Err(FhevmError::InvalidParams(format!(
-            "Maximum {} handles allowed in a single public decryption request",
-            MAX_HANDLES
+            "Maximum {MAX_HANDLES} handles allowed in a single public decryption request"
         )));
     }
     Ok(())

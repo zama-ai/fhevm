@@ -220,10 +220,10 @@ impl ResponseProcessor {
 
         // Convert keys for ML-KEM
         let ml_kem_pub_key = u8vec_to_ml_kem_pke_pk(&public_key_bytes)
-            .map_err(|e| FhevmError::DecryptionError(format!("Invalid public key: {:?}", e)))?;
+            .map_err(|e| FhevmError::DecryptionError(format!("Invalid public key: {e:?}")))?;
 
         let ml_kem_priv_key = u8vec_to_ml_kem_pke_sk(&private_key_bytes)
-            .map_err(|e| FhevmError::DecryptionError(format!("Invalid private key: {:?}", e)))?;
+            .map_err(|e| FhevmError::DecryptionError(format!("Invalid private key: {e:?}")))?;
 
         let eip712_domain = protobuf_to_alloy_domain(&eip712_domain).unwrap();
 
@@ -237,7 +237,7 @@ impl ResponseProcessor {
                     &ml_kem_priv_key,
                 )
                 .map_err(|e| {
-                    FhevmError::DecryptionError(format!("KMS decryption failed: {:?}", e))
+                    FhevmError::DecryptionError(format!("KMS decryption failed: {e:?}"))
                 })?
         } else {
             client
@@ -247,7 +247,7 @@ impl ResponseProcessor {
                     &ml_kem_priv_key,
                 )
                 .map_err(|e| {
-                    FhevmError::DecryptionError(format!("KMS decryption failed: {:?}", e))
+                    FhevmError::DecryptionError(format!("KMS decryption failed: {e:?}"))
                 })?
         };
 
@@ -282,13 +282,13 @@ fn create_kms_client(
         .enumerate()
         .map(|(index, addr)| {
             new_server_id_addr((index + 1) as u32, addr.clone()).map_err(|e| {
-                FhevmError::DecryptionError(format!("Invalid KMS signer address {}: {:?}", addr, e))
+                FhevmError::DecryptionError(format!("Invalid KMS signer address {addr}: {e:?}"))
             })
         })
         .collect::<Result<Vec<_>>>()?;
 
     new_client(server_id_addrs, user_address, "default")
-        .map_err(|e| FhevmError::DecryptionError(format!("Failed to create KMS client: {:?}", e)))
+        .map_err(|e| FhevmError::DecryptionError(format!("Failed to create KMS client: {e:?}")))
 }
 
 fn build_eip712_domain(
@@ -325,7 +325,7 @@ fn create_decryption_payload(
     // Parse signature
     let sig_bytes = parse_hex_string(signature, "signature")?;
     let sig = Signature::from_raw(&sig_bytes)
-        .map_err(|e| FhevmError::DecryptionError(format!("Invalid signature format: {}", e)))?;
+        .map_err(|e| FhevmError::DecryptionError(format!("Invalid signature format: {e}")))?;
 
     // Convert handles
     let ct_handles: Vec<CiphertextHandle> = handle_contract_pairs

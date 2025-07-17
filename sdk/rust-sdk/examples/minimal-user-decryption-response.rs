@@ -57,8 +57,8 @@ fn main() -> Result<()> {
         .process();
 
     match result {
-        Ok(res) => println!("✅ Decryption completed! (Expected result: 42); {:?}", res),
-        Err(e) => println!("⚠️ Decryption failed (expected in test env): {}", e),
+        Ok(res) => println!("✅ Decryption completed! (Expected result: 42); {res:?}"),
+        Err(e) => println!("⚠️ Decryption failed (expected in test env): {e}"),
     }
 
     Ok(())

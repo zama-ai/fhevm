@@ -248,12 +248,11 @@ fn prepare_relayer_curl_command(
     // Also show compact version
     let compact_payload = serde_json::to_string(&payload).unwrap();
     let compact_curl = format!(
-        r#"curl -X POST 'http://localhost:3000/v1/user-decrypt' -H 'Content-Type: application/json' -d '{}'"#,
-        compact_payload
+        r#"curl -X POST 'http://localhost:3000/v1/user-decrypt' -H 'Content-Type: application/json' -d '{compact_payload}'"#
     );
 
     info!("📋 Compact version:");
-    println!("{}", compact_curl);
+    println!("{compact_curl}");
     info!("");
 
     // Show payload details

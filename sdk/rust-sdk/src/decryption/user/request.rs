@@ -305,8 +305,7 @@ fn validate_handles_input(handles: &[Vec<u8>], contract_addresses: &[Address]) -
 
     if contract_addresses.len() > MAX_CONTRACT_ADDRESSES {
         return Err(FhevmError::InvalidParams(format!(
-            "Maximum {} contract addresses allowed",
-            MAX_CONTRACT_ADDRESSES
+            "Maximum {MAX_CONTRACT_ADDRESSES} contract addresses allowed"
         )));
     }
 
@@ -334,8 +333,7 @@ fn validate_validity_params(_start_timestamp: u64, duration_days: u64) -> Result
 
     if duration_days > MAX_DURATION_DAYS {
         return Err(FhevmError::InvalidParams(format!(
-            "Duration days cannot exceed {}",
-            MAX_DURATION_DAYS
+            "Duration days cannot exceed {MAX_DURATION_DAYS}"
         )));
     }
 

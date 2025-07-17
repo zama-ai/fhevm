@@ -654,8 +654,7 @@ impl FhevmSdkBuilder {
     pub fn with_gateway_contract(mut self, name: &str, address: &str) -> Self {
         let addr = Address::from_str(address).unwrap_or_else(|_| {
             panic!(
-                "Invalid address provided for gateway contract '{}': {}",
-                name, address
+                "Invalid address provided for gateway contract '{name}': {address}"
             )
         });
 
@@ -680,8 +679,7 @@ impl FhevmSdkBuilder {
         self.gateway_contracts.input_verification =
             Some(Address::from_str(address).unwrap_or_else(|_| {
                 panic!(
-                    "Invalid address provided for input verification contract: {}",
-                    address
+                    "Invalid address provided for input verification contract: {address}"
                 )
             }));
         self
@@ -690,8 +688,7 @@ impl FhevmSdkBuilder {
     pub fn with_decryption_contract(mut self, address: &str) -> Self {
         self.gateway_contracts.decryption = Some(Address::from_str(address).unwrap_or_else(|_| {
             panic!(
-                "Invalid address provided for decryption contract: {}",
-                address
+                "Invalid address provided for decryption contract: {address}"
             )
         }));
         self
@@ -700,7 +697,7 @@ impl FhevmSdkBuilder {
     pub fn with_acl_contract(mut self, address: &str) -> Self {
         self.host_contracts.acl =
             Some(Address::from_str(address).unwrap_or_else(|_| {
-                panic!("Invalid address provided for ACL contract: {}", address)
+                panic!("Invalid address provided for ACL contract: {address}")
             }));
         self
     }
@@ -708,8 +705,7 @@ impl FhevmSdkBuilder {
     pub fn with_host_contract(mut self, name: &str, address: &str) -> Self {
         let addr = Address::from_str(address).unwrap_or_else(|_| {
             panic!(
-                "Invalid address provided for host contract '{}': {}",
-                name, address
+                "Invalid address provided for host contract '{name}': {address}"
             )
         });
 

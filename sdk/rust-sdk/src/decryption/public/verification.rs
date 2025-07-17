@@ -78,7 +78,7 @@ fn create_verification_message(
 fn parse_handle_to_bytes32(handle: &str) -> Result<FixedBytes<32>> {
     let cleaned = handle.strip_prefix("0x").unwrap_or(handle);
     let bytes = hex::decode(cleaned)
-        .map_err(|e| FhevmError::InvalidParams(format!("Invalid handle hex: {}", e)))?;
+        .map_err(|e| FhevmError::InvalidParams(format!("Invalid handle hex: {e}")))?;
 
     if bytes.len() != 32 {
         return Err(FhevmError::InvalidParams(
@@ -96,18 +96,17 @@ fn recover_addresses(
     let mut recovered_addresses = Vec::new();
 
     for (i, sig_str) in signatures.iter().enumerate() {
-        let sig_bytes = parse_hex_string(sig_str, &format!("signature {}", i))?;
+        let sig_bytes = parse_hex_string(sig_str, &format!("signature {i}"))?;
 
         let signature = alloy::primitives::Signature::from_raw(&sig_bytes).map_err(|e| {
-            FhevmError::DecryptionError(format!("Invalid signature {} format: {}", i, e))
+            FhevmError::DecryptionError(format!("Invalid signature {i} format: {e}"))
         })?;
 
         let recovered = signature
             .recover_address_from_prehash(signing_hash)
             .map_err(|e| {
                 FhevmError::DecryptionError(format!(
-                    "Failed to recover address from signature {}: {}",
-                    i, e
+                    "Failed to recover address from signature {i}: {e}"
                 ))
             })?;
 
@@ -129,8 +128,7 @@ fn is_threshold_reached(
     for addr in recovered_addresses {
         if !seen.insert(addr) {
             return Err(FhevmError::DecryptionError(format!(
-                "Duplicate KMS signer address found: {} appears multiple times",
-                addr
+                "Duplicate KMS signer address found: {addr} appears multiple times"
             )));
         }
     }
@@ -143,8 +141,7 @@ fn is_threshold_reached(
         let addr_lower = addr.to_lowercase();
         if !kms_signers_lower.contains(&addr_lower) {
             return Err(FhevmError::DecryptionError(format!(
-                "Invalid address found: {} is not in the list of KMS signers",
-                addr
+                "Invalid address found: {addr} is not in the list of KMS signers"
             )));
         }
     }

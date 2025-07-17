@@ -62,7 +62,7 @@ fn main() -> Result<()> {
                 hex::encode(&calldata[..32.min(calldata.len())])
             );
         }
-        Err(e) => eprintln!("❌ Calldata generation error: {}", e),
+        Err(e) => eprintln!("❌ Calldata generation error: {e}"),
     }
 
     Ok(())

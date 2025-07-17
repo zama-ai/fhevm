@@ -228,7 +228,7 @@ impl ResponseProcessor {
 
 fn parse_json_response(json_response: &str) -> Result<serde_json::Value> {
     serde_json::from_str(json_response)
-        .map_err(|e| FhevmError::DecryptionError(format!("JSON parse error: {}", e)))
+        .map_err(|e| FhevmError::DecryptionError(format!("JSON parse error: {e}")))
 }
 
 fn extract_response_data(response_data: &serde_json::Value) -> Result<(String, Vec<String>)> {
@@ -265,7 +265,7 @@ fn extract_response_data(response_data: &serde_json::Value) -> Result<(String, V
         .map(|(i, v)| {
             v.as_str()
                 .ok_or_else(|| {
-                    FhevmError::DecryptionError(format!("Signature {} is not a string", i))
+                    FhevmError::DecryptionError(format!("Signature {i} is not a string"))
                 })
                 .map(|s| s.to_string())
         })
@@ -281,7 +281,7 @@ fn extract_response_data(response_data: &serde_json::Value) -> Result<(String, V
     let decrypted_result = if decrypted_value.starts_with("0x") {
         decrypted_value.to_string()
     } else {
-        format!("0x{}", decrypted_value)
+        format!("0x{decrypted_value}")
     };
 
     debug!(

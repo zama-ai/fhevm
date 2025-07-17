@@ -79,7 +79,7 @@ pub(crate) fn sign_eip712_hash(hash: B256, private_key: &str) -> Result<Bytes> {
 
     // Create the signer
     let signer = PrivateKeySigner::from_str(private_key_str)
-        .map_err(|e| FhevmError::SignatureError(format!("Invalid private key: {}", e)))?;
+        .map_err(|e| FhevmError::SignatureError(format!("Invalid private key: {e}")))?;
 
     // Try to use existing runtime, fallback to blocking if needed
     let signature = if let Ok(handle) = tokio::runtime::Handle::try_current() {
@@ -90,13 +90,13 @@ pub(crate) fn sign_eip712_hash(hash: B256, private_key: &str) -> Result<Bytes> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|e| FhevmError::SignatureError(format!("Failed to create runtime: {}", e)))?;
+            .map_err(|e| FhevmError::SignatureError(format!("Failed to create runtime: {e}")))?;
 
         rt.block_on(async { signer.sign_hash(&hash).await })
     };
 
     let signature =
-        signature.map_err(|e| FhevmError::SignatureError(format!("Failed to sign: {}", e)))?;
+        signature.map_err(|e| FhevmError::SignatureError(format!("Failed to sign: {e}")))?;
 
     Ok(Bytes::from(signature.as_bytes().to_vec()))
 }
@@ -108,7 +108,7 @@ pub fn derive_address_from_private_key(private_key: &str) -> Result<Address> {
     let private_key_str = private_key.strip_prefix("0x").unwrap_or(private_key);
 
     let signer = PrivateKeySigner::from_str(private_key_str)
-        .map_err(|e| FhevmError::SignatureError(format!("Invalid private key: {}", e)))?;
+        .map_err(|e| FhevmError::SignatureError(format!("Invalid private key: {e}")))?;
 
     Ok(signer.address())
 }
