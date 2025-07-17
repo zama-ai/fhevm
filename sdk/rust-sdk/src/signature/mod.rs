@@ -76,7 +76,6 @@ pub(crate) fn sign_eip712_hash(hash: B256, private_key: &str) -> Result<Bytes> {
 
     // Parse the private key (remove 0x prefix if present)
     let private_key_str = private_key.strip_prefix("0x").unwrap_or(private_key);
-        
 
     // Create the signer
     let signer = PrivateKeySigner::from_str(private_key_str)

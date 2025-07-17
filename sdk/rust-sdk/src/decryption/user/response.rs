@@ -593,10 +593,12 @@ mod tests {
         // Verify arrays have expected lengths
         let input = &rc17_test["input"];
         assert!(!input["kms_signers"].as_array().unwrap().is_empty());
-        assert!(!input["handle_contract_pairs"]
-            .as_array()
-            .unwrap()
-            .is_empty());
+        assert!(
+            !input["handle_contract_pairs"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 }
 
