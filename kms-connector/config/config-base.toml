@@ -72,6 +72,10 @@ channel_size = 1000
 # ENV: KMS_CONNECTOR_PRIVATE_KEY
 private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 
+# The endpoint used to collect metrics of the connector components (optional, defaults to "0.0.0.0:9100")
+# ENV: KMS_CONNECTOR_METRICS_ENDPOINT
+# metrics_endpoint = "0.0.0.0:9100"
+
 # The limit number of events to fetch from the database (optional, defaults to 10)
 # ENV: KMS_CONNECTOR_EVENTS_BATCH_SIZE
 # events_batch_size = 10

@@ -133,7 +133,7 @@ impl GatewayEvent {
             "UPDATE public_decryption_requests SET under_process = FALSE WHERE decryption_id = $1",
             id.as_le_slice()
         );
-        Self::execute_free_event_query(db, query, format!("PublicDecryptionRequest #{id}")).await;
+        Self::execute_free_event_query(db, query).await;
     }
 
     /// Sets the `under_process` field of the `UserDecryptionRequest` as `FALSE` in the database.
@@ -142,7 +142,7 @@ impl GatewayEvent {
             "UPDATE user_decryption_requests SET under_process = FALSE WHERE decryption_id = $1",
             id.as_le_slice()
         );
-        Self::execute_free_event_query(db, query, format!("UserDecryptionRequest #{id}")).await;
+        Self::execute_free_event_query(db, query).await;
     }
 
     /// Sets the `under_process` field of the `PreprocessKeygenRequest` as `FALSE` in the database.
@@ -151,7 +151,7 @@ impl GatewayEvent {
             "UPDATE preprocess_keygen_requests SET under_process = FALSE WHERE pre_keygen_request_id = $1",
             id.as_le_slice()
         );
-        Self::execute_free_event_query(db, query, format!("PreprocessKeygenRequest #{id}")).await;
+        Self::execute_free_event_query(db, query).await;
     }
 
     /// Sets the `under_process` field of the `PreprocessKskgenRequest` as `FALSE` in the database.
@@ -160,7 +160,7 @@ impl GatewayEvent {
             "UPDATE preprocess_kskgen_requests SET under_process = FALSE WHERE pre_kskgen_request_id = $1",
             id.as_le_slice()
         );
-        Self::execute_free_event_query(db, query, format!("PreprocessKskgenRequest #{id}")).await;
+        Self::execute_free_event_query(db, query).await;
     }
 
     /// Sets the `under_process` field of the `KeyRequest` as `FALSE` in the database.
@@ -169,7 +169,7 @@ impl GatewayEvent {
             "UPDATE keygen_requests SET under_process = FALSE WHERE pre_key_id = $1",
             id.as_le_slice()
         );
-        Self::execute_free_event_query(db, query, format!("KeyRequest #{id}")).await;
+        Self::execute_free_event_query(db, query).await;
     }
 
     /// Sets the `under_process` field of the `KskgenRequest` as `FALSE` in the database.
@@ -178,7 +178,7 @@ impl GatewayEvent {
             "UPDATE kskgen_requests SET under_process = FALSE WHERE pre_ksk_id = $1",
             id.as_le_slice()
         );
-        Self::execute_free_event_query(db, query, format!("KskgenRequest #{id}")).await;
+        Self::execute_free_event_query(db, query).await;
     }
 
     /// Sets the `under_process` field of the `CrsgenRequest` as `FALSE` in the database.
@@ -187,26 +187,26 @@ impl GatewayEvent {
             "UPDATE crsgen_requests SET under_process = FALSE WHERE crsgen_request_id = $1",
             id.as_le_slice()
         );
-        Self::execute_free_event_query(db, query, format!("CrsgenRequest #{id}")).await;
+        Self::execute_free_event_query(db, query).await;
     }
 
     /// Executes the free event query and checks its result.
     async fn execute_free_event_query(
         db: &Pool<Postgres>,
         query: Query<'_, Postgres, PgArguments>,
-        event_str: String,
     ) {
+        warn!("Failed to process event. Restoring `under_process` field to `FALSE` in DB...");
         let query_result = match query.execute(db).await {
             Ok(result) => result,
-            Err(e) => return warn!("Failed to mark event as free: {e}"),
+            Err(e) => return warn!("Failed to restore `under_process` field to `FALSE`: {e}"),
         };
 
         if query_result.rows_affected() == 1 {
-            info!("Successfully restore {event_str} as free in DB");
+            info!("Successfully restore `under_process` field to `FALSE` in DB!");
         } else {
             warn!(
-                "Unexpected query result while restoring {} as free: {:?}",
-                event_str, query_result
+                "Unexpected query result while restoring `under_process` field to `FALSE`: {:?}",
+                query_result
             )
         }
     }

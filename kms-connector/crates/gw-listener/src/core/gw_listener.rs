@@ -1,4 +1,7 @@
-use crate::core::DbEventPublisher;
+use crate::{
+    core::DbEventPublisher,
+    metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS, EVENT_STORAGE_ERRORS},
+};
 
 use super::{Config, EventPublisher};
 use alloy::{contract::Event, network::Ethereum, providers::Provider, sol_types::SolEvent};
@@ -95,16 +98,21 @@ where
         info!("✓ Subscribed to {event_name} events");
 
         loop {
-            let req = match events.next().await {
-                Some(Ok((req, _log))) => req,
+            info!("Waiting for next {event_name}...");
+            let event = match events.next().await {
+                Some(Ok((event, _log))) => event,
                 Some(Err(err)) => {
                     error!("Error while listening for {event_name} events: {err}");
+                    EVENT_RECEIVED_ERRORS.inc();
                     continue;
                 }
                 None => break error!("Alloy Provider was dropped"),
             };
-            if let Err(err) = self.publisher.publish(req).await {
+            EVENT_RECEIVED_COUNTER.inc();
+
+            if let Err(err) = self.publisher.publish(event.into()).await {
                 error!("Failed to publish {event_name}: {err}");
+                EVENT_STORAGE_ERRORS.inc();
             }
         }
     }
@@ -327,8 +335,8 @@ mod tests {
     }
 
     impl EventPublisher for MockPublisher {
-        async fn publish(&self, event: impl Into<GatewayEvent>) -> Result<()> {
-            match event.into() {
+        async fn publish(&self, event: GatewayEvent) -> Result<()> {
+            match event {
                 GatewayEvent::PublicDecryption(_) => info!("PublicDecryptionRequest published!"),
                 GatewayEvent::UserDecryption(_) => info!("UserDecryptionRequest published!"),
                 GatewayEvent::PreprocessKeygen(_) => info!("PreprocessKeygenRequest published!"),

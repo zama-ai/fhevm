@@ -6,10 +6,7 @@ use super::raw::RawConfig;
 use connector_utils::config::{
     AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result,
 };
-use std::{
-    fmt::{self, Display},
-    path::Path,
-};
+use std::{net::SocketAddr, path::Path};
 use tracing::info;
 
 /// Configuration of the `TransactionSender`.
@@ -19,6 +16,8 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
+    /// The endpoint used to collect metrics of the `TransactionSender`.
+    pub metrics_endpoint: SocketAddr,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The Chain ID of the Gateway.
@@ -31,24 +30,6 @@ pub struct Config {
     pub service_name: String,
     /// The wallet used to sign the decryption responses from the kms-core.
     pub wallet: KmsWallet,
-}
-
-impl Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Service Name: {}", self.service_name)?;
-        writeln!(f, "Database URL: {}", self.database_url)?;
-        writeln!(
-            f,
-            "Database connection pool size: {}",
-            self.database_pool_size
-        )?;
-        writeln!(f, "Gateway URL: {}", self.gateway_url)?;
-        writeln!(f, "Chain ID: {}", self.chain_id)?;
-        writeln!(f, "{}", self.decryption_contract)?;
-        writeln!(f, "{}", self.kms_management_contract)?;
-        writeln!(f, "Wallet address: {:#x}", self.wallet.address())?;
-        Ok(())
-    }
 }
 
 impl Config {
@@ -64,13 +45,14 @@ impl Config {
         }
 
         let raw_config = RawConfig::from_env_and_file(path)?;
-        let config = Self::parse(raw_config).await?;
-
-        info!("Configuration loaded successfully:\n{}", config);
-        Ok(config)
+        Self::parse(raw_config).await
     }
 
     async fn parse(raw_config: RawConfig) -> Result<Self> {
+        let metrics_endpoint = raw_config
+            .metrics_endpoint
+            .parse::<SocketAddr>()
+            .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let wallet = Self::parse_kms_wallet(
             raw_config.chain_id,
             raw_config.private_key,
@@ -91,6 +73,7 @@ impl Config {
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
+            metrics_endpoint,
             gateway_url: raw_config.gateway_url,
             chain_id: raw_config.chain_id,
             decryption_contract,

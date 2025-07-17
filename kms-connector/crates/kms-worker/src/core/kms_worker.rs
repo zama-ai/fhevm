@@ -72,6 +72,7 @@ where
     }
 
     /// Handles an event coming from the Gateway.
+    #[tracing::instrument(skip(event_processor, response_publisher), fields(event = %event))]
     async fn handle_event(mut event_processor: Proc, response_publisher: Publ, event: T) {
         let response = match event_processor.process(&event).await {
             Ok(response) => response,
