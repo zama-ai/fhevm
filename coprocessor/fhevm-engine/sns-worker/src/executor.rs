@@ -436,7 +436,7 @@ fn process_tasks(
                 tfhe::set_server_key(keys.server_key.clone());
             });
             batch.par_iter_mut().for_each(|task| {
-                compute_task(task, tx, true, enable_compression, token.clone(), keys);
+                compute_task(task, tx, false, enable_compression, token.clone(), keys);
             });
         }
     }
