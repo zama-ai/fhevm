@@ -38,6 +38,8 @@ contract InputVerification is
         address contractAddress;
         /// @notice The host chain's chain ID of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
+        /// @notice Generic bytes metadata for versioned payloads.
+        bytes extraData;
     }
 
     /// @notice The stored structure for the received ZK Proof verification request inputs.
@@ -55,7 +57,7 @@ contract InputVerification is
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
 
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
@@ -129,7 +131,14 @@ contract InputVerification is
         /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
         $._zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
 
-        emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
+        emit VerifyProofRequest(
+            zkProofId,
+            contractChainId,
+            contractAddress,
+            userAddress,
+            ciphertextWithZKProof,
+            _getVerifyProofRequestExtraData()
+        );
     }
 
     /**
@@ -140,7 +149,8 @@ contract InputVerification is
     function verifyProofResponse(
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender whenNotPaused {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
@@ -152,7 +162,8 @@ contract InputVerification is
             ctHandles,
             zkProofInput.userAddress,
             zkProofInput.contractAddress,
-            zkProofInput.contractChainId
+            zkProofInput.contractChainId,
+            extraData
         );
 
         /// @dev Compute the digest of the CiphertextVerification structure.
@@ -292,7 +303,8 @@ contract InputVerification is
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
-                        ctVerification.contractChainId
+                        ctVerification.contractChainId,
+                        keccak256(abi.encodePacked(ctVerification.extraData))
                     )
                 )
             );
@@ -319,5 +331,15 @@ contract InputVerification is
         assembly {
             $.slot := INPUT_VERIFICATION_STORAGE_LOCATION
         }
+    }
+
+    /**
+     * @dev Returns the extra data to be used in the ZK Proof verification request.
+     * This is used to ensure that the request is versioned and can be extended in the future.
+     * The first byte is the version, and the rest can be used for additional data.
+     * @return The extra data for the ZK Proof verification request.
+     */
+    function _getVerifyProofRequestExtraData() internal pure returns (bytes memory) {
+        return abi.encodePacked(uint8(1));
     }
 }

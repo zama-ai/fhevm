@@ -12,6 +12,9 @@ library HandleOps {
     /// @param fheTypeUint8 The invalid FHE type as a uint8
     error InvalidFHEType(uint8 fheTypeUint8);
 
+    /// @notice Error indicating that the extra data does not have a version byte
+    error NoVersionByteInExtraData();
+
     /// @notice Extracts the chain ID from a ciphertext handle
     /// @param handle The ciphertext handle
     /// @return The chain ID
@@ -45,5 +48,37 @@ library HandleOps {
         }
 
         return FheType(fheTypeUint8);
+    }
+
+    /// @notice Parses the extra data and separates the version and payload.
+    /// @param extraData The bytes containing the version and payload.
+    function parseExtraData(bytes memory extraData) internal pure returns (uint8 version, bytes memory payload) {
+        // Ensure at least 1 byte for version
+        if (extraData.length < 1) {
+            revert NoVersionByteInExtraData();
+        }
+
+        // The first byte of extraData is the version
+        version = uint8(extraData[0]);
+
+        // Allocate a new bytes array with everything after the first byte (version byte)
+        uint256 payloadLength = extraData.length - 1;
+        payload = new bytes(payloadLength);
+
+        assembly {
+            // Skip 32 bytes (length prefix) + 1 byte (version).
+            let src := add(extraData, 0x21)
+            // Skip 32 bytes (length prefix).
+            let dest := add(payload, 0x20)
+            for {
+                let i := 0
+            } lt(i, payloadLength) {
+                i := add(i, 32)
+            } {
+                mstore(add(dest, i), mload(add(src, i)))
+            }
+        }
+
+        return (version, payload);
     }
 }

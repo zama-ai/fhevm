@@ -42,4 +42,5 @@ pub mod r#storageslot;
 pub mod r#strings;
 pub mod r#uupsupgradeable;
 pub mod r#uupsupgradeableemptyproxy;
+pub mod r#console;
 pub mod r#ierc1822proxiable;

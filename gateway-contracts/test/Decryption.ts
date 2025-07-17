@@ -168,6 +168,11 @@ describe("Decryption", function () {
   const fakeTxSender = createRandomWallet();
   const fakeSigner = createRandomWallet();
 
+  // Define extra data for version 1
+  const extraDataV1 = hre.ethers.solidityPacked(["uint8"], [1]);
+  const publicDecryptionRequestExtraDataV1 = hre.ethers.solidityPacked(["uint8"], [1]);
+  const userDecryptRequestExtraDataV1 = hre.ethers.solidityPacked(["uint8"], [1]);
+
   let gatewayConfig: GatewayConfig;
   let kmsManagement: KmsManagement;
   let multichainAcl: MultichainAcl;
@@ -291,6 +296,7 @@ describe("Decryption", function () {
         decryptionAddress,
         ctHandles,
         decryptedResult,
+        extraDataV1,
       );
 
       // Sign the message with all KMS signers
@@ -326,7 +332,7 @@ describe("Decryption", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials));
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), publicDecryptionRequestExtraDataV1);
     });
 
     it("Should request a public decryption with a single ctHandle", async function () {
@@ -338,7 +344,7 @@ describe("Decryption", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials));
+        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), publicDecryptionRequestExtraDataV1);
     });
 
     it("Should revert because ctHandles list is empty", async function () {
@@ -399,7 +405,9 @@ describe("Decryption", function () {
     it("Should revert because the message sender is not a KMS transaction sender", async function () {
       // Check that the transaction fails because the msg.sender is not a registered KMS transaction sender
       await expect(
-        decryption.connect(fakeTxSender).publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]),
+        decryption
+          .connect(fakeTxSender)
+          .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV1),
       )
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
         .withArgs(fakeTxSender.address);
@@ -416,7 +424,9 @@ describe("Decryption", function () {
 
       // Check that the signature verification fails because the signer is not a registered KMS signer
       await expect(
-        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(decryptionId, decryptedResult, fakeSignature),
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(decryptionId, decryptedResult, fakeSignature, extraDataV1),
       )
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsSigner")
         .withArgs(fakeSigner.address);
@@ -429,11 +439,13 @@ describe("Decryption", function () {
       // Trigger a first public decryption response
       await decryption
         .connect(kmsTxSenders[0])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV1);
 
       // Check that a KMS node cannot sign a second time for the same public decryption
       await expect(
-        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]),
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV1),
       )
         .to.be.revertedWithCustomError(decryption, "KmsNodeAlreadySigned")
         .withArgs(decryptionId, kmsSigners[0].address);
@@ -484,14 +496,14 @@ describe("Decryption", function () {
       // Trigger three valid public decryption responses
       await decryption
         .connect(kmsTxSenders[0])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV1);
       await decryption
         .connect(kmsTxSenders[1])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1], extraDataV1);
 
       const responseTx3 = await decryption
         .connect(kmsTxSenders[2])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2], extraDataV1);
 
       // Consensus should be reached at the third response
       // Check 3rd response event: it should only contain 3 valid signatures
@@ -510,19 +522,19 @@ describe("Decryption", function () {
       // Trigger four valid public decryption responses
       const responseTx1 = await decryption
         .connect(kmsTxSenders[0])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV1);
 
       const responseTx2 = await decryption
         .connect(kmsTxSenders[1])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1], extraDataV1);
 
       await decryption
         .connect(kmsTxSenders[2])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2], extraDataV1);
 
       const responseTx4 = await decryption
         .connect(kmsTxSenders[3])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3], extraDataV1);
 
       // Check that the 1st, 2nd and 4th responses do not emit an event:
       // - 1st and 2nd responses are ignored because consensus is not reached yet
@@ -544,7 +556,9 @@ describe("Decryption", function () {
 
       // Try calling paused public decryption response
       await expect(
-        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]),
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV1),
       ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
     });
 
@@ -562,6 +576,7 @@ describe("Decryption", function () {
         decryptionAddress,
         ctHandles,
         fakeDecryptedResult,
+        extraDataV1,
       );
       const [fakeKmsSignature] = await getSignaturesPublicDecrypt(fakeEip712Message, kmsSigners);
 
@@ -570,28 +585,28 @@ describe("Decryption", function () {
       // - a fake signature (unexpected)
       await decryption
         .connect(kmsTxSenders[0])
-        .publicDecryptionResponse(decryptionId, fakeDecryptedResult, fakeKmsSignature);
+        .publicDecryptionResponse(decryptionId, fakeDecryptedResult, fakeKmsSignature, extraDataV1);
 
       // Trigger a first valid public decryption response with:
       // - the second KMS transaction sender
       // - the second KMS signer's signature
       await decryption
         .connect(kmsTxSenders[1])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1], extraDataV1);
 
       // Trigger a second valid public decryption response with:
       // - the third KMS transaction sender
       // - the third KMS signer's signature
       const responseTx3 = await decryption
         .connect(kmsTxSenders[2])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2], extraDataV1);
 
       // Trigger a third valid proof verification response with:
       // - the fourth coprocessor transaction sender
       // - the fourth coprocessor signer's signature
       const responseTx4 = await decryption
         .connect(kmsTxSenders[3])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3], extraDataV1);
 
       // Consensus should not be reached at the third transaction since the first was malicious
       // Check 3rd transaction events: it should not emit an event for public decryption response
@@ -712,7 +727,14 @@ describe("Decryption", function () {
       const userDecryptedShares = createBytes32s(kmsSigners.length);
 
       const eip712ResponseMessages = userDecryptedShares.map((userDecryptedShare) =>
-        createEIP712ResponseUserDecrypt(gatewayChainId, decryptionAddress, publicKey, ctHandles, userDecryptedShare),
+        createEIP712ResponseUserDecrypt(
+          gatewayChainId,
+          decryptionAddress,
+          publicKey,
+          ctHandles,
+          userDecryptedShare,
+          extraDataV1,
+        ),
       );
 
       // Sign the message with all KMS signers
@@ -765,7 +787,13 @@ describe("Decryption", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey);
+        .withArgs(
+          decryptionId,
+          toValues(snsCiphertextMaterials),
+          user.address,
+          publicKey,
+          userDecryptRequestExtraDataV1,
+        );
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -787,7 +815,13 @@ describe("Decryption", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey);
+        .withArgs(
+          decryptionId,
+          toValues(singleSnsCiphertextMaterials),
+          user.address,
+          publicKey,
+          userDecryptRequestExtraDataV1,
+        );
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
@@ -1137,7 +1171,9 @@ describe("Decryption", function () {
 
       // Check that the transaction fails because the signer is not a registered KMS signer
       await expect(
-        decryption.connect(kmsTxSenders[0]).userDecryptionResponse(decryptionId, userDecryptedShares[0], fakeSignature),
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], fakeSignature, extraDataV1),
       )
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsSigner")
         .withArgs(fakeSigner.address);
@@ -1146,7 +1182,9 @@ describe("Decryption", function () {
     it("Should revert because the message sender is not a KMS transaction sender", async function () {
       // Check that the transaction fails because the msg.sender is not a registered KMS transaction sender
       await expect(
-        decryption.connect(fakeTxSender).userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]),
+        decryption
+          .connect(fakeTxSender)
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV1),
       )
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
         .withArgs(fakeTxSender.address);
@@ -1243,13 +1281,13 @@ describe("Decryption", function () {
       // Trigger a first user decryption response
       await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV1);
 
       // Check that a KMS node cannot sign a second time for the same user decryption
       await expect(
         decryption
           .connect(kmsTxSenders[0])
-          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]),
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV1),
       )
         .to.be.revertedWithCustomError(decryption, "KmsNodeAlreadySigned")
         .withArgs(decryptionId, kmsSigners[0].address);
@@ -1270,15 +1308,15 @@ describe("Decryption", function () {
       // Trigger three valid user decryption responses using different KMS transaction senders
       await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV1);
 
       await decryption
         .connect(kmsTxSenders[1])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV1);
 
       const responseTx3 = await decryption
         .connect(kmsTxSenders[2])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV1);
 
       // Consensus should be reached at the third response (reconstruction threshold)
       // Check 3rd response event: it should only contain 3 valid signatures
@@ -1305,19 +1343,19 @@ describe("Decryption", function () {
       // Trigger three valid user decryption responses using different KMS transaction senders
       const responseTx1 = await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV1);
 
       const responseTx2 = await decryption
         .connect(kmsTxSenders[1])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV1);
 
       await decryption
         .connect(kmsTxSenders[2])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV1);
 
       const responseTx4 = await decryption
         .connect(kmsTxSenders[3])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3], extraDataV1);
 
       // Check that the 1st, 2nd and 4th responses do not emit an event:
       // - 1st and 2nd responses are ignored because consensus is not reached yet
@@ -1348,7 +1386,7 @@ describe("Decryption", function () {
       await expect(
         decryption
           .connect(kmsTxSenders[0])
-          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]),
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV1),
       ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
     });
 
@@ -1489,6 +1527,7 @@ describe("Decryption", function () {
           publicKey,
           ctHandleContractPairs.map((pair) => pair.ctHandle.toString()),
           userDecryptedShare,
+          extraDataV1,
         ),
       );
 
@@ -1539,7 +1578,13 @@ describe("Decryption", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), delegationAccounts.delegatedAddress, publicKey);
+        .withArgs(
+          decryptionId,
+          toValues(snsCiphertextMaterials),
+          delegationAccounts.delegatedAddress,
+          publicKey,
+          userDecryptRequestExtraDataV1,
+        );
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -1560,7 +1605,13 @@ describe("Decryption", function () {
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), delegationAccounts.delegatedAddress, publicKey);
+        .withArgs(
+          decryptionId,
+          toValues(singleSnsCiphertextMaterials),
+          delegationAccounts.delegatedAddress,
+          publicKey,
+          userDecryptRequestExtraDataV1,
+        );
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
@@ -1989,15 +2040,15 @@ describe("Decryption", function () {
       // Trigger three valid user decryption responses using different KMS transaction senders
       await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV1);
 
       await decryption
         .connect(kmsTxSenders[1])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV1);
 
       const responseTx3 = await decryption
         .connect(kmsTxSenders[2])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV1);
 
       // Consensus should be reached at the third response (reconstruction threshold)
       // Check 3rd response event: it should only contain 3 valid signatures
@@ -2024,19 +2075,19 @@ describe("Decryption", function () {
       // Trigger three valid user decryption responses using different KMS transaction senders
       const responseTx1 = await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV1);
 
       const responseTx2 = await decryption
         .connect(kmsTxSenders[1])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV1);
 
       await decryption
         .connect(kmsTxSenders[2])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV1);
 
       const responseTx4 = await decryption
         .connect(kmsTxSenders[3])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3], extraDataV1);
 
       // Check that the 1st, 2nd and 4th responses do not emit an event:
       // - 1st and 2nd responses are ignored because consensus is not reached yet
