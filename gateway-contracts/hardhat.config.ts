@@ -4,6 +4,7 @@ import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
 import "@typechain/hardhat";
 import dotenv from "dotenv";
+import "hardhat-dependency-compiler";
 import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task, types } from "hardhat/config";
 import { resolve } from "path";
@@ -55,6 +56,10 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
   .addOptionalParam("skipSetup", "Set to true to skip setup tasks", false, types.boolean)
   .setAction(async ({ skipSetup }, hre, runSuper) => {
     if (!skipSetup) {
+      // Deploy Smart Accounts
+      await hre.run("task:deployOwnerSmartAccount");
+      await hre.run("task:deployPauserSmartAccount");
+
       await hre.run("task:deployAllGatewayContracts");
       // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
       // for local testing
@@ -157,6 +162,12 @@ const config: HardhatUserConfig = {
       evmVersion: "cancun",
       viaIR: false,
     },
+  },
+  dependencyCompiler: {
+    paths: [
+      "@safe-global/safe-contracts/contracts/proxies/SafeProxyFactory.sol",
+      "@safe-global/safe-contracts/contracts/Safe.sol",
+    ],
   },
   warnings: {
     // Turn off all warnings for mocked contracts

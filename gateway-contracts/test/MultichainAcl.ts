@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, MultichainAcl, MultichainAcl__factory } from "../typechain-types";
+import { GatewayConfig, MultichainAcl, MultichainAcl__factory, Safe } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IMultichainAcl interface
 import { DelegationAccountsStruct } from "../typechain-types/contracts/interfaces/IMultichainAcl";
@@ -13,6 +13,7 @@ import {
   createRandomAddress,
   createRandomAddresses,
   createRandomWallet,
+  execSafeTransaction,
   loadHostChainIds,
   loadTestVariablesFixture,
   toValues,
@@ -40,7 +41,7 @@ describe("MultichainAcl", function () {
   let multichainAcl: MultichainAcl;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
-  let pauser: SignerWithAddress;
+  let pauserSmartAccount: Safe;
 
   beforeEach(async function () {
     // Initialize used global variables before each test
@@ -49,7 +50,7 @@ describe("MultichainAcl", function () {
     multichainAcl = fixture.multichainAcl;
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     owner = fixture.owner;
-    pauser = fixture.pauser;
+    pauserSmartAccount = fixture.pauserSmartAccount;
   });
 
   describe("Deployment", function () {
@@ -345,8 +346,14 @@ describe("MultichainAcl", function () {
       // Check that the contract is not paused
       expect(await multichainAcl.paused()).to.be.false;
 
-      // Pause the contract with the pauser address
-      await expect(multichainAcl.connect(pauser).pause()).to.emit(multichainAcl, "Paused").withArgs(pauser);
+      // Get the target contract address and the data to call the pause function.
+      const to = await multichainAcl.getAddress();
+      const data = multichainAcl.interface.encodeFunctionData("pause");
+
+      // Execute the Safe transaction through the Pauser Smart Account.
+      await execSafeTransaction([owner], pauserSmartAccount, to, data);
+
+      // Contract should be paused.
       expect(await multichainAcl.paused()).to.be.true;
     });
 
