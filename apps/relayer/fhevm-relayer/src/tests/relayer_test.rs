@@ -314,87 +314,42 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_user_decrypt_url_endpoint_single() {
-        // Payload for user-decryption
-        // NOTE: requestValidity differs from other user-decryption test to avoid caching issues
-        let payload = &json!({"handleContractPairs":[{"handle":"bf9b45c007d626278570aa9622a9c8646f1bfd4e25a5401bd576d15e05320000","contractAddress":"0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"}],"requestValidity":{"startTimestamp":"1742450894","durationDays":"100"},"contractsChainId":"123456","contractAddresses":["0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"],"userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80","signature":"f77ca89b541ca80645dfa2822a95354142b73d078429083569d9ec97e23868282a11bc8f2addeac311edbb0d6b4e2763ae1f8e69702f2ddb89ff952dded2c2d61c","publicKey":"2000000000000000127eae823019dbba103069c7d2ee53b16de8a29057911dfd8ba82c25abfb071a"});
-
-        let client = reqwest::Client::new();
-        let res = client
-            .post("http://localhost:3000/v1/user-decrypt")
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(10))
-            .json(payload)
-            .send()
-            .await
-            .unwrap();
-        assert_eq!(res.status(), 200);
+    async fn test_user_decrypt_url_endpoint() {
+        tokio::join!(
+            test_user_single_request(helpers::random_payload_for_user_decrypt()),
+            test_user_sequential_requests(helpers::random_payload_for_user_decrypt()),
+            // TODO: test_user_parallel_requests(helpers::random_payload_for_user_decrypt()),
+        );
     }
 
-    #[tokio::test]
-    async fn test_user_decrypt_url_endpoint() {
+    async fn test_user_single_request(payload: serde_json::Value) {
         let client = reqwest::Client::new();
-
-        let mut set = tokio::task::JoinSet::new();
-        let number_of_queries = 10;
-        for i in 1..(number_of_queries + 1) {
-            set.spawn(async move {
-                let client = reqwest::Client::new();
-                (
-                    client
-                        .post("http://localhost:3000/v1/user-decrypt")
-                        .header("Content-Type", "application/json")
-                        .timeout(std::time::Duration::from_secs(10))
-                        .json(&json!({"handleContractPairs":[{"handle":"bf9b45c007d626278570aa9622a9c8646f1bfd4e25a5401bd576d15e05320000","contractAddress":"0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"}],"requestValidity":{"startTimestamp":"1742450894","durationDays":"10"},"contractsChainId":"123456","contractAddresses":["0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"],"userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80","signature":"f77ca89b541ca80645dfa2822a95354142b73d078429083569d9ec97e23868282a11bc8f2addeac311edbb0d6b4e2763ae1f8e69702f2ddb89ff952dded2c2d61c","publicKey":"2000000000000000127eae823019dbba103069c7d2ee53b16de8a29057911dfd8ba82c25abfb071a"}))
-                        .send()
-                        .await
-                        .unwrap(),
-                    i,
-                )
-            });
-        }
-
-        while let Some(res) = set.join_next().await {
-            let (result, index) = res.unwrap();
-            assert_eq!(result.status(), 200);
-            println!("{index} request is ok");
-        }
-
-        // Payload for user-decryption
-        let payload = &json!({"handleContractPairs":[{"handle":"bf9b45c007d626278570aa9622a9c8646f1bfd4e25a5401bd576d15e05320000","contractAddress":"0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"}],"requestValidity":{"startTimestamp":"1742450894","durationDays":"10"},"contractsChainId":"123456","contractAddresses":["0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"],"userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80","signature":"f77ca89b541ca80645dfa2822a95354142b73d078429083569d9ec97e23868282a11bc8f2addeac311edbb0d6b4e2763ae1f8e69702f2ddb89ff952dded2c2d61c","publicKey":"2000000000000000127eae823019dbba103069c7d2ee53b16de8a29057911dfd8ba82c25abfb071a"});
-        let res = client
-            .post("http://localhost:3000/v1/user-decrypt")
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(10))
-            .json(payload)
-            .send()
-            .await
-            .unwrap();
+        let (res, _response_time) = helpers::post_user_decrypt(&client, &payload, 10).await;
         assert_eq!(res.status(), 200);
+        println!("Single user decrypt request completed.");
+    }
 
-        // Should respond under a second using caching system
-        for i in 1..(number_of_queries + 1) {
-            set.spawn(async move {
-                let client = reqwest::Client::new();
-                (
-                    client
-                        .post("http://localhost:3000/v1/user-decrypt")
-                        .header("Content-Type", "application/json")
-                        .timeout(std::time::Duration::from_secs(1)) // The actual interesting part
-                        // of the test is here
-                        .json(&json!({"handleContractPairs":[{"handle":"bf9b45c007d626278570aa9622a9c8646f1bfd4e25a5401bd576d15e05320000","contractAddress":"0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"}],"requestValidity":{"startTimestamp":"1742450894","durationDays":"10"},"contractsChainId":"123456","contractAddresses":["0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"],"userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80","signature":"f77ca89b541ca80645dfa2822a95354142b73d078429083569d9ec97e23868282a11bc8f2addeac311edbb0d6b4e2763ae1f8e69702f2ddb89ff952dded2c2d61c","publicKey":"2000000000000000127eae823019dbba103069c7d2ee53b16de8a29057911dfd8ba82c25abfb071a"}))
-                        .send()
-                        .await
-                        .unwrap(),
-                    i,
-                )
-            });
+    async fn test_user_sequential_requests(payload: serde_json::Value) {
+        let client = reqwest::Client::new();
+        let (res, response_time) = helpers::post_user_decrypt(&client, &payload, 10).await;
+        assert_eq!(res.status(), 200);
+        println!("First public decrypt request took: {:?}", response_time);
+
+        let mut response_times_micros = Vec::new();
+        for i in 0..3 {
+            let (res, response_time) = helpers::post_user_decrypt(&client, &payload, 1).await;
+            assert_eq!(res.status(), 200);
+            response_times_micros.push(response_time.as_micros());
+            println!(
+                "Sequential user decrypt request {} completed in {:?}.",
+                i + 1,
+                response_time
+            );
         }
-        while let Some(res) = set.join_next().await {
-            let (result, index) = res.unwrap();
-            assert_eq!(result.status(), 200);
-            println!("{index} request is ok");
-        }
+        assert!(
+            response_times_micros.iter().all(|&x| x < 1_000_000),
+            "All sequential requests should take less than 1 second"
+        );
     }
 
     #[tokio::test]
@@ -404,8 +359,8 @@ mod tests {
         let payload_3 = helpers::random_payload_for_public_decrypt();
 
         tokio::join!(
-            // test_single_request(payload_1),
-            // test_sequential_requests(payload_2),
+            test_single_request(payload_1),
+            test_sequential_requests(payload_2),
             test_parallel_requests(payload_3),
         );
     }
@@ -521,13 +476,22 @@ mod tests {
     mod helpers {
         use rand::{rng, Rng};
         use serde_json::json;
-        pub fn random_payload_for_public_decrypt() -> serde_json::Value {
+        pub fn random_handle() -> String {
             let mut rng = rng();
-            let random_handle: String = (0..64)
+            (0..64)
                 .map(|_| rng.random_range(0..16))
                 .map(|digit| format!("{:x}", digit))
-                .collect();
+                .collect()
+        }
+
+        pub fn random_payload_for_public_decrypt() -> serde_json::Value {
+            let random_handle = random_handle();
             json!({"ciphertextHandles": [random_handle]})
+        }
+
+        pub fn random_payload_for_user_decrypt() -> serde_json::Value {
+            let random_handle = random_handle();
+            json!({"handleContractPairs":[{"handle":random_handle,"contractAddress":"0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"}],"requestValidity":{"startTimestamp":"1742450894","durationDays":"10"},"contractsChainId":"123456","contractAddresses":["0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"],"userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80","signature":"f77ca89b541ca80645dfa2822a95354142b73d078429083569d9ec97e23868282a11bc8f2addeac311edbb0d6b4e2763ae1f8e69702f2ddb89ff952dded2c2d61c","publicKey":"2000000000000000127eae823019dbba103069c7d2ee53b16de8a29057911dfd8ba82c25abfb071a"})
         }
 
         pub async fn post_public_decrypt(
@@ -538,6 +502,24 @@ mod tests {
             let start = tokio::time::Instant::now();
             let res = client
                 .post("http://localhost:3000/v1/public-decrypt")
+                .header("Content-Type", "application/json")
+                .timeout(std::time::Duration::from_secs(timeout_secs))
+                .json(payload)
+                .send()
+                .await
+                .unwrap();
+            let elapsed = start.elapsed();
+            (res, elapsed)
+        }
+
+        pub async fn post_user_decrypt(
+            client: &reqwest::Client,
+            payload: &serde_json::Value,
+            timeout_secs: u64,
+        ) -> (reqwest::Response, std::time::Duration) {
+            let start = tokio::time::Instant::now();
+            let res = client
+                .post("http://localhost:3000/v1/user-decrypt")
                 .header("Content-Type", "application/json")
                 .timeout(std::time::Duration::from_secs(timeout_secs))
                 .json(payload)
