@@ -39,7 +39,7 @@ impl UserDecryptionDeserializer {
 
         // Step 1: Parse JSON to hex intermediate type
         let hex_responses: JsonResponse = serde_json::from_str(json_str)
-            .map_err(|e| FhevmError::DecryptionError(format!("JSON parse error: {}", e)))?;
+            .map_err(|e| FhevmError::DecryptionError(format!("JSON parse error: {e}")))?;
 
         debug!(
             "Found {} responses to process",
@@ -92,15 +92,15 @@ fn decode_hex_field(hex_str: &str, field_name: &str) -> Result<Vec<u8>> {
     let cleaned = hex_str.trim_start_matches("0x");
 
     hex::decode(cleaned)
-        .map_err(|e| FhevmError::DecryptionError(format!("Invalid {} hex: {}", field_name, e)))
+        .map_err(|e| FhevmError::DecryptionError(format!("Invalid {field_name} hex: {e}")))
 }
 
 /// Deserialize payload bytes to UserDecryptionResponsePayload
 fn deserialize_payload(buf: &[u8]) -> Result<UserDecryptionResponsePayload> {
     debug!("Deserializing payload of {} bytes", buf.len());
 
-    bincode::deserialize(buf)
-        .map_err(|e| FhevmError::DecryptionError(format!("Bincode deserialize error: {}", e)))
+    bc2wrap::deserialize(buf)
+        .map_err(|e| FhevmError::DecryptionError(format!("Bincode deserialize error: {e}")))
 }
 
 #[cfg(test)]

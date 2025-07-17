@@ -43,14 +43,14 @@ fn main() -> Result<(), FhevmError> {
     // - Receive the response and process it as shown below
     let results = sdk
         .create_public_decrypt_response_builder()
-        .kms_signers(vec![
+        .with_kms_signers(vec![
             "0xF7a67027C94d141e5ebC7AeEE03FDF5fa8E0580C".to_string(),
         ])
-        .threshold(1)
-        .gateway_chain_id(54321)
-        .verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
-        .ct_handles(handles)
-        .json_response(mock_response)
+        .with_threshold(1)
+        .with_gateway_chain_id(54321)
+        .with_verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
+        .with_ct_handles(handles)
+        .with_json_response(mock_response)
         .process()?;
 
     // 5. Display the decrypted results

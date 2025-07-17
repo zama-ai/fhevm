@@ -32,7 +32,7 @@ pub fn validate_address_from_str(addr_str: &str) -> Result<Address> {
     debug!("Parsing address: {}", addr_str);
 
     let address = Address::from_str(addr_str.trim()).map_err(|e| {
-        FhevmError::InvalidParams(format!("Invalid address format '{}': {}", addr_str, e))
+        FhevmError::InvalidParams(format!("Invalid address format '{addr_str}': {e}"))
     })?;
 
     debug!("Parsed address: {}", address);
@@ -45,14 +45,10 @@ pub fn validate_address_from_str(addr_str: &str) -> Result<Address> {
 
 /// Helper function to parse hex strings with or without 0x prefix
 pub fn parse_hex_string(hex_str: &str, field_name: &str) -> Result<Bytes> {
-    let cleaned = if hex_str.starts_with("0x") {
-        &hex_str[2..]
-    } else {
-        hex_str
-    };
+    let cleaned = hex_str.strip_prefix("0x").unwrap_or(hex_str);
 
     let bytes = hex::decode(cleaned).map_err(|e| {
-        FhevmError::InvalidParams(format!("Invalid hex string for {}: {}", field_name, e))
+        FhevmError::InvalidParams(format!("Invalid hex string for {field_name}: {e}"))
     })?;
 
     Ok(Bytes::from(bytes))
@@ -60,7 +56,7 @@ pub fn parse_hex_string(hex_str: &str, field_name: &str) -> Result<Bytes> {
 
 pub fn generate_fhe_keyset(output_dir: &Path) -> Result<()> {
     std::fs::create_dir_all(output_dir)
-        .map_err(|e| FhevmError::FileError(format!("Failed to create output directory: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to create output directory: {e}")))?;
 
     let params = tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
     // Indicate which parameters to use for the Compact Public Key encryption
@@ -94,24 +90,24 @@ pub fn generate_fhe_keyset(output_dir: &Path) -> Result<()> {
     safe_serialize(&crs, &mut serialized_crs, 1 << 30).unwrap();
 
     std::fs::write(output_dir.join("public_key.bin"), &serialized_pub_key)
-        .map_err(|e| FhevmError::FileError(format!("Failed to write public key: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to write public key: {e}")))?;
 
     std::fs::write(output_dir.join("crs.bin"), &serialized_crs)
-        .map_err(|e| FhevmError::FileError(format!("Failed to write CRS: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to write CRS: {e}")))?;
 
     let mut client_key_file = File::create(output_dir.join("client_key.bin"))
-        .map_err(|e| FhevmError::FileError(format!("Failed to create client key file: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to create client key file: {e}")))?;
 
     client_key_file
         .write_all(&serialized_client_key)
-        .map_err(|e| FhevmError::FileError(format!("Failed to write client key: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to write client key: {e}")))?;
 
     let mut server_key_file = File::create(output_dir.join("server_key.bin"))
-        .map_err(|e| FhevmError::FileError(format!("Failed to create server key file: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to create server key file: {e}")))?;
 
     server_key_file
         .write_all(&serialized_server_key)
-        .map_err(|e| FhevmError::FileError(format!("Failed to write server key: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to write server key: {e}")))?;
 
     info!(
         "FHE keyset generated and saved successfully to: {}",
@@ -143,36 +139,36 @@ pub fn load_fhe_keyset(
 
     // Read public key
     let pub_key_data = std::fs::read(input_dir.join("public_key.bin"))
-        .map_err(|e| FhevmError::FileError(format!("Failed to read public key: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to read public key: {e}")))?;
 
     let public_key: CompactPublicKey =
         safe_deserialize_conformant(pub_key_data.as_slice(), 1 << 30, &cpk_params).map_err(
-            |e| FhevmError::EncryptionError(format!("Failed to deserialize public key: {}", e)),
+            |e| FhevmError::EncryptionError(format!("Failed to deserialize public key: {e}")),
         )?;
 
     // Read client key
     let client_key_data = std::fs::read(input_dir.join("client_key.bin"))
-        .map_err(|e| FhevmError::FileError(format!("Failed to read client key: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to read client key: {e}")))?;
 
     let client_key: ClientKey =
         safe_deserialize(client_key_data.as_slice(), 1 << 30).map_err(|e| {
-            FhevmError::EncryptionError(format!("Failed to deserialize client key: {}", e))
+            FhevmError::EncryptionError(format!("Failed to deserialize client key: {e}"))
         })?;
 
     // Read server key
     let server_key_data = std::fs::read(input_dir.join("server_key.bin"))
-        .map_err(|e| FhevmError::FileError(format!("Failed to read server key: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to read server key: {e}")))?;
 
     let server_key = safe_deserialize(server_key_data.as_slice(), 1 << 32).map_err(|e| {
-        FhevmError::EncryptionError(format!("Failed to deserialize server key: {}", e))
+        FhevmError::EncryptionError(format!("Failed to deserialize server key: {e}"))
     })?;
 
     // Read CRS
     let crs_data = std::fs::read(input_dir.join("crs.bin"))
-        .map_err(|e| FhevmError::FileError(format!("Failed to read CRS: {}", e)))?;
+        .map_err(|e| FhevmError::FileError(format!("Failed to read CRS: {e}")))?;
 
     let crs = safe_deserialize(crs_data.as_slice(), 1 << 30)
-        .map_err(|e| FhevmError::EncryptionError(format!("Failed to deserialize CRS: {}", e)))?;
+        .map_err(|e| FhevmError::EncryptionError(format!("Failed to deserialize CRS: {e}")))?;
 
     info!("FHE keyset loaded successfully");
 
@@ -190,8 +186,8 @@ pub fn chain_id_to_bytes(chain_id: u64) -> [u8; 32] {
     debug!("chain_id_bytes length: {}", chain_id_bytes.len());
     debug!("chain_id_bytes hex: {}", hex::encode(chain_id_bytes));
 
-    let start_idx = 32 - chain_id_bytes.len();
-    debug!("start_idx: {}", start_idx);
+    let start_idx = buffer.len().saturating_sub(chain_id_bytes.len());
+    debug_assert!(start_idx + chain_id_bytes.len() <= buffer.len());
 
     buffer[start_idx..].copy_from_slice(&chain_id_bytes);
 

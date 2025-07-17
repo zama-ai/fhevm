@@ -31,7 +31,7 @@ fn main() -> Result<()> {
     )?;
 
     println!("✅ Value 42 encrypted!");
-    println!("   Handle: 0x{}", hex::encode(&encrypted.handles[0]));
+    println!("   Handle: 0x{}", hex::encode(encrypted.handles[0]));
     println!("   Ciphertext: {} bytes", encrypted.ciphertext.len());
 
     Ok(())
