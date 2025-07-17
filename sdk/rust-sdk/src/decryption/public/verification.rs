@@ -76,12 +76,9 @@ fn create_verification_message(
 }
 
 fn parse_handle_to_bytes32(handle: &str) -> Result<FixedBytes<32>> {
-    let bytes = if handle.starts_with("0x") {
-        hex::decode(&handle[2..])
-    } else {
-        hex::decode(handle)
-    }
-    .map_err(|e| FhevmError::InvalidParams(format!("Invalid handle hex: {}", e)))?;
+    let cleaned = handle.strip_prefix("0x").unwrap_or(handle);
+    let bytes = hex::decode(cleaned)
+        .map_err(|e| FhevmError::InvalidParams(format!("Invalid handle hex: {}", e)))?;
 
     if bytes.len() != 32 {
         return Err(FhevmError::InvalidParams(

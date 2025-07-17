@@ -48,11 +48,7 @@ pub fn validate_private_key_format(private_key: &str) -> Result<()> {
     }
 
     // Remove 0x prefix if present
-    let cleaned_key = if private_key.starts_with("0x") {
-        &private_key[2..]
-    } else {
-        private_key
-    };
+    let cleaned_key = private_key.strip_prefix("0x").unwrap_or(private_key);
 
     // Check length (64 hex characters = 32 bytes)
     if cleaned_key.len() != 64 {
@@ -79,11 +75,8 @@ pub(crate) fn sign_eip712_hash(hash: B256, private_key: &str) -> Result<Bytes> {
     use std::str::FromStr;
 
     // Parse the private key (remove 0x prefix if present)
-    let private_key_str = if private_key.starts_with("0x") {
-        &private_key[2..]
-    } else {
-        private_key
-    };
+    let private_key_str = private_key.strip_prefix("0x").unwrap_or(private_key);
+        
 
     // Create the signer
     let signer = PrivateKeySigner::from_str(private_key_str)
@@ -113,11 +106,7 @@ pub(crate) fn sign_eip712_hash(hash: B256, private_key: &str) -> Result<Bytes> {
 pub fn derive_address_from_private_key(private_key: &str) -> Result<Address> {
     use std::str::FromStr;
 
-    let private_key_str = if private_key.starts_with("0x") {
-        &private_key[2..]
-    } else {
-        private_key
-    };
+    let private_key_str = private_key.strip_prefix("0x").unwrap_or(private_key);
 
     let signer = PrivateKeySigner::from_str(private_key_str)
         .map_err(|e| FhevmError::SignatureError(format!("Invalid private key: {}", e)))?;

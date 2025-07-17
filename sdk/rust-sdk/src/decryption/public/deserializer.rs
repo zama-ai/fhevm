@@ -269,8 +269,8 @@ mod tests {
     fn test_decode_address() {
         let mut value_bytes = [0u8; 32];
         // Set address bytes (last 20 bytes)
-        for i in 12..32 {
-            value_bytes[i] = 0xab;
+        for item in value_bytes.iter_mut().skip(12) {
+            *item = 0xab;
         }
 
         let result = decode_address(&value_bytes).unwrap();

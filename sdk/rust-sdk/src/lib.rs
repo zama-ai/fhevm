@@ -234,14 +234,10 @@ impl FhevmSdk {
     /// # }
     /// ```
     pub fn create_eip712_signature_builder(&self) -> signature::eip712::Eip712SignatureBuilder {
-        let verifying_contract = self
-            .config
-            .gateway_contracts
-            .decryption
-            .unwrap_or_else(|| {
-                warn!("Decryption contract not set, using zero address");
-                Address::ZERO
-            });
+        let verifying_contract = self.config.gateway_contracts.decryption.unwrap_or_else(|| {
+            warn!("Decryption contract not set, using zero address");
+            Address::ZERO
+        });
 
         let config = signature::eip712::Eip712Config {
             gateway_chain_id: self.config.gateway_chain_id,

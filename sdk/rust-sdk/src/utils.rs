@@ -45,11 +45,7 @@ pub fn validate_address_from_str(addr_str: &str) -> Result<Address> {
 
 /// Helper function to parse hex strings with or without 0x prefix
 pub fn parse_hex_string(hex_str: &str, field_name: &str) -> Result<Bytes> {
-    let cleaned = if hex_str.starts_with("0x") {
-        &hex_str[2..]
-    } else {
-        hex_str
-    };
+    let cleaned = hex_str.strip_prefix("0x").unwrap_or(hex_str);
 
     let bytes = hex::decode(cleaned).map_err(|e| {
         FhevmError::InvalidParams(format!("Invalid hex string for {}: {}", field_name, e))
