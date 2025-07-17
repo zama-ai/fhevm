@@ -161,7 +161,6 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       );
 
       const abiCoder = new ethers.AbiCoder();
-      const extraDataV0 = ethers.solidityPacked(['uint8'], [0]);
       let encodedData;
       let decryptedResult;
 
@@ -169,7 +168,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       // + adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
       decryptedResult = '0x' + encodedData.slice(66).slice(0, -64); // we pop the dummy requestID to get the correct value to pass for `decryptedCts` + we also pop the last 32 bytes (empty bytes[])
 
-      const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult, extraDataV0);
+      const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult);
 
       const calldata =
         callbackSelector +
@@ -197,24 +196,20 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
   }
 };
 
-async function computeDecryptSignatures(
-  handlesList: string[],
-  decryptedResult: string,
-  extraData: string,
-): Promise<string[]> {
+async function computeDecryptSignatures(handlesList: string[], decryptedResult: string): Promise<string[]> {
   const signatures: string[] = [];
 
   let signers = await getKMSSigners();
 
   for (let idx = 0; idx < signers.length; idx++) {
     const kmsSigner = signers[idx];
-    const signature = await kmsSign(handlesList, decryptedResult, extraData, kmsSigner);
+    const signature = await kmsSign(handlesList, decryptedResult, kmsSigner);
     signatures.push(signature);
   }
   return signatures;
 }
 
-async function kmsSign(handlesList: string[], decryptedResult: string, extraData: string, kmsSigner: Wallet) {
+async function kmsSign(handlesList: string[], decryptedResult: string, kmsSigner: Wallet) {
   const decAdd = process.env.DECRYPTION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;
 
@@ -235,16 +230,11 @@ async function kmsSign(handlesList: string[], decryptedResult: string, extraData
         name: 'decryptedResult',
         type: 'bytes',
       },
-      {
-        name: 'extraData',
-        type: 'bytes',
-      },
     ],
   };
   const message = {
     ctHandles: handlesList,
-    decryptedResult,
-    extraData,
+    decryptedResult: decryptedResult,
   };
 
   const signature = await kmsSigner.signTypedData(domain, types, message);

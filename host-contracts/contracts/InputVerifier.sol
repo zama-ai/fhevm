@@ -83,13 +83,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         address contractAddress;
         /// @notice The chainId of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
-        /// @notice Generic bytes metadata for versioned payloads.
-        bytes extraData;
     }
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string public constant EIP712_INPUT_VERIFICATION_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
 
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 public constant EIP712_INPUT_VERIFICATION_TYPEHASH = keccak256(bytes(EIP712_INPUT_VERIFICATION_TYPE));
@@ -186,8 +184,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     function verifyCiphertext(
         FHEVMExecutor.ContextUserInputs memory context,
         bytes32 inputHandle,
-        bytes memory inputProof,
-        bytes memory extraData
+        bytes memory inputProof
     ) public virtual returns (bytes32) {
         (bool isProofCached, bytes32 cacheKey) = _checkProofCache(
             inputProof,
@@ -241,7 +238,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
             ctVerif.ctHandles = listHandles;
             ctVerif.userAddress = context.userAddress;
             ctVerif.contractAddress = context.contractAddress;
-            ctVerif.extraData = extraData;
             _verifyEIP712(ctVerif, signatures);
 
             _cacheProof(cacheKey);
@@ -392,8 +388,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
-                        block.chainid,
-                        ctVerification.extraData
+                        block.chainid
                     )
                 )
             );
