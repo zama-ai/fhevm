@@ -156,7 +156,7 @@ where
 
         // TODO: optimize for low latency
         let receipt = tx.get_receipt().await?;
-        info!("🎯 response sent successfully!");
+        info!("Response sent successfully!");
         debug!("Transaction receipt: {:?}", receipt);
         Ok(())
     }
@@ -188,7 +188,7 @@ where
 
         // TODO: optimize for low latency
         let receipt = tx.get_receipt().await?;
-        info!("🎯 response sent successfully!");
+        info!("Response sent successfully!");
         debug!("Transaction receipt: {:?}", receipt);
         Ok(())
     }

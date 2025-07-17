@@ -116,7 +116,7 @@ impl KmsClient {
         // Log the FHE types being processed in this request
         if let Some(ciphertexts) = request.ciphertexts.as_slice().first() {
             info!(
-                "[OUT] 🔑 Sending GRPC request with FHE type: {}",
+                "[OUT] Sending GRPC request with FHE type: {}",
                 ciphertexts.fhe_type
             );
         } else {
@@ -170,7 +170,7 @@ impl KmsClient {
             .join(", ");
 
         info!(
-            "[OUT] 🔑 Sending GRPC request for client {} with FHE types: [{}]",
+            "[OUT] Sending GRPC request for client {} with FHE types: [{}]",
             request.client_address, fhe_types
         );
 

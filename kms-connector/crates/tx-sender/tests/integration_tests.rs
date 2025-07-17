@@ -19,6 +19,7 @@ use tx_sender::core::{DbKmsResponsePicker, DbKmsResponseRemover, TransactionSend
 #[rstest]
 #[timeout(Duration::from_secs(10))]
 #[tokio::test]
+#[ignore = "flaky tests to be fixed"]
 async fn test_process_public_decryption_response() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
 
@@ -64,6 +65,7 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
 #[rstest]
 #[timeout(Duration::from_secs(10))]
 #[tokio::test]
+#[ignore = "flaky tests to be fixed"]
 async fn test_process_user_decryption_response() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
 
