@@ -347,7 +347,7 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
     ) -> Result<()> {
         let event = match result {
             Some(Ok((event, log))) => {
-                info!("[EVENT] 🔒 Received {} event:", event_name);
+                info!("[EVENT] Received {} event:", event_name);
                 info!(
                     "  Block: {}, Tx: {}, LogIdx: {}",
                     log.block_number
@@ -364,7 +364,7 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
                 debug!("  Raw Data: {:?}", log.data());
                 debug!("  Decoded Event: {:#?}", event);
                 let core_event = event_constructor(event);
-                debug!("🔎 Event processed: {:#?}", core_event);
+                debug!("Event processed: {:#?}", core_event);
                 core_event
             }
             Some(Err(e)) => {
