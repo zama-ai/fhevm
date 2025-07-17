@@ -35,6 +35,7 @@ tracing-subscriber.workspace = true
 
 rand = { workspace = true, optional = true }
 testcontainers = { workspace = true, optional = true }
+tracing-test = { workspace = true, optional = true }
 
 [dev-dependencies]
 serial_test.workspace = true
@@ -46,5 +47,6 @@ tests = [
     "alloy/node-bindings",
     "dep:rand",
     "dep:testcontainers",
+    "dep:tracing-test",
     "sqlx/migrate",
 ]
