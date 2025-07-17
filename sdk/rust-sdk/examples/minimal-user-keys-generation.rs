@@ -17,12 +17,12 @@ fn main() -> Result<()> {
     println!(
         "   Public:  {}\n   Len: {},",
         keypair.public_key[..32].to_string() + "...",
-        (keypair.public_key.bytes().len() / 2 - 1)
+        (keypair.public_key.len() / 2 - 1)
     );
     println!(
         "   Private: {}\n   Len: {},",
         keypair.private_key[..32].to_string() + "...",
-        (keypair.private_key.bytes().len() / 2 - 1)
+        (keypair.private_key.len() / 2 - 1)
     );
 
     Ok(())
