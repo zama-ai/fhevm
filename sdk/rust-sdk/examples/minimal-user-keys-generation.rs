@@ -14,8 +14,16 @@ fn main() -> Result<()> {
     let keypair = generate_keypair()?;
 
     println!("✅ Keypair generated:");
-    println!("   Public:  {}", keypair.public_key);
-    println!("   Private: {}", keypair.private_key);
+    println!(
+        "   Public:  {}\n   Len: {},",
+        keypair.public_key[..32].to_string() + "...",
+        (keypair.public_key.bytes().len() / 2 - 1)
+    );
+    println!(
+        "   Private: {}\n   Len: {},",
+        keypair.private_key[..32].to_string() + "...",
+        (keypair.private_key.bytes().len() / 2 - 1)
+    );
 
     Ok(())
 }

@@ -48,11 +48,11 @@ fn main() -> Result<()> {
 
     match sdk
         .create_user_decrypt_request_builder()
-        .add_handles_from_bytes(&handle_vecs, &contract_addresses)?
-        .user_address_from_str(&user_address.to_string())?
-        .signature_from_hex(signature)?
-        .public_key_from_hex(&public_key)?
-        .validity(start_timestamp, duration_days)?
+        .with_handles_from_bytes(&handle_vecs, &contract_addresses)?
+        .with_user_address_from_str(&user_address.to_string())?
+        .with_signature_from_hex(signature)?
+        .with_public_key_from_hex(public_key)?
+        .with_validity(start_timestamp, duration_days)?
         .build_and_generate_calldata()
     {
         Ok(calldata) => {

@@ -89,18 +89,23 @@ pub(crate) fn sign_eip712_hash(hash: B256, private_key: &str) -> Result<Bytes> {
     let signer = PrivateKeySigner::from_str(private_key_str)
         .map_err(|e| FhevmError::SignatureError(format!("Invalid private key: {}", e)))?;
 
-    // Since sign_hash is async, we need to block on it
-    // Create a minimal runtime
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| FhevmError::SignatureError(format!("Failed to create runtime: {}", e)))?;
+    // Try to use existing runtime, fallback to blocking if needed
+    let signature = if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        // We're already in a tokio runtime
+        handle.block_on(async { signer.sign_hash(&hash).await })
+    } else {
+        // No runtime exists, create a minimal one
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| FhevmError::SignatureError(format!("Failed to create runtime: {}", e)))?;
 
-    let signature = rt
-        .block_on(async { signer.sign_hash(&hash).await })
-        .map_err(|e| FhevmError::SignatureError(format!("Failed to sign: {}", e)))?;
+        rt.block_on(async { signer.sign_hash(&hash).await })
+    };
 
-    // Convert to bytes - Alloy signature already has the correct format
+    let signature =
+        signature.map_err(|e| FhevmError::SignatureError(format!("Failed to sign: {}", e)))?;
+
     Ok(Bytes::from(signature.as_bytes().to_vec()))
 }
 

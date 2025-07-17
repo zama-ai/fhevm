@@ -34,7 +34,7 @@ impl PublicDecryptRequestBuilder {
     /// * If no handles are provided
     /// * If any handle is not exactly 32 bytes
     /// * If more than 256 handles are provided (protocol limit)
-    pub fn add_handles_from_bytes(mut self, handles: &[Vec<u8>]) -> Result<Self> {
+    pub fn with_handles_from_bytes(mut self, handles: &[Vec<u8>]) -> Result<Self> {
         validate_handles(handles)?;
 
         for (i, handle) in handles.iter().enumerate() {
@@ -53,12 +53,12 @@ impl PublicDecryptRequestBuilder {
     ///
     /// # Example
     /// ```ignore
-    /// builder.add_handles_from_hex(&[
+    /// builder.with_handles_from_hex(&[
     ///     "0xf2eac20e8f2385a14094f424c3adb8ee0a713bfcbbff00000000000030390200",
     ///     "a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890"
     /// ])?;
     /// ```
-    pub fn add_handles_from_hex(mut self, hex_handles: &[&str]) -> Result<Self> {
+    pub fn with_handles_from_hex(mut self, hex_handles: &[&str]) -> Result<Self> {
         validate_handles_count(hex_handles.len())?;
 
         for (i, hex_handle) in hex_handles.iter().enumerate() {
@@ -72,7 +72,7 @@ impl PublicDecryptRequestBuilder {
     }
 
     /// Add a single handle from bytes
-    pub fn add_handle(mut self, handle: &[u8]) -> Result<Self> {
+    pub fn with_handle(mut self, handle: &[u8]) -> Result<Self> {
         validate_handle_size(handle, 0)?;
         let fixed_bytes = FixedBytes::<32>::from_slice(handle);
         self.ct_handles.push(fixed_bytes);
@@ -80,7 +80,7 @@ impl PublicDecryptRequestBuilder {
     }
 
     /// Clear all handles (useful for reusing the builder)
-    pub fn clear(mut self) -> Self {
+    pub fn with_handles_cleared(mut self) -> Self {
         self.ct_handles.clear();
         self
     }
@@ -108,22 +108,28 @@ impl PublicDecryptRequestBuilder {
     /// Use this method if you need the structured request object for other purposes
     /// besides generating calldata.
     pub fn build(self) -> Result<PublicDecryptRequest> {
+        self.validate()?;
+        debug!("✅ PublicDecryptRequest built successfully");
+        debug!("   📊 Handles: {}", self.ct_handles.len());
+        Ok(PublicDecryptRequest {
+            ct_handles: self.ct_handles,
+        })
+    }
+
+    fn validate(&self) -> Result<()> {
         if self.ct_handles.is_empty() {
             return Err(FhevmError::InvalidParams(
-                "❌ Missing handles: Call `add_handles_from_bytes()` or `add_handles_from_hex()` first.\n\
-                 💡 Tip: You need at least one encrypted handle to decrypt publicly."
-                    .to_string(),
+                "Missing handles: Call `with_handles_from_bytes()` or `with_handles_from_hex()` first.".to_string(),
             ));
         }
 
-        let request = PublicDecryptRequest {
-            ct_handles: self.ct_handles,
-        };
+        if self.ct_handles.len() > 256 {
+            return Err(FhevmError::InvalidParams(
+                "Maximum 256 handles allowed in a single public decryption request".to_string(),
+            ));
+        }
 
-        debug!("✅ PublicDecryptRequest built successfully");
-        debug!("   📊 Handles: {}", request.ct_handles.len());
-
-        Ok(request)
+        Ok(())
     }
 }
 
@@ -171,7 +177,7 @@ mod tests {
     fn test_builder_with_valid_handles() {
         let handles = vec![vec![1u8; 32], vec![2u8; 32]];
         let result = PublicDecryptRequestBuilder::new()
-            .add_handles_from_bytes(&handles)
+            .with_handles_from_bytes(&handles)
             .unwrap()
             .build();
 

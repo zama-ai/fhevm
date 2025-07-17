@@ -41,19 +41,19 @@ fn main() -> Result<()> {
     }"#;
 
     let result = sdk.create_user_decrypt_response_builder()
-        .add_kms_signer("0x67F6A11ADf13CEDdB8319Fe12705809563611703".to_string())
-        .gateway_chain_id(54321)
-        .user_address("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80")
-        .verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
-        .public_key(
+        .with_kms_signer("0x67F6A11ADf13CEDdB8319Fe12705809563611703".to_string())
+        .with_gateway_chain_id(54321)
+        .with_user_address("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80")
+        .with_verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
+        .with_public_key(
             "2000000000000000750f4e54713eae622dfeb01809290183a447e2b277e89d2c6a681af1aa5b2c2b",
         )
-        .private_key(
+        .with_private_key(
             "2000000000000000321387e7b579a16d9bcb17d14625dc2841314c05f7c266418a9576091178902d",
         )
-        .handle_contract_pairs([handle_pair].to_vec())
-        .signature("791e8a06dab85d960745c4c5dea65fdc250e0d42cbfbd2037ae221d2baa980c062f8b46f023c11bba8ba49c17e9e73a8ce0556040c567849b62b675678c3bc071c")
-        .json_response(json_response)
+        .with_handle_contract_pairs([handle_pair].to_vec())
+        .with_signature("791e8a06dab85d960745c4c5dea65fdc250e0d42cbfbd2037ae221d2baa980c062f8b46f023c11bba8ba49c17e9e73a8ce0556040c567849b62b675678c3bc071c")
+        .with_json_response(json_response)
         .process();
 
     match result {

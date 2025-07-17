@@ -215,18 +215,18 @@ impl FhevmSdk {
     /// # fn example(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     /// // Just generate hash
     /// let hash = sdk.eip712_builder()
-    ///     .public_key("0x2000...")
-    ///     .add_contract("0x742d...")?
-    ///     .validity_period(1748252823, 10)
+    ///     .with_public_key("0x2000...")
+    ///     .with_contract("0x742d...")?
+    ///     .with_validity_period(1748252823, 10)
     ///     .generate_hash()?;
     ///
     /// // Sign and verify (consistent with your actual usage)
     /// let result = sdk.eip712_builder()
-    ///     .public_key("0x2000...")
-    ///     .add_contract("0x742d...")?
-    ///     .validity_period(1748252823, 10)
-    ///     .sign_with("0x7136...")
-    ///     .verify(true)
+    ///     .with_public_key("0x2000...")
+    ///     .with_contract("0x742d...")?
+    ///     .with_validity_period(1748252823, 10)
+    ///     .with_private_key("0x7136...")
+    ///     .with_verification(true)
     ///     .build()?;
     ///
     /// println!("Signed: {}, Verified: {}", result.is_signed(), result.is_verified());
@@ -321,7 +321,7 @@ impl FhevmSdk {
         // Use the existing builder pattern
         let calldata = self
             .create_public_decrypt_request_builder()
-            .add_handles_from_bytes(ct_handles)?
+            .with_handles_from_bytes(ct_handles)?
             .build_and_generate_calldata()?;
 
         info!(
@@ -470,11 +470,11 @@ impl FhevmSdk {
     /// # let timestamp = 1640995200u64;
     /// #
     /// let calldata = sdk.create_user_decrypt_request_builder()
-    ///     .add_handles_from_bytes(&handles, &contracts)?
-    ///     .user_address_from_str("0x742d35Cc6634C0...")?
-    ///     .signature_from_hex("0x1234567890abc5678...")?
-    ///     .public_key_from_hex("0x200000000000...bc6f331")?
-    ///     .validity(timestamp, 30)?
+    ///     .with_handles_from_bytes(&handles, &contracts)?
+    ///     .with_user_address_from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B3")?
+    ///     .with_signature_from_hex("0x1234567890abc5678...")?
+    ///     .with_public_key_from_hex("0x200000000000...bc6f331")?
+    ///     .with_validity(timestamp, 30)?
     ///     .build_and_generate_calldata()?;
     ///
     /// println!("Generated calldata: {} bytes", calldata.len());
@@ -484,14 +484,14 @@ impl FhevmSdk {
     ///
     /// # Quick Start Steps
     ///
-    /// 1. **Add handles**: `.add_handles_from_bytes()` - The encrypted data  
-    /// 2. **Set user**: `.user_address_from_str()` - Who can decrypt
-    /// 3. **Add signature**: `.signature_from_hex()` - EIP-712 signature
-    /// 4. **Add public key**: `.public_key_from_hex()` - User's decryption key
-    /// 5. **Set validity**: `.validity()` - Time period for permission
+    /// 1. **Add handles**: `.with_handles_from_bytes()` - The encrypted data  
+    /// 2. **Set user**: `.with_user_address_from_str()` - Who can decrypt
+    /// 3. **Add signature**: `.with_signature_from_hex()` - EIP-712 signature
+    /// 4. **Add public key**: `.with_public_key_from_hex()` - User's decryption key
+    /// 5. **Set validity**: `.with_validity()` - Time period for permission
     /// 6. **Build**: `.build_and_generate_calldata()` - Generate final calldata
     pub fn create_user_decrypt_request_builder(&self) -> UserDecryptRequestBuilder {
-        UserDecryptRequestBuilder::new().contracts_chain_id(self.config.host_chain_id)
+        UserDecryptRequestBuilder::new().with_contracts_chain_id(self.config.host_chain_id)
     }
 
     /// Alternative shorter name for discoverability
@@ -500,7 +500,7 @@ impl FhevmSdk {
     }
 
     pub fn create_user_decrypt_response_builder(&self) -> UserDecryptionResponseBuilder {
-        UserDecryptionResponseBuilder::new().gateway_chain_id(self.config.gateway_chain_id)
+        UserDecryptionResponseBuilder::new().with_gateway_chain_id(self.config.gateway_chain_id)
     }
 
     /// Alternative shorter name for discoverability
@@ -534,7 +534,7 @@ impl FhevmSdk {
     /// # let handles = vec![vec![1u8; 32], vec![2u8; 32]]; // Your encrypted handles
     /// #
     /// let calldata = sdk.create_public_decrypt_request_builder()
-    ///     .add_handles_from_bytes(&handles)?
+    ///     .with_handles_from_bytes(&handles)?
     ///     .build_and_generate_calldata()?;
     ///
     /// println!("Generated calldata: {} bytes", calldata.len());
@@ -559,7 +559,7 @@ impl FhevmSdk {
         &self,
     ) -> decryption::public::PublicDecryptionResponseBuilder {
         decryption::public::PublicDecryptionResponseBuilder::new()
-            .gateway_chain_id(self.config.gateway_chain_id)
+            .with_gateway_chain_id(self.config.gateway_chain_id)
     }
 
     /// Alternative shorter name for discoverability  

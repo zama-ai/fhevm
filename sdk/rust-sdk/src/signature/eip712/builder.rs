@@ -6,7 +6,7 @@ use crate::signature::derive_address_from_private_key;
 use crate::{FhevmError, Result};
 use alloy::primitives::{Address, Bytes};
 use alloy::sol_types::SolStruct;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Builder for EIP-712 signature generation with a fluent API
 ///
@@ -75,20 +75,20 @@ impl Eip712SignatureBuilder {
     }
 
     /// Set the user's public key for decryption
-    pub fn public_key(mut self, key: &str) -> Self {
+    pub fn with_public_key(mut self, key: &str) -> Self {
         self.public_key = Some(key.to_string());
         self
     }
 
     /// Add a single contract address (accepts &str, String, Address, or &Address)
-    pub fn add_contract<T: IntoEthereumAddress>(mut self, address: T) -> Result<Self> {
+    pub fn with_contract<T: IntoEthereumAddress>(mut self, address: T) -> Result<Self> {
         let addr = address.into_address()?;
         self.contract_addresses.push(addr);
         Ok(self)
     }
 
     /// Add multiple contract addresses from an iterator
-    pub fn add_contracts<I, T>(mut self, addresses: I) -> Result<Self>
+    pub fn with_contracts<I, T>(mut self, addresses: I) -> Result<Self>
     where
         I: IntoIterator<Item = T>,
         T: IntoEthereumAddress,
@@ -101,26 +101,26 @@ impl Eip712SignatureBuilder {
     }
 
     /// Set contract addresses from Address types
-    pub fn with_contract_addresses(mut self, addresses: Vec<Address>) -> Self {
+    pub fn with_contract_addresses_vec(mut self, addresses: Vec<Address>) -> Self {
         self.contract_addresses = addresses;
         self
     }
 
     /// Clear all contract addresses (useful for reusing builder)
-    pub fn clear_contracts(mut self) -> Self {
+    pub fn with_contracts_cleared(mut self) -> Self {
         self.contract_addresses.clear();
         self
     }
 
     /// Set the validity period
-    pub fn validity_period(mut self, start_timestamp: u64, duration_days: u64) -> Self {
+    pub fn with_validity_period(mut self, start_timestamp: u64, duration_days: u64) -> Self {
         self.start_timestamp = Some(start_timestamp);
         self.duration_days = Some(duration_days);
         self
     }
 
     /// Set just the start timestamp (duration defaults to 30 days)
-    pub fn starts_at(mut self, timestamp: u64) -> Self {
+    pub fn with_start_timestamp(mut self, timestamp: u64) -> Self {
         self.start_timestamp = Some(timestamp);
         if self.duration_days.is_none() {
             self.duration_days = Some(30); // Default 30 days
@@ -129,7 +129,7 @@ impl Eip712SignatureBuilder {
     }
 
     /// Set start timestamp to current time
-    pub fn starts_now(mut self) -> Self {
+    pub fn with_start_now(mut self) -> Self {
         self.start_timestamp = Some(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -140,7 +140,7 @@ impl Eip712SignatureBuilder {
     }
 
     /// Set just the duration (start defaults to now)
-    pub fn valid_for_days(mut self, days: u64) -> Self {
+    pub fn with_duration_days(mut self, days: u64) -> Self {
         self.duration_days = Some(days);
         if self.start_timestamp.is_none() {
             self.start_timestamp = Some(
@@ -154,13 +154,13 @@ impl Eip712SignatureBuilder {
     }
 
     /// Sign with a private key
-    pub fn sign_with(mut self, private_key: &str) -> Self {
+    pub fn with_private_key(mut self, private_key: &str) -> Self {
         self.private_key = Some(private_key.to_string());
         self
     }
 
     /// Enable or disable signature verification
-    pub fn verify(mut self, should_verify: bool) -> Self {
+    pub fn with_verification(mut self, should_verify: bool) -> Self {
         self.verify_signature = should_verify;
         self
     }
@@ -176,35 +176,19 @@ impl Eip712SignatureBuilder {
     pub fn build(self) -> Result<Eip712Result> {
         debug!("Building EIP-712 signature");
 
-        // Validate required fields
-        let public_key = self.public_key.as_ref().ok_or_else(|| {
-            FhevmError::InvalidParams(
-                "Public key is required. Call .public_key() first.".to_string(),
-            )
-        })?;
+        self.validate()?;
+        self.generate_signature()
+    }
 
-        if self.contract_addresses.is_empty() {
-            return Err(FhevmError::InvalidParams(
-                "At least one contract address is required. Call .add_contract() first."
-                    .to_string(),
-            ));
-        }
-
+    fn generate_signature(self) -> Result<Eip712Result> {
+        let public_key = self.public_key.as_ref().unwrap(); // Safe after validation
         let start_timestamp = self.start_timestamp.unwrap_or_else(|| {
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs()
         });
-
-        let duration_days = self.duration_days.unwrap_or(30); // Default 30 days
-
-        // Validate duration
-        if duration_days == 0 || duration_days > 365 {
-            return Err(FhevmError::InvalidParams(
-                "Duration must be between 1 and 365 days".to_string(),
-            ));
-        }
+        let duration_days = self.duration_days.unwrap_or(30);
 
         info!(
             "Generating EIP-712 hash with {} contracts, {} days validity",
@@ -212,46 +196,20 @@ impl Eip712SignatureBuilder {
             duration_days
         );
 
-        // Parse public key
-        let public_key_bytes = crate::utils::parse_hex_string(&public_key, "public key")?;
-
         // Generate hash
+        let public_key_bytes = crate::utils::parse_hex_string(public_key, "public key")?;
         let hash =
             self.generate_hash_internal(&public_key_bytes, start_timestamp, duration_days)?;
 
         // Handle signing if private key provided
         if let Some(private_key) = self.private_key {
-            info!("Signing EIP-712 hash");
-
-            // Validate private key format
             crate::signature::validate_private_key_format(&private_key)?;
-
-            // Sign the hash
             let signature = crate::signature::sign_eip712_hash(hash, &private_key)?;
-
-            // Recover signer
             let signer = verification::recover_signer(&signature, hash)?;
-            debug!("Recovered signer: {}", signer);
 
-            // Verify if requested
             let verified = if self.verify_signature {
-                debug!("Verifying signature");
                 let expected_signer = derive_address_from_private_key(&private_key)?;
-                let is_valid = signer == expected_signer;
-
-                if is_valid {
-                    info!(
-                        "✅ Signature verification passed: signer {} matches expected",
-                        signer
-                    );
-                } else {
-                    warn!(
-                        "❌ Signature verification failed: expected {}, got {}",
-                        expected_signer, signer
-                    );
-                }
-
-                Some(is_valid)
+                Some(signer == expected_signer)
             } else {
                 None
             };
@@ -263,7 +221,6 @@ impl Eip712SignatureBuilder {
                 verified,
             })
         } else {
-            // Just return the hash
             Ok(Eip712Result {
                 hash,
                 signature: None,
@@ -271,6 +228,30 @@ impl Eip712SignatureBuilder {
                 verified: None,
             })
         }
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.public_key.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "Public key is required. Call .with_public_key() first.".to_string(),
+            ));
+        }
+
+        if self.contract_addresses.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "At least one contract address is required. Call .with_contract() first."
+                    .to_string(),
+            ));
+        }
+
+        let duration_days = self.duration_days.unwrap_or(30);
+        if duration_days == 0 || duration_days > 365 {
+            return Err(FhevmError::InvalidParams(
+                "Duration must be between 1 and 365 days".to_string(),
+            ));
+        }
+
+        Ok(())
     }
 
     /// Generate the EIP-712 hash internally
@@ -375,12 +356,12 @@ mod tests {
         let builder = Eip712SignatureBuilder::new(config);
 
         let hash = builder
-            .public_key(
+            .with_public_key(
                 "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331",
             )
-            .add_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
+            .with_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
             .unwrap()
-            .validity_period(1748252823, 10)
+            .with_validity_period(1748252823, 10)
             .generate_hash()
             .unwrap();
 
@@ -393,13 +374,13 @@ mod tests {
         let builder = Eip712SignatureBuilder::new(config);
 
         let result = builder
-            .public_key(
+            .with_public_key(
                 "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331",
             )
-            .add_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
+            .with_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
             .unwrap()
-            .validity_period(1748252823, 10)
-            .sign_with("7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f")
+            .with_validity_period(1748252823, 10)
+            .with_private_key("7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f")
             .build()
             .unwrap();
 
@@ -420,14 +401,14 @@ mod tests {
         let builder = Eip712SignatureBuilder::new(config);
 
         let result = builder
-            .public_key(
+            .with_public_key(
                 "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331",
             )
-            .add_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
+            .with_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
             .unwrap()
-            .validity_period(1748252823, 10)
-            .sign_with("7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f")
-            .verify(true)
+            .with_validity_period(1748252823, 10)
+            .with_private_key("7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f")
+            .with_verification(true)
             .build() // ← Use build(), not generate_and_sign()
             .unwrap();
 
@@ -443,14 +424,14 @@ mod tests {
 
         // Test that generate_and_sign() now respects the verification setting
         let result = builder
-            .public_key(
+            .with_public_key(
                 "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331",
             )
-            .add_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
+            .with_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
             .unwrap()
-            .validity_period(1748252823, 10)
-            .sign_with("7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f")
-            .verify(true)
+            .with_validity_period(1748252823, 10)
+            .with_private_key("7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f")
+            .with_verification(true)
             .generate_and_sign() // ← Should now respect verification setting
             .unwrap();
 
@@ -474,7 +455,7 @@ mod tests {
         );
 
         // Test missing contracts
-        let result = builder.clone().public_key("test_key").build();
+        let result = builder.clone().with_public_key("test_key").build();
         assert!(result.is_err());
         assert!(
             result
@@ -490,12 +471,12 @@ mod tests {
         let builder = Eip712SignatureBuilder::new(config);
 
         let result = builder
-            .public_key(
+            .with_public_key(
                 "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331",
             )
-            .add_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
+            .with_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
             .unwrap()
-            .validity_period(1748252823, 0) // ← Invalid: 0 days
+            .with_validity_period(1748252823, 0) // ← Invalid: 0 days
             .build();
 
         assert!(result.is_err());
@@ -513,11 +494,11 @@ mod tests {
 
         // Test starts_now
         let builder = Eip712SignatureBuilder::new(config.clone())
-            .public_key("test_key")
-            .add_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
+            .with_public_key("test_key")
+            .with_contract("0x56a24bcaE11890353726596fD6f5cABb5a126Df9")
             .unwrap()
-            .starts_now()
-            .valid_for_days(30);
+            .with_start_now()
+            .with_duration_days(30);
 
         assert!(builder.start_timestamp.is_some());
         assert_eq!(builder.duration_days, Some(30));
@@ -526,7 +507,7 @@ mod tests {
         let addresses =
             vec![Address::from_str("0x56a24bcaE11890353726596fD6f5cABb5a126Df9").unwrap()];
         let builder =
-            Eip712SignatureBuilder::new(config).with_contract_addresses(addresses.clone());
+            Eip712SignatureBuilder::new(config).with_contract_addresses_vec(addresses.clone());
 
         assert_eq!(builder.contract_addresses, addresses);
     }

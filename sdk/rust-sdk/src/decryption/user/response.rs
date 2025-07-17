@@ -32,16 +32,16 @@ use tracing::{debug, info};
 /// # let json_response = "{}"; // Response from gateway
 /// #
 /// let results = process_user_decryption_response()
-///     .kms_signers(vec!["0x67F6A11ADf13CEDdB8319Fe12705809563611703".to_string()])
-///     .user_address("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80")
-///     .gateway_chain_id(54321)
-///     .verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
-///     .signature("791e8a06dab85d960745c4c5dea65fdc250e0d42...")
-///     .public_key("2000000000000000750f4e54713eae622dfeb01809290183...")
-///     .private_key("2000000000000000321387e7b579a16d9bcb17d14625dc28...")
-///     .handle_contract_pairs(handle_pairs)
-///     .json_response(json_response)
-///     .verify_signatures(true) // Optional
+///     .with_kms_signers(vec!["0x67F6A11ADf13CEDdB8319Fe12705809563611703".to_string()])
+///     .with_user_address("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80")
+///     .with_gateway_chain_id(54321)
+///     .with_verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
+///     .with_signature("791e8a06dab85d960745c4c5dea65fdc250e0d42...")
+///     .with_public_key("2000000000000000750f4e54713eae622dfeb01809290183...")
+///     .with_private_key("2000000000000000321387e7b579a16d9bcb17d14625dc28...")
+///     .with_handle_contract_pairs(handle_pairs)
+///     .with_json_response(json_response)
+///     .with_verification(true) // Optional
 ///     .process()?;
 ///
 
@@ -50,6 +50,12 @@ use tracing::{debug, info};
 /// ```
 pub struct UserDecryptionResponseBuilder {
     config: ResponseConfig,
+}
+
+impl Default for UserDecryptionResponseBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl UserDecryptionResponseBuilder {
@@ -61,13 +67,13 @@ impl UserDecryptionResponseBuilder {
     }
 
     /// Set KMS signers (required)
-    pub fn kms_signers(mut self, signers: Vec<String>) -> Self {
+    pub fn with_kms_signers(mut self, signers: Vec<String>) -> Self {
         self.config.kms_signers = Some(signers);
         self
     }
 
     /// Add a single KMS signer (convenience method)
-    pub fn add_kms_signer(mut self, signer: String) -> Self {
+    pub fn with_kms_signer(mut self, signer: String) -> Self {
         self.config
             .kms_signers
             .get_or_insert_with(Vec::new)
@@ -76,61 +82,61 @@ impl UserDecryptionResponseBuilder {
     }
 
     /// Set user address (required)
-    pub fn user_address(mut self, address: &str) -> Self {
+    pub fn with_user_address(mut self, address: &str) -> Self {
         self.config.user_address = Some(address.to_string());
         self
     }
 
     /// Set gateway chain ID (required)
-    pub fn gateway_chain_id(mut self, chain_id: u64) -> Self {
+    pub fn with_gateway_chain_id(mut self, chain_id: u64) -> Self {
         self.config.gateway_chain_id = Some(chain_id);
         self
     }
 
     /// Set verifying contract address (required)
-    pub fn verifying_contract_address(mut self, address: &str) -> Self {
+    pub fn with_verifying_contract_address(mut self, address: &str) -> Self {
         self.config.verifying_contract_address = Some(address.to_string());
         self
     }
 
     /// Set signature (required)
-    pub fn signature(mut self, signature: &str) -> Self {
+    pub fn with_signature(mut self, signature: &str) -> Self {
         self.config.signature = Some(signature.to_string());
         self
     }
 
     /// Set public key (required)
-    pub fn public_key(mut self, key: &str) -> Self {
+    pub fn with_public_key(mut self, key: &str) -> Self {
         self.config.public_key = Some(key.to_string());
         self
     }
 
     /// Set private key (required)
-    pub fn private_key(mut self, key: &str) -> Self {
+    pub fn with_private_key(mut self, key: &str) -> Self {
         self.config.private_key = Some(key.to_string());
         self
     }
 
     /// Set handle-contract pairs (required)
-    pub fn handle_contract_pairs(mut self, pairs: Vec<CtHandleContractPair>) -> Self {
+    pub fn with_handle_contract_pairs(mut self, pairs: Vec<CtHandleContractPair>) -> Self {
         self.config.handle_contract_pairs = Some(pairs);
         self
     }
 
     /// Set JSON response (required)
-    pub fn json_response(mut self, response: &str) -> Self {
+    pub fn with_json_response(mut self, response: &str) -> Self {
         self.config.json_response = Some(response.to_string());
         self
     }
 
     /// Enable or disable signature verification (optional, default: false)
-    pub fn verify_signatures(mut self, verify: bool) -> Self {
+    pub fn with_verification(mut self, verify: bool) -> Self {
         self.config.verify_signatures = verify;
         self
     }
 
     /// Set domain (optional, default: "Decryption")
-    pub fn domain(mut self, domain: &str) -> Self {
+    pub fn with_domain(mut self, domain: &str) -> Self {
         self.config.domain = Some(domain.to_string());
         self
     }
@@ -299,7 +305,7 @@ fn build_eip712_domain(
         chain_id_buffer[24..32].copy_from_slice(&gateway_chain_id.to_be_bytes());
     }
 
-    debug!("🔢 Chain ID buffer: {}", hex::encode(&chain_id_buffer));
+    debug!("🔢 Chain ID buffer: {}", hex::encode(chain_id_buffer));
 
     Eip712DomainMsg {
         name: domain.to_string(),
@@ -336,14 +342,14 @@ fn create_decryption_payload(
     Ok(ParsedUserDecryptionRequest::new(
         Some(sig),
         user_address,
-        public_key_bytes.to_vec().into(),
+        public_key_bytes.to_vec(),
         ct_handles,
         verifying_contract,
     ))
 }
 
 fn validate_config(config: &ResponseConfig) -> Result<()> {
-    if config.kms_signers.as_ref().map_or(true, |s| s.is_empty()) {
+    if config.kms_signers.as_ref().is_none_or(|s| s.is_empty()) {
         return Err(FhevmError::InvalidParams(
             "❌ Missing KMS signers: Call `kms_signers()` or `add_kms_signer()` first.\n\
              💡 Tip: Add at least one KMS signer address that will participate in the decryption."
@@ -403,7 +409,7 @@ fn validate_config(config: &ResponseConfig) -> Result<()> {
     if config
         .handle_contract_pairs
         .as_ref()
-        .map_or(true, |p| p.is_empty())
+        .is_none_or(|p| p.is_empty())
     {
         return Err(FhevmError::InvalidParams(
             "❌ Missing handle-contract pairs: Call `handle_contract_pairs()` first.\n\
@@ -504,28 +510,28 @@ mod tests {
 
         // Build the test
         process_user_decryption_response()
-            .kms_signers(kms_signers)
-            .user_address(
+            .with_kms_signers(kms_signers)
+            .with_user_address(
                 input["user_address"]
                     .as_str()
                     .expect("user_address required"),
             )
-            .gateway_chain_id(
+            .with_gateway_chain_id(
                 input["gateway_chain_id"]
                     .as_u64()
                     .expect("gateway_chain_id required"),
             )
-            .verifying_contract_address(
+            .with_verifying_contract_address(
                 input["verifying_contract_address"]
                     .as_str()
                     .expect("verifying_contract_address required"),
             )
-            .signature(input["signature"].as_str().expect("signature required"))
-            .public_key(input["public_key"].as_str().expect("public_key required"))
-            .private_key(input["private_key"].as_str().expect("private_key required"))
-            .handle_contract_pairs(handle_pairs)
-            .domain(input["domain"].as_str().unwrap_or("Decryption")) // Default domain
-            .json_response(
+            .with_signature(input["signature"].as_str().expect("signature required"))
+            .with_public_key(input["public_key"].as_str().expect("public_key required"))
+            .with_private_key(input["private_key"].as_str().expect("private_key required"))
+            .with_handle_contract_pairs(handle_pairs)
+            .with_domain(input["domain"].as_str().unwrap_or("Decryption")) // Default domain
+            .with_json_response(
                 &serde_json::to_string(json_response).expect("Failed to serialize json_response"),
             )
     }
@@ -587,8 +593,13 @@ mod tests {
 
         // Verify arrays have expected lengths
         let input = &rc17_test["input"];
-        assert!(input["kms_signers"].as_array().unwrap().len() > 0);
-        assert!(input["handle_contract_pairs"].as_array().unwrap().len() > 0);
+        assert!(!input["kms_signers"].as_array().unwrap().is_empty());
+        assert!(
+            !input["handle_contract_pairs"]
+                .as_array()
+                .unwrap()
+                .is_empty()
+        );
     }
 }
 
@@ -601,7 +612,7 @@ mod config_tests {
         let builder = UserDecryptionResponseBuilder::new();
         assert_eq!(builder.config.domain, Some("Decryption".to_string()));
 
-        let builder = builder.domain("CustomDomain");
+        let builder = builder.with_domain("CustomDomain");
         assert_eq!(builder.config.domain, Some("CustomDomain".to_string()));
     }
 }

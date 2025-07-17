@@ -26,7 +26,7 @@ fn main() -> Result<(), FhevmError> {
 
     let calldata = sdk
         .create_public_decrypt_request_builder()
-        .add_handles_from_bytes(&[handle])?
+        .with_handles_from_bytes(&[handle])?
         .build_and_generate_calldata()?;
 
     info!(

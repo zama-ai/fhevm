@@ -190,8 +190,8 @@ pub fn chain_id_to_bytes(chain_id: u64) -> [u8; 32] {
     debug!("chain_id_bytes length: {}", chain_id_bytes.len());
     debug!("chain_id_bytes hex: {}", hex::encode(chain_id_bytes));
 
-    let start_idx = 32 - chain_id_bytes.len();
-    debug!("start_idx: {}", start_idx);
+    let start_idx = buffer.len().saturating_sub(chain_id_bytes.len());
+    debug_assert!(start_idx + chain_id_bytes.len() <= buffer.len());
 
     buffer[start_idx..].copy_from_slice(&chain_id_bytes);
 
