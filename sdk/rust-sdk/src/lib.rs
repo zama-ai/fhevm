@@ -237,9 +237,9 @@ impl FhevmSdk {
         let verifying_contract = self
             .config
             .gateway_contracts
-            .input_verification
+            .decryption
             .unwrap_or_else(|| {
-                warn!("Input verification contract not set, using zero address");
+                warn!("Decryption contract not set, using zero address");
                 Address::ZERO
             });
 
