@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO computations (\n                tenant_id,\n                output_handle,\n                dependencies,\n                fhe_operation,\n                is_scalar,\n                schedule_order,\n                transaction_id\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7)\n            ON CONFLICT (tenant_id, output_handle) DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea",
+        "ByteaArray",
+        "Int2",
+        "Bool",
+        "Timestamp",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "bd1b568711f0a33c37cb603d239b7b85734a0959ffb2c990d9c9a244d3bad89c"
+}

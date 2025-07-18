@@ -22,7 +22,11 @@ use tfhe::set_server_key;
 use tokio::task::spawn_blocking;
 use tonic::{transport::Server, Code, Request, Response, Status};
 
-use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput, DFGraph};
+use scheduler::dfg::{
+    scheduler::Scheduler,
+    types::{DFGTaskInput, SchedulerError},
+    DFGraph,
+};
 
 pub use fhevm_engine_common::common;
 pub mod executor {
@@ -135,7 +139,8 @@ impl FhevmExecutor for FhevmExecutorService {
                 let outputs: Result<Vec<(Handle, (i16, Vec<u8>))>> = results
                     .into_iter()
                     .map(|(h, output)| match output {
-                        Ok(output) => Ok((h, output)),
+                        Ok(Some(output)) => Ok((h, output)),
+                        Ok(None) => Err(anyhow::Error::new(SchedulerError::SchedulerError)),
                         Err(e) => Err(e),
                     })
                     .collect();
@@ -364,6 +369,7 @@ pub fn build_taskgraph_from_request(
                 res_handle.clone(),
                 computation.operation,
                 std::mem::take(&mut inputs),
+                true, // We force all handles to be allowed
             )
             .map_err(|_| SyncComputeError::ComputationFailed)?;
         produced_handles.insert(res_handle, n.index());
