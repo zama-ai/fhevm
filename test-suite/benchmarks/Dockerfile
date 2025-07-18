@@ -25,7 +25,7 @@ RUN npm ci && \
     npm prune
 
 # Copy the application files
-COPY benchmarks/*.sh e2e/*.ts e2e/tsconfig.json ./
+COPY benchmarks/*.sh benchmarks/*.ts benchmarks/tsconfig.json ./
 COPY benchmarks/contracts ./contracts/
 COPY benchmarks/tasks ./tasks/
 
