@@ -34,6 +34,7 @@ jobs:
             kms-connector-gw-listener:
               - .github/workflows/kms-connector-docker-build-gw-listener.yml
               - kms-connector/crates/gw-listener/**
+              - kms-connector/crates/utils/**
               - kms-connector/Cargo.toml
               - kms-connector/Cargo.lock
 
