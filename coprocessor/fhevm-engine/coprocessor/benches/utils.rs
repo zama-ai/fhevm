@@ -310,8 +310,8 @@ pub mod shortint_utils {
     use tfhe::shortint::parameters::list_compression::CompressionParameters;
     use tfhe::shortint::parameters::ShortintKeySwitchingParameters;
     use tfhe::shortint::{
-        CarryModulus, ClassicPBSParameters, MessageModulus, MultiBitPBSParameters, PBSParameters,
-        ShortintParameterSet,
+        AtomicPatternParameters, CarryModulus, ClassicPBSParameters, MessageModulus,
+        MultiBitPBSParameters, PBSParameters, ShortintParameterSet,
     };
 
     /// An iterator that yields a succession of combinations
@@ -430,6 +430,31 @@ pub mod shortint_utils {
                     comp_params.packing_ks_key_noise_distribution,
                 ),
                 ciphertext_modulus: Some(pbs_params.ciphertext_modulus()),
+                ..Default::default()
+            }
+        }
+    }
+
+    impl From<AtomicPatternParameters> for CryptoParametersRecord<u64> {
+        fn from(params: AtomicPatternParameters) -> Self {
+            CryptoParametersRecord {
+                lwe_dimension: Some(params.lwe_dimension()),
+                glwe_dimension: Some(params.glwe_dimension()),
+                polynomial_size: Some(params.polynomial_size()),
+                lwe_noise_distribution: Some(params.lwe_noise_distribution()),
+                glwe_noise_distribution: Some(params.glwe_noise_distribution()),
+                pbs_base_log: Some(params.pbs_base_log()),
+                pbs_level: Some(params.pbs_level()),
+                ks_base_log: Some(params.ks_base_log()),
+                ks_level: Some(params.ks_level()),
+                message_modulus: Some(params.message_modulus().0),
+                carry_modulus: Some(params.carry_modulus().0),
+                ciphertext_modulus: Some(
+                    params
+                        .ciphertext_modulus()
+                        .try_to()
+                        .expect("failed to convert ciphertext modulus"),
+                ),
                 ..Default::default()
             }
         }
