@@ -28,8 +28,8 @@ pub struct RawConfig {
     pub aws_kms_config: Option<AwsKmsConfig>,
     #[serde(default = "default_tx_retries")]
     pub tx_retries: u8,
-    #[serde(default = "default_tx_retry_interval")]
-    pub tx_retry_interval: u64,
+    #[serde(default = "default_tx_retry_interval_ms")]
+    pub tx_retry_interval_ms: u64,
     #[serde(default = "default_responses_batch_size")]
     pub responses_batch_size: u8,
 }
@@ -46,7 +46,7 @@ fn default_tx_retries() -> u8 {
     3
 }
 
-fn default_tx_retry_interval() -> u64 {
+fn default_tx_retry_interval_ms() -> u64 {
     100
 }
 
@@ -81,7 +81,7 @@ impl Default for RawConfig {
             ),
             aws_kms_config: None,
             tx_retries: default_tx_retries(),
-            tx_retry_interval: default_tx_retry_interval(),
+            tx_retry_interval_ms: default_tx_retry_interval_ms(),
             responses_batch_size: default_responses_batch_size(),
         }
     }

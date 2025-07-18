@@ -76,7 +76,7 @@ impl Config {
             return Err(Error::EmptyField("Gateway URL".to_string()));
         }
 
-        let tx_retry_interval = Duration::from_millis(raw_config.tx_retry_interval);
+        let tx_retry_interval = Duration::from_millis(raw_config.tx_retry_interval_ms);
 
         Ok(Self {
             database_url: raw_config.database_url,
@@ -139,7 +139,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE");
             env::remove_var("KMS_CONNECTOR_TX_RETRIES");
-            env::remove_var("KMS_CONNECTOR_TX_RETRY_INTERVAL");
+            env::remove_var("KMS_CONNECTOR_TX_RETRY_INTERVAL_MS");
         }
     }
 
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(raw_config.responses_batch_size, config.responses_batch_size);
         assert_eq!(raw_config.tx_retries, config.tx_retries);
         assert_eq!(
-            raw_config.tx_retry_interval as u128,
+            raw_config.tx_retry_interval_ms as u128,
             config.tx_retry_interval.as_millis()
         );
     }
@@ -219,7 +219,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE", "20");
             env::set_var("KMS_CONNECTOR_TX_RETRIES", "5");
-            env::set_var("KMS_CONNECTOR_TX_RETRY_INTERVAL", "200");
+            env::set_var("KMS_CONNECTOR_TX_RETRY_INTERVAL_MS", "200");
         }
 
         // Load config from environment
