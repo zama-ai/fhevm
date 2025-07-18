@@ -35,7 +35,7 @@ contract Counter {
 
   /// @notice Decrements the counter by a specific value
   function decrement(uint32 value) external {
-    require(_count > value, "Counter: cannot decrement below zero");
+    require(_count >= value, "Counter: cannot decrement below zero");
     _count -= value;
   }
 }
@@ -95,7 +95,7 @@ describe("Counter", function () {
 
   it("decrement the counter by 1", async function () {
     // First increment, count becomes 1
-    let tx = await counterContract.connect(signers.alice).increment();
+    let tx = await counterContract.connect(signers.alice).increment(1);
     await tx.wait();
     // Then decrement, count goes back to 0
     tx = await counterContract.connect(signers.alice).decrement(1);
