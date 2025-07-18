@@ -6,7 +6,7 @@ use super::raw::RawConfig;
 use connector_utils::config::{
     AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result,
 };
-use std::{net::SocketAddr, path::Path};
+use std::{net::SocketAddr, path::Path, time::Duration};
 use tracing::info;
 
 /// Configuration of the `TransactionSender`.
@@ -30,6 +30,12 @@ pub struct Config {
     pub service_name: String,
     /// The wallet used to sign the decryption responses from the kms-core.
     pub wallet: KmsWallet,
+    /// The number of retries for transaction sending.
+    pub tx_retries: u8,
+    /// The interval between transaction retries.
+    pub tx_retry_interval: Duration,
+    /// The batch size for KMS Core response processing.
+    pub responses_batch_size: u8,
 }
 
 impl Config {
@@ -70,6 +76,8 @@ impl Config {
             return Err(Error::EmptyField("Gateway URL".to_string()));
         }
 
+        let tx_retry_interval = Duration::from_millis(raw_config.tx_retry_interval);
+
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
@@ -80,6 +88,9 @@ impl Config {
             kms_management_contract,
             service_name: raw_config.service_name,
             wallet,
+            tx_retries: raw_config.tx_retries,
+            tx_retry_interval,
+            responses_batch_size: raw_config.responses_batch_size,
         })
     }
 
@@ -126,6 +137,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
+            env::remove_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE");
+            env::remove_var("KMS_CONNECTOR_TX_RETRIES");
+            env::remove_var("KMS_CONNECTOR_TX_RETRY_INTERVAL");
         }
     }
 
@@ -169,6 +183,12 @@ mod tests {
             raw_config.kms_management_contract.domain_version.unwrap(),
             config.kms_management_contract.domain_version,
         );
+        assert_eq!(raw_config.responses_batch_size, config.responses_batch_size);
+        assert_eq!(raw_config.tx_retries, config.tx_retries);
+        assert_eq!(
+            raw_config.tx_retry_interval as u128,
+            config.tx_retry_interval.as_millis()
+        );
     }
 
     #[tokio::test]
@@ -197,6 +217,9 @@ mod tests {
                 "0x0000000000000000000000000000000000000002",
             );
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
+            env::set_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE", "20");
+            env::set_var("KMS_CONNECTOR_TX_RETRIES", "5");
+            env::set_var("KMS_CONNECTOR_TX_RETRY_INTERVAL", "200");
         }
 
         // Load config from environment
@@ -214,6 +237,9 @@ mod tests {
             Address::from_str("0x0000000000000000000000000000000000000002").unwrap()
         );
         assert_eq!(config.service_name, "kms-connector-test");
+        assert_eq!(config.responses_batch_size, 20);
+        assert_eq!(config.tx_retries, 5);
+        assert_eq!(config.tx_retry_interval, Duration::from_millis(200));
 
         cleanup_env_vars();
     }

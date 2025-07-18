@@ -39,13 +39,7 @@ where
     R: KmsResponseRemover + Clone + 'static,
 {
     /// Creates a new `TransactionSender` instance.
-    pub fn new(
-        response_picker: L,
-        provider: P,
-        decryption_contract: DecryptionInstance<(), P>,
-        response_remover: R,
-    ) -> Self {
-        let inner = TransactionSenderInner::new(provider, decryption_contract);
+    pub fn new(response_picker: L, inner: TransactionSenderInner<P>, response_remover: R) -> Self {
         Self {
             response_picker,
             inner,
@@ -92,8 +86,6 @@ where
         response: KmsResponse,
     ) -> anyhow::Result<()> {
         inner.send_to_gateway(response.clone()).await?;
-        GATEWAY_TX_SENT_COUNTER.inc();
-
         response_remover.remove_response(&response).await
     }
 }
@@ -102,42 +94,55 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponse
     /// Creates a new `TransactionSender` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<Self> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let response_picker = DbKmsResponsePicker::connect(db_pool.clone()).await?;
+        let response_picker =
+            DbKmsResponsePicker::connect(db_pool.clone(), config.responses_batch_size).await?;
         let response_remover = DbKmsResponseRemover::new(db_pool);
 
         let provider = connect_to_gateway_with_wallet(&config.gateway_url, config.wallet).await?;
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
 
-        Ok(Self::new(
-            response_picker,
+        let inner = TransactionSenderInner::new(
             provider,
             decryption_contract,
-            response_remover,
-        ))
+            config.tx_retries,
+            config.tx_retry_interval,
+        );
+
+        Ok(Self::new(response_picker, inner, response_remover))
     }
 }
 
 /// The expected length of an EIP712 signature.
 pub const EIP712_SIGNATURE_LENGTH: usize = 65;
 
-/// The time to wait between two transactions attempt.
-const TX_INTERVAL: Duration = Duration::from_millis(100);
-
 /// The internal struct used to send transaction to the Gateway.
-struct TransactionSenderInner<P: Provider> {
+pub struct TransactionSenderInner<P: Provider> {
     /// The `Provider` used to interact with the Gateway
     provider: P,
 
     /// The `Decryption` contract instance of the Gateway.
     decryption_contract: DecryptionInstance<(), P>,
+
+    /// The number of retries to send a transaction to the Gateway.
+    tx_retries: u8,
+
+    /// The time to wait between two transactions attempt.
+    tx_retry_interval: Duration,
 }
 
 impl<P: Provider> TransactionSenderInner<P> {
-    fn new(provider: P, decryption_contract: DecryptionInstance<(), P>) -> Self {
+    pub fn new(
+        provider: P,
+        decryption_contract: DecryptionInstance<(), P>,
+        tx_retries: u8,
+        tx_retry_interval: Duration,
+    ) -> Self {
         Self {
             provider,
             decryption_contract,
+            tx_retries,
+            tx_retry_interval,
         }
     }
 
@@ -164,7 +169,10 @@ impl<P: Provider> TransactionSenderInner<P> {
             }
         }
         .inspect_err(|_| GATEWAY_TX_SENT_ERRORS.inc())
-        .inspect(|_| info!("Response successfully sent to the Gateway!"))
+        .inspect(|_| {
+            GATEWAY_TX_SENT_COUNTER.inc();
+            info!("Response successfully sent to the Gateway!");
+        })
     }
 
     /// Sends a PublicDecryptionResponse to the Gateway.
@@ -259,22 +267,22 @@ impl<P: Provider> TransactionSenderInner<P> {
         &self,
         call: TransactionRequest,
     ) -> anyhow::Result<PendingTransactionBuilder<Ethereum>> {
-        match self.provider.send_transaction(call.clone()).await {
-            Ok(tx) => Ok(tx),
-            Err(e) => {
-                warn!(
-                    "Retrying to send transaction in {}s after failure: {}",
-                    TX_INTERVAL.as_secs(),
-                    e
-                );
-
-                tokio::time::sleep(TX_INTERVAL).await;
-                self.provider
-                    .send_transaction(call)
-                    .await
-                    .map_err(anyhow::Error::from)
+        for i in 1..=self.tx_retries {
+            match self.provider.send_transaction(call.clone()).await {
+                Ok(tx) => return Ok(tx),
+                Err(e) => {
+                    warn!(
+                        "Transaction attempt #{}/{} failed: {}. Retrying in {}ms...",
+                        i,
+                        self.tx_retries,
+                        e,
+                        self.tx_retry_interval.as_millis()
+                    );
+                    tokio::time::sleep(self.tx_retry_interval).await;
+                }
             }
         }
+        Err(anyhow!("All transactions attempt failed"))
     }
 }
 
@@ -283,6 +291,8 @@ impl<P: Provider + Clone> Clone for TransactionSenderInner<P> {
         Self {
             provider: self.provider.clone(),
             decryption_contract: self.decryption_contract.clone(),
+            tx_retries: self.tx_retries,
+            tx_retry_interval: self.tx_retry_interval,
         }
     }
 }

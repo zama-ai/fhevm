@@ -8,7 +8,7 @@ use tx_sender::core::{DbKmsResponsePicker, KmsResponsePicker};
 async fn test_pick_public_decryption() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut response_picker = DbKmsResponsePicker::connect(test_instance.db().clone()).await?;
+    let mut response_picker = DbKmsResponsePicker::connect(test_instance.db().clone(), 1).await?;
 
     println!("Triggering Postgres notification with PublicDecryptionResponse insertion...");
     let inserted_response = insert_rand_public_decrypt_response(test_instance.db()).await?;
@@ -26,7 +26,7 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
 async fn test_pick_user_decryption() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut response_picker = DbKmsResponsePicker::connect(test_instance.db().clone()).await?;
+    let mut response_picker = DbKmsResponsePicker::connect(test_instance.db().clone(), 1).await?;
 
     println!("Triggering Postgres notification with UserDecryptionResponse insertion...");
     let inserted_response = insert_rand_user_decrypt_response(test_instance.db()).await?;

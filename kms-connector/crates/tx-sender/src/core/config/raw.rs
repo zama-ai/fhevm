@@ -26,6 +26,12 @@ pub struct RawConfig {
     pub private_key: Option<String>,
     #[serde(default)]
     pub aws_kms_config: Option<AwsKmsConfig>,
+    #[serde(default = "default_tx_retries")]
+    pub tx_retries: u8,
+    #[serde(default = "default_tx_retry_interval")]
+    pub tx_retry_interval: u64,
+    #[serde(default = "default_responses_batch_size")]
+    pub responses_batch_size: u8,
 }
 
 fn default_service_name() -> String {
@@ -36,6 +42,18 @@ fn default_database_pool_size() -> u32 {
     16
 }
 
+fn default_tx_retries() -> u8 {
+    3
+}
+
+fn default_tx_retry_interval() -> u64 {
+    100
+}
+
+fn default_responses_batch_size() -> u8 {
+    10
+}
+
 impl DeserializeRawConfig for RawConfig {}
 
 // Default implementation for testing purpose
@@ -43,7 +61,7 @@ impl Default for RawConfig {
     fn default() -> Self {
         Self {
             database_url: "postgres://postgres:postgres@localhost".to_string(),
-            database_pool_size: 16,
+            database_pool_size: default_database_pool_size(),
             metrics_endpoint: "0.0.0.0:9100".to_string(),
             gateway_url: "ws://localhost:8545".to_string(),
             chain_id: 1,
@@ -62,6 +80,9 @@ impl Default for RawConfig {
                 "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f".to_string(),
             ),
             aws_kms_config: None,
+            tx_retries: default_tx_retries(),
+            tx_retry_interval: default_tx_retry_interval(),
+            responses_batch_size: default_responses_batch_size(),
         }
     }
 }

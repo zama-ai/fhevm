@@ -21,22 +21,27 @@ pub struct DbKmsResponsePicker {
 
     /// The DB listener to watch for notifications.
     db_listener: PgListener,
+
+    /// The maximum number of responses to fetch at once.
+    responses_batch_size: u8,
 }
 
 impl DbKmsResponsePicker {
-    pub fn new(db_pool: Pool<Postgres>, db_listener: PgListener) -> Self {
+    pub fn new(db_pool: Pool<Postgres>, db_listener: PgListener, response_batch_size: u8) -> Self {
         Self {
             db_pool,
             db_listener,
+            responses_batch_size: response_batch_size,
         }
     }
 
-    pub async fn connect(db_pool: Pool<Postgres>) -> anyhow::Result<Self> {
+    pub async fn connect(db_pool: Pool<Postgres>, response_batch_size: u8) -> anyhow::Result<Self> {
         let db_listener = PgListener::connect_with(&db_pool)
             .await
             .map_err(|e| anyhow!("Failed to init Postgres Listener: {e}"))?;
 
-        let mut response_picker = DbKmsResponsePicker::new(db_pool, db_listener);
+        let mut response_picker =
+            DbKmsResponsePicker::new(db_pool, db_listener, response_batch_size);
         response_picker
             .listen()
             .await
@@ -59,10 +64,8 @@ impl KmsResponsePicker for DbKmsResponsePicker {
             info!("Received Postgres notification: {}", notification.channel());
 
             let query_result = match notification.channel() {
-                PUBLIC_DECRYPT_NOTIFICATION => {
-                    pick_public_decryption_responses(&self.db_pool).await
-                }
-                USER_DECRYPT_NOTIFICATION => pick_user_decryption_responses(&self.db_pool).await,
+                PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_responses().await,
+                USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_responses().await,
                 channel => {
                     warn!("Unexpected notification: {channel}");
                     continue;
@@ -88,38 +91,36 @@ impl KmsResponsePicker for DbKmsResponsePicker {
     }
 }
 
-async fn pick_public_decryption_responses(
-    db_pool: &Pool<Postgres>,
-) -> sqlx::Result<Vec<KmsResponse>> {
-    sqlx::query(
-        "
-            SELECT decryption_id, decrypted_result, signature
-            FROM public_decryption_responses
-            LIMIT $1
-        ",
-    )
-    .bind(10) // TODO
-    .fetch_all(db_pool)
-    .await?
-    .iter()
-    .map(KmsResponse::from_public_decryption_row)
-    .collect()
-}
+impl DbKmsResponsePicker {
+    async fn pick_public_decryption_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                SELECT decryption_id, decrypted_result, signature
+                FROM public_decryption_responses
+                LIMIT $1
+            ",
+        )
+        .bind(self.responses_batch_size as i16)
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(KmsResponse::from_public_decryption_row)
+        .collect()
+    }
 
-async fn pick_user_decryption_responses(
-    db_pool: &Pool<Postgres>,
-) -> sqlx::Result<Vec<KmsResponse>> {
-    sqlx::query(
-        "
-            SELECT decryption_id, user_decrypted_shares, signature
-            FROM user_decryption_responses
-            LIMIT $1
-        ",
-    )
-    .bind(10) // TODO
-    .fetch_all(db_pool)
-    .await?
-    .iter()
-    .map(KmsResponse::from_user_decryption_row)
-    .collect()
+    async fn pick_user_decryption_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                SELECT decryption_id, user_decrypted_shares, signature
+                FROM user_decryption_responses
+                LIMIT $1
+            ",
+        )
+        .bind(self.responses_batch_size as i16)
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(KmsResponse::from_user_decryption_row)
+        .collect()
+    }
 }
