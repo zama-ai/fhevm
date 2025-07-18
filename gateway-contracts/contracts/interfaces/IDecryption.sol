@@ -27,8 +27,13 @@ interface IDecryption {
      * @notice Emitted when an public decryption request is made.
      * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
+     * @param extraData Generic bytes metadata for versioned payloads.
      */
-    event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials);
+    event PublicDecryptionRequest(
+        uint256 indexed decryptionId,
+        SnsCiphertextMaterial[] snsCtMaterials,
+        bytes extraData
+    );
 
     /**
      * @notice Emitted when an public decryption response is made.
@@ -44,12 +49,14 @@ interface IDecryption {
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      * @param userAddress The user's address.
      * @param publicKey The user's public key for used reencryption.
+     * @param extraData Generic bytes metadata for versioned payloads.
      */
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         address userAddress,
-        bytes publicKey
+        bytes publicKey,
+        bytes extraData
     );
 
     /**
@@ -174,11 +181,13 @@ interface IDecryption {
      * @param decryptionId The decryption request ID associated with the response.
      * @param decryptedResult The decrypted result.
      * @param signature The signature of the KMS connector that responded.
+     * @param extraData Generic bytes metadata for versioned payloads.
      */
     function publicDecryptionResponse(
         uint256 decryptionId,
         bytes calldata decryptedResult,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata extraData
     ) external;
 
     /**
@@ -226,11 +235,13 @@ interface IDecryption {
      * @param decryptionId The decryption request ID associated with the response.
      * @param userDecryptedShare The partial decryption share reencrypted with the user's public key.
      * @param signature The signature of the KMS connector that responded.
+     * @param extraData Generic bytes metadata for versioned payloads.
      */
     function userDecryptionResponse(
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata extraData
     ) external;
 
     /**

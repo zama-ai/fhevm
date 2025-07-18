@@ -38,6 +38,8 @@ contract Decryption is
         bytes32[] ctHandles;
         /// @notice The decrypted result of the public decryption.
         bytes decryptedResult;
+        /// @notice Generic bytes metadata for versioned payloads.
+        bytes extraData;
     }
 
     /// @notice The typed data structure for the EIP712 signature to validate in user decryption requests.
@@ -66,6 +68,8 @@ contract Decryption is
         bytes32[] ctHandles;
         /// @notice The partial decryption share reencrypted with the user's public key.
         bytes userDecryptedShare;
+        /// @notice Generic bytes metadata for versioned payloads.
+        bytes extraData;
     }
 
     /// @notice The typed data structure for the EIP712 signature to validate in user decryption with delegation requests.
@@ -112,12 +116,12 @@ contract Decryption is
     /// @notice The maximum number of bits that can be decrypted in a single public/user decryption request.
     uint256 internal constant MAX_DECRYPTION_REQUEST_BITS = 2048;
 
-    /// @notice The definition of the PublicDecryptVerification structure typed data.
-    string private constant EIP712_PUBLIC_DECRYPT_TYPE =
-        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult)";
-
     bytes32 private constant DOMAIN_TYPE_HASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
+    /// @notice The definition of the PublicDecryptVerification structure typed data.
+    string private constant EIP712_PUBLIC_DECRYPT_TYPE =
+        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
 
     /// @notice The hash of the PublicDecryptVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_PUBLIC_DECRYPT_TYPE_HASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
@@ -140,7 +144,7 @@ contract Decryption is
 
     /// @notice The definition of the UserDecryptResponseVerification structure typed data.
     string private constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
-        "UserDecryptResponseVerification(bytes publicKey,bytes32[] ctHandles,bytes userDecryptedShare)";
+        "UserDecryptResponseVerification(bytes publicKey,bytes32[] ctHandles,bytes userDecryptedShare,bytes extraData)";
 
     /// @notice The hash of the UserDecryptResponseVerification structure typed data definition
     /// @notice used for signature validation.
@@ -256,7 +260,7 @@ contract Decryption is
         /// @dev The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[decryptionId] = ctHandles;
 
-        emit PublicDecryptionRequest(decryptionId, snsCtMaterials);
+        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, _getPublicDecryptionRequestExtraData());
     }
 
     /// @dev See {IDecryption-publicDecryptionResponse}.
@@ -265,14 +269,16 @@ contract Decryption is
     function publicDecryptionResponse(
         uint256 decryptionId,
         bytes calldata decryptedResult,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata extraData
     ) external virtual onlyKmsTxSender whenNotPaused {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
         PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
             $.publicCtHandles[decryptionId],
-            decryptedResult
+            decryptedResult,
+            extraData
         );
 
         /// @dev Compute the digest of the PublicDecryptVerification structure.
@@ -368,7 +374,13 @@ contract Decryption is
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey);
+        emit UserDecryptionRequest(
+            decryptionId,
+            snsCtMaterials,
+            userAddress,
+            publicKey,
+            _getUserDecryptionRequestExtraData()
+        );
     }
 
     /// @dev See {IDecryption-userDecryptionWithDelegationRequest}.
@@ -449,7 +461,13 @@ contract Decryption is
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, delegationAccounts.delegatedAddress, publicKey);
+        emit UserDecryptionRequest(
+            decryptionId,
+            snsCtMaterials,
+            delegationAccounts.delegatedAddress,
+            publicKey,
+            _getUserDecryptionRequestExtraData()
+        );
     }
 
     /// @dev See {IDecryption-userDecryptionResponse}.
@@ -458,7 +476,8 @@ contract Decryption is
     function userDecryptionResponse(
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata extraData
     ) external virtual onlyKmsTxSender whenNotPaused {
         DecryptionStorage storage $ = _getDecryptionStorage();
         UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
@@ -467,7 +486,8 @@ contract Decryption is
         UserDecryptResponseVerification memory userDecryptResponseVerification = UserDecryptResponseVerification(
             userDecryptionPayload.publicKey,
             userDecryptionPayload.ctHandles,
-            userDecryptedShare
+            userDecryptedShare,
+            extraData
         );
 
         /// @dev Compute the digest of the UserDecryptResponseVerification structure.
@@ -643,7 +663,8 @@ contract Decryption is
                     abi.encode(
                         EIP712_PUBLIC_DECRYPT_TYPE_HASH,
                         keccak256(abi.encodePacked(publicDecryptVerification.ctHandles)),
-                        keccak256(publicDecryptVerification.decryptedResult)
+                        keccak256(publicDecryptVerification.decryptedResult),
+                        keccak256(abi.encodePacked(publicDecryptVerification.extraData))
                     )
                 )
             );
@@ -715,7 +736,8 @@ contract Decryption is
                         EIP712_USER_DECRYPT_RESPONSE_TYPE_HASH,
                         keccak256(userDecryptResponseVerification.publicKey),
                         keccak256(abi.encodePacked(userDecryptResponseVerification.ctHandles)),
-                        keccak256(userDecryptResponseVerification.userDecryptedShare)
+                        keccak256(userDecryptResponseVerification.userDecryptedShare),
+                        keccak256(abi.encodePacked(userDecryptResponseVerification.extraData))
                     )
                 )
             );
@@ -886,5 +908,27 @@ contract Decryption is
         assembly {
             $.slot := DECRYPTION_STORAGE_LOCATION
         }
+    }
+
+    /**
+     * @dev Returns the extra data to be used in the Public Decryption request.
+     * This is used to ensure that the request is versioned and can be extended in the future.
+     * The first byte is the version, and the rest can be used for additional data.
+     * @return The extra data for the Public Decryption request.
+     */
+    function _getPublicDecryptionRequestExtraData() internal pure returns (bytes memory) {
+        // Current version is 0, and no additional data is used.
+        return abi.encodePacked(uint8(0));
+    }
+
+    /**
+     * @dev Returns the extra data to be used in the User Decryption request.
+     * This is used to ensure that the request is versioned and can be extended in the future.
+     * The first byte is the version, and the rest can be used for additional data.
+     * @return The extra data for the User Decryption request.
+     */
+    function _getUserDecryptionRequestExtraData() internal pure returns (bytes memory) {
+        // Current version is 0, and no additional data is used.
+        return abi.encodePacked(uint8(0));
     }
 }

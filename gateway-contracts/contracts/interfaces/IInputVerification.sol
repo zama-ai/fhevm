@@ -13,13 +13,15 @@ interface IInputVerification {
      * @param contractAddress The address of the dapp requiring the ZK Proof verification.
      * @param userAddress The address of the user providing the input.
      * @param ciphertextWithZKProof The combination of the ciphertext (plain text signed with user PK) and the ZK Proof.
+     * @param extraData Generic bytes metadata for versioned payloads.
      */
     event VerifyProofRequest(
         uint256 indexed zkProofId,
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
-        bytes ciphertextWithZKProof
+        bytes ciphertextWithZKProof,
+        bytes extraData
     );
 
     /**
@@ -83,8 +85,14 @@ interface IInputVerification {
      * @param zkProofId The ID of the requested ZK Proof.
      * @param ctHandles The coprocessor's computed ciphertext handles.
      * @param signature The coprocessor's signature.
+     * @param extraData Generic bytes metadata for versioned payloads.
      */
-    function verifyProofResponse(uint256 zkProofId, bytes32[] calldata ctHandles, bytes calldata signature) external;
+    function verifyProofResponse(
+        uint256 zkProofId,
+        bytes32[] calldata ctHandles,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external;
 
     /**
      * @notice Rejects an incorrect ZK Proof verification request.

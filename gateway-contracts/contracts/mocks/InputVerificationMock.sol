@@ -7,7 +7,8 @@ contract InputVerificationMock {
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
-        bytes ciphertextWithZKProof
+        bytes ciphertextWithZKProof,
+        bytes extraData
     );
 
     event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
@@ -24,11 +25,24 @@ contract InputVerificationMock {
     ) external {
         zkProofIdCounter++;
         uint256 zkProofId = zkProofIdCounter;
+        bytes memory extraData;
 
-        emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
+        emit VerifyProofRequest(
+            zkProofId,
+            contractChainId,
+            contractAddress,
+            userAddress,
+            ciphertextWithZKProof,
+            extraData
+        );
     }
 
-    function verifyProofResponse(uint256 zkProofId, bytes32[] calldata ctHandles, bytes calldata signature) external {
+    function verifyProofResponse(
+        uint256 zkProofId,
+        bytes32[] calldata ctHandles,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external {
         bytes[] memory signatures = new bytes[](1);
 
         emit VerifyProofResponse(zkProofId, ctHandles, signatures);

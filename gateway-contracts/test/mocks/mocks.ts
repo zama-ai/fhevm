@@ -130,11 +130,13 @@ describe("Mock contracts", function () {
       decryptionCounterId++;
       await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32]))
         .to.emit(decryptionMock, "PublicDecryptionRequest")
-        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]));
+        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
     });
 
     it("Should emit PublicDecryptionResponse event on public decryption response", async function () {
-      await expect(decryptionMock.publicDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes))
+      await expect(
+        decryptionMock.publicDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
+      )
         .to.emit(decryptionMock, "PublicDecryptionResponse")
         .withArgs(decryptionCounterId, DefaultBytes, [DefaultBytes]);
     });
@@ -153,7 +155,13 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(decryptionMock, "UserDecryptionRequest")
-        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultAddress, DefaultBytes);
+        .withArgs(
+          decryptionCounterId,
+          toValues([DefaultSnsCiphertextMaterial]),
+          DefaultAddress,
+          DefaultBytes,
+          DefaultBytes,
+        );
     });
 
     it("Should emit UserDecryptionRequest event on delegated user decryption request", async function () {
@@ -170,11 +178,17 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(decryptionMock, "UserDecryptionRequest")
-        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultAddress, DefaultBytes);
+        .withArgs(
+          decryptionCounterId,
+          toValues([DefaultSnsCiphertextMaterial]),
+          DefaultAddress,
+          DefaultBytes,
+          DefaultBytes,
+        );
     });
 
     it("Should emit UserDecryptionResponse event on user decryption response", async function () {
-      await expect(decryptionMock.userDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes))
+      await expect(decryptionMock.userDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes))
         .to.emit(decryptionMock, "UserDecryptionResponse")
         .withArgs(decryptionCounterId, [DefaultBytes], [DefaultBytes]);
     });
@@ -250,11 +264,13 @@ describe("Mock contracts", function () {
         inputVerificationMock.verifyProofRequest(DefaultUint256, DefaultAddress, DefaultAddress, DefaultBytes),
       )
         .to.emit(inputVerificationMock, "VerifyProofRequest")
-        .withArgs(zkProofCounterId, DefaultUint256, DefaultAddress, DefaultAddress, DefaultBytes);
+        .withArgs(zkProofCounterId, DefaultUint256, DefaultAddress, DefaultAddress, DefaultBytes, DefaultBytes);
     });
 
     it("Should emit VerifyProofResponse event on verify proof response", async function () {
-      await expect(inputVerificationMock.verifyProofResponse(zkProofCounterId, [DefaultBytes32], DefaultBytes))
+      await expect(
+        inputVerificationMock.verifyProofResponse(zkProofCounterId, [DefaultBytes32], DefaultBytes, DefaultBytes),
+      )
         .to.emit(inputVerificationMock, "VerifyProofResponse")
         .withArgs(zkProofCounterId, [DefaultBytes32], [DefaultBytes]);
     });

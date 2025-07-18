@@ -8,7 +8,11 @@ contract DecryptionMock {
         uint256 durationDays;
     }
 
-    event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials);
+    event PublicDecryptionRequest(
+        uint256 indexed decryptionId,
+        SnsCiphertextMaterial[] snsCtMaterials,
+        bytes extraData
+    );
 
     event PublicDecryptionResponse(uint256 indexed decryptionId, bytes decryptedResult, bytes[] signatures);
 
@@ -16,7 +20,8 @@ contract DecryptionMock {
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         address userAddress,
-        bytes publicKey
+        bytes publicKey,
+        bytes extraData
     );
 
     event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecryptedShares, bytes[] signatures);
@@ -27,14 +32,16 @@ contract DecryptionMock {
         _decryptionRequestCounter++;
         uint256 decryptionId = _decryptionRequestCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
+        bytes memory extraData;
 
-        emit PublicDecryptionRequest(decryptionId, snsCtMaterials);
+        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
     }
 
     function publicDecryptionResponse(
         uint256 decryptionId,
         bytes calldata decryptedResult,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata extraData
     ) external {
         bytes[] memory signatures = new bytes[](1);
 
@@ -53,8 +60,9 @@ contract DecryptionMock {
         _decryptionRequestCounter++;
         uint256 decryptionId = _decryptionRequestCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
+        bytes memory extraData;
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey);
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
     function delegatedUserDecryptionRequest(
@@ -70,14 +78,16 @@ contract DecryptionMock {
         uint256 decryptionId = _decryptionRequestCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
         address userAddress;
+        bytes memory extraData;
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey);
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
     function userDecryptionResponse(
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata extraData
     ) external {
         bytes[] memory userDecryptedShares = new bytes[](1);
         bytes[] memory signatures = new bytes[](1);
