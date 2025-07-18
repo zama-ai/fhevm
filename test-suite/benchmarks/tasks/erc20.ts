@@ -178,14 +178,15 @@ as batched transfers is not yet implemented in this script.
     const balanceAlice = balanceAliceResults[encrypted_balance];
     console.log(`Alice's cERC-20 balance: ${balanceAlice}`);
 
-    // Create encrypted input euint64(1)
-    console.info("Creating encrypted input");
-    let input = instance.createEncryptedInput(contractAddress, signer.address);
-    input.add64(1);
-    const encryptedTransferAmount = await input.encrypt();
 
     // Transfer 1 token to each derived wallet
     if (taskArgs.transfer) {
+      // Create encrypted input euint64(1)
+      console.info("Creating encrypted input");
+      let input = instance.createEncryptedInput(contractAddress, signer.address);
+      input.add64(1);
+      const encryptedTransferAmount = await input.encrypt();
+
       console.info("Transfering cERC-20 tokens");
       let txs = [];
       for (let index = 1; index < taskArgs.mintAmount + 1; index++) {
@@ -237,6 +238,8 @@ as batched transfers is not yet implemented in this script.
           console.error(error);
           console.log(`Retrying user decryptions attempt: ${counter}`);
           counter += 1;
+          // To avoid spamming too much the relayer
+          await sleep(1000);
         }
 
       }
