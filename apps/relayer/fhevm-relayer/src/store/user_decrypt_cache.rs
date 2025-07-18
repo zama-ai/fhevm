@@ -53,11 +53,11 @@ impl UserDecryptResponseCacheStore {
         if let Some(value) = self.kv_store.get(&key).await? {
             let response = serde_json::from_str(&value)?;
             debug!("Cache hit on {key} with {response}");
-            cache_operation(CacheType::UserDecryptResponse, CacheOperation::Hit, &key);
+            cache_operation(CacheType::UserDecryptResponse, CacheOperation::Hit);
             return Ok(Some(response));
         }
         debug!("Cache miss on {key}");
-        cache_operation(CacheType::UserDecryptResponse, CacheOperation::Miss, &key);
+        cache_operation(CacheType::UserDecryptResponse, CacheOperation::Miss);
         Ok(None)
     }
 }
@@ -95,11 +95,11 @@ impl UserDecryptRequestCacheStore {
         if let Some(value) = self.kv_store.get(&key).await? {
             let response = serde_json::from_str(&value)?;
             debug!("Cache hit on {key} with {response}");
-            cache_operation(CacheType::UserDecryptRequest, CacheOperation::Hit, &key);
+            cache_operation(CacheType::UserDecryptRequest, CacheOperation::Hit);
             return Ok(Some(response));
         }
         debug!("Cache miss on {key}");
-        cache_operation(CacheType::UserDecryptRequest, CacheOperation::Miss, &key);
+        cache_operation(CacheType::UserDecryptRequest, CacheOperation::Miss);
         Ok(None)
     }
 }

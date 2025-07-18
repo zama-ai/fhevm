@@ -15,7 +15,7 @@ pub fn init_cache_metrics(registry: &Registry) {
             "relayer_cache_operations_total",
             "Total number of cache operations (hits and misses)"
         ),
-        &["cache_type", "operation", "cache_key"],
+        &["cache_type", "operation"],
         registry
     )
     .unwrap();
@@ -62,10 +62,10 @@ impl CacheOperation {
 }
 
 /// Record a cache operation (hit or miss).
-pub fn cache_operation(cache_type: CacheType, operation: CacheOperation, cache_key: &str) {
+pub fn cache_operation(cache_type: CacheType, operation: CacheOperation) {
     let metrics = CACHE_METRICS.get().expect("Cache metrics not initialized");
     metrics
         .cache_operations_total
-        .with_label_values(&[cache_type.as_str(), operation.as_str(), cache_key])
+        .with_label_values(&[cache_type.as_str(), operation.as_str()])
         .inc();
 }

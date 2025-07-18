@@ -45,11 +45,11 @@ impl PublicDecryptCacheStore {
         if let Some(value) = self.kv_store.get(&key).await? {
             let gw_response = serde_json::from_str(&value)?;
             debug!("Cache hit on {key}");
-            cache_operation(CacheType::PublicDecrypt, CacheOperation::Hit, &key);
+            cache_operation(CacheType::PublicDecrypt, CacheOperation::Hit);
             return Ok(Some(gw_response));
         }
         debug!("Cache miss on {key}");
-        cache_operation(CacheType::PublicDecrypt, CacheOperation::Miss, &key);
+        cache_operation(CacheType::PublicDecrypt, CacheOperation::Miss);
         Ok(None)
     }
 }
