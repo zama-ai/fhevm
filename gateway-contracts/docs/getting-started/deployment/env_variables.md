@@ -2,9 +2,10 @@
 
 This section describes the environment variables used for deployment. A complete example of an expected `.env` file is given in the [`.env.example`](../../../.env.example) file.
 
-Environment variables can be separated in 3 categories:
+Environment variables can be separated in 4 categories:
 
 - [`GatewayConfig` values](./env_variables.md#gatewayconfig-values)
+- [`CoprocessorContexts` values](./env_variables.md#coprocessorcontexts-values)
 - [`KmsManagement` parameters](./env_variables.md#kmsmanagement-parameters)
 - [Deployment settings](./env_variables.md#deployment-settings)
 
@@ -147,6 +148,37 @@ HOST_CHAIN_WEBSITE_0="https://host-chain-2025.com" # (string)
 ```
 
 `HOST_CHAIN_CHAIN_ID` must be different for all host chains, else the script will fail.
+
+### CoprocessorContexts values
+
+These values are crucial for the fhevm Gateway protocol and are set in the `CoprocessorContexts` contract at deployment. To understand what each value is used for, please refer to the [CoprocessorContexts](../contracts/coprocessor_contexts.md) documentation.
+
+#### At deployment
+
+The following values are set at deployment.
+
+- Coprocessors feature set:
+
+```bash
+COPROCESSORS_FEATURE_SET="1" # (uint256)
+```
+
+This integer is used to identify the feature set of the coprocessors for software upgrades.
+
+- Coprocessors:
+
+```bash
+NUM_COPROCESSORS="3" # (number)
+```
+
+`NUM_COPROCESSORS` is the number of coprocessors to register in the `CoprocessorContexts` contract. It it not stored in it and is only used within the deployment script. The following metadata variables must be set for each coprocessor, indexed by a coprocessor number starting from 0. If not enough variables are set, the deployment will fail. If, on the contrary, too many variables are set, the deployment will succeed but the extra ones will be ignored.
+
+```bash
+COPROCESSOR_NAME_0="Coprocessor 1" # (string)
+COPROCESSOR_TX_SENDER_ADDRESS_0="0x6518D50aDc9036Df37119eA465a8159E34417E2E" # (address)
+COPROCESSOR_SIGNER_ADDRESS_0="0xa5eE8292dA52d8234248709F3E217ffEBA5E8312" # (address)
+COPROCESSOR_S3_BUCKET_URL_0="s3://bucket-1" # (string)
+```
 
 ### KmsManagement parameters
 
