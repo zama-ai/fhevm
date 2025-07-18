@@ -10,7 +10,7 @@ use std::{sync::Arc, time::Duration};
 use tracing::{debug, info, warn};
 
 /// The time to wait between two transactions attempt.
-const TX_INTERVAL: Duration = Duration::from_secs(3);
+const TX_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Adapter for decryption operations
 #[derive(Clone)]
@@ -47,21 +47,15 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             )));
         }
 
-        info!(
+        debug!(
             signature = ?signature,
             "Using Core's EIP-712 signature for PublicDecryptionResponse-{id}"
-        );
-
-        debug!(
-            result_len = result.len(),
-            signature = ?signature,
-            "Sending PublicDecryptionResponse-{id}"
         );
 
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
 
         let call_builder = contract.publicDecryptionResponse(id, result, signature.into());
-        info!(
+        debug!(
             "PublicDecryptionResponse-{id} calldata length {}",
             call_builder.calldata().len()
         );
@@ -76,11 +70,11 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             .await
             .map_err(|e| Error::Contract(e.to_string()))?;
         info!(
-            "🎯 PublicDecryptionResponse-{id} sent with tx receipt: {:?}",
-            receipt
+            "[TRX SUCCESS] PublicDecryptionResponse-{id} sent with trx receipt: {}",
+            receipt.transaction_hash
         );
         info!(
-            "⛽ Gas consumed by PublicDecryptionResponse-{id}: {}",
+            "[GAS] consumed by PublicDecryptionResponse-{id}: {}",
             receipt.gas_used
         );
         Ok(())
@@ -100,22 +94,16 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             )));
         }
 
-        info!(
+        debug!(
             signature = ?signature,
             "Using Core's EIP-712 signature for UserDecryptionResponse-{id}"
-        );
-
-        debug!(
-            result_len = result.len(),
-            signature = ?signature,
-            "Sending UserDecryptionResponse-{id}"
         );
 
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
 
         // Create and send transaction
         let call_builder = contract.userDecryptionResponse(id, result, signature.into());
-        info!(
+        debug!(
             "UserDecryptionResponse-{id} calldata length {}",
             call_builder.calldata().len()
         );
@@ -130,11 +118,11 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             .await
             .map_err(|e| Error::Contract(e.to_string()))?;
         info!(
-            "🎯 UserDecryptionResponse-{id} sent with tx receipt: {:?}",
-            receipt
+            "[TRX SUCCESS] UserDecryptionResponse-{id} sent with trx hash: {}",
+            receipt.transaction_hash
         );
         info!(
-            "⛽ Gas consumed by UserDecryptionResponse-{id}: {}",
+            "[GAS] consumed by UserDecryptionResponse-{id}: {}",
             receipt.gas_used
         );
         Ok(())

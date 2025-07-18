@@ -156,13 +156,13 @@ impl KmsService for KmsServiceImpl {
         let request_id_decimal = request_id_to_decimal(&request_id.request_id);
         if let Some(ciphertexts) = request.get_ref().ciphertexts.as_slice().first() {
             info!(
-                "[OUT] 🔑 Sending PublicDecryptionRequest-{} with FHE type: {}",
+                "[SENDING] PublicDecryptionRequest-{} with FHE type: {}",
                 request_id_decimal,
                 fhe_type_to_string(ciphertexts.fhe_type)
             );
         } else {
             info!(
-                "[OUT] Sending PublicDecryptionRequest-{} with no ciphertexts",
+                "[SENDING] PublicDecryptionRequest-{} with no ciphertexts",
                 request_id_decimal
             );
         }
@@ -223,7 +223,7 @@ impl KmsService for KmsServiceImpl {
 
         let request_id_decimal = request_id_to_decimal(&request_id.request_id);
         info!(
-            "[OUT] 🔑 Sending UserDecryptionRequest-{} for client {} with FHE types: [{}]",
+            "[SENDING] UserDecryptionRequest-{} for client {} with FHE types: [{}]",
             request_id_decimal,
             request.get_ref().client_address,
             fhe_types

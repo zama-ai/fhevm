@@ -67,13 +67,13 @@ impl CoordinatedMessage {
         if delay_ms < 0 {
             // Only calculate when needed - delayed case
             info!(
-                "⏳ Scheduled {}-{} in 0ms (delta: {}ms, delayed by {}ms)",
+                "[SCHEDULED] {}-{} in 0ms (delta: {}ms, delayed by {}ms)",
                 event_type, request_id, send_delta_ms, -delay_ms
             );
         } else {
             // Normal case - use delay_ms directly (already positive)
             info!(
-                "⏳ Scheduled {}-{} in {}ms (delta: {}ms)",
+                "[SCHEDULED] {}-{} in {}ms (delta: {}ms)",
                 event_type, request_id, delay_ms, send_delta_ms
             );
         }
@@ -174,7 +174,7 @@ impl<P: Provider + Clone + 'static> MessageScheduler<P> {
         if current_size >= self.config.pending_events_max {
             // Queue is completely full - signal critical backpressure and wait
             warn!(
-                "🔥🔥🔥 Message queue at capacity ({}), signaling critical backpressure",
+                "Message queue at capacity ({}), signaling critical backpressure",
                 current_size
             );
             let _ = self.backpressure_tx.send(BackpressureSignal::QueueCritical);
@@ -195,14 +195,14 @@ impl<P: Provider + Clone + 'static> MessageScheduler<P> {
         } else if current_size >= critical_threshold {
             // Queue is critically full - signal strong backpressure
             warn!(
-                "⚠️🚨 Message queue critically full ({}/{}), signaling backpressure",
+                "Message queue critically full ({}/{}), signaling backpressure",
                 current_size, self.config.pending_events_max
             );
             let _ = self.backpressure_tx.send(BackpressureSignal::QueueCritical);
         } else if current_size >= queue_threshold {
             // Queue is getting full - signal moderate backpressure
             warn!(
-                "⚠️ Message queue filling up ({}/{}), signaling backpressure",
+                "Message queue filling up ({}/{}), signaling backpressure",
                 current_size, self.config.pending_events_max
             );
             let _ = self.backpressure_tx.send(BackpressureSignal::QueueFull);
@@ -253,7 +253,7 @@ impl<P: Provider + Clone + 'static> MessageScheduler<P> {
                 .send(BackpressureSignal::QueueAvailable);
         }
 
-        info!(
+        debug!(
             "Scheduled message {} for sending at timestamp {} (queue size: {})",
             event_id, coordinated_message.send_time, new_size
         );
@@ -521,7 +521,7 @@ impl<P: Provider + Clone + 'static> MessageScheduler<P> {
         match event {
             KmsCoreEvent::PublicDecryptionRequest(request) => {
                 info!(
-                    "📤 Dequeuing PublicDecryptionRequest-{}",
+                    "[DEQUEUING] PublicDecryptionRequest-{}",
                     request.decryptionId
                 );
 
@@ -578,10 +578,7 @@ impl<P: Provider + Clone + 'static> MessageScheduler<P> {
                 }
             }
             KmsCoreEvent::UserDecryptionRequest(request) => {
-                info!(
-                    "📤 Dequeuing UserDecryptionRequest-{}",
-                    request.decryptionId
-                );
+                info!("[DEQUEUING] UserDecryptionRequest-{}", request.decryptionId);
 
                 // Extract key_id from the first snsCtMaterials entry (same as EventProcessor)
                 let key_id = if !request.snsCtMaterials.is_empty() {

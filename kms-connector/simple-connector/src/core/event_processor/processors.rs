@@ -3,7 +3,7 @@ use chrono::Utc;
 use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     core::{
@@ -37,7 +37,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
     ) -> Result<Self> {
         // Create MessageScheduler if coordinated sending is enabled
         let (message_scheduler, backpressure_rx) = if config.enable_coordinated_sending {
-            info!("🔂 Coordinated sending enabled - starting MessageScheduler");
+            info!("Coordinated sending enabled - starting MessageScheduler");
 
             // Use the same shutdown receiver as the EventProcessor to coordinate shutdown
             let scheduler_shutdown_rx = shutdown.resubscribe();
@@ -164,7 +164,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
                     let result = match event {
                         KmsCoreEvent::PublicDecryptionRequest(req) => {
                             info!(
-                                "📭 Received PublicDecryptionRequest-{}",
+                                "[RECEIVED] PublicDecryptionRequest-{}",
                                 req.decryptionId
                             );
 
@@ -172,7 +172,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
                             let key_id = if !req.snsCtMaterials.is_empty() {
                                 let extracted_key_id = req.snsCtMaterials.first().unwrap().keyId;
                                 let key_id_hex = alloy::hex::encode(extracted_key_id.to_be_bytes::<32>());
-                                info!(
+                                debug!(
                                     "Extracted key_id {} from snsCtMaterials[0] for PublicDecryptionRequest-{}",
                                     key_id_hex, req.decryptionId
                                 );
@@ -203,7 +203,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
 
                             // Use MessageScheduler if coordinated sending is enabled
                             if let Some(scheduler) = &self.message_scheduler {
-                                info!("📋 Queuing PublicDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
+                                info!("[QUEUING] PublicDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
 
                                 // Get block timestamp for coordinated sending - this fixes the critical timing bug
                                 let event_id = req_clone.decryptionId.to_string();
@@ -235,7 +235,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
 
                         KmsCoreEvent::UserDecryptionRequest(req) => {
                             info!(
-                                "📭 Received UserDecryptionRequest-{}",
+                                "[RECEIVED] UserDecryptionRequest-{}",
                                 req.decryptionId
                             );
 
@@ -274,7 +274,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
 
                             let user_key_prefixed = hex::encode_prefixed(req_clone.userAddress);
 
-                            info!(
+                            debug!(
                                 "UserDecryptionRequest-{} was received with userAddress: {}",
                                 req_clone.decryptionId,
                                 user_key_prefixed,
@@ -282,7 +282,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
 
                             // Use MessageScheduler if coordinated sending is enabled
                             if let Some(scheduler) = &self.message_scheduler {
-                                info!("📋 Queuing UserDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
+                                info!("[QUEUING] UserDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
 
                                 // Get block timestamp for coordinated sending - this fixes the critical timing bug
                                 let event_id = req_clone.decryptionId.to_string();

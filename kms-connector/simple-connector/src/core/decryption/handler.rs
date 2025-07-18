@@ -34,7 +34,7 @@ pub struct DecryptionHandler<P> {
     config: Config,
 }
 
-impl<P: Provider + Clone> DecryptionHandler<P> {
+impl<P: Provider + Clone + 'static> DecryptionHandler<P> {
     /// Create a new decryption handler
     pub fn new(
         decryption: DecryptionAdapter<P>,
@@ -73,7 +73,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
             .collect();
 
         info!(
-            "🔄 Processing {}DecryptionRequest-{} with {} ciphertexts, key_id: {}, FHE types: [{}]",
+            "[PROCESSING] {}DecryptionRequest-{} with {} ciphertexts, key_id: {}, FHE types: [{}]",
             request_type,
             request_id.to_string(),
             sns_ciphertext_materials.len(),
@@ -126,7 +126,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
         let domain_msg = alloy_to_protobuf_domain(&domain)
             .map_err(|e| crate::error::Error::Config(format!("Failed to convert domain: {e}")))?;
 
-        info!(
+        debug!(
             "Eip712Domain constructed: name={} version={} chain_id={} verifying_contract={} salt=None",
             domain_msg.name,
             domain_msg.version,
@@ -151,13 +151,6 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                     })
                     .collect();
 
-                info!(
-                    "Sending PublicDecryptionRequest-{}, key_id={}, domain.chain_id={}",
-                    request_id.to_string(),
-                    key_id_obj.request_id.to_string(),
-                    alloy::primitives::U256::from_be_slice(&domain_msg.chain_id).to_string()
-                );
-
                 let request = Request::new(PublicDecryptionRequest {
                     ciphertexts,
                     key_id: Some(key_id_obj.clone()),
@@ -167,7 +160,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
 
                 let response = self.kms_client.request_public_decryption(request).await?;
                 info!(
-                    "[IN] 📡 PublicDecryptionResponse-{} received",
+                    "[RECEIVED] PublicDecryptionResponse-{}",
                     request_id.to_string()
                 );
                 let decryption_response = response.into_inner();
@@ -191,13 +184,32 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
 
                     // Send response back to the Gateway
                     info!(
-                        "Sending PublicDecryptionResponse-{} with {} plaintexts",
+                        "[EMBEDDING] PublicDecryptionResponse-{} with {} plaintexts into the Gateway",
                         request_id,
                         payload.plaintexts.len()
                     );
-                    self.decryption
-                        .send_public_decryption_response(request_id, result, signature)
-                        .await?;
+
+                    let decryption_adapter = self.decryption.clone();
+
+                    tokio::spawn(async move {
+                        match decryption_adapter
+                            .send_public_decryption_response(request_id, result, signature)
+                            .await
+                        {
+                            Ok(_) => {
+                                info!(
+                                    "PublicDecryptionResponse-{} transaction submitted successfully",
+                                    request_id
+                                );
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Failed to submit PublicDecryptionResponse-{}: {}",
+                                    request_id, e
+                                );
+                            }
+                        }
+                    });
                 } else {
                     error!(
                         "Received empty payload for PublicDecryptionRequest-{}",
@@ -249,7 +261,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                     format!("0x{}", alloy::hex::encode(client_addr))
                 };
 
-                info!(
+                debug!(
                     "Proceeding with Client address: {} (length: {} bytes)",
                     client_address_str,
                     client_addr.len()
@@ -270,36 +282,6 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
 
                 let request = Request::new(user_decryption_request.clone());
 
-                info!(
-                    "Sending UserDecryptionRequest-{}, client_address={}, key_id={}, typed_ciphertexts.len={}, domain.chain_id={}",
-                    request_id.to_string(),
-                    request.get_ref().client_address,
-                    request
-                        .get_ref()
-                        .key_id
-                        .as_ref()
-                        .map(|id| id.request_id.to_string())
-                        .unwrap_or_else(|| "unknown".to_string()),
-                    request.get_ref().typed_ciphertexts.len(),
-                    request
-                        .get_ref()
-                        .domain
-                        .as_ref()
-                        .map(|x| {
-                            let chain_id_bytes = &x.chain_id;
-                            if !chain_id_bytes.is_empty() {
-                                // Parse bytes back to U256 and display as decimal
-                                let chain_id_u256 =
-                                    alloy::primitives::U256::from_be_slice(chain_id_bytes);
-                                chain_id_u256.to_string()
-                            } else {
-                                "unknown".to_string()
-                            }
-                        })
-                        .unwrap_or_else(|| "unknown".to_string())
-                );
-
-                // TODO: revert to DEBUG
                 // Only log detailed ciphertext info at debug level
                 if tracing::enabled!(tracing::Level::DEBUG) {
                     for (i, ct) in request.get_ref().typed_ciphertexts.iter().enumerate() {
@@ -315,7 +297,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
 
                 let response = self.kms_client.request_user_decryption(request).await?;
                 info!(
-                    "[IN] 📡 UserDecryptionResponse-{} received",
+                    "[RECEIVED] UserDecryptionResponse-{}",
                     request_id.to_string()
                 );
                 let user_decryption_response = response.into_inner();
@@ -343,14 +325,36 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                     }
 
                     // Send response back to the Gateway
-                    info!("Sending UserDecryptionResponse-{}", request_id);
-                    self.decryption
-                        .send_user_decryption_response(
-                            request_id,
-                            Bytes::from(serialized_response_payload),
-                            signature,
-                        )
-                        .await?;
+                    info!(
+                        "[EMBEDDING] UserDecryptionResponse-{} into the Gateway",
+                        request_id
+                    );
+
+                    let decryption_adapter = self.decryption.clone();
+
+                    tokio::spawn(async move {
+                        match decryption_adapter
+                            .send_user_decryption_response(
+                                request_id,
+                                Bytes::from(serialized_response_payload),
+                                signature,
+                            )
+                            .await
+                        {
+                            Ok(_) => {
+                                info!(
+                                    "UserDecryptionResponse-{} trx submitted successfully",
+                                    request_id
+                                );
+                            }
+                            Err(e) => {
+                                error!(
+                                    "Failed to submit UserDecryptionResponse-{} trx: {}",
+                                    request_id, e
+                                );
+                            }
+                        }
+                    });
                 } else {
                     error!(
                         "Received empty payload for UserDecryptionRequest-{}",
