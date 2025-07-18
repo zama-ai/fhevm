@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import {E2EFHEVMConfig} from "../E2EFHEVMConfigLocal.sol";
+import { E2EFHEVMConfig } from "../E2EFHEVMConfig.sol";
 
 contract FHEVMManualTestSuite is E2EFHEVMConfig {
     ebool public resEbool;
