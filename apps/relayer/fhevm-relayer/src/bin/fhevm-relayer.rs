@@ -126,6 +126,7 @@ async fn main() -> eyre::Result<()> {
         let registry = Registry::new();
         metrics::init_metrics(&registry);
         metrics::init_http_metrics(&registry, &settings.http_metrics);
+        metrics::init_cache_metrics(&registry);
         let metrics_endpoint = settings.metrics_endpoint.clone();
         let registry_clone = registry.clone();
 

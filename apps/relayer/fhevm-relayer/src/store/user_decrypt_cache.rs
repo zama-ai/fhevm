@@ -1,5 +1,6 @@
 use crate::{
     core::event::{UserDecryptRequest, UserDecryptResponse},
+    metrics::{cache_operation, CacheOperation, CacheType},
     store::key_value_db::KVStore,
 };
 use alloy::primitives::U256;
@@ -52,9 +53,11 @@ impl UserDecryptResponseCacheStore {
         if let Some(value) = self.kv_store.get(&key).await? {
             let response = serde_json::from_str(&value)?;
             debug!("Cache hit on {key} with {response}");
+            cache_operation(CacheType::UserDecryptResponse, CacheOperation::Hit, &key);
             return Ok(Some(response));
         }
         debug!("Cache miss on {key}");
+        cache_operation(CacheType::UserDecryptResponse, CacheOperation::Miss, &key);
         Ok(None)
     }
 }
@@ -92,9 +95,11 @@ impl UserDecryptRequestCacheStore {
         if let Some(value) = self.kv_store.get(&key).await? {
             let response = serde_json::from_str(&value)?;
             debug!("Cache hit on {key} with {response}");
+            cache_operation(CacheType::UserDecryptRequest, CacheOperation::Hit, &key);
             return Ok(Some(response));
         }
         debug!("Cache miss on {key}");
+        cache_operation(CacheType::UserDecryptRequest, CacheOperation::Miss, &key);
         Ok(None)
     }
 }
@@ -105,7 +110,14 @@ mod tests {
     use crate::core::event::RequestValidity;
     use crate::store::key_value_db::InMemoryKVStore;
     use alloy::primitives::{Address, Bytes, U256};
+    use prometheus::Registry;
     use std::sync::Arc;
+
+    // Helper function to initialize metrics for tests
+    fn init_metrics_for_test() {
+        let registry = Registry::new();
+        crate::metrics::init_cache_metrics(&registry);
+    }
 
     fn dummy_response(gateway_request_id: U256) -> UserDecryptResponse {
         UserDecryptResponse {
@@ -132,6 +144,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_decrypt_request_cache_store() {
+        init_metrics_for_test();
         let kv_store = Arc::new(InMemoryKVStore::default());
         let cache_store = UserDecryptRequestCacheStore::new(kv_store);
         let request = dummy_request(0);
@@ -162,6 +175,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_decrypt_request_cache_store_handles_multiple() {
+        init_metrics_for_test();
         let kv_store = Arc::new(InMemoryKVStore::default());
         let cache_store = UserDecryptRequestCacheStore::new(kv_store);
         let on_chain_decryption_id_1 = U256::from(7);
@@ -186,6 +200,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_decrypt_response_cache_store() {
+        init_metrics_for_test();
         let kv_store = Arc::new(InMemoryKVStore::default());
         let cache_store = UserDecryptResponseCacheStore::new(kv_store);
         let on_chain_decryption_id = U256::from(3);
@@ -217,6 +232,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_decrypt_response_cache_store_handles_multiple() {
+        init_metrics_for_test();
         let kv_store = Arc::new(InMemoryKVStore::default());
         let cache_store = UserDecryptResponseCacheStore::new(kv_store);
         let on_chain_decryption_id_1 = U256::from(2);

@@ -1,6 +1,11 @@
-use crate::{core::event::PublicDecryptResponse, store::key_value_db::KVStore};
+use crate::{
+    core::event::PublicDecryptResponse,
+    metrics::{cache_operation, CacheOperation, CacheType},
+    store::key_value_db::KVStore,
+};
 use anyhow::Result;
 use std::sync::Arc;
+use tracing::debug;
 
 const PUB_DECRYPT_CACHE_PREFIX: &str = "PUB-DECRYPT-CACHE";
 
@@ -39,8 +44,12 @@ impl PublicDecryptCacheStore {
         let key = Self::make_key(handles);
         if let Some(value) = self.kv_store.get(&key).await? {
             let gw_response = serde_json::from_str(&value)?;
+            debug!("Cache hit on {key}");
+            cache_operation(CacheType::PublicDecrypt, CacheOperation::Hit, &key);
             return Ok(Some(gw_response));
         }
+        debug!("Cache miss on {key}");
+        cache_operation(CacheType::PublicDecrypt, CacheOperation::Miss, &key);
         Ok(None)
     }
 }
@@ -50,7 +59,14 @@ mod tests {
     use super::*;
     use crate::store::key_value_db::InMemoryKVStore;
     use alloy::primitives::{Bytes, U256};
+    use prometheus::Registry;
     use std::sync::Arc;
+
+    // Helper function to initialize metrics for tests
+    fn init_metrics_for_test() {
+        let registry = Registry::new();
+        crate::metrics::init_cache_metrics(&registry);
+    }
 
     // Helper function to construct a dummy PublicDecryptResponse.
     fn dummy_response(gateway_request_id: U256, decrypted_value: &[u8]) -> PublicDecryptResponse {
@@ -63,6 +79,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pub_decrypt_cache_store() {
+        init_metrics_for_test();
         let kv_store = Arc::new(InMemoryKVStore::default());
         let cache_store = PublicDecryptCacheStore::new(kv_store);
         let handles: Vec<[u8; 32]> = vec![[1u8; 32]];
@@ -94,6 +111,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pub_decrypt_cache_store_handles_multiple() {
+        init_metrics_for_test();
         let kv_store = Arc::new(InMemoryKVStore::default());
         let cache_store = PublicDecryptCacheStore::new(kv_store);
         let handles1: Vec<[u8; 32]> = vec![[1u8; 32]];
