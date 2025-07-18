@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import "./interfaces/IKmsManagement.sol";
 import "./interfaces/IGatewayConfig.sol";
 import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
-import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
@@ -14,13 +13,7 @@ import "./shared/Pausable.sol";
 /// @dev TODO: This contract is neither used nor up-to-date. It will be reworked in the future.
 /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/108
 /// @dev See {IKmsManagement}.
-contract KmsManagement is
-    IKmsManagement,
-    Ownable2StepUpgradeable,
-    UUPSUpgradeableEmptyProxy,
-    GatewayConfigChecks,
-    Pausable
-{
+contract KmsManagement is IKmsManagement, UUPSUpgradeableEmptyProxy, GatewayConfigChecks, Pausable {
     /// @notice The address of the GatewayConfig contract for protocol state calls.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -136,7 +129,6 @@ contract KmsManagement is
         string memory fheParamsName,
         bytes32 fheParamsDigest
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __Ownable_init(owner());
         __Pausable_init();
 
         KmsManagementStorage storage $ = _getKmsManagementStorage();
@@ -156,7 +148,7 @@ contract KmsManagement is
     /// @dev See {IKmsManagement-preprocessKeygenRequest}.
     function preprocessKeygenRequest(
         string calldata fheParamsName
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
+    ) external virtual onlyGatewayConfigOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
@@ -205,7 +197,7 @@ contract KmsManagement is
     /// @dev See {IKmsManagement-preprocessKskgenRequest}.
     function preprocessKskgenRequest(
         string calldata fheParamsName
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
+    ) external virtual onlyGatewayConfigOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
@@ -252,7 +244,7 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-keygenRequest}.
-    function keygenRequest(uint256 preKeyId) external virtual onlyOwner whenNotPaused {
+    function keygenRequest(uint256 preKeyId) external virtual onlyGatewayConfigOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A key generation request can only be sent once
@@ -301,7 +293,7 @@ contract KmsManagement is
     /// @dev See {IKmsManagement-crsgenRequest}.
     function crsgenRequest(
         string calldata fheParamsName
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
+    ) external virtual onlyGatewayConfigOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev Generate a new crsgenRequestId. This is used to link the FHE params sent in the request
@@ -347,7 +339,7 @@ contract KmsManagement is
         uint256 preKskId,
         uint256 sourceKeyId,
         uint256 destKeyId
-    ) external virtual onlyOwner whenNotPaused {
+    ) external virtual onlyGatewayConfigOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KSK generation request can only be sent once
@@ -412,7 +404,7 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-activateKeyRequest}.
-    function activateKeyRequest(uint256 keyId) external virtual onlyOwner whenNotPaused {
+    function activateKeyRequest(uint256 keyId) external virtual onlyGatewayConfigOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A key activation request can only be sent once
@@ -468,7 +460,7 @@ contract KmsManagement is
     function addFheParams(
         string calldata fheParamsName,
         bytes32 fheParamsDigest
-    ) external virtual onlyOwner whenNotPaused {
+    ) external virtual onlyGatewayConfigOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
         if ($._fheParamsInitialized[fheParamsName]) {
             revert FheParamsAlreadyInitialized(fheParamsName);
@@ -484,7 +476,7 @@ contract KmsManagement is
     function updateFheParams(
         string calldata fheParamsName,
         bytes32 fheParamsDigest
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
+    ) external virtual onlyGatewayConfigOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
         $.fheParamsDigests[fheParamsName] = fheParamsDigest;
 
@@ -547,7 +539,7 @@ contract KmsManagement is
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
     // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayConfigOwner {}
 
     /// @notice Checks if the consensus is reached among the KMS nodes.
     /// @param kmsCounter The number of KMS nodes that agreed

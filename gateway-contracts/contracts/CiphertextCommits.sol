@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
 import { kmsManagementAddress } from "../addresses/KmsManagementAddress.sol";
-import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
@@ -16,13 +15,7 @@ import "./libraries/HandleOps.sol";
  * @title CiphertextCommits smart contract
  * @dev See {ICiphertextCommits}.
  */
-contract CiphertextCommits is
-    ICiphertextCommits,
-    Ownable2StepUpgradeable,
-    UUPSUpgradeableEmptyProxy,
-    GatewayConfigChecks,
-    Pausable
-{
+contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, GatewayConfigChecks, Pausable {
     /// @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -83,7 +76,6 @@ contract CiphertextCommits is
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __Ownable_init(owner());
         __Pausable_init();
     }
 
@@ -248,7 +240,7 @@ contract CiphertextCommits is
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
     // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayConfigOwner {}
 
     /// @notice Checks if the consensus is reached among the Coprocessors.
     /// @param coprocessorCounter The number of coprocessors that agreed

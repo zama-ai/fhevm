@@ -5,13 +5,14 @@ import { gatewayConfigAddress } from "../../addresses/GatewayConfigAddress.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "../interfaces/IGatewayConfig.sol";
+import "./GatewayConfigChecks.sol";
 
 /**
  * @title Pausable.
  * @dev This contract provides an abstract implementation for the pausing features
  * based on the OpenZeppelin PausableUpgradeable contract.
  */
-abstract contract Pausable is Ownable2StepUpgradeable, PausableUpgradeable {
+abstract contract Pausable is PausableUpgradeable, GatewayConfigChecks {
     /// @notice The address of the GatewayConfig contract
     IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -30,7 +31,7 @@ abstract contract Pausable is Ownable2StepUpgradeable, PausableUpgradeable {
      * - The contract must not be paused.
      */
     function pause() external virtual {
-        if (msg.sender != owner() && msg.sender != _GATEWAY_CONFIG.getPauser()) {
+        if (msg.sender != _GATEWAY_CONFIG.getOwner() && msg.sender != _GATEWAY_CONFIG.getPauser()) {
             revert NotOwnerOrPauser(msg.sender);
         }
         _pause();
@@ -44,7 +45,7 @@ abstract contract Pausable is Ownable2StepUpgradeable, PausableUpgradeable {
      * - Only owner can unpause.
      * - The contract must be paused.
      */
-    function unpause() external virtual onlyOwner {
+    function unpause() external virtual onlyGatewayConfigOwner {
         _unpause();
     }
 }

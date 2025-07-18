@@ -7,7 +7,6 @@ import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./interfaces/IMultichainAcl.sol";
@@ -20,14 +19,7 @@ import "./libraries/FHETypeBitSizes.sol";
 
 /// @title Decryption contract
 /// @dev See {IDecryption}.
-contract Decryption is
-    IDecryption,
-    EIP712Upgradeable,
-    Ownable2StepUpgradeable,
-    UUPSUpgradeableEmptyProxy,
-    GatewayConfigChecks,
-    Pausable
-{
+contract Decryption is IDecryption, EIP712Upgradeable, UUPSUpgradeableEmptyProxy, GatewayConfigChecks, Pausable {
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
     /// @dev The name of this struct is not relevant for the signature validation, only the one defined
     /// @dev EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
@@ -210,7 +202,6 @@ contract Decryption is
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
-        __Ownable_init(owner());
         __Pausable_init();
     }
 
@@ -595,7 +586,7 @@ contract Decryption is
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
     // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayConfigOwner {}
 
     /// @notice Validates the EIP712 signature for a given user decryption request
     /// @dev This function checks that the signer address is the same as the user address.

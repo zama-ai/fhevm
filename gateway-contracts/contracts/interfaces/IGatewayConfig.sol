@@ -247,6 +247,8 @@ interface IGatewayConfig {
      */
     function checkHostChainIsRegistered(uint256 chainId) external view;
 
+    function checkIsGatewayConfigOwner(address sender) external view;
+
     /**
      * @notice Get the pauser's address.
      * @return The address of the pauser.
@@ -354,4 +356,6 @@ interface IGatewayConfig {
      * @dev This is conventionally used for upgrade features.
      */
     function getVersion() external pure returns (string memory);
+
+    function getOwner() external view returns (address);
 }
