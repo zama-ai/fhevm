@@ -129,3 +129,15 @@ private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 # bucket = "my-ciphertext-bucket"
 # ENV: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
 # endpoint = "http://localhost:9876"
+
+# The limit number of KMS Core responses to fetch from the database (optional, defaults to 10)
+# ENV: KMS_CONNECTOR_RESPONSES_BATCH_SIZE
+# responses_batch_size = 10
+
+# Number of retries for transactions sent to the Gateway (optional, defaults to 3)
+# ENV: KMS_CONNECTOR_TX_RETRIES
+# tx_retries = 3
+
+# Interval between retries for transactions sent to the Gateway, in milliseconds (optional, defaults to 100ms)
+# ENV: KMS_CONNECTOR_TX_RETRY_INTERVAL_MS
+# tx_retry_interval = 100

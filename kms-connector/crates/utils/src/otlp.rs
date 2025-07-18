@@ -32,14 +32,14 @@ pub fn init_otlp_setup(
         .with_batch_exporter(span_exporter)
         .build();
 
-    global::set_text_map_propagator(TraceContextPropagator::new());
-    global::set_tracer_provider(trace_provider.clone());
-
     tracing_subscriber::registry()
         .with(fmt::layer())
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .with(OpenTelemetryLayer::new(trace_provider.tracer("test-layer"))) // TODO
+        .with(OpenTelemetryLayer::new(trace_provider.tracer("otlp-layer")))
         .init();
+
+    global::set_text_map_propagator(TraceContextPropagator::new());
+    global::set_tracer_provider(trace_provider);
 
     Ok(())
 }

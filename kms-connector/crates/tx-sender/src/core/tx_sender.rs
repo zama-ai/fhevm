@@ -2,10 +2,7 @@ use crate::{
     core::{
         Config, DbKmsResponsePicker, DbKmsResponseRemover, KmsResponsePicker, KmsResponseRemover,
     },
-    metrics::{
-        GATEWAY_TX_SENT_COUNTER, GATEWAY_TX_SENT_ERRORS, RESPONSE_RECEIVED_COUNTER,
-        RESPONSE_RECEIVED_ERRORS,
-    },
+    metrics::{GATEWAY_TX_SENT_COUNTER, GATEWAY_TX_SENT_ERRORS},
 };
 use alloy::{
     network::Ethereum,
@@ -21,46 +18,31 @@ use connector_utils::{
 use fhevm_gateway_rust_bindings::decryption::Decryption::{self, DecryptionInstance};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 /// Struct sending stored KMS Core's responses to the Gateway.
 pub struct TransactionSender<L, P: Provider, R> {
     /// The entity used to collect stored KMS Core's responses.
     response_picker: L,
 
-    /// The `Provider` used to interact with the Gateway
-    provider: P,
-
-    /// The `Decryption` contract instance of the Gateway.
-    decryption_contract: DecryptionInstance<(), P>,
+    /// The entity responsible to send transaction to the Gateway.
+    inner: TransactionSenderInner<P>,
 
     /// The entity used to remove stored KMS Core's responses.
     response_remover: R,
 }
 
-/// The expected length of an EIP712 signature.
-pub const EIP712_SIGNATURE_LENGTH: usize = 65;
-
-/// The time to wait between two transactions attempt.
-const TX_INTERVAL: Duration = Duration::from_secs(3);
-
 impl<L, P, R> TransactionSender<L, P, R>
 where
     L: KmsResponsePicker,
-    P: Provider,
-    R: KmsResponseRemover,
+    P: Provider + Clone + 'static,
+    R: KmsResponseRemover + Clone + 'static,
 {
     /// Creates a new `TransactionSender` instance.
-    pub fn new(
-        response_picker: L,
-        provider: P,
-        decryption_contract: DecryptionInstance<(), P>,
-        response_remover: R,
-    ) -> Self {
+    pub fn new(response_picker: L, inner: TransactionSenderInner<P>, response_remover: R) -> Self {
         Self {
             response_picker,
-            provider,
-            decryption_contract,
+            inner,
             response_remover,
         }
     }
@@ -78,36 +60,96 @@ where
     /// Runs the KMS Core's responses processing loop.
     async fn run(mut self) {
         loop {
-            let response = match self.response_picker.pick_response().await {
-                Ok(response) => response,
-                Err(e) => {
-                    RESPONSE_RECEIVED_ERRORS.inc();
-                    error!("Error while picking response: {e}");
-                    continue;
-                }
+            match self.response_picker.pick_responses().await {
+                Ok(responses) => self.spawn_response_handling_tasks(responses),
+                Err(e) => warn!("Error while picking responses: {e}"),
             };
-            RESPONSE_RECEIVED_COUNTER.inc();
-
-            let response_identifier = response.to_string();
-            if let Err(e) = self.process(response).await {
-                error!("Error while processing {response_identifier}: {e}");
-            }
         }
     }
 
-    /// Processes a KMS Core response.
-    #[tracing::instrument(skip(self), fields(response = %response))]
-    async fn process(&self, response: KmsResponse) -> anyhow::Result<()> {
-        info!("Processing response: {response:?}");
-        self.send_to_gateway(response.clone()).await?;
-        GATEWAY_TX_SENT_COUNTER.inc();
+    /// Spawns a new task to handle each response.
+    fn spawn_response_handling_tasks(&self, responses: Vec<KmsResponse>) {
+        for response in responses {
+            let inner = self.inner.clone();
+            let response_remover = self.response_remover.clone();
+            tokio::spawn(
+                async move { Self::handle_response(inner, response_remover, response).await },
+            );
+        }
+    }
 
-        self.response_remover.remove_response(&response).await
+    /// Handles a response coming from the  KMS Core.
+    #[tracing::instrument(skip(inner, response_remover), fields(response = %response))]
+    async fn handle_response(
+        inner: TransactionSenderInner<P>,
+        response_remover: R,
+        response: KmsResponse,
+    ) -> anyhow::Result<()> {
+        inner.send_to_gateway(response.clone()).await?;
+        response_remover.remove_response(&response).await
+    }
+}
+
+impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponseRemover> {
+    /// Creates a new `TransactionSender` instance from a valid `Config`.
+    pub async fn from_config(config: Config) -> anyhow::Result<Self> {
+        let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
+        let response_picker =
+            DbKmsResponsePicker::connect(db_pool.clone(), config.responses_batch_size).await?;
+        let response_remover = DbKmsResponseRemover::new(db_pool);
+
+        let provider = connect_to_gateway_with_wallet(&config.gateway_url, config.wallet).await?;
+        let decryption_contract =
+            Decryption::new(config.decryption_contract.address, provider.clone());
+
+        let inner = TransactionSenderInner::new(
+            provider,
+            decryption_contract,
+            config.tx_retries,
+            config.tx_retry_interval,
+        );
+
+        Ok(Self::new(response_picker, inner, response_remover))
+    }
+}
+
+/// The expected length of an EIP712 signature.
+pub const EIP712_SIGNATURE_LENGTH: usize = 65;
+
+/// The internal struct used to send transaction to the Gateway.
+pub struct TransactionSenderInner<P: Provider> {
+    /// The `Provider` used to interact with the Gateway
+    provider: P,
+
+    /// The `Decryption` contract instance of the Gateway.
+    decryption_contract: DecryptionInstance<(), P>,
+
+    /// The number of retries to send a transaction to the Gateway.
+    tx_retries: u8,
+
+    /// The time to wait between two transactions attempt.
+    tx_retry_interval: Duration,
+}
+
+impl<P: Provider> TransactionSenderInner<P> {
+    pub fn new(
+        provider: P,
+        decryption_contract: DecryptionInstance<(), P>,
+        tx_retries: u8,
+        tx_retry_interval: Duration,
+    ) -> Self {
+        Self {
+            provider,
+            decryption_contract,
+            tx_retries,
+            tx_retry_interval,
+        }
     }
 
     #[tracing::instrument(skip_all)]
     /// Sends a KMS Core's response to the Gateway.
     async fn send_to_gateway(&self, response: KmsResponse) -> anyhow::Result<()> {
+        info!("Sending response to the Gateway...");
         match response {
             KmsResponse::PublicDecryption {
                 decryption_id: id,
@@ -127,6 +169,10 @@ where
             }
         }
         .inspect_err(|_| GATEWAY_TX_SENT_ERRORS.inc())
+        .inspect(|_| {
+            GATEWAY_TX_SENT_COUNTER.inc();
+            info!("Response successfully sent to the Gateway!");
+        })
     }
 
     /// Sends a PublicDecryptionResponse to the Gateway.
@@ -221,41 +267,32 @@ where
         &self,
         call: TransactionRequest,
     ) -> anyhow::Result<PendingTransactionBuilder<Ethereum>> {
-        match self.provider.send_transaction(call.clone()).await {
-            Ok(tx) => Ok(tx),
-            Err(e) => {
-                warn!(
-                    "Retrying to send transaction in {}s after failure: {}",
-                    TX_INTERVAL.as_secs(),
-                    e
-                );
-
-                tokio::time::sleep(TX_INTERVAL).await;
-                self.provider
-                    .send_transaction(call)
-                    .await
-                    .map_err(anyhow::Error::from)
+        for i in 1..=self.tx_retries {
+            match self.provider.send_transaction(call.clone()).await {
+                Ok(tx) => return Ok(tx),
+                Err(e) => {
+                    warn!(
+                        "Transaction attempt #{}/{} failed: {}. Retrying in {}ms...",
+                        i,
+                        self.tx_retries,
+                        e,
+                        self.tx_retry_interval.as_millis()
+                    );
+                    tokio::time::sleep(self.tx_retry_interval).await;
+                }
             }
         }
+        Err(anyhow!("All transactions attempt failed"))
     }
 }
 
-impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponseRemover> {
-    /// Creates a new `TransactionSender` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<Self> {
-        let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let response_picker = DbKmsResponsePicker::connect(db_pool.clone()).await?;
-        let response_remover = DbKmsResponseRemover::new(db_pool);
-
-        let provider = connect_to_gateway_with_wallet(&config.gateway_url, config.wallet).await?;
-        let decryption_contract =
-            Decryption::new(config.decryption_contract.address, provider.clone());
-
-        Ok(Self::new(
-            response_picker,
-            provider,
-            decryption_contract,
-            response_remover,
-        ))
+impl<P: Provider + Clone> Clone for TransactionSenderInner<P> {
+    fn clone(&self) -> Self {
+        Self {
+            provider: self.provider.clone(),
+            decryption_contract: self.decryption_contract.clone(),
+            tx_retries: self.tx_retries,
+            tx_retry_interval: self.tx_retry_interval,
+        }
     }
 }

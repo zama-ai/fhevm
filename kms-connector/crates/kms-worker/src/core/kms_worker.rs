@@ -59,7 +59,7 @@ where
         }
     }
 
-    /// Spawns a new task dedicated to the handling of an event.
+    /// Spawns a new task to handle each event.
     fn spawn_event_handling_tasks(&self, events: Vec<T>) {
         for event in events {
             let event_processor = self.event_processor.clone();
