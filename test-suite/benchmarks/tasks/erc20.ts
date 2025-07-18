@@ -1,5 +1,5 @@
 import { task, types } from "hardhat/config";
-import { createInstance as createFhevmInstance, SepoliaConfig, FhevmInstanceConfig } from '@zama-fhe/relayer-sdk/node';
+import { createInstance as createFhevmInstance, SepoliaConfig, FhevmInstanceConfig, DecryptedResults } from '@zama-fhe/relayer-sdk/node';
 import { HardhatRuntimeEnvironment } from 'hardhat/types';
 import { EncryptedERC20 } from '../types';
 import fs from 'fs';
@@ -83,11 +83,34 @@ as batched transfers is not yet implemented in this script.
     console.log("Network:", network.name);
     console.log("Signer:", signer.address);
 
-    if (network.name != "sepolia") {
-      throw Error("Only sepolia is supported for now");
+    // Default to Sepolia configuration
+    const fhevmConfig: FhevmInstanceConfig = { ...SepoliaConfig, network: network.provider, chainId: network.config.chainId };
+
+    // Conditionally set properties only if env vars exist
+    if (process.env.CHAIN_ID_GATEWAY) {
+      fhevmConfig.gatewayChainId = parseInt(process.env.CHAIN_ID_GATEWAY);
+    }
+    if (process.env.RELAYER_URL) {
+      fhevmConfig.relayerUrl = process.env.RELAYER_URL;
+    }
+    if (process.env.DECRYPTION_ADDRESS) {
+      fhevmConfig.verifyingContractAddressDecryption = process.env.DECRYPTION_ADDRESS;
+    }
+    if (process.env.INPUT_VERIFICATION_ADDRESS) {
+      fhevmConfig.verifyingContractAddressInputVerification = process.env.INPUT_VERIFICATION_ADDRESS;
+    }
+    if (process.env.KMS_VERIFIER_CONTRACT_ADDRESS) {
+      fhevmConfig.kmsContractAddress = process.env.KMS_VERIFIER_CONTRACT_ADDRESS;
+    }
+    if (process.env.INPUT_VERIFIER_CONTRACT_ADDRESS) {
+      fhevmConfig.inputVerifierContractAddress = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS;
+    }
+    if (process.env.ACL_CONTRACT_ADDRESS) {
+      fhevmConfig.aclContractAddress = process.env.ACL_CONTRACT_ADDRESS;
     }
 
-    const fhevmConfig: FhevmInstanceConfig = { ...SepoliaConfig, network: network.provider };
+    console.log(`Using configuration: ${JSON.stringify(fhevmConfig)}`);
+
     const instance = await createFhevmInstance(fhevmConfig);
     console.debug(JSON.stringify(fhevmConfig));
 
@@ -180,8 +203,9 @@ as batched transfers is not yet implemented in this script.
     // Run multiple concurrent decryptions
     if (taskArgs.decrypt) {
       console.info("Decrypting cERC-20 balances");
-      let decrypted_balances_promises = [];
-      let balancesHandles = [];
+      let balancesHandles: string[] = [];
+      let eip712Signatures: string[] = []
+
       for (let index = 0; index < taskArgs.mintAmount + 1; index++) {
         let encrypted_balance = await contract.balanceOf(signers[index].address);
         balancesHandles.push(encrypted_balance);
@@ -192,10 +216,31 @@ as batched transfers is not yet implemented in this script.
           },
           eip712.message,
         );
-        decrypted_balances_promises.push(instance.userDecrypt([{ handle: encrypted_balance, contractAddress: contractAddress }], privateKey, publicKey, signature, [contractAddress], signers[index].address, taskArgs.eip712Timestamp, durationDays));
-        await sleep(taskArgs.sleepBetweenDecryptions);
+        eip712Signatures.push(signature);
+      };
+
+      // Leverage cache of relayer to retry until all promises resolve
+      console.time("decrytions");
+      let decrypted_balances: DecryptedResults[];
+      let counter = 0;
+      while (true) {
+        let decrypted_balances_promises = [];
+        for (let index = 0; index < taskArgs.mintAmount + 1; index++) {
+
+          decrypted_balances_promises.push(instance.userDecrypt([{ handle: balancesHandles[index], contractAddress: contractAddress }], privateKey, publicKey, eip712Signatures[index], [contractAddress], signers[index].address, taskArgs.eip712Timestamp, durationDays));
+          await sleep(taskArgs.sleepBetweenDecryptions);
+        }
+        try {
+          decrypted_balances = await Promise.all(decrypted_balances_promises);
+          break;
+        } catch (error) {
+          console.error(error);
+          console.log(`Retrying user decryptions attempt: ${counter}`);
+          counter += 1;
+        }
+
       }
-      const decrypted_balances = await Promise.all(decrypted_balances_promises);
+      console.timeEnd("decrytions");
       for (const [result, handle] of zip(decrypted_balances, balancesHandles)) {
         console.log(result[handle]);
       }
