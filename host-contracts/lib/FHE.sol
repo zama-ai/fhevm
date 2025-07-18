@@ -14,7 +14,8 @@ interface IKMSVerifier {
     function verifyDecryptionEIP712KMSSignatures(
         bytes32[] memory handlesList,
         bytes memory decryptedResult,
-        bytes[] memory signatures
+        bytes[] memory signatures,
+        bytes memory extraData
     ) external returns (bool);
 }
 
@@ -8948,11 +8949,13 @@ library FHE {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
         }
         FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+        bytes memory extraData = abi.encodePacked(uint8(0));
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 handlesList,
                 decryptedResult,
-                signatures
+                signatures,
+                extraData
             );
     }
 

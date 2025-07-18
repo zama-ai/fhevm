@@ -340,6 +340,7 @@ contract InputVerification is
      * @return The extra data for the ZK Proof verification request.
      */
     function _getVerifyProofRequestExtraData() internal pure returns (bytes memory) {
-        return abi.encodePacked(uint8(1));
+        // Current version is 0, and no additional data is used.
+        return abi.encodePacked(uint8(0));
     }
 }

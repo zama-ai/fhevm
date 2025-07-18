@@ -406,7 +406,8 @@ function generateKMSVerifierInterface(): string {
     function verifyDecryptionEIP712KMSSignatures(
         bytes32[] memory handlesList,
         bytes memory decryptedResult,
-        bytes[] memory signatures
+        bytes[] memory signatures,
+        bytes memory extraData
     ) external returns (bool);
   }
   `;

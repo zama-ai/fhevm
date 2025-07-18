@@ -19,7 +19,8 @@ interface IInputVerifier {
     function verifyCiphertext(
         FHEVMExecutor.ContextUserInputs memory context,
         bytes32 inputHandle,
-        bytes memory inputProof
+        bytes memory inputProof,
+        bytes memory extraData
     ) external returns (bytes32);
 }
 
@@ -737,7 +738,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
         bytes32 inputHandle,
         address userAddress,
         bytes memory inputProof,
-        FheType inputType
+        FheType inputType,
+        bytes memory extraData
     ) public virtual returns (bytes32 result) {
         ContextUserInputs memory contextUserInputs = ContextUserInputs({
             userAddress: userAddress,
@@ -745,7 +747,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
         });
         FheType typeCt = _typeOf(inputHandle);
         if (inputType != typeCt) revert InvalidType();
-        result = inputVerifier.verifyCiphertext(contextUserInputs, inputHandle, inputProof);
+        result = inputVerifier.verifyCiphertext(contextUserInputs, inputHandle, inputProof, extraData);
         acl.allowTransient(result, msg.sender);
         emit VerifyCiphertext(msg.sender, inputHandle, userAddress, inputProof, inputType, result);
     }

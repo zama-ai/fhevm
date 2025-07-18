@@ -915,7 +915,8 @@ contract Decryption is
      * @return The extra data for the Public Decryption request.
      */
     function _getPublicDecryptionRequestExtraData() internal pure returns (bytes memory) {
-        return abi.encodePacked(uint8(1));
+        // Current version is 0, and no additional data is used.
+        return abi.encodePacked(uint8(0));
     }
 
     /**
@@ -925,6 +926,7 @@ contract Decryption is
      * @return The extra data for the User Decryption request.
      */
     function _getUserDecryptionRequestExtraData() internal pure returns (bytes memory) {
-        return abi.encodePacked(uint8(1));
+        // Current version is 0, and no additional data is used.
+        return abi.encodePacked(uint8(0));
     }
 }
