@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 import { IDecryption } from "./interfaces/IDecryption.sol";
-import { multichainAclAddress } from "../addresses/MultichainAclAddress.sol";
-import { ciphertextCommitsAddress } from "../addresses/CiphertextCommitsAddress.sol";
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
+import {
+    ciphertextCommitsAddress,
+    gatewayConfigAddress,
+    multichainAclAddress
+} from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";

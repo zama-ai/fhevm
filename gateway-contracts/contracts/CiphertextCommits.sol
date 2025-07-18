@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
-import { kmsManagementAddress } from "../addresses/KmsManagementAddress.sol";
+import { gatewayConfigAddress, kmsManagementAddress } from "../addresses/GatewayAddresses.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/ICiphertextCommits.sol";
