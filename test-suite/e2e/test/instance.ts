@@ -11,6 +11,7 @@ const gatewayChainID = +process.env.CHAIN_ID_GATEWAY!;
 const verifyingContractAddressDecryption = process.env.DECRYPTION_ADDRESS!;
 const verifyingContractAddressInputVerification = process.env.INPUT_VERIFICATION_ADDRESS!;
 const relayerUrl = process.env.RELAYER_URL!;
+const apiKey: string | undefined = process.env.RELAYER_API_KEY;
 
 export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
   // Create instance
@@ -35,6 +36,7 @@ export const createInstance = async () => {
     network: network.config.url,
     relayerUrl: relayerUrl,
     gatewayChainId: gatewayChainID,
+    apiKey: apiKey,
   });
   return instance;
 };
