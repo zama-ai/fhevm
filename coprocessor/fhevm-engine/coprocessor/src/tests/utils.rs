@@ -100,7 +100,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         server_addr: format!("127.0.0.1:{app_port}"),
         metrics_addr: "".to_string(),
         database_url: Some(db_url.to_string()),
-        maximimum_compact_inputs_upload: 10,
+        maximum_compact_inputs_upload: 10,
         coprocessor_private_key: "./coprocessor.key".to_string(),
         service_name: "coprocessor".to_string(),
         log_level: Level::INFO,
