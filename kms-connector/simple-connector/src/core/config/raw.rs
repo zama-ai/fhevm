@@ -91,7 +91,7 @@ fn default_service_name() -> String {
 }
 
 fn default_channel_size() -> usize {
-    1000
+    5000
 }
 
 fn default_public_decryption_timeout() -> u64 {
@@ -103,7 +103,7 @@ fn default_user_decryption_timeout() -> u64 {
 }
 
 fn default_retry_interval() -> u64 {
-    3 // 3 seconds
+    1 // 1 second
 }
 
 fn default_verify_coprocessors() -> Option<bool> {
@@ -119,7 +119,7 @@ fn default_message_send_delta_ms() -> u64 {
 }
 
 fn default_message_spacing_ms() -> u64 {
-    25 // 25ms between messages
+    5 // 5ms between messages
 }
 
 fn default_pending_events_max() -> usize {
@@ -139,7 +139,7 @@ fn default_starting_block_number() -> Option<u64> {
 }
 
 fn default_max_concurrent_tasks() -> usize {
-    100 // Maximum 100 concurrent tasks
+    500 // Maximum 500 concurrent tasks
 }
 
 fn default_use_polling_mode() -> bool {

@@ -47,7 +47,7 @@ gateway_config_domain_version = "1"
 
 # Channel buffer size (optimized for local testing)
 # ENV: KMS_CONNECTOR_CHANNEL_SIZE
-channel_size = 2000
+channel_size = 5000
 
 # Timeout configurations (5 minutes for reliable processing)
 # ENV: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
@@ -58,7 +58,7 @@ user_decryption_timeout_secs = 300
 
 # Connection retry interval (faster recovery)
 # ENV: KMS_CONNECTOR_RETRY_INTERVAL_SECS
-retry_interval_secs = 3
+retry_interval_secs = 1
 
 # Coprocessor verification disabled for local testing
 # ENV: KMS_CONNECTOR_VERIFY_COPROCESSORS
@@ -78,7 +78,7 @@ fixed_send_interval_ms = 0
 
 # Spacing between messages from the same block
 # ENV: KMS_CONNECTOR_MESSAGE_SPACING_MS
-message_spacing_ms = 50
+message_spacing_ms = 5
 
 # Maximum pending events before backpressure
 # ENV: KMS_CONNECTOR_MAX_PENDING_EVENTS
