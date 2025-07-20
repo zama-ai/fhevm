@@ -188,6 +188,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         /// @dev Register the custodians
         for (uint256 i = 0; i < custodians.length; i++) {
+            if ($._isCustodianTxSender[custodians[i].txSenderAddress]) {
+                revert CustodianAlreadyRegistered(custodians[i].txSenderAddress);
+            }
             $.custodians[custodians[i].txSenderAddress] = custodians[i];
             $.custodianTxSenderAddresses.push(custodians[i].txSenderAddress);
             $._isCustodianTxSender[custodians[i].txSenderAddress] = true;

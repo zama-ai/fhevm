@@ -15,6 +15,11 @@ import {FheType} from "./shared/FheType.sol";
  * @dev The contract is designed to be used with the FHEVMExecutor contract.
  */
 contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
+    /// @custom:storage-location erc7201:fhevm.storage.HCULimit
+    struct HCULimitStorage {
+        mapping(bytes32 => uint256) hcuValues;
+    }
+
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
@@ -97,38 +102,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 84000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 87000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 87000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 128000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 159000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheAdd_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 87000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 87000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 121000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 156000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 249000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheAdd", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -148,38 +128,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 83000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 86000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 87000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 129000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 159000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheSub_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 84000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 88000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 120000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 159000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 244000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheSub", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -199,38 +154,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 117000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 176000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 244000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 346000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 646000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheMul_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 146000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 207000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 313000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 571000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 1671000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheMul", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -249,22 +179,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
-        if (resultType == FheType.Uint8) {
-            opHCU = 203000;
-        } else if (resultType == FheType.Uint16) {
-            opHCU = 283000;
-        } else if (resultType == FheType.Uint32) {
-            opHCU = 397000;
-        } else if (resultType == FheType.Uint64) {
-            opHCU = 651000;
-        } else if (resultType == FheType.Uint128) {
-            opHCU = 1290000;
-        } else {
-            revert UnsupportedOperation();
-        }
-
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint256 opHCU = $.hcuValues[_getHcuKey("fheDiv_scalar", resultType)];
         _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
     }
     /**
@@ -282,22 +199,9 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
         if (scalarByte != 0x01) revert OnlyScalarOperationsAreSupported();
-        if (resultType == FheType.Uint8) {
-            opHCU = 387000;
-        } else if (resultType == FheType.Uint16) {
-            opHCU = 513000;
-        } else if (resultType == FheType.Uint32) {
-            opHCU = 714000;
-        } else if (resultType == FheType.Uint64) {
-            opHCU = 1111000;
-        } else if (resultType == FheType.Uint128) {
-            opHCU = 1900000;
-        } else {
-            revert UnsupportedOperation();
-        }
-
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint256 opHCU = $.hcuValues[_getHcuKey("fheRem_scalar", resultType)];
         _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
     }
     /**
@@ -316,46 +220,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Bool) {
-                opHCU = 26000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 28000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 33000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 33000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 37000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheBitAnd_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Bool) {
-                opHCU = 26000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 30000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 33000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 34000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 38000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheBitAnd", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -375,46 +246,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Bool) {
-                opHCU = 25000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 28000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 30000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 32000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 34000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 37000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheBitOr_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Bool) {
-                opHCU = 25000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 28000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 31000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 33000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 35000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 37000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheBitOr", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -434,46 +272,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Bool) {
-                opHCU = 25000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 30000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 33000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 35000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 37000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheBitXor_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Bool) {
-                opHCU = 25000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 30000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 32000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 35000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 37000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheBitXor", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -493,42 +298,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 30000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 33000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 33000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 37000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheShl_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 86000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 118000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 203000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 251000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 359000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheShl", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -548,42 +324,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 28000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 30000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 33000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 37000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheShr_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 88000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 118000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 203000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 254000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 359000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheShr", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -603,42 +350,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 30000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 33000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 37000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheRotl_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 87000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 117000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 150000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 203000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 264000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 367000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheRotl", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -658,42 +376,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 29000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 30000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 30000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 34000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 34000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 37000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheRotr_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 86000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 117000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 149000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 206000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 261000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 367000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheRotr", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -713,50 +402,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Bool) {
-                opHCU = 49000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 52000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 52000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 81000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 83000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 115000;
-            } else if (resultType == FheType.Uint160) {
-                opHCU = 115000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 117000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheEq_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Bool) {
-                opHCU = 49000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 49000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 78000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 82000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 116000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 117000;
-            } else if (resultType == FheType.Uint160) {
-                opHCU = 125000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 151000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheEq", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -776,50 +428,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Bool) {
-                opHCU = 49000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 49000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 51000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 80000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 84000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 115000;
-            } else if (resultType == FheType.Uint160) {
-                opHCU = 115000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 117000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheNe_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Bool) {
-                opHCU = 49000;
-            } else if (resultType == FheType.Uint8) {
-                opHCU = 52000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 82000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 84000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 111000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 116000;
-            } else if (resultType == FheType.Uint160) {
-                opHCU = 124000;
-            } else if (resultType == FheType.Uint256) {
-                opHCU = 149000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheNe", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -839,38 +454,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 60000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 60000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 81000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 112000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 144000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheGe_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 55000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 80000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 111000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 146000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 206000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheGe", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -890,38 +480,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 53000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 53000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 82000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 113000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 144000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheGt_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 56000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 83000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 111000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 141000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 206000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheGt", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -941,38 +506,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 53000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 54000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 80000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 113000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 143000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheLe_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 54000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 80000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 113000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 146000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 204000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheLe", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -992,38 +532,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 51000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 53000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 80000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 113000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 143000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheLt_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 56000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 80000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 111000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 142000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 204000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheLt", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -1043,38 +558,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 86000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 86000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 113000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 149000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 180000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheMin_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 111000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 141000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 177000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 210000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 280000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheMin", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -1094,38 +584,13 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
+        HCULimitStorage storage $ = _getHCULimitStorage();
         uint256 opHCU;
         if (scalarByte == 0x01) {
-            if (resultType == FheType.Uint8) {
-                opHCU = 81000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 83000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 112000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 147000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 181000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheMax_scalar", resultType)];
             _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
         } else {
-            if (resultType == FheType.Uint8) {
-                opHCU = 111000;
-            } else if (resultType == FheType.Uint16) {
-                opHCU = 140000;
-            } else if (resultType == FheType.Uint32) {
-                opHCU = 174000;
-            } else if (resultType == FheType.Uint64) {
-                opHCU = 211000;
-            } else if (resultType == FheType.Uint128) {
-                opHCU = 274000;
-            } else {
-                revert UnsupportedOperation();
-            }
-
+            opHCU = $.hcuValues[_getHcuKey("fheMax", resultType)];
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
@@ -1136,22 +601,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      */
     function checkHCUForFheNeg(FheType resultType, bytes32 ct, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
-        if (resultType == FheType.Uint8) {
-            opHCU = 72000;
-        } else if (resultType == FheType.Uint16) {
-            opHCU = 89000;
-        } else if (resultType == FheType.Uint32) {
-            opHCU = 116000;
-        } else if (resultType == FheType.Uint64) {
-            opHCU = 150000;
-        } else if (resultType == FheType.Uint128) {
-            opHCU = 241000;
-        } else if (resultType == FheType.Uint256) {
-            opHCU = 269000;
-        } else {
-            revert UnsupportedOperation();
-        }
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint256 opHCU = $.hcuValues[_getHcuKey("fheNeg", resultType)];
         _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
     }
     /**
@@ -1161,24 +612,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      */
     function checkHCUForFheNot(FheType resultType, bytes32 ct, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
-        if (resultType == FheType.Bool) {
-            opHCU = 4000;
-        } else if (resultType == FheType.Uint8) {
-            opHCU = 8000;
-        } else if (resultType == FheType.Uint16) {
-            opHCU = 15000;
-        } else if (resultType == FheType.Uint32) {
-            opHCU = 28000;
-        } else if (resultType == FheType.Uint64) {
-            opHCU = 84000;
-        } else if (resultType == FheType.Uint128) {
-            opHCU = 109000;
-        } else if (resultType == FheType.Uint256) {
-            opHCU = 216000;
-        } else {
-            revert UnsupportedOperation();
-        }
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint256 opHCU = $.hcuValues[_getHcuKey("fheNot", resultType)];
         _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
     }
     /**
@@ -1188,24 +623,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      */
     function checkHCUForCast(FheType resultType, bytes32 ct, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
-        if (resultType == FheType.Bool) {
-            opHCU = 200;
-        } else if (resultType == FheType.Uint8) {
-            opHCU = 200;
-        } else if (resultType == FheType.Uint16) {
-            opHCU = 200;
-        } else if (resultType == FheType.Uint32) {
-            opHCU = 200;
-        } else if (resultType == FheType.Uint64) {
-            opHCU = 200;
-        } else if (resultType == FheType.Uint128) {
-            opHCU = 200;
-        } else if (resultType == FheType.Uint256) {
-            opHCU = 200;
-        } else {
-            revert UnsupportedOperation();
-        }
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint256 opHCU = $.hcuValues[_getHcuKey("cast", resultType)];
         _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
     }
     /**
@@ -1215,26 +634,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      */
     function checkHCUForTrivialEncrypt(FheType resultType, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
-        if (resultType == FheType.Bool) {
-            opHCU = 100;
-        } else if (resultType == FheType.Uint8) {
-            opHCU = 100;
-        } else if (resultType == FheType.Uint16) {
-            opHCU = 200;
-        } else if (resultType == FheType.Uint32) {
-            opHCU = 300;
-        } else if (resultType == FheType.Uint64) {
-            opHCU = 600;
-        } else if (resultType == FheType.Uint128) {
-            opHCU = 650;
-        } else if (resultType == FheType.Uint160) {
-            opHCU = 700;
-        } else if (resultType == FheType.Uint256) {
-            opHCU = 800;
-        } else {
-            revert UnsupportedOperation();
-        }
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint256 opHCU = $.hcuValues[_getHcuKey("trivialEncrypt", resultType)];
         _updateAndVerifyHCUTransactionLimit(opHCU);
         _setHCUForHandle(result, opHCU);
     }
@@ -1253,26 +654,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         bytes32 result
     ) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
-        if (resultType == FheType.Bool) {
-            opHCU = 43000;
-        } else if (resultType == FheType.Uint8) {
-            opHCU = 43000;
-        } else if (resultType == FheType.Uint16) {
-            opHCU = 44000;
-        } else if (resultType == FheType.Uint32) {
-            opHCU = 45000;
-        } else if (resultType == FheType.Uint64) {
-            opHCU = 52000;
-        } else if (resultType == FheType.Uint128) {
-            opHCU = 51000;
-        } else if (resultType == FheType.Uint160) {
-            opHCU = 56000;
-        } else if (resultType == FheType.Uint256) {
-            opHCU = 71000;
-        } else {
-            revert UnsupportedOperation();
-        }
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint256 opHCU = $.hcuValues[_getHcuKey("ifThenElse", resultType)];
         _adjustAndCheckFheTransactionLimitThreeOps(opHCU, lhs, middle, rhs, result);
     }
     /**
@@ -1282,24 +665,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      */
     function checkHCUForFheRand(FheType resultType, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
-        if (resultType == FheType.Bool) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint8) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint16) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint32) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint64) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint128) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint256) {
-            opHCU = 100000;
-        } else {
-            revert UnsupportedOperation();
-        }
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint256 opHCU = $.hcuValues[_getHcuKey("fheRand", resultType)];
         _updateAndVerifyHCUTransactionLimit(opHCU);
         _setHCUForHandle(result, opHCU);
     }
@@ -1310,22 +677,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      */
     function checkHCUForFheRandBounded(FheType resultType, bytes32 result) external virtual {
         if (msg.sender != fhevmExecutorAddress) revert CallerMustBeFHEVMExecutorContract();
-        uint256 opHCU;
-        if (resultType == FheType.Uint8) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint16) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint32) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint64) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint128) {
-            opHCU = 100000;
-        } else if (resultType == FheType.Uint256) {
-            opHCU = 100000;
-        } else {
-            revert UnsupportedOperation();
-        }
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        uint256 opHCU = $.hcuValues[_getHcuKey("fheRandBounded", resultType)];
         _updateAndVerifyHCUTransactionLimit(opHCU);
         _setHCUForHandle(result, opHCU);
     }
@@ -1354,6 +707,21 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    function setHcuValue(string memory operation, FheType fheType, uint256 value) external onlyOwner {
+        HCULimitStorage storage $ = _getHCULimitStorage();
+        $.hcuValues[_getHcuKey(operation, fheType)] = value;
+    }
+
+    function _getHcuKey(string memory operation, FheType fheType) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(operation, fheType));
+    }
+
+    function _getHCULimitStorage() internal pure returns (HCULimitStorage storage $) {
+        assembly {
+            $.slot := HCULimitStorageLocation
+        }
     }
 
     /**

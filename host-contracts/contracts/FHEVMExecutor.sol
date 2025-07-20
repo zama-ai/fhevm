@@ -877,6 +877,10 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
     }
 
     function _generateSeed() internal virtual returns (bytes16 seed) {
+        // @dev WARNING: This function uses blockhash as a source of randomness, which is not secure.
+        // A malicious miner can influence the block hash, making the random number predictable.
+        // For security-critical applications, consider using a more secure source of randomness,
+        // such as an external oracle (e.g., Chainlink VRF) or a commit-reveal scheme.
         FHEVMExecutorStorage storage $ = _getFHEVMExecutorStorage();
         seed = bytes16(
             keccak256(abi.encodePacked($.counterRand, acl, block.chainid, blockhash(block.number - 1), block.timestamp))

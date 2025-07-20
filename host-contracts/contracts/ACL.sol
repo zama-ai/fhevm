@@ -366,11 +366,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
             let length := tload(0)
             tstore(0, 0)
             let lengthPlusOne := add(length, 1)
-            for {
-                let i := 1
-            } lt(i, lengthPlusOne) {
-                i := add(i, 1)
-            } {
+            for { let i := 1 } lt(i, lengthPlusOne) { i := add(i, 1) } {
                 let handle := tload(i)
                 tstore(i, 0)
                 tstore(handle, 0)

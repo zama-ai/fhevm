@@ -112,6 +112,8 @@ async fn tfhe_worker_cycle(
         let mut trx = conn.begin().await?;
         s.end();
         // This query locks our work items so other worker doesn't select them.
+        // TODO: This query can be optimized to filter out computations that are not ready to be processed.
+        // This would reduce the amount of data transferred from the database to the worker.
         let mut s = tracer.start_with_context("query_work_items", &loop_ctx);
         #[cfg(feature = "bench")]
         let now = std::time::SystemTime::now();

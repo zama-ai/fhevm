@@ -20,6 +20,7 @@ pub struct KmsCoreConnector<P> {
     event_processor: EventProcessor<P>,
     kms_client: Arc<KmsServiceImpl>,
     shutdown: Option<broadcast::Receiver<()>>,
+    poller_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
@@ -81,6 +82,7 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
             event_processor,
             kms_client,
             shutdown: Some(shutdown),
+            poller_handle: None,
         };
 
         Ok((connector, event_rx))
@@ -96,7 +98,7 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
             events.initialize().await?;
         } else if let Some(poller) = &self.poller {
             info!("Starting blockchain polling system...");
-            let poller_handle = {
+            self.poller_handle = Some({
                 let poller = poller.clone();
                 tokio::spawn(async move {
                     if let Err(e) = poller.start().await {
@@ -105,11 +107,7 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
                         std::process::exit(1);
                     }
                 })
-            };
-
-            // Store the handle for cleanup (we could add this to the struct if needed)
-            // For now, the poller will handle its own shutdown via broadcast channel
-            std::mem::forget(poller_handle); // Let it run independently
+            });
         } else {
             return Err(crate::Error::Config(
                 "Neither WebSocket nor polling mode configured".to_string(),
@@ -166,10 +164,10 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
             }
         }
 
-        // Note: BlockPoller handles its own shutdown via broadcast channel
-        // so no explicit cleanup needed for polling mode
-        if self.poller.is_some() {
-            info!("Polling system will shut down via broadcast signal");
+        if let Some(handle) = self.poller_handle.take() {
+            if let Err(e) = handle.await {
+                error!("Error waiting for poller task to complete: {:?}", e);
+            }
         }
 
         info!("KMS Core Connector stopped");

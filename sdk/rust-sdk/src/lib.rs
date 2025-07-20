@@ -651,10 +651,9 @@ impl FhevmSdkBuilder {
         self
     }
 
-    pub fn with_gateway_contract(mut self, name: &str, address: &str) -> Self {
-        let addr = Address::from_str(address).unwrap_or_else(|_| {
-            panic!("Invalid address provided for gateway contract '{name}': {address}")
-        });
+    pub fn with_gateway_contract(mut self, name: &str, address: &str) -> Result<Self> {
+        let addr = Address::from_str(address)
+            .map_err(|e| FhevmError::AddressError(e.to_string()))?;
 
         match name.to_lowercase().as_str() {
             "input_verification" | "input-verifier" | "input-verification" => {
@@ -670,36 +669,30 @@ impl FhevmSdkBuilder {
                 );
             }
         }
-        self
+        Ok(self)
     }
 
-    pub fn with_input_verification_contract(mut self, address: &str) -> Self {
+    pub fn with_input_verification_contract(mut self, address: &str) -> Result<Self> {
         self.gateway_contracts.input_verification =
-            Some(Address::from_str(address).unwrap_or_else(|_| {
-                panic!("Invalid address provided for input verification contract: {address}")
-            }));
-        self
+            Some(Address::from_str(address).map_err(|e| FhevmError::AddressError(e.to_string()))?);
+        Ok(self)
     }
 
-    pub fn with_decryption_contract(mut self, address: &str) -> Self {
-        self.gateway_contracts.decryption = Some(Address::from_str(address).unwrap_or_else(|_| {
-            panic!("Invalid address provided for decryption contract: {address}")
-        }));
-        self
+    pub fn with_decryption_contract(mut self, address: &str) -> Result<Self> {
+        self.gateway_contracts.decryption =
+            Some(Address::from_str(address).map_err(|e| FhevmError::AddressError(e.to_string()))?);
+        Ok(self)
     }
 
-    pub fn with_acl_contract(mut self, address: &str) -> Self {
+    pub fn with_acl_contract(mut self, address: &str) -> Result<Self> {
         self.host_contracts.acl =
-            Some(Address::from_str(address).unwrap_or_else(|_| {
-                panic!("Invalid address provided for ACL contract: {address}")
-            }));
-        self
+            Some(Address::from_str(address).map_err(|e| FhevmError::AddressError(e.to_string()))?);
+        Ok(self)
     }
 
-    pub fn with_host_contract(mut self, name: &str, address: &str) -> Self {
-        let addr = Address::from_str(address).unwrap_or_else(|_| {
-            panic!("Invalid address provided for host contract '{name}': {address}")
-        });
+    pub fn with_host_contract(mut self, name: &str, address: &str) -> Result<Self> {
+        let addr = Address::from_str(address)
+            .map_err(|e| FhevmError::AddressError(e.to_string()))?;
 
         match name.to_lowercase().as_str() {
             "acl" => {
@@ -712,7 +705,7 @@ impl FhevmSdkBuilder {
                 );
             }
         }
-        self
+        Ok(self)
     }
 
     /// Export the current builder state to YAML

@@ -61,7 +61,7 @@ pub async fn async_main(
     info!(target: "async_main", "Starting runtime with args: {:?}", args);
 
     if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-        panic!("Error while initializing tracing: {:?}", err);
+        return Err(Box::new(err));
     }
 
     let mut set = JoinSet::new();
@@ -81,12 +81,12 @@ pub async fn async_main(
     }
 
     if set.is_empty() {
-        panic!("No tasks specified to run");
+        return Err("No tasks specified to run".into());
     }
 
     while let Some(res) = set.join_next().await {
         if let Err(e) = res {
-            panic!("Error background initializing worker: {:?}", e);
+            return Err(e.into());
         }
     }
 

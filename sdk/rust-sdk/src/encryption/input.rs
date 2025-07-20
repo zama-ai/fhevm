@@ -164,6 +164,8 @@ impl EncryptedInputBuilder {
     }
 
     /// Adds an Ethereum address (160 bits)
+    ///
+    /// Note: The address is padded with leading zeros to fit into a U256.
     pub fn add_address(&mut self, address: &str) -> Result<&mut Self> {
         // First, validate and convert the address to u160
         let address = if let Some(stripped) = address.strip_prefix("0x") {
