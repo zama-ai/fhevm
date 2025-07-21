@@ -1,3 +1,4 @@
+use crate::monitoring::metrics::EVENT_STORED_COUNTER;
 use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, db::SnsCiphertextMaterialDbItem};
 use fhevm_gateway_rust_bindings::{
@@ -9,8 +10,6 @@ use fhevm_gateway_rust_bindings::{
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
 use tracing::info;
-
-use crate::metrics::EVENT_STORED_COUNTER;
 
 /// Interface used to publish Gateway's events in some storage.
 pub trait EventPublisher: Clone + Send + Sync {

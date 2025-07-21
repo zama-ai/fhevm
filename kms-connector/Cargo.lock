@@ -3497,6 +3497,7 @@ dependencies = [
 name = "gw-listener"
 version = "0.1.0-rc6"
 dependencies = [
+ "actix-web",
  "alloy",
  "anyhow",
  "connector-utils",
@@ -4242,6 +4243,7 @@ dependencies = [
 name = "kms-worker"
 version = "0.1.0-rc6"
 dependencies = [
+ "actix-web",
  "alloy",
  "anyhow",
  "bincode",
@@ -4261,6 +4263,7 @@ dependencies = [
  "tokio-util",
  "toml 0.9.2",
  "tonic",
+ "tonic-health",
  "tracing",
  "tracing-subscriber",
  "tracing-test",
@@ -7243,6 +7246,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "tonic-health"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "27b322337dbd837f3dec2c0d29074da49ec80b7ead45ec1c56d6805c43f370f5"
+dependencies = [
+ "prost",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+]
+
+[[package]]
 name = "tower"
 version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7433,6 +7448,7 @@ dependencies = [
 name = "tx-sender"
 version = "0.1.0-rc6"
 dependencies = [
+ "actix-web",
  "alloy",
  "anyhow",
  "connector-utils",

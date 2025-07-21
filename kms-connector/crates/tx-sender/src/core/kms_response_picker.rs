@@ -1,4 +1,4 @@
-use crate::metrics::{RESPONSE_RECEIVED_COUNTER, RESPONSE_RECEIVED_ERRORS};
+use crate::monitoring::metrics::{RESPONSE_RECEIVED_COUNTER, RESPONSE_RECEIVED_ERRORS};
 use anyhow::anyhow;
 use connector_utils::types::KmsResponse;
 use sqlx::{Pool, Postgres, postgres::PgListener};

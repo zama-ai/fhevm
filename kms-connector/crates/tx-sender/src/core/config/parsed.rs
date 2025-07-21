@@ -16,8 +16,6 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
-    /// The endpoint used to collect metrics of the `TransactionSender`.
-    pub metrics_endpoint: SocketAddr,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The Chain ID of the Gateway.
@@ -36,6 +34,10 @@ pub struct Config {
     pub tx_retry_interval: Duration,
     /// The batch size for KMS Core response processing.
     pub responses_batch_size: u8,
+    /// The monitoring server endpoint of the `TransactionSender`.
+    pub monitoring_endpoint: SocketAddr,
+    /// The timeout to perform each external service connection healthcheck.
+    pub healthcheck_timeout: Duration,
 }
 
 impl Config {
@@ -55,8 +57,8 @@ impl Config {
     }
 
     async fn parse(raw_config: RawConfig) -> Result<Self> {
-        let metrics_endpoint = raw_config
-            .metrics_endpoint
+        let monitoring_endpoint = raw_config
+            .monitoring_endpoint
             .parse::<SocketAddr>()
             .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let wallet = Self::parse_kms_wallet(
@@ -77,11 +79,11 @@ impl Config {
         }
 
         let tx_retry_interval = Duration::from_millis(raw_config.tx_retry_interval_ms);
+        let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
 
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
-            metrics_endpoint,
             gateway_url: raw_config.gateway_url,
             chain_id: raw_config.chain_id,
             decryption_contract,
@@ -91,6 +93,8 @@ impl Config {
             tx_retries: raw_config.tx_retries,
             tx_retry_interval,
             responses_batch_size: raw_config.responses_batch_size,
+            monitoring_endpoint,
+            healthcheck_timeout,
         })
     }
 

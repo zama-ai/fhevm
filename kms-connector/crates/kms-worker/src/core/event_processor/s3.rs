@@ -1,6 +1,6 @@
 use crate::{
     core::config::{Config, S3Config},
-    metrics::{S3_CIPHERTEXT_RETRIEVAL_COUNTER, S3_CIPHERTEXT_RETRIEVAL_ERRORS},
+    monitoring::metrics::{S3_CIPHERTEXT_RETRIEVAL_COUNTER, S3_CIPHERTEXT_RETRIEVAL_ERRORS},
 };
 use alloy::{hex, primitives::Address, providers::Provider, transports::http::reqwest};
 use anyhow::anyhow;

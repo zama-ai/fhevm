@@ -2,7 +2,10 @@ use crate::{
     core::{
         Config, DbKmsResponsePicker, DbKmsResponseRemover, KmsResponsePicker, KmsResponseRemover,
     },
-    metrics::{GATEWAY_TX_SENT_COUNTER, GATEWAY_TX_SENT_ERRORS},
+    monitoring::{
+        health::State,
+        metrics::{GATEWAY_TX_SENT_COUNTER, GATEWAY_TX_SENT_ERRORS},
+    },
 };
 use alloy::{
     network::Ethereum,
@@ -92,24 +95,25 @@ where
 
 impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponseRemover> {
     /// Creates a new `TransactionSender` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<Self> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let response_picker =
             DbKmsResponsePicker::connect(db_pool.clone(), config.responses_batch_size).await?;
-        let response_remover = DbKmsResponseRemover::new(db_pool);
+        let response_remover = DbKmsResponseRemover::new(db_pool.clone());
 
         let provider = connect_to_gateway_with_wallet(&config.gateway_url, config.wallet).await?;
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
-
         let inner = TransactionSenderInner::new(
-            provider,
+            provider.clone(),
             decryption_contract,
             config.tx_retries,
             config.tx_retry_interval,
         );
 
-        Ok(Self::new(response_picker, inner, response_remover))
+        let state = State::new(db_pool, provider, config.healthcheck_timeout);
+        let tx_sender = TransactionSender::new(response_picker, inner, response_remover);
+        Ok((tx_sender, state))
     }
 }
 

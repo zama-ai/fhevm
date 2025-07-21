@@ -14,8 +14,6 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
-    /// The endpoint used to collect metrics of the `KmsWorker`.
-    pub metrics_endpoint: SocketAddr,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The KMS Core endpoint.
@@ -50,6 +48,11 @@ pub struct Config {
     // TODO: implement to increase security
     /// Whether to verify coprocessors against the `GatewayConfig` contract (defaults to false).
     pub verify_coprocessors: bool,
+
+    /// The monitoring server endpoint of the `KmsWorker`.
+    pub monitoring_endpoint: SocketAddr,
+    /// The timeout to perform each external service connection healthcheck.
+    pub healthcheck_timeout: Duration,
 }
 
 impl Config {
@@ -69,8 +72,8 @@ impl Config {
     }
 
     fn parse(raw_config: RawConfig) -> Result<Self> {
-        let metrics_endpoint = raw_config
-            .metrics_endpoint
+        let monitoring_endpoint = raw_config
+            .monitoring_endpoint
             .parse::<SocketAddr>()
             .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let decryption_contract =
@@ -92,11 +95,11 @@ impl Config {
         let user_decryption_timeout = Duration::from_secs(raw_config.user_decryption_timeout_secs);
         let grpc_poll_interval = Duration::from_secs(raw_config.grpc_poll_interval_secs);
         let s3_ciphertext_retrieval_timeout = Duration::from_secs(raw_config.s3_connect_timeout);
+        let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
 
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
-            metrics_endpoint,
             gateway_url: raw_config.gateway_url,
             kms_core_endpoint: raw_config.kms_core_endpoint,
             chain_id: raw_config.chain_id,
@@ -112,6 +115,8 @@ impl Config {
             s3_ciphertext_retrieval_retries: raw_config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: s3_ciphertext_retrieval_timeout,
             verify_coprocessors: raw_config.verify_coprocessors,
+            monitoring_endpoint,
+            healthcheck_timeout,
         })
     }
 }
