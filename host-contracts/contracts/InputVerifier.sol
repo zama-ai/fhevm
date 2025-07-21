@@ -83,7 +83,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         address contractAddress;
         /// @notice The chainId of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
-        /// @notice Generic bytes metadata for versioned payloads.
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
         bytes extraData;
     }
 
@@ -240,6 +240,8 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
             ctVerif.ctHandles = listHandles;
             ctVerif.userAddress = context.userAddress;
             ctVerif.contractAddress = context.contractAddress;
+
+            // The extraData field is currently set with a single byte for version, but extendable in the future.
             ctVerif.extraData = hex"00";
             _verifyEIP712(ctVerif, signatures);
 
@@ -392,7 +394,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
                         block.chainid,
-                        ctVerification.extraData
+                        keccak256(abi.encodePacked(ctVerification.extraData))
                     )
                 )
             );
