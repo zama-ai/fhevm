@@ -64,7 +64,8 @@ contract InputVerifierTest is Test {
         bytes32[] memory handlesList,
         address userAddress,
         address contractAddress,
-        uint256 chainId
+        uint256 chainId,
+        bytes memory extraData
     ) internal view returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
@@ -72,7 +73,8 @@ contract InputVerifierTest is Test {
                 keccak256(abi.encodePacked(handlesList)),
                 userAddress,
                 contractAddress,
-                chainId
+                chainId,
+                keccak256(abi.encodePacked(extraData))
             )
         );
 
@@ -242,13 +244,14 @@ contract InputVerifierTest is Test {
         address userAddress,
         address contractAddress,
         address[] memory signers,
-        uint256 chainId
+        uint256 chainId,
+        bytes memory extraData
     ) internal view returns (bytes[] memory signatures) {
         signatures = new bytes[](signers.length);
         for (uint256 i = 0; i < signers.length; i++) {
             /// @dev The signer address must have its private key in the mapping.
             assert(signerPrivateKeys[signers[i]] != 0);
-            bytes32 digest = _computeDigest(handles, userAddress, contractAddress, chainId);
+            bytes32 digest = _computeDigest(handles, userAddress, contractAddress, chainId, extraData);
             signatures[i] = _computeSignature(signerPrivateKeys[signers[i]], digest);
         }
     }
@@ -276,6 +279,7 @@ contract InputVerifierTest is Test {
         address userAddress,
         address contractAddress,
         uint256 chainId,
+        bytes memory extraData,
         uint8 handleVersion,
         address[] memory signers
     )
@@ -293,7 +297,14 @@ contract InputVerifierTest is Test {
         /// @dev The first handle is used as the input handle for mock purposes.
         mockInputHandle = handles[0];
 
-        bytes[] memory signatures = _generateSignatures(handles, userAddress, contractAddress, signers, chainId);
+        bytes[] memory signatures = _generateSignatures(
+            handles,
+            userAddress,
+            contractAddress,
+            signers,
+            chainId,
+            extraData
+        );
         inputProof = _computeInputProof(handles, signatures);
 
         context.userAddress = userAddress;
@@ -332,6 +343,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 chainId,
+                hex"00",
                 handleVersion,
                 signers
             );
@@ -460,6 +472,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(3);
         address userAddress = address(1111);
         address contractAddress = address(2222);
+        bytes memory extraData = hex"00";
         bytes32[] memory cleartextValues = new bytes32[](1);
         FheType[] memory fheTypes = new FheType[](1);
         fheTypes[0] = FheType.Uint64;
@@ -475,6 +488,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 block.chainid,
+                extraData,
                 HANDLE_VERSION,
                 activeSigners
             );
@@ -490,6 +504,7 @@ contract InputVerifierTest is Test {
 
         address userAddress = address(1111);
         address contractAddress = address(2222);
+        bytes memory extraData = hex"00";
 
         bytes32[] memory cleartextValues = new bytes32[](2);
         FheType[] memory fheTypes = new FheType[](2);
@@ -509,6 +524,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 block.chainid,
+                extraData,
                 HANDLE_VERSION,
                 activeSigners
             );
@@ -569,6 +585,7 @@ contract InputVerifierTest is Test {
         vm.expectRevert(InputVerifier.InvalidIndex.selector);
         inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
     }
+
     /**
      * @dev Tests that the verifyCiphertext function fails if the index is invalid since it is greater than 254.
      */
@@ -678,6 +695,7 @@ contract InputVerifierTest is Test {
         address userAddress = address(1111);
         address contractAddress = address(2222);
         uint64 initialCleartextValue = 123456789;
+        bytes memory extraData = hex"00";
 
         FheType[] memory fheTypes = new FheType[](1);
         bytes32[] memory cleartextValues = new bytes32[](1);
@@ -690,6 +708,7 @@ contract InputVerifierTest is Test {
             userAddress,
             contractAddress,
             block.chainid,
+            extraData,
             HANDLE_VERSION,
             activeSigners
         );
@@ -703,6 +722,7 @@ contract InputVerifierTest is Test {
             userAddress,
             contractAddress,
             block.chainid,
+            extraData,
             HANDLE_VERSION,
             activeSigners
         );
@@ -719,6 +739,7 @@ contract InputVerifierTest is Test {
         address userAddress = address(1111);
         address contractAddress = address(2222);
         uint64 initialCleartextValue = 123456789;
+        bytes memory extraData = hex"00";
 
         FheType[] memory fheTypes = new FheType[](1);
         bytes32[] memory cleartextValues = new bytes32[](1);
@@ -735,6 +756,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 block.chainid,
+                extraData,
                 HANDLE_VERSION,
                 activeSigners
             );
@@ -750,6 +772,7 @@ contract InputVerifierTest is Test {
             userAddress,
             contractAddress,
             block.chainid,
+            extraData,
             HANDLE_VERSION,
             activeSigners
         );
