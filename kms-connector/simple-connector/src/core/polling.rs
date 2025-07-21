@@ -287,7 +287,7 @@ where
 
         // Adaptive polling for sub-second block times
         let mut shutdown_rx = self.shutdown_tx.subscribe();
-        let base_interval_ms = (self.config.base_poll_interval_secs * 1000).max(100); // Min 100ms
+        let base_interval_ms = (self.config.base_poll_interval_secs * 1000).max(500);
         let mut current_interval_ms = base_interval_ms;
 
         info!(
@@ -302,33 +302,25 @@ where
                 _ = sleep(Duration::from_millis(current_interval_ms)) => {
                     match self.poll_and_process_fast().await {
                         Ok(blocks_processed) => {
-                            // Check if we're truly behind (catch-up mode) or just processing normal blockchain progression
+                            // Adaptive polling
                             let current = self.current_block.load(Ordering::SeqCst);
-                            // Get fresh latest block number for accurate catch-up detection
-                            let latest = match self.get_latest_block_number().await {
-                                Ok(latest_block) => {
-                                    self.latest_block.store(latest_block, Ordering::SeqCst);
-                                    latest_block
-                                },
-                                Err(_) => self.latest_block.load(Ordering::SeqCst) // Fallback to cached value
-                            };
+                            let latest = self.latest_block.load(Ordering::SeqCst); // Use cached value
                             let blocks_behind = latest.saturating_sub(current);
 
                             if blocks_processed > 0 {
                                 // Use hardcoded threshold of 3 blocks
-                                let catch_up_threshold = 3u64;
-                                if blocks_behind > catch_up_threshold {
-                                    // True catch-up mode: we're significantly behind
-                                    current_interval_ms = (base_interval_ms / 4).max(50); // Min 50ms for catch-up
-                                    info!("Catch-up mode: {}ms (processed {} blocks, {} blocks behind)", current_interval_ms, blocks_processed, blocks_behind);
+                                if blocks_behind > 3 {
+                                    // Catch-up mode: faster polling
+                                    current_interval_ms = (base_interval_ms / 2).max(100); // Min 100ms
+                                    debug!("Catch-up mode: {}ms (processed {} blocks, {} behind)", current_interval_ms, blocks_processed, blocks_behind);
                                 } else {
-                                    // Normal blockchain progression: use base interval
+                                    // Normal mode: base interval
                                     current_interval_ms = base_interval_ms;
-                                    debug!("Normal polling: {}ms (processed {} blocks, {} blocks behind)", current_interval_ms, blocks_processed, blocks_behind);
+                                    debug!("Normal polling: {}ms (processed {} blocks)", current_interval_ms, blocks_processed);
                                 }
                             } else {
-                                // No new blocks: gradually slow down but don't go below base interval
-                                current_interval_ms = (current_interval_ms * 11 / 10).min(base_interval_ms * 2).max(base_interval_ms);
+                                // No new blocks: base interval
+                                current_interval_ms = base_interval_ms;
                                 debug!("Idle polling: {}ms (no new blocks)", current_interval_ms);
                             }
                         }
@@ -355,7 +347,7 @@ where
         Ok(())
     }
 
-    /// High-performance polling optimized for sub-second block times
+    /// Sequential polling
     async fn poll_and_process_fast(&self) -> Result<u64> {
         let current = self.current_block.load(Ordering::SeqCst);
         let latest = self.get_latest_block_number().await?;
@@ -365,101 +357,72 @@ where
                 "No new blocks to process (current: {}, latest: {})",
                 current, latest
             );
-            return Ok(0); // Return number of blocks processed
-        }
-
-        self.latest_block.store(latest, Ordering::SeqCst);
-
-        let blocks_behind = latest - current;
-        // Use a simple threshold for catch-up mode (5 blocks behind)
-        let catch_up_threshold = 5u64;
-        let max_blocks_per_batch = 10u64; // Default batch size
-
-        let batch_size = if blocks_behind > catch_up_threshold {
-            debug!(
-                "Catch-up mode: {} blocks behind, using batch size {}",
-                blocks_behind, max_blocks_per_batch
-            );
-            max_blocks_per_batch
-        } else {
-            // For sub-second blocks, process small batches even when caught up
-            (blocks_behind).min(3) // Max 3 blocks per batch for fast processing
-        };
-
-        let end_block = (current + batch_size).min(latest);
-        let blocks_to_process = end_block - current;
-
-        if blocks_to_process == 0 {
             return Ok(0);
         }
 
+        self.latest_block.store(latest, Ordering::SeqCst);
+        let blocks_behind = latest - current;
+
+        let mut blocks_processed = 0u64;
+        let mut next_block = current + 1;
+
+        // Process up to 5 blocks per poll cycle to maintain responsiveness
+        let max_blocks_per_cycle = 5u64;
+        let blocks_to_process = blocks_behind.min(max_blocks_per_cycle);
+
         debug!(
-            "Processing blocks {} to {} (latest: {}, batch_size: {})",
-            current + 1,
-            end_block,
+            "Sequential processing: blocks {} to {} (latest: {}, {} behind)",
+            next_block,
+            next_block + blocks_to_process - 1,
             latest,
-            blocks_to_process
+            blocks_behind
         );
 
-        // Process blocks concurrently for better performance with sub-second blocks
-        let mut tasks = Vec::new();
-
-        for block_num in (current + 1)..=end_block {
-            // Check if already processed using lock-free DashMap
-            if self.processed_blocks.contains_key(&block_num) {
-                debug!("Block {} already processed, skipping", block_num);
+        // Sequential block processing
+        for _ in 0..blocks_to_process {
+            // Check if already processed
+            if self.processed_blocks.contains_key(&next_block) {
+                debug!("Block {} already processed, skipping", next_block);
+                next_block += 1;
                 continue;
             }
 
-            // Mark as being processed
-            self.processed_blocks.insert(block_num, false);
-
-            let poller = self.clone();
-            let task = tokio::spawn(async move {
-                match poller.process_single_block_fast(block_num).await {
-                    Ok(_) => {
-                        // Mark as successfully processed
-                        poller.processed_blocks.insert(block_num, true);
-                        Ok(block_num)
-                    }
-                    Err(e) => {
-                        error!("Failed to process block {}: {}", block_num, e);
-                        // Remove from processed map on failure
-                        poller.processed_blocks.remove(&block_num);
-                        Err(e)
-                    }
+            // Process a single
+            match self.process_single_block_sequential(next_block).await {
+                Ok(_) => {
+                    // Mark as successfully processed
+                    self.processed_blocks.insert(next_block, true);
+                    self.current_block.store(next_block, Ordering::SeqCst);
+                    blocks_processed += 1;
+                    debug!("Successfully processed block {}", next_block);
                 }
-            });
-            tasks.push(task);
-        }
-
-        // Wait for all block processing tasks to complete
-        let mut successful_blocks = Vec::new();
-        for task in tasks {
-            match task.await {
-                Ok(Ok(block_num)) => successful_blocks.push(block_num),
-                Ok(Err(e)) => error!("Block processing error: {}", e),
-                Err(e) => error!("Task join error: {}", e),
+                Err(e) => {
+                    error!(
+                        "Failed to process block {}: {} - continuing with next block",
+                        next_block, e
+                    );
+                    self.processed_blocks.insert(next_block, false);
+                }
             }
-        }
 
-        // Update current block to the highest successfully processed block
-        if let Some(&max_block) = successful_blocks.iter().max() {
-            self.current_block.store(max_block, Ordering::SeqCst);
-            debug!("Updated current block to {}", max_block);
+            next_block += 1;
         }
 
         // Cleanup old processed blocks to prevent memory growth
-        self.cleanup_processed_blocks(current).await;
+        if self.processed_blocks.len() > 1000 {
+            self.cleanup_processed_blocks(current).await;
+        }
 
-        Ok(successful_blocks.len() as u64)
+        Ok(blocks_processed)
     }
 
-    /// Process a single block with concurrent event processing for maximum throughput
-    async fn process_single_block_fast(&self, block_number: u64) -> Result<()> {
-        debug!("Fast-processing block {}", block_number);
+    /// Process a single block sequentially for reliability and memory efficiency with monitoring
+    async fn process_single_block_sequential(&self, block_number: u64) -> Result<()> {
+        let block_start = Instant::now();
+        debug!("Processing block {}", block_number);
 
-        // Get block information including timestamp
+        // Monitor block fetch time
+        let fetch_start = Instant::now();
         let block = self
             .provider
             .get_block_by_number(block_number.into())
@@ -467,150 +430,166 @@ where
             .map_err(|e| Error::Provider(format!("Failed to get block {block_number}: {e}")))?
             .ok_or_else(|| Error::Provider(format!("Block {block_number} not found")))?;
 
+        let fetch_duration = fetch_start.elapsed();
+        // Arbitrum-optimized thresholds: 250ms block time, ~100-200ms RPC response expected
+        if fetch_duration > Duration::from_secs(2) {
+            error!(
+                "[CRITICAL SLOW BLOCK FETCH]: Block {} fetch took {:?} - provider severely degraded (Gateway expected: <500ms)",
+                block_number, fetch_duration
+            );
+        } else if fetch_duration > Duration::from_millis(1000) {
+            warn!(
+                "[SLOW BLOCK FETCH]: Block {} fetch took {:?} - provider performance degraded (Gateway expected: <500ms)",
+                block_number, fetch_duration
+            );
+        } else if fetch_duration > Duration::from_millis(500) {
+            debug!(
+                "Moderate block fetch time: {:?} for block {} (Gateway baseline: ~200ms)",
+                fetch_duration, block_number
+            );
+        }
+
         let block_timestamp = block.header.timestamp;
-        debug!("Block {} timestamp: {}", block_number, block_timestamp);
-
-        // Process decryption and gateway events concurrently with block timestamp
-        let decryption_task = self.process_decryption_events(block_number, block_timestamp);
-        let gateway_task = self.process_gateway_events(block_number, block_timestamp);
-
-        // Wait for both to complete
-        let (decryption_result, gateway_result) = tokio::join!(decryption_task, gateway_task);
-
-        // Check results
-        decryption_result?;
-        gateway_result?;
-
         debug!(
-            "Successfully fast-processed block {} with timestamp {}",
-            block_number, block_timestamp
+            "Retrieved timestamp {} for block {} in {:?}",
+            block_timestamp, block_number, fetch_duration
         );
+
+        // Monitor event processing time
+        let events_start = Instant::now();
+        self.process_all_events_unified(block_number, block_timestamp)
+            .await?;
+
+        let events_duration = events_start.elapsed();
+        let total_duration = block_start.elapsed();
+
+        // Alert on slow block processing
+        if total_duration > Duration::from_secs(5) {
+            error!(
+                "[CRITICAL SLOW BLOCK]: Block {} processing took {:?} (fetch: {:?}, events: {:?}) - missing multiple Gateway blocks!",
+                block_number, total_duration, fetch_duration, events_duration
+            );
+        } else if total_duration > Duration::from_secs(2) {
+            warn!(
+                "[SLOW BLOCK PROCESSING]: Block {} took {:?} (fetch: {:?}, events: {:?}) - slower than Gateway block time",
+                block_number, total_duration, fetch_duration, events_duration
+            );
+        } else if total_duration > Duration::from_millis(500) {
+            debug!(
+                "Block {} processing: {:?} (fetch: {:?}, events: {:?}) - within Gateway tolerance",
+                block_number, total_duration, fetch_duration, events_duration
+            );
+        } else {
+            debug!(
+                "Successfully processed block {} with timestamp {} in {:?} (fetch: {:?}, events: {:?})",
+                block_number, block_timestamp, total_duration, fetch_duration, events_duration
+            );
+        }
+
         Ok(())
     }
 
     /// Cleanup old processed blocks to prevent memory growth
     async fn cleanup_processed_blocks(&self, current_block: u64) {
-        // Keep only recent blocks in memory (last 1000 blocks)
+        // More aggressive cleanup to prevent memory leaks (last 1000 blocks only)
         let cleanup_threshold = current_block.saturating_sub(1000);
+        let initial_size = self.processed_blocks.len();
 
         // Remove old entries from DashMap
         self.processed_blocks
             .retain(|&block_num, _| block_num > cleanup_threshold);
 
-        debug!(
-            "Cleaned up processed blocks older than {}",
-            cleanup_threshold
-        );
+        let final_size = self.processed_blocks.len();
+        let cleaned_count = initial_size.saturating_sub(final_size);
+
+        if cleaned_count > 0 {
+            debug!(
+                "Cleaned up {} processed blocks older than {} (size: {} -> {})",
+                cleaned_count, cleanup_threshold, initial_size, final_size
+            );
+        }
     }
 
-    /// Process decryption events for a specific block with proper ordering
-    async fn process_decryption_events(
+    /// Unified event processing
+    async fn process_all_events_unified(
         &self,
         block_number: u64,
         block_timestamp: u64,
     ) -> Result<()> {
-        // Create contract instance
-        let contract = Decryption::new(self.config.decryption_address, Arc::clone(&self.provider));
+        // Collect all events with their transaction indices for proper ordering
+        let mut ordered_events = BTreeMap::new();
 
-        // Create filters for the specific block
-        let public_filter = contract
+        // Process decryption events
+        let decryption_contract =
+            Decryption::new(self.config.decryption_address, Arc::clone(&self.provider));
+
+        // Query public decryption events
+        let public_filter = decryption_contract
             .PublicDecryptionRequest_filter()
             .from_block(block_number)
             .to_block(block_number);
 
-        let user_filter = contract
-            .UserDecryptionRequest_filter()
-            .from_block(block_number)
-            .to_block(block_number);
-
-        // Query events for this block
         let public_events = public_filter.query().await.map_err(|e| {
             Error::Provider(format!("Failed to query public decryption events: {e}"))
         })?;
+
+        // Query user decryption events
+        let user_filter = decryption_contract
+            .UserDecryptionRequest_filter()
+            .from_block(block_number)
+            .to_block(block_number);
 
         let user_events = user_filter
             .query()
             .await
             .map_err(|e| Error::Provider(format!("Failed to query user decryption events: {e}")))?;
 
-        // Collect all events with their transaction indices for proper ordering
-        let mut ordered_events = BTreeMap::new();
-
-        // Add public events with their transaction indices
-        for (event, log) in public_events {
-            let tx_index = log.transaction_index.unwrap_or(0);
-            let log_index = log.log_index.unwrap_or(0);
-            let sort_key = (tx_index, log_index);
-            ordered_events.insert(sort_key, KmsCoreEvent::PublicDecryptionRequest(event));
-        }
-
-        // Add user events with their transaction indices
-        for (event, log) in user_events {
-            let tx_index = log.transaction_index.unwrap_or(0);
-            let log_index = log.log_index.unwrap_or(0);
-            let sort_key = (tx_index, log_index);
-            ordered_events.insert(sort_key, KmsCoreEvent::UserDecryptionRequest(event));
-        }
-
-        // Send events in transaction order (BTreeMap maintains sorted order)
-        for (_, event) in ordered_events {
-            self.send_event_with_backpressure(event, block_timestamp)
-                .await?;
-        }
-
-        Ok(())
-    }
-
-    /// Process gateway config events for a specific block with proper ordering
-    async fn process_gateway_events(&self, block_number: u64, block_timestamp: u64) -> Result<()> {
-        // Create contract instance
-        let contract = KmsManagement::new(
+        // Process gateway management events
+        let gateway_contract = KmsManagement::new(
             self.config.gateway_config_address,
             Arc::clone(&self.provider),
         );
 
-        // Create filters for the specific block
-        let keygen_filter = contract
+        // Query keygen events
+        let keygen_filter = gateway_contract
             .KeygenRequest_filter()
             .from_block(block_number)
             .to_block(block_number);
 
-        let crsgen_filter = contract
-            .CrsgenRequest_filter()
-            .from_block(block_number)
-            .to_block(block_number);
-
-        // Query events for this block
         let keygen_events = keygen_filter
             .query()
             .await
             .map_err(|e| Error::Provider(format!("Failed to query keygen events: {e}")))?;
+
+        // Query crsgen events
+        let crsgen_filter = gateway_contract
+            .CrsgenRequest_filter()
+            .from_block(block_number)
+            .to_block(block_number);
 
         let crsgen_events = crsgen_filter
             .query()
             .await
             .map_err(|e| Error::Provider(format!("Failed to query crsgen events: {e}")))?;
 
-        // Collect all events with their transaction indices for proper ordering
-        let mut ordered_events = BTreeMap::new();
+        // Unified event ordering logic
+        self.add_events_to_ordered_map(&mut ordered_events, public_events, |event| {
+            KmsCoreEvent::PublicDecryptionRequest(event)
+        });
 
-        // Add keygen events with their transaction indices
-        for (event, log) in keygen_events {
-            let tx_index = log.transaction_index.unwrap_or(0);
-            let log_index = log.log_index.unwrap_or(0);
-            let sort_key = (tx_index, log_index);
-            ordered_events.insert(sort_key, KmsCoreEvent::KeygenRequest(event));
-        }
+        self.add_events_to_ordered_map(&mut ordered_events, user_events, |event| {
+            KmsCoreEvent::UserDecryptionRequest(event)
+        });
 
-        // Add crsgen events with their transaction indices
-        for (event, log) in crsgen_events {
-            let tx_index = log.transaction_index.unwrap_or(0);
-            let log_index = log.log_index.unwrap_or(0);
-            let sort_key = (tx_index, log_index);
-            ordered_events.insert(sort_key, KmsCoreEvent::CrsgenRequest(event));
-        }
+        self.add_events_to_ordered_map(&mut ordered_events, keygen_events, |event| {
+            KmsCoreEvent::KeygenRequest(event)
+        });
 
-        // Send events in transaction order (BTreeMap maintains sorted order)
+        self.add_events_to_ordered_map(&mut ordered_events, crsgen_events, |event| {
+            KmsCoreEvent::CrsgenRequest(event)
+        });
+
+        // Send all events in transaction order (BTreeMap maintains sorted order)
         for (_, event) in ordered_events {
             self.send_event_with_backpressure(event, block_timestamp)
                 .await?;
@@ -619,36 +598,105 @@ where
         Ok(())
     }
 
-    /// Send event to the processing channel with backpressure control
+    /// Helper method to add events to ordered map
+    fn add_events_to_ordered_map<T, F>(
+        &self,
+        ordered_events: &mut BTreeMap<(u64, u64), KmsCoreEvent>,
+        events: Vec<(T, alloy::rpc::types::Log)>,
+        event_converter: F,
+    ) where
+        F: Fn(T) -> KmsCoreEvent,
+    {
+        for (event, log) in events {
+            let tx_index = log.transaction_index.unwrap_or(0);
+            let log_index = log.log_index.unwrap_or(0);
+            let sort_key = (tx_index, log_index);
+            ordered_events.insert(sort_key, event_converter(event));
+        }
+    }
+
+    /// Send event to the processing channel with async backpressure control and monitoring
     async fn send_event_with_backpressure(
         &self,
         event: KmsCoreEvent,
         block_timestamp: u64,
     ) -> Result<()> {
-        // Check if backpressure is active and wait if needed
+        let operation_start = Instant::now();
+
+        // Monitor backpressure wait time
         if self.is_backpressure_active.load(Ordering::Relaxed) {
-            debug!("Backpressure active, waiting before sending event");
+            let backpressure_start = Instant::now();
+            debug!("Backpressure active - waiting for release");
 
-            // Wait for backpressure to be released (with timeout to prevent infinite blocking)
-            let mut retry_count = 0;
-            while self.is_backpressure_active.load(Ordering::Relaxed) && retry_count < 100 {
-                sleep(Duration::from_millis(100)).await; // Wait 100ms
-                retry_count += 1;
-            }
+            // Use async timeout instead of blocking polling loop
+            match tokio::time::timeout(
+                Duration::from_secs(2), // 2 second max wait
+                async {
+                    while self.is_backpressure_active.load(Ordering::Relaxed) {
+                        tokio::time::sleep(Duration::from_millis(50)).await;
+                    }
+                },
+            )
+            .await
+            {
+                Ok(_) => {
+                    let backpressure_duration = backpressure_start.elapsed();
+                    debug!(
+                        "Backpressure released after {:?} - resuming event processing",
+                        backpressure_duration
+                    );
 
-            if retry_count >= 100 {
-                warn!("Backpressure remained active for 10 seconds, proceeding with event send");
-            } else {
-                debug!("Backpressure released, resuming event processing");
+                    // Alert on long backpressure waits
+                    if backpressure_duration > Duration::from_secs(1) {
+                        warn!(
+                            "[SLOW BACKPRESSURE]: Waited {:?} for backpressure release - check downstream processing capacity",
+                            backpressure_duration
+                        );
+                    }
+                }
+                Err(_) => warn!(
+                    "[BACKPRESSURE TIMEOUT]: 2+ seconds waiting for release - resuming with degraded performance"
+                ),
             }
         }
 
-        // Acquire semaphore permit to limit concurrent event processing
-        let _permit = self
-            .event_semaphore
-            .acquire()
-            .await
-            .map_err(|e| Error::Channel(format!("Failed to acquire event semaphore: {e}")))?;
+        // Monitor semaphore acquisition time
+        let semaphore_start = Instant::now();
+        let _permit = match self.event_semaphore.try_acquire() {
+            Ok(permit) => {
+                let acquire_duration = semaphore_start.elapsed();
+                if acquire_duration > Duration::from_millis(1) {
+                    debug!("Fast semaphore acquire: {:?}", acquire_duration);
+                }
+                permit
+            }
+            Err(_) => {
+                warn!(
+                    "[SEMAPHORE FULL]: Event processing semaphore exhausted - acquiring with blocking wait"
+                );
+
+                // Monitor blocking semaphore acquire time
+                let blocking_start = Instant::now();
+                let permit = self.event_semaphore.acquire().await.map_err(|e| {
+                    Error::Channel(format!("Failed to acquire event semaphore: {e}"))
+                })?;
+
+                let blocking_duration = blocking_start.elapsed();
+                if blocking_duration > Duration::from_millis(100) {
+                    warn!(
+                        "[SLOW SEMAPHORE]: Blocking acquire took {:?} - system under high load",
+                        blocking_duration
+                    );
+                } else {
+                    debug!(
+                        "Semaphore acquired after blocking wait: {:?}",
+                        blocking_duration
+                    );
+                }
+
+                permit
+            }
+        };
 
         // Start cleanup task if not already started (non-blocking)
         start_cleanup_task_for_expired_block_timestamps();
@@ -671,19 +719,88 @@ where
             );
         }
 
-        self.event_tx
+        // Monitor channel send time
+        let send_start = Instant::now();
+        let result = self
+            .event_tx
             .send(event)
             .await
-            .map_err(|e| Error::Channel(format!("Failed to send event: {e}")))
+            .map_err(|e| Error::Channel(format!("Failed to send event: {e}")));
+
+        let send_duration = send_start.elapsed();
+
+        // Alert on slow channel sends
+        if send_duration > Duration::from_secs(3) {
+            error!(
+                "[CRITICAL CHANNEL SLOW SEND]: Channel send took {:?} - downstream processing severely degraded! (blocking multiple Arbitrum blocks)",
+                send_duration
+            );
+        } else if send_duration > Duration::from_millis(500) {
+            warn!(
+                "[SLOW CHANNEL SEND]: Event send took {:?} - check downstream event processor performance (Arbitrum block time: 250ms)",
+                send_duration
+            );
+        } else if send_duration > Duration::from_millis(100) {
+            debug!(
+                "Moderate channel send time: {:?} (within Arbitrum block tolerance)",
+                send_duration
+            );
+        }
+
+        // Monitor total operation time
+        let total_duration = operation_start.elapsed();
+        if total_duration > Duration::from_secs(2) {
+            warn!(
+                "[SLOW EVENT PROCESSING]: Total send_event_with_backpressure took {:?}",
+                total_duration
+            );
+        }
+
+        result
         // Permit is automatically released when _permit goes out of scope
     }
 
-    /// Get the latest block number from the blockchain
+    /// Get the latest block number from the blockchain with monitoring
     async fn get_latest_block_number(&self) -> Result<u64> {
-        self.provider
+        let rpc_start = Instant::now();
+
+        let result = self
+            .provider
             .get_block_number()
             .await
-            .map_err(|e| Error::Provider(format!("Failed to get latest block number: {e}")))
+            .map_err(|e| Error::Provider(format!("Failed to get latest block number: {e}")));
+
+        let rpc_duration = rpc_start.elapsed();
+
+        // Monitor RPC call performance
+        match &result {
+            Ok(block_number) => {
+                if rpc_duration > Duration::from_secs(3) {
+                    error!(
+                        "[CRITICAL SLOW RPC]: get_block_number took {:?} - provider severely degraded! Block: {} (Arbitrum expected: <200ms)",
+                        rpc_duration, block_number
+                    );
+                } else if rpc_duration > Duration::from_millis(1000) {
+                    warn!(
+                        "[SLOW RPC]: get_block_number took {:?} - provider performance degraded. Block: {} (Arbitrum expected: <200ms)",
+                        rpc_duration, block_number
+                    );
+                } else if rpc_duration > Duration::from_millis(500) {
+                    debug!(
+                        "Moderate RPC time: {:?} for block {} (Arbitrum baseline: ~100-200ms)",
+                        rpc_duration, block_number
+                    );
+                }
+            }
+            Err(e) => {
+                error!(
+                    "[RPC FAILURE]: get_block_number failed after {:?} - {}",
+                    rpc_duration, e
+                );
+            }
+        }
+
+        result
     }
 
     /// Get current processing status

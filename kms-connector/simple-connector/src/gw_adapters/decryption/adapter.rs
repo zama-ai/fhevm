@@ -12,6 +12,9 @@ use tracing::{debug, info, warn};
 /// The time to wait between two transactions attempt.
 const TX_INTERVAL: Duration = Duration::from_millis(100);
 
+/// Gas price escalation multiplier for transaction retry (20x = 2000%)
+const GAS_PRICE_ESCALATION_MULTIPLIER: u128 = 20;
+
 /// Adapter for decryption operations
 #[derive(Clone)]
 pub struct DecryptionAdapter<P> {
@@ -62,6 +65,7 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
 
         let mut call = call_builder.into_transaction_request();
         self.estimate_gas(id, &mut call).await;
+
         let tx = self.send_tx_with_retry(call).await?;
 
         // TODO: optimize for low latency
@@ -110,6 +114,7 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
 
         let mut call = call_builder.into_transaction_request();
         self.estimate_gas(id, &mut call).await;
+
         let tx = self.send_tx_with_retry(call).await?;
 
         // TODO: optimize for low latency
@@ -146,27 +151,51 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         call.gas = Some(new_gas_value);
     }
 
-    /// Sends the requested transactions with one retry.
+    /// Escalate gas prices for transaction retry
+    fn escalate_gas_prices(&self, call: &mut TransactionRequest) {
+        // Clear nonce to force fresh fetch
+        call.nonce = None;
+
+        // Escalate or set fallback gas prices
+        call.gas_price =
+            Some(call.gas_price.unwrap_or(50_000_000_000) * GAS_PRICE_ESCALATION_MULTIPLIER);
+        call.max_fee_per_gas =
+            Some(call.max_fee_per_gas.unwrap_or(100_000_000_000) * GAS_PRICE_ESCALATION_MULTIPLIER);
+        call.max_priority_fee_per_gas = Some(
+            call.max_priority_fee_per_gas.unwrap_or(10_000_000_000)
+                * GAS_PRICE_ESCALATION_MULTIPLIER,
+        );
+
+        warn!(
+            "Escalated gas prices: gas={} gwei, max_fee={} gwei, priority={} gwei",
+            call.gas_price.unwrap() / 1_000_000_000, // Safe to unwrap as we set fallbacks
+            call.max_fee_per_gas.unwrap() / 1_000_000_000, // Safe to unwrap as we set fallbacks
+            call.max_priority_fee_per_gas.unwrap() / 1_000_000_000
+        ); // Safe to unwrap as we set fallbacks
+    }
+
+    /// Generic transaction retry with escalation
     async fn send_tx_with_retry(
         &self,
-        call: TransactionRequest,
+        mut call: TransactionRequest,
     ) -> Result<PendingTransactionBuilder<Ethereum>> {
+        // First attempt
         match self.provider.send_transaction(call.clone()).await {
-            Ok(tx) => Ok(tx),
+            Ok(tx) => return Ok(tx),
             Err(e) => {
                 warn!(
-                    "Retrying to send transaction in {}s after failure: {}",
-                    TX_INTERVAL.as_secs(),
+                    "Transaction failed, retrying with escalated gas prices: {}",
                     e
                 );
-
                 tokio::time::sleep(TX_INTERVAL).await;
-
-                self.provider
-                    .send_transaction(call)
-                    .await
-                    .map_err(|e| Error::Contract(e.to_string()))
             }
         }
+
+        // Retry with escalated gas prices
+        self.escalate_gas_prices(&mut call);
+        self.provider
+            .send_transaction(call)
+            .await
+            .map_err(|e| Error::Contract(e.to_string()))
     }
 }
