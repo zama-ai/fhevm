@@ -7,14 +7,10 @@ use alloy::{
 };
 use fhevm_gateway_rust_bindings::decryption::Decryption;
 use std::{sync::Arc, time::Duration};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// The time to wait between two transactions attempt.
 const TX_INTERVAL: Duration = Duration::from_millis(100);
-
-/// Gas price escalation multiplier for transaction retry (20x = 2000%)
-const GAS_PRICE_ESCALATION_MULTIPLIER: u128 = 5;
-const MAX_GAS_PRICE_CAP: u128 = 900_000_000_000_000_000; // 0.9 ETH in wei
 
 /// Adapter for decryption operations
 #[derive(Clone)]
@@ -67,7 +63,7 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         let mut call = call_builder.into_transaction_request();
         self.estimate_gas(id, &mut call).await;
 
-        let tx = self.send_tx_with_retry(call).await?;
+        let tx = self.send_tx_with_retry(call, id).await?;
 
         // TODO: optimize for low latency
         let receipt = tx
@@ -116,7 +112,7 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         let mut call = call_builder.into_transaction_request();
         self.estimate_gas(id, &mut call).await;
 
-        let tx = self.send_tx_with_retry(call).await?;
+        let tx = self.send_tx_with_retry(call, id).await?;
 
         // TODO: optimize for low latency
         let receipt = tx
@@ -152,56 +148,55 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         call.gas = Some(new_gas_value);
     }
 
-    /// Escalate gas prices for transaction retry
-    fn escalate_gas_prices(&self, call: &mut TransactionRequest) {
-        // Clear nonce to force fresh fetch
-        call.nonce = None;
-
-        // Escalate gas prices with 5x multiplier, capped at 0.9 ETH
-        let escalated_gas_price = (call.gas_price.unwrap_or(50_000_000_000)
-            * GAS_PRICE_ESCALATION_MULTIPLIER)
-            .min(MAX_GAS_PRICE_CAP);
-        let escalated_max_fee = (call.max_fee_per_gas.unwrap_or(100_000_000_000)
-            * GAS_PRICE_ESCALATION_MULTIPLIER)
-            .min(MAX_GAS_PRICE_CAP);
-        let escalated_priority_fee = (call.max_priority_fee_per_gas.unwrap_or(10_000_000_000)
-            * GAS_PRICE_ESCALATION_MULTIPLIER)
-            .min(MAX_GAS_PRICE_CAP);
-
-        call.gas_price = Some(escalated_gas_price);
-        call.max_fee_per_gas = Some(escalated_max_fee);
-        call.max_priority_fee_per_gas = Some(escalated_priority_fee);
-
-        warn!(
-            "Escalated gas prices (5x multiplier, 0.9 ETH cap): gas={} gwei, max_fee={} gwei, priority={} gwei",
-            call.gas_price.unwrap() / 1_000_000_000, // Safe to unwrap as we set fallbacks
-            call.max_fee_per_gas.unwrap() / 1_000_000_000, // Safe to unwrap as we set fallbacks
-            call.max_priority_fee_per_gas.unwrap() / 1_000_000_000
-        ); // Safe to unwrap as we set fallbacks
-    }
-
-    /// Generic transaction retry with escalation
     async fn send_tx_with_retry(
         &self,
         mut call: TransactionRequest,
+        id: U256,
     ) -> Result<PendingTransactionBuilder<Ethereum>> {
-        // First attempt
+        // Step 1: First attempt with original parameters
         match self.provider.send_transaction(call.clone()).await {
             Ok(tx) => return Ok(tx),
             Err(e) => {
                 warn!(
-                    "Transaction failed, retrying with escalated gas prices: {}",
+                    decryption_id = ?id,
+                    "Transaction attempt 1 failed, retrying with gas estimation: {}",
                     e
                 );
                 tokio::time::sleep(TX_INTERVAL).await;
             }
         }
 
-        // Retry with escalated gas prices
-        self.escalate_gas_prices(&mut call);
-        self.provider
-            .send_transaction(call)
-            .await
-            .map_err(|e| Error::Contract(e.to_string()))
+        // Step 2: Clear nonce and re-estimate gas with 300% multiplier
+        call.nonce = None; // Force fresh nonce fetch
+        call.gas = None; // Clear previous gas estimation to prevent double-inflation
+        self.estimate_gas(id, &mut call).await;
+
+        match self.provider.send_transaction(call.clone()).await {
+            Ok(tx) => return Ok(tx),
+            Err(e) => {
+                warn!(
+                    decryption_id = ?id,
+                    "Transaction attempt 2 failed, waiting 3s before final retry: {}",
+                    e
+                );
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+        }
+
+        // Step 3: Final attempt after 3-second wait (keeping increased gas)
+        call.nonce = None; // Force fresh nonce fetch
+        call.gas = None; // Clear previous gas estimation to prevent double-inflation
+        self.estimate_gas(id, &mut call).await;
+
+        match self.provider.send_transaction(call.clone()).await {
+            Ok(tx) => {
+                info!(decryption_id = ?id, "Transaction succeeded on final attempt");
+                Ok(tx)
+            }
+            Err(e) => {
+                error!(decryption_id = ?id, "All transaction attempts failed: {}", e);
+                Err(Error::Contract(e.to_string()))
+            }
+        }
     }
 }
