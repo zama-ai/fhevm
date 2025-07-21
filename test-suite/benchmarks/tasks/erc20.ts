@@ -10,6 +10,13 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+const timeout = (ms: number) =>
+  new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('Operation timed out')), ms)
+  );
+
+const TIMEOUT = 60_000;
+
 // https://gist.github.com/chrismilson/e6549023bdca1fa9c263973b8f7a713b
 type Iterableify<T> = { [K in keyof T]: Iterable<T[K]> }
 function* zip<T extends Array<any>>(
@@ -219,31 +226,54 @@ as batched transfers is not yet implemented in this script.
         );
         eip712Signatures.push(signature);
       };
+      console.debug(`handles: ${JSON.stringify(balancesHandles, null, "\t")}`);
 
       // Leverage cache of relayer to retry until all promises resolve
       console.time("decrytions");
       let decrypted_balances: DecryptedResults[];
       let counter = 0;
       while (true) {
+        console.time("decrytions-inner");
         let decrypted_balances_promises = [];
         for (let index = 0; index < taskArgs.mintAmount + 1; index++) {
 
           decrypted_balances_promises.push(instance.userDecrypt([{ handle: balancesHandles[index], contractAddress: contractAddress }], privateKey, publicKey, eip712Signatures[index], [contractAddress], signers[index].address, taskArgs.eip712Timestamp, durationDays));
           await sleep(taskArgs.sleepBetweenDecryptions);
         }
+
+        // monitor promises states
+        const promiseStates = new Array(decrypted_balances_promises.length).fill('pending');
+        decrypted_balances_promises.forEach((p, i) => {
+          p.then(() => { promiseStates[i] = 'fulfilled' })
+            .catch(() => { promiseStates[i] = 'rejected' });
+        });
+
+
         try {
-          decrypted_balances = await Promise.all(decrypted_balances_promises);
+          console.log("Waiting for all decryption promises to resolve")
+          try {
+            decrypted_balances = await Promise.race([Promise.all(decrypted_balances_promises), timeout(TIMEOUT)]);
+            console.timeEnd("decrytions-inner");
+          } catch (timeoutError) {
+            console.log("Counting fulfilled decryptions.");
+            const fulfilled = promiseStates.filter(s => s === 'fulfilled').length;
+            console.log(`Timeout after ${TIMEOUT}ms: ${fulfilled}/${decrypted_balances_promises.length} promises already resolved`);
+            throw timeoutError;
+          }
           break;
         } catch (error) {
+          counter += 1;
           console.error(error);
           console.log(`Retrying user decryptions attempt: ${counter}`);
-          counter += 1;
+          console.timeEnd("decrytions-inner");
           // To avoid spamming too much the relayer
+          console.debug("Waiting 1s before retrying");
           await sleep(1000);
         }
-
       }
       console.timeEnd("decrytions");
+
+      console.log("All decryption promises resolved")
       for (const [result, handle] of zip(decrypted_balances, balancesHandles)) {
         console.log(result[handle]);
       }
