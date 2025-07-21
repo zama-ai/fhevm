@@ -70,7 +70,7 @@ pub struct Config {
     /// Use polling mode instead of WebSocket
     pub use_polling_mode: bool,
     /// Base polling interval in seconds
-    pub base_poll_interval_secs: u64,
+    pub base_poll_interval_ms: u64,
     /// Maximum blocks to process per batch
     pub max_blocks_per_batch: u64,
 }
@@ -142,7 +142,7 @@ impl Display for Config {
 
         // Polling configuration
         writeln!(f, "Polling Mode: {}", self.use_polling_mode)?;
-        writeln!(f, "Base Poll Interval: {}s", self.base_poll_interval_secs)?;
+        writeln!(f, "Base Poll Interval: {}ms", self.base_poll_interval_ms)?;
         writeln!(f, "Max Blocks Per Batch: {}", self.max_blocks_per_batch)?;
 
         // S3 configuration
@@ -256,7 +256,7 @@ impl Config {
             starting_block_number: raw_config.starting_block_number,
             max_concurrent_tasks: raw_config.max_concurrent_tasks,
             use_polling_mode: raw_config.use_polling_mode,
-            base_poll_interval_secs: raw_config.base_poll_interval_secs,
+            base_poll_interval_ms: raw_config.base_poll_interval_ms,
             max_blocks_per_batch: raw_config.max_blocks_per_batch,
         })
     }
@@ -672,7 +672,7 @@ mod tests {
                 starting_block_number: None,
                 max_concurrent_tasks: 100,
                 use_polling_mode: false,
-                base_poll_interval_secs: 2,
+                base_poll_interval_ms: 2,
                 max_blocks_per_batch: 10,
             }
         }

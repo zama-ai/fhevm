@@ -80,8 +80,8 @@ pub struct RawConfig {
     // Polling parameters
     #[serde(default = "default_use_polling_mode")]
     pub use_polling_mode: bool,
-    #[serde(default = "default_base_poll_interval_secs")]
-    pub base_poll_interval_secs: u64,
+    #[serde(default = "default_base_poll_interval_ms")]
+    pub base_poll_interval_ms: u64,
     #[serde(default = "default_max_blocks_per_batch")]
     pub max_blocks_per_batch: u64,
 }
@@ -146,8 +146,8 @@ fn default_use_polling_mode() -> bool {
     true // Use WebSocket by default
 }
 
-fn default_base_poll_interval_secs() -> u64 {
-    1 // Poll every 1 second
+fn default_base_poll_interval_ms() -> u64 {
+    100 // Poll every 100 ms
 }
 
 fn default_max_blocks_per_batch() -> u64 {

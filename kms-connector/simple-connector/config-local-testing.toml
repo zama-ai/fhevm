@@ -93,12 +93,8 @@ pending_events_queue_slowdown_threshold = 0.8
 use_polling_mode = true
 
 # Base polling interval when caught up
-# ENV: KMS_CONNECTOR_BASE_POLL_INTERVAL_SECS
-base_poll_interval_secs = 1
-
-# Fast polling interval during catch-up
-# ENV: KMS_CONNECTOR_CATCH_UP_POLL_INTERVAL_MS
-catch_up_poll_interval_ms = 200
+# ENV: KMS_CONNECTOR_BASE_POLL_INTERVAL_MS
+base_poll_interval_ms = 100
 
 # Maximum blocks per batch
 # ENV: KMS_CONNECTOR_MAX_BLOCKS_PER_BATCH

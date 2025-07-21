@@ -254,8 +254,8 @@ where
         }
 
         info!(
-            "Starting blockchain polling with interval: {}s",
-            self.config.base_poll_interval_secs
+            "Starting blockchain polling with interval: {}ms",
+            self.config.base_poll_interval_ms
         );
 
         // Initialize current block if starting from latest
@@ -287,12 +287,11 @@ where
 
         // Adaptive polling for sub-second block times
         let mut shutdown_rx = self.shutdown_tx.subscribe();
-        let base_interval_ms = (self.config.base_poll_interval_secs * 1000).max(500);
-        let mut current_interval_ms = base_interval_ms;
+        let mut current_interval_ms = self.config.base_poll_interval_ms;
 
         info!(
             "Starting adaptive polling with base interval: {}ms",
-            base_interval_ms
+            self.config.base_poll_interval_ms
         );
 
         loop {
@@ -311,16 +310,16 @@ where
                                 // Use hardcoded threshold of 3 blocks
                                 if blocks_behind > 3 {
                                     // Catch-up mode: faster polling
-                                    current_interval_ms = (base_interval_ms / 2).max(100); // Min 100ms
+                                    current_interval_ms = (self.config.base_poll_interval_ms / 2).max(50); // Min 50ms
                                     debug!("Catch-up mode: {}ms (processed {} blocks, {} behind)", current_interval_ms, blocks_processed, blocks_behind);
                                 } else {
                                     // Normal mode: base interval
-                                    current_interval_ms = base_interval_ms;
+                                    current_interval_ms = self.config.base_poll_interval_ms;
                                     debug!("Normal polling: {}ms (processed {} blocks)", current_interval_ms, blocks_processed);
                                 }
                             } else {
                                 // No new blocks: base interval
-                                current_interval_ms = base_interval_ms;
+                                current_interval_ms = self.config.base_poll_interval_ms;
                                 debug!("Idle polling: {}ms (no new blocks)", current_interval_ms);
                             }
                         }

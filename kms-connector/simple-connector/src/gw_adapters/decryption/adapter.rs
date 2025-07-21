@@ -13,7 +13,8 @@ use tracing::{debug, info, warn};
 const TX_INTERVAL: Duration = Duration::from_millis(100);
 
 /// Gas price escalation multiplier for transaction retry (20x = 2000%)
-const GAS_PRICE_ESCALATION_MULTIPLIER: u128 = 20;
+const GAS_PRICE_ESCALATION_MULTIPLIER: u128 = 5;
+const MAX_GAS_PRICE_CAP: u128 = 900_000_000_000_000_000; // 0.9 ETH in wei
 
 /// Adapter for decryption operations
 #[derive(Clone)]
@@ -156,18 +157,23 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         // Clear nonce to force fresh fetch
         call.nonce = None;
 
-        // Escalate or set fallback gas prices
-        call.gas_price =
-            Some(call.gas_price.unwrap_or(50_000_000_000) * GAS_PRICE_ESCALATION_MULTIPLIER);
-        call.max_fee_per_gas =
-            Some(call.max_fee_per_gas.unwrap_or(100_000_000_000) * GAS_PRICE_ESCALATION_MULTIPLIER);
-        call.max_priority_fee_per_gas = Some(
-            call.max_priority_fee_per_gas.unwrap_or(10_000_000_000)
-                * GAS_PRICE_ESCALATION_MULTIPLIER,
-        );
+        // Escalate gas prices with 5x multiplier, capped at 0.9 ETH
+        let escalated_gas_price = (call.gas_price.unwrap_or(50_000_000_000)
+            * GAS_PRICE_ESCALATION_MULTIPLIER)
+            .min(MAX_GAS_PRICE_CAP);
+        let escalated_max_fee = (call.max_fee_per_gas.unwrap_or(100_000_000_000)
+            * GAS_PRICE_ESCALATION_MULTIPLIER)
+            .min(MAX_GAS_PRICE_CAP);
+        let escalated_priority_fee = (call.max_priority_fee_per_gas.unwrap_or(10_000_000_000)
+            * GAS_PRICE_ESCALATION_MULTIPLIER)
+            .min(MAX_GAS_PRICE_CAP);
+
+        call.gas_price = Some(escalated_gas_price);
+        call.max_fee_per_gas = Some(escalated_max_fee);
+        call.max_priority_fee_per_gas = Some(escalated_priority_fee);
 
         warn!(
-            "Escalated gas prices: gas={} gwei, max_fee={} gwei, priority={} gwei",
+            "Escalated gas prices (5x multiplier, 0.9 ETH cap): gas={} gwei, max_fee={} gwei, priority={} gwei",
             call.gas_price.unwrap() / 1_000_000_000, // Safe to unwrap as we set fallbacks
             call.max_fee_per_gas.unwrap() / 1_000_000_000, // Safe to unwrap as we set fallbacks
             call.max_priority_fee_per_gas.unwrap() / 1_000_000_000
