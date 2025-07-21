@@ -237,6 +237,7 @@ contract InputVerifierTest is Test {
      * @param contractAddress Contract's address.
      * @param signers Signers' addresses.
      * @param chainId Blockchain network ID.
+     * @param extraData Generic bytes metadata for versioned payloads.
      * @return signatures Array of generated signatures.
      */
     function _generateSignatures(
@@ -264,6 +265,7 @@ contract InputVerifierTest is Test {
      * @param userAddress User's address.
      * @param contractAddress Contract's address.
      * @param chainId Blockchain ID.
+     * @param extraData Generic bytes metadata for versioned payloads.
      * @param handleVersion Handle version.
      * @param signers Signers' addresses.
      *
