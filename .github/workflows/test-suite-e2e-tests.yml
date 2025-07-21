@@ -73,6 +73,7 @@ jobs:
           filters: |
             fhevm:
               - 'test-suite/fhevm/**'
+              - 'test-suite/e2e/**'
   fhevm-e2e-test:
     name: test-suite-e2e-tests/fhevm-e2e-test (bpr)
     needs: check-changes
