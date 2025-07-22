@@ -1,30 +1,30 @@
+use crate::core::utils::nonce_manager::SequentialNonceManager;
 use crate::error::{Error, Result};
 use alloy::{
-    network::Ethereum,
-    primitives::{Address, Bytes, U256},
-    providers::{PendingTransactionBuilder, Provider},
-    rpc::types::TransactionRequest,
+    primitives::{Address, Bytes, TxHash, U256},
+    providers::Provider,
+    rpc::types::{TransactionReceipt, TransactionRequest},
 };
 use fhevm_gateway_rust_bindings::decryption::Decryption;
 use std::{sync::Arc, time::Duration};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
-/// The time to wait between two transactions attempt.
-const TX_INTERVAL: Duration = Duration::from_millis(100);
-
-/// Adapter for decryption operations
+/// Adapter for decryption operations with sequential nonce management
 #[derive(Clone)]
 pub struct DecryptionAdapter<P> {
     decryption_address: Address,
     provider: Arc<P>,
+    nonce_manager: Arc<SequentialNonceManager<P>>,
 }
 
-impl<P: Provider + Clone> DecryptionAdapter<P> {
-    /// Create a new decryption adapter
+impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
+    /// Create a new decryption adapter with sequential nonce management
     pub fn new(decryption_address: Address, provider: Arc<P>) -> Self {
+        let nonce_manager = Arc::new(SequentialNonceManager::new(provider.clone()));
         Self {
             decryption_address,
             provider,
+            nonce_manager,
         }
     }
 
@@ -63,21 +63,36 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         let mut call = call_builder.into_transaction_request();
         self.estimate_gas(id, &mut call).await;
 
-        let tx = self.send_tx_with_retry(call, id).await?;
+        let tx_hash = self.send_tx_with_retry(call, id).await?;
 
-        // TODO: optimize for low latency
-        let receipt = tx
-            .get_receipt()
-            .await
-            .map_err(|e| Error::Contract(e.to_string()))?;
+        // Log transaction sent immediately (non-blocking)
         info!(
-            "[TRX SUCCESS] PublicDecryptionResponse-{id} sent with trx receipt: {}",
-            receipt.transaction_hash
+            "[TRX SENT] PublicDecryptionResponse-{id} sent with hash: {}",
+            tx_hash
         );
-        info!(
-            "[GAS] consumed by PublicDecryptionResponse-{id}: {}",
-            receipt.gas_used
-        );
+
+        // Spawn background task for receipt polling (non-blocking)
+        let provider = self.provider.clone();
+        tokio::spawn(async move {
+            match wait_for_receipt_background(provider, tx_hash, id).await {
+                Ok(receipt) => {
+                    info!(
+                        "[TRX SUCCESS] PublicDecryptionResponse-{id} confirmed with receipt: {}",
+                        tx_hash
+                    );
+                    info!(
+                        "[GAS] consumed by PublicDecryptionResponse-{id}: {}",
+                        receipt.gas_used
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "[TRX WARNING] Failed to get receipt for PublicDecryptionResponse-{id} ({}): {}",
+                        tx_hash, e
+                    );
+                }
+            }
+        });
         Ok(())
     }
 
@@ -112,21 +127,36 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         let mut call = call_builder.into_transaction_request();
         self.estimate_gas(id, &mut call).await;
 
-        let tx = self.send_tx_with_retry(call, id).await?;
+        let tx_hash = self.send_tx_with_retry(call, id).await?;
 
-        // TODO: optimize for low latency
-        let receipt = tx
-            .get_receipt()
-            .await
-            .map_err(|e| Error::Contract(e.to_string()))?;
+        // Log transaction sent immediately (non-blocking)
         info!(
-            "[TRX SUCCESS] UserDecryptionResponse-{id} sent with trx hash: {}",
-            receipt.transaction_hash
+            "[TRX SENT] UserDecryptionResponse-{id} sent with hash: {}",
+            tx_hash
         );
-        info!(
-            "[GAS] consumed by UserDecryptionResponse-{id}: {}",
-            receipt.gas_used
-        );
+
+        // Spawn background task for receipt polling (non-blocking)
+        let provider = self.provider.clone();
+        tokio::spawn(async move {
+            match wait_for_receipt_background(provider, tx_hash, id).await {
+                Ok(receipt) => {
+                    info!(
+                        "[TRX SUCCESS] UserDecryptionResponse-{id} confirmed with receipt: {}",
+                        tx_hash
+                    );
+                    info!(
+                        "[GAS] consumed by UserDecryptionResponse-{id}: {}",
+                        receipt.gas_used
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "[TRX WARNING] Failed to get receipt for UserDecryptionResponse-{id} ({}): {}",
+                        tx_hash, e
+                    );
+                }
+            }
+        });
         Ok(())
     }
 
@@ -138,63 +168,73 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         };
         info!(decryption_id = ?id, "Initial gas estimation for the tx: {gas_estimation}");
 
-        // Increase estimation to 300%
-        // TODO: temporary workaround for out-of-gas errors
-        // Our automatic estimation fails during gas pikes.
-        // (see https://zama-ai.slack.com/archives/C0915Q59CKG/p1749843623276629?thread_ts=1749828466.079719&cid=C0915Q59CKG)
-        let new_gas_value = gas_estimation.saturating_mul(3);
+        // Use the estimated gas limit as-is; nonce manager handles gas price optimization
+        call.gas = Some(gas_estimation);
+    }
+}
 
-        info!(decryption_id = ?id, "Updating `gas_limit` to {new_gas_value}");
-        call.gas = Some(new_gas_value);
+/// Standalone function for background receipt polling
+async fn wait_for_receipt_background<P: Provider + Clone + Send + Sync + 'static>(
+    provider: P,
+    tx_hash: TxHash,
+    id: U256,
+) -> Result<TransactionReceipt> {
+    const MAX_RETRIES: u32 = 10;
+    const RETRY_DELAY: Duration = Duration::from_millis(500);
+
+    for attempt in 1..=MAX_RETRIES {
+        match provider.get_transaction_receipt(tx_hash).await {
+            Ok(Some(receipt)) => {
+                info!(
+                    "Transaction receipt found for {}: {} (attempt {})",
+                    id, tx_hash, attempt
+                );
+                return Ok(receipt);
+            }
+            Ok(None) => {
+                if attempt < MAX_RETRIES {
+                    info!(
+                        "Transaction receipt not yet available for {}: {} (attempt {}), retrying...",
+                        id, tx_hash, attempt
+                    );
+                    tokio::time::sleep(RETRY_DELAY).await;
+                    continue;
+                } else {
+                    return Err(Error::Contract(format!(
+                        "Transaction receipt not found after {MAX_RETRIES} attempts for {id}: {tx_hash}"
+                    )));
+                }
+            }
+            Err(e) => {
+                if attempt < MAX_RETRIES {
+                    warn!(
+                        "Error fetching receipt for {}: {} (attempt {}): {}, retrying...",
+                        id, tx_hash, attempt, e
+                    );
+                    tokio::time::sleep(RETRY_DELAY).await;
+                    continue;
+                } else {
+                    return Err(Error::Contract(format!(
+                        "Failed to get transaction receipt after {MAX_RETRIES} attempts for {id}: {tx_hash}: {e}"
+                    )));
+                }
+            }
+        }
     }
 
-    async fn send_tx_with_retry(
-        &self,
-        mut call: TransactionRequest,
-        id: U256,
-    ) -> Result<PendingTransactionBuilder<Ethereum>> {
-        // Step 1: First attempt with original parameters
-        match self.provider.send_transaction(call.clone()).await {
-            Ok(tx) => return Ok(tx),
-            Err(e) => {
-                warn!(
-                    decryption_id = ?id,
-                    "Transaction attempt 1 failed, retrying with gas estimation: {}",
-                    e
-                );
-                tokio::time::sleep(TX_INTERVAL).await;
-            }
-        }
+    unreachable!()
+}
 
-        // Step 2: Re-estimate gas with 300% multiplier (keep original nonce)
-        call.gas = None; // Clear previous gas estimation to prevent double-inflation
-        self.estimate_gas(id, &mut call).await;
+impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
+    async fn send_tx_with_retry(&self, call: TransactionRequest, id: U256) -> Result<TxHash> {
+        info!(decryption_id = ?id, "Using SequentialNonceManager for sequential transaction processing");
 
-        match self.provider.send_transaction(call.clone()).await {
-            Ok(tx) => return Ok(tx),
-            Err(e) => {
-                warn!(
-                    decryption_id = ?id,
-                    "Transaction attempt 2 failed, waiting 500ms before final retry: {}",
-                    e
-                );
-                tokio::time::sleep(Duration::from_millis(500)).await;
-            }
-        }
-
-        // Step 3: Final attempt after 3-second wait (keeping increased gas)
-        call.gas = None; // Clear previous gas estimation to prevent double-inflation
-        self.estimate_gas(id, &mut call).await;
-
-        match self.provider.send_transaction(call.clone()).await {
-            Ok(tx) => {
-                info!(decryption_id = ?id, "Transaction succeeded on final attempt");
-                Ok(tx)
-            }
-            Err(e) => {
-                error!(decryption_id = ?id, "All transaction attempts failed: {}", e);
-                Err(Error::Contract(e.to_string()))
-            }
-        }
+        // Gas estimation already done by caller, proceed with transaction
+        // The SequentialNonceManager will:
+        // 1. Queue transactions per wallet address
+        // 2. Process them sequentially
+        // 3. Handle nonce management and retries automatically
+        // 4. Return the transaction hash when complete (decoupled process to not stall the whole logic)
+        self.nonce_manager.send_transaction_queued(call).await
     }
 }

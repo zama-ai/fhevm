@@ -432,7 +432,7 @@ where
         let fetch_duration = fetch_start.elapsed();
         // Arbitrum-optimized thresholds: 250ms block time, ~100-200ms RPC response expected
         if fetch_duration > Duration::from_secs(2) {
-            error!(
+            warn!(
                 "[CRITICAL SLOW BLOCK FETCH]: Block {} fetch took {:?} - provider severely degraded (Gateway expected: <500ms)",
                 block_number, fetch_duration
             );
@@ -464,7 +464,7 @@ where
 
         // Alert on slow block processing
         if total_duration > Duration::from_secs(5) {
-            error!(
+            warn!(
                 "[CRITICAL SLOW BLOCK]: Block {} processing took {:?} (fetch: {:?}, events: {:?}) - missing multiple Gateway blocks!",
                 block_number, total_duration, fetch_duration, events_duration
             );
@@ -730,7 +730,7 @@ where
 
         // Alert on slow channel sends
         if send_duration > Duration::from_secs(3) {
-            error!(
+            warn!(
                 "[CRITICAL CHANNEL SLOW SEND]: Channel send took {:?} - downstream processing severely degraded! (blocking multiple Arbitrum blocks)",
                 send_duration
             );
@@ -775,7 +775,7 @@ where
         match &result {
             Ok(block_number) => {
                 if rpc_duration > Duration::from_secs(3) {
-                    error!(
+                    warn!(
                         "[CRITICAL SLOW RPC]: get_block_number took {:?} - provider severely degraded! Block: {} (Arbitrum expected: <200ms)",
                         rpc_duration, block_number
                     );
