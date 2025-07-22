@@ -105,8 +105,14 @@ async fn test_decryptable(
 
     let cleartext = if with_compression {
         let list: CompressedSquashedNoiseCiphertextList = safe_deserialize(&data)?;
-        let v: SquashedNoiseFheUint = list.get(0).unwrap().unwrap();
-        let r: u128 = v.decrypt(client_key.as_ref().unwrap());
+        let v: SquashedNoiseFheUint = list
+            .get(0)?
+            .ok_or_else(|| anyhow::anyhow!("Failed to get the first element from the list"))?;
+        let r: u128 = v.decrypt(
+            client_key
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Client key is not available for decryption"))?,
+        );
         r
     } else {
         let v: SquashedNoiseFheUint = safe_deserialize(&data)?;
@@ -114,11 +120,11 @@ async fn test_decryptable(
         r
     };
 
-    println!("Decrypted value: {cleartext}");
+    println!("Cleartext: {cleartext}");
 
     assert!(
         cleartext == expected_result as u128,
-        "Decrypted value does not match expected value",
+        "Cleartext value does not match expected value",
     );
 
     anyhow::Result::<()>::Ok(())
