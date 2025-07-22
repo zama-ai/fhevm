@@ -1,4 +1,6 @@
-use crate::{Config, ExecutionError, HandleItem, S3Config, UploadJob};
+use crate::{
+    BigCiphertext, Ciphertext128Format, Config, ExecutionError, HandleItem, S3Config, UploadJob,
+};
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
 use aws_sdk_s3::operation::head_object::HeadObjectError;
@@ -101,8 +103,8 @@ pub(crate) async fn process_s3_uploads(
                                     WHERE handle = $2 AND tenant_id = $1 AND
                                     (ciphertext128 IS NULL OR ciphertext IS NULL)
                                     FOR UPDATE SKIP LOCKED",
-                            item.tenant_id,
-                            item.handle,
+                                    item.tenant_id,
+                                    item.handle
                         )
                         .fetch_one(trx.as_mut())
                         .await
@@ -206,8 +208,8 @@ async fn upload_ciphertexts(
 
     let mut jobs = vec![];
 
-    if !task.ct128_uncompressed.is_empty() {
-        let ct128_bytes = task.ct128_uncompressed.as_ref();
+    if !task.ct128.is_empty() && task.ct128.format() != Ciphertext128Format::Unknown {
+        let ct128_bytes = task.ct128.bytes();
         let ct128_digest = compute_digest(ct128_bytes);
         info!(
             "Uploading ct128, handle: {}, len: {}, tenant: {}",
@@ -215,6 +217,8 @@ async fn upload_ciphertexts(
             ByteSize::b(ct128_bytes.len() as u64),
             task.tenant_id,
         );
+
+        let format_as_str = task.ct128.format().to_string();
 
         let key = hex::encode(&ct128_digest);
 
@@ -226,11 +230,13 @@ async fn upload_ciphertexts(
         if !exists {
             let mut span: BoxedSpan = task.otel.child_span("ct128_upload_s3");
             telemetry::attribute(&mut span, "len", ct128_bytes.len().to_string());
+            telemetry::attribute(&mut span, "format", format_as_str.to_owned());
 
             jobs.push((
                 client
                     .put_object()
                     .bucket(conf.bucket_ct128.clone())
+                    .metadata("Ct-Format", format_as_str)
                     .key(key)
                     .body(ByteStream::from(ct128_bytes.clone()))
                     .send(),
@@ -352,12 +358,15 @@ fn compute_digest(ct: &[u8]) -> Vec<u8> {
 }
 
 /// Fetches incomplete upload tasks from the database.
+///
+/// An incomplete upload task is defined as a task that has either
+/// `ciphertext` or `ciphertext128` as NULL in the `ciphertext_digest` table.
 async fn fetch_pending_uploads(
     db_pool: &Pool<Postgres>,
     limit: i64,
 ) -> Result<Vec<UploadJob>, ExecutionError> {
     let rows = sqlx::query!(
-        "SELECT tenant_id, handle, ciphertext, ciphertext128
+        "SELECT tenant_id, handle, ciphertext, ciphertext128, ciphertext128_format 
         FROM ciphertext_digest 
         WHERE ciphertext IS NULL OR ciphertext128 IS NULL
         FOR UPDATE SKIP LOCKED
@@ -371,7 +380,7 @@ async fn fetch_pending_uploads(
 
     for row in rows {
         let mut ct64_compressed = Arc::new(Vec::new());
-        let mut ct128_uncompressed = Arc::new(Vec::new());
+        let mut ct128 = Vec::new();
         let ciphertext_digest = row.ciphertext;
         let ciphertext128_digest = row.ciphertext128;
         let handle = row.handle;
@@ -407,7 +416,7 @@ async fn fetch_pending_uploads(
                 if let Some(record) = row {
                     match record.ciphertext128 {
                         Some(ct) if !ct.is_empty() => {
-                            ct128_uncompressed = Arc::new(ct);
+                            ct128 = ct;
                         }
                         _ => {
                             warn!("Fetched empty ct128, handle: {}", hex::encode(&handle));
@@ -419,12 +428,31 @@ async fn fetch_pending_uploads(
             }
         }
 
-        if !ct64_compressed.is_empty() || !ct128_uncompressed.is_empty() {
+        let is_ct128_empty = ct128.is_empty();
+
+        let ct128 = if !is_ct128_empty {
+            match BigCiphertext::new_with_format_id(ct128, row.ciphertext128_format) {
+                Some(ct) => ct,
+                None => {
+                    error!(
+                        "Failed to create a BigCiphertext from DB data, handle: {}, format_id: {}",
+                        compact_hex(&handle),
+                        row.ciphertext128_format
+                    );
+                    continue;
+                }
+            }
+        } else {
+            // Already uploaded
+            BigCiphertext::default()
+        };
+
+        if !ct64_compressed.is_empty() || !is_ct128_empty {
             let item = HandleItem {
                 tenant_id: row.tenant_id,
                 handle: handle.clone(),
                 ct64_compressed,
-                ct128_uncompressed,
+                ct128: Arc::new(ct128),
                 otel: telemetry::tracer_with_handle("recovery_task", handle),
             };
 

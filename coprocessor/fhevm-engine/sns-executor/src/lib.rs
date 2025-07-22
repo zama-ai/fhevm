@@ -85,6 +85,7 @@ pub struct Config {
     pub s3: S3Config,
     pub log_level: Level,
     pub health_checks: HealthCheckConfig,
+    pub enable_compression: bool,
 }
 
 /// Implement Display for Config
@@ -95,6 +96,75 @@ impl std::fmt::Display for Config {
             "db_url: {},  db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}",
             self.db.url, self.db.listen_channels, self.db.notify_channel, self.db.batch_limit
         )
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(i16)]
+pub enum Ciphertext128Format {
+    #[default]
+    Unknown = 0,
+    UncompressedOnCpu = 10,
+    CompressedOnCpu = 11,
+    UncompressedOnGpu = 20,
+    CompressedOnGpu = 21,
+}
+
+impl Ciphertext128Format {
+    pub fn from_i16(value: i16) -> Option<Self> {
+        match value {
+            10 => Some(Self::UncompressedOnCpu),
+            11 => Some(Self::CompressedOnCpu),
+            20 => Some(Self::UncompressedOnGpu),
+            21 => Some(Self::CompressedOnGpu),
+            _ => None,
+        }
+    }
+}
+
+impl From<Ciphertext128Format> for i16 {
+    fn from(format: Ciphertext128Format) -> Self {
+        format as i16
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct BigCiphertext {
+    format: Ciphertext128Format,
+    bytes: Vec<u8>,
+}
+
+impl BigCiphertext {
+    pub fn new_with_format_id(bytes: Vec<u8>, format_id: i16) -> Option<Self> {
+        let format = Ciphertext128Format::from_i16(format_id)?;
+        Some(Self { format, bytes })
+    }
+
+    pub fn new(bytes: Vec<u8>, format: Ciphertext128Format) -> Self {
+        Self { format, bytes }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
+
+    pub fn bytes(&self) -> &Vec<u8> {
+        &self.bytes
+    }
+
+    pub fn format(&self) -> Ciphertext128Format {
+        self.format
+    }
+}
+
+impl std::fmt::Display for Ciphertext128Format {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Ciphertext128Format::Unknown => write!(f, "unknown"),
+            Ciphertext128Format::UncompressedOnCpu => write!(f, "uncompressed_on_cpu"),
+            Ciphertext128Format::CompressedOnCpu => write!(f, "compressed_on_cpu"),
+            Ciphertext128Format::UncompressedOnGpu => write!(f, "uncompressed_on_gpu"),
+            Ciphertext128Format::CompressedOnGpu => write!(f, "compressed_on_gpu"),
+        }
     }
 }
 
@@ -110,12 +180,9 @@ pub struct HandleItem {
     /// The maximum size can be 8.1 KiB (type FheBytes256)
     pub ct64_compressed: Arc<Vec<u8>>,
 
-    /// Uncompressed 128-bit ciphertext
-    ///
-    /// Shared between the execute worker and the uploader
-    ///
-    /// The maximum size can be 32.0 MiB (type FheBytes256)
-    pub ct128_uncompressed: Arc<Vec<u8>>,
+    /// The computed 128-bit ciphertext
+    pub(crate) ct128: Arc<BigCiphertext>,
+
     pub otel: OtelTracer,
 }
 
@@ -132,7 +199,7 @@ impl HandleItem {
             "INSERT INTO ciphertext_digest (tenant_id, handle)
             VALUES ($1, $2) ON CONFLICT DO NOTHING",
             self.tenant_id,
-            &self.handle,
+            self.handle,
         )
         .execute(db_txn.as_mut())
         .await?;
@@ -145,20 +212,24 @@ impl HandleItem {
         trx: &mut Transaction<'_, Postgres>,
         digest: Vec<u8>,
     ) -> Result<(), ExecutionError> {
+        let format: i16 = self.ct128.format().into();
+
         sqlx::query!(
             "UPDATE ciphertext_digest
-            SET ciphertext128 = $1
-            WHERE handle = $2",
+            SET ciphertext128 = $1, ciphertext128_format = $2
+            WHERE handle = $3",
             digest,
-            self.handle
+            format,
+            self.handle,
         )
         .execute(trx.as_mut())
         .await?;
 
         info!(
-            "Mark ct128 as uploaded, handle: {}, digest: {}",
+            "Mark ct128 as uploaded, handle: {}, digest: {}, format: {:?}",
             compact_hex(&self.handle),
-            compact_hex(&digest)
+            compact_hex(&digest),
+            format,
         );
 
         Ok(())
