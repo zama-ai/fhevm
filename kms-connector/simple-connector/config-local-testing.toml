@@ -49,6 +49,10 @@ gateway_config_domain_version = "1"
 # ENV: KMS_CONNECTOR_CHANNEL_SIZE
 channel_size = 5000
 
+# Maximum concurrent tasks for parallel processing
+# ENV: KMS_CONNECTOR_MAX_CONCURRENT_TASKS
+max_concurrent_tasks = 1000
+
 # Timeout configurations (5 minutes for reliable processing)
 # ENV: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
 public_decryption_timeout_secs = 300
@@ -98,7 +102,7 @@ base_poll_interval_ms = 100
 
 # Maximum blocks per batch
 # ENV: KMS_CONNECTOR_MAX_BLOCKS_PER_BATCH
-max_blocks_per_batch = 10
+max_blocks_per_batch = 50
 
 # Blocks behind latest to consider "caught up"
 # ENV: KMS_CONNECTOR_CATCH_UP_THRESHOLD

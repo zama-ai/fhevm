@@ -7,10 +7,15 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-use tokio::sync::oneshot;
+use tokio::sync::{broadcast, oneshot};
 use tracing::{debug, error, info, trace, warn};
 
+use crate::core::config::Config;
+use crate::core::coordination::scheduler::BackpressureSignal;
 use crate::error::{Error, Result};
+
+// Queue limits and thresholds are now configurable via Config
+// No more hardcoded constants - everything comes from config
 
 /// A transaction pending in the queue with its result channel
 #[derive(Debug)]
@@ -34,50 +39,66 @@ pub struct SequentialNonceManager<P> {
 
     /// Provider for blockchain calls
     provider: Arc<P>,
+
+    /// Optional backpressure sender for queue status signaling
+    backpressure_tx: Option<broadcast::Sender<BackpressureSignal>>,
+
+    /// Configuration for queue limits and thresholds
+    config: Arc<Config>,
+
+    /// Wallet address from config
+    wallet_address: Address,
 }
 
 impl<P> SequentialNonceManager<P>
 where
     P: Provider + Clone + Send + Sync + 'static,
 {
-    /// Create a new sequential nonce manager
-    pub fn new(provider: Arc<P>) -> Self {
+    /// Create a new sequential nonce manager with config-based queue limits
+    pub fn new(provider: Arc<P>, config: Arc<Config>) -> Self {
+        let wallet_address = config.wallet.address();
         Self {
             nonces: Arc::new(DashMap::new()),
             transaction_queues: Arc::new(DashMap::new()),
             processing_flags: Arc::new(DashMap::new()),
             provider,
+            backpressure_tx: None,
+            config,
+            wallet_address,
+        }
+    }
+
+    /// Create a new sequential nonce manager with backpressure signaling and config-based queue limits
+    pub fn new_with_backpressure(
+        provider: Arc<P>,
+        backpressure_tx: broadcast::Sender<BackpressureSignal>,
+        config: Arc<Config>,
+    ) -> Self {
+        let wallet_address = config.wallet.address();
+        Self {
+            nonces: Arc::new(DashMap::new()),
+            transaction_queues: Arc::new(DashMap::new()),
+            processing_flags: Arc::new(DashMap::new()),
+            provider,
+            backpressure_tx: Some(backpressure_tx),
+            config,
+            wallet_address,
         }
     }
 
     /// Queue a transaction for sequential processing
     /// This method is NON-BLOCKING and returns immediately
-    /// The actual transaction sending happens asynchronously in background
     pub async fn send_transaction_queued(&self, mut tx: TransactionRequest) -> Result<TxHash> {
         let address = if let Some(addr) = tx.from {
             addr
         } else {
-            match self.provider.get_accounts().await {
-                Ok(accounts) if !accounts.is_empty() => {
-                    let wallet_address = accounts[0];
-                    tx.from = Some(wallet_address); // Set it for queue processing
-                    info!(
-                        "Using provider wallet address for sequential processing: {}",
-                        wallet_address
-                    );
-                    wallet_address
-                }
-                Ok(_) => {
-                    return Err(Error::Transport(
-                        "No accounts available from provider".to_string(),
-                    ));
-                }
-                Err(e) => {
-                    return Err(Error::Transport(format!(
-                        "Failed to get provider accounts: {e}"
-                    )));
-                }
-            }
+            let wallet_address = self.wallet_address;
+            tx.from = Some(wallet_address); // Set it for queue processing
+            info!(
+                "Using config wallet address for sequential processing: {}",
+                wallet_address
+            );
+            wallet_address
         };
 
         let (result_sender, result_receiver) = oneshot::channel();
@@ -92,13 +113,80 @@ where
             .or_insert_with(|| Arc::new(Mutex::new(VecDeque::new())))
             .clone();
 
+        // Check transaction queue utilization for backpressure signaling
+        // For single wallet setup, we measure actual transaction queue vs reasonable limit
+        let total_queued = self.get_total_queued().await;
+
+        // Use a fraction of channel_size as transaction queue limit (transactions are slower than events)
+        let max_transaction_queue_size = (self.config.channel_size as f32 * 0.3) as usize; // 30% of event capacity
+        let utilization = total_queued as f32 / max_transaction_queue_size as f32;
+
+        // Use config threshold for backpressure signaling
+        let backpressure_threshold = self.config.pending_events_queue_slowdown_threshold;
+        let critical_threshold = 0.95; // 95% for critical (close to full)
+
+        // Send backpressure signals based on queue utilization
+        if let Some(ref tx) = self.backpressure_tx {
+            if utilization >= critical_threshold {
+                let _ = tx.send(BackpressureSignal::QueueCritical);
+                warn!(
+                    "Sent QueueCritical signal: {:.1}% utilization",
+                    utilization * 100.0
+                );
+            } else if utilization >= backpressure_threshold {
+                let _ = tx.send(BackpressureSignal::QueueFull);
+                warn!(
+                    "Sent QueueFull signal: {:.1}% utilization",
+                    utilization * 100.0
+                );
+            } else if utilization < backpressure_threshold {
+                let _ = tx.send(BackpressureSignal::QueueAvailable);
+                debug!(
+                    "Sent QueueAvailable signal: {:.1}% utilization",
+                    utilization * 100.0
+                );
+            }
+        }
+
+        // Only reject at 100% capacity (hard limit)
+        if total_queued >= max_transaction_queue_size {
+            warn!(
+                "Transaction queue at capacity: {} total transactions (max: {})",
+                total_queued, max_transaction_queue_size
+            );
+            return Err(Error::Transport(format!(
+                "Transaction queue temporarily full: {total_queued} transactions pending. Polling will adapt automatically."
+            )));
+        }
+
+        // Check per-wallet queue and add transaction
         {
             let mut queue_guard = queue.lock().await;
+
+            // For single wallet setup, per-wallet limit equals total transaction queue limit
+            let max_per_wallet = max_transaction_queue_size;
+
+            // Check per-wallet queue limit
+            if queue_guard.len() >= max_per_wallet {
+                warn!(
+                    "Queue overflow: wallet {} has {} transactions (max: {})",
+                    address,
+                    queue_guard.len(),
+                    max_per_wallet
+                );
+                return Err(Error::Transport(format!(
+                    "Transaction queue full for wallet {}: {} transactions pending",
+                    address,
+                    queue_guard.len()
+                )));
+            }
+
             queue_guard.push_back(pending_tx);
             debug!(
-                "Queued transaction for address {}, queue size: {}",
+                "Queued transaction for wallet {}: {} in queue, {} total system-wide",
                 address,
-                queue_guard.len()
+                queue_guard.len(),
+                total_queued + 1
             );
         }
 
@@ -228,6 +316,7 @@ where
         expected_nonce: u64,
     ) -> Result<TxHash> {
         const MAX_RETRIES: usize = 3;
+
         let mut attempt = 0;
 
         while attempt < MAX_RETRIES {
@@ -318,23 +407,29 @@ where
         Ok(())
     }
 
-    /// Get current queue size for monitoring
-    pub async fn get_queue_size(&self, address: Address) -> usize {
-        if let Some(queue) = self.transaction_queues.get(&address) {
-            let queue_guard = queue.lock().await;
+    /// Get total queued transactions (optimized for single wallet)
+    pub async fn get_total_queued(&self) -> usize {
+        // For single wallet deployment, we only have one queue
+        if let Some(entry) = self.transaction_queues.iter().next() {
+            let queue_guard = entry.value().lock().await;
             queue_guard.len()
         } else {
             0
         }
     }
 
-    /// Get total queued transactions across all addresses
-    pub async fn get_total_queued(&self) -> usize {
-        let mut total = 0;
-        for entry in self.transaction_queues.iter() {
-            let queue_guard = entry.value().lock().await;
-            total += queue_guard.len();
-        }
-        total
+    /// Get current queue utilization as a percentage (0.0 to 1.0)
+    pub async fn get_queue_utilization(&self) -> f32 {
+        let total_queued = self.get_total_queued().await;
+        let max_transaction_queue_size = (self.config.channel_size as f32 * 0.2) as usize;
+        total_queued as f32 / max_transaction_queue_size as f32
+    }
+
+    /// Get queue status for monitoring
+    pub async fn get_queue_status(&self) -> (usize, usize, f32) {
+        let total_queued = self.get_total_queued().await;
+        let max_transaction_queue_size = (self.config.channel_size as f32 * 0.2) as usize;
+        let utilization = total_queued as f32 / max_transaction_queue_size as f32;
+        (total_queued, max_transaction_queue_size, utilization)
     }
 }

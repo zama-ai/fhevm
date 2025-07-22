@@ -35,8 +35,9 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
         // Create broadcast channel for shutdown signaling to polling system
         let (shutdown_tx, _) = broadcast::channel(1);
 
-        // Possible gas limit
-        let decryption = DecryptionAdapter::new(config.decryption_address, provider.clone());
+        // Create decryption adapter with config for proper channel sizing
+        let decryption =
+            DecryptionAdapter::new(config.decryption_address, provider.clone(), &config);
 
         let decryption_handler =
             DecryptionHandler::new(decryption.clone(), kms_client.clone(), config.clone());
