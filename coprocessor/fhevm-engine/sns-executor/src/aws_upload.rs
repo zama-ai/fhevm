@@ -238,7 +238,7 @@ async fn upload_ciphertexts(
                     .bucket(conf.bucket_ct128.clone())
                     .metadata("Ct-Format", format_as_str)
                     .key(key)
-                    .body(ByteStream::from(ct128_bytes.clone()))
+                    .body(ByteStream::from(ct128_bytes.to_vec()))
                     .send(),
                 UploadResult::CtType128((ct128_digest.clone(), span)),
             ));

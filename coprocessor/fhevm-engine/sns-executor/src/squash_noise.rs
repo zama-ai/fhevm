@@ -37,7 +37,7 @@ pub(crate) trait SquashNoiseCiphertext {
         enable_compression: bool,
     ) -> Result<Vec<u8>, ExecutionError>;
 
-    /// Decrypts the squashed noise ciphertext and returns the decrypted value.
+    /// Tries to decrypt a squashed noise ciphertext and returns the cleartext.
     #[cfg(feature = "test_decrypt_128")]
     fn decrypt_squash_noise(
         &self,
@@ -45,6 +45,7 @@ pub(crate) trait SquashNoiseCiphertext {
         data: &[u8],
     ) -> Result<u128, ExecutionError>;
 
+    /// Tries to decrypt a compressed squashed noise ciphertext and returns the cleartext.
     #[cfg(feature = "test_decrypt_128")]
     fn decrypt_squash_noise_compressed(
         &self,
@@ -116,7 +117,7 @@ impl SquashNoiseCiphertext for SupportedFheCiphertexts {
                 clear as u128
             }
             _ => {
-                let v: SquashedNoiseFheUint = safe_deserialize(data).unwrap();
+                let v: SquashedNoiseFheUint = safe_deserialize(data)?;
                 let clear: u128 = v.decrypt(key);
                 clear
             }
@@ -136,12 +137,16 @@ impl SquashNoiseCiphertext for SupportedFheCiphertexts {
 
         let res = match self {
             SupportedFheCiphertexts::FheBool(_) => {
-                let v: tfhe::SquashedNoiseFheBool = list.get(0).unwrap().unwrap();
+                let v: tfhe::SquashedNoiseFheBool = list.get(0)?.ok_or_else(|| {
+                    anyhow::anyhow!("Failed to get the first element from the list")
+                })?;
                 let clear: bool = v.decrypt(key);
                 clear as u128
             }
             _ => {
-                let v: SquashedNoiseFheUint = list.get(0).unwrap().unwrap();
+                let v: SquashedNoiseFheUint = list.get(0)?.ok_or_else(|| {
+                    anyhow::anyhow!("Failed to get the first element from the list")
+                })?;
                 let clear: u128 = v.decrypt(key);
                 clear
             }
