@@ -15,6 +15,10 @@ pub struct Args {
     #[arg(long, default_value_t = 4)]
     pub work_items_batch_size: u32,
 
+    /// Garbage collection batch size
+    #[arg(long, default_value_t = 80)]
+    pub gc_batch_size: u32,
+
     /// NOTIFY/LISTEN channels for database that the worker listen to
     #[arg(long, num_args(1..))]
     pub pg_listen_channels: Vec<String>,
@@ -95,6 +99,12 @@ pub struct Args {
     /// and will be restarted by the orchestrator
     #[arg(long, default_value = "70s", value_parser = parse_duration)]
     pub liveness_threshold: Duration,
+
+    /// LIFO (Last In, First Out) processing
+    /// If true, the worker will process the most recent tasks
+    /// if false, default FIFO (First In, First Out) processing is used
+    #[arg(long, default_value_t = false)]
+    pub lifo: bool,
 }
 
 pub fn parse_args() -> Args {

@@ -7,9 +7,11 @@ import dotenv from "dotenv";
 import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task, types } from "hardhat/config";
 import { resolve } from "path";
+import "solidity-coverage";
 
 import "./tasks/accounts";
 import "./tasks/addHostChains";
+import "./tasks/blockExplorerVerify";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
@@ -20,6 +22,7 @@ const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 export const NUM_ACCOUNTS = 30;
+export const ADDRESSES_DIR = resolve(__dirname, "addresses");
 
 const chainIds = {
   hardhat: 31337,

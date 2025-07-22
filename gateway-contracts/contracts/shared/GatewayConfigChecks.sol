@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { gatewayConfigAddress } from "../../addresses/GatewayConfigAddress.sol";
+import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
 import "../interfaces/IGatewayConfig.sol";
 import "../libraries/HandleOps.sol";
 
@@ -22,12 +22,6 @@ abstract contract GatewayConfigChecks {
     /// @notice Checks if the sender is a KMS transaction sender.
     modifier onlyKmsTxSender() {
         _GATEWAY_CONFIG.checkIsKmsTxSender(msg.sender);
-        _;
-    }
-
-    /// @notice Checks if the sender is the pauser.
-    modifier onlyPauser() {
-        _GATEWAY_CONFIG.checkIsPauser(msg.sender);
         _;
     }
 

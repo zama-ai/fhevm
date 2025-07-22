@@ -7,9 +7,7 @@ import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol"
 
 import {ACL} from "./ACL.sol";
 import {HCULimit} from "./HCULimit.sol";
-import {aclAdd} from "../addresses/ACLAddress.sol";
-import {HCULimitAdd} from "../addresses/HCULimitAddress.sol";
-import {inputVerifierAdd} from "../addresses/InputVerifierAddress.sol";
+import {aclAdd, hcuLimitAdd, inputVerifierAdd} from "../addresses/FHEVMHostAddresses.sol";
 
 import {FheType} from "./shared/FheType.sol";
 import {FHEEvents} from "./FHEEvents.sol";
@@ -131,10 +129,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
     ACL private constant acl = ACL(aclAdd);
 
     /// @notice hcuLimit.
-    HCULimit private constant hcuLimit = HCULimit(HCULimitAdd);
+    HCULimit private constant hcuLimit = HCULimit(hcuLimitAdd);
 
     /// @notice IInputVerifier.
     IInputVerifier private constant inputVerifier = IInputVerifier(inputVerifierAdd);
+
+    /// Constant used for making sure the version number used in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMExecutor")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVMExecutorStorageLocation =
@@ -149,14 +151,16 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
      * @notice  Initializes the contract.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(3) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
     }
 
     /**
      * @notice Re-initializes the contract from V1.
      */
-    function reinitializeV2() public virtual reinitializer(3) {}
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice              Computes FHEAdd operation.

@@ -1,12 +1,13 @@
+use tx_sender::core::{Config, TransactionSender};
+
 use connector_utils::{
     cli::{Cli, Subcommands},
+    monitoring::{otlp::init_otlp_setup, server::start_monitoring_server},
     signal::install_signal_handlers,
 };
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
-use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-use tx_sender::core::{Config, TransactionSender};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -18,11 +19,6 @@ async fn main() -> ExitCode {
 }
 
 async fn run() -> anyhow::Result<()> {
-    tracing_subscriber::registry()
-        .with(fmt::layer())
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .init();
-
     let subcommand = Cli::new("TransactionSender").parse();
     match subcommand {
         Subcommands::Validate { config } => {
@@ -38,9 +34,12 @@ async fn run() -> anyhow::Result<()> {
 
             let cancel_token = CancellationToken::new();
             install_signal_handlers(cancel_token.clone())?;
+            init_otlp_setup(config.service_name.clone())?;
+            let monitoring_endpoint = config.monitoring_endpoint;
 
-            info!("Starting TransactionSender with config:\n{}", config);
-            let tx_sender = TransactionSender::from_config(config).await?;
+            info!("Starting TransactionSender with config: {:?}", config);
+            let (tx_sender, state) = TransactionSender::from_config(config).await?;
+            start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
             tx_sender.start(cancel_token).await;
         }
     }

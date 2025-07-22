@@ -1,70 +1,61 @@
-# Configuration for the KMS peers
-# This is used to define the number of peers and their IDs
-kmsPeers:
-  # Defines either the peer ID when count=1 or the start ID of a set of peers when count>1
-  id: 1
-  # The number of peers managed by the StatefulSets
-  count: 1
-
 # Configuration for the KMS connector
-# This is used to define the connector configuration
 kmsConnector:
   # Add the following to enable the connector:
   enabled: true
   # Override the name of the connector:
   nameOverride:
-  # Override the image of the connector:
+  replicas: 1
   image:
     name: ghcr.io/zama-ai/kms-connector
     # Override the tag of the connector:
     tag: latest
   kmsCore:
     name: kms-threshold-staging
+    id: 1
     clientPort: 50100
-    # Optional endpoint URL (replace use of the above variables abovse if set)
+    # Optional endpoint URL (replace use of the above variables if set)
     endpoint: ""
+  serviceName: kms-connector
+  config:
+    gatewayChainId: 54321
+    gatewayUrl: ""
+    channelSize: 5000
+    sendDeltaMs: 1000
+    publicDecryptionTimeoutSecs: 300
+    userDecryptionTimeoutSecs: 300
+    retryIntervalSecs: 1
+    messageSpacingMs: 5
+    basePollIntervalMs: 100
+    verifyCoprocessors: true
+  walletPrivateKey:
+    secret:
+      # name: wallet
+      # key:  txsender.private-key
   # Define all the environment variable needed for the connector:
-  env:
-    - name: PROBE
-      value: "true"
-    - name: KMS_CONNECTOR_GATEWAY_URL
-      value: "ws://gateway-node:8546"
-    - name: KMS_CONNECTOR_CHAIN_ID
-      value: "54321"
-    - name: KMS_CONNECTOR_DECRYPTION_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: kms-sc-deploy-kms-sc-addresses
-          key: DECRYPTION_CONTRACT_ADDRESS
-    - name: KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: kms-sc-deploy-kms-sc-addresses
-          key: GATEWAY_CONFIG_CONTRACT_ADDRESS
-    - name: KMS_CONNECTOR_CHANNEL_SIZE
-      value: "1000"
-    - name: KMS_CONNECTOR_SERVICE_NAME
-      value: "kms-connector"
-    - name: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
-      value: "300"
-    - name: KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS
-      value: "300"
-    - name: KMS_CONNECTOR_RETRY_INTERVAL_SECS
-      value: "5"
-    - name: KMS_CONNECTOR_S3_CONFIG__REGION
-      value: "us-east-1"
-    - name: KMS_CONNECTOR_S3_CONFIG__BUCKET
-      value: "my-ciphertext-bucket"
-    - name: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
-      value: "http://localhost:9876"
-    - name: KMS_CONNECTOR_VERIFY_COPROCESSORS
-      value: "true"
-    - name: KMS_CONNECTOR_PRIVATE_KEY
-      value: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+  env: {}
+#    - name: KMS_CONNECTOR_DECRYPTION_ADDRESS
+#      valueFrom:
+#        configMapKeyRef:
+#          name: kms-sc-addresses
+#          key: DECRYPTION_CONTRACT_ADDRESS
+#    - name: KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS
+#      valueFrom:
+#        configMapKeyRef:
+#          name: kms-sc-addresses
+#          key: GATEWAY_CONFIG_CONTRACT_ADDRESS
+#    - name: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
+#      value: "http://localhost:9876"
   # Define the storage for the connector:
   storage:
     storageClassName: gp3
     capacity: 5Gi
+  resources: {}
+#    requests:
+#      cpu: 100m
+#      memory: 256Mi
+#    limits:
+#      cpu: 2
+#      memory: 2Gi
   # Additional labels for the connector:
   labels: {}
   # Additional annotations for the connector:
@@ -82,14 +73,7 @@ runMode: dev
 rustLog: info
 
 podSecurityContext:
-  # To set when the image will support non root user
-  #  runAsUser: 1000
-  #  runAsGroup: 1000
-  #  fsGroup: 1000
-  #  runAsNonRoot: true
-  allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
-  capabilities:
-    drop:
-      - ALL
-  privileged: false
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  runAsNonRoot: true

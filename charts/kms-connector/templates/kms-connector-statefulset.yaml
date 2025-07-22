@@ -15,14 +15,10 @@ metadata:
     {{- end }}
   name: {{ include "kmsConnectorName" . }}
 spec:
-  replicas: {{ .Values.kmsPeers.count }}
+  replicas: {{ .Values.kmsConnector.replicas }}
   ordinals:
-    start: {{ include "kmsPeersStartID" . }}
+    start: {{ .Values.kmsConnector.kmsCore.id }}
   podManagementPolicy: Parallel
-  updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
   selector:
     matchLabels:
       app: kms-connector
@@ -36,13 +32,14 @@ spec:
         {{- toYaml . | nindent 8 }}
         {{- end }}
       annotations:
-        checksum/config: {{ include (print $.Template.BasePath "/kms-connector-configmap.yaml") . | sha256sum }}
         {{- with .Values.kmsConnector.annotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
     spec:
+      {{- with .Values.podSecurityContext }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: kms-connector
           command:
@@ -54,40 +51,40 @@ spec:
               kms-connector start -c /var/lib/kms-connector/config.toml
           image: {{ .Values.kmsConnector.image.name }}:{{ .Values.kmsConnector.image.tag }}
           env:
-            - name: POD_INDEX
-              valueFrom:
-                fieldRef:
-                  fieldPath: metadata.labels['apps.kubernetes.io/pod-index']
             - name: RUN_MODE
               value: {{ .Values.runMode }}
             - name: RUST_LOG
               value: {{ .Values.rustLog }}
-            - name: KMS_CONNECTOR_KMS_CORE_ENDPOINT
-              {{- if .Values.kmsConnector.kmsCore.endpoint }}
-              value: {{ .Values.kmsConnector.kmsCore.endpoint }}
-              {{- else }}
-              value: {{ printf "http://%s-$(POD_INDEX):%d" .Values.kmsConnector.kmsCore.name (int $.Values.kmsConnector.kmsCore.clientPort) | quote }}
-              {{- end }}
-{{- toYaml .Values.kmsConnector.env | nindent 12 }}
+            - name: PROBE
+              value: "true"
+            {{- if .Values.kmsConnector.walletPrivateKey.secret }}
+            - name: KMS_CONNECTOR_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kmsConnector.walletPrivateKey.secret.name }}
+                  key: {{ .Values.kmsConnector.walletPrivateKey.secret.key }}
+            {{- end }}
+          {{- with .Values.kmsConnector.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.kmsConnector.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - mountPath: /var/lib/kms-connector/config.toml
               subPath: config.toml
               name: config-files
-            - mountPath: /data
-              name: data
       restartPolicy: Always
       imagePullSecrets:
         - name: registry-credentials
       volumes:
         - name: config-files
           configMap:
-            # Provide the name of the ConfigMap you want to mount.
             name: {{ include "kmsConnectorName" . }}-config
-            defaultMode: 0777
-            # An array of keys from the ConfigMap to create as files
             items:
-            - key: "config.toml"
-              path: "config.toml"
+              - key: "config.toml"
+                path: "config.toml"
       {{- with .Values.kmsConnector.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
@@ -100,16 +97,4 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-  volumeClaimTemplates:
-    - metadata:
-        labels:
-          app: kms-connector
-        name: data
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        storageClassName: {{ .Values.kmsConnector.storage.storageClassName }}
-        resources:
-          requests:
-            storage: {{ .Values.kmsConnector.storage.capacity }}
 {{- end -}}

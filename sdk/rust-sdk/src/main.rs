@@ -95,9 +95,9 @@ fn demo_eip712_signatures(sdk: &FhevmSdk) -> Result<()> {
     info!("\n   Mode 1: Hash Only (No Signing)");
     let hash_only = sdk
         .eip712_builder()
-        .public_key(&public_key)
-        .add_contract(contract_addresses_str)?
-        .validity_period(start_timestamp, duration_days)
+        .with_public_key(public_key)
+        .with_contract(contract_addresses_str)?
+        .with_validity_period(start_timestamp, duration_days)
         .generate_hash()?;
 
     info!("   ✅ Hash: {}", hash_only);
@@ -106,10 +106,10 @@ fn demo_eip712_signatures(sdk: &FhevmSdk) -> Result<()> {
     info!("\n   Mode 2: Hash + Sign (Fast)");
     let signed_only = sdk
         .eip712_builder()
-        .public_key(&public_key)
-        .add_contract(contract_addresses_str)?
-        .validity_period(start_timestamp, duration_days)
-        .sign_with(wallet_private_key)
+        .with_public_key(public_key)
+        .with_contract(contract_addresses_str)?
+        .with_validity_period(start_timestamp, duration_days)
+        .with_private_key(wallet_private_key)
         .generate_and_sign_only()?;
 
     info!(
@@ -128,11 +128,11 @@ fn demo_eip712_signatures(sdk: &FhevmSdk) -> Result<()> {
     info!("\n   Mode 3: Hash + Sign + Verify (Full)");
     let verified = sdk
         .eip712_builder()
-        .public_key(&public_key)
-        .add_contract(contract_addresses_str)?
-        .validity_period(start_timestamp, duration_days)
-        .sign_with(wallet_private_key)
-        .verify(true)
+        .with_public_key(public_key)
+        .with_contract(contract_addresses_str)?
+        .with_validity_period(start_timestamp, duration_days)
+        .with_private_key(wallet_private_key)
+        .with_verification(true)
         .generate_and_sign()?;
 
     if verified.is_verified() {
@@ -185,11 +185,11 @@ fn demo_decrypt_calldata(sdk: &mut FhevmSdk) -> Result<()> {
 
     let user_calldata = sdk
         .create_user_decrypt_request_builder()
-        .add_handles_from_bytes(&handle_vecs, &contract_addresses)?
-        .user_address_from_str(user_address)?
-        .signature_from_hex(&signature)?
-        .public_key_from_hex(&public_key)?
-        .validity(1640995200, 30)?
+        .with_handles_from_bytes(&handle_vecs, &contract_addresses)?
+        .with_user_address_from_str(user_address)?
+        .with_signature_from_hex(&signature)?
+        .with_public_key_from_hex(public_key)?
+        .with_validity(1640995200, 30)?
         .build_and_generate_calldata()?;
 
     info!("   ✅ Calldata size: {} bytes", user_calldata.len());

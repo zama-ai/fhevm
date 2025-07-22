@@ -9,7 +9,7 @@ use crate::auxiliary::ZkData;
 
 pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
     tracing_subscriber::fmt().json().with_level(true).init();
-    let test_instance = test_harness::instance::setup_test_db()
+    let test_instance = test_harness::instance::setup_test_db(true)
         .await
         .expect("valid db instance");
 

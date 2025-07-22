@@ -12,9 +12,7 @@ import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
 
-import {aclAdd} from "../../addresses/ACLAddress.sol";
-import {HCULimitAdd} from "../../addresses/HCULimitAddress.sol";
-import {inputVerifierAdd} from "../../addresses/InputVerifierAddress.sol";
+import {aclAdd, hcuLimitAdd, inputVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract SupportedTypesConstants {
     uint256 internal supportedTypesFheAdd =
@@ -228,7 +226,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
 
     function _deployMockContracts() internal {
         vm.etch(aclAdd, address(new MockACL()).code);
-        vm.etch(HCULimitAdd, address(new MockHCULimit()).code);
+        vm.etch(hcuLimitAdd, address(new MockHCULimit()).code);
         vm.etch(inputVerifierAdd, address(new MockInputVerifier()).code);
         acl = MockACL(aclAdd);
         inputVerifier = MockInputVerifier(inputVerifierAdd);
@@ -346,7 +344,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(fhevmExecutor.owner(), owner);
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
-        assertEq(fhevmExecutor.getHCULimitAddress(), HCULimitAdd);
+        assertEq(fhevmExecutor.getHCULimitAddress(), hcuLimitAdd);
         assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.2.0")));
     }
 

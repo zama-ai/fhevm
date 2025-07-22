@@ -2,7 +2,10 @@
 //!
 //! The `RawConfig` can then be parsed into a `Config` in the `parsed` module.
 
-use connector_utils::config::{DeserializeRawConfig, RawContractConfig};
+use connector_utils::{
+    config::{DeserializeRawConfig, RawContractConfig},
+    monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
+};
 use serde::{Deserialize, Serialize};
 
 /// Configuration for S3 ciphertext storage.
@@ -29,12 +32,16 @@ pub struct RawConfig {
     pub gateway_config_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
+    #[serde(default = "default_events_batch_size")]
+    pub events_batch_size: u8,
+    #[serde(default = "default_grpc_request_retries")]
+    pub grpc_request_retries: u8,
     #[serde(default = "default_public_decryption_timeout")]
     pub public_decryption_timeout_secs: u64,
     #[serde(default = "default_user_decryption_timeout")]
     pub user_decryption_timeout_secs: u64,
-    #[serde(default = "default_grpc_retry_interval")]
-    pub grpc_retry_interval_secs: u64,
+    #[serde(default = "default_grpc_poll_interval")]
+    pub grpc_poll_interval_secs: u64,
     #[serde(default)]
     pub s3_config: Option<S3Config>,
     #[serde(default = "default_s3_ciphertext_retrieval_retries")]
@@ -43,14 +50,26 @@ pub struct RawConfig {
     pub s3_connect_timeout: u64,
     #[serde(default = "default_verify_coprocessors")]
     pub verify_coprocessors: bool,
+    #[serde(default = "default_monitoring_endpoint")]
+    pub monitoring_endpoint: String,
+    #[serde(default = "default_healthcheck_timeout_secs")]
+    pub healthcheck_timeout_secs: u64,
 }
 
 fn default_service_name() -> String {
-    "kms-connector".to_string()
+    "kms-connector-kms-worker".to_string()
 }
 
 fn default_database_pool_size() -> u32 {
     16
+}
+
+fn default_events_batch_size() -> u8 {
+    10
+}
+
+fn default_grpc_request_retries() -> u8 {
+    3
 }
 
 fn default_public_decryption_timeout() -> u64 {
@@ -61,12 +80,12 @@ fn default_user_decryption_timeout() -> u64 {
     300 // 5 minutes
 }
 
-fn default_grpc_retry_interval() -> u64 {
+fn default_grpc_poll_interval() -> u64 {
     5 // 5 seconds
 }
 
 fn default_s3_ciphertext_retrieval_retries() -> u8 {
-    3 // 3 seconds
+    3
 }
 
 fn default_s3_connect_timeout() -> u64 {
@@ -99,13 +118,17 @@ impl Default for RawConfig {
                 domain_version: Some("1".to_string()),
             },
             service_name: "kms-connector".to_string(),
+            events_batch_size: 10,
+            grpc_request_retries: 3,
             public_decryption_timeout_secs: 300,
             user_decryption_timeout_secs: 300,
-            grpc_retry_interval_secs: 5,
+            grpc_poll_interval_secs: 5,
             s3_ciphertext_retrieval_retries: 3,
             s3_connect_timeout: 2,
             s3_config: None,
             verify_coprocessors: false,
+            monitoring_endpoint: default_monitoring_endpoint(),
+            healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
         }
     }
 }

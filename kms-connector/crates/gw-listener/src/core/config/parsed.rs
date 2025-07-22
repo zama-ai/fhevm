@@ -4,10 +4,7 @@
 
 use super::raw::RawConfig;
 use connector_utils::config::{ContractConfig, DeserializeRawConfig, Error, Result};
-use std::{
-    fmt::{self, Display},
-    path::Path,
-};
+use std::{net::SocketAddr, path::Path, time::Duration};
 use tracing::info;
 
 /// Configuration of the `GatewayListener`.
@@ -27,23 +24,10 @@ pub struct Config {
     pub kms_management_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
-}
-
-impl Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Service Name: {}", self.service_name)?;
-        writeln!(f, "Database URL: {}", self.database_url)?;
-        writeln!(
-            f,
-            "  Database connection pool size: {}",
-            self.database_pool_size
-        )?;
-        writeln!(f, "Gateway URL: {}", self.gateway_url)?;
-        writeln!(f, "Chain ID: {}", self.chain_id)?;
-        writeln!(f, "{}", self.decryption_contract)?;
-        writeln!(f, "{}", self.kms_management_contract)?;
-        Ok(())
-    }
+    /// The monitoring server endpoint of the `GatewayListener`.
+    pub monitoring_endpoint: SocketAddr,
+    /// The timeout to perform each external service connection healthcheck.
+    pub healthcheck_timeout: Duration,
 }
 
 impl Config {
@@ -63,6 +47,10 @@ impl Config {
     }
 
     fn parse(raw_config: RawConfig) -> Result<Self> {
+        let monitoring_endpoint = raw_config
+            .monitoring_endpoint
+            .parse::<SocketAddr>()
+            .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let decryption_contract =
             ContractConfig::parse("Decryption", raw_config.decryption_contract)?;
         let kms_management_contract =
@@ -73,6 +61,8 @@ impl Config {
             return Err(Error::EmptyField("Gateway URL".to_string()));
         }
 
+        let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
+
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
@@ -81,6 +71,8 @@ impl Config {
             decryption_contract,
             kms_management_contract,
             service_name: raw_config.service_name,
+            monitoring_endpoint,
+            healthcheck_timeout,
         })
     }
 }

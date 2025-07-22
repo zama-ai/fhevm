@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
+import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
@@ -68,6 +68,10 @@ contract InputVerification is
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
+    /// Constant used for making sure the version number using in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 2;
+
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.InputVerification
     struct InputVerificationStorage {
@@ -104,7 +108,7 @@ contract InputVerification is
     /// @dev Contract name and version for EIP712 signature validation are defined here
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(2) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
         __Pausable_init();
@@ -292,15 +296,6 @@ contract InputVerification is
                     )
                 )
             );
-    }
-
-    /**
-     * @notice Computes the hash of ctHandles
-     * @param ctHandles The ctHandles
-     * @return The hash of the ctHandles
-     */
-    function _hashCtHandles(bytes32[] calldata ctHandles) internal view virtual returns (bytes32) {
-        return keccak256(abi.encodePacked(ctHandles));
     }
 
     /**

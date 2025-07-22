@@ -1,6 +1,16 @@
 use super::{Config, EventPublisher};
+use crate::{
+    core::DbEventPublisher,
+    monitoring::{
+        health::State,
+        metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS, EVENT_STORAGE_ERRORS},
+    },
+};
 use alloy::{contract::Event, network::Ethereum, providers::Provider, sol_types::SolEvent};
-use connector_utils::types::GatewayEvent;
+use connector_utils::{
+    conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    types::GatewayEvent,
+};
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     kmsmanagement::KmsManagement::{self, KmsManagementInstance},
@@ -90,16 +100,21 @@ where
         info!("✓ Subscribed to {event_name} events");
 
         loop {
-            let req = match events.next().await {
-                Some(Ok((req, _log))) => req,
+            info!("Waiting for next {event_name}...");
+            let event = match events.next().await {
+                Some(Ok((event, _log))) => event,
                 Some(Err(err)) => {
                     error!("Error while listening for {event_name} events: {err}");
+                    EVENT_RECEIVED_ERRORS.inc();
                     continue;
                 }
                 None => break error!("Alloy Provider was dropped"),
             };
-            if let Err(err) = self.publisher.publish(req).await {
+            EVENT_RECEIVED_COUNTER.inc();
+
+            if let Err(err) = self.publisher.publish(event.into()).await {
                 error!("Failed to publish {event_name}: {err}");
+                EVENT_STORAGE_ERRORS.inc();
             }
         }
     }
@@ -148,6 +163,19 @@ where
         let crsgen_filter = self.kms_management_contract.CrsgenRequest_filter();
         self.subscribe_to_events("CrsgenRequest", crsgen_filter)
             .await;
+    }
+}
+
+impl GatewayListener<GatewayProvider, DbEventPublisher> {
+    /// Creates a new `GatewayListener` instance from a valid `Config`.
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
+        let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
+        let publisher = DbEventPublisher::new(db_pool.clone());
+
+        let provider = connect_to_gateway(&config.gateway_url).await?;
+        let state = State::new(db_pool, provider.clone(), config.healthcheck_timeout);
+        let gw_listener = GatewayListener::new(&config, provider, publisher);
+        Ok((gw_listener, state))
     }
 }
 
@@ -311,8 +339,8 @@ mod tests {
     }
 
     impl EventPublisher for MockPublisher {
-        async fn publish(&self, event: impl Into<GatewayEvent>) -> Result<()> {
-            match event.into() {
+        async fn publish(&self, event: GatewayEvent) -> Result<()> {
+            match event {
                 GatewayEvent::PublicDecryption(_) => info!("PublicDecryptionRequest published!"),
                 GatewayEvent::UserDecryption(_) => info!("UserDecryptionRequest published!"),
                 GatewayEvent::PreprocessKeygen(_) => info!("PreprocessKeygenRequest published!"),

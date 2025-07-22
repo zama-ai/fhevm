@@ -5,7 +5,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
+import {fhevmExecutorAdd} from "../addresses/FHEVMHostAddresses.sol";
 
 import {ACLEvents} from "./ACLEvents.sol";
 
@@ -74,6 +74,10 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     /// @notice maximum length of contractAddresses array during delegation.
     uint256 private constant MAX_NUM_CONTRACT_ADDRESSES = 10;
 
+    /// Constant used for making sure the version number used in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 3;
+
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
 
@@ -87,7 +91,9 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
      * @param initialPauser Pauser address
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy(address initialPauser) public virtual onlyFromEmptyProxy reinitializer(3) {
+    function initializeFromEmptyProxy(
+        address initialPauser
+    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
 
@@ -103,7 +109,9 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
      * @notice Re-initializes the contract from V1, adding new storage variable pauser.
      * @param initialPauser Pauser address
      */
-    function reinitializeV2(address initialPauser) public virtual reinitializer(3) {
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV2(address initialPauser) public virtual reinitializer(REINITIALIZER_VERSION) {
         if (initialPauser == address(0)) {
             revert InvalidNullPauser();
         }

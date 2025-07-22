@@ -25,6 +25,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
+    /// Constant used for making sure the version number using in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 3;
+
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.GatewayConfig
     struct GatewayConfigStorage {
@@ -105,7 +109,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
-    ) public virtual onlyFromEmptyProxy reinitializer(3) {
+    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
 
@@ -175,7 +179,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @notice Reinitializes the contract with custodians.
-    function reinitializeV2(Custodian[] memory custodians) external reinitializer(3) {
+    function reinitializeV2(Custodian[] memory custodians) public virtual reinitializer(REINITIALIZER_VERSION) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
         if (custodians.length == 0) {
@@ -245,14 +249,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         emit AddHostChain(hostChain);
     }
 
-    /// @dev See {IGatewayConfig-checkIsPauser}.
-    function checkIsPauser(address pauserAddress) external view virtual {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if ($.pauser != pauserAddress) {
-            revert NotPauser(pauserAddress);
-        }
-    }
-
     /// @dev See {IGatewayConfig-checkIsKmsTxSender}.
     function checkIsKmsTxSender(address txSenderAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
@@ -289,7 +285,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function checkIsCustodianTxSender(address txSenderAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         if (!$._isCustodianTxSender[txSenderAddress]) {
-            revert NotCoprocessorTxSender(txSenderAddress);
+            revert NotCustodianTxSender(txSenderAddress);
         }
     }
 
@@ -297,7 +293,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function checkIsCustodianSigner(address signerAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         if (!$._isCustodianSigner[signerAddress]) {
-            revert NotCoprocessorSigner(signerAddress);
+            revert NotCustodianSigner(signerAddress);
         }
     }
 

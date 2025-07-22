@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import "./interfaces/IKmsManagement.sol";
 import "./interfaces/IGatewayConfig.sol";
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
+import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
@@ -31,6 +31,10 @@ contract KmsManagement is
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
+
+    /// Constant used for making sure the version number using in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.KmsManagement
@@ -131,7 +135,7 @@ contract KmsManagement is
     function initializeFromEmptyProxy(
         string memory fheParamsName,
         bytes32 fheParamsDigest
-    ) public virtual onlyFromEmptyProxy reinitializer(2) {
+    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
 

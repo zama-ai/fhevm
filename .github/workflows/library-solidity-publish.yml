@@ -48,7 +48,7 @@ jobs:
         with:
           package: ./library-solidity/package.json
           tag: prerelease
-          token: ${{ secrets.NPM_TOKEN }}
+          token: ${{ secrets.FHEVM_FHEVM_NPM_TOKEN }}
           provenance: true
           access: public
 
@@ -57,6 +57,6 @@ jobs:
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
           package: ./library-solidity/package.json
-          token: ${{ secrets.NPM_TOKEN }}
+          token: ${{ secrets.FHEVM_NPM_TOKEN }}
           provenance: true
           access: public

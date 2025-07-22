@@ -1,7 +1,7 @@
 mod common;
 
 use alloy::primitives::{FixedBytes, U256};
-use alloy_provider::{Provider, ProviderBuilder, WsConnect};
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use common::SignerType;
 use common::{CiphertextCommits, TestEnvironment};
 use rstest::*;

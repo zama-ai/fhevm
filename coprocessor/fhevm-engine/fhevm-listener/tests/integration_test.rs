@@ -7,10 +7,9 @@ use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use tracing::Level;
 
+use alloy::providers::{Provider, ProviderBuilder, WalletProvider, WsConnect};
+use alloy::rpc::types::TransactionRequest;
 use alloy_primitives::U256;
-use alloy_provider::{Provider, ProviderBuilder, WalletProvider, WsConnect};
-
-use alloy_rpc_types::TransactionRequest;
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
 
@@ -47,9 +46,9 @@ async fn emit_events<P, N>(
     tfhe_contract: FHEVMExecutorTestInstance<P, N>,
     acl_contract: ACLTestInstance<P, N>,
 ) where
-    P: Clone + alloy_provider::Provider<N> + 'static,
+    P: Clone + alloy::providers::Provider<N> + 'static,
     N: Clone
-        + alloy_provider::Network<TransactionRequest = TransactionRequest>
+        + alloy::providers::Network<TransactionRequest = TransactionRequest>
         + 'static,
 {
     let mut providers = vec![];
@@ -153,13 +152,14 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         no_block_immediate_recheck: false,
         ignore_tfhe_events: false,
         ignore_acl_events: false,
-        acl_contract_address: None,
-        tfhe_contract_address: None,
+        acl_contract_address: acl_contract.address().to_string(),
+        tfhe_contract_address: tfhe_contract.address().to_string(),
         database_url: DATABASE_URL.into(),
         coprocessor_api_key: Some(coprocessor_api_key),
         start_at_block: None,
         end_at_block: None,
         catchup_margin: 5,
+        catchup_paging: 3,
         log_level: Level::INFO,
         health_port: 8080,
     };
@@ -252,6 +252,18 @@ async fn test_health() -> Result<(), anyhow::Error> {
         .args(["--accounts", "1"])
         .spawn();
     let url = anvil.ws_endpoint();
+    let mut wallets = vec![];
+    for key in anvil.keys().iter() {
+        let signer: PrivateKeySigner = key.clone().into();
+        let wallet = EthereumWallet::new(signer);
+        wallets.push(wallet);
+    }
+    let provider = ProviderBuilder::new()
+        .wallet(wallets[0].clone())
+        .connect_ws(WsConnect::new(url.clone()))
+        .await?;
+    let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
+    let acl_contract = ACLTest::deploy(provider.clone()).await?;
 
     let db_pool = PgPoolOptions::new()
         .max_connections(1)
@@ -270,13 +282,14 @@ async fn test_health() -> Result<(), anyhow::Error> {
         no_block_immediate_recheck: false,
         ignore_tfhe_events: false,
         ignore_acl_events: false,
-        acl_contract_address: None,
-        tfhe_contract_address: None,
+        acl_contract_address: acl_contract.address().to_string(),
+        tfhe_contract_address: tfhe_contract.address().to_string(),
         database_url: DATABASE_URL.into(),
         coprocessor_api_key,
         start_at_block: None,
         end_at_block: None,
         catchup_margin: 5,
+        catchup_paging: 3,
         log_level: Level::INFO,
         health_port: 8081,
     };

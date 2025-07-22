@@ -2,10 +2,7 @@
 
 pragma solidity ^0.8.24;
 
-import "../addresses/ACLAddress.sol";
-import "../addresses/KMSVerifierAddress.sol";
-import "../addresses/InputVerifierAddress.sol";
-import "../addresses/FHEVMExecutorAddress.sol";
+import "../addresses/FHEVMHostAddresses.sol";
 
 import {FHEVMConfigStruct} from "./FHE.sol";
 
