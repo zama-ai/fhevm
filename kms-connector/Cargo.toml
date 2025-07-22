@@ -19,11 +19,8 @@ kms-worker.path = "crates/kms-worker"
 tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_rust_bindings = { path = "../gateway-contracts/rust_bindings" }
-kms-grpc = { git = "ssh://git@github.com/zama-ai/kms-core.git", tag = "v0.11.0-rc15", default-features = true, features = [
-    "insecure",
-] }
+kms-grpc = { git = "ssh://git@github.com/zama-ai/kms-core.git", tag = "v0.11.0-rc20", default-features = true }
 tfhe = "=1.1.3"
-tfhe-versionable = "=0.5.0"
 
 #####################################################################
 #                       External dependencies                       #
@@ -37,16 +34,15 @@ alloy = { version = "=0.13.0", default-features = false, features = [
     "signer-aws",
 ] }
 anyhow = { version = "=1.0.98", default-features = false }
-aws-config = { version = "=1.6.1", default-features = true }
-aws-sdk-kms = { version = "=1.65.0", default-features = true }
-aws-sdk-s3 = { version = "=1.82.0", default-features = true }
-bincode = { version = "=1.3.3", default-features = false } # Couldn't be upgraded because of kms-grpc
-bip39 = { version = "=2.1.0", default-features = false }
-clap = { version = "=4.5.36", default-features = true, features = [
+aws-config = { version = "=1.8.2", default-features = true }
+aws-sdk-kms = { version = "=1.79.0", default-features = true }
+aws-sdk-s3 = { version = "=1.98.0", default-features = true }
+bincode = { version = "=1.3.3", default-features = false }
+clap = { version = "=4.5.38", default-features = true, features = [
     "cargo",
     "derive",
 ] }
-config = { version = "=0.15.11", default-features = false, features = ["toml"] }
+config = { version = "=0.15.13", default-features = false, features = ["toml"] }
 dashmap = { version = "=6.1.0", default-features = false }
 futures = { version = "=0.3.31", default-features = false }
 opentelemetry = "=0.30.0"
@@ -74,26 +70,25 @@ tokio = { version = "=1.46.1", default-features = false, features = [
 ] }
 tokio-util = { version = "=0.7.15", default-features = false }
 tokio-stream = { version = "=0.1.17", default-features = false }
-tonic = { version = "=0.13.0", default-features = true, features = [
+tonic = { version = "=0.13.1", default-features = true, features = [
     "tls-ring",
     "tls-native-roots",
 ] }
-tonic-health = { version = "=0.13.0", default-features = false }
+tonic-health = { version = "=0.13.1", default-features = false }
 tracing = { version = "=0.1.41", default-features = true }
 tracing-opentelemetry = "0.31.0"
 tracing-subscriber = { version = "=0.3.19", default-features = true, features = [
     "env-filter",
 ] }
-url = { version = "=2.5.4", default-features = false }
 
 #####################################################################
 #                       Testing dependencies                        #
 #####################################################################
 connector-tests.path = "tests"
-rand = "=0.8.5"
+rand = "=0.9.2"
 rstest = "=0.25.0"
 serial_test = "3.2.0"
-tempfile = "=3.19.1"
+tempfile = "=3.20.0"
 testcontainers = "=0.24.0"
 toml = { version = "=0.9.2", default-features = true }
 tracing-test = { version = "=0.2.5", default-features = false }
