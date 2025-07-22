@@ -5,10 +5,14 @@ use tfhe::core_crypto::gpu::get_number_of_gpus;
 use tfhe::{
     set_server_key,
     shortint::parameters::{
-        v1_0::compact_public_key_only::p_fail_2_minus_128::ks_pbs::V1_0_PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
-        v1_0::key_switching::p_fail_2_minus_128::ks_pbs::V1_0_PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
-        v1_0::list_compression::V1_0_COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
+        v1_0::{
+            compact_public_key_only::p_fail_2_minus_128::ks_pbs::V1_0_PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
+            key_switching::p_fail_2_minus_128::ks_pbs::V1_0_PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
+            list_compression::V1_0_COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
+        },
+        v1_3::{self, V1_3_NOISE_SQUASHING_COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128},
         CompactPublicKeyEncryptionParameters, CompressionParameters,
+        NoiseSquashingCompressionParameters, NoiseSquashingParameters,
         ShortintKeySwitchingParameters,
     },
     zk::CompactPkeCrs,
@@ -23,6 +27,10 @@ pub const TFHE_COMPACT_PK_ENCRYPTION_PARAMS: CompactPublicKeyEncryptionParameter
     V1_0_PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
 pub const TFHE_KS_PARAMS: ShortintKeySwitchingParameters =
     V1_0_PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+pub const TFHE_NOISE_SQUASHING_PARAMS: NoiseSquashingParameters =
+    v1_3::V1_3_NOISE_SQUASHING_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+pub const TFHE_NOISE_SQUASHING_PARAMS_COMPRESSED: NoiseSquashingCompressionParameters =
+    V1_3_NOISE_SQUASHING_COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
 
 #[cfg(not(feature = "gpu"))]
 pub const TFHE_PARAMS: tfhe::shortint::ClassicPBSParameters =
@@ -89,6 +97,8 @@ impl FhevmKeys {
 
     pub fn new_config() -> Config {
         ConfigBuilder::with_custom_parameters(TFHE_PARAMS)
+            .enable_noise_squashing(TFHE_NOISE_SQUASHING_PARAMS)
+            .enable_noise_squashing_compression(TFHE_NOISE_SQUASHING_PARAMS_COMPRESSED)
             .enable_compression(TFHE_COMPRESSION_PARAMS)
             .use_dedicated_compact_public_key_parameters((
                 TFHE_COMPACT_PK_ENCRYPTION_PARAMS,
