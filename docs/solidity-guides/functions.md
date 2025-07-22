@@ -177,7 +177,7 @@ More information about the behavior of these operators can be found at the [TFHE
 
 #### Bitwise operations (`AND`, `OR`, `XOR`)
 
-Unlike other binary operations, bitwise operations do not natively accept a mix of ciphertext and plaintext inputs. To ease developer experience, the `FHE` library adds function overloads for these operations. Such overloads implicitely do a trivial encryption before actually calling the operation function, as shown in the examples below.
+Unlike other binary operations, bitwise operations do not natively accept a mix of ciphertext and plaintext inputs. To ease developer experience, the `FHE` library adds function overloads for these operations. Such overloads implicitly do a trivial encryption before actually calling the operation function, as shown in the examples below.
 
 Available for euint\* types:
 
