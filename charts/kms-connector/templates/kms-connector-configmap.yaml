@@ -9,27 +9,19 @@ metadata:
 data:
   config.toml: |
     # Service name for tracing (optional, default: "kms-connector")
-    #service_name = "kms-connector"
+    service_name = {{ .Values.kmsConnector.serviceName | quote }}
 
-    # private key for anvil
-    # this one is for testing purpose
-    #private_key = "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f"
+    chain_id = {{ .Values.kmsConnector.config.gatewayChainId | quote }}
+    gateway_url = {{ .Values.kmsConnector.config.gatewayUrl | quote }}
+    channel_size = {{ .Values.kmsConnector.config.channelSize | quote }}
+    send_delta_ms = {{ .Values.kmsConnector.config.sendDeltaMs | quote }}
+    public_decryption_timeout_secs = {{ .Values.kmsConnector.config.publicDecryptionTimeoutSecs | quote }}
+    user_decryption_timeout_secs = {{ .Values.kmsConnector.config.userDecryptionTimeoutSecs | quote }}
+    retry_interval_secs = {{ .Values.kmsConnector.config.retryIntervalSecs | quote }}
+    message_spacing_ms = {{ .Values.kmsConnector.config.messageSpacingMs | quote }}
+    base_poll_interval_ms ={{ .Values.kmsConnector.config.basePollIntervalMs | quote }}
+    verify_coprocessors = {{ .Values.kmsConnector.config.verifyCoprocessors | quote }}
 
-    # KMS Core GRPC endpoint required, overriden by env vars
-    #kms_core_endpoint =
-
-    # Gateway WebSocket RPC URL endpoint (required)
-    #gateway_url =
-
-    # Chain ID (required)
-    #chain_id =
-
-    # Decryption contract address, required, overriden by env vars
-    #decryption_address = "0x..."
-
-    # GatewayConfig contract address, required, overriden by env vars
-    #gateway_config_address = "0x..."
-
-    # Size of the event processing channel (optional)
-    #channel_size =
+    # KMS Core GRPC endpoint
+    kms_core_endpoint = {{ if .Values.kmsConnector.kmsCore.endpoint }}{{ .Values.kmsConnector.kmsCore.endpoint }}{{ else }}{{ printf "http://%s-%d:%d" .Values.kmsConnector.kmsCore.name (int .Values.kmsConnector.kmsCore.id) (int .Values.kmsConnector.kmsCore.clientPort) | quote }}{{ end }}
 {{- end -}}
