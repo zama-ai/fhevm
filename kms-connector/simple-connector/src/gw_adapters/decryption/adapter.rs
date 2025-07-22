@@ -166,8 +166,7 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             }
         }
 
-        // Step 2: Clear nonce and re-estimate gas with 300% multiplier
-        call.nonce = None; // Force fresh nonce fetch
+        // Step 2: Re-estimate gas with 300% multiplier (keep original nonce)
         call.gas = None; // Clear previous gas estimation to prevent double-inflation
         self.estimate_gas(id, &mut call).await;
 
@@ -176,15 +175,14 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             Err(e) => {
                 warn!(
                     decryption_id = ?id,
-                    "Transaction attempt 2 failed, waiting 3s before final retry: {}",
+                    "Transaction attempt 2 failed, waiting 500ms before final retry: {}",
                     e
                 );
-                tokio::time::sleep(Duration::from_secs(3)).await;
+                tokio::time::sleep(Duration::from_millis(500)).await;
             }
         }
 
         // Step 3: Final attempt after 3-second wait (keeping increased gas)
-        call.nonce = None; // Force fresh nonce fetch
         call.gas = None; // Clear previous gas estimation to prevent double-inflation
         self.estimate_gas(id, &mut call).await;
 
