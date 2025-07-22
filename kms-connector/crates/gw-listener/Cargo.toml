@@ -10,6 +10,7 @@ version.workspace = true
 connector-utils.workspace = true
 fhevm_gateway_rust_bindings.workspace = true
 
+actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
 prometheus.workspace = true

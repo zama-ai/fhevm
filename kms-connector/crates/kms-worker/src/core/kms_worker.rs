@@ -1,11 +1,14 @@
-use crate::core::{
-    KmsResponsePublisher,
-    config::Config,
-    event_picker::{DbEventPicker, EventPicker},
-    event_processor::{
-        DbEventProcessor, DecryptionProcessor, EventProcessor, KmsClient, s3::S3Service,
+use crate::{
+    core::{
+        KmsResponsePublisher,
+        config::Config,
+        event_picker::{DbEventPicker, EventPicker},
+        event_processor::{
+            DbEventProcessor, DecryptionProcessor, EventProcessor, KmsClient, s3::S3Service,
+        },
+        kms_response_publisher::DbKmsResponsePublisher,
     },
-    kms_response_publisher::DbKmsResponsePublisher,
+    monitoring::health::{KmsHealthClient, State},
 };
 use connector_utils::conn::{GatewayProvider, connect_to_db, connect_to_gateway};
 use std::fmt::Display;
@@ -87,21 +90,29 @@ where
 
 impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePublisher> {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<Self> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let provider = connect_to_gateway(&config.gateway_url).await?;
         let kms_client = KmsClient::connect(&config).await?;
+        let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoint).await?;
 
         let event_picker =
             DbEventPicker::connect(db_pool.clone(), config.events_batch_size).await?;
 
-        let s3_service = S3Service::new(&config, provider);
+        let s3_service = S3Service::new(&config, provider.clone());
         let decryption_processor = DecryptionProcessor::new(&config, s3_service);
         let event_processor =
-            DbEventProcessor::new(kms_client, decryption_processor, db_pool.clone());
-        let response_publisher = DbKmsResponsePublisher::new(db_pool);
+            DbEventProcessor::new(kms_client.clone(), decryption_processor, db_pool.clone());
+        let response_publisher = DbKmsResponsePublisher::new(db_pool.clone());
 
-        Ok(Self::new(event_picker, event_processor, response_publisher))
+        let state = State::new(
+            db_pool,
+            provider,
+            kms_health_client,
+            config.healthcheck_timeout,
+        );
+        let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
+        Ok((kms_worker, state))
     }
 }
 

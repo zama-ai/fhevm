@@ -4,7 +4,7 @@
 
 use super::raw::RawConfig;
 use connector_utils::config::{ContractConfig, DeserializeRawConfig, Error, Result};
-use std::{net::SocketAddr, path::Path};
+use std::{net::SocketAddr, path::Path, time::Duration};
 use tracing::info;
 
 /// Configuration of the `GatewayListener`.
@@ -14,8 +14,6 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
-    /// The endpoint used to collect metrics of the `GatewayListener`.
-    pub metrics_endpoint: SocketAddr,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The Chain ID of the Gateway.
@@ -26,6 +24,10 @@ pub struct Config {
     pub kms_management_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
+    /// The monitoring server endpoint of the `GatewayListener`.
+    pub monitoring_endpoint: SocketAddr,
+    /// The timeout to perform each external service connection healthcheck.
+    pub healthcheck_timeout: Duration,
 }
 
 impl Config {
@@ -45,8 +47,8 @@ impl Config {
     }
 
     fn parse(raw_config: RawConfig) -> Result<Self> {
-        let metrics_endpoint = raw_config
-            .metrics_endpoint
+        let monitoring_endpoint = raw_config
+            .monitoring_endpoint
             .parse::<SocketAddr>()
             .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let decryption_contract =
@@ -59,15 +61,18 @@ impl Config {
             return Err(Error::EmptyField("Gateway URL".to_string()));
         }
 
+        let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
+
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
-            metrics_endpoint,
             gateway_url: raw_config.gateway_url,
             chain_id: raw_config.chain_id,
             decryption_contract,
             kms_management_contract,
             service_name: raw_config.service_name,
+            monitoring_endpoint,
+            healthcheck_timeout,
         })
     }
 }

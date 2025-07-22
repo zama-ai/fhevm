@@ -4,7 +4,7 @@
 
 use connector_utils::{
     config::{DeserializeRawConfig, RawContractConfig},
-    otlp::default_metrics_endpoint,
+    monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
 };
 use serde::{Deserialize, Serialize};
 
@@ -25,8 +25,6 @@ pub struct RawConfig {
     pub database_url: String,
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
-    #[serde(default = "default_metrics_endpoint")]
-    pub metrics_endpoint: String,
     pub gateway_url: String,
     pub kms_core_endpoint: String,
     pub chain_id: u64,
@@ -52,6 +50,10 @@ pub struct RawConfig {
     pub s3_connect_timeout: u64,
     #[serde(default = "default_verify_coprocessors")]
     pub verify_coprocessors: bool,
+    #[serde(default = "default_monitoring_endpoint")]
+    pub monitoring_endpoint: String,
+    #[serde(default = "default_healthcheck_timeout_secs")]
+    pub healthcheck_timeout_secs: u64,
 }
 
 fn default_service_name() -> String {
@@ -102,7 +104,6 @@ impl Default for RawConfig {
         Self {
             database_url: "postgres://postgres:postgres@localhost".to_string(),
             database_pool_size: 16,
-            metrics_endpoint: "0.0.0.0:9100".to_string(),
             gateway_url: "ws://localhost:8545".to_string(),
             kms_core_endpoint: "http://localhost:50052".to_string(),
             chain_id: 1,
@@ -126,6 +127,8 @@ impl Default for RawConfig {
             s3_connect_timeout: 2,
             s3_config: None,
             verify_coprocessors: false,
+            monitoring_endpoint: default_monitoring_endpoint(),
+            healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
         }
     }
 }
