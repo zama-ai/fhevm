@@ -2,7 +2,7 @@
 **FHEVM Coprocessor** provides the execution service for FHE computations.
 
 It includes a **Coprocessor** service [FHEVM-coprocessor](docs/getting_started/fhevm/coprocessor/coprocessor_backend.md). The Coprocessor
-itself consists of multiple microservices, e.g. for FHE compute, input verify, transaction sending, listenting to events, etc.
+itself consists of multiple microservices, e.g. for FHE compute, input verify, transaction sending, listening to events, etc.
 
 ## Main features
 
