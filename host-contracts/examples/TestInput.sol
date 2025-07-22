@@ -28,8 +28,13 @@ contract TestInput {
         FHE.requestDecryption(cts, this.callbackUint64.selector);
     }
 
-    function callbackUint64(uint256 requestID, uint64 decryptedInput, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestID, signatures);
+    function callbackUint64(
+        uint256 requestID,
+        uint64 decryptedInput,
+        bytes[] memory signatures,
+        bytes memory extraData
+    ) public {
+        FHE.checkSignatures(requestID, signatures, extraData);
         yUint64 = decryptedInput;
     }
 
@@ -54,9 +59,10 @@ contract TestInput {
         bool decryptedBool,
         uint8 decryptedUint8,
         address decryptedAddress,
-        bytes[] memory signatures
+        bytes[] memory signatures,
+        bytes memory extraData
     ) public {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, signatures, extraData);
         yBool = decryptedBool;
         yUint8 = decryptedUint8;
         yAddress = decryptedAddress;
