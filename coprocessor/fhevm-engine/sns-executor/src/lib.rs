@@ -147,8 +147,8 @@ impl BigCiphertext {
         self.bytes.is_empty()
     }
 
-    pub fn bytes(&self) -> &Vec<u8> {
-        &self.bytes
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes[..]
     }
 
     pub fn format(&self) -> Ciphertext128Format {
