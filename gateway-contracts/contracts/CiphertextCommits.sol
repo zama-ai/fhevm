@@ -8,7 +8,6 @@ import "./interfaces/IGatewayConfig.sol";
 import "./interfaces/IKmsManagement.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
-import "./shared/Pausable.sol";
 import "./libraries/HandleOps.sol";
 
 /**
@@ -19,8 +18,7 @@ contract CiphertextCommits is
     ICiphertextCommits,
     Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
-    GatewayConfigChecks,
-    Pausable
+    GatewayConfigChecks
 {
     /// @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
@@ -83,7 +81,6 @@ contract CiphertextCommits is
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
-        __Pausable_init();
     }
 
     /**
@@ -98,7 +95,7 @@ contract CiphertextCommits is
         uint256 keyId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) external virtual onlyCoprocessorTxSender whenNotPaused {
+    ) external virtual onlyCoprocessorTxSender {
         // Extract the chainId from the ciphertext handle
         uint256 chainId = HandleOps.extractChainId(ctHandle);
 

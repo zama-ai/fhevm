@@ -40,7 +40,6 @@ describe("MultichainAcl", function () {
   let multichainAcl: MultichainAcl;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
-  let pauser: SignerWithAddress;
 
   beforeEach(async function () {
     // Initialize used global variables before each test
@@ -49,7 +48,6 @@ describe("MultichainAcl", function () {
     multichainAcl = fixture.multichainAcl;
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     owner = fixture.owner;
-    pauser = fixture.pauser;
   });
 
   describe("Deployment", function () {
@@ -126,16 +124,6 @@ describe("MultichainAcl", function () {
         .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
         .withArgs(newCtHandle, accountAddress);
     });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await multichainAcl.connect(owner).pause();
-
-      // Try calling paused allow account
-      await expect(
-        multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress),
-      ).to.be.revertedWithCustomError(multichainAcl, "EnforcedPause");
-    });
   });
 
   describe("Allow public decrypt", async function () {
@@ -181,16 +169,6 @@ describe("MultichainAcl", function () {
       await expect(multichainAcl.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed(newCtHandle))
         .to.be.revertedWithCustomError(multichainAcl, "PublicDecryptNotAllowed")
         .withArgs(newCtHandle);
-    });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await multichainAcl.connect(owner).pause();
-
-      // Try calling paused allow public decrypt
-      await expect(
-        multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle),
-      ).to.be.revertedWithCustomError(multichainAcl, "EnforcedPause");
     });
   });
 
@@ -312,49 +290,6 @@ describe("MultichainAcl", function () {
       await expect(multichainAcl.checkAccountDelegated(hostChainId, fakeDelegationAccounts, allowedContracts))
         .revertedWithCustomError(multichainAcl, "AccountNotDelegated")
         .withArgs(hostChainId, toValues(fakeDelegationAccounts), allowedContracts[0]);
-    });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await multichainAcl.connect(owner).pause();
-
-      // Try calling paused delegate account
-      await expect(
-        multichainAcl
-          .connect(coprocessorTxSenders[0])
-          .delegateAccount(hostChainId, delegationAccounts, allowedContracts),
-      ).to.be.revertedWithCustomError(multichainAcl, "EnforcedPause");
-    });
-  });
-
-  describe("Pause", async function () {
-    it("Should pause and unpause contract with owner address", async function () {
-      // Check that the contract is not paused
-      expect(await multichainAcl.paused()).to.be.false;
-
-      // Pause the contract with the owner address
-      await expect(multichainAcl.connect(owner).pause()).to.emit(multichainAcl, "Paused").withArgs(owner);
-      expect(await multichainAcl.paused()).to.be.true;
-
-      // Unpause the contract with the owner address
-      await expect(multichainAcl.connect(owner).unpause()).to.emit(multichainAcl, "Unpaused").withArgs(owner);
-      expect(await multichainAcl.paused()).to.be.false;
-    });
-
-    it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
-      expect(await multichainAcl.paused()).to.be.false;
-
-      // Pause the contract with the pauser address
-      await expect(multichainAcl.connect(pauser).pause()).to.emit(multichainAcl, "Paused").withArgs(pauser);
-      expect(await multichainAcl.paused()).to.be.true;
-    });
-
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
-      await expect(multichainAcl.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(multichainAcl, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
     });
   });
 });

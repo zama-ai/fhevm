@@ -5,7 +5,6 @@ import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/acc
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
-import "./shared/Pausable.sol";
 
 /**
  * @title GatewayConfig contract
@@ -13,7 +12,7 @@ import "./shared/Pausable.sol";
  * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
  * @dev See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
-contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy, Pausable {
+contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy {
     /// @notice The maximum chain ID.
     uint256 internal constant MAX_CHAIN_ID = type(uint64).max;
 
@@ -111,7 +110,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         Custodian[] memory initialCustodians
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
-        __Pausable_init();
 
         if (initialPauser == address(0)) {
             revert InvalidNullPauser();
@@ -199,7 +197,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IGatewayConfig-updatePauser}.
-    function updatePauser(address newPauser) external virtual onlyOwner whenNotPaused {
+    function updatePauser(address newPauser) external virtual onlyOwner {
         if (newPauser == address(0)) {
             revert InvalidNullPauser();
         }
@@ -209,29 +207,25 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IGatewayConfig-updateMpcThreshold}.
-    function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner whenNotPaused {
+    function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner {
         _setMpcThreshold(newMpcThreshold);
         emit UpdateMpcThreshold(newMpcThreshold);
     }
 
     /// @dev See {IGatewayConfig-updatePublicDecryptionThreshold}.
-    function updatePublicDecryptionThreshold(
-        uint256 newPublicDecryptionThreshold
-    ) external virtual onlyOwner whenNotPaused {
+    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external virtual onlyOwner {
         _setPublicDecryptionThreshold(newPublicDecryptionThreshold);
         emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
     }
 
     /// @dev See {IGatewayConfig-updateUserDecryptionThreshold}.
-    function updateUserDecryptionThreshold(
-        uint256 newUserDecryptionThreshold
-    ) external virtual onlyOwner whenNotPaused {
+    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external virtual onlyOwner {
         _setUserDecryptionThreshold(newUserDecryptionThreshold);
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
     /// @dev See {IGatewayConfig-addHostChain}.
-    function addHostChain(HostChain calldata hostChain) external virtual onlyOwner whenNotPaused {
+    function addHostChain(HostChain calldata hostChain) external virtual onlyOwner {
         if (hostChain.chainId == 0) {
             revert InvalidNullChainId();
         }
