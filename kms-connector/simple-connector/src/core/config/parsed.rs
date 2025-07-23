@@ -52,7 +52,7 @@ pub struct Config {
     /// Whether to verify coprocessors against the `GatewayConfig` contract (optional, defaults to true)
     pub verify_coprocessors: Option<bool>,
     /// Enable coordinated message sending with timing synchronization
-    pub enable_coordinated_sending: bool,
+
     /// Delay in milliseconds after block timestamp before sending messages
     pub message_send_delta_ms: u64,
     /// Spacing in milliseconds between individual messages
@@ -118,11 +118,6 @@ impl Display for Config {
         writeln!(f, "Retry Interval: {}s", self.retry_interval.as_secs())?;
 
         // Coordination and scheduling parameters
-        writeln!(
-            f,
-            "Coordinated Sending: {}",
-            self.enable_coordinated_sending
-        )?;
         writeln!(f, "Message Send Delta: {}ms", self.message_send_delta_ms)?;
         writeln!(f, "Message Spacing: {}ms", self.message_spacing_ms)?;
         writeln!(f, "Max Pending Events: {}", self.pending_events_max)?;
@@ -225,9 +220,6 @@ impl Config {
         let user_decryption_timeout = Duration::from_secs(raw_config.user_decryption_timeout_secs);
         let retry_interval = Duration::from_secs(raw_config.retry_interval_secs);
 
-        // Validate coordination parameters
-        Self::validate_coordination_config(&raw_config)?;
-
         Ok(Self {
             gateway_url: raw_config.gateway_url,
             kms_core_endpoint: raw_config.kms_core_endpoint,
@@ -246,7 +238,7 @@ impl Config {
             wallet,
             s3_config: raw_config.s3_config,
             verify_coprocessors: raw_config.verify_coprocessors,
-            enable_coordinated_sending: raw_config.enable_coordinated_sending,
+
             message_send_delta_ms: raw_config.message_send_delta_ms,
             message_spacing_ms: raw_config.message_spacing_ms,
             pending_events_max: raw_config.pending_events_max,
@@ -259,53 +251,6 @@ impl Config {
             base_poll_interval_ms: raw_config.base_poll_interval_ms,
             max_blocks_per_batch: raw_config.max_blocks_per_batch,
         })
-    }
-
-    fn validate_coordination_config(raw_config: &RawConfig) -> Result<()> {
-        if raw_config.enable_coordinated_sending {
-            // Validate timing parameters
-            if raw_config.message_send_delta_ms > 60000 {
-                return Err(Error::Config(
-                    "message_send_delta_ms cannot exceed 60 seconds".to_string(),
-                ));
-            }
-
-            if raw_config.message_spacing_ms > 10000 {
-                return Err(Error::Config(
-                    "message_spacing_ms cannot exceed 10 seconds".to_string(),
-                ));
-            }
-
-            // Validate queue parameters
-            if raw_config.pending_events_max == 0 || raw_config.pending_events_max > 100000 {
-                return Err(Error::Config(
-                    "pending_events_max must be between 1 and 100,000".to_string(),
-                ));
-            }
-
-            if raw_config.pending_events_queue_slowdown_threshold <= 0.0
-                || raw_config.pending_events_queue_slowdown_threshold > 1.0
-            {
-                return Err(Error::Config(
-                    "pending_events_queue_slowdown_threshold must be between 0.0 and 1.0"
-                        .to_string(),
-                ));
-            }
-
-            // Validate retry parameters
-            if raw_config.max_retries > 10 {
-                return Err(Error::Config("max_retries cannot exceed 10".to_string()));
-            }
-
-            // Validate concurrent task limits
-            if raw_config.max_concurrent_tasks == 0 || raw_config.max_concurrent_tasks > 1000 {
-                return Err(Error::Config(
-                    "max_concurrent_tasks must be between 1 and 1,000".to_string(),
-                ));
-            }
-        }
-
-        Ok(())
     }
 
     async fn parse_kms_wallet(raw_config: &mut RawConfig) -> Result<KmsWallet> {
@@ -663,7 +608,7 @@ mod tests {
                 s3_config: None,
                 aws_kms_config: None,
                 verify_coprocessors: Some(true),
-                enable_coordinated_sending: false,
+
                 message_send_delta_ms: 100,
                 message_spacing_ms: 10,
                 pending_events_max: 10000,

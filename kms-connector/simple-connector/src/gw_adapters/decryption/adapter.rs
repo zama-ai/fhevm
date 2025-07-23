@@ -1,4 +1,5 @@
 use crate::core::config::Config;
+use crate::core::backpressure::BackpressureSignal;
 use crate::core::utils::nonce_manager::SequentialNonceManager;
 use crate::error::{Error, Result};
 use alloy::{
@@ -21,9 +22,9 @@ pub struct DecryptionAdapter<P> {
 
 impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
     /// Create a new decryption adapter with sequential nonce management and backpressure signaling
-    pub fn new(decryption_address: Address, provider: Arc<P>, config: &Config) -> Self {
+    pub fn new(decryption_address: Address, provider: Arc<P>, config: &Config) -> (Self, broadcast::Receiver<BackpressureSignal>) {
         // Create backpressure channel for queue monitoring using configured channel size
-        let (backpressure_tx, _backpressure_rx) = broadcast::channel(config.channel_size);
+        let (backpressure_tx, backpressure_rx) = broadcast::channel(config.channel_size);
 
         // Use backpressure-enabled nonce manager with config
         let nonce_manager = Arc::new(SequentialNonceManager::new_with_backpressure(
@@ -37,11 +38,13 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
             config.channel_size
         );
 
-        Self {
+        let adapter = Self {
             decryption_address,
             provider,
             nonce_manager,
-        }
+        };
+        
+        (adapter, backpressure_rx)
     }
 
     /// Get the provider

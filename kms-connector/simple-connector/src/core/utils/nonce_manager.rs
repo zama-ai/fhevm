@@ -11,7 +11,7 @@ use tokio::sync::{broadcast, oneshot};
 use tracing::{debug, error, info, trace, warn};
 
 use crate::core::config::Config;
-use crate::core::coordination::scheduler::BackpressureSignal;
+use crate::core::backpressure::BackpressureSignal;
 use crate::error::{Error, Result};
 
 // Queue limits and thresholds are now configurable via Config

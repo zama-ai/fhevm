@@ -3,7 +3,7 @@
 //! This module provides a clean, performant polling strategy that can be used as an
 //! alternative to WebSocket-based event streaming.
 
-use crate::core::coordination::scheduler::BackpressureSignal;
+use crate::core::backpressure::BackpressureSignal;
 use crate::gw_adapters::events::KmsCoreEvent;
 use crate::{Error, Result, core::config::Config};
 use alloy::providers::Provider;

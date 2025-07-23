@@ -61,8 +61,7 @@ pub struct RawConfig {
     #[serde(default = "default_verify_coprocessors")]
     pub verify_coprocessors: Option<bool>,
     // Coordination parameters
-    #[serde(default = "default_enable_coordinated_sending")]
-    pub enable_coordinated_sending: bool,
+
     #[serde(default = "default_message_send_delta_ms")]
     pub message_send_delta_ms: u64,
     #[serde(default = "default_message_spacing_ms")]
@@ -108,10 +107,6 @@ fn default_retry_interval() -> u64 {
 
 fn default_verify_coprocessors() -> Option<bool> {
     Some(false)
-}
-
-fn default_enable_coordinated_sending() -> bool {
-    true
 }
 
 fn default_message_send_delta_ms() -> u64 {

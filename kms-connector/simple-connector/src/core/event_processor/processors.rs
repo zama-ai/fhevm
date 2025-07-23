@@ -1,5 +1,4 @@
 use alloy::{hex, providers::Provider};
-use chrono::Utc;
 use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
@@ -7,10 +6,10 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     core::{
+        backpressure::BackpressureSignal,
         config::Config,
-        coordination::{MessageScheduler, scheduler::BackpressureSignal},
         decryption::handler::DecryptionHandler,
-        polling::{get_block_timestamp, remove_block_timestamp},
+        polling::remove_block_timestamp,
         utils::s3,
     },
     error::Result,
@@ -23,7 +22,7 @@ pub struct EventProcessor<P> {
     config: Config,
     provider: Arc<P>,
     shutdown: Option<broadcast::Receiver<()>>,
-    message_scheduler: Option<Arc<MessageScheduler<P>>>,
+    // Backpressure receiver for polling system integration
     backpressure_rx: Option<broadcast::Receiver<BackpressureSignal>>,
 }
 
@@ -34,35 +33,13 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
         config: Config,
         provider: Arc<P>,
         shutdown: broadcast::Receiver<()>,
+        backpressure_rx: Option<broadcast::Receiver<BackpressureSignal>>,
     ) -> Result<Self> {
-        // Create MessageScheduler if coordinated sending is enabled
-        let (message_scheduler, backpressure_rx) = if config.enable_coordinated_sending {
-            info!("Coordinated sending enabled - starting MessageScheduler");
-
-            // Use the same shutdown receiver as the EventProcessor to coordinate shutdown
-            let scheduler_shutdown_rx = shutdown.resubscribe();
-
-            let (scheduler, backpressure_rx) = MessageScheduler::new(
-                decryption_handler.clone(),
-                config.clone(),
-                provider.clone(),
-                scheduler_shutdown_rx,
-            );
-
-            // IMPORTANT: Start the scheduler background task
-            scheduler.start_scheduler().await?;
-
-            (Some(Arc::new(scheduler)), Some(backpressure_rx))
-        } else {
-            (None, None)
-        };
-
         Ok(Self {
             decryption_handler,
             config,
             provider,
             shutdown: Some(shutdown),
-            message_scheduler,
             backpressure_rx,
         })
     }
@@ -201,36 +178,23 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
                                 continue;
                             }
 
-                            // Use MessageScheduler if coordinated sending is enabled
-                            if let Some(scheduler) = &self.message_scheduler {
-                                info!("[QUEUING] PublicDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
+                            // Process decryption directly since we already have S3 materials
+                            // This eliminates the duplicate S3 fetch that would happen in the scheduler
+                            info!("[PROCESSING] PublicDecryptionRequest-{} with pre-fetched S3 materials", req_clone.decryptionId);
+                            
+                            // Clean up timestamp to prevent memory leaks
+                            let event_id = req_clone.decryptionId.to_string();
+                            remove_block_timestamp(&event_id);
 
-                                // Get block timestamp for coordinated sending - this fixes the critical timing bug
-                                let event_id = req_clone.decryptionId.to_string();
-                                let block_timestamp = get_block_timestamp(&event_id)
-                                    .unwrap_or_else(|| {
-                                        warn!("No block timestamp found for event {}, using current UTC time", event_id);
-                                        Utc::now().timestamp() as u64
-                                    });
-
-                                // Clean up timestamp to prevent memory leaks
-                                remove_block_timestamp(&event_id);
-
-                                scheduler.schedule_message(
-                                    KmsCoreEvent::PublicDecryptionRequest(req_clone.clone()),
-                                    block_timestamp,
-                                ).await
-                            } else {
-                                // Immediate processing for non-coordinated mode
-                                self.decryption_handler.handle_decryption_request_response(
-                                    req.decryptionId,
-                                    key_id,
-                                    sns_ciphertext_materials,
-                                    None,
-                                    None,
-                                )
-                                .await
-                            }
+                            // Handle decryption directly with the S3 materials we just fetched
+                            self.decryption_handler.handle_decryption_request_response(
+                                req.decryptionId,
+                                key_id,
+                                sns_ciphertext_materials,
+                                None, // client_addr is None for public requests
+                                None, // public_key is None for public requests
+                            )
+                            .await
                         }
 
                         KmsCoreEvent::UserDecryptionRequest(req) => {
@@ -280,43 +244,30 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
                                 user_key_prefixed,
                             );
 
-                            // Use MessageScheduler if coordinated sending is enabled
-                            if let Some(scheduler) = &self.message_scheduler {
-                                info!("[QUEUING] UserDecryptionRequest-{} for coordinated sending", req_clone.decryptionId);
+                            // Process decryption directly since we already have S3 materials
+                            // This eliminates the duplicate S3 fetch that would happen in the scheduler
+                            info!("[PROCESSING] UserDecryptionRequest-{} with pre-fetched S3 materials", req_clone.decryptionId);
+                            
+                            // Clean up timestamp to prevent memory leaks
+                            let event_id = req_clone.decryptionId.to_string();
+                            remove_block_timestamp(&event_id);
 
-                                // Get block timestamp for coordinated sending - this fixes the critical timing bug
-                                let event_id = req_clone.decryptionId.to_string();
-                                let block_timestamp = get_block_timestamp(&event_id)
-                                    .unwrap_or_else(|| {
-                                        warn!("No block timestamp found for event {}, using current UTC time", event_id);
-                                        Utc::now().timestamp() as u64
-                                    });
-
-                                // Clean up timestamp to prevent memory leaks
-                                remove_block_timestamp(&event_id);
-
-                                scheduler.schedule_message(
-                                    KmsCoreEvent::UserDecryptionRequest(req_clone.clone()),
-                                    block_timestamp,
-                                ).await
-                            } else {
-                                // Immediate processing for non-coordinated mode
-                                match self.decryption_handler.handle_decryption_request_response(
-                                    req.decryptionId,
-                                    key_id,
-                                    sns_ciphertext_materials,
-                                    Some(req.userAddress),
-                                    Some(req.publicKey)
-                                ).await {
-                                    Ok(_) => Ok(()),
-                                    Err(e) => {
-                                        error!(
-                                            "Error processing UserDecryptionRequest-{}: {}",
-                                            req.decryptionId, e
-                                        );
-                                        // Log error but continue processing other events
-                                        Ok(())
-                                    }
+                            // Handle decryption directly with the S3 materials we just fetched
+                            match self.decryption_handler.handle_decryption_request_response(
+                                req.decryptionId,
+                                key_id,
+                                sns_ciphertext_materials,
+                                Some(req.userAddress), // client_addr for user requests
+                                Some(req.publicKey), // public_key for user requests
+                            ).await {
+                                Ok(_) => Ok(()),
+                                Err(e) => {
+                                    error!(
+                                        "Error processing UserDecryptionRequest-{}: {}",
+                                        req.decryptionId, e
+                                    );
+                                    // Log error but continue processing other events
+                                    Ok(())
                                 }
                             }
                         }
