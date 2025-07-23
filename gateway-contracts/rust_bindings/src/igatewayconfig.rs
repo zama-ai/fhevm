@@ -49,7 +49,6 @@ interface IGatewayConfig {
     error NotCustodianTxSender(address txSenderAddress);
     error NotKmsSigner(address signerAddress);
     error NotKmsTxSender(address txSenderAddress);
-    error NotPauser(address pauserAddress);
 
     event AddHostChain(HostChain hostChain);
     event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
@@ -1058,17 +1057,6 @@ interface IGatewayConfig {
     "inputs": [
       {
         "name": "txSenderAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotPauser",
-    "inputs": [
-      {
-        "name": "pauserAddress",
         "type": "address",
         "internalType": "address"
       }
@@ -3725,79 +3713,6 @@ error NotKmsTxSender(address txSenderAddress);
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSenderAddress,
-                    ),
-                )
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotPauser(address)` and selector `0x206a346e`.
-```solidity
-error NotPauser(address pauserAddress);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotPauser {
-        #[allow(missing_docs)]
-        pub pauserAddress: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotPauser> for UnderlyingRustTuple<'_> {
-            fn from(value: NotPauser) -> Self {
-                (value.pauserAddress,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotPauser {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { pauserAddress: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotPauser {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotPauser(address)";
-            const SELECTOR: [u8; 4] = [32u8, 106u8, 52u8, 110u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.pauserAddress,
                     ),
                 )
             }
@@ -9507,8 +9422,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         NotKmsSigner(NotKmsSigner),
         #[allow(missing_docs)]
         NotKmsTxSender(NotKmsTxSender),
-        #[allow(missing_docs)]
-        NotPauser(NotPauser),
     }
     #[automatically_derived]
     impl IGatewayConfigErrors {
@@ -9520,7 +9433,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 140u8, 141u8, 64u8],
-            [32u8, 106u8, 52u8, 110u8],
             [34u8, 247u8, 63u8, 234u8],
             [38u8, 205u8, 117u8, 220u8],
             [42u8, 124u8, 110u8, 246u8],
@@ -9545,7 +9457,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 20usize;
+        const COUNT: usize = 19usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -9606,7 +9518,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::NotKmsTxSender(_) => {
                     <NotKmsTxSender as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::NotPauser(_) => <NotPauser as alloy_sol_types::SolError>::SELECTOR,
             }
         }
         #[inline]
@@ -9640,19 +9551,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
-                },
-                {
-                    fn NotPauser(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigErrors::NotPauser)
-                    }
-                    NotPauser
                 },
                 {
                     fn InvalidNullChainId(
@@ -10001,9 +9899,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
-                Self::NotPauser(inner) => {
-                    <NotPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
-                }
             }
         }
         #[inline]
@@ -10122,9 +10017,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                         out,
                     )
-                }
-                Self::NotPauser(inner) => {
-                    <NotPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
             }
         }

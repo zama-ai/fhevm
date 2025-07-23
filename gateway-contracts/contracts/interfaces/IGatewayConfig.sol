@@ -109,12 +109,6 @@ interface IGatewayConfig {
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
 
     /**
-     * @notice Error emitted when an address is not the pauser.
-     * @param pauserAddress The address that is not the pauser.
-     */
-    error NotPauser(address pauserAddress);
-
-    /**
      * @notice Error emitted when an address is not a KMS transaction sender.
      * @param txSenderAddress The address that is not a KMS transaction sender.
      */
