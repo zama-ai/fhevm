@@ -173,11 +173,11 @@ impl std::fmt::Display for FhevmError {
             }
             Self::FheOperationDoesntSupportEbytesAsInput {
                 lhs_handle,
-                rhs_handle: rhs_value,
+                rhs_handle,
                 fhe_operation,
                 fhe_operation_name,
             } => {
-                write!(f, "zero on the right side of scalar division, lhs handle: {lhs_handle}, rhs value: {rhs_value}, fhe operation: {fhe_operation} fhe operation name:{fhe_operation_name}")
+                write!(f, "operation doesn't support ebytes as input, lhs handle: {lhs_handle}, rhs handle: {rhs_handle}, fhe operation: {fhe_operation} fhe operation name:{fhe_operation_name}")
             }
             Self::UnexpectedOperandCountForFheOperation {
                 fhe_operation,
