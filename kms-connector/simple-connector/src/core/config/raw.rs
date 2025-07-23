@@ -107,7 +107,7 @@ fn default_verify_coprocessors() -> Option<bool> {
 }
 
 fn default_pending_events_max() -> usize {
-    10000 // Maximum pending events before backpressure
+    50000 // Maximum pending events before backpressure
 }
 
 fn default_pending_events_queue_slowdown_threshold() -> f32 {
@@ -115,7 +115,7 @@ fn default_pending_events_queue_slowdown_threshold() -> f32 {
 }
 
 fn default_max_parallel_transactions() -> usize {
-    100
+    500
 }
 
 fn default_max_retries() -> u32 {
@@ -127,7 +127,7 @@ fn default_starting_block_number() -> Option<u64> {
 }
 
 fn default_max_concurrent_tasks() -> usize {
-    500 // Maximum 500 concurrent tasks
+    2000
 }
 
 fn default_use_polling_mode() -> bool {
@@ -139,7 +139,7 @@ fn default_base_poll_interval_ms() -> u64 {
 }
 
 fn default_max_blocks_per_batch() -> u64 {
-    10 // Process 10 blocks per batch
+    25
 }
 
 impl RawConfig {
