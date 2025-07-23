@@ -51,18 +51,12 @@ pub struct Config {
     // TODO: implement to increase security
     /// Whether to verify coprocessors against the `GatewayConfig` contract (optional, defaults to true)
     pub verify_coprocessors: Option<bool>,
-    /// Enable coordinated message sending with timing synchronization
-
-    /// Delay in milliseconds after block timestamp before sending messages
-    pub message_send_delta_ms: u64,
-    /// Spacing in milliseconds between individual messages
-    pub message_spacing_ms: u64,
-    /// Maximum number of pending messages in queue
+    /// Maximum number of pending events in queue
     pub pending_events_max: usize,
-    /// Queue capacity threshold (0.0-1.0) at which to slow down processing
+    /// Queue capacity threshold (0.0-1.0) at which to slow down processing (needed for backpressure)
     pub pending_events_queue_slowdown_threshold: f32,
-    /// Maximum number of retries per message
-    pub max_retries: u32,
+    /// Maximum number of parallel in-flight transactions
+    pub max_parallel_transactions: usize,
     /// Starting block number for historical parsing (None = latest)
     pub starting_block_number: Option<u64>,
     /// Maximum number of concurrent tasks
@@ -117,16 +111,18 @@ impl Display for Config {
         )?;
         writeln!(f, "Retry Interval: {}s", self.retry_interval.as_secs())?;
 
-        // Coordination and scheduling parameters
-        writeln!(f, "Message Send Delta: {}ms", self.message_send_delta_ms)?;
-        writeln!(f, "Message Spacing: {}ms", self.message_spacing_ms)?;
+        // Backpressure parameters
         writeln!(f, "Max Pending Events: {}", self.pending_events_max)?;
         writeln!(
             f,
             "Pending Events Queue Slowdown Threshold: {:.1}%",
             self.pending_events_queue_slowdown_threshold * 100.0
         )?;
-        writeln!(f, "Max Retries: {}", self.max_retries)?;
+        writeln!(
+            f,
+            "Max Parallel Transactions: {}",
+            self.max_parallel_transactions
+        )?;
         writeln!(f, "Max Concurrent Tasks: {}", self.max_concurrent_tasks)?;
 
         // Starting block configuration
@@ -238,13 +234,10 @@ impl Config {
             wallet,
             s3_config: raw_config.s3_config,
             verify_coprocessors: raw_config.verify_coprocessors,
-
-            message_send_delta_ms: raw_config.message_send_delta_ms,
-            message_spacing_ms: raw_config.message_spacing_ms,
             pending_events_max: raw_config.pending_events_max,
             pending_events_queue_slowdown_threshold: raw_config
                 .pending_events_queue_slowdown_threshold,
-            max_retries: raw_config.max_retries,
+            max_parallel_transactions: raw_config.max_parallel_transactions,
             starting_block_number: raw_config.starting_block_number,
             max_concurrent_tasks: raw_config.max_concurrent_tasks,
             use_polling_mode: raw_config.use_polling_mode,
@@ -609,10 +602,9 @@ mod tests {
                 aws_kms_config: None,
                 verify_coprocessors: Some(true),
 
-                message_send_delta_ms: 100,
-                message_spacing_ms: 10,
                 pending_events_max: 10000,
                 pending_events_queue_slowdown_threshold: 0.8,
+                max_parallel_transactions: 100,
                 max_retries: 3,
                 starting_block_number: None,
                 max_concurrent_tasks: 100,

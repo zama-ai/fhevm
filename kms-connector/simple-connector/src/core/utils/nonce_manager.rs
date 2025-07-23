@@ -8,10 +8,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::{broadcast, oneshot};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
-use crate::core::config::Config;
 use crate::core::backpressure::BackpressureSignal;
+use crate::core::config::Config;
 use crate::error::{Error, Result};
 
 // Queue limits and thresholds are now configurable via Config
@@ -86,7 +86,9 @@ where
         }
     }
 
-    /// Queue a transaction for sequential processing
+    /// Queue a transac
+    ///
+    ///  sequential processing
     /// This method is NON-BLOCKING and returns immediately
     pub async fn send_transaction_queued(&self, mut tx: TransactionRequest) -> Result<TxHash> {
         let address = if let Some(addr) = tx.from {
@@ -249,28 +251,52 @@ where
         }
     }
 
-    /// Process a single transaction with proper nonce management and retry logic
+    /// Process a single transaction with aggressive parallel nonce management for maximum throughput
     async fn process_single_transaction(&self, mut tx: TransactionRequest) -> Result<TxHash> {
         let address = tx.from.unwrap();
 
-        // Get next nonce with proper synchronization
+        // Check if we're at the parallel transaction limit
+        let in_flight_count = self.get_in_flight_transaction_count(address).await;
+        if in_flight_count >= self.config.max_parallel_transactions {
+            // Minimal wait
+            warn!(
+                "[MILD] Hit mild limit in parallel transactions sending ({} >= {}), delaying by 25ms",
+                in_flight_count, self.config.max_parallel_transactions
+            );
+            tokio::time::sleep(Duration::from_millis(25)).await;
+
+            // Recheck after brief wait
+            let updated_count = self.get_in_flight_transaction_count(address).await;
+            if updated_count >= self.config.max_parallel_transactions {
+                warn!(
+                    "[PARALLEL] Hit parallel transactions sending limit ({} >= {}), backing off",
+                    updated_count, self.config.max_parallel_transactions
+                );
+                // Send backpressure signal to slow down event processing
+                if let Some(ref tx) = self.backpressure_tx {
+                    let _ = tx.send(BackpressureSignal::QueueFull);
+                }
+                // Shorter backoff with WebSocket - faster confirmations
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        }
+
         let nonce = self.get_next_nonce_internal(address).await?;
         tx.nonce = Some(nonce);
 
-        trace!(
-            "Processing transaction for {} with nonce {}",
-            address, nonce
-        );
-
-        // Send transaction with retry logic
-        match self.send_with_enhanced_retry(tx, nonce).await {
+        match self.send_transaction_immediately(tx, nonce).await {
             Ok(tx_hash) => {
-                info!("Transaction sent: {} (nonce: {})", tx_hash, nonce);
+                info!(
+                    "[PARALLEL] Transaction sent: {} (nonce: {}, in-flight: {})",
+                    tx_hash,
+                    nonce,
+                    in_flight_count + 1
+                );
+                self.track_transaction_confirmation_async(tx_hash, nonce);
                 Ok(tx_hash)
             }
             Err(e) => {
-                // On failure, refresh nonce from chain to recover
-                warn!("Transaction failed (nonce: {}): {}", nonce, e);
+                error!("[PARALLEL] Transaction failed: {} (nonce: {})", e, nonce);
                 if let Err(refresh_err) = self.refresh_nonce_from_chain(address).await {
                     error!("Failed to refresh nonce: {}", refresh_err);
                 }
@@ -279,8 +305,18 @@ where
         }
     }
 
-    /// Get next nonce with proper synchronization
-    pub async fn get_next_nonce_internal(&self, address: Address) -> Result<u64> {
+    /// Get the count of in-flight transactions for aggressive parallel management
+    async fn get_in_flight_transaction_count(&self, address: Address) -> usize {
+        if let Some(queue_ref) = self.transaction_queues.get(&address) {
+            let queue = queue_ref.lock().await;
+            queue.len()
+        } else {
+            0
+        }
+    }
+
+    /// Get the next nonce for the given address, incrementing the stored value
+    async fn get_next_nonce_internal(&self, address: Address) -> Result<u64> {
         const NONE: u64 = u64::MAX;
 
         let nonce_mutex = self
@@ -308,33 +344,33 @@ where
         Ok(current_nonce)
     }
 
-    /// Send transaction with retry logic and nonce recovery
-    /// Uses constant retry strategy: 100ms, then 500ms delays with gas price bumping
-    async fn send_with_enhanced_retry(
+    /// Send transaction immediately with retry logic for parallel processing
+    async fn send_transaction_immediately(
         &self,
         mut tx: TransactionRequest,
         expected_nonce: u64,
     ) -> Result<TxHash> {
         const MAX_RETRIES: usize = 3;
-
         let mut attempt = 0;
 
         while attempt < MAX_RETRIES {
-            // Ensure nonce is always set correctly for retries
+            // Set nonce and aggressive gas price for immediate sending
             tx.nonce = Some(expected_nonce);
 
-            // Set aggressive gas price from first attempt to prevent gas failures
+            // Use aggressive gas price from first attempt
             if attempt == 0 {
                 if let Some(gas_price) = tx.gas_price {
-                    tx.gas_price = Some(gas_price * 700 / 100); // 600% boost from start
-                    info!(
-                        "Set aggressive gas price {} for first attempt (nonce: {})",
+                    tx.gas_price = Some(gas_price * 700 / 100); // 600% boost for fast processing
+                    debug!(
+                        "Set aggressive gas price {} for immediate send (nonce: {}, attempt: {})",
                         tx.gas_price.unwrap(),
-                        expected_nonce
+                        expected_nonce,
+                        attempt + 1
                     );
                 }
             }
 
+            // Send transaction immediately
             match self.provider.send_transaction(tx.clone()).await {
                 Ok(pending_tx) => {
                     let tx_hash = *pending_tx.tx_hash();
@@ -355,7 +391,7 @@ where
                         || error_msg.contains("insufficient")
                     {
                         warn!(
-                            "Gas-related error on attempt {} (nonce: {}): {}",
+                            "Gas-related error on immediate send attempt {} (nonce: {}): {}",
                             attempt + 1,
                             expected_nonce,
                             e
@@ -365,11 +401,14 @@ where
                             // Bump gas price by 20% for retry
                             if let Some(gas_price) = tx.gas_price {
                                 tx.gas_price = Some(gas_price * 120 / 100);
-                                info!("Bumped gas price to {} for retry", tx.gas_price.unwrap());
+                                info!(
+                                    "Bumped gas price to {} for immediate retry",
+                                    tx.gas_price.unwrap()
+                                );
                             }
 
-                            // Efficient retry delays: 100ms, then 500ms
-                            let delay_ms = if attempt == 0 { 100 } else { 500 };
+                            // Short retry delays for immediate sending: 50ms, then 100ms
+                            let delay_ms = if attempt == 0 { 50 } else { 100 };
                             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
 
                             attempt += 1;
@@ -379,7 +418,7 @@ where
 
                     // Non-retryable error or max retries exceeded
                     error!(
-                        "Transaction failed permanently (nonce: {}): {}",
+                        "Transaction failed permanently on immediate send (nonce: {}): {}",
                         expected_nonce, e
                     );
                     return Err(Error::Transport(e.to_string()));
@@ -387,7 +426,60 @@ where
             }
         }
 
-        Err(Error::Transport("Max retries exceeded".to_string()))
+        Err(Error::Transport(
+            "Max retries exceeded on immediate send".to_string(),
+        ))
+    }
+
+    /// Track transaction confirmation asynchronously (fire-and-forget)
+    /// This enables monitoring of parallel transactions without blocking the main flow
+    fn track_transaction_confirmation_async(&self, tx_hash: TxHash, nonce: u64) {
+        let provider = self.provider.clone();
+
+        tokio::spawn(async move {
+            let mut attempts = 0;
+            const MAX_CONFIRMATION_ATTEMPTS: usize = 30;
+            const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_millis(50);
+
+            while attempts < MAX_CONFIRMATION_ATTEMPTS {
+                tokio::time::sleep(CONFIRMATION_POLL_INTERVAL).await;
+                attempts += 1;
+
+                match provider.get_transaction_receipt(tx_hash).await {
+                    Ok(Some(receipt)) => {
+                        info!(
+                            "[TRX SUCCESS] Transaction confirmed: {} (nonce: {}, attempt: {})",
+                            tx_hash, nonce, attempts
+                        );
+                        info!(
+                            "[GAS] consumed by transaction {}: {}",
+                            tx_hash, receipt.gas_used
+                        );
+                        return; // Success - exit tracking
+                    }
+                    Ok(None) => {
+                        debug!(
+                            "Transaction receipt not yet available: {} (nonce: {}, attempt: {})",
+                            tx_hash, nonce, attempts
+                        );
+                        // Continue polling
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Error checking transaction receipt: {} (nonce: {}, attempt: {}): {}",
+                            tx_hash, nonce, attempts, e
+                        );
+                        // Continue polling despite errors
+                    }
+                }
+            }
+
+            // Max attempts reached - log warning but don't fail
+            warn!(
+                "Transaction confirmation tracking timed out: {} (nonce: {}) after {} attempts",
+                tx_hash, nonce, MAX_CONFIRMATION_ATTEMPTS
+            );
+        });
     }
 
     /// Refresh nonce from chain (used for recovery)

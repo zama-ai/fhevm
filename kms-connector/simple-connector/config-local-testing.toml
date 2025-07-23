@@ -120,5 +120,5 @@ catch_up_threshold = 3
 # ENV: KMS_CONNECTOR_S3_CONFIG__REGION, KMS_CONNECTOR_S3_CONFIG__BUCKET, KMS_CONNECTOR_S3_CONFIG__ENDPOINT
 [s3_config]
 region = "eu-west-1"
-bucket = "kms-public"
+bucket = "ct128"
 endpoint = "http://localhost:9000"

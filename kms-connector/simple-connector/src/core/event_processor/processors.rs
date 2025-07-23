@@ -1,16 +1,12 @@
 use alloy::{hex, providers::Provider};
-use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
 use crate::{
     core::{
-        backpressure::BackpressureSignal,
-        config::Config,
-        decryption::handler::DecryptionHandler,
-        polling::remove_block_timestamp,
-        utils::s3,
+        backpressure::BackpressureSignal, config::Config, decryption::handler::DecryptionHandler,
+        polling::remove_block_timestamp, utils::s3_client::S3Client,
     },
     error::Result,
     gw_adapters::events::KmsCoreEvent,
@@ -19,8 +15,7 @@ use crate::{
 /// Process events from the Gateway
 pub struct EventProcessor<P> {
     decryption_handler: DecryptionHandler<P>,
-    config: Config,
-    provider: Arc<P>,
+    s3_client: S3Client,
     shutdown: Option<broadcast::Receiver<()>>,
     // Backpressure receiver for polling system integration
     backpressure_rx: Option<broadcast::Receiver<BackpressureSignal>>,
@@ -31,14 +26,15 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
     pub async fn new(
         decryption_handler: DecryptionHandler<P>,
         config: Config,
-        provider: Arc<P>,
+        _provider: Arc<P>,
         shutdown: broadcast::Receiver<()>,
         backpressure_rx: Option<broadcast::Receiver<BackpressureSignal>>,
     ) -> Result<Self> {
+        let s3_client = S3Client::new(config.s3_config.clone());
+
         Ok(Self {
             decryption_handler,
-            config,
-            provider,
+            s3_client,
             shutdown: Some(shutdown),
             backpressure_rx,
         })
@@ -47,83 +43,6 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
     /// Get a backpressure receiver for polling system integration
     pub fn get_backpressure_receiver(&self) -> Option<broadcast::Receiver<BackpressureSignal>> {
         self.backpressure_rx.as_ref().map(|rx| rx.resubscribe())
-    }
-
-    /// Helper method to retrieve ciphertext materials from S3
-    async fn retrieve_sns_ciphertext_materials(
-        &self,
-        sns_materials: Vec<SnsCiphertextMaterial>,
-    ) -> Vec<(Vec<u8>, Vec<u8>)> {
-        let s3_config = self.config.s3_config.clone();
-
-        // Process all SNS ciphertext materials
-        let mut sns_ciphertext_materials = Vec::new();
-        for sns_material in sns_materials {
-            let extracted_ct_handle = sns_material.ctHandle.to_vec();
-            let extracted_sns_ciphertext_digest = sns_material.snsCiphertextDigest.to_vec();
-            let coprocessor_addresses = sns_material.coprocessorTxSenderAddresses;
-
-            // Get S3 URL and retrieve ciphertext
-            // 1. For each SNS material, we try to retrieve its ciphertext from multiple possible S3 URLs
-            // 2. Once we successfully retrieve a ciphertext from any of those URLs, we break out of the S3 URLs loop
-            // 3. Then we continue processing the next SNS material in the outer loop
-            let s3_urls = s3::prefetch_coprocessor_buckets(
-                coprocessor_addresses,
-                self.config.gateway_config_address,
-                self.provider.clone(),
-                s3_config.as_ref(),
-            )
-            .await;
-
-            if s3_urls.is_empty() {
-                warn!(
-                    "No S3 URLs found for ciphertext digest {}",
-                    alloy::hex::encode(&extracted_sns_ciphertext_digest)
-                );
-                continue;
-            }
-
-            let mut ciphertext_retrieved = false;
-            for s3_url in s3_urls {
-                match s3::retrieve_s3_ciphertext(
-                    s3_url.clone(),
-                    extracted_sns_ciphertext_digest.clone(),
-                )
-                .await
-                {
-                    Ok(ciphertext) => {
-                        info!(
-                            "Successfully retrieved ciphertext for digest {} from S3 URL {}",
-                            alloy::hex::encode(&extracted_sns_ciphertext_digest),
-                            s3_url
-                        );
-                        sns_ciphertext_materials.push((extracted_ct_handle.clone(), ciphertext));
-                        ciphertext_retrieved = true;
-                        break; // We want to stop as soon as ciphertext corresponding to extracted_sns_ciphertext_digest is retrieved
-                    }
-                    Err(error) => {
-                        // Log warning but continue trying other URLs
-                        warn!(
-                            "Failed to retrieve ciphertext for digest {} from S3 URL {}: {}",
-                            alloy::hex::encode(&extracted_sns_ciphertext_digest),
-                            s3_url,
-                            error
-                        );
-                        // Continue to the next URL
-                    }
-                }
-            }
-
-            if !ciphertext_retrieved {
-                warn!(
-                    "Failed to retrieve ciphertext for digest {} from any S3 URL",
-                    alloy::hex::encode(&extracted_sns_ciphertext_digest)
-                );
-                // Continue to the next SNS material
-            }
-        }
-
-        sns_ciphertext_materials
     }
 
     /// Process events from Gateway
@@ -138,146 +57,29 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
         loop {
             tokio::select! {
                 Some(event) = event_rx.recv() => {
-                    let result = match event {
+                    // Log event reception immediately
+                    match &event {
                         KmsCoreEvent::PublicDecryptionRequest(req) => {
-                            info!(
-                                "[RECEIVED] PublicDecryptionRequest-{}",
-                                req.decryptionId
-                            );
-
-                            // Extract keyId from the first SNS ciphertext material if available
-                            let key_id = if !req.snsCtMaterials.is_empty() {
-                                let extracted_key_id = req.snsCtMaterials.first().unwrap().keyId;
-                                let key_id_hex = alloy::hex::encode(extracted_key_id.to_be_bytes::<32>());
-                                debug!(
-                                    "Extracted key_id {} from snsCtMaterials[0] for PublicDecryptionRequest-{}",
-                                    key_id_hex, req.decryptionId
-                                );
-                                key_id_hex
-                            } else {
-                                // Fail the request if no materials available
-                                error!(
-                                    "No snsCtMaterials found for PublicDecryptionRequest-{}, cannot proceed without a valid key_id",
-                                    req.decryptionId
-                                );
-                                continue;
-                            };
-
-                            // Clone the request first to avoid borrow checker issues
-                            let req_clone = req.clone();
-
-                            // Retrieve ciphertext materials from S3
-                            let sns_ciphertext_materials = self.retrieve_sns_ciphertext_materials(req.snsCtMaterials).await;
-
-                            // If we couldn't retrieve any materials, fail the request
-                            if sns_ciphertext_materials.is_empty() {
-                                error!(
-                                    "Failed to retrieve any ciphertext materials for PublicDecryptionRequest-{}",
-                                    req_clone.decryptionId
-                                );
-                                continue;
-                            }
-
-                            // Process decryption directly since we already have S3 materials
-                            // This eliminates the duplicate S3 fetch that would happen in the scheduler
-                            info!("[PROCESSING] PublicDecryptionRequest-{} with pre-fetched S3 materials", req_clone.decryptionId);
-                            
-                            // Clean up timestamp to prevent memory leaks
-                            let event_id = req_clone.decryptionId.to_string();
-                            remove_block_timestamp(&event_id);
-
-                            // Handle decryption directly with the S3 materials we just fetched
-                            self.decryption_handler.handle_decryption_request_response(
-                                req.decryptionId,
-                                key_id,
-                                sns_ciphertext_materials,
-                                None, // client_addr is None for public requests
-                                None, // public_key is None for public requests
-                            )
-                            .await
+                            info!("[RECEIVED] PublicDecryptionRequest-{}", req.decryptionId);
                         }
-
                         KmsCoreEvent::UserDecryptionRequest(req) => {
-                            info!(
-                                "[RECEIVED] UserDecryptionRequest-{}",
-                                req.decryptionId
-                            );
-
-                            // Extract keyId from the first SNS ciphertext material if available
-                            let key_id = if !req.snsCtMaterials.is_empty() {
-                                let extracted_key_id = req.snsCtMaterials.first().unwrap().keyId;
-                                let key_id_hex = alloy::hex::encode(extracted_key_id.to_be_bytes::<32>());
-                                info!(
-                                    "Extracted key_id {} from snsCtMaterials[0] for UserDecryptionRequest-{}",
-                                    key_id_hex, req.decryptionId
-                                );
-                                key_id_hex
-                            } else {
-                                // Fail the request if no materials available
-                                error!(
-                                    "No snsCtMaterials found for UserDecryptionRequest-{} (contract: {}), cannot proceed without a valid key_id",
-                                    req.decryptionId, req.publicKey
-                                );
-                                continue;
-                            };
-
-                            // Clone the request first to avoid borrow checker issues
-                            let req_clone = req.clone();
-
-                            // Retrieve ciphertext materials from S3
-                            let sns_ciphertext_materials = self.retrieve_sns_ciphertext_materials(req.snsCtMaterials).await;
-
-                            // If we couldn't retrieve any materials, fail the request
-                            if sns_ciphertext_materials.is_empty() {
-                                error!(
-                                    "Failed to retrieve any ciphertext materials for UserDecryptionRequest {}",
-                                    req_clone.decryptionId
-                                );
-                                continue;
-                            }
-
-                            let user_key_prefixed = hex::encode_prefixed(req_clone.userAddress);
-
-                            debug!(
-                                "UserDecryptionRequest-{} was received with userAddress: {}",
-                                req_clone.decryptionId,
-                                user_key_prefixed,
-                            );
-
-                            // Process decryption directly since we already have S3 materials
-                            // This eliminates the duplicate S3 fetch that would happen in the scheduler
-                            info!("[PROCESSING] UserDecryptionRequest-{} with pre-fetched S3 materials", req_clone.decryptionId);
-                            
-                            // Clean up timestamp to prevent memory leaks
-                            let event_id = req_clone.decryptionId.to_string();
-                            remove_block_timestamp(&event_id);
-
-                            // Handle decryption directly with the S3 materials we just fetched
-                            match self.decryption_handler.handle_decryption_request_response(
-                                req.decryptionId,
-                                key_id,
-                                sns_ciphertext_materials,
-                                Some(req.userAddress), // client_addr for user requests
-                                Some(req.publicKey), // public_key for user requests
-                            ).await {
-                                Ok(_) => Ok(()),
-                                Err(e) => {
-                                    error!(
-                                        "Error processing UserDecryptionRequest-{}: {}",
-                                        req.decryptionId, e
-                                    );
-                                    // Log error but continue processing other events
-                                    Ok(())
-                                }
-                            }
+                            info!("[RECEIVED] UserDecryptionRequest-{}", req.decryptionId);
                         }
-                        _ => Ok(()), // Ignore other events for now
-                    };
-
-                    if let Err(e) = result {
-                        error!("Failed to process event: {}", e);
-                        // Continue processing other events
+                        _ => {
+                            info!("[RECEIVED] Other event type");
+                        }
                     }
+
+                    // Spawn concurrent task for processing
+                    let decryption_handler = self.decryption_handler.clone();
+                    let s3_client = self.s3_client.clone();
+                    tokio::spawn(async move {
+                        if let Err(e) = Self::process_single_event(decryption_handler, event, s3_client).await {
+                            error!("Event processing failed: {}", e);
+                        }
+                    });
+
+                    // Continue immediately to receive next event
                 }
                 _ = shutdown.recv() => {
                     info!("Received shutdown signal in event processor");
@@ -287,6 +89,178 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
         }
 
         info!("Event processing stopped");
+        Ok(())
+    }
+
+    /// Process a single event concurrently (static method to avoid self borrowing issues)
+    async fn process_single_event<P2: Provider + Clone + 'static>(
+        decryption_handler: DecryptionHandler<P2>,
+        event: KmsCoreEvent,
+        s3_client: S3Client,
+    ) -> Result<()> {
+        match event {
+            KmsCoreEvent::PublicDecryptionRequest(req) => {
+                // Extract keyId from the first SNS ciphertext material if available (CONVENTION)
+                let key_id = if !req.snsCtMaterials.is_empty() {
+                    let extracted_key_id = req.snsCtMaterials.first().unwrap().keyId;
+                    let key_id_hex = alloy::hex::encode(extracted_key_id.to_be_bytes::<32>());
+                    debug!(
+                        "Extracted key_id {} from snsCtMaterials[0] for PublicDecryptionRequest-{}",
+                        key_id_hex, req.decryptionId
+                    );
+                    key_id_hex
+                } else {
+                    // Fail the request if no materials available
+                    error!(
+                        "No snsCtMaterials found for PublicDecryptionRequest-{}, cannot proceed without a valid key_id",
+                        req.decryptionId
+                    );
+                    return Err(crate::error::Error::InvalidRequestType(
+                        "No snsCtMaterials found".to_string(),
+                    ));
+                };
+
+                let req_clone = req.clone();
+
+                // Retrieve ciphertext materials from S3
+                let sns_ciphertext_materials = match s3_client
+                    .retrieve_ciphertext_materials(req.snsCtMaterials)
+                    .await
+                {
+                    Ok(materials) => materials,
+                    Err(e) => {
+                        error!(
+                            "Failed to retrieve ciphertext materials for PublicDecryptionRequest-{}: {}",
+                            req_clone.decryptionId, e
+                        );
+                        return Err(e);
+                    }
+                };
+
+                // If we couldn't retrieve any materials, fail the request
+                if sns_ciphertext_materials.is_empty() {
+                    error!(
+                        "Failed to retrieve any ciphertext materials for PublicDecryptionRequest-{}",
+                        req_clone.decryptionId
+                    );
+                    return Err(crate::error::Error::S3Error(
+                        "No ciphertext materials retrieved".to_string(),
+                    ));
+                }
+
+                // Process decryption directly since we already have S3 materials
+                info!(
+                    "[PROCESSING] PublicDecryptionRequest-{} with pre-fetched S3 materials",
+                    req_clone.decryptionId
+                );
+
+                // Clean up timestamp to prevent memory leaks
+                let event_id = req_clone.decryptionId.to_string();
+                remove_block_timestamp(&event_id);
+
+                // Handle decryption directly with the S3 materials we just fetched
+                if let Err(e) = decryption_handler
+                    .handle_decryption_request_response(
+                        req.decryptionId,
+                        key_id,
+                        sns_ciphertext_materials,
+                        None, // client_addr is None for public requests
+                        None, // public_key is None for public requests
+                    )
+                    .await
+                {
+                    error!(
+                        "Error processing PublicDecryptionRequest-{}: {}",
+                        req.decryptionId, e
+                    );
+                }
+            }
+
+            KmsCoreEvent::UserDecryptionRequest(req) => {
+                // Extract keyId from the first SNS ciphertext material if available (CONVENTION)
+                let key_id = if !req.snsCtMaterials.is_empty() {
+                    let extracted_key_id = req.snsCtMaterials.first().unwrap().keyId;
+                    let key_id_hex = alloy::hex::encode(extracted_key_id.to_be_bytes::<32>());
+                    info!(
+                        "Extracted key_id {} from snsCtMaterials[0] for UserDecryptionRequest-{}",
+                        key_id_hex, req.decryptionId
+                    );
+                    key_id_hex
+                } else {
+                    // Fail the request if no materials available
+                    error!(
+                        "No snsCtMaterials found for UserDecryptionRequest-{} (contract: {}), cannot proceed without a valid key_id",
+                        req.decryptionId, req.publicKey
+                    );
+                    return Err(crate::error::Error::InvalidRequestType(
+                        "No snsCtMaterials found".to_string(),
+                    ));
+                };
+
+                let req_clone = req.clone();
+
+                // Retrieve ciphertext materials from S3
+                let sns_ciphertext_materials = match s3_client
+                    .retrieve_ciphertext_materials(req.snsCtMaterials)
+                    .await
+                {
+                    Ok(materials) => materials,
+                    Err(e) => {
+                        error!(
+                            "Failed to retrieve ciphertext materials for UserDecryptionRequest-{}: {}",
+                            req_clone.decryptionId, e
+                        );
+                        return Err(e);
+                    }
+                };
+
+                // If we couldn't retrieve any materials, fail the request
+                if sns_ciphertext_materials.is_empty() {
+                    error!(
+                        "Failed to retrieve any ciphertext materials for UserDecryptionRequest {}",
+                        req_clone.decryptionId
+                    );
+                    return Err(crate::error::Error::S3Error(
+                        "No ciphertext materials retrieved".to_string(),
+                    ));
+                }
+
+                let user_key_prefixed = hex::encode_prefixed(req_clone.userAddress);
+
+                debug!(
+                    "UserDecryptionRequest-{} was received with userAddress: {}",
+                    req_clone.decryptionId, user_key_prefixed,
+                );
+
+                // Process decryption directly since we already have S3 materials
+                info!(
+                    "[PROCESSING] UserDecryptionRequest-{} with pre-fetched S3 materials",
+                    req_clone.decryptionId
+                );
+
+                // Clean up timestamp to prevent memory leaks
+                let event_id = req_clone.decryptionId.to_string();
+                remove_block_timestamp(&event_id);
+
+                // Handle decryption directly with the S3 materials we just fetched
+                if let Err(e) = decryption_handler
+                    .handle_decryption_request_response(
+                        req.decryptionId,
+                        key_id,
+                        sns_ciphertext_materials,
+                        Some(req.userAddress), // client_addr for user requests
+                        Some(req.publicKey),   // public_key for user requests
+                    )
+                    .await
+                {
+                    error!(
+                        "Error processing UserDecryptionRequest-{}: {}",
+                        req.decryptionId, e
+                    );
+                }
+            }
+            _ => {} // Ignore other events for now
+        }
         Ok(())
     }
 }

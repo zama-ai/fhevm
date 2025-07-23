@@ -60,16 +60,13 @@ pub struct RawConfig {
     pub aws_kms_config: Option<AwsKmsConfig>,
     #[serde(default = "default_verify_coprocessors")]
     pub verify_coprocessors: Option<bool>,
-    // Coordination parameters
-
-    #[serde(default = "default_message_send_delta_ms")]
-    pub message_send_delta_ms: u64,
-    #[serde(default = "default_message_spacing_ms")]
-    pub message_spacing_ms: u64,
+    // Backpressure parameters
     #[serde(default = "default_pending_events_max")]
     pub pending_events_max: usize,
     #[serde(default = "default_pending_events_queue_slowdown_threshold")]
     pub pending_events_queue_slowdown_threshold: f32,
+    #[serde(default = "default_max_parallel_transactions")]
+    pub max_parallel_transactions: usize,
     #[serde(default = "default_max_retries")]
     pub max_retries: u32,
     #[serde(default = "default_starting_block_number")]
@@ -109,20 +106,16 @@ fn default_verify_coprocessors() -> Option<bool> {
     Some(false)
 }
 
-fn default_message_send_delta_ms() -> u64 {
-    1000 // 1000ms delay after block time
-}
-
-fn default_message_spacing_ms() -> u64 {
-    5 // 5ms between messages
-}
-
 fn default_pending_events_max() -> usize {
-    10000 // Maximum 10k pending messages
+    10000 // Maximum pending events before backpressure
 }
 
 fn default_pending_events_queue_slowdown_threshold() -> f32 {
     0.8 // Slow down at 80% capacity
+}
+
+fn default_max_parallel_transactions() -> usize {
+    100
 }
 
 fn default_max_retries() -> u32 {

@@ -38,13 +38,14 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
         // Create decryption adapter with config for proper channel sizing
         let (decryption, backpressure_rx) =
             DecryptionAdapter::new(config.decryption_address, provider.clone(), &config);
-        
+
         // Clone backpressure receiver for both EventProcessor and BlockPoller (only needed in polling mode)
-        let (backpressure_rx_for_event_processor, backpressure_rx_for_poller) = if config.use_polling_mode {
-            (Some(backpressure_rx.resubscribe()), Some(backpressure_rx))
-        } else {
-            (None, None)
-        };
+        let (backpressure_rx_for_event_processor, backpressure_rx_for_poller) =
+            if config.use_polling_mode {
+                (Some(backpressure_rx.resubscribe()), Some(backpressure_rx))
+            } else {
+                (None, None)
+            };
 
         let decryption_handler =
             DecryptionHandler::new(decryption.clone(), kms_client.clone(), config.clone());
