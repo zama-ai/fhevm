@@ -165,18 +165,20 @@ impl S3Client {
 
         let ciphertext = body.to_vec();
 
-        // Verify digest
+        // Verify digest but don't fail
         let calculated_digest = self.compute_digest(&ciphertext);
-        if calculated_digest != ciphertext_digest {
+        if calculated_digest != *ciphertext_digest {
             warn!(
-                "Digest mismatch: expected {}, got {}",
+                "DIGEST MISMATCH: Expected: {}, Got: {}",
                 encode(ciphertext_digest),
                 encode(&calculated_digest)
             );
         } else {
-            debug!("Ciphertext digest verified successfully");
+            debug!("Digest verification successful");
         }
 
+        // Return data even with digest mismatch
+        // TODO: that's Ok for testnet, but need to revisit for production
         Ok(ciphertext)
     }
 
