@@ -41,6 +41,7 @@ describe("CiphertextCommits", function () {
   let ciphertextCommits: CiphertextCommits;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
+  let pauser: HardhatEthersSigner;
 
   async function prepareFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -72,6 +73,7 @@ describe("CiphertextCommits", function () {
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     ciphertextCommits = fixture.ciphertextCommits;
     owner = fixture.owner;
+    pauser = fixture.pauser;
   });
 
   describe("Deployment", function () {
@@ -307,6 +309,38 @@ describe("CiphertextCommits", function () {
       await expect(ciphertextCommits.checkCiphertextMaterial(newCtHandle))
         .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
         .withArgs(newCtHandle);
+    });
+  });
+
+  describe("Pause", async function () {
+    it("Should pause and unpause contract with owner address", async function () {
+      // Check that the contract is not paused
+      expect(await ciphertextCommits.paused()).to.be.false;
+
+      // Pause the contract with the owner address
+      await expect(ciphertextCommits.connect(owner).pause()).to.emit(ciphertextCommits, "Paused").withArgs(owner);
+      expect(await ciphertextCommits.paused()).to.be.true;
+
+      // Unpause the contract with the owner address
+      await expect(ciphertextCommits.connect(owner).unpause()).to.emit(ciphertextCommits, "Unpaused").withArgs(owner);
+      expect(await ciphertextCommits.paused()).to.be.false;
+    });
+
+    it("Should pause contract with pauser address", async function () {
+      // Check that the contract is not paused
+      expect(await ciphertextCommits.paused()).to.be.false;
+
+      // Pause the contract with the pauser address
+      await expect(ciphertextCommits.connect(pauser).pause()).to.emit(ciphertextCommits, "Paused").withArgs(pauser);
+      expect(await ciphertextCommits.paused()).to.be.true;
+    });
+
+    it("Should revert on pause because sender is not owner or pauser address", async function () {
+      const notOwnerOrPauser = createRandomWallet();
+
+      await expect(ciphertextCommits.connect(notOwnerOrPauser).pause())
+        .to.be.revertedWithCustomError(ciphertextCommits, "NotOwnerOrPauser")
+        .withArgs(notOwnerOrPauser.address);
     });
   });
 });

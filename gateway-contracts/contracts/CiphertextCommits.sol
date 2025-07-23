@@ -9,6 +9,7 @@ import "./interfaces/IKmsManagement.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./libraries/HandleOps.sol";
+import "./shared/Pausable.sol";
 
 /**
  * @title CiphertextCommits smart contract
@@ -18,7 +19,8 @@ contract CiphertextCommits is
     ICiphertextCommits,
     Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
-    GatewayConfigChecks
+    GatewayConfigChecks,
+    Pausable
 {
     /// @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
@@ -81,6 +83,7 @@ contract CiphertextCommits is
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
+        __Pausable_init();
     }
 
     /**

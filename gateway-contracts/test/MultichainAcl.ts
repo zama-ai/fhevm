@@ -1,4 +1,4 @@
-import { HardhatEthersSigner, SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { Wallet } from "ethers";
@@ -40,6 +40,7 @@ describe("MultichainAcl", function () {
   let multichainAcl: MultichainAcl;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
+  let pauser: HardhatEthersSigner;
 
   beforeEach(async function () {
     // Initialize used global variables before each test
@@ -48,6 +49,7 @@ describe("MultichainAcl", function () {
     multichainAcl = fixture.multichainAcl;
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     owner = fixture.owner;
+    pauser = fixture.pauser;
   });
 
   describe("Deployment", function () {
@@ -290,6 +292,37 @@ describe("MultichainAcl", function () {
       await expect(multichainAcl.checkAccountDelegated(hostChainId, fakeDelegationAccounts, allowedContracts))
         .revertedWithCustomError(multichainAcl, "AccountNotDelegated")
         .withArgs(hostChainId, toValues(fakeDelegationAccounts), allowedContracts[0]);
+    });
+  });
+
+  describe("Pause", async function () {
+    it("Should pause and unpause contract with owner address", async function () {
+      // Check that the contract is not paused
+      expect(await multichainAcl.paused()).to.be.false;
+
+      // Pause the contract with the owner address
+      await expect(multichainAcl.connect(owner).pause()).to.emit(multichainAcl, "Paused").withArgs(owner);
+      expect(await multichainAcl.paused()).to.be.true;
+
+      // Unpause the contract with the owner address
+      await expect(multichainAcl.connect(owner).unpause()).to.emit(multichainAcl, "Unpaused").withArgs(owner);
+      expect(await multichainAcl.paused()).to.be.false;
+    });
+
+    it("Should pause contract with pauser address", async function () {
+      // Check that the contract is not paused
+      expect(await multichainAcl.paused()).to.be.false;
+
+      // Pause the contract with the pauser address
+      await expect(multichainAcl.connect(pauser).pause()).to.emit(multichainAcl, "Paused").withArgs(pauser);
+      expect(await multichainAcl.paused()).to.be.true;
+    });
+
+    it("Should revert on pause because sender is not owner or pauser address", async function () {
+      const notOwnerOrPauser = createRandomWallet();
+      await expect(multichainAcl.connect(notOwnerOrPauser).pause())
+        .to.be.revertedWithCustomError(multichainAcl, "NotOwnerOrPauser")
+        .withArgs(notOwnerOrPauser.address);
     });
   });
 });

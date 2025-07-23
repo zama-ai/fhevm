@@ -805,4 +805,42 @@ describe("GatewayConfig", function () {
       });
     });
   });
+
+  describe("Pause", async function () {
+    beforeEach(async function () {
+      const fixtureData = await loadFixture(loadTestVariablesFixture);
+      gatewayConfig = fixtureData.gatewayConfig;
+      owner = fixtureData.owner;
+      pauser = fixtureData.pauser;
+    });
+
+    it("Should pause and unpause contract with owner address", async function () {
+      // Check that the contract is not paused
+      expect(await gatewayConfig.paused()).to.be.false;
+
+      // Pause the contract with the owner address
+      await expect(gatewayConfig.connect(owner).pause()).to.emit(gatewayConfig, "Paused").withArgs(owner);
+      expect(await gatewayConfig.paused()).to.be.true;
+
+      // Unpause the contract with the owner address
+      await expect(gatewayConfig.connect(owner).unpause()).to.emit(gatewayConfig, "Unpaused").withArgs(owner);
+      expect(await gatewayConfig.paused()).to.be.false;
+    });
+
+    it("Should pause contract with pauser address", async function () {
+      // Check that the contract is not paused
+      expect(await gatewayConfig.paused()).to.be.false;
+
+      // Pause the contract with the pauser address
+      await expect(gatewayConfig.connect(pauser).pause()).to.emit(gatewayConfig, "Paused").withArgs(pauser);
+      expect(await gatewayConfig.paused()).to.be.true;
+    });
+
+    it("Should revert on pause because sender is not owner or pauser address", async function () {
+      const notOwnerOrPauser = createRandomWallet();
+      await expect(gatewayConfig.connect(notOwnerOrPauser).pause())
+        .to.be.revertedWithCustomError(gatewayConfig, "NotOwnerOrPauser")
+        .withArgs(notOwnerOrPauser.address);
+    });
+  });
 });

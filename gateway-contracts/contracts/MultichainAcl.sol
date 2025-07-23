@@ -9,10 +9,17 @@ import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
+import "./shared/Pausable.sol";
 
 /// @title MultichainAcl smart contract
 /// @dev See {IMultichainAcl}
-contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy, GatewayConfigChecks {
+contract MultichainAcl is
+    IMultichainAcl,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeableEmptyProxy,
+    GatewayConfigChecks,
+    Pausable
+{
     /// @notice The address of the GatewayConfig contract for protocol state calls.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -83,6 +90,7 @@ contract MultichainAcl is IMultichainAcl, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
+        __Pausable_init();
     }
 
     /**
