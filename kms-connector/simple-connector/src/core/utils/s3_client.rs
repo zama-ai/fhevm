@@ -133,7 +133,7 @@ impl S3Client {
             }
         } else {
             // Default fallback if no config provided
-            "http://localhost:9000/ct128".to_string()
+            "http://minio:9000/ct128".to_string()
         }
     }
 
