@@ -29,11 +29,6 @@ contract CiphertextCommits {
             revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }
 
-        emit AddCiphertextMaterial(
-            ctHandle,
-            ciphertextDigest,
-            snsCiphertextDigest,
-            new address[](0)
-        );
+        emit AddCiphertextMaterial(ctHandle, ciphertextDigest, snsCiphertextDigest, new address[](0));
     }
 }

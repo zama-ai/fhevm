@@ -77,6 +77,8 @@ async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyho
         .await?;
 
     let proof_id: u32 = random();
+    let context_id = 48;
+    let contract_chain_id = 42;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
@@ -92,17 +94,16 @@ async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyho
             .unwrap()
     });
 
-    let contract_chain_id = 42u64;
-
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
-        contract_chain_id as i64,
+        context_id,
+        contract_chain_id,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[1u8; 64],
@@ -206,11 +207,13 @@ async fn verify_proof_response_concurrent_success(
     });
 
     let contract_chain_id = 42u64;
+    let context_id = 48;
 
     let mut query_builder = QueryBuilder::<Postgres>::new("WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)");
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)");
     query_builder.push_values(0..count, |mut b, i| {
         b.push_bind(i as i64);
+        b.push(context_id);
         b.push_bind(contract_chain_id as i64);
         b.push_bind(env.contract_address.to_string());
         b.push_bind(env.user_address.to_string());
@@ -310,6 +313,8 @@ async fn reject_proof_response_success(#[case] signer_type: SignerType) -> anyho
         .await?;
 
     let proof_id: u32 = random();
+    let context_id = 48;
+    let contract_chain_id = 42;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
@@ -327,12 +332,13 @@ async fn reject_proof_response_success(#[case] signer_type: SignerType) -> anyho
 
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, false)
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, false)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
-        42 as i64,
+        context_id,
+        contract_chain_id,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[],
@@ -415,6 +421,8 @@ async fn verify_proof_response_reversal_already_verified(
     .await?;
 
     let proof_id: u32 = random();
+    let context_id = 48;
+    let contract_chain_id = 42;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
@@ -426,12 +434,13 @@ async fn verify_proof_response_reversal_already_verified(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
-        42,
+        context_id,
+        contract_chain_id,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[1u8; 64],
@@ -517,6 +526,8 @@ async fn reject_proof_response_reversal_already_rejected(
     .await?;
 
     let proof_id: u32 = random();
+    let context_id = 48;
+    let contract_chain_id = 42;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
@@ -527,12 +538,13 @@ async fn reject_proof_response_reversal_already_rejected(
 
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, false)
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, false)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
-        42,
+        context_id,
+        contract_chain_id,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[],
@@ -619,18 +631,21 @@ async fn verify_proof_response_other_reversal(
     .await?;
 
     let proof_id: u32 = random();
+    let context_id = 48;
+    let contract_chain_id = 42;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
-        42,
+        context_id,
+        contract_chain_id,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[1u8; 64],
@@ -718,17 +733,20 @@ async fn reject_proof_response_other_reversal(
     .await?;
 
     let proof_id: u32 = random();
+    let context_id = 48;
+    let contract_chain_id = 42;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, false)
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, false)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
-        42,
+        context_id,
+        contract_chain_id,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[],
@@ -812,18 +830,21 @@ async fn verify_proof_response_other_reversal_gas_estimation(
     .await?;
 
     let proof_id: u32 = random();
+    let context_id = 48;
+    let contract_chain_id = 42;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
-        42,
+        context_id,
+        contract_chain_id,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[1u8; 64],
@@ -910,18 +931,21 @@ async fn reject_proof_response_other_reversal_gas_estimation(
     .await?;
 
     let proof_id: u32 = random();
+    let context_id = 48;
+    let contract_chain_id = 42;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, false)
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, false)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
-        42,
+        context_id,
+        contract_chain_id,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[],
@@ -1010,18 +1034,21 @@ async fn verify_proof_max_retries_remove_entry(
     .await?;
 
     let proof_id: u32 = random();
+    let context_id = 48;
+    let contract_chain_id = 42;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
-        42,
+        context_id,
+        contract_chain_id,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[1u8; 64],
@@ -1100,18 +1127,21 @@ async fn verify_proof_max_retries_do_not_remove_entry(
     .await?;
 
     let proof_id: u32 = random();
+    let context_id = 48;
+    let contract_chain_id = 42;
 
     let run_handle = tokio::spawn(async move { txn_sender.run().await });
 
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
-        42,
+        context_id,
+        contract_chain_id,
         env.contract_address.to_string(),
         env.user_address.to_string(),
         &[1u8; 64],
