@@ -1,6 +1,6 @@
 # GatewayConfig contract
 
-This section describes the `GatewayConfig` contract. It is used to configure settings for the fhevm Gateway protocol.
+This section describes the `GatewayConfig` contract. It is used to configure settings for the FHEVM Gateway protocol.
 
 Several settings are stored in the contract, which can be separated in several categories:
 
@@ -22,7 +22,7 @@ Currently, it is set at deployment but it is not possible to update them later o
 
 ## Operators
 
-The operators include the Key Management Service (KMS) nodes and coprocessors. Each operator needs to be registered in the `GatewayConfig` contract in order to be able to participate in the fhevm protocol.
+The operators include the Key Management Service (KMS) nodes and coprocessors. Each operator needs to be registered in the `GatewayConfig` contract in order to be able to participate in the FHEVM protocol.
 
 They serve different purposes, which are described below.
 
@@ -35,13 +35,13 @@ A KMS node is part of a set of multiple nodes. Often called the KMS, it refers t
 
 Several metadata are stored for each KMS node:
 
-- `txSenderAddress` : see [Sender and signer](#sender-and-signer) below. In the fhevm protocol, this account is also called the KMS connector.
+- `txSenderAddress` : see [Sender and signer](#sender-and-signer) below. In the FHEVM protocol, this account is also called the KMS connector.
 - `signerAddress` : see [Sender and signer](#sender-and-signer) below.
 - `ipAddress` : IP address of the KMS node.
 
-The fhevm Gateway has a single KMS, which must be constituted of at least 1 node.
+The FHEVM Gateway has a single KMS, which must be constituted of at least 1 node.
 
-Currently, they are set at deployment and it is currently _not_ possible to add or remove a KMS node to the fhevm Gateway later on.
+Currently, they are set at deployment and it is currently _not_ possible to add or remove a KMS node to the FHEVM Gateway later on.
 
 ### KMS thresholds
 
@@ -81,18 +81,18 @@ Several metadata are stored for each coprocessor:
 
 - `txSenderAddress` : see [Sender and signer](#sender-and-signer) below.
 - `signerAddress` : see [Sender and signer](#sender-and-signer) below.
-- `s3BucketUrl` : URL of the S3 bucket where the ciphertexts are stored. In the fhevm protocol, this URL is fetched by the KMS connector in order to download the ciphertexts needed for decryption requests.
+- `s3BucketUrl` : URL of the S3 bucket where the ciphertexts are stored. In the FHEVM protocol, this URL is fetched by the KMS connector in order to download the ciphertexts needed for decryption requests.
 
-The fhevm Gateway has a single set of coprocessors, which must be constituted of at least 1 coprocessor.
+The FHEVM Gateway has a single set of coprocessors, which must be constituted of at least 1 coprocessor.
 
-Currently, they are set at deployment and it is currently _not_ possible to add or remove a coprocessor to the fhevm Gateway later on.
+Currently, they are set at deployment and it is currently _not_ possible to add or remove a coprocessor to the FHEVM Gateway later on.
 
 ### Sender and signer
 
 Despite the above differences, each operator has both a transaction sender and a signer assigned to it:
 
-- `txSenderAddress` : address of the account that will send transactions to the fhevm Gateway.
-- `signerAddress` : address associated to the public key used to sign results sent to the fhevm Gateway.
+- `txSenderAddress` : address of the account that will send transactions to the FHEVM Gateway.
+- `signerAddress` : address associated to the public key used to sign results sent to the FHEVM Gateway.
 
 The current list of transaction senders and signers can be retrieved using the following view functions:
 
@@ -110,7 +110,7 @@ Additionally, the transaction sender address is used for identifying an operator
 
 ## Governance accounts
 
-The fhevm Gateway protocol is governed by two accounts:
+The FHEVM Gateway protocol is governed by two accounts:
 
 - `owner`: account that can perform restricted actions
 - `pauser`: account that can pause contract functions
@@ -144,8 +144,8 @@ Host chains are host chains registered to the protocol. Only ciphertexts generat
 Several metadata are stored for each host chain:
 
 - `chainId` : unique identifier of the host chain. Unlike typical chain IDs, its value is limited to 64 bits.
-- `fhevmExecutorAddress` : address of the `FHEVMExecutor` fhevm contract deployed on the host chain.
-- `aclAddress` : address of the `ACL` fhevm contract deployed on the host chain.
+- `fhevmExecutorAddress` : address of the `FHEVMExecutor` FHEVM contract deployed on the host chain.
+- `aclAddress` : address of the `ACL` FHEVM contract deployed on the host chain.
 - `name` : name associated to the host chain.
 - `website` : website associated to the host chain.
 

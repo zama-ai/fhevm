@@ -1,6 +1,6 @@
 # Generate random numbers
 
-This document explains how to generate cryptographically secure random encrypted numbers fully on-chain using the `FHE` library in fhevm. These numbers are encrypted and remain confidential, enabling privacy-preserving smart contract logic.
+This document explains how to generate cryptographically secure random encrypted numbers fully on-chain using the `FHE` library in FHEVM. These numbers are encrypted and remain confidential, enabling privacy-preserving smart contract logic.
 
 ## **Key notes on random number generation**
 

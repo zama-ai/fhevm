@@ -14,7 +14,7 @@ For more information see [Configuration](configure.md).
 
 ### Encrypted data types
 
-fhevm introduces encrypted data types compatible with Solidity:
+FHEVM introduces encrypted data types compatible with Solidity:
 
 - **Booleans**: `ebool`
 - **Unsigned Integers**: `euint8`, `euint16`, `euint32`, `euint64`, `euint128`, `euint256`
@@ -27,7 +27,7 @@ For more information see [use of encrypted types](types.md).
 
 ### Casting types
 
-fhevm provides functions to cast between encrypted types:
+FHEVM provides functions to cast between encrypted types:
 
 - **Casting between encrypted types**: `FHE.asEbool` converts encrypted integers to encrypted booleans
 - **Casting to encrypted types**: `FHE.asEuintX` converts plaintext values to encrypted types
@@ -37,7 +37,7 @@ For more information see [use of encrypted types](types.md).
 
 ### Confidential computation
 
-fhevm enables symbolic execution of encrypted operations, supporting:
+FHEVM enables symbolic execution of encrypted operations, supporting:
 
 - **Arithmetic:** `FHE.add`, `FHE.sub`, `FHE.mul`, `FHE.min`, `FHE.max`, `FHE.neg`, `FHE.div`, `FHE.rem`
   - Note: `div` and `rem` operations are supported only with plaintext divisors
@@ -53,7 +53,7 @@ For more information on random number generation, see [Generate Random Encrypted
 
 ### Access control mechanism
 
-fhevm enforces access control with a blockchain-based Access Control List (ACL):
+FHEVM enforces access control with a blockchain-based Access Control List (ACL):
 
 - **Persistent access**: `FHE.allow`, `FHE.allowThis` grants permanent permissions for ciphertexts.
 - **Transient access**: `FHE.allowTransient` provides temporary access for specific transactions.

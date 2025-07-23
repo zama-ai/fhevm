@@ -6,7 +6,7 @@ This document is a guide listing detailed steps to integrate `fhevm-backend` int
 This document is based on go-ethereum v1.13.5
 {% endhint %}
 
-An fhEVM-native node consists of the following components:
+An FHEVM-native node consists of the following components:
  * full node/validator node
  * Executor service
 

@@ -1,6 +1,6 @@
 # KmsManagement contract
 
-This section describes the `KmsManagement` contract. It is used to orchestrate KMS-related materials for the fhevm Gateway protocol.
+This section describes the `KmsManagement` contract. It is used to orchestrate KMS-related materials for the FHEVM Gateway protocol.
 
 🚧 **Important** 🚧: The contract is currently neither used nor up-to-date. It will be reworked in the future. See [this issue](https://github.com/zama-ai/fhevm-gateway/issues/108) for more details.
 
@@ -15,7 +15,7 @@ All non-view functions are only callable by the owner of the contract.
 
 ## Public material generation
 
-The `KmsManagement` contract is used to generate different public materials needed by the fhevm protocol.
+The `KmsManagement` contract is used to generate different public materials needed by the FHEVM protocol.
 
 ### Generate FHE keys
 
