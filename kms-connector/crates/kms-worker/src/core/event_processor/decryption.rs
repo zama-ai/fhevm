@@ -12,7 +12,7 @@ use alloy::{
     sol_types::Eip712Domain,
 };
 use anyhow::anyhow;
-use connector_utils::types::{KmsGrpcRequest, fhe::fhe_type_to_string};
+use connector_utils::types::KmsGrpcRequest;
 use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use kms_grpc::kms::v1::{
     PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
@@ -128,17 +128,17 @@ where
         }
 
         // Extract and log FHE types for all ciphertexts
-        let fhe_types: Vec<String> = sns_ciphertext_materials
+        let fhe_types: Vec<_> = sns_ciphertext_materials
             .iter()
-            .map(|ct| fhe_type_to_string(ct.fhe_type).to_string())
+            .map(|ct| ct.fhe_type)
             .collect();
 
         info!(
-            "Processing {} with {} ciphertexts, key_id: {}, FHE types: [{}]",
+            "Processing {} with {} ciphertexts, key_id: {}, FHE types: {:?}",
             decryption_id,
             sns_ciphertext_materials.len(),
             key_id,
-            fhe_types.join(", ")
+            fhe_types,
         );
 
         Ok(sns_ciphertext_materials)
