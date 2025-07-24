@@ -124,7 +124,11 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
 
                 // Retrieve ciphertext materials from S3
                 let sns_ciphertext_materials = match s3_client
-                    .retrieve_ciphertext_materials(req.snsCtMaterials)
+                    .retrieve_ciphertext_materials(
+                        req.snsCtMaterials,
+                        decryption_handler.gateway_config_address(),
+                        decryption_handler.provider(),
+                    )
                     .await
                 {
                     Ok(materials) => materials,
@@ -137,15 +141,13 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
                     }
                 };
 
-                // If we couldn't retrieve any materials, fail the request
+                // If we couldn't retrieve any materials, log error and skip this request
                 if sns_ciphertext_materials.is_empty() {
                     error!(
-                        "Failed to retrieve any ciphertext materials for PublicDecryptionRequest-{}",
+                        "Failed to retrieve any ciphertext materials for PublicDecryptionRequest-{} - skipping this request",
                         req_clone.decryptionId
                     );
-                    return Err(crate::error::Error::S3Error(
-                        "No ciphertext materials retrieved".to_string(),
-                    ));
+                    return Ok(()); // Continue processing other events
                 }
 
                 // Process decryption directly since we already have S3 materials
@@ -201,7 +203,11 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
 
                 // Retrieve ciphertext materials from S3
                 let sns_ciphertext_materials = match s3_client
-                    .retrieve_ciphertext_materials(req.snsCtMaterials)
+                    .retrieve_ciphertext_materials(
+                        req.snsCtMaterials,
+                        decryption_handler.gateway_config_address(),
+                        decryption_handler.provider(),
+                    )
                     .await
                 {
                     Ok(materials) => materials,
@@ -214,15 +220,13 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
                     }
                 };
 
-                // If we couldn't retrieve any materials, fail the request
+                // If we couldn't retrieve any materials, log error and skip this request
                 if sns_ciphertext_materials.is_empty() {
                     error!(
-                        "Failed to retrieve any ciphertext materials for UserDecryptionRequest {}",
+                        "Failed to retrieve any ciphertext materials for UserDecryptionRequest {} - skipping this request",
                         req_clone.decryptionId
                     );
-                    return Err(crate::error::Error::S3Error(
-                        "No ciphertext materials retrieved".to_string(),
-                    ));
+                    return Ok(()); // Continue processing other events
                 }
 
                 let user_key_prefixed = hex::encode_prefixed(req_clone.userAddress);

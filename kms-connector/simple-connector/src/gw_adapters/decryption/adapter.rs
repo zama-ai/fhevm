@@ -44,7 +44,7 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
 
         let adapter = Self {
             decryption_address,
-            provider,
+            provider: provider.clone(),
             nonce_manager,
         };
 
