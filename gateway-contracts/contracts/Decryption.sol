@@ -531,7 +531,10 @@ contract Decryption is
     }
 
     /// @dev See {IDecryption-checkPublicDecryptionReady}.
-    function checkPublicDecryptionReady(bytes32[] calldata ctHandles, bytes calldata extraData) external view virtual {
+    function checkPublicDecryptionReady(
+        bytes32[] calldata ctHandles,
+        bytes calldata /* extraData */
+    ) external view virtual {
         /// @dev Check that the handles are allowed for public decryption and that the ciphertext materials
         /// @dev represented by them have been added.
         for (uint256 i = 0; i < ctHandles.length; i++) {
@@ -544,7 +547,7 @@ contract Decryption is
     function checkUserDecryptionReady(
         address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs,
-        bytes calldata extraData
+        bytes calldata /* extraData */
     ) external view virtual {
         /// @dev Check that the user and contracts accounts have access to the handles and that the
         /// @dev ciphertext materials represented by them have been added.
@@ -564,7 +567,7 @@ contract Decryption is
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         address[] calldata contractAddresses,
-        bytes calldata extraData
+        bytes calldata /* extraData */
     ) external view virtual {
         /// @dev Check that the delegated address has been granted access to the given contractAddresses
         /// @dev by the delegator.
