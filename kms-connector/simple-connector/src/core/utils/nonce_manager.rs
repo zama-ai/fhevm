@@ -360,7 +360,7 @@ where
             // Use aggressive gas price from first attempt
             if attempt == 0 {
                 if let Some(gas_price) = tx.gas_price {
-                    tx.gas_price = Some(gas_price * 700 / 100); // 600% boost for fast processing
+                    tx.gas_price = Some(gas_price * 150 / 100); // 50% boost for fast processing
                     debug!(
                         "Set aggressive gas price {} for immediate send (nonce: {}, attempt: {})",
                         tx.gas_price.unwrap(),
@@ -398,9 +398,9 @@ where
                         );
 
                         if attempt < MAX_RETRIES - 1 {
-                            // Bump gas price by 20% for retry
+                            // Bump gas price by 10% for retry
                             if let Some(gas_price) = tx.gas_price {
-                                tx.gas_price = Some(gas_price * 120 / 100);
+                                tx.gas_price = Some(gas_price * 110 / 100);
                                 info!(
                                     "Bumped gas price to {} for immediate retry",
                                     tx.gas_price.unwrap()
