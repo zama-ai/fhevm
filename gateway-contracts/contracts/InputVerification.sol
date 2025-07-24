@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IInputVerification.sol";
 import "./interfaces/IGatewayConfig.sol";
@@ -18,6 +19,7 @@ import "./shared/Pausable.sol";
 contract InputVerification is
     IInputVerification,
     EIP712Upgradeable,
+    Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
     Pausable
@@ -108,6 +110,7 @@ contract InputVerification is
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
+        __Ownable_init(owner());
         __Pausable_init();
     }
 

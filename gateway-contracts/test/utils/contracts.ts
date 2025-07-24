@@ -1,6 +1,7 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import dotenv from "dotenv";
 import { Wallet } from "ethers";
+import fs from "fs";
 import hre from "hardhat";
 import path from "path";
 

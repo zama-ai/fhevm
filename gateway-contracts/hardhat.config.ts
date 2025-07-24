@@ -16,8 +16,10 @@ import "./tasks/blockExplorerVerify";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
+import "./tasks/deployment/smart_accounts";
 import "./tasks/getters";
 import "./tasks/upgradeContracts";
+import { getRequiredEnvVar } from "./tasks/utils/loadVariables";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
@@ -57,9 +59,12 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
   .addOptionalParam("skipSetup", "Set to true to skip setup tasks", false, types.boolean)
   .setAction(async ({ skipSetup }, hre, runSuper) => {
     if (!skipSetup) {
-      // Deploy Smart Accounts
-      await hre.run("task:deployOwnerSmartAccount");
-      await hre.run("task:deployPauserSmartAccount");
+      // Deploy Smart Accounts with the deployer account as the owner
+      const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+      const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+
+      await hre.run("task:deployOwnerSmartAccount", { owners: [deployer.address], threshold: 1 });
+      await hre.run("task:deployPauserSmartAccount", { owners: [deployer.address], threshold: 1 });
 
       await hre.run("task:deployAllGatewayContracts");
       // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory

@@ -13,7 +13,13 @@ import "./shared/Pausable.sol";
 
 /// @title MultichainAcl smart contract
 /// @dev See {IMultichainAcl}
-contract MultichainAcl is IMultichainAcl, UUPSUpgradeableEmptyProxy, GatewayConfigChecks, Pausable {
+contract MultichainAcl is
+    IMultichainAcl,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeableEmptyProxy,
+    GatewayConfigChecks,
+    Pausable
+{
     /// @notice The address of the GatewayConfig contract for protocol state calls.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -83,6 +89,7 @@ contract MultichainAcl is IMultichainAcl, UUPSUpgradeableEmptyProxy, GatewayConf
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        __Ownable_init(owner());
         __Pausable_init();
     }
 

@@ -14,7 +14,13 @@ import "./shared/Pausable.sol";
 /// @dev TODO: This contract is neither used nor up-to-date. It will be reworked in the future.
 /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/108
 /// @dev See {IKmsManagement}.
-contract KmsManagement is IKmsManagement, UUPSUpgradeableEmptyProxy, GatewayConfigChecks, Pausable {
+contract KmsManagement is
+    IKmsManagement,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeableEmptyProxy,
+    GatewayConfigChecks,
+    Pausable
+{
     /// @notice The address of the GatewayConfig contract for protocol state calls.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -130,6 +136,7 @@ contract KmsManagement is IKmsManagement, UUPSUpgradeableEmptyProxy, GatewayConf
         string memory fheParamsName,
         bytes32 fheParamsDigest
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        __Ownable_init(owner());
         __Pausable_init();
 
         KmsManagementStorage storage $ = _getKmsManagementStorage();

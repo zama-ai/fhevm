@@ -15,7 +15,13 @@ import "./shared/Pausable.sol";
  * @title CiphertextCommits smart contract
  * @dev See {ICiphertextCommits}.
  */
-contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, GatewayConfigChecks, Pausable {
+contract CiphertextCommits is
+    ICiphertextCommits,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeableEmptyProxy,
+    GatewayConfigChecks,
+    Pausable
+{
     /// @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
@@ -76,6 +82,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        __Ownable_init(owner());
         __Pausable_init();
     }
 
