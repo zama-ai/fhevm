@@ -1,6 +1,6 @@
 import { task, types } from "hardhat/config";
 import { createInstance as createFhevmInstance, SepoliaConfig, FhevmInstanceConfig, DecryptedResults } from '@zama-fhe/relayer-sdk/node';
-import { HardhatRuntimeEnvironment } from 'hardhat/types';
+import { HardhatRuntimeEnvironment, Network } from 'hardhat/types';
 import { EncryptedERC20 } from '../types';
 import fs from 'fs';
 import path from 'path';
@@ -10,12 +10,12 @@ function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-const timeout = (ms: number) =>
+const timeout = (ms: number): Promise<null> =>
   new Promise((_, reject) =>
     setTimeout(() => reject(new Error('Operation timed out')), ms)
   );
 
-const TIMEOUT = 60_000;
+const TIMEOUT = 30_000;
 
 // https://gist.github.com/chrismilson/e6549023bdca1fa9c263973b8f7a713b
 type Iterableify<T> = { [K in keyof T]: Iterable<T[K]> }
@@ -56,6 +56,73 @@ interface KeyPair {
   privateKey: string,
 }
 
+async function waitAllPromises(promises: Promise<any>[], ms: number): Promise<any[]> {
+  console.log("Waiting for all promises to resolve")
+  const promiseStates = new Array(promises.length).fill('pending');
+  promises.forEach((p, i) => {
+    p.then(() => { promiseStates[i] = 'fulfilled' })
+      .catch(() => { promiseStates[i] = 'rejected' });
+  });
+
+  try {
+    while (true) {
+      try {
+        let res: any = await Promise.race([Promise.all(promises), timeout(ms)]);
+        return res;
+      } catch (timeoutError) {
+        const fulfilled = promiseStates.filter(s => s === 'fulfilled').length;
+        const pendingIndexes = promiseStates
+          .map((state, index) => state === 'pending' ? index : -1)
+          .filter(index => index !== -1);
+        console.log(`Timeout after ${ms}ms: ${fulfilled}/${promises.length} promises already resolved`);
+        console.log(`Pending promise indexes: ${pendingIndexes.join(', ')}`);
+      }
+    }
+  } catch (error) {
+    const fulfilled = promiseStates.filter(s => s === 'fulfilled').length;
+    const pendingIndexes = promiseStates
+      .map((state, index) => state === 'pending' ? index : -1)
+      .filter(index => index !== -1);
+    console.log(`Error: ${fulfilled}/${promises.length} promises already resolved`);
+    console.log(`Pending promise indexes: ${pendingIndexes.join(', ')}`);
+    throw error;
+  }
+}
+
+async function create_instance(network: Network) {
+  // Default to Sepolia configuration
+  const fhevmConfig: FhevmInstanceConfig = { ...SepoliaConfig, network: network.provider, chainId: network.config.chainId };
+
+  // Conditionally set properties only if env vars exist
+  if (process.env.CHAIN_ID_GATEWAY) {
+    fhevmConfig.gatewayChainId = parseInt(process.env.CHAIN_ID_GATEWAY);
+  }
+  if (process.env.RELAYER_URL) {
+    fhevmConfig.relayerUrl = process.env.RELAYER_URL;
+  }
+  if (process.env.DECRYPTION_ADDRESS) {
+    fhevmConfig.verifyingContractAddressDecryption = process.env.DECRYPTION_ADDRESS;
+  }
+  if (process.env.INPUT_VERIFICATION_ADDRESS) {
+    fhevmConfig.verifyingContractAddressInputVerification = process.env.INPUT_VERIFICATION_ADDRESS;
+  }
+  if (process.env.KMS_VERIFIER_CONTRACT_ADDRESS) {
+    fhevmConfig.kmsContractAddress = process.env.KMS_VERIFIER_CONTRACT_ADDRESS;
+  }
+  if (process.env.INPUT_VERIFIER_CONTRACT_ADDRESS) {
+    fhevmConfig.inputVerifierContractAddress = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS;
+  }
+  if (process.env.ACL_CONTRACT_ADDRESS) {
+    fhevmConfig.aclContractAddress = process.env.ACL_CONTRACT_ADDRESS;
+  }
+
+  console.log(`Using configuration: ${JSON.stringify(fhevmConfig)}`);
+
+  const instance = await createFhevmInstance(fhevmConfig);
+  console.debug(JSON.stringify(fhevmConfig));
+  return instance;
+}
+
 task("cerc-20-multi-transfer-decrypt", `cERC-20 multi-transfer and decryptions script.
 
 This script does the following:
@@ -90,37 +157,9 @@ as batched transfers is not yet implemented in this script.
     console.log("Network:", network.name);
     console.log("Signer:", signer.address);
 
-    // Default to Sepolia configuration
-    const fhevmConfig: FhevmInstanceConfig = { ...SepoliaConfig, network: network.provider, chainId: network.config.chainId };
+    const instance = await create_instance(network);
 
-    // Conditionally set properties only if env vars exist
-    if (process.env.CHAIN_ID_GATEWAY) {
-      fhevmConfig.gatewayChainId = parseInt(process.env.CHAIN_ID_GATEWAY);
-    }
-    if (process.env.RELAYER_URL) {
-      fhevmConfig.relayerUrl = process.env.RELAYER_URL;
-    }
-    if (process.env.DECRYPTION_ADDRESS) {
-      fhevmConfig.verifyingContractAddressDecryption = process.env.DECRYPTION_ADDRESS;
-    }
-    if (process.env.INPUT_VERIFICATION_ADDRESS) {
-      fhevmConfig.verifyingContractAddressInputVerification = process.env.INPUT_VERIFICATION_ADDRESS;
-    }
-    if (process.env.KMS_VERIFIER_CONTRACT_ADDRESS) {
-      fhevmConfig.kmsContractAddress = process.env.KMS_VERIFIER_CONTRACT_ADDRESS;
-    }
-    if (process.env.INPUT_VERIFIER_CONTRACT_ADDRESS) {
-      fhevmConfig.inputVerifierContractAddress = process.env.INPUT_VERIFIER_CONTRACT_ADDRESS;
-    }
-    if (process.env.ACL_CONTRACT_ADDRESS) {
-      fhevmConfig.aclContractAddress = process.env.ACL_CONTRACT_ADDRESS;
-    }
-
-    console.log(`Using configuration: ${JSON.stringify(fhevmConfig)}`);
-
-    const instance = await createFhevmInstance(fhevmConfig);
-    console.debug(JSON.stringify(fhevmConfig));
-
+    // Deploy benchmark cERC-20 contract (or not)
     let contract: EncryptedERC20;
     let contractAddress: string;
     if (taskArgs.cerc20Address == null) {
@@ -130,22 +169,20 @@ as batched transfers is not yet implemented in this script.
       await contract.waitForDeployment();
       contractAddress = await contract.getAddress();
     } else {
-      console.info(`Using pre-deployed cERC-20 contract at: ${taskArgs.cerc20Address}`);
+      console.info("Using pre-deployed cERC-20");
       const contractFactory = await ethers.getContractFactory('EncryptedERC20');
       contract = contractFactory.attach(taskArgs.cerc20Address).connect(signer) as EncryptedERC20;
       contractAddress = taskArgs.cerc20Address;
     }
     console.info(`Using cERC-20 deployed at ${contractAddress}`);
-
     console.info(`cERC-20 contract name: ${await contract.name()}`);
     console.info(`cERC-20 contract owner: ${await contract.owner()}`);
 
     // Boiler-plate for user-decryption
-
     let publicKey: string;
     let privateKey: string;
     const filePath = path.join(__dirname, 'keypair.json');
-
+    // We might want to re-use an already generated keypair
     if (fs.existsSync(filePath) && taskArgs.reuseKeypair) {
       console.debug("Loading serialized keypair");
       const fileContent = fs.readFileSync(filePath, 'utf-8');
@@ -160,6 +197,7 @@ as batched transfers is not yet implemented in this script.
       fs.writeFileSync(filePath, JSON.stringify({ publicKey: publicKey, privateKey: privateKey }, null, 2));
     }
 
+    // EIP-712
     const durationDays = '100'; // String for consistency
     const contractAddresses = [contractAddress];
     const eip712 = instance.createEIP712(publicKey, contractAddresses, taskArgs.eip712Timestamp, durationDays);
@@ -176,15 +214,14 @@ as batched transfers is not yet implemented in this script.
       console.info("Minting cERC-20 contract");
       const transaction = await contract.mint(taskArgs.mintAmount);
       await transaction.wait();
+
+      // Validate mint was succesful
+      const encrypted_balance = await contract.balanceOf(signer);
+      console.info(`Deciphering cERC-20 balance: ${encrypted_balance}`);
+      const balanceAliceResults = await instance.userDecrypt([{ handle: encrypted_balance, contractAddress: contractAddress }], privateKey, publicKey, aliceEIPSignature, [contractAddress], signer.address, taskArgs.eip712Timestamp, durationDays);
+      const balanceAlice = balanceAliceResults[encrypted_balance];
+      console.log(`Alice's cERC-20 balance: ${balanceAlice}`);
     }
-    // Validate mint was succesful
-    const encrypted_balance = await contract.balanceOf(signer);
-
-    console.info(`Deciphering cERC-20 balance: ${encrypted_balance}`);
-    const balanceAliceResults = await instance.userDecrypt([{ handle: encrypted_balance, contractAddress: contractAddress }], privateKey, publicKey, aliceEIPSignature, [contractAddress], signer.address, taskArgs.eip712Timestamp, durationDays);
-    const balanceAlice = balanceAliceResults[encrypted_balance];
-    console.log(`Alice's cERC-20 balance: ${balanceAlice}`);
-
 
     // Transfer 1 token to each derived wallet
     if (taskArgs.transfer) {
@@ -194,18 +231,48 @@ as batched transfers is not yet implemented in this script.
       input.add64(1);
       const encryptedTransferAmount = await input.encrypt();
 
-      console.info("Transfering cERC-20 tokens");
-      let txs = [];
+      // Create an array of async transfer tasks
+      const transferTasks = [];
+
       for (let index = 1; index < taskArgs.mintAmount + 1; index++) {
-        const tx = await contract['transfer(address,bytes32,bytes)'](
-          signers[index].address,
-          encryptedTransferAmount.handles[0],
-          encryptedTransferAmount.inputProof,
-        );
-        txs.push(tx.wait());
+
+        // Create an async function for each transfer
+        const transferTask = async () => {
+          console.log(`Starting processing for signer: ${index}`);
+          let internalCounter = 0;
+          while (true) {
+            try {
+
+              console.log(`Broadcasting transaction (${index}/${taskArgs.mintAmount}, retry:${internalCounter})`);
+              const tx = await Promise.race([contract['transfer(address,bytes32,bytes)'](
+                signers[index].address,
+                encryptedTransferAmount.handles[0],
+                encryptedTransferAmount.inputProof,
+              ), timeout(TIMEOUT)]);
+              if (tx == null) {
+                continue;
+              }
+              console.log(`Waiting transaction (${index}/${taskArgs.mintAmount}, retry:${internalCounter}): ${tx.hash}`);
+              await tx.wait(1, 20_000); // Wait 1 block for confirmation, 20s for timeout
+              console.log(`Completed transaction (${index}/${taskArgs.mintAmount}, retry:${internalCounter}): ${tx.hash}`);
+              return tx; // Return the transaction for potential later use
+            } catch (error) {
+              internalCounter += 1;
+              console.error(`Caught error: ${error}, retrying transfer (${index}/${taskArgs.mintAmount}), retry number: ${internalCounter}`);
+              // Continue will restart the while loop to retry
+              continue;
+            }
+          }
+        };
+
+        // Start the task immediately and add the promise to the array
+        transferTasks.push(transferTask());
+        await sleep(1_000);
       }
-      const transfers = await Promise.all(txs);
-      console.log(`Done: ${JSON.stringify(transfers)}`);
+
+      // Wait for all transfers to complete
+      const completedTransactions: any[] = await waitAllPromises(transferTasks, 5_000);
+      console.info(`All ${completedTransactions.length} transfers completed`);
     };
 
     // Run multiple concurrent decryptions
@@ -230,11 +297,11 @@ as batched transfers is not yet implemented in this script.
 
       // Leverage cache of relayer to retry until all promises resolve
       console.time("decrytions");
-      let decrypted_balances: DecryptedResults[];
+      let decrypted_balances: DecryptedResults[] | null;
       let counter = 0;
       while (true) {
         console.time("decrytions-inner");
-        let decrypted_balances_promises = [];
+        let decrypted_balances_promises: Promise<DecryptedResults>[] = [];
         for (let index = 0; index < taskArgs.mintAmount + 1; index++) {
 
           decrypted_balances_promises.push(instance.userDecrypt([{ handle: balancesHandles[index], contractAddress: contractAddress }], privateKey, publicKey, eip712Signatures[index], [contractAddress], signers[index].address, taskArgs.eip712Timestamp, durationDays));
@@ -250,7 +317,7 @@ as batched transfers is not yet implemented in this script.
 
 
         try {
-          console.log("Waiting for all decryption promises to resolve")
+          console.log(`Waiting for all decryption promises to resolve within ${TIMEOUT}ms`)
           try {
             decrypted_balances = await Promise.race([Promise.all(decrypted_balances_promises), timeout(TIMEOUT)]);
             console.timeEnd("decrytions-inner");
@@ -273,10 +340,12 @@ as batched transfers is not yet implemented in this script.
       }
       console.timeEnd("decrytions");
 
-      console.log("All decryption promises resolved")
-      for (const [result, handle] of zip(decrypted_balances, balancesHandles)) {
-        console.log(result[handle]);
+      if (decrypted_balances) {
+        console.log("All decryption promises resolved")
+        for (const [result, handle] of zip(decrypted_balances, balancesHandles)) {
+          console.log(result[handle]);
+        }
+        console.log(decrypted_balances);
       }
-      console.log(decrypted_balances);
     };
   });
