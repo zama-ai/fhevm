@@ -292,7 +292,7 @@ where
                     nonce,
                     in_flight_count + 1
                 );
-                self.track_transaction_confirmation_async(tx_hash, nonce);
+                // Receipt confirmation is handled by DecryptionAdapter's analyze_receipt_with_retry_logic
                 Ok(tx_hash)
             }
             Err(e) => {
@@ -344,142 +344,43 @@ where
         Ok(current_nonce)
     }
 
-    /// Send transaction immediately with retry logic for parallel processing
+    /// Send transaction immediately with optimized gas settings for parallel processing
+    /// Simple, clean implementation - complex retry logic handled by receipt analysis
     async fn send_transaction_immediately(
         &self,
         mut tx: TransactionRequest,
         expected_nonce: u64,
     ) -> Result<TxHash> {
-        const MAX_RETRIES: usize = 3;
-        let mut attempt = 0;
+        // Set nonce for immediate sending
+        tx.nonce = Some(expected_nonce);
 
-        while attempt < MAX_RETRIES {
-            // Set nonce and aggressive gas price for immediate sending
-            tx.nonce = Some(expected_nonce);
-
-            // Use aggressive gas price from first attempt
-            if attempt == 0 {
-                if let Some(gas_price) = tx.gas_price {
-                    tx.gas_price = Some(gas_price * 150 / 100); // 50% boost for fast processing
-                    debug!(
-                        "Set aggressive gas price {} for immediate send (nonce: {}, attempt: {})",
-                        tx.gas_price.unwrap(),
-                        expected_nonce,
-                        attempt + 1
-                    );
-                }
-            }
-
-            // Send transaction immediately
-            match self.provider.send_transaction(tx.clone()).await {
-                Ok(pending_tx) => {
-                    let tx_hash = *pending_tx.tx_hash();
-                    info!(
-                        "Transaction sent: {} (nonce: {}, attempt: {})",
-                        tx_hash,
-                        expected_nonce,
-                        attempt + 1
-                    );
-                    return Ok(tx_hash);
-                }
-                Err(e) => {
-                    let error_msg = e.to_string().to_lowercase();
-
-                    // Check if it's a gas-related error that we can retry
-                    if error_msg.contains("gas")
-                        || error_msg.contains("underpriced")
-                        || error_msg.contains("insufficient")
-                    {
-                        warn!(
-                            "Gas-related error on immediate send attempt {} (nonce: {}): {}",
-                            attempt + 1,
-                            expected_nonce,
-                            e
-                        );
-
-                        if attempt < MAX_RETRIES - 1 {
-                            // Bump gas price by 10% for retry
-                            if let Some(gas_price) = tx.gas_price {
-                                tx.gas_price = Some(gas_price * 110 / 100);
-                                info!(
-                                    "Bumped gas price to {} for immediate retry",
-                                    tx.gas_price.unwrap()
-                                );
-                            }
-
-                            // Short retry delays for immediate sending: 50ms, then 100ms
-                            let delay_ms = if attempt == 0 { 50 } else { 100 };
-                            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-
-                            attempt += 1;
-                            continue;
-                        }
-                    }
-
-                    // Non-retryable error or max retries exceeded
-                    error!(
-                        "Transaction failed permanently on immediate send (nonce: {}): {}",
-                        expected_nonce, e
-                    );
-                    return Err(Error::Transport(e.to_string()));
-                }
-            }
+        if let Some(gas_limit) = tx.gas {
+            tx.gas = Some(gas_limit * 130 / 100); // 30% gas limit boost
+            debug!(
+                "Applied optimized gas settings for immediate send (nonce: {}): gas_limit={}",
+                expected_nonce,
+                tx.gas.unwrap()
+            );
         }
 
-        Err(Error::Transport(
-            "Max retries exceeded on immediate send".to_string(),
-        ))
-    }
-
-    /// Track transaction confirmation asynchronously (fire-and-forget)
-    /// This enables monitoring of parallel transactions without blocking the main flow
-    fn track_transaction_confirmation_async(&self, tx_hash: TxHash, nonce: u64) {
-        let provider = self.provider.clone();
-
-        tokio::spawn(async move {
-            let mut attempts = 0;
-            const MAX_CONFIRMATION_ATTEMPTS: usize = 30;
-            const CONFIRMATION_POLL_INTERVAL: Duration = Duration::from_millis(50);
-
-            while attempts < MAX_CONFIRMATION_ATTEMPTS {
-                tokio::time::sleep(CONFIRMATION_POLL_INTERVAL).await;
-                attempts += 1;
-
-                match provider.get_transaction_receipt(tx_hash).await {
-                    Ok(Some(receipt)) => {
-                        info!(
-                            "[TRX SUCCESS] Transaction confirmed: {} (nonce: {}, attempt: {})",
-                            tx_hash, nonce, attempts
-                        );
-                        info!(
-                            "[GAS] consumed by transaction {}: {}",
-                            tx_hash, receipt.gas_used
-                        );
-                        return; // Success - exit tracking
-                    }
-                    Ok(None) => {
-                        debug!(
-                            "Transaction receipt not yet available: {} (nonce: {}, attempt: {})",
-                            tx_hash, nonce, attempts
-                        );
-                        // Continue polling
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Error checking transaction receipt: {} (nonce: {}, attempt: {}): {}",
-                            tx_hash, nonce, attempts, e
-                        );
-                        // Continue polling despite errors
-                    }
-                }
+        // Single send attempt - let receipt analysis handle any failures
+        match self.provider.send_transaction(tx).await {
+            Ok(pending_tx) => {
+                let tx_hash = *pending_tx.tx_hash();
+                info!(
+                    "Transaction sent immediately: {} (nonce: {})",
+                    tx_hash, expected_nonce
+                );
+                Ok(tx_hash)
             }
-
-            // Max attempts reached - log warning but don't fail
-            warn!(
-                "Transaction confirmation tracking timed out: {} (nonce: {}) after {} attempts",
-                tx_hash, nonce, MAX_CONFIRMATION_ATTEMPTS
-            );
-        });
+            Err(e) => {
+                warn!(
+                    "Immediate send failed (nonce: {}): {} - will be handled by receipt analysis",
+                    expected_nonce, e
+                );
+                Err(Error::Transport(e.to_string()))
+            }
+        }
     }
 
     /// Refresh nonce from chain (used for recovery)
@@ -515,6 +416,31 @@ where
         let total_queued = self.get_total_queued().await;
         let max_transaction_queue_size = (self.config.channel_size as f32 * 0.2) as usize;
         total_queued as f32 / max_transaction_queue_size as f32
+    }
+
+    /// Retry a transaction with increased gas limit (called by DecryptionAdapter on out-of-gas)
+    /// This maintains decoupling: adapter detects issue, nonce manager handles retry
+    /// Uses async queue processing to maintain proper sequential nonce management
+    pub async fn retry_transaction_with_gas_bump(
+        &self,
+        mut tx: TransactionRequest,
+        gas_bump_percent: u32,
+    ) -> Result<TxHash> {
+        // Increase gas limit by specified percentage
+        if let Some(gas_limit) = tx.gas {
+            tx.gas = Some(gas_limit * (100 + gas_bump_percent) as u64 / 100);
+            info!(
+                "Retrying transaction with {}% gas bump: {} -> {} (async queue)",
+                gas_bump_percent,
+                gas_limit,
+                tx.gas.unwrap()
+            );
+        }
+
+        // Queue the retry transaction (maintains proper async architecture)
+        // This ensures retries follow the same sequential nonce management
+        // and backpressure handling as initial transactions
+        self.send_transaction_queued(tx).await
     }
 
     /// Get queue status for monitoring
