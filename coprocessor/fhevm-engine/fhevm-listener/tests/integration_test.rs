@@ -5,6 +5,7 @@ use alloy::sol;
 use futures_util::future::try_join_all;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
+use test_harness::instance::ImportMode;
 use tracing::Level;
 
 use alloy::providers::{Provider, ProviderBuilder, WalletProvider, WsConnect};
@@ -96,9 +97,10 @@ async fn emit_events<P, N>(
 #[tokio::test]
 #[serial(db)]
 async fn test_listener_restart() -> Result<(), anyhow::Error> {
-    let test_instance = test_harness::instance::setup_test_db(true)
-        .await
-        .expect("valid db instance");
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("valid db instance");
 
     let anvil = Anvil::new()
         .block_time_f64(1.0)
@@ -234,9 +236,10 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[serial(db)]
 async fn test_health() -> Result<(), anyhow::Error> {
-    let test_instance = test_harness::instance::setup_test_db(true)
-        .await
-        .expect("valid db instance");
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("valid db instance");
 
     let mut anvil = Anvil::new()
         .block_time_f64(1.0)
