@@ -690,9 +690,9 @@ interface Decryption {
     function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
     function acceptOwnership() external;
     function checkDecryptionDone(uint256 decryptionId) external view;
-    function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, address[] memory contractAddresses, bytes memory extraData) external view;
-    function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory extraData) external view;
-    function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view;
+    function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, address[] memory contractAddresses, bytes memory) external view;
+    function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory) external view;
+    function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory) external view;
     function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, IDecryption.RequestValidity memory requestValidity, DelegationAccounts memory delegationAccounts, IDecryption.ContractsInfo memory contractsInfo, bytes memory publicKey, bytes memory signature, bytes memory extraData) external;
     function eip712Domain() external view returns (bytes1 fields, string memory name, string memory version, uint256 chainId, address verifyingContract, bytes32 salt, uint256[] memory extensions);
     function getVersion() external pure returns (string memory);
@@ -804,7 +804,7 @@ interface Decryption {
         "internalType": "address[]"
       },
       {
-        "name": "extraData",
+        "name": "",
         "type": "bytes",
         "internalType": "bytes"
       }
@@ -822,7 +822,7 @@ interface Decryption {
         "internalType": "bytes32[]"
       },
       {
-        "name": "extraData",
+        "name": "",
         "type": "bytes",
         "internalType": "bytes"
       }
@@ -857,7 +857,7 @@ interface Decryption {
         ]
       },
       {
-        "name": "extraData",
+        "name": "",
         "type": "bytes",
         "internalType": "bytes"
       }
@@ -7224,7 +7224,7 @@ function checkDecryptionDone(uint256 decryptionId) external view;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkDelegatedUserDecryptionReady(uint256,(address,address),(bytes32,address)[],address[],bytes)` and selector `0x9f98d899`.
 ```solidity
-function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, address[] memory contractAddresses, bytes memory extraData) external view;
+function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, address[] memory contractAddresses, bytes memory) external view;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -7242,7 +7242,7 @@ function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationA
             alloy::sol_types::private::Address,
         >,
         #[allow(missing_docs)]
-        pub extraData: alloy::sol_types::private::Bytes,
+        pub _4: alloy::sol_types::private::Bytes,
     }
     ///Container type for the return parameters of the [`checkDelegatedUserDecryptionReady(uint256,(address,address),(bytes32,address)[],address[],bytes)`](checkDelegatedUserDecryptionReadyCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -7296,7 +7296,7 @@ function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationA
                         value.delegationAccounts,
                         value.ctHandleContractPairs,
                         value.contractAddresses,
-                        value.extraData,
+                        value._4,
                     )
                 }
             }
@@ -7310,7 +7310,7 @@ function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationA
                         delegationAccounts: tuple.1,
                         ctHandleContractPairs: tuple.2,
                         contractAddresses: tuple.3,
-                        extraData: tuple.4,
+                        _4: tuple.4,
                     }
                 }
             }
@@ -7391,7 +7391,7 @@ function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationA
                         alloy::sol_types::sol_data::Address,
                     > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.extraData,
+                        &self._4,
                     ),
                 )
             }
@@ -7411,7 +7411,7 @@ function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationA
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkPublicDecryptionReady(bytes32[],bytes)` and selector `0xe31ec19d`.
 ```solidity
-function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory extraData) external view;
+function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory) external view;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -7421,7 +7421,7 @@ function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory ext
             alloy::sol_types::private::FixedBytes<32>,
         >,
         #[allow(missing_docs)]
-        pub extraData: alloy::sol_types::private::Bytes,
+        pub _1: alloy::sol_types::private::Bytes,
     }
     ///Container type for the return parameters of the [`checkPublicDecryptionReady(bytes32[],bytes)`](checkPublicDecryptionReadyCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -7466,7 +7466,7 @@ function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory ext
             impl ::core::convert::From<checkPublicDecryptionReadyCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: checkPublicDecryptionReadyCall) -> Self {
-                    (value.ctHandles, value.extraData)
+                    (value.ctHandles, value._1)
                 }
             }
             #[automatically_derived]
@@ -7476,7 +7476,7 @@ function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory ext
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         ctHandles: tuple.0,
-                        extraData: tuple.1,
+                        _1: tuple.1,
                     }
                 }
             }
@@ -7545,7 +7545,7 @@ function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory ext
                         alloy::sol_types::sol_data::FixedBytes<32>,
                     > as alloy_sol_types::SolType>::tokenize(&self.ctHandles),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.extraData,
+                        &self._1,
                     ),
                 )
             }
@@ -7565,7 +7565,7 @@ function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory ext
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkUserDecryptionReady(address,(bytes32,address)[],bytes)` and selector `0xf4a6e2ce`.
 ```solidity
-function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view;
+function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory) external view;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -7577,7 +7577,7 @@ function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] me
             <CtHandleContractPair as alloy::sol_types::SolType>::RustType,
         >,
         #[allow(missing_docs)]
-        pub extraData: alloy::sol_types::private::Bytes,
+        pub _2: alloy::sol_types::private::Bytes,
     }
     ///Container type for the return parameters of the [`checkUserDecryptionReady(address,(bytes32,address)[],bytes)`](checkUserDecryptionReadyCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -7622,7 +7622,7 @@ function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] me
             impl ::core::convert::From<checkUserDecryptionReadyCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: checkUserDecryptionReadyCall) -> Self {
-                    (value.userAddress, value.ctHandleContractPairs, value.extraData)
+                    (value.userAddress, value.ctHandleContractPairs, value._2)
                 }
             }
             #[automatically_derived]
@@ -7633,7 +7633,7 @@ function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] me
                     Self {
                         userAddress: tuple.0,
                         ctHandleContractPairs: tuple.1,
-                        extraData: tuple.2,
+                        _2: tuple.2,
                     }
                 }
             }
@@ -7706,7 +7706,7 @@ function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] me
                         &self.ctHandleContractPairs,
                     ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.extraData,
+                        &self._2,
                     ),
                 )
             }
@@ -12652,7 +12652,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             contractAddresses: alloy::sol_types::private::Vec<
                 alloy::sol_types::private::Address,
             >,
-            extraData: alloy::sol_types::private::Bytes,
+            _4: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<
             T,
             &P,
@@ -12665,7 +12665,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     delegationAccounts,
                     ctHandleContractPairs,
                     contractAddresses,
-                    extraData,
+                    _4,
                 },
             )
         }
@@ -12675,12 +12675,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             ctHandles: alloy::sol_types::private::Vec<
                 alloy::sol_types::private::FixedBytes<32>,
             >,
-            extraData: alloy::sol_types::private::Bytes,
+            _1: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<T, &P, checkPublicDecryptionReadyCall, N> {
             self.call_builder(
                 &checkPublicDecryptionReadyCall {
                     ctHandles,
-                    extraData,
+                    _1,
                 },
             )
         }
@@ -12691,13 +12691,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             ctHandleContractPairs: alloy::sol_types::private::Vec<
                 <CtHandleContractPair as alloy::sol_types::SolType>::RustType,
             >,
-            extraData: alloy::sol_types::private::Bytes,
+            _2: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<T, &P, checkUserDecryptionReadyCall, N> {
             self.call_builder(
                 &checkUserDecryptionReadyCall {
                     userAddress,
                     ctHandleContractPairs,
-                    extraData,
+                    _2,
                 },
             )
         }

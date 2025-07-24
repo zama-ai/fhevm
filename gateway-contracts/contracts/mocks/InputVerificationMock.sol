@@ -48,7 +48,7 @@ contract InputVerificationMock {
         emit VerifyProofResponse(zkProofId, ctHandles, signatures);
     }
 
-    function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external {
+    function rejectProofResponse(uint256 zkProofId, bytes calldata) external {
         emit RejectProofResponse(zkProofId);
     }
 }

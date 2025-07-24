@@ -45,8 +45,8 @@ interface MultichainAcl {
 
     function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
     function acceptOwnership() external;
-    function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory extraData) external;
-    function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
+    function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory) external;
+    function allowPublicDecrypt(bytes32 ctHandle, bytes memory) external;
     function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view;
     function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view;
     function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
@@ -109,7 +109,7 @@ interface MultichainAcl {
         "internalType": "address"
       },
       {
-        "name": "extraData",
+        "name": "",
         "type": "bytes",
         "internalType": "bytes"
       }
@@ -127,7 +127,7 @@ interface MultichainAcl {
         "internalType": "bytes32"
       },
       {
-        "name": "extraData",
+        "name": "",
         "type": "bytes",
         "internalType": "bytes"
       }
@@ -4049,7 +4049,7 @@ function acceptOwnership() external;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `allowAccount(bytes32,address,bytes)` and selector `0x294a8705`.
 ```solidity
-function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory extraData) external;
+function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4059,7 +4059,7 @@ function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory ext
         #[allow(missing_docs)]
         pub accountAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub extraData: alloy::sol_types::private::Bytes,
+        pub _2: alloy::sol_types::private::Bytes,
     }
     ///Container type for the return parameters of the [`allowAccount(bytes32,address,bytes)`](allowAccountCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -4101,7 +4101,7 @@ function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory ext
             #[doc(hidden)]
             impl ::core::convert::From<allowAccountCall> for UnderlyingRustTuple<'_> {
                 fn from(value: allowAccountCall) -> Self {
-                    (value.ctHandle, value.accountAddress, value.extraData)
+                    (value.ctHandle, value.accountAddress, value._2)
                 }
             }
             #[automatically_derived]
@@ -4111,7 +4111,7 @@ function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory ext
                     Self {
                         ctHandle: tuple.0,
                         accountAddress: tuple.1,
-                        extraData: tuple.2,
+                        _2: tuple.2,
                     }
                 }
             }
@@ -4180,7 +4180,7 @@ function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory ext
                         &self.accountAddress,
                     ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.extraData,
+                        &self._2,
                     ),
                 )
             }
@@ -4200,7 +4200,7 @@ function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory ext
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `allowPublicDecrypt(bytes32,bytes)` and selector `0xd90724b5`.
 ```solidity
-function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
+function allowPublicDecrypt(bytes32 ctHandle, bytes memory) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -4208,7 +4208,7 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
         #[allow(missing_docs)]
         pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub extraData: alloy::sol_types::private::Bytes,
+        pub _1: alloy::sol_types::private::Bytes,
     }
     ///Container type for the return parameters of the [`allowPublicDecrypt(bytes32,bytes)`](allowPublicDecryptCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -4249,7 +4249,7 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
             impl ::core::convert::From<allowPublicDecryptCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: allowPublicDecryptCall) -> Self {
-                    (value.ctHandle, value.extraData)
+                    (value.ctHandle, value._1)
                 }
             }
             #[automatically_derived]
@@ -4259,7 +4259,7 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         ctHandle: tuple.0,
-                        extraData: tuple.1,
+                        _1: tuple.1,
                     }
                 }
             }
@@ -4326,7 +4326,7 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.extraData,
+                        &self._1,
                     ),
                 )
             }
@@ -8203,13 +8203,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
             accountAddress: alloy::sol_types::private::Address,
-            extraData: alloy::sol_types::private::Bytes,
+            _2: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<T, &P, allowAccountCall, N> {
             self.call_builder(
                 &allowAccountCall {
                     ctHandle,
                     accountAddress,
-                    extraData,
+                    _2,
                 },
             )
         }
@@ -8217,12 +8217,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn allowPublicDecrypt(
             &self,
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
-            extraData: alloy::sol_types::private::Bytes,
+            _1: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<T, &P, allowPublicDecryptCall, N> {
             self.call_builder(
                 &allowPublicDecryptCall {
                     ctHandle,
-                    extraData,
+                    _1,
                 },
             )
         }

@@ -51,7 +51,7 @@ interface InputVerification {
     function pendingOwner() external view returns (address);
     function proxiableUUID() external view returns (bytes32);
     function reinitializeV2() external;
-    function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external;
+    function rejectProofResponse(uint256 zkProofId, bytes memory) external;
     function renounceOwnership() external;
     function transferOwnership(address newOwner) external;
     function unpause() external;
@@ -254,7 +254,7 @@ interface InputVerification {
         "internalType": "uint256"
       },
       {
-        "name": "extraData",
+        "name": "",
         "type": "bytes",
         "internalType": "bytes"
       }
@@ -5183,7 +5183,7 @@ function reinitializeV2() external;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `rejectProofResponse(uint256,bytes)` and selector `0x338007fc`.
 ```solidity
-function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external;
+function rejectProofResponse(uint256 zkProofId, bytes memory) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -5191,7 +5191,7 @@ function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub extraData: alloy::sol_types::private::Bytes,
+        pub _1: alloy::sol_types::private::Bytes,
     }
     ///Container type for the return parameters of the [`rejectProofResponse(uint256,bytes)`](rejectProofResponseCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -5232,7 +5232,7 @@ function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external
             impl ::core::convert::From<rejectProofResponseCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: rejectProofResponseCall) -> Self {
-                    (value.zkProofId, value.extraData)
+                    (value.zkProofId, value._1)
                 }
             }
             #[automatically_derived]
@@ -5242,7 +5242,7 @@ function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         zkProofId: tuple.0,
-                        extraData: tuple.1,
+                        _1: tuple.1,
                     }
                 }
             }
@@ -5309,7 +5309,7 @@ function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
-                        &self.extraData,
+                        &self._1,
                     ),
                 )
             }
@@ -8039,12 +8039,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn rejectProofResponse(
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
-            extraData: alloy::sol_types::private::Bytes,
+            _1: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<T, &P, rejectProofResponseCall, N> {
             self.call_builder(
                 &rejectProofResponseCall {
                     zkProofId,
-                    extraData,
+                    _1,
                 },
             )
         }
