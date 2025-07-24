@@ -393,6 +393,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS");
             env::remove_var("KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS");
             env::remove_var("KMS_CONNECTOR_RETRY_INTERVAL_SECS");
+            env::remove_var("KMS_CONNECTOR_S3_CONFIG__REGION");
+            env::remove_var("KMS_CONNECTOR_S3_CONFIG__BUCKET");
+            env::remove_var("KMS_CONNECTOR_S3_CONFIG__ENDPOINT");
         }
     }
 
@@ -482,6 +485,9 @@ mod tests {
             env::set_var("KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS", "600");
             env::set_var("KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS", "600");
             env::set_var("KMS_CONNECTOR_RETRY_INTERVAL_SECS", "10");
+            env::set_var("KMS_CONNECTOR_S3_CONFIG__REGION", "us-west-2");
+            env::set_var("KMS_CONNECTOR_S3_CONFIG__BUCKET", "test-bucket");
+            env::set_var("KMS_CONNECTOR_S3_CONFIG__ENDPOINT", "http://localhost:9000");
         }
 
         // Load config from environment
@@ -504,6 +510,14 @@ mod tests {
         assert_eq!(config.public_decryption_timeout.as_secs(), 600);
         assert_eq!(config.user_decryption_timeout.as_secs(), 600);
         assert_eq!(config.retry_interval.as_secs(), 10);
+        assert_eq!(
+            config.s3_config,
+            Some(S3Config {
+                region: "us-west-2".to_string(),
+                bucket: "test-bucket".to_string(),
+                endpoint: Some("http://localhost:9000".to_string()),
+            })
+        );
 
         cleanup_env_vars();
     }

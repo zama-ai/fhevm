@@ -159,7 +159,11 @@ impl RawConfig {
 
         // Add environment variables last so they take precedence
         info!("Adding environment variables with prefix KMS_CONNECTOR_");
-        builder = builder.add_source(Environment::with_prefix("KMS_CONNECTOR"));
+        builder = builder.add_source(
+            Environment::with_prefix("KMS_CONNECTOR")
+                .prefix_separator("_")
+                .separator("__"),
+        );
 
         let settings = builder
             .build()
