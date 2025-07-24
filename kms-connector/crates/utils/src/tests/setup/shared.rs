@@ -16,6 +16,13 @@ use tokio::{
 // Note that containers spawned by the `testcontainers` crate are stopped when they are dropped.
 // However, static variables are not dropped. Thus, we wrap the static `TestInstance` in an
 // `Option`, so we can manually `take` it and drop it, using `#[dtor]` macro.
+//
+// Note on `#[dtor]`:
+// - if the tests fails, it might not be run, so running containers will be left in that case
+//   - it should not impact the next tests that are run
+// - there is warning regarding its use https://crates.io/crates/ctor
+// - the behavior might be plateform specific
+// - if we face too many issues with this in the future, we should try to find a workaround
 pub static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 pub static TEST_INSTANCE: OnceCell<TokioMutex<Option<TestInstance>>> = OnceCell::const_new();
 
