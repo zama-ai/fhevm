@@ -15,8 +15,8 @@ interface IInputVerification {
     function checkProofRejected(uint256 zkProofId) external view;
     function checkProofVerified(uint256 zkProofId) external view;
     function getVersion() external pure returns (string memory);
-    function rejectProofResponse(uint256 zkProofId) external;
-    function verifyProofRequest(uint256 contractChainId, address contractAddress, address userAddress, bytes memory ciphertextWithZKProof) external;
+    function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external;
+    function verifyProofRequest(uint256 contractChainId, address contractAddress, address userAddress, bytes memory ciphertextWithZKProof, bytes memory extraData) external;
     function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, bytes memory signature, bytes memory extraData) external;
 }
 ```
@@ -71,6 +71,11 @@ interface IInputVerification {
         "name": "zkProofId",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "extraData",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
     "outputs": [],
@@ -97,6 +102,11 @@ interface IInputVerification {
       },
       {
         "name": "ciphertextWithZKProof",
+        "type": "bytes",
+        "internalType": "bytes"
+      },
+      {
+        "name": "extraData",
         "type": "bytes",
         "internalType": "bytes"
       }
@@ -1426,17 +1436,19 @@ function getVersion() external pure returns (string memory);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `rejectProofResponse(uint256)` and selector `0x12fe7315`.
+    /**Function with signature `rejectProofResponse(uint256,bytes)` and selector `0x338007fc`.
 ```solidity
-function rejectProofResponse(uint256 zkProofId) external;
+function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct rejectProofResponseCall {
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the [`rejectProofResponse(uint256)`](rejectProofResponseCall) function.
+    ///Container type for the return parameters of the [`rejectProofResponse(uint256,bytes)`](rejectProofResponseCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct rejectProofResponseReturn {}
@@ -1450,10 +1462,14 @@ function rejectProofResponse(uint256 zkProofId) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Bytes,
+            );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::primitives::aliases::U256,
+                alloy::sol_types::private::Bytes,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
@@ -1471,7 +1487,7 @@ function rejectProofResponse(uint256 zkProofId) external;
             impl ::core::convert::From<rejectProofResponseCall>
             for UnderlyingRustTuple<'_> {
                 fn from(value: rejectProofResponseCall) -> Self {
-                    (value.zkProofId,)
+                    (value.zkProofId, value.extraData)
                 }
             }
             #[automatically_derived]
@@ -1479,7 +1495,10 @@ function rejectProofResponse(uint256 zkProofId) external;
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for rejectProofResponseCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { zkProofId: tuple.0 }
+                    Self {
+                        zkProofId: tuple.0,
+                        extraData: tuple.1,
+                    }
                 }
             }
         }
@@ -1518,7 +1537,10 @@ function rejectProofResponse(uint256 zkProofId) external;
         }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for rejectProofResponseCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Bytes,
+            );
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
@@ -1527,8 +1549,8 @@ function rejectProofResponse(uint256 zkProofId) external;
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "rejectProofResponse(uint256)";
-            const SELECTOR: [u8; 4] = [18u8, 254u8, 115u8, 21u8];
+            const SIGNATURE: &'static str = "rejectProofResponse(uint256,bytes)";
+            const SELECTOR: [u8; 4] = [51u8, 128u8, 7u8, 252u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -1541,6 +1563,9 @@ function rejectProofResponse(uint256 zkProofId) external;
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
+                    ),
                 )
             }
             #[inline]
@@ -1557,9 +1582,9 @@ function rejectProofResponse(uint256 zkProofId) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `verifyProofRequest(uint256,address,address,bytes)` and selector `0x954d2712`.
+    /**Function with signature `verifyProofRequest(uint256,address,address,bytes,bytes)` and selector `0xa7004996`.
 ```solidity
-function verifyProofRequest(uint256 contractChainId, address contractAddress, address userAddress, bytes memory ciphertextWithZKProof) external;
+function verifyProofRequest(uint256 contractChainId, address contractAddress, address userAddress, bytes memory ciphertextWithZKProof, bytes memory extraData) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1572,8 +1597,10 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
         pub userAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
         pub ciphertextWithZKProof: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub extraData: alloy::sol_types::private::Bytes,
     }
-    ///Container type for the return parameters of the [`verifyProofRequest(uint256,address,address,bytes)`](verifyProofRequestCall) function.
+    ///Container type for the return parameters of the [`verifyProofRequest(uint256,address,address,bytes,bytes)`](verifyProofRequestCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct verifyProofRequestReturn {}
@@ -1592,12 +1619,14 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
             );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::primitives::aliases::U256,
                 alloy::sol_types::private::Address,
                 alloy::sol_types::private::Address,
+                alloy::sol_types::private::Bytes,
                 alloy::sol_types::private::Bytes,
             );
             #[cfg(test)]
@@ -1621,6 +1650,7 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
                         value.contractAddress,
                         value.userAddress,
                         value.ciphertextWithZKProof,
+                        value.extraData,
                     )
                 }
             }
@@ -1634,6 +1664,7 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
                         contractAddress: tuple.1,
                         userAddress: tuple.2,
                         ciphertextWithZKProof: tuple.3,
+                        extraData: tuple.4,
                     }
                 }
             }
@@ -1678,6 +1709,7 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
             );
             type Token<'a> = <Self::Parameters<
                 'a,
@@ -1687,8 +1719,8 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "verifyProofRequest(uint256,address,address,bytes)";
-            const SELECTOR: [u8; 4] = [149u8, 77u8, 39u8, 18u8];
+            const SIGNATURE: &'static str = "verifyProofRequest(uint256,address,address,bytes,bytes)";
+            const SELECTOR: [u8; 4] = [167u8, 0u8, 73u8, 150u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -1709,6 +1741,9 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
                     ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.ciphertextWithZKProof,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.extraData,
                     ),
                 )
             }
@@ -1923,11 +1958,11 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [13u8, 142u8, 110u8, 44u8],
-            [18u8, 254u8, 115u8, 21u8],
             [24u8, 20u8, 174u8, 137u8],
             [49u8, 190u8, 222u8, 163u8],
+            [51u8, 128u8, 7u8, 252u8],
             [90u8, 81u8, 116u8, 235u8],
-            [149u8, 77u8, 39u8, 18u8],
+            [167u8, 0u8, 73u8, 150u8],
         ];
     }
     #[automatically_derived]
@@ -1991,19 +2026,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     getVersion
                 },
                 {
-                    fn rejectProofResponse(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
-                        <rejectProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IInputVerificationCalls::rejectProofResponse)
-                    }
-                    rejectProofResponse
-                },
-                {
                     fn checkProofRejected(
                         data: &[u8],
                         validate: bool,
@@ -2028,6 +2050,19 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                             .map(IInputVerificationCalls::verifyProofResponse)
                     }
                     verifyProofResponse
+                },
+                {
+                    fn rejectProofResponse(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <rejectProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IInputVerificationCalls::rejectProofResponse)
+                    }
+                    rejectProofResponse
                 },
                 {
                     fn checkProofVerified(
@@ -2644,10 +2679,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn rejectProofResponse(
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+            extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<T, &P, rejectProofResponseCall, N> {
             self.call_builder(
                 &rejectProofResponseCall {
                     zkProofId,
+                    extraData,
                 },
             )
         }
@@ -2658,6 +2695,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             contractAddress: alloy::sol_types::private::Address,
             userAddress: alloy::sol_types::private::Address,
             ciphertextWithZKProof: alloy::sol_types::private::Bytes,
+            extraData: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<T, &P, verifyProofRequestCall, N> {
             self.call_builder(
                 &verifyProofRequestCall {
@@ -2665,6 +2703,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     contractAddress,
                     userAddress,
                     ciphertextWithZKProof,
+                    extraData,
                 },
             )
         }

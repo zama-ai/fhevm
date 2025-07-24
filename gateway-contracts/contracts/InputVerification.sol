@@ -38,7 +38,7 @@ contract InputVerification is
         address contractAddress;
         /// @notice The host chain's chain ID of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
-        /// @notice Generic bytes metadata for versioned payloads.
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
         bytes extraData;
     }
 
@@ -121,7 +121,8 @@ contract InputVerification is
         uint256 contractChainId,
         address contractAddress,
         address userAddress,
-        bytes calldata ciphertextWithZKProof
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
     ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
@@ -137,7 +138,7 @@ contract InputVerification is
             contractAddress,
             userAddress,
             ciphertextWithZKProof,
-            _getVerifyProofRequestExtraData()
+            extraData
         );
     }
 
@@ -195,7 +196,10 @@ contract InputVerification is
     }
 
     /// @dev See {IInputVerification-rejectProofResponse}.
-    function rejectProofResponse(uint256 zkProofId) external virtual onlyCoprocessorTxSender whenNotPaused {
+    function rejectProofResponse(
+        uint256 zkProofId,
+        bytes calldata extraData
+    ) external virtual onlyCoprocessorTxSender whenNotPaused {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         /**
@@ -331,16 +335,5 @@ contract InputVerification is
         assembly {
             $.slot := INPUT_VERIFICATION_STORAGE_LOCATION
         }
-    }
-
-    /**
-     * @dev Returns the extra data to be used in the ZK Proof verification request.
-     * This is used to ensure that the request is versioned and can be extended in the future.
-     * The first byte is the version, and the rest can be used for additional data.
-     * @return The extra data for the ZK Proof verification request.
-     */
-    function _getVerifyProofRequestExtraData() internal pure returns (bytes memory) {
-        // Current version is 0, and no additional data is used.
-        return abi.encodePacked(uint8(0));
     }
 }

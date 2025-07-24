@@ -36,7 +36,7 @@ contract Decryption is
         bytes32[] ctHandles;
         /// @notice The decrypted result of the public decryption.
         bytes decryptedResult;
-        /// @notice Generic bytes metadata for versioned payloads.
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
         bytes extraData;
     }
 
@@ -54,6 +54,8 @@ contract Decryption is
         uint256 startTimestamp;
         /// @notice The duration in days of the user decryption request after the start timestamp.
         uint256 durationDays;
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
+        bytes extraData;
     }
 
     /// @notice The typed data structure for the EIP712 signature to validate in user decryption responses.
@@ -66,7 +68,7 @@ contract Decryption is
         bytes32[] ctHandles;
         /// @notice The partial decryption share reencrypted with the user's public key.
         bytes userDecryptedShare;
-        /// @notice Generic bytes metadata for versioned payloads.
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
         bytes extraData;
     }
 
@@ -86,6 +88,8 @@ contract Decryption is
         uint256 startTimestamp;
         /// @notice The duration in days of the user decryption request after the start timestamp.
         uint256 durationDays;
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
+        bytes extraData;
     }
 
     /// @notice The publicKey and ctHandles from user decryption requests used for validations during responses.
@@ -127,7 +131,7 @@ contract Decryption is
     /// @notice The definition of the UserDecryptRequestVerification structure typed data.
     string private constant EIP712_USER_DECRYPT_REQUEST_TYPE =
         "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 contractsChainId,"
-        "uint256 startTimestamp,uint256 durationDays)";
+        "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
 
     /// @notice The hash of the UserDecryptRequestVerification structure typed data definition
     /// @notice used for signature validation.
@@ -135,7 +139,7 @@ contract Decryption is
 
     string private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
         "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
-        "uint256 contractsChainId,uint256 startTimestamp,uint256 durationDays)";
+        "uint256 contractsChainId,uint256 startTimestamp,uint256 durationDays,bytes extraData)";
 
     bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
         keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
@@ -224,7 +228,10 @@ contract Decryption is
     function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
-    function publicDecryptionRequest(bytes32[] calldata ctHandles) external virtual whenNotPaused {
+    function publicDecryptionRequest(
+        bytes32[] calldata ctHandles,
+        bytes calldata extraData
+    ) external virtual whenNotPaused {
         /// @dev Check that the list of handles is not empty
         if (ctHandles.length == 0) {
             revert EmptyCtHandles();
@@ -258,7 +265,7 @@ contract Decryption is
         /// @dev The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[decryptionId] = ctHandles;
 
-        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, _getPublicDecryptionRequestExtraData());
+        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
     }
 
     /// @dev See {IDecryption-publicDecryptionResponse}.
@@ -299,7 +306,7 @@ contract Decryption is
         if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
 
-            emit PublicDecryptionResponse(decryptionId, decryptedResult, verifiedSignatures);
+            emit PublicDecryptionResponse(decryptionId, decryptedResult, verifiedSignatures, extraData);
         }
     }
 
@@ -307,41 +314,45 @@ contract Decryption is
     function userDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
         RequestValidity calldata requestValidity,
-        uint256 contractsChainId,
-        address[] calldata contractAddresses,
+        ContractsInfo calldata contractsInfo,
         address userAddress,
         bytes calldata publicKey,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata extraData
     ) external virtual whenNotPaused {
-        if (contractAddresses.length == 0) {
+        if (contractsInfo.addresses.length == 0) {
             revert EmptyContractAddresses();
         }
-        if (contractAddresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-            revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
+        if (contractsInfo.addresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractAddressesMaxLengthExceeded(
+                MAX_USER_DECRYPT_CONTRACT_ADDRESSES,
+                contractsInfo.addresses.length
+            );
         }
 
         /// @dev Check the user decryption request is valid.
         _checkUserDecryptionRequestValidity(requestValidity);
 
         /// @dev Check the user address is not included in the contract addresses.
-        if (_containsContractAddress(contractAddresses, userAddress)) {
-            revert UserAddressInContractAddresses(userAddress, contractAddresses);
+        if (_containsContractAddress(contractsInfo.addresses, userAddress)) {
+            revert UserAddressInContractAddresses(userAddress, contractsInfo.addresses);
         }
 
         /// @dev - Extract the handles and check their conformance
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
             ctHandleContractPairs,
-            contractAddresses,
+            contractsInfo.addresses,
             userAddress
         );
 
         /// @dev Initialize the UserDecryptRequestVerification structure for the signature validation.
         UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
             publicKey,
-            contractAddresses,
-            contractsChainId,
+            contractsInfo.addresses,
+            contractsInfo.chainId,
             requestValidity.startTimestamp,
-            requestValidity.durationDays
+            requestValidity.durationDays,
+            extraData
         );
 
         /// @dev Validate the received EIP712 signature on the user decryption request.
@@ -372,13 +383,7 @@ contract Decryption is
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(
-            decryptionId,
-            snsCtMaterials,
-            userAddress,
-            publicKey,
-            _getUserDecryptionRequestExtraData()
-        );
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
     /// @dev See {IDecryption-userDecryptionWithDelegationRequest}.
@@ -386,46 +391,50 @@ contract Decryption is
         CtHandleContractPair[] calldata ctHandleContractPairs,
         RequestValidity calldata requestValidity,
         DelegationAccounts calldata delegationAccounts,
-        uint256 contractsChainId,
-        address[] calldata contractAddresses,
+        ContractsInfo calldata contractsInfo,
         bytes calldata publicKey,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata extraData
     ) external virtual whenNotPaused {
-        if (contractAddresses.length == 0) {
+        if (contractsInfo.addresses.length == 0) {
             revert EmptyContractAddresses();
         }
-        if (contractAddresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-            revert ContractAddressesMaxLengthExceeded(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractAddresses.length);
+        if (contractsInfo.addresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
+            revert ContractAddressesMaxLengthExceeded(
+                MAX_USER_DECRYPT_CONTRACT_ADDRESSES,
+                contractsInfo.addresses.length
+            );
         }
 
         /// @dev Check the user decryption request is valid.
         _checkUserDecryptionRequestValidity(requestValidity);
 
         /// @dev Check the delegator address is not included in the contract addresses.
-        if (_containsContractAddress(contractAddresses, delegationAccounts.delegatorAddress)) {
-            revert DelegatorAddressInContractAddresses(delegationAccounts.delegatorAddress, contractAddresses);
+        if (_containsContractAddress(contractsInfo.addresses, delegationAccounts.delegatorAddress)) {
+            revert DelegatorAddressInContractAddresses(delegationAccounts.delegatorAddress, contractsInfo.addresses);
         }
 
         /// @dev - Extract the handles and check their conformance
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
             ctHandleContractPairs,
-            contractAddresses,
+            contractsInfo.addresses,
             delegationAccounts.delegatorAddress
         );
 
         /// @dev Check that the delegated address has been granted access to the contract addresses
         /// @dev by the delegator.
-        MULTICHAIN_ACL.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
+        MULTICHAIN_ACL.checkAccountDelegated(contractsInfo.chainId, delegationAccounts, contractsInfo.addresses);
 
         /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
         DelegatedUserDecryptRequestVerification
             memory delegatedUserDecryptRequestVerification = DelegatedUserDecryptRequestVerification(
                 publicKey,
-                contractAddresses,
+                contractsInfo.addresses,
                 delegationAccounts.delegatorAddress,
-                contractsChainId,
+                contractsInfo.chainId,
                 requestValidity.startTimestamp,
-                requestValidity.durationDays
+                requestValidity.durationDays,
+                extraData
             );
 
         /// @dev Validate the received EIP712 signature on the user decryption request.
@@ -464,7 +473,7 @@ contract Decryption is
             snsCtMaterials,
             delegationAccounts.delegatedAddress,
             publicKey,
-            _getUserDecryptionRequestExtraData()
+            extraData
         );
     }
 
@@ -510,12 +519,17 @@ contract Decryption is
         if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
 
-            emit UserDecryptionResponse(decryptionId, $.userDecryptedShares[decryptionId], verifiedSignatures);
+            emit UserDecryptionResponse(
+                decryptionId,
+                $.userDecryptedShares[decryptionId],
+                verifiedSignatures,
+                extraData
+            );
         }
     }
 
     /// @dev See {IDecryption-checkPublicDecryptionReady}.
-    function checkPublicDecryptionReady(bytes32[] calldata ctHandles) external view virtual {
+    function checkPublicDecryptionReady(bytes32[] calldata ctHandles, bytes calldata extraData) external view virtual {
         /// @dev Check that the handles are allowed for public decryption and that the ciphertext materials
         /// @dev represented by them have been added.
         for (uint256 i = 0; i < ctHandles.length; i++) {
@@ -527,7 +541,8 @@ contract Decryption is
     /// @dev See {IDecryption-checkUserDecryptionReady}.
     function checkUserDecryptionReady(
         address userAddress,
-        CtHandleContractPair[] calldata ctHandleContractPairs
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        bytes calldata extraData
     ) external view virtual {
         /// @dev Check that the user and contracts accounts have access to the handles and that the
         /// @dev ciphertext materials represented by them have been added.
@@ -546,7 +561,8 @@ contract Decryption is
         uint256 contractsChainId,
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
-        address[] calldata contractAddresses
+        address[] calldata contractAddresses,
+        bytes calldata extraData
     ) external view virtual {
         /// @dev Check that the delegated address has been granted access to the given contractAddresses
         /// @dev by the delegator.
@@ -695,7 +711,8 @@ contract Decryption is
                 keccak256(abi.encodePacked(userDecryptRequestVerification.contractAddresses)),
                 userDecryptRequestVerification.contractsChainId,
                 userDecryptRequestVerification.startTimestamp,
-                userDecryptRequestVerification.durationDays
+                userDecryptRequestVerification.durationDays,
+                keccak256(abi.encodePacked(userDecryptRequestVerification.extraData))
             )
         );
         return _hashTypedDataV4CustomChainId(userDecryptRequestVerification.contractsChainId, structHash);
@@ -715,7 +732,8 @@ contract Decryption is
                 delegatedUserDecryptRequestVerification.delegatorAddress,
                 delegatedUserDecryptRequestVerification.contractsChainId,
                 delegatedUserDecryptRequestVerification.startTimestamp,
-                delegatedUserDecryptRequestVerification.durationDays
+                delegatedUserDecryptRequestVerification.durationDays,
+                keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.extraData))
             )
         );
         return _hashTypedDataV4CustomChainId(delegatedUserDecryptRequestVerification.contractsChainId, structHash);
@@ -906,27 +924,5 @@ contract Decryption is
         assembly {
             $.slot := DECRYPTION_STORAGE_LOCATION
         }
-    }
-
-    /**
-     * @dev Returns the extra data to be used in the Public Decryption request.
-     * This is used to ensure that the request is versioned and can be extended in the future.
-     * The first byte is the version, and the rest can be used for additional data.
-     * @return The extra data for the Public Decryption request.
-     */
-    function _getPublicDecryptionRequestExtraData() internal pure returns (bytes memory) {
-        // Current version is 0, and no additional data is used.
-        return abi.encodePacked(uint8(0));
-    }
-
-    /**
-     * @dev Returns the extra data to be used in the User Decryption request.
-     * This is used to ensure that the request is versioned and can be extended in the future.
-     * The first byte is the version, and the rest can be used for additional data.
-     * @return The extra data for the User Decryption request.
-     */
-    function _getUserDecryptionRequestExtraData() internal pure returns (bytes memory) {
-        // Current version is 0, and no additional data is used.
-        return abi.encodePacked(uint8(0));
     }
 }

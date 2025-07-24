@@ -149,6 +149,7 @@ export function createEIP712RequestUserDecrypt(
   contractsChainId: number,
   startTimestamp: string,
   durationDays: string,
+  extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -167,6 +168,7 @@ export function createEIP712RequestUserDecrypt(
         { name: "contractsChainId", type: "uint256" },
         { name: "startTimestamp", type: "uint256" },
         { name: "durationDays", type: "uint256" },
+        { name: "extraData", type: "bytes" },
       ],
     },
     primaryType: "UserDecryptRequestVerification",
@@ -182,6 +184,7 @@ export function createEIP712RequestUserDecrypt(
       contractsChainId,
       startTimestamp,
       durationDays,
+      extraData,
     },
   };
 }
@@ -211,6 +214,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
   contractsChainId: number,
   startTimestamp: string,
   durationDays: string,
+  extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -230,6 +234,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
         { name: "contractsChainId", type: "uint256" },
         { name: "startTimestamp", type: "uint256" },
         { name: "durationDays", type: "uint256" },
+        { name: "extraData", type: "bytes" },
       ],
     },
     primaryType: "DelegatedUserDecryptRequestVerification",
@@ -246,6 +251,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
       contractsChainId,
       startTimestamp,
       durationDays,
+      extraData,
     },
   };
 }

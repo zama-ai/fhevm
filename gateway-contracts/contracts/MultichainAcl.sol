@@ -95,7 +95,8 @@ contract MultichainAcl is
 
     /// @dev See {IMultichainAcl-allowPublicDecrypt}.
     function allowPublicDecrypt(
-        bytes32 ctHandle
+        bytes32 ctHandle,
+        bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
@@ -122,7 +123,8 @@ contract MultichainAcl is
     /// @dev See {IMultichainAcl-allowAccount}.
     function allowAccount(
         bytes32 ctHandle,
-        address accountAddress
+        address accountAddress,
+        bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
