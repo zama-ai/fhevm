@@ -170,6 +170,12 @@ interface IDecryption {
     error DecryptionNotRequested(uint256 decryptionId);
 
     /**
+     * @notice Checks if a (public, user, delegated user) decryption is done.
+     * @param decryptionId The decryption request ID.
+     */
+    function checkDecryptionDone(uint256 decryptionId) external view;
+
+    /**
      * @notice Requests a public decryption.
      * @param ctHandles The handles of the ciphertexts to decrypt.
      */
@@ -268,12 +274,6 @@ interface IDecryption {
         CtHandleContractPair[] calldata ctHandleContractPairs,
         address[] calldata contractAddresses
     ) external view;
-
-    /**
-     * @notice Checks if a (public, user, delegated user) decryption is done.
-     * @param decryptionId The decryption request ID.
-     */
-    function checkDecryptionDone(uint256 decryptionId) external view;
 
     /**
      * @notice Returns the KMS transaction sender addresses that were involved in the consensus for a decryption request.

@@ -203,6 +203,11 @@ contract Decryption is
                consensusTxSenderAddresses;
         /// @notice The digest of the decryption response that reached consensus for a decryption request.
         mapping(uint256 decryptionId => bytes32 consensusDigest) decryptionConsensusDigest;
+        // ----------------------------------------------------------------------------------------------
+        // Public decryption response state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The decrypted result of the public decryption.
+        mapping(uint256 decryptionId => bytes decryptedResult) publicDecryptedResult;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -230,6 +235,14 @@ contract Decryption is
      * @notice Re-initializes the contract from V2.
      */
     function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
+    /// @dev See {IDecryption-checkDecryptionDone}.
+    function checkDecryptionDone(uint256 decryptionId) public view virtual {
+        DecryptionStorage storage $ = _getDecryptionStorage();
+        if (!$.decryptionDone[decryptionId]) {
+            revert DecryptionNotDone(decryptionId);
+        }
+    }
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
     function publicDecryptionRequest(bytes32[] calldata ctHandles) external virtual whenNotPaused {
@@ -320,6 +333,10 @@ contract Decryption is
             // by only knowing the decryption ID, since a consensus can only happen once per decryption
             // request, independently of the decryption response type (public or user).
             $.decryptionConsensusDigest[decryptionId] = digest;
+
+            // Store the decrypted result for the public decryption response in order to be able to
+            // retrieve it later
+            $.publicDecryptedResult[decryptionId] = decryptedResult;
 
             emit PublicDecryptionResponse(decryptionId, decryptedResult, verifiedSignatures);
         }
@@ -587,14 +604,6 @@ contract Decryption is
         }
     }
 
-    /// @dev See {IDecryption-checkDecryptionDone}.
-    function checkDecryptionDone(uint256 decryptionId) external view virtual {
-        DecryptionStorage storage $ = _getDecryptionStorage();
-        if (!$.decryptionDone[decryptionId]) {
-            revert DecryptionNotDone(decryptionId);
-        }
-    }
-
     /**
      * @dev See {IDecryption-getDecryptionConsensusTxSenders}.
      * For public decryption, the list remains empty until the consensus is reached.
@@ -608,6 +617,36 @@ contract Decryption is
         bytes32 consensusDigest = $.decryptionConsensusDigest[decryptionId];
 
         return $.consensusTxSenderAddresses[decryptionId][consensusDigest];
+    }
+
+    function getPublicDecryptionResponseMaterials(
+        uint256 decryptionId
+    ) external view virtual returns (bytes memory, bytes[] memory) {
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Check that the user decryption consensus has been reached
+        checkDecryptionDone(decryptionId);
+
+        // Get the unique digest associated to the decryption request
+        bytes32 consensusDigest = $.decryptionConsensusDigest[decryptionId];
+
+        // Return the decrypted result and the verified signatures for the public decryption response
+        return (
+            $.publicDecryptedResult[decryptionId],
+            $._verifiedPublicDecryptSignatures[decryptionId][consensusDigest]
+        );
+    }
+
+    function getUserDecryptionResponseMaterials(
+        uint256 decryptionId
+    ) external view virtual returns (bytes[] memory, bytes[] memory) {
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Check that the user decryption consensus has been reached
+        checkDecryptionDone(decryptionId);
+
+        // Return the user decrypted shares and the verified signatures for the user decryption response
+        return ($.userDecryptedShares[decryptionId], $._verifiedUserDecryptSignatures[decryptionId]);
     }
 
     /// @dev See {IDecryption-getVersion}.

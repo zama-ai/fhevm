@@ -677,6 +677,58 @@ describe("Decryption", function () {
       expect(decryptionConsensusTxSenders).to.deep.equal(expectedKmsTxSenderAddresses);
     });
 
+    it("Should get public decryption materials from consensus", async function () {
+      // Request public decryption
+      await decryption.publicDecryptionRequest(ctHandles);
+
+      // Trigger 3 valid public decryption responses
+      await decryption
+        .connect(kmsTxSenders[0])
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
+
+      await decryption
+        .connect(kmsTxSenders[1])
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
+
+      await decryption
+        .connect(kmsTxSenders[2])
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+
+      const expectedPublicDecryptionResponseMaterials1 = [decryptedResult, kmsSignatures.slice(0, 3)];
+
+      // Check that the public decryption response materials are from the 3 KMS transaction senders
+      // at the moment the consensus is reached
+      const publicDecryptionResponseMaterials1 = await decryption.getPublicDecryptionResponseMaterials(decryptionId);
+      expect(publicDecryptionResponseMaterials1).to.deep.equal(expectedPublicDecryptionResponseMaterials1);
+
+      // Trigger a fourth valid public decryption response
+      await decryption
+        .connect(kmsTxSenders[3])
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3]);
+
+      const expectedPublicDecryptionResponseMaterials2 = [decryptedResult, kmsSignatures.slice(0, 4)];
+
+      // Check that the public decryption response materials are from the 4 KMS transaction senders
+      // after the consensus is reached
+      const publicDecryptionResponseMaterials2 = await decryption.getPublicDecryptionResponseMaterials(decryptionId);
+      expect(publicDecryptionResponseMaterials2).to.deep.equal(expectedPublicDecryptionResponseMaterials2);
+    });
+
+    it("Should revert and not get public decryption materials from consensus because consensus is not reached", async function () {
+      // Request public decryption
+      await decryption.publicDecryptionRequest(ctHandles);
+
+      // Trigger a valid public decryption response
+      await decryption
+        .connect(kmsTxSenders[0])
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
+
+      await expect(decryption.getPublicDecryptionResponseMaterials(decryptionId)).to.be.revertedWithCustomError(
+        decryption,
+        "DecryptionNotDone",
+      );
+    });
+
     it("Should revert in case of invalid decryptionId in public decryption response", async function () {
       // Check that a public decryption response with null (invalid) decryptionId reverts
       await expect(
@@ -1480,6 +1532,73 @@ describe("Decryption", function () {
       // Get the KMS transaction senders that were involved in the consensus, after the consensus is reached
       const decryptionConsensusTxSenders3 = await decryption.getDecryptionConsensusTxSenders(decryptionId);
       expect(decryptionConsensusTxSenders3).to.deep.equal(expectedKmsTxSenderAddresses3);
+    });
+
+    it("Should get user decryption materials from consensus", async function () {
+      // Request user decryption
+      await decryption.userDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        hostChainId,
+        contractAddresses,
+        user.address,
+        publicKey,
+        userSignature,
+      );
+
+      // Trigger 3 valid user decryption responses using different KMS transaction senders
+      await decryption
+        .connect(kmsTxSenders[0])
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+
+      await decryption
+        .connect(kmsTxSenders[1])
+        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1]);
+
+      await decryption
+        .connect(kmsTxSenders[2])
+        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2]);
+
+      const expectedUserDecryptionResponseMaterials1 = [userDecryptedShares.slice(0, 3), kmsSignatures.slice(0, 3)];
+
+      // Check that the user decrypted response materials are from the 3 KMS transaction senders
+      // at the moment the consensus is reached
+      const userDecryptionResponseMaterials1 = await decryption.getUserDecryptionResponseMaterials(decryptionId);
+      expect(userDecryptionResponseMaterials1).to.deep.equal(expectedUserDecryptionResponseMaterials1);
+
+      await decryption
+        .connect(kmsTxSenders[3])
+        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3]);
+
+      const expectedUserDecryptionResponseMaterials2 = [userDecryptedShares.slice(0, 4), kmsSignatures.slice(0, 4)];
+
+      // Check that the user decrypted response materials are from the 4 KMS transaction senders
+      // after the consensus is reached
+      const userDecryptionResponseMaterials2 = await decryption.getUserDecryptionResponseMaterials(decryptionId);
+      expect(userDecryptionResponseMaterials2).to.deep.equal(expectedUserDecryptionResponseMaterials2);
+    });
+
+    it("Should revert and not get user decryption materials from consensus because consensus is not reached", async function () {
+      // Request user decryption
+      await decryption.userDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        hostChainId,
+        contractAddresses,
+        user.address,
+        publicKey,
+        userSignature,
+      );
+
+      // Trigger a valid user decryption response
+      await decryption
+        .connect(kmsTxSenders[0])
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+
+      await expect(decryption.getUserDecryptionResponseMaterials(decryptionId)).to.be.revertedWithCustomError(
+        decryption,
+        "DecryptionNotDone",
+      );
     });
 
     it("Should revert in case of invalid decryptionId in user decryption response", async function () {
