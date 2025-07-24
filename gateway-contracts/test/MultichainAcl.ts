@@ -1,4 +1,4 @@
-import { HardhatEthersSigner, SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { Wallet } from "ethers";
@@ -127,16 +127,6 @@ describe("MultichainAcl", function () {
         .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
         .withArgs(newCtHandle, accountAddress);
     });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await multichainAcl.connect(owner).pause();
-
-      // Try calling paused allow account
-      await expect(
-        multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress),
-      ).to.be.revertedWithCustomError(multichainAcl, "EnforcedPause");
-    });
   });
 
   describe("Allow public decrypt", async function () {
@@ -182,16 +172,6 @@ describe("MultichainAcl", function () {
       await expect(multichainAcl.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed(newCtHandle))
         .to.be.revertedWithCustomError(multichainAcl, "PublicDecryptNotAllowed")
         .withArgs(newCtHandle);
-    });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await multichainAcl.connect(owner).pause();
-
-      // Try calling paused allow public decrypt
-      await expect(
-        multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle),
-      ).to.be.revertedWithCustomError(multichainAcl, "EnforcedPause");
     });
   });
 
@@ -313,18 +293,6 @@ describe("MultichainAcl", function () {
       await expect(multichainAcl.checkAccountDelegated(hostChainId, fakeDelegationAccounts, allowedContracts))
         .revertedWithCustomError(multichainAcl, "AccountNotDelegated")
         .withArgs(hostChainId, toValues(fakeDelegationAccounts), allowedContracts[0]);
-    });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await multichainAcl.connect(owner).pause();
-
-      // Try calling paused delegate account
-      await expect(
-        multichainAcl
-          .connect(coprocessorTxSenders[0])
-          .delegateAccount(hostChainId, delegationAccounts, allowedContracts),
-      ).to.be.revertedWithCustomError(multichainAcl, "EnforcedPause");
     });
   });
 

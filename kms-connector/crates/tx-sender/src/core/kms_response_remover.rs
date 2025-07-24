@@ -18,8 +18,9 @@ pub struct DbKmsResponseRemover {
 }
 
 impl KmsResponseRemover for DbKmsResponseRemover {
+    #[tracing::instrument(skip_all)]
     async fn remove_response(&self, response: &KmsResponse) -> anyhow::Result<()> {
-        info!("Removing {response} from DB...");
+        info!("Removing response from DB...");
         let query_result = match response {
             KmsResponse::PublicDecryption { decryption_id, .. } => {
                 self.remove_public_decryption(*decryption_id).await?
@@ -29,12 +30,9 @@ impl KmsResponseRemover for DbKmsResponseRemover {
             }
         };
         if query_result.rows_affected() == 1 {
-            info!("Successfully removed {response} from DB!");
+            info!("Successfully removed response from DB!");
         } else {
-            warn!(
-                "Unexpected query result while removing {}: {:?}",
-                response, query_result
-            )
+            warn!("Unexpected query result while removing response: {query_result:?}");
         }
         Ok(())
     }

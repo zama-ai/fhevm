@@ -35,10 +35,12 @@ fn construct_config() -> Config {
             listen_channels: args.pg_listen_channels,
             notify_channel: args.pg_notify_channel,
             batch_limit: args.work_items_batch_size,
+            gc_batch_limit: args.gc_batch_size,
             polling_interval: args.pg_polling_interval,
             max_connections: args.pg_pool_connections,
             cleanup_interval: args.cleanup_interval,
             timeout: args.pg_timeout,
+            lifo: args.lifo,
         },
         s3: S3Config {
             bucket_ct128: args.bucket_name_ct128,

@@ -10,7 +10,7 @@ import { checkIsHardhatSigner } from './utils';
 
 const networkName = network.name;
 
-const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
+const parsedEnvACL = dotenv.parse(fs.readFileSync('addresses/.env.host'));
 const aclAdd = parsedEnvACL.ACL_CONTRACT_ADDRESS;
 
 async function getKMSSigners() {
@@ -23,25 +23,6 @@ async function getKMSSigners() {
   }
   return kmsSigners;
 }
-
-/**
- * An object that maps numeric keys to their corresponding ciphertext types.
- * The keys represent different types of ciphertexts, and the values are their
- * respective type names as strings.
- */
-const CiphertextType = {
-  0: 'bool',
-  2: 'uint8', // corresponding to euint8
-  3: 'uint16',
-  4: 'uint32',
-  5: 'uint64',
-  6: 'uint128',
-  7: 'address',
-  8: 'uint256',
-  9: 'bytes',
-  10: 'bytes',
-  11: 'bytes',
-};
 
 let toSkip: BigInt[] = [];
 
@@ -143,37 +124,24 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       if (!allTrue(isAllowedForDec)) {
         throw new Error('Some handle is not authorized for decryption');
       }
-      const types = typesList.map((num: string | number) => CiphertextType[num]);
+
       const values = await Promise.all(handles.map(async (handle: string) => await getClearText(handle)));
 
-      const valuesFormatted = values.map((value, index) =>
-        types[index] === 'address' ? '0x' + BigInt(value).toString(16).padStart(40, '0') : value,
-      );
-
-      const valuesFormatted2 = valuesFormatted.map((value, index) =>
-        typesList[index] === 9 ? '0x' + BigInt(value).toString(16).padStart(128, '0') : value,
-      );
-      const valuesFormatted3 = valuesFormatted2.map((value, index) =>
-        typesList[index] === 10 ? '0x' + BigInt(value).toString(16).padStart(256, '0') : value,
-      );
-      const valuesFormatted4 = valuesFormatted3.map((value, index) =>
-        typesList[index] === 11 ? '0x' + BigInt(value).toString(16).padStart(512, '0') : value,
-      );
-
       const abiCoder = new ethers.AbiCoder();
-      let encodedData;
+      const extraDataV0 = ethers.solidityPacked(['uint8'], [0]);
       let decryptedResult;
 
-      encodedData = abiCoder.encode(['uint256', ...types, 'bytes[]'], [31, ...valuesFormatted4, []]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
-      // + adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
-      decryptedResult = '0x' + encodedData.slice(66).slice(0, -64); // we pop the dummy requestID to get the correct value to pass for `decryptedCts` + we also pop the last 32 bytes (empty bytes[])
+      decryptedResult = abiCoder.encode(Array(values.length).fill('uint256'), values); // since ebytesXXX were deprecated, all cleartexts are native static types, i.e encoding works as if they were all uint256 types, and the selector already takes into account correct underlying types
 
-      const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult);
+      const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult, extraDataV0);
 
       const calldata =
         callbackSelector +
         abiCoder
-          .encode(['uint256', ...types, 'bytes[]'], [requestID, ...valuesFormatted4, decryptResultsEIP712signatures])
+          .encode(
+            ['uint256', ...Array(values.length).fill('uint256'), 'bytes[]', 'bytes'],
+            [requestID, ...values, decryptResultsEIP712signatures, extraDataV0],
+          )
           .slice(2);
 
       const txData = {
@@ -196,20 +164,24 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
   }
 };
 
-async function computeDecryptSignatures(handlesList: string[], decryptedResult: string): Promise<string[]> {
+async function computeDecryptSignatures(
+  handlesList: string[],
+  decryptedResult: string,
+  extraData: string,
+): Promise<string[]> {
   const signatures: string[] = [];
 
   let signers = await getKMSSigners();
 
   for (let idx = 0; idx < signers.length; idx++) {
     const kmsSigner = signers[idx];
-    const signature = await kmsSign(handlesList, decryptedResult, kmsSigner);
+    const signature = await kmsSign(handlesList, decryptedResult, extraData, kmsSigner);
     signatures.push(signature);
   }
   return signatures;
 }
 
-async function kmsSign(handlesList: string[], decryptedResult: string, kmsSigner: Wallet) {
+async function kmsSign(handlesList: string[], decryptedResult: string, extraData: string, kmsSigner: Wallet) {
   const decAdd = process.env.DECRYPTION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;
 
@@ -230,11 +202,16 @@ async function kmsSign(handlesList: string[], decryptedResult: string, kmsSigner
         name: 'decryptedResult',
         type: 'bytes',
       },
+      {
+        name: 'extraData',
+        type: 'bytes',
+      },
     ],
   };
   const message = {
     ctHandles: handlesList,
-    decryptedResult: decryptedResult,
+    decryptedResult,
+    extraData,
   };
 
   const signature = await kmsSigner.signTypedData(domain, types, message);

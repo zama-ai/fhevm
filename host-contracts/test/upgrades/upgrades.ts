@@ -110,7 +110,7 @@ describe('Upgrades', function () {
   });
 
   it('original owner upgrades the original ACL and transfer ownership', async function () {
-    const origACLAdd = dotenv.parse(fs.readFileSync('addresses/.env.acl')).ACL_CONTRACT_ADDRESS;
+    const origACLAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const acl = (await this.aclFactory.attach(origACLAdd, deployer)) as ACL;
     expect(await acl.getVersion()).to.equal('ACL v0.2.0');

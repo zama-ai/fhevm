@@ -36,6 +36,7 @@
   - [Setup Hardhat](getting-started/quick-start-tutorial/setup.md)
   - [Write FHEVM tests in Hardhat](hardhat/write_test.md)
   - [Deploy contracts and run tests](hardhat/run_test.md)
+  - [Write FHEVM-enabled Hardhat Tasks](hardhat//write_task.md)
 - [Foundry](foundry.md)
 - [HCU](hcu.md)
 - [Migrate to v0.7](migration.md)

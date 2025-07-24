@@ -10,18 +10,19 @@ version.workspace = true
 connector-utils.workspace = true
 fhevm_gateway_rust_bindings.workspace = true
 
+actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
+prometheus.workspace = true
 serde.workspace = true
 sqlx.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-tonic.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace = true
 
 [dev-dependencies]
-connector-tests.workspace = true
+connector-utils = { workspace = true, features = ["tests"] }
+rstest.workspace = true
 serial_test.workspace = true
 tempfile.workspace = true
 tokio-stream.workspace = true

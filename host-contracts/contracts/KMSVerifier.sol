@@ -53,11 +53,13 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
         bytes32[] ctHandles;
         /// @notice The decrypted result of the public decryption.
         bytes decryptedResult;
+        /// @notice Generic bytes metadata for versioned payloads.
+        bytes extraData;
     }
 
     /// @notice Decryption result type.
     string public constant EIP712_PUBLIC_DECRYPT_TYPE =
-        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult)";
+        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
 
     /// @notice Decryption result typehash.
     bytes32 public constant DECRYPTION_RESULT_TYPEHASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
@@ -84,8 +86,8 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
         uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
     }
 
-    /// Constant used for making sure the version number using in the `reinitializer` modifier is
-    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    /// Constant used for making sure the version number used in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
     uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
@@ -175,11 +177,13 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
     function verifyDecryptionEIP712KMSSignatures(
         bytes32[] memory handlesList,
         bytes memory decryptedResult,
-        bytes[] memory signatures
+        bytes[] memory signatures,
+        bytes memory extraData
     ) public virtual returns (bool) {
         PublicDecryptVerification memory decRes;
         decRes.ctHandles = handlesList;
         decRes.decryptedResult = decryptedResult;
+        decRes.extraData = extraData;
         bytes32 digest = _hashDecryptionResult(decRes);
         return _verifySignaturesDigest(digest, signatures);
     }
@@ -330,7 +334,8 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
                     abi.encode(
                         DECRYPTION_RESULT_TYPEHASH,
                         keccak256(abi.encodePacked(decRes.ctHandles)),
-                        keccak256(decRes.decryptedResult)
+                        keccak256(decRes.decryptedResult),
+                        keccak256(abi.encodePacked(decRes.extraData))
                     )
                 )
             );

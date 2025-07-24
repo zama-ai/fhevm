@@ -78,7 +78,7 @@ function requestDecryption(
 
 The first argument, `ctsHandles`, should be an array of ciphertexts handles which could be of different types, i.e `uint256` values coming from unwrapping handles of type either `ebool`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`.&#x20;
 
-`ctsHandles` is the array of ciphertexts that are requested to be decrypted. Tthe relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
+`ctsHandles` is the array of ciphertexts that are requested to be decrypted. The relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
 
 `callbackSelector` is the function selector of the callback function, which will be called once the relayer fulfils the decryption request.
 

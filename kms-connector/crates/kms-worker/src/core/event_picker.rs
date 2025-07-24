@@ -1,3 +1,4 @@
+use crate::monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS};
 use anyhow::anyhow;
 use connector_utils::types::GatewayEvent;
 use sqlx::{Pool, Postgres, postgres::PgListener};
@@ -95,9 +96,13 @@ impl EventPicker for DbEventPicker {
                         continue;
                     }
                     info!("Picked {} events successfully", events.len());
+                    EVENT_RECEIVED_COUNTER.inc_by(events.len() as u64);
                     return Ok(events);
                 }
-                Err(err) => return Err(err.into()),
+                Err(err) => {
+                    EVENT_RECEIVED_ERRORS.inc();
+                    return Err(err.into());
+                }
             }
         }
     }

@@ -8,7 +8,7 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 import {ACL} from "../../contracts/ACL.sol";
 import {ACLEvents} from "../../contracts/ACLEvents.sol";
 import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
-import {fhevmExecutorAdd} from "../../addresses/FHEVMExecutorAddress.sol";
+import {fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract ACLTest is Test {
     ACL internal acl;

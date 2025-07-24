@@ -48,7 +48,7 @@ pub struct DecryptedValue {
 }
 
 /// Configuration for response processing
-#[derive(Default)]
+#[derive(Debug)]
 pub(super) struct ResponseConfig {
     pub kms_signers: Option<Vec<String>>,
     pub user_address: Option<String>,
@@ -57,7 +57,26 @@ pub(super) struct ResponseConfig {
     pub signature: Option<String>,
     pub public_key: Option<String>,
     pub private_key: Option<String>,
+    pub domain: Option<String>,
     pub handle_contract_pairs: Option<Vec<CtHandleContractPair>>,
     pub json_response: Option<String>,
     pub verify_signatures: bool,
+}
+
+impl Default for ResponseConfig {
+    fn default() -> Self {
+        Self {
+            kms_signers: None,
+            user_address: None,
+            gateway_chain_id: None,
+            verifying_contract_address: None,
+            signature: None,
+            public_key: None,
+            private_key: None,
+            domain: Some("Decryption".to_string()),
+            handle_contract_pairs: None,
+            json_response: None,
+            verify_signatures: false,
+        }
+    }
 }

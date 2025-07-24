@@ -37,14 +37,16 @@ pub async fn insert_ciphertext64(
     tenant_id: i32,
     handle: &Vec<u8>,
     ciphertext: &Vec<u8>,
+    ciphertext128: &[u8],
 ) -> anyhow::Result<()> {
     let _ = query!(
-        "INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type) 
-         VALUES ($1, $2, $3, $4, $5)
+        "INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext128, ciphertext_version, ciphertext_type) 
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT DO NOTHING;",
          tenant_id,
         handle,
         ciphertext,
+        ciphertext128,
         0,
         0,
     )
@@ -69,6 +71,31 @@ pub async fn insert_into_pbs_computations(
     .execute(pool)
     .await
     .expect("insert into pbs_computations");
+
+    Ok(())
+}
+
+pub async fn insert_ciphertext_digest(
+    pool: &PgPool,
+    tenant_id: i32,
+    handle: &[u8; 32],
+    ciphertext: &[u8],
+    ciphertext128: &[u8],
+    txn_limited_retries_count: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO ciphertext_digest (tenant_id, handle, ciphertext, ciphertext128, txn_limited_retries_count)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+        tenant_id,
+        handle,
+        ciphertext,
+        ciphertext128,
+        txn_limited_retries_count,
+    )
+    .execute(pool)
+    .await?;
 
     Ok(())
 }

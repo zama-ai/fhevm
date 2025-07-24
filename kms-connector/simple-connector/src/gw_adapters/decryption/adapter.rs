@@ -48,22 +48,23 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
         }
 
         info!(
-            decryption_id = ?id,
             signature = ?signature,
-            "Using Core's EIP-712 signature for public decryption"
+            "Using Core's EIP-712 signature for PublicDecryptionResponse-{id}"
         );
 
         debug!(
-            decryption_id = ?id,
             result_len = result.len(),
             signature = ?signature,
-            "Sending public decryption response"
+            "Sending PublicDecryptionResponse-{id}"
         );
 
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
 
         let call_builder = contract.publicDecryptionResponse(id, result, signature.into());
-        info!(decryption_id = ?id, "public decryption calldata length {}", call_builder.calldata().len());
+        info!(
+            "PublicDecryptionResponse-{id} calldata length {}",
+            call_builder.calldata().len()
+        );
 
         let mut call = call_builder.into_transaction_request();
         self.estimate_gas(id, &mut call).await;
@@ -74,8 +75,14 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             .get_receipt()
             .await
             .map_err(|e| Error::Contract(e.to_string()))?;
-        info!(decryption_id = ?id, "🎯 Public Decryption response sent with tx receipt: {:?}", receipt);
-        info!(decryption_id = ?id, "⛽ Gas consumed for Public Decryption: {}", receipt.gas_used);
+        info!(
+            "🎯 PublicDecryptionResponse-{id} sent with tx receipt: {:?}",
+            receipt
+        );
+        info!(
+            "⛽ Gas consumed by PublicDecryptionResponse-{id}: {}",
+            receipt.gas_used
+        );
         Ok(())
     }
 
@@ -88,29 +95,30 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
     ) -> Result<()> {
         if signature.len() != 65 {
             return Err(Error::Contract(format!(
-                "Invalid EIP-712 signature length: {}, expected 65 bytes",
+                "UserDecryptionResponse-{id}: Invalid EIP-712 signature length: {}, expected 65 bytes",
                 signature.len()
             )));
         }
 
         info!(
-            decryption_id = ?id,
             signature = ?signature,
-            "Using Core's EIP-712 signature for user decryption"
+            "Using Core's EIP-712 signature for UserDecryptionResponse-{id}"
         );
 
         debug!(
-            decryption_id = ?id,
             result_len = result.len(),
             signature = ?signature,
-            "Sending user decryption response"
+            "Sending UserDecryptionResponse-{id}"
         );
 
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
 
         // Create and send transaction
         let call_builder = contract.userDecryptionResponse(id, result, signature.into());
-        info!(decryption_id = ?id, "user decryption calldata length {}", call_builder.calldata().len());
+        info!(
+            "UserDecryptionResponse-{id} calldata length {}",
+            call_builder.calldata().len()
+        );
 
         let mut call = call_builder.into_transaction_request();
         self.estimate_gas(id, &mut call).await;
@@ -121,8 +129,14 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             .get_receipt()
             .await
             .map_err(|e| Error::Contract(e.to_string()))?;
-        info!(decryption_id = ?id, "🎯 User Decryption response sent with tx receipt: {:?}", receipt);
-        info!(decryption_id = ?id, "⛽ Gas consumed for User Decryption: {}", receipt.gas_used);
+        info!(
+            "🎯 UserDecryptionResponse-{id} sent with tx receipt: {:?}",
+            receipt
+        );
+        info!(
+            "⛽ Gas consumed by UserDecryptionResponse-{id}: {}",
+            receipt.gas_used
+        );
         Ok(())
     }
 

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 import { IDecryption } from "./interfaces/IDecryption.sol";
-import { multichainAclAddress } from "../addresses/MultichainAclAddress.sol";
-import { ciphertextCommitsAddress } from "../addresses/CiphertextCommitsAddress.sol";
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
+import {
+    ciphertextCommitsAddress,
+    gatewayConfigAddress,
+    multichainAclAddress
+} from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
@@ -255,7 +257,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, UUPSUpgradeableEmptyProxy
         uint256 decryptionId,
         bytes calldata decryptedResult,
         bytes calldata signature
-    ) external virtual onlyKmsTxSender whenNotPaused {
+    ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
@@ -448,7 +450,7 @@ contract Decryption is IDecryption, EIP712Upgradeable, UUPSUpgradeableEmptyProxy
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
         bytes calldata signature
-    ) external virtual onlyKmsTxSender whenNotPaused {
+    ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
         UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
 

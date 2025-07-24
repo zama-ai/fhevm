@@ -1,16 +1,22 @@
-use crate::core::{Config, event_processor::eip712::verify_user_decryption_eip712};
+use crate::{
+    core::{Config, event_processor::eip712::verify_user_decryption_eip712},
+    monitoring::metrics::{
+        CORE_REQUEST_SENT_COUNTER, CORE_REQUEST_SENT_ERRORS, CORE_RESPONSE_COUNTER,
+        CORE_RESPONSE_ERRORS,
+    },
+};
 use anyhow::anyhow;
 use connector_utils::{
     conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
     types::{KmsGrpcRequest, KmsGrpcResponse},
 };
 use kms_grpc::{
-    kms::v1::{PublicDecryptionRequest, UserDecryptionRequest},
+    kms::v1::{Empty, PublicDecryptionRequest, UserDecryptionRequest},
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
 use std::time::{Duration, Instant};
 use tonic::{Code, Request, Response, Status, transport::Channel};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 /// The struct handling the communication with the KMS Core.
 #[derive(Clone, Debug)]
@@ -84,6 +90,7 @@ impl KmsClient {
     }
 
     /// Sends the GRPC request to the KMS Core.
+    #[tracing::instrument(skip_all)]
     pub async fn send_request(
         &mut self,
         request: KmsGrpcRequest,
@@ -109,28 +116,20 @@ impl KmsClient {
         // Log the FHE types being processed in this request
         if let Some(ciphertexts) = request.ciphertexts.as_slice().first() {
             info!(
-                "[OUT] 🔑 Sending PublicDecryptionRequest({}) with FHE type: {}",
-                request_id.request_id, ciphertexts.fhe_type
+                "[OUT] Sending GRPC request with FHE type: {}",
+                ciphertexts.fhe_type
             );
         } else {
-            info!(
-                "[OUT] Sending PublicDecryptionRequest({}) with no ciphertexts",
-                request_id.request_id
-            );
+            info!("[OUT] Sending GRPC request with no ciphertexts",);
         }
 
         // Send initial request with retries
-        for i in 1..=self.grpc_request_retries {
-            match self.inner.public_decrypt(request.clone()).await {
-                Ok(_) => break,
-                Err(e) => {
-                    warn!("GRPC PublicDecryptionRequest attempt #{i} failed: {e}");
-                    if i == self.grpc_request_retries {
-                        return Err(anyhow!("All GRPC PublicDecryptionRequest attempts failed!"));
-                    }
-                }
-            }
-        }
+        send_request_with_retry(self.grpc_request_retries, || {
+            let mut inner_client = self.inner.clone();
+            let request = request.clone();
+            async move { inner_client.public_decrypt(request).await }
+        })
+        .await?;
 
         // Poll for result with timeout
         let grpc_response = poll_for_result(
@@ -159,8 +158,7 @@ impl KmsClient {
 
         // Verify the EIP-712 signature for the user decryption request
         if let Err(e) = verify_user_decryption_eip712(&request) {
-            error!("Failed to verify user decryption request: {e}");
-            warn!("Proceeding with user decryption despite verification failure: {e}");
+            warn!("Failed to verify request: {e}. Proceeding despite failure...");
         }
 
         // Log the client address and FHE types being processed
@@ -172,22 +170,17 @@ impl KmsClient {
             .join(", ");
 
         info!(
-            "[OUT] 🔑 Sending UserDecryptionRequest({}) for client {} with FHE types: [{}]",
-            request_id.request_id, request.client_address, fhe_types
+            "[OUT] Sending GRPC request for client {} with FHE types: [{}]",
+            request.client_address, fhe_types
         );
 
         // Send initial request with retries
-        for i in 1..=self.grpc_request_retries {
-            match self.inner.user_decrypt(request.clone()).await {
-                Ok(_) => break,
-                Err(e) => {
-                    warn!("GRPC UserDecryptionRequest attempt #{i} failed: {e}");
-                    if i == self.grpc_request_retries {
-                        return Err(anyhow!("All GRPC UserDecryptionRequest attempts failed!"));
-                    }
-                }
-            }
-        }
+        send_request_with_retry(self.grpc_request_retries, || {
+            let mut inner_client = self.inner.clone();
+            let request = request.clone();
+            async move { inner_client.user_decrypt(request).await }
+        })
+        .await?;
 
         // Poll for result with timeout
         let grpc_response = poll_for_result(
@@ -205,7 +198,31 @@ impl KmsClient {
     }
 }
 
-/// Poll for result with timeout
+/// Sends a GRPC request with retry.
+#[tracing::instrument(skip_all)]
+async fn send_request_with_retry<F, Fut>(retries: u8, mut request_fn: F) -> anyhow::Result<()>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<Response<Empty>, Status>>,
+{
+    for i in 1..=retries {
+        match request_fn().await {
+            Ok(_) => break,
+            Err(e) => {
+                CORE_REQUEST_SENT_ERRORS.inc();
+                warn!("#{}/{} GRPC request attempt failed: {}", i, retries, e);
+                if i == retries {
+                    return Err(anyhow!("All GRPC requests failed!"));
+                }
+            }
+        }
+    }
+    CORE_REQUEST_SENT_COUNTER.inc();
+    Ok(())
+}
+
+/// Poll for result with timeout.
+#[tracing::instrument(skip_all)]
 async fn poll_for_result<T, F, Fut>(
     timeout: Duration,
     retry_interval: Duration,
@@ -217,21 +234,31 @@ where
 {
     let start = Instant::now();
     loop {
+        info!("Trying to retrieve result from KMS Core...");
         match poll_fn().await {
-            Ok(response) => return Ok(response),
+            Ok(response) => {
+                CORE_RESPONSE_COUNTER.inc();
+                info!("Result successfully retrieved from KMS Core!");
+                return Ok(response);
+            }
             Err(status) => {
                 if status.code() == Code::NotFound {
                     // Check if we've exceeded the timeout
                     if start.elapsed() >= timeout {
+                        CORE_RESPONSE_ERRORS.inc();
                         return Err(Status::deadline_exceeded(format!(
                             "Operation timed out after {timeout:?}"
                         )));
                     }
-                    // Result not ready yet, wait and retry
+                    info!(
+                        "Result was not ready, retrying in {}s...",
+                        retry_interval.as_secs()
+                    );
                     tokio::time::sleep(retry_interval).await;
                     continue;
                 }
                 // Any other error is returned immediately
+                CORE_RESPONSE_ERRORS.inc();
                 return Err(status);
             }
         }

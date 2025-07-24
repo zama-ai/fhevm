@@ -625,17 +625,6 @@ describe("GatewayConfig", function () {
           "InvalidNullPauser",
         );
       });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused update pauser
-        await expect(gatewayConfig.connect(owner).updatePauser(fakeOwner.address)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "EnforcedPause",
-        );
-      });
     });
 
     describe("Update MPC threshold", function () {
@@ -663,17 +652,6 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(owner).updateMpcThreshold(highMpcThreshold))
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighMpcThreshold")
           .withArgs(highMpcThreshold, nKmsNodes);
-      });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused update MPC threshold
-        await expect(gatewayConfig.connect(owner).updateMpcThreshold(mpcThreshold)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "EnforcedPause",
-        );
       });
     });
 
@@ -715,16 +693,6 @@ describe("GatewayConfig", function () {
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighPublicDecryptionThreshold")
           .withArgs(highPublicDecryptionThreshold, nKmsNodes);
       });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused update public decryption threshold
-        await expect(
-          gatewayConfig.connect(owner).updatePublicDecryptionThreshold(publicDecryptionThreshold),
-        ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
-      });
     });
 
     describe("Update user decryption threshold", function () {
@@ -762,16 +730,6 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(owner).updateUserDecryptionThreshold(highUserDecryptionThreshold))
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
           .withArgs(highUserDecryptionThreshold, nKmsNodes);
-      });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused update user decryption threshold
-        await expect(
-          gatewayConfig.connect(owner).updateUserDecryptionThreshold(userDecryptionThreshold),
-        ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
       });
     });
 
@@ -854,17 +812,6 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(owner).addHostChain(alreadyAddedHostChain))
           .to.revertedWithCustomError(gatewayConfig, "HostChainAlreadyRegistered")
           .withArgs(alreadyAddedHostChainId);
-      });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused add host chain
-        await expect(gatewayConfig.connect(owner).addHostChain(newHostChain)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "EnforcedPause",
-        );
       });
     });
   });
