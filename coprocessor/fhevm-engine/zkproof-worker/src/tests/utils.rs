@@ -1,7 +1,7 @@
 use fhevm_engine_common::{tenant_keys, utils::safe_serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use test_harness::instance::DBInstance;
+use test_harness::instance::{DBInstance, ImportMode};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 
@@ -9,7 +9,7 @@ use crate::auxiliary::ZkData;
 
 pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
     tracing_subscriber::fmt().json().with_level(true).init();
-    let test_instance = test_harness::instance::setup_test_db(true)
+    let test_instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
         .await
         .expect("valid db instance");
 
