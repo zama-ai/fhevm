@@ -1,4 +1,7 @@
-use crate::core::config::{Config, S3Config};
+use crate::{
+    core::config::{Config, S3Config},
+    monitoring::metrics::{S3_CIPHERTEXT_RETRIEVAL_COUNTER, S3_CIPHERTEXT_RETRIEVAL_ERRORS},
+};
 use alloy::{hex, primitives::Address, providers::Provider, transports::http::reqwest};
 use anyhow::anyhow;
 use dashmap::DashMap;
@@ -98,7 +101,7 @@ where
         S3_BUCKET_CACHE.insert(copro_addr, s3_bucket_url.clone());
 
         // Log the updated cache state
-        log_cache();
+        log_cache("S3 cache state after insert");
 
         info!(
             "Successfully retrieved and cached S3 bucket URL for coprocessor {:?}: {}",
@@ -116,10 +119,7 @@ where
             "S3 PREFETCH START: Prefetching S3 bucket URLs for {} coprocessors",
             coprocessor_addresses.len()
         );
-
-        // Log current cache state before prefetching
-        info!("S3 cache state before prefetching:");
-        log_cache();
+        log_cache("S3 cache state before prefetching");
 
         let mut s3_urls = Vec::new();
         let mut success_count = 0;
@@ -171,10 +171,7 @@ where
                 }
             };
         }
-
-        // Log cache state after prefetching
-        info!("S3 cache state after prefetching:");
-        log_cache();
+        log_cache("S3 cache state after prefetching");
 
         // If we couldn't get any URLs but have a fallback config, use it
         if s3_urls.is_empty() {
@@ -268,16 +265,20 @@ where
                     .await
                 {
                     Ok(ciphertext) => {
+                        S3_CIPHERTEXT_RETRIEVAL_COUNTER.inc();
                         info!(
                             attempt = i,
                             "Successfully retrieved ciphertext for digest {digest_hex} from S3 URL {s3_url}"
                         );
                         return Some(ciphertext);
                     }
-                    Err(e) => warn!(
-                        attempt = i,
-                        "Failed to retrieve ciphertext for digest {digest_hex} from S3 URL {s3_url}: {e}"
-                    ),
+                    Err(e) => {
+                        S3_CIPHERTEXT_RETRIEVAL_ERRORS.inc();
+                        warn!(
+                            attempt = i,
+                            "Failed to retrieve ciphertext for digest {digest_hex} from S3 URL {s3_url}: {e}"
+                        )
+                    }
                 }
             }
         }
@@ -353,9 +354,9 @@ where
 }
 
 /// Logs the current state of the S3 bucket cache.
-fn log_cache() {
+fn log_cache(prefix: &str) {
     let cache_size = S3_BUCKET_CACHE.len();
-    info!("S3Service cache state: {} entries", cache_size);
+    info!("{prefix}: {cache_size} entries");
 
     if cache_size > 0 {
         let mut cache_entries = Vec::new();

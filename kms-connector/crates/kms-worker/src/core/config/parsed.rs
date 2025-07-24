@@ -4,11 +4,7 @@
 
 use crate::core::config::raw::{RawConfig, S3Config};
 use connector_utils::config::{ContractConfig, DeserializeRawConfig, Error, Result};
-use std::{
-    fmt::{self, Display},
-    path::Path,
-    time::Duration,
-};
+use std::{net::SocketAddr, path::Path, time::Duration};
 use tracing::info;
 
 /// Configuration of the `KmsWorker`.
@@ -52,52 +48,11 @@ pub struct Config {
     // TODO: implement to increase security
     /// Whether to verify coprocessors against the `GatewayConfig` contract (defaults to false).
     pub verify_coprocessors: bool,
-}
 
-impl Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Service Name: {}", self.service_name)?;
-        writeln!(f, "Database URL: {}", self.database_url)?;
-        writeln!(
-            f,
-            "  Database connection pool size: {}",
-            self.database_pool_size
-        )?;
-        writeln!(f, "KMS Core Endpoint: {}", self.kms_core_endpoint)?;
-        writeln!(f, "Gateway URL: {}", self.gateway_url)?;
-        writeln!(f, "Chain ID: {}", self.chain_id)?;
-        writeln!(f, "{}", self.decryption_contract)?;
-        writeln!(f, "{}", self.gateway_config_contract)?;
-        writeln!(f, "Events batch size: {}", self.events_batch_size)?;
-        writeln!(f, "GRPC Requests Retries: {}", self.grpc_request_retries)?;
-        writeln!(
-            f,
-            "Public Decryption Timeout: {}s",
-            self.public_decryption_timeout.as_secs()
-        )?;
-        writeln!(
-            f,
-            "User Decryption Timeout: {}s",
-            self.user_decryption_timeout.as_secs()
-        )?;
-        writeln!(
-            f,
-            "GRPC Poll Interval: {}s",
-            self.grpc_poll_interval.as_secs()
-        )?;
-        writeln!(
-            f,
-            "Number of retries for S3 ciphertext retrieval: {}",
-            self.s3_ciphertext_retrieval_retries
-        )?;
-        writeln!(
-            f,
-            "S3 ciphertext retrieval timeout: {}s",
-            self.s3_connect_timeout.as_secs()
-        )?;
-
-        Ok(())
-    }
+    /// The monitoring server endpoint of the `KmsWorker`.
+    pub monitoring_endpoint: SocketAddr,
+    /// The timeout to perform each external service connection healthcheck.
+    pub healthcheck_timeout: Duration,
 }
 
 impl Config {
@@ -117,6 +72,10 @@ impl Config {
     }
 
     fn parse(raw_config: RawConfig) -> Result<Self> {
+        let monitoring_endpoint = raw_config
+            .monitoring_endpoint
+            .parse::<SocketAddr>()
+            .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let decryption_contract =
             ContractConfig::parse("Decryption", raw_config.decryption_contract)?;
         let gateway_config_contract =
@@ -136,6 +95,7 @@ impl Config {
         let user_decryption_timeout = Duration::from_secs(raw_config.user_decryption_timeout_secs);
         let grpc_poll_interval = Duration::from_secs(raw_config.grpc_poll_interval_secs);
         let s3_ciphertext_retrieval_timeout = Duration::from_secs(raw_config.s3_connect_timeout);
+        let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
 
         Ok(Self {
             database_url: raw_config.database_url,
@@ -155,6 +115,8 @@ impl Config {
             s3_ciphertext_retrieval_retries: raw_config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: s3_ciphertext_retrieval_timeout,
             verify_coprocessors: raw_config.verify_coprocessors,
+            monitoring_endpoint,
+            healthcheck_timeout,
         })
     }
 }

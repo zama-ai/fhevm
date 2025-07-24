@@ -34,6 +34,7 @@ jobs:
             kms-connector-kms-worker:
               - .github/workflows/kms-connector-docker-build-kms-worker.yml
               - kms-connector/crates/kms-worker/**
+              - kms-connector/crates/utils/**
               - kms-connector/Cargo.toml
               - kms-connector/Cargo.lock
 

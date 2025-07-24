@@ -6,10 +6,7 @@ use super::raw::RawConfig;
 use connector_utils::config::{
     AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result,
 };
-use std::{
-    fmt::{self, Display},
-    path::Path,
-};
+use std::{net::SocketAddr, path::Path, time::Duration};
 use tracing::info;
 
 /// Configuration of the `TransactionSender`.
@@ -31,24 +28,16 @@ pub struct Config {
     pub service_name: String,
     /// The wallet used to sign the decryption responses from the kms-core.
     pub wallet: KmsWallet,
-}
-
-impl Display for Config {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Service Name: {}", self.service_name)?;
-        writeln!(f, "Database URL: {}", self.database_url)?;
-        writeln!(
-            f,
-            "Database connection pool size: {}",
-            self.database_pool_size
-        )?;
-        writeln!(f, "Gateway URL: {}", self.gateway_url)?;
-        writeln!(f, "Chain ID: {}", self.chain_id)?;
-        writeln!(f, "{}", self.decryption_contract)?;
-        writeln!(f, "{}", self.kms_management_contract)?;
-        writeln!(f, "Wallet address: {:#x}", self.wallet.address())?;
-        Ok(())
-    }
+    /// The number of retries for transaction sending.
+    pub tx_retries: u8,
+    /// The interval between transaction retries.
+    pub tx_retry_interval: Duration,
+    /// The batch size for KMS Core response processing.
+    pub responses_batch_size: u8,
+    /// The monitoring server endpoint of the `TransactionSender`.
+    pub monitoring_endpoint: SocketAddr,
+    /// The timeout to perform each external service connection healthcheck.
+    pub healthcheck_timeout: Duration,
 }
 
 impl Config {
@@ -64,13 +53,14 @@ impl Config {
         }
 
         let raw_config = RawConfig::from_env_and_file(path)?;
-        let config = Self::parse(raw_config).await?;
-
-        info!("Configuration loaded successfully:\n{}", config);
-        Ok(config)
+        Self::parse(raw_config).await
     }
 
     async fn parse(raw_config: RawConfig) -> Result<Self> {
+        let monitoring_endpoint = raw_config
+            .monitoring_endpoint
+            .parse::<SocketAddr>()
+            .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let wallet = Self::parse_kms_wallet(
             raw_config.chain_id,
             raw_config.private_key,
@@ -88,6 +78,9 @@ impl Config {
             return Err(Error::EmptyField("Gateway URL".to_string()));
         }
 
+        let tx_retry_interval = Duration::from_millis(raw_config.tx_retry_interval_ms);
+        let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
+
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
@@ -97,6 +90,11 @@ impl Config {
             kms_management_contract,
             service_name: raw_config.service_name,
             wallet,
+            tx_retries: raw_config.tx_retries,
+            tx_retry_interval,
+            responses_batch_size: raw_config.responses_batch_size,
+            monitoring_endpoint,
+            healthcheck_timeout,
         })
     }
 
@@ -143,6 +141,9 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
+            env::remove_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE");
+            env::remove_var("KMS_CONNECTOR_TX_RETRIES");
+            env::remove_var("KMS_CONNECTOR_TX_RETRY_INTERVAL_MS");
         }
     }
 
@@ -186,6 +187,12 @@ mod tests {
             raw_config.kms_management_contract.domain_version.unwrap(),
             config.kms_management_contract.domain_version,
         );
+        assert_eq!(raw_config.responses_batch_size, config.responses_batch_size);
+        assert_eq!(raw_config.tx_retries, config.tx_retries);
+        assert_eq!(
+            raw_config.tx_retry_interval_ms as u128,
+            config.tx_retry_interval.as_millis()
+        );
     }
 
     #[tokio::test]
@@ -214,6 +221,9 @@ mod tests {
                 "0x0000000000000000000000000000000000000002",
             );
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
+            env::set_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE", "20");
+            env::set_var("KMS_CONNECTOR_TX_RETRIES", "5");
+            env::set_var("KMS_CONNECTOR_TX_RETRY_INTERVAL_MS", "200");
         }
 
         // Load config from environment
@@ -231,6 +241,9 @@ mod tests {
             Address::from_str("0x0000000000000000000000000000000000000002").unwrap()
         );
         assert_eq!(config.service_name, "kms-connector-test");
+        assert_eq!(config.responses_batch_size, 20);
+        assert_eq!(config.tx_retries, 5);
+        assert_eq!(config.tx_retry_interval, Duration::from_millis(200));
 
         cleanup_env_vars();
     }

@@ -22,6 +22,7 @@ const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 export const NUM_ACCOUNTS = 30;
+export const ADDRESSES_DIR = resolve(__dirname, "addresses");
 
 const chainIds = {
   hardhat: 31337,

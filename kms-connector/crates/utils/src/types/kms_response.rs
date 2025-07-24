@@ -25,6 +25,13 @@ pub enum KmsResponse {
 }
 
 impl KmsResponse {
+    pub fn id(&self) -> U256 {
+        match self {
+            KmsResponse::PublicDecryption { decryption_id, .. } => *decryption_id,
+            KmsResponse::UserDecryption { decryption_id, .. } => *decryption_id,
+        }
+    }
+
     /// Processes a KMS GRPC response into a `KmsResponse` enum.
     pub fn process(response: KmsGrpcResponse) -> anyhow::Result<Self> {
         match response {
@@ -127,7 +134,7 @@ impl KmsResponse {
 
     /// Sets the `under_process` field of the event associated to this response as `FALSE` in the
     /// database.
-    pub async fn free_associated_event(&self, db: &Pool<Postgres>) {
+    pub async fn mark_associated_event_as_pending(&self, db: &Pool<Postgres>) {
         match self {
             KmsResponse::PublicDecryption { decryption_id, .. } => {
                 GatewayEvent::mark_public_decryption_as_pending(db, *decryption_id).await

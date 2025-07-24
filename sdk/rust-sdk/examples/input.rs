@@ -94,8 +94,7 @@ fn example_encrypt_u64() -> Result<()> {
     let relayer_url = "http://localhost:3000/v1/input-proof";
 
     let curl_file_command = format!(
-        "curl -X POST {} \\\n  -H \"Content-Type: application/json\" \\\n  -d @payload.json",
-        relayer_url
+        "curl -X POST {relayer_url} \\\n  -H \"Content-Type: application/json\" \\\n  -d @payload.json"
     );
 
     info!("\n Curl command using the saved payload file:");
@@ -106,8 +105,7 @@ fn example_encrypt_u64() -> Result<()> {
         Ok(s) => s,
         Err(e) => {
             return Err(FhevmError::InvalidParams(format!(
-                "JSON serialization failed: {}",
-                e
+                "JSON serialization failed: {e}"
             )));
         }
     };

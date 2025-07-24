@@ -199,7 +199,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IGatewayConfig-updatePauser}.
-    function updatePauser(address newPauser) external virtual onlyOwner whenNotPaused {
+    function updatePauser(address newPauser) external virtual onlyOwner {
         if (newPauser == address(0)) {
             revert InvalidNullPauser();
         }
@@ -209,29 +209,25 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IGatewayConfig-updateMpcThreshold}.
-    function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner whenNotPaused {
+    function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner {
         _setMpcThreshold(newMpcThreshold);
         emit UpdateMpcThreshold(newMpcThreshold);
     }
 
     /// @dev See {IGatewayConfig-updatePublicDecryptionThreshold}.
-    function updatePublicDecryptionThreshold(
-        uint256 newPublicDecryptionThreshold
-    ) external virtual onlyOwner whenNotPaused {
+    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external virtual onlyOwner {
         _setPublicDecryptionThreshold(newPublicDecryptionThreshold);
         emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
     }
 
     /// @dev See {IGatewayConfig-updateUserDecryptionThreshold}.
-    function updateUserDecryptionThreshold(
-        uint256 newUserDecryptionThreshold
-    ) external virtual onlyOwner whenNotPaused {
+    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external virtual onlyOwner {
         _setUserDecryptionThreshold(newUserDecryptionThreshold);
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
     /// @dev See {IGatewayConfig-addHostChain}.
-    function addHostChain(HostChain calldata hostChain) external virtual onlyOwner whenNotPaused {
+    function addHostChain(HostChain calldata hostChain) external virtual onlyOwner {
         if (hostChain.chainId == 0) {
             revert InvalidNullChainId();
         }

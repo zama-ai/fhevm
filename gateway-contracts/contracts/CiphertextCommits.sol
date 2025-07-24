@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
-import { kmsManagementAddress } from "../addresses/KmsManagementAddress.sol";
+import { gatewayConfigAddress, kmsManagementAddress } from "../addresses/GatewayAddresses.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/ICiphertextCommits.sol";
@@ -9,8 +8,8 @@ import "./interfaces/IGatewayConfig.sol";
 import "./interfaces/IKmsManagement.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
-import "./shared/Pausable.sol";
 import "./libraries/HandleOps.sol";
+import "./shared/Pausable.sol";
 
 /**
  * @title CiphertextCommits smart contract
@@ -99,7 +98,7 @@ contract CiphertextCommits is
         uint256 keyId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) external virtual onlyCoprocessorTxSender whenNotPaused {
+    ) external virtual onlyCoprocessorTxSender {
         // Extract the chainId from the ciphertext handle
         uint256 chainId = HandleOps.extractChainId(ctHandle);
 

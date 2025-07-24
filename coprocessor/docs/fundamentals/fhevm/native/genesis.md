@@ -2,7 +2,7 @@
 
 ## Contracts
 
-For an fhEVM-native blockchain to operate and execute FHE computations, certain contracts need to be available when creating the chain - see [Contracts](../contracts.md). Strictly speaking, these contracts don't have to be available in the genesis block and can be deployed in the second block of the chain, at runtime.
+For an FHEVM-native blockchain to operate and execute FHE computations, certain contracts need to be available when creating the chain - see [Contracts](../contracts.md). Strictly speaking, these contracts don't have to be available in the genesis block and can be deployed in the second block of the chain, at runtime.
 
 ## Keys
 

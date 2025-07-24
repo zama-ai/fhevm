@@ -6,10 +6,9 @@ import { task } from "hardhat/config";
 import type { TaskArguments } from "hardhat/types";
 import path from "path";
 
+import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../utils/loadVariables";
 import { pascalCaseToCamelCase, pascalCaseToSnakeCase } from "../utils/stringOps";
-
-const ADDRESSES_DIR = path.join(__dirname, "../../addresses");
 
 // Deploy a new EmptyUUPSProxy contract
 async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
@@ -28,40 +27,27 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
 task("task:setContractAddress")
   .addParam("name", "The name of the contract (PascalCase)")
   .addParam("address", "The address of the contract")
-  .setAction(async function (taskArguments: TaskArguments) {
-    const name = taskArguments.name;
-    const address = taskArguments.address;
-
+  .setAction(async function ({ name, address }: TaskArguments) {
     const nameSnakeCase = pascalCaseToSnakeCase(name);
-    const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
+    const envFilePath = path.join(ADDRESSES_DIR, ".env.gateway");
+    const solidityFilePath = path.join(ADDRESSES_DIR, "GatewayAddresses.sol");
     const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${address}\n`;
+    const solidityTemplate = `address constant ${pascalCaseToCamelCase(name)}Address = ${address};\n`;
 
-    // Write the contract's address in its addresses/.env.xxx file
     try {
-      // Ensure the ADDRESSES_DIR exists or create it
-      fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
-      fs.writeFileSync(envFilePath, envContent, { flag: "w" });
-      console.log(`${name} address ${address} written successfully!`);
+      // Append the contract's address in the addresses/.env.gateway file
+      fs.appendFileSync(envFilePath, envContent, { encoding: "utf8", flag: "a" });
+
+      // Append the contract's address in the addresses/GatewayAddresses.sol file
+      fs.appendFileSync(solidityFilePath, solidityTemplate, {
+        encoding: "utf8",
+        flag: "a",
+      });
     } catch (err) {
       console.error(`Failed to write ${name} address:`, err);
     }
 
-    const solidityFilePath = path.join(ADDRESSES_DIR, `${name}Address.sol`);
-    const solidityTemplate =
-      `// SPDX-License-Identifier: BSD-3-Clause-Clear\n\n` +
-      `pragma solidity ^0.8.24;\n\n` +
-      `address constant ${pascalCaseToCamelCase(name)}Address = ${address};\n`;
-
-    // Write the contract's address in its addresses/xxxAddress.sol file
-    try {
-      fs.writeFileSync(solidityFilePath, solidityTemplate, {
-        encoding: "utf8",
-        flag: "w",
-      });
-      console.log(`${solidityFilePath} file generated successfully!\n`);
-    } catch (error) {
-      console.error(`Failed to write ${solidityFilePath}\n`, error);
-    }
+    console.log(`${name} address ${address} written successfully!`);
   });
 
 // Deploy all the EmptyUUPS proxy contracts
@@ -71,6 +57,22 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
 
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+
+  // Ensure the ADDRESSES_DIR exists or create it
+  fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
+
+  // Empty the .env.gateway file for the subsequent tasks to append the contract addresses.
+  const envFilePath = path.join(ADDRESSES_DIR, ".env.gateway");
+  fs.writeFileSync(envFilePath, "", { flag: "w" });
+
+  // Truncate the GatewayAddresses.sol file with the Solidity header for the subsequent tasks
+  // to append the contract addresses.
+  const solidityFilePath = path.join(ADDRESSES_DIR, "GatewayAddresses.sol");
+  const solidityHeader = `// SPDX-License-Identifier: BSD-3-Clause-Clear\npragma solidity ^0.8.24;\n\n`;
+  fs.writeFileSync(solidityFilePath, solidityHeader, {
+    encoding: "utf8",
+    flag: "w",
+  });
 
   console.log("Deploying an EmptyUUPS proxy contract for MultichainAcl...");
   const multichainAclAddress = await deployEmptyUUPS(ethers, upgrades, deployer);

@@ -3277,25 +3277,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "executor"
-version = "0.6.1"
-dependencies = [
- "anyhow",
- "bincode",
- "clap",
- "daggy",
- "fhevm-engine-common",
- "prost",
- "rayon",
- "scheduler",
- "sha3",
- "tfhe",
- "tokio",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
 name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

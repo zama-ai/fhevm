@@ -2,7 +2,10 @@
 //!
 //! The `RawConfig` can then be parsed into a `Config` in the `parsed` module.
 
-use connector_utils::config::{DeserializeRawConfig, RawContractConfig};
+use connector_utils::{
+    config::{DeserializeRawConfig, RawContractConfig},
+    monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
+};
 use serde::{Deserialize, Serialize};
 
 /// Deserializable representation of the `GatewayListener` configuration.
@@ -17,6 +20,10 @@ pub struct RawConfig {
     pub kms_management_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
+    #[serde(default = "default_monitoring_endpoint")]
+    pub monitoring_endpoint: String,
+    #[serde(default = "default_healthcheck_timeout_secs")]
+    pub healthcheck_timeout_secs: u64,
 }
 
 fn default_service_name() -> String {
@@ -48,6 +55,8 @@ impl Default for RawConfig {
                 domain_version: Some("1".to_string()),
             },
             service_name: default_service_name(),
+            monitoring_endpoint: default_monitoring_endpoint(),
+            healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
         }
     }
 }
