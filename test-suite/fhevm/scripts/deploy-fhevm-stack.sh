@@ -125,7 +125,7 @@ prepare_local_config_relayer() {
 prepare_all_env_files() {
     log_info "Preparing all local environment files..."
 
-    local components=("minio" "core" "gateway" "host" "connector" "coprocessor" "relayer" "test-suite")
+    local components=("minio" "core" "gateway" "host" "connector" "coprocessor-0" "coprocessor-1" "coprocessor-2" "relayer" "test-suite")
 
     for component in "${components[@]}"; do
         prepare_local_env_file "$component" > /dev/null
@@ -331,17 +331,40 @@ if [ "$FORCE_BUILD" = true ]; then
     "${PROJECT}-zkproof-worker:running" \
     "${PROJECT}-sns-worker:running" \
     "${PROJECT}-transaction-sender:running"
+
 else
-  run_compose "coprocessor" "Coprocessor Services" \
-    "${PROJECT}-coprocessor-db:running" \
-    "${PROJECT}-key-downloader:complete" \
-    "${PROJECT}-db-migration:complete" \
-    "${PROJECT}-host-listener:running" \
-    "${PROJECT}-gw-listener:running" \
-    "${PROJECT}-tfhe-worker:running" \
-    "${PROJECT}-zkproof-worker:running" \
-    "${PROJECT}-sns-worker:running" \
-    "${PROJECT}-transaction-sender:running"
+  run_compose "coprocessor-0" "Coprocessor 0 Services" \
+    "${PROJECT}-0-coprocessor-db:running" \
+    "${PROJECT}-0-key-downloader:complete" \
+    "${PROJECT}-0-db-migration:complete" \
+    "${PROJECT}-0-host-listener:running" \
+    "${PROJECT}-0-gw-listener:running" \
+    "${PROJECT}-0-tfhe-worker:running" \
+    "${PROJECT}-0-zkproof-worker:running" \
+    "${PROJECT}-0-sns-worker:running" \
+    "${PROJECT}-0-transaction-sender:running"
+
+  run_compose "coprocessor-1" "Coprocessor 1 Services" \
+    "${PROJECT}-1-coprocessor-db:running" \
+    "${PROJECT}-1-key-downloader:complete" \
+    "${PROJECT}-1-db-migration:complete" \
+    "${PROJECT}-1-host-listener:running" \
+    "${PROJECT}-1-gw-listener:running" \
+    "${PROJECT}-1-tfhe-worker:running" \
+    "${PROJECT}-1-zkproof-worker:running" \
+    "${PROJECT}-1-sns-worker:running" \
+    "${PROJECT}-1-transaction-sender:running"
+
+  run_compose "coprocessor-2" "Coprocessor 2 Services" \
+    "${PROJECT}-2-coprocessor-db:running" \
+    "${PROJECT}-2-key-downloader:complete" \
+    "${PROJECT}-2-db-migration:complete" \
+    "${PROJECT}-2-host-listener:running" \
+    "${PROJECT}-2-gw-listener:running" \
+    "${PROJECT}-2-tfhe-worker:running" \
+    "${PROJECT}-2-zkproof-worker:running" \
+    "${PROJECT}-2-sns-worker:running" \
+    "${PROJECT}-2-transaction-sender:running"
 fi
 
 if [ "$FORCE_BUILD" = true ]; then
