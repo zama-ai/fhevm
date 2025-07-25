@@ -36,6 +36,8 @@ pub struct Config {
     pub responses_batch_size: u8,
     /// The gas multiplier percentage after each transaction attempt.
     pub gas_multiplier_percent: usize,
+    /// The maximum number of tasks that can be executed concurrently.
+    pub task_limit: usize,
     /// The monitoring server endpoint of the `TransactionSender`.
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
@@ -102,6 +104,7 @@ impl Config {
             tx_retry_interval,
             responses_batch_size: raw_config.responses_batch_size,
             gas_multiplier_percent: raw_config.gas_multiplier_percent,
+            task_limit: raw_config.task_limit,
             monitoring_endpoint,
             healthcheck_timeout,
         })

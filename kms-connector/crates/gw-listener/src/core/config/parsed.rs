@@ -24,6 +24,8 @@ pub struct Config {
     pub kms_management_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
+    /// The maximum number of tasks that can be executed concurrently.
+    pub task_limit: usize,
     /// The monitoring server endpoint of the `GatewayListener`.
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
@@ -73,6 +75,7 @@ impl Config {
             decryption_contract,
             kms_management_contract,
             service_name: raw_config.service_name,
+            task_limit: raw_config.task_limit,
             monitoring_endpoint,
             healthcheck_timeout,
             from_block_number: raw_config.from_block_number,

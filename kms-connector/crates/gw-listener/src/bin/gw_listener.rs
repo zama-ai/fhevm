@@ -4,6 +4,7 @@ use connector_utils::{
     cli::{Cli, Subcommands},
     monitoring::{otlp::init_otlp_setup, server::start_monitoring_server},
     signal::install_signal_handlers,
+    tasks::set_task_limit,
 };
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
@@ -33,6 +34,7 @@ async fn run() -> anyhow::Result<()> {
             }
 
             let cancel_token = CancellationToken::new();
+            set_task_limit(config.task_limit);
             install_signal_handlers(cancel_token.clone())?;
             init_otlp_setup(config.service_name.clone())?;
             let monitoring_endpoint = config.monitoring_endpoint;

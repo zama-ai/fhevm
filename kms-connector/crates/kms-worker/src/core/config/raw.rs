@@ -5,6 +5,7 @@
 use connector_utils::{
     config::{DeserializeRawConfig, RawContractConfig},
     monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
+    tasks::default_task_limit,
 };
 use serde::{Deserialize, Serialize};
 
@@ -48,6 +49,8 @@ pub struct RawConfig {
     pub s3_ciphertext_retrieval_retries: u8,
     #[serde(default = "default_s3_connect_timeout")]
     pub s3_connect_timeout: u64,
+    #[serde(default = "default_task_limit")]
+    pub task_limit: usize,
     #[serde(default = "default_verify_coprocessors")]
     pub verify_coprocessors: bool,
     #[serde(default = "default_monitoring_endpoint")]
@@ -126,6 +129,7 @@ impl Default for RawConfig {
             s3_ciphertext_retrieval_retries: 3,
             s3_connect_timeout: 2,
             s3_config: None,
+            task_limit: default_task_limit(),
             verify_coprocessors: false,
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
