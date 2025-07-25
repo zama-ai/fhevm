@@ -22,6 +22,7 @@ use crate::error::{Error, Result};
 struct PendingTransaction {
     tx_request: TransactionRequest,
     result_sender: oneshot::Sender<Result<TxHash>>,
+    request_id: Option<String>,
 }
 
 /// Sequential nonce manager that processes transactions per wallet in order
@@ -86,11 +87,13 @@ where
         }
     }
 
-    /// Queue a transac
-    ///
-    ///  sequential processing
+    /// Queue a transaction for sequential processing with optional request ID for logging
     /// This method is NON-BLOCKING and returns immediately
-    pub async fn send_transaction_queued(&self, mut tx: TransactionRequest) -> Result<TxHash> {
+    pub async fn send_transaction_queued(
+        &self,
+        mut tx: TransactionRequest,
+        request_id: Option<String>,
+    ) -> Result<TxHash> {
         let address = if let Some(addr) = tx.from {
             addr
         } else {
@@ -107,6 +110,7 @@ where
         let pending_tx = PendingTransaction {
             tx_request: tx,
             result_sender,
+            request_id,
         };
 
         let queue = self
@@ -237,7 +241,9 @@ where
             match pending_tx {
                 Some(pending) => {
                     // Process single transaction with proper nonce management
-                    let result = self.process_single_transaction(pending.tx_request).await;
+                    let result = self
+                        .process_single_transaction(pending.tx_request, pending.request_id)
+                        .await;
 
                     // Send result back to caller (non-blocking)
                     let _ = pending.result_sender.send(result);
@@ -252,7 +258,11 @@ where
     }
 
     /// Process a single transaction with aggressive parallel nonce management for maximum throughput
-    async fn process_single_transaction(&self, mut tx: TransactionRequest) -> Result<TxHash> {
+    async fn process_single_transaction(
+        &self,
+        mut tx: TransactionRequest,
+        request_id: Option<String>,
+    ) -> Result<TxHash> {
         let address = tx.from.unwrap();
 
         // Check if we're at the parallel transaction limit
@@ -284,7 +294,10 @@ where
         let nonce = self.get_next_nonce_internal(address).await?;
         tx.nonce = Some(nonce);
 
-        match self.send_transaction_immediately(tx, nonce).await {
+        match self
+            .send_transaction_immediately(tx, nonce, request_id)
+            .await
+        {
             Ok(tx_hash) => {
                 info!(
                     "[PARALLEL] Transaction sent: {} (nonce: {}, in-flight: {})",
@@ -350,6 +363,7 @@ where
         &self,
         mut tx: TransactionRequest,
         expected_nonce: u64,
+        request_id: Option<String>,
     ) -> Result<TxHash> {
         // Set nonce for immediate sending
         tx.nonce = Some(expected_nonce);
@@ -410,10 +424,17 @@ where
         let gas_boost_percent = self.config.gas_boost_percent;
         let boosted_gas = gas_estimation * (100 + gas_boost_percent as u64) / 100;
         tx.gas = Some(boosted_gas);
-        info!(
-            "Applied {}% gas boost for immediate send (nonce: {}): {} → {}",
-            gas_boost_percent, expected_nonce, gas_estimation, boosted_gas
-        );
+        if let Some(ref id) = request_id {
+            info!(
+                "Applied {}% gas boost for DecryptionResponse-{} (nonce: {}): {} → {}",
+                gas_boost_percent, id, expected_nonce, gas_estimation, boosted_gas
+            );
+        } else {
+            info!(
+                "Applied {}% gas boost for immediate send (nonce: {}): {} → {}",
+                gas_boost_percent, expected_nonce, gas_estimation, boosted_gas
+            );
+        }
 
         // Single send attempt - let receipt analysis handle any failures
         match self.provider.send_transaction(tx).await {
@@ -492,7 +513,7 @@ where
         // Queue the retry transaction (maintains proper async architecture)
         // This ensures retries follow the same sequential nonce management
         // and backpressure handling as initial transactions
-        self.send_transaction_queued(tx).await
+        self.send_transaction_queued(tx, None).await
     }
 
     /// Get queue status for monitoring

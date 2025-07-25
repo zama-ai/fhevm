@@ -89,7 +89,10 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
             // Gas estimation + 30% boost handled centrally by nonce manager
             let original_gas_limit = None; // Will be set by nonce manager
             // Send initial transaction
-            match nonce_manager.send_transaction_queued(call).await {
+            match nonce_manager
+                .send_transaction_queued(call, Some(format!("PublicDecryptionResponse-{id}")))
+                .await
+            {
                 Ok(tx_hash) => {
                     info!(
                         "[TRX SENT] PublicDecryptionResponse-{id} sent with hash: {}",
@@ -105,7 +108,7 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                     )
                     .await
                     {
-                        ReceiptAnalysisResult::Success { .. } => {
+                        ReceiptAnalysisResult::Success => {
                             info!(
                                 "[TRX SUCCESS] PublicDecryptionResponse-{id} confirmed: {}",
                                 tx_hash
@@ -152,7 +155,12 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                             // Note: No gas set - nonce manager will estimate fresh + apply 30% boost
 
                             // Send retry (gas estimation + 30% boost applied automatically by nonce manager)
-                            if let Err(e) = nonce_manager.send_transaction_queued(retry_call).await
+                            if let Err(e) = nonce_manager
+                                .send_transaction_queued(
+                                    retry_call,
+                                    Some(format!("PublicDecryptionResponse-{id}-retry")),
+                                )
+                                .await
                             {
                                 error!(
                                     "Failed to retry PublicDecryptionResponse-{id} after {retry_reason}: {e}"
@@ -203,7 +211,10 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
             // Gas estimation + 30% boost handled centrally by nonce manager
             let original_gas_limit = None; // Will be set by nonce manager
             // Send initial transaction
-            match nonce_manager.send_transaction_queued(call).await {
+            match nonce_manager
+                .send_transaction_queued(call, Some(format!("UserDecryptionResponse-{id}")))
+                .await
+            {
                 Ok(tx_hash) => {
                     info!(
                         "[TRX SENT] UserDecryptionResponse-{id} sent with hash: {}",
@@ -219,7 +230,7 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                     )
                     .await
                     {
-                        ReceiptAnalysisResult::Success { .. } => {
+                        ReceiptAnalysisResult::Success => {
                             info!(
                                 "[TRX SUCCESS] UserDecryptionResponse-{id} confirmed: {}",
                                 tx_hash
@@ -264,7 +275,12 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                             // Note: No gas set - nonce manager will estimate fresh + apply 30% boost
 
                             // Send retry (gas estimation + 30% boost applied automatically by nonce manager)
-                            if let Err(e) = nonce_manager.send_transaction_queued(retry_call).await
+                            if let Err(e) = nonce_manager
+                                .send_transaction_queued(
+                                    retry_call,
+                                    Some(format!("UserDecryptionResponse-{id}-retry")),
+                                )
+                                .await
                             {
                                 error!(
                                     "Failed to retry UserDecryptionResponse-{id} after {retry_reason}: {e}"
@@ -285,18 +301,19 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
 
 /// Result of receipt analysis for retry decision making
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 enum ReceiptAnalysisResult {
     /// Transaction succeeded
-    Success(TransactionReceipt),
+    Success,
     /// Transaction failed due to out of gas
     OutOfGas {
+        #[allow(dead_code)]
         receipt: TransactionReceipt,
         gas_used: u64,
         gas_limit: u64,
     },
     /// Transaction failed for non-retryable reasons
     NonRetryableFailure {
+        #[allow(dead_code)]
         receipt: TransactionReceipt,
         reason: String,
     },
@@ -324,24 +341,45 @@ async fn analyze_receipt_with_retry_logic<P: Provider + Clone + Send + Sync + 's
                     id, tx_hash, attempt
                 );
 
+                // Extract gas usage for reporting
+                let gas_used = Into::<u64>::into(receipt.gas_used);
+                let gas_limit = original_gas_limit.unwrap_or(0);
+                let gas_percentage = if gas_limit > 0 {
+                    (gas_used as f64 / gas_limit as f64) * 100.0
+                } else {
+                    0.0
+                };
+
                 // Check if transaction succeeded
                 if receipt.status() {
-                    return ReceiptAnalysisResult::Success(receipt);
+                    info!(
+                        "DecryptionResponse-{} SUCCESS: gas_used={} gas_limit={} ({:.1}%) tx_hash={} block={:?} tx_index={:?}",
+                        id,
+                        gas_used,
+                        gas_limit,
+                        gas_percentage,
+                        tx_hash,
+                        receipt.block_number,
+                        receipt.transaction_index
+                    );
+                    return ReceiptAnalysisResult::Success;
                 }
 
                 // Transaction failed - analyze the failure reason
-                let gas_used = Into::<u64>::into(receipt.gas_used);
+                // (gas_used already extracted above for reporting)
 
                 // Use the original gas limit if provided for out-of-gas detection
                 if let Some(gas_limit) = original_gas_limit {
                     // Check for out-of-gas condition using the provided gas limit
                     if gas_used as f64 >= (gas_limit as f64 * OUT_OF_GAS_THRESHOLD) {
                         warn!(
-                            "Out-of-gas detected for {}: used {} / {} gas ({:.1}%)",
+                            "DecryptionResponse-{} OUT-OF-GAS: used {} / {} gas ({:.1}%) tx_hash={} block={:?}",
                             id,
                             gas_used,
                             gas_limit,
-                            (gas_used as f64 / gas_limit as f64) * 100.0
+                            (gas_used as f64 / gas_limit as f64) * 100.0,
+                            receipt.transaction_hash,
+                            receipt.block_number
                         );
                         return ReceiptAnalysisResult::OutOfGas {
                             receipt,
@@ -357,6 +395,10 @@ async fn analyze_receipt_with_retry_logic<P: Provider + Clone + Send + Sync + 's
                 }
 
                 // Other execution failure (or indeterminate)
+                warn!(
+                    "DecryptionResponse-{} FAILED: gas_used={} gas_limit={} ({:.1}%) tx_hash={} block={:?} reason=execution_failed",
+                    id, gas_used, gas_limit, gas_percentage, tx_hash, receipt.block_number
+                );
                 return ReceiptAnalysisResult::NonRetryableFailure {
                     receipt,
                     reason: "Transaction execution failed".to_string(),
