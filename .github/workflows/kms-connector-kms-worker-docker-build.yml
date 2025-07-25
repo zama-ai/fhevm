@@ -32,11 +32,12 @@ jobs:
         with:
           filters: |
             kms-connector-kms-worker:
-              - .github/workflows/kms-connector-docker-build-kms-worker.yml
+              - .github/workflows/kms-connector-kms-worker-docker-build.yml
               - kms-connector/crates/kms-worker/**
               - kms-connector/crates/utils/**
               - kms-connector/Cargo.toml
               - kms-connector/Cargo.lock
+              - gateway-contracts/rust_bindings/**
 
   build:
     name: kms-connector-kms-worker-docker-build/build
