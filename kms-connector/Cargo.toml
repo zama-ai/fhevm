@@ -34,6 +34,7 @@ alloy = { version = "=0.13.0", default-features = false, features = [
     "signer-aws",
 ] }
 anyhow = { version = "=1.0.98", default-features = false }
+async-trait = { version = "0.1.88", default-features = false }
 aws-config = { version = "=1.8.2", default-features = true }
 aws-sdk-kms = { version = "=1.79.0", default-features = true }
 aws-sdk-s3 = { version = "=1.98.0", default-features = true }
@@ -53,6 +54,7 @@ serde = { version = "=1.0.219", default-features = false, features = [
     "derive",
     "std",
 ] }
+serde_json = { version = "1.0.141", default-features = false, features = ["std"] }
 sha3 = { version = "=0.10.8", default-features = false }
 sqlx = { version = "=0.8.6", default-features = false, features = [
     "chrono",
