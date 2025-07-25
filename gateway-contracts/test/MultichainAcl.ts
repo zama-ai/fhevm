@@ -296,12 +296,12 @@ describe("MultichainAcl", function () {
   });
 
   describe("Pause", async function () {
-    it("Should pause and unpause contract with owner address", async function () {
+    it("Should pause the contract with the pauser and unpause with the owner", async function () {
       // Check that the contract is not paused
       expect(await multichainAcl.paused()).to.be.false;
 
-      // Pause the contract with the owner address
-      await expect(multichainAcl.connect(owner).pause()).to.emit(multichainAcl, "Paused").withArgs(owner);
+      // Pause the contract with the pauser address
+      await expect(multichainAcl.connect(pauser).pause()).to.emit(multichainAcl, "Paused").withArgs(pauser);
       expect(await multichainAcl.paused()).to.be.true;
 
       // Unpause the contract with the owner address
@@ -309,20 +309,11 @@ describe("MultichainAcl", function () {
       expect(await multichainAcl.paused()).to.be.false;
     });
 
-    it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
-      expect(await multichainAcl.paused()).to.be.false;
-
-      // Pause the contract with the pauser address
-      await expect(multichainAcl.connect(pauser).pause()).to.emit(multichainAcl, "Paused").withArgs(pauser);
-      expect(await multichainAcl.paused()).to.be.true;
-    });
-
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
-      await expect(multichainAcl.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(multichainAcl, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
+    it("Should revert on pause because sender is not pauser address", async function () {
+      const notPauser = createRandomWallet();
+      await expect(multichainAcl.connect(notPauser).pause())
+        .to.be.revertedWithCustomError(multichainAcl, "NotPauser")
+        .withArgs(notPauser.address);
     });
   });
 });
