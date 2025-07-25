@@ -406,12 +406,13 @@ where
             }
         };
 
-        // Apply 30% gas boost to estimated or fallback gas
-        let boosted_gas = gas_estimation * 130 / 100;
+        // Apply configurable gas boost to estimated or fallback gas
+        let gas_boost_percent = self.config.gas_boost_percent;
+        let boosted_gas = gas_estimation * (100 + gas_boost_percent as u64) / 100;
         tx.gas = Some(boosted_gas);
         info!(
-            "Applied 30% gas boost for immediate send (nonce: {}): {} → {}",
-            expected_nonce, gas_estimation, boosted_gas
+            "Applied {}% gas boost for immediate send (nonce: {}): {} → {}",
+            gas_boost_percent, expected_nonce, gas_estimation, boosted_gas
         );
 
         // Single send attempt - let receipt analysis handle any failures

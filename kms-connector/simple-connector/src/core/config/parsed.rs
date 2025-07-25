@@ -67,6 +67,8 @@ pub struct Config {
     pub base_poll_interval_ms: u64,
     /// Maximum blocks to process per batch
     pub max_blocks_per_batch: u64,
+    /// Gas boost percentage for transactions (default: 30%)
+    pub gas_boost_percent: u32,
 }
 
 impl Display for Config {
@@ -135,6 +137,9 @@ impl Display for Config {
         writeln!(f, "Polling Mode: {}", self.use_polling_mode)?;
         writeln!(f, "Base Poll Interval: {}ms", self.base_poll_interval_ms)?;
         writeln!(f, "Max Blocks Per Batch: {}", self.max_blocks_per_batch)?;
+
+        // Gas configuration
+        writeln!(f, "Gas Boost Percentage: {}%", self.gas_boost_percent)?;
 
         // S3 configuration
         match &self.s3_config {
@@ -243,6 +248,7 @@ impl Config {
             use_polling_mode: raw_config.use_polling_mode,
             base_poll_interval_ms: raw_config.base_poll_interval_ms,
             max_blocks_per_batch: raw_config.max_blocks_per_batch,
+            gas_boost_percent: raw_config.gas_boost_percent,
         })
     }
 
@@ -625,6 +631,7 @@ mod tests {
                 use_polling_mode: false,
                 base_poll_interval_ms: 2,
                 max_blocks_per_batch: 10,
+                gas_boost_percent: 30,
             }
         }
     }

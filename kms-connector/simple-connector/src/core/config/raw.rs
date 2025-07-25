@@ -80,6 +80,8 @@ pub struct RawConfig {
     pub base_poll_interval_ms: u64,
     #[serde(default = "default_max_blocks_per_batch")]
     pub max_blocks_per_batch: u64,
+    #[serde(default = "default_gas_boost_percent")]
+    pub gas_boost_percent: u32,
 }
 
 fn default_service_name() -> String {
@@ -140,6 +142,10 @@ fn default_base_poll_interval_ms() -> u64 {
 
 fn default_max_blocks_per_batch() -> u64 {
     25
+}
+
+fn default_gas_boost_percent() -> u32 {
+    30 // 30% gas boost by default
 }
 
 impl RawConfig {
