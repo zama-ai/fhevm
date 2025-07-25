@@ -131,17 +131,11 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                                     );
                                     "out-of-gas"
                                 }
-                                ReceiptAnalysisResult::InsufficientGasPrice { reason, .. } => {
+                                ReceiptAnalysisResult::ImmediateRetry { reason } => {
                                     warn!(
-                                        "PublicDecryptionResponse-{id} insufficient gas price: {reason} - retrying"
+                                        "PublicDecryptionResponse-{id} immediate retry: {reason}"
                                     );
-                                    "insufficient gas price"
-                                }
-                                ReceiptAnalysisResult::ReceiptTimeout => {
-                                    warn!(
-                                        "PublicDecryptionResponse-{id} receipt timeout - retrying"
-                                    );
-                                    "timeout"
+                                    "immediate retry"
                                 }
                                 _ => return, // Non-retryable or success cases
                             };
@@ -251,15 +245,9 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                                     );
                                     "out-of-gas"
                                 }
-                                ReceiptAnalysisResult::InsufficientGasPrice { reason, .. } => {
-                                    warn!(
-                                        "UserDecryptionResponse-{id} insufficient gas price: {reason} - retrying"
-                                    );
-                                    "insufficient gas price"
-                                }
-                                ReceiptAnalysisResult::ReceiptTimeout => {
-                                    warn!("UserDecryptionResponse-{id} receipt timeout - retrying");
-                                    "timeout"
+                                ReceiptAnalysisResult::ImmediateRetry { reason } => {
+                                    warn!("UserDecryptionResponse-{id} immediate retry: {reason}");
+                                    "immediate retry"
                                 }
                                 _ => return, // Non-retryable or success cases
                             };
@@ -307,18 +295,13 @@ enum ReceiptAnalysisResult {
         gas_used: u64,
         gas_limit: u64,
     },
-    /// Transaction failed due to insufficient gas price (stuck in mempool)
-    InsufficientGasPrice {
-        receipt: Option<TransactionReceipt>,
-        reason: String,
-    },
     /// Transaction failed for non-retryable reasons
     NonRetryableFailure {
         receipt: TransactionReceipt,
         reason: String,
     },
-    /// Receipt polling timed out
-    ReceiptTimeout,
+    /// Receipt polling error or timeout - should trigger immediate transaction retry
+    ImmediateRetry { reason: String },
 }
 
 /// Enhanced receipt analysis with retry decision logic
@@ -395,64 +378,23 @@ async fn analyze_receipt_with_retry_logic<P: Provider + Clone + Send + Sync + 's
                         "Transaction receipt timeout for {}: {} after {} attempts - may be stuck in mempool",
                         id, tx_hash, MAX_RETRIES
                     );
-                    return ReceiptAnalysisResult::ReceiptTimeout;
+                    return ReceiptAnalysisResult::ImmediateRetry {
+                        reason: format!("Receipt timeout after {MAX_RETRIES} attempts"),
+                    };
                 }
             }
             Err(e) => {
-                if attempt < MAX_RETRIES {
-                    // Exponential backoff: 200ms → 400ms → 800ms → 1600ms (capped)
-                    let delay_ms =
-                        std::cmp::min(INITIAL_DELAY_MS * (1 << (attempt - 1)), MAX_DELAY_MS);
-                    debug!(
-                        "Error fetching receipt for {}: {} (attempt {}): {}, retrying in {}ms...",
-                        id, tx_hash, attempt, e, delay_ms
-                    );
-                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-                    continue;
-                } else {
-                    let error_msg = e.to_string().to_lowercase();
-
-                    // Classify the error based on the actual error message
-                    if error_msg.contains("underpriced") || error_msg.contains("gas") {
-                        warn!(
-                            "Transaction {} appears to have insufficient gas price: {}",
-                            tx_hash, e
-                        );
-                        return ReceiptAnalysisResult::InsufficientGasPrice {
-                            receipt: None,
-                            reason: format!("Insufficient gas price: {e}"),
-                        };
-                    } else {
-                        warn!(
-                            "Failed to get transaction receipt after {} attempts for {}: {}: {}",
-                            MAX_RETRIES, id, tx_hash, e
-                        );
-                        return ReceiptAnalysisResult::ReceiptTimeout;
-                    }
-                }
+                // Immediate retry strategy: Any receipt polling error triggers immediate transaction retry
+                warn!(
+                    "Receipt polling error for {}: {} - triggering immediate retry",
+                    tx_hash, e
+                );
+                return ReceiptAnalysisResult::ImmediateRetry {
+                    reason: format!("Receipt polling error: {e}"),
+                };
             }
         }
     }
 
     unreachable!()
-}
-
-/// Legacy function for backward compatibility
-#[allow(dead_code)]
-async fn wait_for_receipt_background<P: Provider + Clone + Send + Sync + 'static>(
-    provider: P,
-    tx_hash: TxHash,
-    id: U256,
-) -> Result<TransactionReceipt> {
-    match analyze_receipt_with_retry_logic(provider, tx_hash, id, None).await {
-        ReceiptAnalysisResult::Success(receipt) => Ok(receipt),
-        ReceiptAnalysisResult::OutOfGas { receipt, .. } => Ok(receipt),
-        ReceiptAnalysisResult::NonRetryableFailure { receipt, .. } => Ok(receipt),
-        ReceiptAnalysisResult::InsufficientGasPrice { reason, .. } => {
-            Err(Error::Contract(format!("Transaction failed: {reason}")))
-        }
-        ReceiptAnalysisResult::ReceiptTimeout => Err(Error::Contract(format!(
-            "Transaction receipt timeout for {id}: {tx_hash}"
-        ))),
-    }
 }
