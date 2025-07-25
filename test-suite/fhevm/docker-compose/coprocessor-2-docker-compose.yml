@@ -1,6 +1,6 @@
 services:
   ####################### DATABASE SETUP #######################
-  db:
+  db-2:
     container_name: fhevm-2-coprocessor-db
     image: postgres:15.7
     restart: always
@@ -51,7 +51,7 @@ services:
     volumes:
       - keys-cache-2:/fhevm-keys
     depends_on:
-      db:
+      db-2:
         condition: service_healthy
       key-downloader:
         condition: service_completed_successfully
@@ -77,7 +77,7 @@ services:
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_URL}
     depends_on:
-      db:
+      db-2:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
@@ -109,7 +109,7 @@ services:
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
     depends_on:
-      db:
+      db-2:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
@@ -137,7 +137,7 @@ services:
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
     depends_on:
-      db:
+      db-2:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
@@ -163,7 +163,7 @@ services:
       - --pg-pool-connections=5
       - --worker-thread-count=4
     depends_on:
-      db:
+      db-2:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
@@ -201,7 +201,7 @@ services:
       - --s3-recheck-duration=2s
       - --s3-regular-recheck-duration=120s
     depends_on:
-      db:
+      db-2:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
@@ -235,7 +235,7 @@ services:
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
     depends_on:
-      db:
+      db-2:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully

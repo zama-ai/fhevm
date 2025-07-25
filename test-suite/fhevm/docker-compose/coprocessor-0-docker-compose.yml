@@ -1,6 +1,6 @@
 services:
   ####################### DATABASE SETUP #######################
-  db:
+  db-0:
     container_name: fhevm-0-coprocessor-db
     image: postgres:15.7
     restart: always
@@ -51,7 +51,7 @@ services:
     volumes:
       - keys-cache-0:/fhevm-keys
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       key-downloader:
         condition: service_completed_successfully
@@ -78,7 +78,7 @@ services:
       - --url=${RPC_URL}
       - --initial-block-time=1
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
@@ -110,7 +110,7 @@ services:
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
@@ -138,7 +138,7 @@ services:
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
@@ -164,7 +164,7 @@ services:
       - --pg-pool-connections=5
       - --worker-thread-count=4
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
@@ -203,7 +203,7 @@ services:
       - --s3-regular-recheck-duration=120s
       - --enable-compression
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
@@ -237,7 +237,7 @@ services:
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully

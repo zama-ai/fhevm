@@ -228,15 +228,23 @@ get_minio_ip() {
     local minio_container_name=$1
     local minio_ip
     minio_ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$minio_container_name")
-    local coprocessor_file="$SCRIPT_DIR/../env/staging/.env.coprocessor.local"
+    
+    # Update all coprocessor env files
+    local coprocessor_files=(
+        "$SCRIPT_DIR/../env/staging/.env.coprocessor-0.local"
+        "$SCRIPT_DIR/../env/staging/.env.coprocessor-1.local" 
+        "$SCRIPT_DIR/../env/staging/.env.coprocessor-2.local"
+    )
+    
     if [ -n "$minio_ip" ]; then
-    echo "Found $minio_container_name container IP: $minio_ip"
-    sed -i.bak "s|AWS_ENDPOINT_URL=http://[^:]*:9000|AWS_ENDPOINT_URL=http://$minio_ip:9000|" \
-            "$coprocessor_file"
-    echo "Updated AWS_ENDPOINT_URL to http://$minio_ip:9000"
+        echo "Found $minio_container_name container IP: $minio_ip"
+        for file in "${coprocessor_files[@]}"; do
+            sed -i.bak "s|AWS_ENDPOINT_URL=http://[^:]*:9000|AWS_ENDPOINT_URL=http://$minio_ip:9000|" "$file"
+        done
+        echo "Updated AWS_ENDPOINT_URL to http://$minio_ip:9000 in all coprocessor env files"
     else
-    echo "Error: Could not find IP address for $minio_container_name container"
-    exit 1
+        echo "Error: Could not find IP address for $minio_container_name container"
+        exit 1
     fi
 }
 
@@ -321,17 +329,38 @@ fi
 get_minio_ip "fhevm-minio"
 
 if [ "$FORCE_BUILD" = true ]; then
-  run_compose_with_build "coprocessor" "Coprocessor Services" \
-    "${PROJECT}-coprocessor-db:running" \
-    "${PROJECT}-key-downloader:complete" \
-    "${PROJECT}-db-migration:complete" \
-    "${PROJECT}-host-listener:running" \
-    "${PROJECT}-gw-listener:running" \
-    "${PROJECT}-tfhe-worker:running" \
-    "${PROJECT}-zkproof-worker:running" \
-    "${PROJECT}-sns-worker:running" \
-    "${PROJECT}-transaction-sender:running"
+  run_compose_with_build "coprocessor-0" "Coprocessor 0 Services" \
+    "${PROJECT}-0-coprocessor-db:running" \
+    "${PROJECT}-0-key-downloader:complete" \
+    "${PROJECT}-0-db-migration:complete" \
+    "${PROJECT}-0-host-listener:running" \
+    "${PROJECT}-0-gw-listener:running" \
+    "${PROJECT}-0-tfhe-worker:running" \
+    "${PROJECT}-0-zkproof-worker:running" \
+    "${PROJECT}-0-sns-worker:running" \
+    "${PROJECT}-0-transaction-sender:running"
 
+  run_compose_with_build "coprocessor-1" "Coprocessor 1 Services" \
+    "${PROJECT}-1-coprocessor-db:running" \
+    "${PROJECT}-1-key-downloader:complete" \
+    "${PROJECT}-1-db-migration:complete" \
+    "${PROJECT}-1-host-listener:running" \
+    "${PROJECT}-1-gw-listener:running" \
+    "${PROJECT}-1-tfhe-worker:running" \
+    "${PROJECT}-1-zkproof-worker:running" \
+    "${PROJECT}-1-sns-worker:running" \
+    "${PROJECT}-1-transaction-sender:running"
+
+  run_compose_with_build "coprocessor-2" "Coprocessor 2 Services" \
+    "${PROJECT}-2-coprocessor-db:running" \
+    "${PROJECT}-2-key-downloader:complete" \
+    "${PROJECT}-2-db-migration:complete" \
+    "${PROJECT}-2-host-listener:running" \
+    "${PROJECT}-2-gw-listener:running" \
+    "${PROJECT}-2-tfhe-worker:running" \
+    "${PROJECT}-2-zkproof-worker:running" \
+    "${PROJECT}-2-sns-worker:running" \
+    "${PROJECT}-2-transaction-sender:running"
 else
   run_compose "coprocessor-0" "Coprocessor 0 Services" \
     "${PROJECT}-0-coprocessor-db:running" \
