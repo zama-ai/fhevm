@@ -105,7 +105,7 @@ describe("InputVerification", function () {
         inputVerification
           .connect(owner)
           .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof),
-      ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
+      ).to.be.revertedWithCustomError(inputVerification, "EnforcedPause");
     });
   });
 
@@ -320,16 +320,6 @@ describe("InputVerification", function () {
         .to.be.revertedWithCustomError(inputVerification, "ProofNotVerified")
         .withArgs(fakeZkProofId);
     });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await inputVerification.connect(owner).pause();
-
-      // Try calling paused verify proof response
-      await expect(
-        inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]),
-      ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
-    });
   });
 
   describe("Proof rejection response", async function () {
@@ -474,16 +464,6 @@ describe("InputVerification", function () {
       await expect(inputVerification.checkProofRejected(fakeZkProofId))
         .to.be.revertedWithCustomError(inputVerification, "ProofNotRejected")
         .withArgs(fakeZkProofId);
-    });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await inputVerification.connect(owner).pause();
-
-      // Try calling paused reject proof response
-      await expect(
-        inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId),
-      ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
     });
   });
 

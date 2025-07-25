@@ -6,7 +6,7 @@ This document provides instructions on migrating from FHEVM v0.6 to v0.7.
 
 ### Package and library
 
-The package is now `@fhevm/solidity` instead of `fhevm` and the library name has changed from `TFHE` to `FHE`
+The package is now `@fhevm/solidity` instead of `FHEVM` and the library name has changed from `TFHE` to `FHE`
 
 ```solidity
 import { FHE } from "@fhevm/solidity";

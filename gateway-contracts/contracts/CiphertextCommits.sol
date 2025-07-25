@@ -8,8 +8,8 @@ import "./interfaces/IGatewayConfig.sol";
 import "./interfaces/IKmsManagement.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
-import "./shared/Pausable.sol";
 import "./libraries/HandleOps.sol";
+import "./shared/Pausable.sol";
 
 /**
  * @title CiphertextCommits smart contract
@@ -98,7 +98,7 @@ contract CiphertextCommits is
         uint256 keyId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) external virtual onlyCoprocessorTxSender whenNotPaused {
+    ) external virtual onlyCoprocessorTxSender {
         // Extract the chainId from the ciphertext handle
         uint256 chainId = HandleOps.extractChainId(ctHandle);
 

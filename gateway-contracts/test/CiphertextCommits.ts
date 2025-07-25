@@ -204,18 +204,6 @@ describe("CiphertextCommits", function () {
         .withArgs(ctHandle, coprocessorTxSenders[0]);
     });
 
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await ciphertextCommits.connect(owner).pause();
-
-      // Try calling paused add ciphertext material
-      await expect(
-        ciphertextCommits
-          .connect(coprocessorTxSenders[0])
-          .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
-      ).to.be.revertedWithCustomError(ciphertextCommits, "EnforcedPause");
-    });
-
     // TODO: Add test checking `checkCurrentKeyId` once keys are generated through the Gateway
   });
 

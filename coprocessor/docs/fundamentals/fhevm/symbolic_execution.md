@@ -12,7 +12,7 @@ Inputs can either be other handles or plaintext values.
 
 ## FHE Computation Data Dependencies
 
-Note that fhEVM-native and fhEVM-coprocessor send both input handles and result handles for FHE computation. It is able to do that, because result handles are computed symbolically in the FHEVMExecutor contract. That allows for parallel FHE computation by analysing which computations are independent.
+Note that FHEVM-native and FHEVM-coprocessor send both input handles and result handles for FHE computation. It is able to do that, because result handles are computed symbolically in the FHEVMExecutor contract. That allows for parallel FHE computation by analysing which computations are independent.
 
 The Executor or Coprocessor can detect a conflict if an output of computation A (or the output of another computation depending on the output of A) is also used as an input in a subsequent computation B. We call these computations `dependent` and we need to execute them in order.
 

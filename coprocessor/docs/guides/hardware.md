@@ -1,6 +1,6 @@
 # Node and gateway hardware
 
-## fhEVM validator
+## FHEVM validator
 
 Validators perform all operations on ciphertext, which requires powerful machines. FHE computations benefit from multi-threading, so we recommend using [hpc7a](https://aws.amazon.com/fr/ec2/instance-types/hpc7a/) instances or equivalent, with at least 48 physical cores.
 

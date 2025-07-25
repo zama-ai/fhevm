@@ -266,7 +266,7 @@ contract Decryption is
         uint256 decryptionId,
         bytes calldata decryptedResult,
         bytes calldata signature
-    ) external virtual onlyKmsTxSender whenNotPaused {
+    ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
@@ -459,7 +459,7 @@ contract Decryption is
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
         bytes calldata signature
-    ) external virtual onlyKmsTxSender whenNotPaused {
+    ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
         UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
 

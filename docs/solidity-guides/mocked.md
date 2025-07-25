@@ -22,7 +22,7 @@ Mocked mode support is planned for [Foundry](./write_contract/foundry.md) in fut
 
 For faster testing iterations, instead of launching all the tests on the local FHEVM node, which could last several minutes, you can use a mocked version of the FHEVM by running `pnpm test`. The same tests should (almost always) pass as is, without any modification; neither the JavaScript files nor the Solidity files need to be changed between the mocked and the real version.
 
-The mocked mode does **not** actually perform real encryption for encrypted types and instead runs the tests on a local Hardhat node, which is implementing the original EVM (i.e., non-fhevm).
+The mocked mode does **not** actually perform real encryption for encrypted types and instead runs the tests on a local Hardhat node, which is implementing the original EVM (i.e., non-FHEVM).
 
 Additionally, the mocked mode will let you use all the Hardhat-related special testing and debugging methods, such as `evm_mine`, `evm_snapshot`, `evm_revert`, etc., which are very helpful for testing.
 
@@ -30,7 +30,7 @@ Additionally, the mocked mode will let you use all the Hardhat-related special t
 
 When developing confidential contracts, we recommend to use first the mocked version of FHEVM for faster testing with `pnpm test` and coverage computation via `pnpm coverage`, this will lead to a better developer experience.
 
-It's essential to run tests of the final contract version using the real fhevm. You can do this by running `pnpm test` before deployment.
+It's essential to run tests of the final contract version using the real FHEVM. You can do this by running `pnpm test` before deployment.
 
 To run the mocked tests use either:
 

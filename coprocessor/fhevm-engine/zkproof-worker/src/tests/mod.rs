@@ -22,9 +22,15 @@ async fn test_verify_proof() {
         .await
         .unwrap();
 
+    let max_retries = 1000;
+
     // Check if it's valid
-    assert!(utils::is_valid(&pool, request_id_valid).await.unwrap());
+    assert!(utils::is_valid(&pool, request_id_valid, max_retries)
+        .await
+        .unwrap(),);
 
     // Check if it's invalid
-    assert!(!utils::is_valid(&pool, request_id_invalid).await.unwrap());
+    assert!(!utils::is_valid(&pool, request_id_invalid, max_retries)
+        .await
+        .unwrap());
 }

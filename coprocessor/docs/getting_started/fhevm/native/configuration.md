@@ -1,6 +1,6 @@
 # Configuration
 
-At the time of writing, fhEVM-native is still not fully implemented, namely the geth integration is not done. Configuration settings will be listed here when they are implemented.
+At the time of writing, FHEVM-native is still not fully implemented, namely the geth integration is not done. Configuration settings will be listed here when they are implemented.
 
 ## Executor
 

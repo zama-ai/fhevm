@@ -131,7 +131,15 @@ pub async fn wait_for_ciphertext(
     Err(sqlx::Error::RowNotFound.into())
 }
 
-pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
+/// Inserts a new tenant into the database with the specified ACL contract address
+///
+/// # Arguments
+/// * `pool` - The database connection pool
+/// * `with_sns_pk` - Enables the importing of SNS sks key which usually is 1.5GB in size
+pub async fn setup_test_user(
+    pool: &sqlx::PgPool,
+    with_sns_pk: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let (sks, cks, pks, pp, sns_pk) = if !cfg!(feature = "gpu") {
         (
             "../fhevm-keys/sks",
@@ -154,7 +162,12 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
     let cks = tokio::fs::read(cks).await.expect("can't read cks key");
     let public_params = tokio::fs::read(pp).await.expect("can't read public params");
 
-    let sns_pk_oid = import_file_into_db(pool, sns_pk).await?;
+    let sns_pk_oid = if with_sns_pk {
+        import_file_into_db(pool, sns_pk).await?
+    } else {
+        Oid::default()
+    };
+
     info!("Uploaded sns_pk with Oid: {:?}", sns_pk_oid);
 
     sqlx::query!(

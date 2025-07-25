@@ -97,7 +97,7 @@ impl KmsConnector {
         info!("Setting up KMS Connector sub-components...");
         let mut gw_listener_conf = gw_listener::core::Config {
             database_url: test_instance.db_url().to_string(),
-            gateway_url: test_instance.anvil().ws_endpoint(),
+            gateway_url: test_instance.anvil_ws_endpoint(),
             chain_id: *CHAIN_ID as u64,
             ..Default::default()
         };
@@ -108,7 +108,7 @@ impl KmsConnector {
         let mut kms_worker_conf = kms_worker::core::Config {
             database_url: test_instance.db_url().to_string(),
             kms_core_endpoint: test_instance.kms_url().to_string(),
-            gateway_url: test_instance.anvil().ws_endpoint(),
+            gateway_url: test_instance.anvil_ws_endpoint(),
             chain_id: *CHAIN_ID as u64,
             ..Default::default()
         };
@@ -118,7 +118,7 @@ impl KmsConnector {
 
         let mut tx_sender_conf = tx_sender::core::Config::default().await;
         tx_sender_conf.database_url = test_instance.db_url().to_string();
-        tx_sender_conf.gateway_url = test_instance.anvil().ws_endpoint();
+        tx_sender_conf.gateway_url = test_instance.anvil_ws_endpoint();
         tx_sender_conf.chain_id = *CHAIN_ID as u64;
         tx_sender_conf.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
         tx_sender_conf.kms_management_contract.address = KMS_MANAGEMENT_MOCK_ADDRESS;

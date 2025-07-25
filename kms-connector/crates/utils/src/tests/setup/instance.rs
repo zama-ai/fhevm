@@ -2,7 +2,6 @@ use crate::{
     conn::WalletGatewayProvider,
     tests::setup::{DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
 };
-use alloy::node_bindings::AnvilInstance;
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::DecryptionInstance,
     gatewayconfig::GatewayConfig::GatewayConfigInstance,
@@ -42,10 +41,6 @@ impl TestInstance {
             .url
     }
 
-    pub fn anvil(&self) -> &AnvilInstance {
-        &self.gateway().anvil
-    }
-
     pub fn provider(&self) -> &WalletGatewayProvider {
         &self.gateway().provider
     }
@@ -70,6 +65,10 @@ impl TestInstance {
 
     pub fn s3_url(&self) -> &str {
         &self.s3.as_ref().expect("S3 has not been setup").url
+    }
+
+    pub fn anvil_ws_endpoint(&self) -> String {
+        self.gateway().anvil_ws_endpoint()
     }
 }
 

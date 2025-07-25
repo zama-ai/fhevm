@@ -12,7 +12,7 @@ use std::{
     io::{Read, Write},
     time::Duration,
 };
-use test_harness::instance::DBInstance;
+use test_harness::instance::{DBInstance, ImportMode};
 use tfhe::{prelude::FheDecrypt, ClientKey, SquashedNoiseFheUint};
 use tokio::{sync::mpsc, time::sleep};
 use tracing::Level;
@@ -88,7 +88,7 @@ async fn test_decryptable(
 #[tokio::test]
 async fn test_lifo_mode() {
     tracing_subscriber::fmt().json().with_level(true).init();
-    let test_instance = test_harness::instance::setup_test_db(false)
+    let test_instance = test_harness::instance::setup_test_db(ImportMode::None)
         .await
         .expect("valid db instance");
 
@@ -167,7 +167,7 @@ async fn test_lifo_mode() {
 
 #[tokio::test]
 async fn test_garbage_collect() {
-    let test_instance = test_harness::instance::setup_test_db(false)
+    let test_instance = test_harness::instance::setup_test_db(ImportMode::None)
         .await
         .expect("valid db instance");
 
@@ -260,7 +260,7 @@ async fn setup() -> anyhow::Result<(
     DBInstance,
 )> {
     tracing_subscriber::fmt().json().with_level(true).init();
-    let test_instance = test_harness::instance::setup_test_db(true)
+    let test_instance = test_harness::instance::setup_test_db(ImportMode::WithAllKeys)
         .await
         .expect("valid db instance");
 

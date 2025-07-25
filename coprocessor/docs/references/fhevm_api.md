@@ -1,1 +1,1 @@
-# fhEVM API specifications
+# FHEVM API specifications

@@ -1,6 +1,6 @@
 # Executor
 
-An fhEVM-native node consists of the following components:
+An FHEVM-native node consists of the following components:
  * full node/validator node
  * Executor service
 

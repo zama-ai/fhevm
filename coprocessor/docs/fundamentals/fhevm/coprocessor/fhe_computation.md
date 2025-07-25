@@ -1,6 +1,6 @@
 # FHE Computation
 
-Block execution in fhEVM-coprocessor is split into two parts:
+Block execution in FHEVM-coprocessor is split into two parts:
 
 - Symbolic Execution (onchain)
 - FHE Computation (offchain)

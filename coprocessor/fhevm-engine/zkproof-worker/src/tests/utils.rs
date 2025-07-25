@@ -1,7 +1,7 @@
 use fhevm_engine_common::{tenant_keys, utils::safe_serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
-use test_harness::instance::DBInstance;
+use test_harness::instance::{DBInstance, ImportMode};
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 
@@ -9,7 +9,7 @@ use crate::auxiliary::ZkData;
 
 pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
     tracing_subscriber::fmt().json().with_level(true).init();
-    let test_instance = test_harness::instance::setup_test_db(true)
+    let test_instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
         .await
         .expect("valid db instance");
 
@@ -45,15 +45,27 @@ pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
     Ok((pool, test_instance))
 }
 
-pub(crate) async fn is_valid(pool: &sqlx::PgPool, zk_proof_id: i64) -> Result<bool, sqlx::Error> {
-    let result = sqlx::query!(
-        "SELECT verified FROM verify_proofs WHERE zk_proof_id = $1",
-        zk_proof_id
-    )
-    .fetch_one(pool)
-    .await?;
+pub(crate) async fn is_valid(
+    pool: &sqlx::PgPool,
+    zk_proof_id: i64,
+    max_retries: usize,
+) -> Result<bool, sqlx::Error> {
+    for _ in 0..max_retries {
+        sleep(Duration::from_millis(100)).await;
+        let result = sqlx::query!(
+            "SELECT verified FROM verify_proofs WHERE zk_proof_id = $1",
+            zk_proof_id
+        )
+        .fetch_one(pool)
+        .await?;
 
-    Ok(result.verified.unwrap_or(false))
+        match result.verified {
+            Some(verified) => return Ok(verified),
+            None => continue,
+        }
+    }
+
+    Ok(false)
 }
 
 pub(crate) async fn generate_zk_pok(pool: &sqlx::PgPool, aux_data: &[u8]) -> Vec<u8> {
@@ -110,8 +122,6 @@ pub(crate) async fn insert_proof(
         .execute(pool)
         .await
         .unwrap();
-
-    sleep(Duration::from_secs(5)).await;
 
     Ok(request_id)
 }

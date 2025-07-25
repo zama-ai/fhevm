@@ -36,7 +36,7 @@ contract MultichainAcl is
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.MultichainAcl
@@ -93,10 +93,15 @@ contract MultichainAcl is
         __Pausable_init();
     }
 
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
     /// @dev See {IMultichainAcl-allowPublicDecrypt}.
     function allowPublicDecrypt(
         bytes32 ctHandle
-    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused {
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /**
@@ -123,7 +128,7 @@ contract MultichainAcl is
     function allowAccount(
         bytes32 ctHandle,
         address accountAddress
-    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused {
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /**
@@ -154,7 +159,7 @@ contract MultichainAcl is
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
-    ) external virtual onlyCoprocessorTxSender whenNotPaused {
+    ) external virtual onlyCoprocessorTxSender {
         if (contractAddresses.length == 0) {
             revert EmptyContractAddresses();
         }

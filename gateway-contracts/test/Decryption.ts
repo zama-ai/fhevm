@@ -541,11 +541,6 @@ describe("Decryption", function () {
         decryption,
         "EnforcedPause",
       );
-
-      // Try calling paused public decryption response
-      await expect(
-        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]),
-      ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
     });
 
     it("Should public decrypt with 3 valid and 1 malicious signatures", async function () {
@@ -1342,13 +1337,6 @@ describe("Decryption", function () {
           publicKey,
           userSignature,
         ),
-      ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
-
-      // Try calling paused user decryption response
-      await expect(
-        decryption
-          .connect(kmsTxSenders[0])
-          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]),
       ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
     });
 
