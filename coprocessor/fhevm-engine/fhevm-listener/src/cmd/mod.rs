@@ -1,9 +1,5 @@
 use alloy::primitives::Address;
-use alloy::providers::fillers::{
-    BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
-    NonceFiller,
-};
-use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
 use alloy::sol_types::SolEventInterface;
@@ -11,7 +7,9 @@ use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 use std::collections::VecDeque;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use tracing::{error, info, warn, Level};
 
 use clap::Parser;
@@ -20,9 +18,12 @@ use rustls;
 
 use tokio_util::sync::CancellationToken;
 
+use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
+use fhevm_engine_common::types::BlockchainProvider;
+
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::tfhe_event_propagate::{ChainId, Database};
-use crate::health_check::{HealthCheck, HealthState};
+use crate::health_check::{HealthCheck, Tick};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -95,18 +96,6 @@ pub struct Args {
     pub health_port: u16,
 }
 
-type RProvider = FillProvider<
-    JoinFill<
-        alloy::providers::Identity,
-        JoinFill<
-            GasFiller,
-            JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>,
-        >,
-    >,
-    RootProvider,
->;
-
-// TODO: to merge with Levent works
 struct InfiniteLogIter {
     url: String,
     block_time: u64, /* A default value that is refined with real-time
@@ -117,7 +106,7 @@ struct InfiniteLogIter {
     // Option<(from_block, optional to_block)>
     catchup_logs: VecDeque<Log>,
     stream: Option<SubscriptionStream<Log>>,
-    provider: Option<RProvider>, // required to maintain the stream
+    pub provider: Arc<RwLock<Option<BlockchainProvider>>>, // required to maintain the stream
     last_valid_block: Option<u64>,
     start_at_block: Option<i64>,
     end_at_block: Option<u64>,
@@ -127,7 +116,8 @@ struct InfiniteLogIter {
     current_event: Option<Log>,
     last_block_event_count: u64,
     last_block_recheck_planned: u64,
-    health: HealthState,
+    pub tick_timeout: Tick,
+    pub tick_block: Tick,
 }
 enum LogOrBlockTimeout {
     Log(Option<Log>),
@@ -135,7 +125,7 @@ enum LogOrBlockTimeout {
 }
 
 impl InfiniteLogIter {
-    fn new(args: &Args, health: HealthState) -> Self {
+    fn new(args: &Args) -> Self {
         let mut contract_addresses = vec![];
         if !args.acl_contract_address.is_empty() {
             contract_addresses
@@ -153,7 +143,7 @@ impl InfiniteLogIter {
             catchup_blocks: None,
             catchup_logs: VecDeque::new(),
             stream: None,
-            provider: None,
+            provider: Arc::new(RwLock::new(None)),
             last_valid_block: None,
             start_at_block: args.start_at_block,
             end_at_block: args.end_at_block,
@@ -163,7 +153,8 @@ impl InfiniteLogIter {
             current_event: None,
             last_block_event_count: 0,
             last_block_recheck_planned: 0,
-            health,
+            tick_timeout: Tick::default(),
+            tick_block: Tick::default(),
         }
     }
 
@@ -182,7 +173,7 @@ impl InfiniteLogIter {
 
     async fn catchup_block_from(
         &self,
-        provider: &RProvider,
+        provider: &BlockchainProvider,
     ) -> BlockNumberOrTag {
         if let Some(last_seen_block) = self.last_valid_block {
             return BlockNumberOrTag::Number(
@@ -208,10 +199,6 @@ impl InfiniteLogIter {
     }
 
     async fn consume_catchup_blocks(&mut self) {
-        let Some(provider) = &self.provider else {
-            error!("No provider, inconsistent state");
-            return;
-        };
         let Some((_, to_block)) = self.catchup_blocks else {
             return;
         };
@@ -231,7 +218,13 @@ impl InfiniteLogIter {
             if !self.contract_addresses.is_empty() {
                 filter = filter.address(self.contract_addresses.clone())
             }
-            let logs = provider.get_logs(&filter).await;
+            let logs = {
+                let Some(provider) = &*self.provider.read().await else {
+                    error!("No provider, inconsistent state");
+                    return;
+                };
+                provider.get_logs(&filter).await
+            };
             match logs {
                 Ok(logs) => break (logs, from_block, paging_to_block),
                 Err(err) => {
@@ -274,7 +267,14 @@ impl InfiniteLogIter {
             }
         } else if nb_logs == 0 {
             // either empty or futur block
-            if let Ok(current_block) = provider.get_block_number().await {
+            let current_block = {
+                let Some(provider) = &*self.provider.read().await else {
+                    error!("No provider, inconsistent state");
+                    return;
+                };
+                provider.get_block_number().await
+            };
+            if let Ok(current_block) = current_block {
                 if current_block < paging_to_block + 1 {
                     self.catchup_blocks = None;
                 }
@@ -286,10 +286,6 @@ impl InfiniteLogIter {
     }
 
     async fn recheck_prev_block(&mut self) -> bool {
-        let Some(provider) = &self.provider else {
-            error!("No provider, inconsistent state");
-            return false;
-        };
         let Some(event) = &self.prev_event else {
             return false;
         };
@@ -306,7 +302,15 @@ impl InfiniteLogIter {
         if !self.contract_addresses.is_empty() {
             filter = filter.address(self.contract_addresses.clone())
         }
-        let Ok(logs) = provider.get_logs(&filter).await else {
+        let logs = {
+            let Some(provider) = &*self.provider.read().await else {
+                error!("No provider, inconsistent state");
+                return false;
+            };
+            provider.get_logs(&filter).await
+        };
+
+        let Ok(logs) = logs else {
             return false;
         };
         if logs.is_empty() {
@@ -361,7 +365,7 @@ impl InfiniteLogIter {
                             .expect("BLA2")
                             .into_stream(),
                     );
-                    self.provider = Some(provider);
+                    let _ = self.provider.write().await.replace(provider);
                     return;
                 }
                 Err(err) => {
@@ -465,7 +469,7 @@ impl InfiniteLogIter {
                     info!(log = ?log, "Log event");
                     self.current_event = Some(log);
                     if self.is_first_of_block() {
-                        self.health.write().await.tick();
+                        self.tick_block.update().await;
                     }
                     let recheck_planned = if !self.no_block_immediate_recheck
                         && self.is_first_of_block()
@@ -483,7 +487,7 @@ impl InfiniteLogIter {
                     }
                 }
                 LogOrBlockTimeout::BlockTimeout => {
-                    self.health.write().await.tick();
+                    self.tick_timeout.update().await;
                     self.recheck_prev_block().await;
                     continue;
                 }
@@ -547,54 +551,43 @@ pub async fn main(args: Args) {
         panic!("Invalid TFHE contract address: {err}");
     }
 
-    let cancel_token = CancellationToken::new();
-    let health_check = HealthCheck::new(
-        args.health_port,
-        cancel_token,
-        &args.database_url,
-        &args.url,
-    );
-    {
-        let health_check_clone = health_check.clone();
-        tokio::spawn(async move {
-            health_check_clone
-                .start_http_server()
-                .await
-                .expect("Failed to start health check server");
-        });
-    }
-
-    let mut log_iter =
-        InfiniteLogIter::new(&args, health_check.health_state.clone());
+    let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id_or_panic().await;
     info!(chain_id = chain_id, "Chain ID");
-
-    let mut db = if !args.database_url.is_empty() {
-        if let Some(coprocessor_api_key) = args.coprocessor_api_key {
-            let mut db = Database::new(
-                &args.database_url,
-                &coprocessor_api_key,
-                chain_id,
-            )
-            .await;
-            if log_iter.start_at_block.is_none() {
-                log_iter.start_at_block = db
-                    .read_last_valid_block()
-                    .await
-                    .map(|n| n - args.catchup_margin as i64);
-            }
-            Some(db)
-        } else {
-            // TODO: remove panic and, instead, propagate the error
-            error!("A Coprocessor API key is required to access the database");
-            panic!("A Coprocessor API key is required to access the database");
-        }
-    } else {
-        None
+    if args.database_url.is_empty() {
+        error!("Database URL is required");
+        panic!("Database URL is required");
     };
+    let Some(coprocessor_api_key) = args.coprocessor_api_key else {
+        error!("A Coprocessor API key is required to access the database");
+        panic!("A Coprocessor API key is required to access the database");
+    };
+    let mut db =
+        Database::new(&args.database_url, &coprocessor_api_key, chain_id).await;
+
+    let health_check = HealthCheck {
+        blockchain_timeout_tick: log_iter.tick_timeout.clone(),
+        blockchain_tick: log_iter.tick_block.clone(),
+        blockchain_provider: log_iter.provider.clone(),
+        database_pool: db.pool.clone(),
+        database_tick: db.tick.clone(),
+    };
+    let cancel_token = CancellationToken::new();
+    let health_check_server = HealthHttpServer::new(
+        Arc::new(health_check),
+        args.health_port,
+        cancel_token.clone(),
+    );
+    tokio::spawn(async move { health_check_server.start().await });
+
+    if log_iter.start_at_block.is_none() {
+        log_iter.start_at_block = db
+            .read_last_valid_block()
+            .await
+            .map(|n| n - args.catchup_margin as i64);
+    }
 
     log_iter.new_log_stream(true).await;
-    health_check.connected().await;
 
     let mut block_tfhe_errors = 0;
     while let Some(log) = log_iter.next().await {
@@ -602,16 +595,14 @@ pub async fn main(args: Args) {
             log_iter.reestimated_block_time();
             if let Some(block_number) = log.block_number {
                 if block_tfhe_errors == 0 {
-                    if let Some(ref mut db) = db {
-                        let last_valid_block = db
-                            .mark_prev_block_as_valid(
-                                &log_iter.current_event,
-                                &log_iter.prev_event,
-                            )
-                            .await;
-                        if last_valid_block.is_some() {
-                            log_iter.last_valid_block = last_valid_block;
-                        }
+                    let last_valid_block = db
+                        .mark_prev_block_as_valid(
+                            &log_iter.current_event,
+                            &log_iter.prev_event,
+                        )
+                        .await;
+                    if last_valid_block.is_some() {
+                        log_iter.last_valid_block = last_valid_block;
                     }
                 } else {
                     error!(
@@ -632,12 +623,10 @@ pub async fn main(args: Args) {
             {
                 // TODO: filter on contract address if known
                 info!(tfhe_event = ?event, "TFHE event");
-                if let Some(ref mut db) = db {
-                    let res = db.insert_tfhe_event(&event).await;
-                    if let Err(err) = res {
-                        block_tfhe_errors += 1;
-                        error!(error = %err, "Error inserting tfhe event");
-                    }
+                let res = db.insert_tfhe_event(&event).await;
+                if let Err(err) = res {
+                    block_tfhe_errors += 1;
+                    error!(error = %err, "Error inserting tfhe event");
                 }
                 continue;
             }
@@ -647,12 +636,10 @@ pub async fn main(args: Args) {
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
                 info!(acl_event = ?event, "ACL event");
-                if let Some(ref mut db) = db {
-                    let _ = db.handle_acl_event(&event).await;
-                }
+                let _ = db.handle_acl_event(&event).await;
                 continue;
             }
         }
     }
-    health_check.cancel_token.cancel();
+    cancel_token.cancel();
 }

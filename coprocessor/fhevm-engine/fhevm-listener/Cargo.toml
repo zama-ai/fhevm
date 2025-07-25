@@ -15,7 +15,6 @@ bench = false
 anyhow = { workspace = true }
 alloy = { workspace = true }
 alloy-primitives = { workspace = true }
-axum = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
 rustls = { workspace = true }
@@ -24,7 +23,6 @@ serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
-tower-http = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

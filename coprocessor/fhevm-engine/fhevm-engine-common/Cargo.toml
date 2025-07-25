@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 # workspace dependencies
 anyhow = { workspace = true }
+alloy = { workspace = true, features = ["providers", "provider-ws"] }
+alloy-provider = "1.0.9"
 bigdecimal = { workspace = true }
 bincode = { workspace = true }
 hex = { workspace = true }
@@ -37,8 +39,6 @@ opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
-
-
 
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
