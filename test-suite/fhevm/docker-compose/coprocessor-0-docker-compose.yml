@@ -1,7 +1,7 @@
 services:
   ####################### DATABASE SETUP #######################
-  db:
-    container_name: fhevm-coprocessor-db
+  db-0:
+    container_name: fhevm-0-coprocessor-db
     image: postgres:15.7
     restart: always
     env_file:
@@ -14,15 +14,15 @@ services:
       timeout: 5s
       retries: 3
     volumes:
-      - db:/var/lib/postgresql/data
+      - db-0:/var/lib/postgresql/data
 
   key-downloader:
-    container_name: fhevm-key-downloader
+    container_name: fhevm-0-key-downloader
     image: busybox
     env_file:
       - ../env/staging/.env.coprocessor.local
     volumes:
-      - keys-cache:/keys
+      - keys-cache-0:/keys
     command: >
       sh -c "echo 'Starting key downloads...' &&
             wget $KMS_PUBLIC_KEY -O /keys/pks &&
@@ -33,7 +33,7 @@ services:
             echo 'Downloaded PP key - All downloads complete'"
 
   db-migration:
-    container_name: fhevm-db-migration
+    container_name: fhevm-0-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
     build:
       context: ../../..
@@ -49,16 +49,16 @@ services:
     command:
       - /initialize_db.sh
     volumes:
-      - keys-cache:/fhevm-keys
+      - keys-cache-0:/fhevm-keys
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       key-downloader:
         condition: service_completed_successfully
 
   ####################### COPROCESSOR SERVICES #######################
   host-listener:
-    container_name: fhevm-host-listener
+    container_name: fhevm-0-host-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
     build:
       context: ../../..
@@ -77,13 +77,13 @@ services:
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_URL}
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
   gw-listener:
-    container_name: fhevm-gw-listener
+    container_name: fhevm-0-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${GW_LISTENER_VERSION}
     build:
       context: ../../..
@@ -109,13 +109,13 @@ services:
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
   tfhe-worker:
-    container_name: fhevm-tfhe-worker
+    container_name: fhevm-0-tfhe-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}
     build:
       context: ../../..
@@ -137,13 +137,13 @@ services:
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
   zkproof-worker:
-    container_name: fhevm-zkproof-worker
+    container_name: fhevm-0-zkproof-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${ZKPROOF_WORKER_VERSION}
     build:
       context: ../../..
@@ -163,13 +163,13 @@ services:
       - --pg-pool-connections=5
       - --worker-thread-count=4
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
   sns-worker:
-    container_name: fhevm-sns-worker
+    container_name: fhevm-0-sns-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${SNS_WORKER_VERSION}
     build:
       context: ../../..
@@ -193,7 +193,7 @@ services:
       - --pg-polling-interval=30
       - --pg-pool-connections=10
       - --bucket-name-ct64=ct64
-      - --bucket-name-ct128=ct128
+      - --bucket-name-ct128=ct128-0
       - --s3-max-concurrent-uploads=100
       - --s3-max-retries-per-upload=100
       - --s3-max-backoff=10s
@@ -201,13 +201,13 @@ services:
       - --s3-recheck-duration=2s
       - --s3-regular-recheck-duration=120s
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
   transaction-sender:
-    container_name: fhevm-transaction-sender
+    container_name: fhevm-0-transaction-sender
     image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${TX_SENDER_VERSION}
     build:
       context: ../../..
@@ -235,11 +235,11 @@ services:
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
     depends_on:
-      db:
+      db-0:
         condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
 volumes:
-  db:
-  keys-cache:
+  db-0:
+  keys-cache-0:
