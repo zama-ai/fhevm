@@ -32,11 +32,12 @@ jobs:
         with:
           filters: |
             kms-connector-tx-sender:
-              - .github/workflows/kms-connector-docker-build-tx-sender.yml
+              - .github/workflows/kms-connector-tx-sender-docker-build.yml
               - kms-connector/crates/tx-sender/**
               - kms-connector/crates/utils/**
               - kms-connector/Cargo.toml
               - kms-connector/Cargo.lock
+              - gateway-contracts/rust_bindings/**
 
   build:
     name: kms-connector-tx-sender-docker-build/build
