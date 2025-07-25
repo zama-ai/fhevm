@@ -316,7 +316,7 @@ function generateMockFunctions(functionDefinitions, eventDefinitions, structDefi
           // There is a case when the parameter name is commented to silence "unused variable" warnings.
           // In that case, we only set the parameter type and location.
           if (parameter.name === null) {
-            parameter.name = "";
+            parameter.name = "/* unusedVariable */"; // Default name for unused parameters
           }
           return `${parameterType} ${location}${parameter.name}`;
         })
