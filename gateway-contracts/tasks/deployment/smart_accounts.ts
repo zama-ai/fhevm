@@ -79,11 +79,6 @@ async function deployMultisigSmartAccount(
 
   // Write the contract's address in the envFilePath file
   fs.writeFileSync(envFilePath, envContent, { encoding: "utf8", flag: "w" });
-
-  await run("task:setContractAddress", {
-    name,
-    address: safeProxyAddress,
-  });
 }
 
 task("task:deployOwnerSmartAccount")

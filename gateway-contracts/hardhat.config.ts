@@ -55,6 +55,13 @@ task("compile:specific", "Compiles only the specified contract")
     await hre.run("compile");
   });
 
+task("coverage", "Runs the Solidity Coverage suite").setAction(async (_, hre, runSuper) => {
+  const pauserAddress = getRequiredEnvVar("SOLIDITY_COVERAGE_PAUSER_ADDRESS");
+  process.env.PAUSER_ADDRESS = pauserAddress;
+
+  await runSuper();
+});
+
 task("test", "Runs the test suite, optionally skipping setup tasks")
   .addOptionalParam("skipSetup", "Set to true to skip setup tasks", false, types.boolean)
   .setAction(async ({ skipSetup }, hre, runSuper) => {
