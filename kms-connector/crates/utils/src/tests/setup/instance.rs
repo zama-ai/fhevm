@@ -8,12 +8,13 @@ use fhevm_gateway_rust_bindings::{
     kmsmanagement::KmsManagement::KmsManagementInstance,
 };
 use sqlx::{Pool, Postgres};
+use tokio::sync::Mutex;
 use tracing_subscriber::EnvFilter;
 
 /// The integration test environment.
 pub struct TestInstance {
     /// Use to enable tracing during tests.
-    _tracing_default_guard: Option<tracing::subscriber::DefaultGuard>,
+    _tracing_guard: Option<tracing::subscriber::DefaultGuard>,
     db: Option<DbInstance>,
     gateway: Option<GatewayInstance>,
     s3: Option<S3Instance>,
@@ -72,34 +73,27 @@ impl TestInstance {
     }
 }
 
+#[derive(Default)]
 pub struct TestInstanceBuilder {
-    _tracing_default_guard: Option<tracing::subscriber::DefaultGuard>,
+    _tracing_guard: Option<tracing::subscriber::DefaultGuard>,
     db: Option<DbInstance>,
     gateway: Option<GatewayInstance>,
     s3: Option<S3Instance>,
     kms: Option<KmsInstance>,
 }
 
-impl Default for TestInstanceBuilder {
-    fn default() -> Self {
+impl TestInstanceBuilder {
+    /// Used to have only one global tracing subscriber for the static shared `TestInstance`.
+    pub fn with_global_tracing() {
         let subscriber = tracing_subscriber::fmt()
             .with_env_filter(
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
             )
             .with_test_writer()
             .finish();
-
-        Self {
-            _tracing_default_guard: Some(tracing::subscriber::set_default(subscriber)),
-            db: None,
-            gateway: None,
-            s3: None,
-            kms: None,
-        }
+        let _ = tracing::subscriber::set_global_default(subscriber);
     }
-}
 
-impl TestInstanceBuilder {
     pub fn with_db(mut self, db_instance: DbInstance) -> Self {
         self.db = Some(db_instance);
         self
@@ -121,13 +115,13 @@ impl TestInstanceBuilder {
     }
 
     pub fn with_tracing(mut self, tracing: Option<tracing::subscriber::DefaultGuard>) -> Self {
-        self._tracing_default_guard = tracing;
+        self._tracing_guard = tracing;
         self
     }
 
     pub fn build(self) -> TestInstance {
         TestInstance {
-            _tracing_default_guard: self._tracing_default_guard,
+            _tracing_guard: self._tracing_guard,
             db: self.db,
             gateway: self.gateway,
             s3: self.s3,
@@ -148,5 +142,17 @@ impl TestInstanceBuilder {
         let db = DbInstance::setup().await?;
         let gateway = GatewayInstance::setup().await?;
         Ok(builder.with_db(db).with_gateway(gateway).build())
+    }
+
+    /// Static shared test setup with a DB only.
+    pub async fn static_db_setup() -> Mutex<Option<TestInstance>> {
+        Self::with_global_tracing();
+        Mutex::new(Some(TestInstanceBuilder::db_setup().await.unwrap()))
+    }
+
+    /// Static shared test setup with a DB and Anvil Gateway.
+    pub async fn static_db_gw_setup() -> Mutex<Option<TestInstance>> {
+        Self::with_global_tracing();
+        Mutex::new(Some(TestInstanceBuilder::db_gw_setup().await.unwrap()))
     }
 }

@@ -4,6 +4,7 @@ mod gw;
 mod instance;
 mod kms;
 mod s3;
+pub mod shared;
 
 pub use common::*;
 pub use db::*;

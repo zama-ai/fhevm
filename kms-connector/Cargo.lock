@@ -2547,6 +2547,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "tracing-test",
 ]
 
 [[package]]
@@ -2746,6 +2747,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ctor"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4735f265ba6a1188052ca32d461028a7d1125868be18e287e756019da7607b5"
+dependencies = [
+ "ctor-proc-macro",
+ "dtor",
+]
+
+[[package]]
+name = "ctor-proc-macro"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4f211af61d8efdd104f96e57adf5e426ba1bc3ed7a4ead616e15e5881fd79c4d"
+
+[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2937,6 +2954,21 @@ name = "downcast"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
+
+[[package]]
+name = "dtor"
+version = "0.0.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "97cbdf2ad6846025e8e25df05171abfb30e3ababa12ee0a0e44b9bbe570633a8"
+dependencies = [
+ "dtor-proc-macro",
+]
+
+[[package]]
+name = "dtor-proc-macro"
+version = "0.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7454e41ff9012c00d53cf7f475c5e3afa3b91b7c90568495495e8d9bf47a1055"
 
 [[package]]
 name = "dunce"
@@ -3511,8 +3543,11 @@ dependencies = [
  "alloy",
  "anyhow",
  "connector-utils",
+ "ctor",
  "fhevm_gateway_rust_bindings",
+ "futures",
  "prometheus",
+ "rstest",
  "serde",
  "serial_test",
  "sqlx",
@@ -4251,6 +4286,7 @@ dependencies = [
  "fhevm_gateway_rust_bindings",
  "kms-grpc",
  "prometheus",
+ "rstest",
  "serde",
  "serial_test",
  "sha3",
@@ -7498,6 +7534,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "connector-utils",
+ "ctor",
  "fhevm_gateway_rust_bindings",
  "prometheus",
  "rstest",
