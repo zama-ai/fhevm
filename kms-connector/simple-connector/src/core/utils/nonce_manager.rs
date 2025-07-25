@@ -94,14 +94,21 @@ where
         mut tx: TransactionRequest,
         request_id: Option<String>,
     ) -> Result<TxHash> {
+        let request_context = request_id.as_deref().unwrap_or("unknown");
+        let request_id_clone = request_id.clone();
+
         let address = if let Some(addr) = tx.from {
+            debug!(
+                "[TRX QUEUE] {}: Using provided wallet address: {}",
+                request_context, addr
+            );
             addr
         } else {
             let wallet_address = self.wallet_address;
             tx.from = Some(wallet_address); // Set it for queue processing
             info!(
-                "Using config wallet address for sequential processing: {}",
-                wallet_address
+                "[TRX QUEUE] {}: Using config wallet address for sequential processing: {}",
+                request_context, wallet_address
             );
             wallet_address
         };
@@ -110,7 +117,7 @@ where
         let pending_tx = PendingTransaction {
             tx_request: tx,
             result_sender,
-            request_id,
+            request_id: request_id_clone,
         };
 
         let queue = self
@@ -127,6 +134,14 @@ where
         let max_transaction_queue_size = (self.config.channel_size as f32 * 0.3) as usize; // 30% of event capacity
         let utilization = total_queued as f32 / max_transaction_queue_size as f32;
 
+        debug!(
+            "[TRX QUEUE] {}: Queue status - total: {}/{} ({:.1}% utilization)",
+            request_context,
+            total_queued,
+            max_transaction_queue_size,
+            utilization * 100.0
+        );
+
         // Use config threshold for backpressure signaling
         let backpressure_threshold = self.config.pending_events_queue_slowdown_threshold;
         let critical_threshold = 0.95; // 95% for critical (close to full)
@@ -136,19 +151,24 @@ where
             if utilization >= critical_threshold {
                 let _ = tx.send(BackpressureSignal::QueueCritical);
                 warn!(
-                    "Sent QueueCritical signal: {:.1}% utilization",
-                    utilization * 100.0
+                    "[BACKPRESSURE] {}: Sent QueueCritical signal - {:.1}% utilization (threshold: {:.1}%)",
+                    request_context,
+                    utilization * 100.0,
+                    critical_threshold * 100.0
                 );
             } else if utilization >= backpressure_threshold {
                 let _ = tx.send(BackpressureSignal::QueueFull);
                 warn!(
-                    "Sent QueueFull signal: {:.1}% utilization",
-                    utilization * 100.0
+                    "[BACKPRESSURE] {}: Sent QueueFull signal - {:.1}% utilization (threshold: {:.1}%)",
+                    request_context,
+                    utilization * 100.0,
+                    backpressure_threshold * 100.0
                 );
             } else if utilization < backpressure_threshold {
                 let _ = tx.send(BackpressureSignal::QueueAvailable);
                 debug!(
-                    "Sent QueueAvailable signal: {:.1}% utilization",
+                    "[BACKPRESSURE] {}: Sent QueueAvailable signal - {:.1}% utilization",
+                    request_context,
                     utilization * 100.0
                 );
             }
@@ -157,8 +177,8 @@ where
         // Only reject at 100% capacity (hard limit)
         if total_queued >= max_transaction_queue_size {
             warn!(
-                "Transaction queue at capacity: {} total transactions (max: {})",
-                total_queued, max_transaction_queue_size
+                "[TRX QUEUE] {}: REJECTED - Queue at capacity: {} total transactions (max: {})",
+                request_context, total_queued, max_transaction_queue_size
             );
             return Err(Error::Transport(format!(
                 "Transaction queue temporarily full: {total_queued} transactions pending. Polling will adapt automatically."
@@ -175,7 +195,8 @@ where
             // Check per-wallet queue limit
             if queue_guard.len() >= max_per_wallet {
                 warn!(
-                    "Queue overflow: wallet {} has {} transactions (max: {})",
+                    "[TRX QUEUE] {}: REJECTED - Wallet {} queue overflow: {} transactions (max: {})",
+                    request_context,
                     address,
                     queue_guard.len(),
                     max_per_wallet
@@ -187,11 +208,13 @@ where
                 )));
             }
 
+            let queue_position = queue_guard.len() + 1; // Position after adding
             queue_guard.push_back(pending_tx);
-            debug!(
-                "Queued transaction for wallet {}: {} in queue, {} total system-wide",
+            info!(
+                "[TRX QUEUED] {}: Position #{} in wallet {} queue ({} total system-wide)",
+                request_context,
+                queue_position,
                 address,
-                queue_guard.len(),
                 total_queued + 1
             );
         }
@@ -365,22 +388,28 @@ where
         expected_nonce: u64,
         request_id: Option<String>,
     ) -> Result<TxHash> {
+        let request_context = request_id.as_deref().unwrap_or("unknown");
+
         // Set nonce for immediate sending
         tx.nonce = Some(expected_nonce);
+        debug!(
+            "[TRX SEND] {}: Preparing immediate send with nonce: {}",
+            request_context, expected_nonce
+        );
 
         // Always estimate gas fresh with 100ms retry for resilience
         let gas_estimation = match self.provider.estimate_gas(tx.clone()).await {
             Ok(estimation) => {
-                info!(
-                    "Fresh gas estimation for immediate send (nonce: {}): {}",
-                    expected_nonce, estimation
+                debug!(
+                    "[GAS ESTIMATE] {}: Fresh estimation successful (nonce: {}): {} gas",
+                    request_context, expected_nonce, estimation
                 );
                 estimation
             }
             Err(first_error) => {
                 warn!(
-                    "Gas estimation failed for nonce {}: {} - retrying in 100ms",
-                    expected_nonce, first_error
+                    "[GAS ESTIMATE] {}: Failed for nonce {}: {} - retrying in 100ms",
+                    request_context, expected_nonce, first_error
                 );
 
                 // Wait 100ms and retry once
@@ -389,29 +418,29 @@ where
                 match self.provider.estimate_gas(tx.clone()).await {
                     Ok(estimation) => {
                         info!(
-                            "Gas estimation retry succeeded for nonce {}: {}",
-                            expected_nonce, estimation
+                            "[GAS ESTIMATE] {}: Retry succeeded for nonce {}: {} gas",
+                            request_context, expected_nonce, estimation
                         );
                         estimation
                     }
                     Err(retry_error) => {
                         error!(
-                            "Gas estimation failed twice for nonce {}: first={}, retry={} - using fallback",
-                            expected_nonce, first_error, retry_error
+                            "[GAS ESTIMATE] {}: Failed twice for nonce {}: first={}, retry={} - using fallback",
+                            request_context, expected_nonce, first_error, retry_error
                         );
 
                         // Fallback strategies
                         if let Some(existing_gas) = tx.gas {
                             info!(
-                                "Using existing gas limit: {} for nonce: {}",
-                                existing_gas, expected_nonce
+                                "[GAS FALLBACK] {}: Using existing gas limit: {} for nonce: {}",
+                                request_context, existing_gas, expected_nonce
                             );
                             existing_gas
                         } else {
                             let fallback_gas = 2_000_000u64; // High fallback for complex decryption contract calls (observed: ~1.8M gas)
                             warn!(
-                                "Using fallback gas limit: {} for nonce: {} due to estimation failures",
-                                fallback_gas, expected_nonce
+                                "[GAS FALLBACK] {}: Using fallback gas limit: {} for nonce: {} due to estimation failures",
+                                request_context, fallback_gas, expected_nonce
                             );
                             fallback_gas
                         }
@@ -424,32 +453,25 @@ where
         let gas_boost_percent = self.config.gas_boost_percent;
         let boosted_gas = gas_estimation * (100 + gas_boost_percent as u64) / 100;
         tx.gas = Some(boosted_gas);
-        if let Some(ref id) = request_id {
-            info!(
-                "Applied {}% gas boost for DecryptionResponse-{} (nonce: {}): {} → {}",
-                gas_boost_percent, id, expected_nonce, gas_estimation, boosted_gas
-            );
-        } else {
-            info!(
-                "Applied {}% gas boost for immediate send (nonce: {}): {} → {}",
-                gas_boost_percent, expected_nonce, gas_estimation, boosted_gas
-            );
-        }
+        info!(
+            "[GAS BOOST] {}: Applied {}% boost (nonce: {}): {} → {} gas",
+            request_context, gas_boost_percent, expected_nonce, gas_estimation, boosted_gas
+        );
 
         // Single send attempt - let receipt analysis handle any failures
         match self.provider.send_transaction(tx).await {
             Ok(pending_tx) => {
                 let tx_hash = *pending_tx.tx_hash();
                 info!(
-                    "Transaction sent immediately: {} (nonce: {})",
-                    tx_hash, expected_nonce
+                    "[TRX SENT] {}: Transaction sent successfully - hash: {} (nonce: {})",
+                    request_context, tx_hash, expected_nonce
                 );
                 Ok(tx_hash)
             }
             Err(e) => {
                 warn!(
-                    "Immediate send failed (nonce: {}): {} - will be handled by receipt analysis",
-                    expected_nonce, e
+                    "[TRX FAILED] {}: Immediate send failed (nonce: {}): {} - will be handled by receipt analysis",
+                    request_context, expected_nonce, e
                 );
                 Err(Error::Transport(e.to_string()))
             }

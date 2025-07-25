@@ -85,18 +85,25 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
         let nonce_manager = self.nonce_manager.clone();
         let provider = self.provider.clone();
         let decryption_address = self.decryption_address;
+        let response_id = format!("PublicDecryptionResponse-{id}");
+
+        info!(
+            "[TRX INIT] {}: Starting transaction processing",
+            response_id
+        );
+
         tokio::spawn(async move {
             // Gas estimation + 30% boost handled centrally by nonce manager
             let original_gas_limit = None; // Will be set by nonce manager
             // Send initial transaction
             match nonce_manager
-                .send_transaction_queued(call, Some(format!("PublicDecryptionResponse-{id}")))
+                .send_transaction_queued(call, Some(response_id.clone()))
                 .await
             {
                 Ok(tx_hash) => {
                     info!(
-                        "[TRX SENT] PublicDecryptionResponse-{id} sent with hash: {}",
-                        tx_hash
+                        "[TRX SENT] {}: Transaction sent successfully - hash: {}",
+                        response_id, tx_hash
                     );
 
                     // Analyze receipt and handle retries
@@ -110,14 +117,14 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                     {
                         ReceiptAnalysisResult::Success => {
                             info!(
-                                "[TRX SUCCESS] PublicDecryptionResponse-{id} confirmed: {}",
-                                tx_hash
+                                "[TRX SUCCESS] {}: Transaction confirmed successfully - hash: {}",
+                                response_id, tx_hash
                             );
                         }
                         ReceiptAnalysisResult::NonRetryableFailure { reason, .. } => {
                             warn!(
-                                "PublicDecryptionResponse-{id} non-retryable failure: {}",
-                                reason
+                                "[TRX FAILED] {}: Non-retryable failure - hash: {}, reason: {}",
+                                response_id, tx_hash, reason
                             );
                         }
                         retry_result => {
@@ -129,14 +136,19 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                                     ..
                                 } => {
                                     warn!(
-                                        "[OUT OF GAS] PublicDecryptionResponse-{id} failed: gas_used={gas_used} gas_limit={gas_limit} ({}%) - retrying",
+                                        "[TRX RETRY] {}: Out of gas - hash: {}, gas_used: {}, gas_limit: {} ({:.1}%) - preparing retry",
+                                        response_id,
+                                        tx_hash,
+                                        gas_used,
+                                        gas_limit,
                                         (gas_used as f64 / gas_limit as f64) * 100.0
                                     );
                                     "out-of-gas"
                                 }
                                 ReceiptAnalysisResult::ImmediateRetry { reason } => {
                                     warn!(
-                                        "PublicDecryptionResponse-{id} immediate retry: {reason}"
+                                        "[TRX RETRY] {}: Immediate retry needed - hash: {}, reason: {} - preparing retry",
+                                        response_id, tx_hash, reason
                                     );
                                     "immediate retry"
                                 }
@@ -155,22 +167,26 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                             // Note: No gas set - nonce manager will estimate fresh + apply 30% boost
 
                             // Send retry (gas estimation + 30% boost applied automatically by nonce manager)
+                            let retry_id = format!("{response_id}-retry");
+                            info!("[TRX RETRY] {}: Submitting retry transaction", retry_id);
+
                             if let Err(e) = nonce_manager
-                                .send_transaction_queued(
-                                    retry_call,
-                                    Some(format!("PublicDecryptionResponse-{id}-retry")),
-                                )
+                                .send_transaction_queued(retry_call, Some(retry_id.clone()))
                                 .await
                             {
                                 error!(
-                                    "Failed to retry PublicDecryptionResponse-{id} after {retry_reason}: {e}"
+                                    "[TRX RETRY] {}: Failed to submit retry after {}: {}",
+                                    retry_id, retry_reason, e
                                 );
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    error!("Failed to send PublicDecryptionResponse-{id}: {}", e);
+                    error!(
+                        "[TRX FAILED] {}: Failed to send initial transaction: {}",
+                        response_id, e
+                    );
                 }
             }
         });
@@ -207,18 +223,25 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
         let nonce_manager = self.nonce_manager.clone();
         let provider = self.provider.clone();
         let decryption_address = self.decryption_address;
+        let response_id = format!("UserDecryptionResponse-{id}");
+
+        info!(
+            "[TRX INIT] {}: Starting transaction processing",
+            response_id
+        );
+
         tokio::spawn(async move {
             // Gas estimation + 30% boost handled centrally by nonce manager
             let original_gas_limit = None; // Will be set by nonce manager
             // Send initial transaction
             match nonce_manager
-                .send_transaction_queued(call, Some(format!("UserDecryptionResponse-{id}")))
+                .send_transaction_queued(call, Some(response_id.clone()))
                 .await
             {
                 Ok(tx_hash) => {
                     info!(
-                        "[TRX SENT] UserDecryptionResponse-{id} sent with hash: {}",
-                        tx_hash
+                        "[TRX SENT] {}: Transaction sent successfully - hash: {}",
+                        response_id, tx_hash
                     );
 
                     // Analyze receipt and handle retries
@@ -232,14 +255,14 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                     {
                         ReceiptAnalysisResult::Success => {
                             info!(
-                                "[TRX SUCCESS] UserDecryptionResponse-{id} confirmed: {}",
-                                tx_hash
+                                "[TRX SUCCESS] {}: Transaction confirmed successfully - hash: {}",
+                                response_id, tx_hash
                             );
                         }
                         ReceiptAnalysisResult::NonRetryableFailure { reason, .. } => {
                             warn!(
-                                "UserDecryptionResponse-{id} non-retryable failure: {}",
-                                reason
+                                "[TRX FAILED] {}: Non-retryable failure - hash: {}, reason: {}",
+                                response_id, tx_hash, reason
                             );
                         }
                         retry_result => {
@@ -251,13 +274,20 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                                     ..
                                 } => {
                                     warn!(
-                                        "[OUT OF GAS] UserDecryptionResponse-{id} failed: gas_used={gas_used} gas_limit={gas_limit} ({}%) - retrying",
+                                        "[TRX RETRY] {}: Out of gas - hash: {}, gas_used: {}, gas_limit: {} ({:.1}%) - preparing retry",
+                                        response_id,
+                                        tx_hash,
+                                        gas_used,
+                                        gas_limit,
                                         (gas_used as f64 / gas_limit as f64) * 100.0
                                     );
                                     "out-of-gas"
                                 }
                                 ReceiptAnalysisResult::ImmediateRetry { reason } => {
-                                    warn!("UserDecryptionResponse-{id} immediate retry: {reason}");
+                                    warn!(
+                                        "[TRX RETRY] {}: Immediate retry needed - hash: {}, reason: {} - preparing retry",
+                                        response_id, tx_hash, reason
+                                    );
                                     "immediate retry"
                                 }
                                 _ => return, // Non-retryable or success cases
@@ -275,22 +305,26 @@ impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
                             // Note: No gas set - nonce manager will estimate fresh + apply 30% boost
 
                             // Send retry (gas estimation + 30% boost applied automatically by nonce manager)
+                            let retry_id = format!("{response_id}-retry");
+                            info!("[TRX RETRY] {}: Submitting retry transaction", retry_id);
+
                             if let Err(e) = nonce_manager
-                                .send_transaction_queued(
-                                    retry_call,
-                                    Some(format!("UserDecryptionResponse-{id}-retry")),
-                                )
+                                .send_transaction_queued(retry_call, Some(retry_id.clone()))
                                 .await
                             {
                                 error!(
-                                    "Failed to retry UserDecryptionResponse-{id} after {retry_reason}: {e}"
+                                    "[TRX RETRY] {}: Failed to submit retry after {}: {}",
+                                    retry_id, retry_reason, e
                                 );
                             }
                         }
                     }
                 }
                 Err(e) => {
-                    error!("Failed to send UserDecryptionResponse-{id}: {}", e);
+                    error!(
+                        "[TRX FAILED] {}: Failed to send initial transaction: {}",
+                        response_id, e
+                    );
                 }
             }
         });
