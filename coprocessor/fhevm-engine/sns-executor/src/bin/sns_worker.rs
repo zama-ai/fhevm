@@ -59,6 +59,7 @@ fn construct_config() -> Config {
             liveness_threshold: args.liveness_threshold,
             port: args.health_check_port,
         },
+        enable_compression: args.enable_compression,
     }
 }
 

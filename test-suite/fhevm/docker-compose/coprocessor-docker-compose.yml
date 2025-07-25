@@ -25,12 +25,12 @@ services:
       - keys-cache:/keys
     command: >
       sh -c "echo 'Starting key downloads...' &&
-            wget $KMS_PUBLIC_KEY -O /keys/pks &&
-            echo 'Downloaded public key' &&
-            wget $KMS_SERVER_KEY -O /keys/sns_pk &&
-            echo 'Downloaded server key' &&
-            wget $KMS_CRS_KEY -O /keys/pp &&
-            echo 'Downloaded PP key - All downloads complete'"
+        wget $KMS_PUBLIC_KEY -O /keys/pks &&
+        echo 'Downloaded public key' &&
+        wget $KMS_SERVER_KEY -O /keys/sns_pk &&
+        echo 'Downloaded server key' &&
+        wget $KMS_CRS_KEY -O /keys/pp &&
+        echo 'Downloaded PP key - All downloads complete'"
 
   db-migration:
     container_name: fhevm-db-migration
@@ -200,6 +200,7 @@ services:
       - --s3-max-retries-timeout=120s
       - --s3-recheck-duration=2s
       - --s3-regular-recheck-duration=120s
+      - --enable-compression
     depends_on:
       db:
         condition: service_healthy

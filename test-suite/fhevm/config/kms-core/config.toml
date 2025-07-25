@@ -23,16 +23,18 @@ region = "eu-west-1"
 s3_endpoint = "http://minio:9000"
 
 [public_vault]
-storage = "s3://kms-public"
 storage_cache_size = 1000
 
-[private_vault]
-storage = "file://./keys"
+[public_vault.storage.s3]
+bucket = "kms-public"
+
+[private_vault.storage.file]
+path = "./keys"
 
 [rate_limiter_conf]
 bucket_size = 50000
 pub_decrypt = 1
 user_decrypt = 1
 crsgen = 100
-preproc = 5000
+preproc = 25000
 keygen = 1000
