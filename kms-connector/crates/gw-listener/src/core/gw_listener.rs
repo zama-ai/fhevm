@@ -34,6 +34,9 @@ where
 
     /// The entity responsible of events publication to some external storage.
     publisher: Publ,
+
+    /// The configuration of the `GatewayListener`.
+    config: Config,
 }
 
 impl<Prov, Publ> GatewayListener<Prov, Publ>
@@ -52,6 +55,7 @@ where
             decryption_contract,
             kms_management_contract,
             publisher,
+            config: config.clone(),
         }
     }
 
@@ -86,11 +90,21 @@ where
     async fn subscribe_to_events<'a, E>(
         &'a self,
         event_name: &str,
-        event_filter: Event<(), &'a Prov, E>,
+        mut event_filter: Event<(), &'a Prov, E>,
     ) where
         E: Into<GatewayEvent> + SolEvent + Send + Sync,
     {
-        info!("Starting {event_name} event subscriptions...");
+        info!(
+            "Starting {} event subscriptions from block {}...",
+            event_name,
+            self.config
+                .from_block_number
+                .map(|b| b.to_string())
+                .unwrap_or_else(|| "latest".into())
+        );
+        if let Some(from_block_number) = self.config.from_block_number {
+            event_filter = event_filter.from_block(from_block_number);
+        }
         let mut events = match event_filter.watch().await {
             Ok(filter) => filter.into_stream(),
             Err(err) => {

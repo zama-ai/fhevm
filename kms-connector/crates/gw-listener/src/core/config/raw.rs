@@ -24,6 +24,7 @@ pub struct RawConfig {
     pub monitoring_endpoint: String,
     #[serde(default = "default_healthcheck_timeout_secs")]
     pub healthcheck_timeout_secs: u64,
+    pub from_block_number: Option<u64>,
 }
 
 fn default_service_name() -> String {
@@ -57,6 +58,7 @@ impl Default for RawConfig {
             service_name: default_service_name(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
+            from_block_number: None,
         }
     }
 }

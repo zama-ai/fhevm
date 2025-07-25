@@ -1,4 +1,7 @@
-use crate::config::KmsWallet;
+use crate::{
+    config::KmsWallet,
+    provider::{FillersWithoutNonceManagement, NonceManagedProvider},
+};
 use alloy::{
     network::EthereumWallet,
     providers::{
@@ -51,8 +54,12 @@ type DefaultFillers = JoinFill<
 pub type GatewayProvider = FillProvider<DefaultFillers, RootProvider>;
 
 /// The default `alloy::Provider` used to interact with the Gateway using a wallet.
-pub type WalletGatewayProvider =
-    FillProvider<JoinFill<DefaultFillers, WalletFiller<EthereumWallet>>, RootProvider>;
+pub type WalletGatewayProvider = NonceManagedProvider<
+    FillProvider<
+        JoinFill<JoinFill<Identity, FillersWithoutNonceManagement>, WalletFiller<EthereumWallet>>,
+        RootProvider,
+    >,
+>;
 
 /// Tries to establish the connection with a RPC node of the Gateway.
 pub async fn connect_to_gateway(gateway_url: &str) -> anyhow::Result<GatewayProvider> {
@@ -64,10 +71,14 @@ pub async fn connect_to_gateway_with_wallet(
     gateway_url: &str,
     wallet: KmsWallet,
 ) -> anyhow::Result<WalletGatewayProvider> {
-    connect_to_gateway_inner(gateway_url, || {
-        ProviderBuilder::new().wallet(wallet.clone())
+    let provider = connect_to_gateway_inner(gateway_url, || {
+        ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(wallet.clone())
     })
-    .await
+    .await?;
+    Ok(NonceManagedProvider::new(provider, wallet.address()))
 }
 
 /// Tries to establish the connection with a RPC node of the Gateway.

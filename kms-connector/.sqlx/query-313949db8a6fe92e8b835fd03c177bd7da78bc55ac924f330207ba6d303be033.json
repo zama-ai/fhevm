@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE public_decryption_responses SET under_process = FALSE WHERE decryption_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "313949db8a6fe92e8b835fd03c177bd7da78bc55ac924f330207ba6d303be033"
+}

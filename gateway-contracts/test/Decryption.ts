@@ -170,6 +170,9 @@ describe("Decryption", function () {
   const fakeTxSender = createRandomWallet();
   const fakeSigner = createRandomWallet();
 
+  // Define extra data for version 0
+  const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
+
   let gatewayConfig: GatewayConfig;
   let kmsManagement: KmsManagement;
   let multichainAcl: MultichainAcl;
@@ -282,7 +285,7 @@ describe("Decryption", function () {
       // Allow public decryption
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle, extraDataV0);
         }
       }
 
@@ -293,6 +296,7 @@ describe("Decryption", function () {
         decryptionAddress,
         ctHandles,
         decryptedResult,
+        extraDataV0,
       );
 
       // Sign the message with all KMS signers
@@ -322,41 +326,44 @@ describe("Decryption", function () {
 
     it("Should request a public decryption with multiple ctHandles", async function () {
       // Request public decryption
-      const requestTx = await decryption.publicDecryptionRequest(ctHandles);
+      const requestTx = await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials));
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), extraDataV0);
     });
 
     it("Should request a public decryption with a single ctHandle", async function () {
       // Request public decryption with a single ctHandle
-      const requestTx = await decryption.publicDecryptionRequest([ctHandles[0]]);
+      const requestTx = await decryption.publicDecryptionRequest([ctHandles[0]], extraDataV0);
 
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials));
+        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), extraDataV0);
     });
 
     it("Should revert because ctHandles list is empty", async function () {
       // Check that the request fails because the list of handles is empty
-      await expect(decryption.publicDecryptionRequest([])).to.be.revertedWithCustomError(decryption, "EmptyCtHandles");
+      await expect(decryption.publicDecryptionRequest([], extraDataV0)).to.be.revertedWithCustomError(
+        decryption,
+        "EmptyCtHandles",
+      );
     });
 
     it("Should revert because handle represents an invalid FHE type", async function () {
       // Check that the request fails because the ctHandle represents an invalid FHE type
-      await expect(decryption.publicDecryptionRequest([invalidFHETypeCtHandle]))
+      await expect(decryption.publicDecryptionRequest([invalidFHETypeCtHandle], extraDataV0))
         .to.be.revertedWithCustomError(decryption, "InvalidFHEType")
         .withArgs(invalidFHEType);
     });
 
     it("Should revert because handle represents an unsupported FHE type", async function () {
       // Check that the request fails because the ctHandle represents an unsupported FHE type
-      await expect(decryption.publicDecryptionRequest([unsupportedFHETypeCtHandle]))
+      await expect(decryption.publicDecryptionRequest([unsupportedFHETypeCtHandle], extraDataV0))
         .to.be.revertedWithCustomError(decryption, "UnsupportedFHEType")
         .withArgs(unsupportedFHEType);
     });
@@ -369,14 +376,14 @@ describe("Decryption", function () {
       const totalBitSize = 3072;
 
       // Check that the request fails because the total bit size exceeds the maximum allowed
-      await expect(decryption.publicDecryptionRequest(largeBitSizeCtHandles))
+      await expect(decryption.publicDecryptionRequest(largeBitSizeCtHandles, extraDataV0))
         .to.be.revertedWithCustomError(decryption, "MaxDecryptionRequestBitSizeExceeded")
         .withArgs(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
     });
 
     it("Should revert because handles are not allowed for public decryption", async function () {
       // Check that the request fails because the handles are not allowed for public decryption
-      await expect(decryption.publicDecryptionRequest(newCtHandles))
+      await expect(decryption.publicDecryptionRequest(newCtHandles, extraDataV0))
         .to.be.revertedWithCustomError(multichainAcl, "PublicDecryptNotAllowed")
         .withArgs(newCtHandles[0]);
     });
@@ -387,12 +394,12 @@ describe("Decryption", function () {
       // have been allowed for public decryption
       for (const newCtHandle of newCtHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
         }
       }
 
       // Check that the request fails because the ciphertext material is unavailable
-      await expect(decryption.publicDecryptionRequest(newCtHandles))
+      await expect(decryption.publicDecryptionRequest(newCtHandles, extraDataV0))
         .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
         .withArgs(newCtHandles[0]);
     });
@@ -400,7 +407,9 @@ describe("Decryption", function () {
     it("Should revert because the message sender is not a KMS transaction sender", async function () {
       // Check that the transaction fails because the msg.sender is not a registered KMS transaction sender
       await expect(
-        decryption.connect(fakeTxSender).publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]),
+        decryption
+          .connect(fakeTxSender)
+          .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
       )
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
         .withArgs(fakeTxSender.address);
@@ -410,14 +419,16 @@ describe("Decryption", function () {
       // Request public decryption
       // This step is necessary, else the decryptionId won't be set in the state and the
       // signature verification will use wrong handles
-      await decryption.publicDecryptionRequest(ctHandles);
+      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Create a fake signature from the fake signer
       const [fakeSignature] = await getSignaturesPublicDecrypt(eip712Message, [fakeSigner]);
 
       // Check that the signature verification fails because the signer is not a registered KMS signer
       await expect(
-        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(decryptionId, decryptedResult, fakeSignature),
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(decryptionId, decryptedResult, fakeSignature, extraDataV0),
       )
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsSigner")
         .withArgs(fakeSigner.address);
@@ -425,16 +436,18 @@ describe("Decryption", function () {
 
     it("Should revert because of two responses with same signature", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles);
+      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Trigger a first public decryption response
       await decryption
         .connect(kmsTxSenders[0])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0);
 
       // Check that a KMS node cannot sign a second time for the same public decryption
       await expect(
-        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]),
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
       )
         .to.be.revertedWithCustomError(decryption, "KmsNodeAlreadySigned")
         .withArgs(decryptionId, kmsSigners[0].address);
@@ -457,12 +470,12 @@ describe("Decryption", function () {
             .connect(coprocessorTxSenders[i])
             .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
 
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
         }
       }
 
       // Request public decryption with ctMaterials tied to different key IDs
-      const requestTx = decryption.publicDecryptionRequest([...ctHandles, newCtHandle]);
+      const requestTx = decryption.publicDecryptionRequest([...ctHandles, newCtHandle], extraDataV0);
 
       // Check that different key IDs are not allowed for batched public decryption
       await expect(requestTx)
@@ -480,25 +493,25 @@ describe("Decryption", function () {
 
     it("Should reach consensus with 3 valid responses", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles);
+      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Trigger three valid public decryption responses
       await decryption
         .connect(kmsTxSenders[0])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0);
       await decryption
         .connect(kmsTxSenders[1])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1], extraDataV0);
 
       const responseTx3 = await decryption
         .connect(kmsTxSenders[2])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2], extraDataV0);
 
       // Consensus should be reached at the third response
       // Check 3rd response event: it should only contain 3 valid signatures
       await expect(responseTx3)
         .to.emit(decryption, "PublicDecryptionResponse")
-        .withArgs(decryptionId, decryptedResult, [kmsSignatures[0], kmsSignatures[1], kmsSignatures[2]]);
+        .withArgs(decryptionId, decryptedResult, [kmsSignatures[0], kmsSignatures[1], kmsSignatures[2]], extraDataV0);
 
       // Check that the public decryption is done
       await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
@@ -506,24 +519,24 @@ describe("Decryption", function () {
 
     it("Should ignore other valid responses", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles);
+      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Trigger four valid public decryption responses
       const responseTx1 = await decryption
         .connect(kmsTxSenders[0])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0);
 
       const responseTx2 = await decryption
         .connect(kmsTxSenders[1])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1], extraDataV0);
 
       await decryption
         .connect(kmsTxSenders[2])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2], extraDataV0);
 
       const responseTx4 = await decryption
         .connect(kmsTxSenders[3])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3], extraDataV0);
 
       // Check that the 1st, 2nd and 4th responses do not emit an event:
       // - 1st and 2nd responses are ignored because consensus is not reached yet
@@ -533,12 +546,26 @@ describe("Decryption", function () {
       await expect(responseTx4).to.not.emit(decryption, "PublicDecryptionResponse");
     });
 
+    it("Should revert in case of invalid requestID in response", async function () {
+      // Try calling publicDecryptionResponse with null (invalid) id
+      await expect(
+        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(0, decryptedResult, kmsSignatures[0], extraDataV0),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
+
+      // Try calling publicDecryptionResponse with too high (not requested yet) id
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(100000, decryptedResult, kmsSignatures[0], extraDataV0),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
+    });
+
     it("Should revert because the contract is paused", async function () {
       // Pause the contract
       await decryption.connect(owner).pause();
 
       // Try calling paused public decryption request
-      await expect(decryption.publicDecryptionRequest(ctHandles)).to.be.revertedWithCustomError(
+      await expect(decryption.publicDecryptionRequest(ctHandles, extraDataV0)).to.be.revertedWithCustomError(
         decryption,
         "EnforcedPause",
       );
@@ -546,7 +573,7 @@ describe("Decryption", function () {
 
     it("Should public decrypt with 3 valid and 1 malicious signatures", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles);
+      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
       const decryptionAddress = await decryption.getAddress();
 
@@ -558,6 +585,7 @@ describe("Decryption", function () {
         decryptionAddress,
         ctHandles,
         fakeDecryptedResult,
+        extraDataV0,
       );
       const [fakeKmsSignature] = await getSignaturesPublicDecrypt(fakeEip712Message, kmsSigners);
 
@@ -566,28 +594,28 @@ describe("Decryption", function () {
       // - a fake signature (unexpected)
       await decryption
         .connect(kmsTxSenders[0])
-        .publicDecryptionResponse(decryptionId, fakeDecryptedResult, fakeKmsSignature);
+        .publicDecryptionResponse(decryptionId, fakeDecryptedResult, fakeKmsSignature, extraDataV0);
 
       // Trigger a first valid public decryption response with:
       // - the second KMS transaction sender
       // - the second KMS signer's signature
       await decryption
         .connect(kmsTxSenders[1])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1], extraDataV0);
 
       // Trigger a second valid public decryption response with:
       // - the third KMS transaction sender
       // - the third KMS signer's signature
       const responseTx3 = await decryption
         .connect(kmsTxSenders[2])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2], extraDataV0);
 
       // Trigger a third valid proof verification response with:
       // - the fourth coprocessor transaction sender
       // - the fourth coprocessor signer's signature
       const responseTx4 = await decryption
         .connect(kmsTxSenders[3])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3], extraDataV0);
 
       // Consensus should not be reached at the third transaction since the first was malicious
       // Check 3rd transaction events: it should not emit an event for public decryption response
@@ -597,16 +625,16 @@ describe("Decryption", function () {
       // Check 4th transaction events: it should only contain 3 valid signatures
       await expect(responseTx4)
         .to.emit(decryption, "PublicDecryptionResponse")
-        .withArgs(decryptionId, decryptedResult, kmsSignatures.slice(1, 4));
+        .withArgs(decryptionId, decryptedResult, kmsSignatures.slice(1, 4), extraDataV0);
     });
 
     describe("Checks", function () {
       it("Should not revert because public decryption is ready", async function () {
-        await expect(decryption.checkPublicDecryptionReady(ctHandles)).to.not.be.reverted;
+        await expect(decryption.checkPublicDecryptionReady(ctHandles, extraDataV0)).to.not.be.reverted;
       });
 
       it("Should revert because handles have not been allowed for public decryption", async function () {
-        await expect(decryption.checkPublicDecryptionReady(newCtHandles))
+        await expect(decryption.checkPublicDecryptionReady(newCtHandles, extraDataV0))
           .to.be.revertedWithCustomError(multichainAcl, "PublicDecryptNotAllowed")
           .withArgs(newCtHandles[0]);
       });
@@ -617,11 +645,11 @@ describe("Decryption", function () {
         // have been allowed for public decryption
         for (const newCtHandle of newCtHandles) {
           for (let i = 0; i < coprocessorTxSenders.length; i++) {
-            await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle);
+            await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
           }
         }
 
-        await expect(decryption.checkPublicDecryptionReady(newCtHandles))
+        await expect(decryption.checkPublicDecryptionReady(newCtHandles, extraDataV0))
           .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
           .withArgs(newCtHandles[0]);
       });
@@ -643,10 +671,13 @@ describe("Decryption", function () {
     // Create valid input values
     const user = createRandomWallet();
     const contractAddress = createRandomAddress();
-    const contractAddresses = [contractAddress];
     const publicKey = createBytes32();
     const startTimestamp = getDateInSeconds();
     const durationDays = 120;
+    const contractsInfo: IDecryption.ContractsInfoStruct = {
+      addresses: [contractAddress],
+      chainId: hostChainId,
+    };
     const requestValidity: IDecryption.RequestValidityStruct = {
       startTimestamp,
       durationDays,
@@ -686,8 +717,8 @@ describe("Decryption", function () {
       // Allow user decryption for the user and contract address over all handles
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, user.address);
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, user.address, extraDataV0);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress, extraDataV0);
         }
       }
 
@@ -696,10 +727,11 @@ describe("Decryption", function () {
       const eip712RequestMessage = createEIP712RequestUserDecrypt(
         decryptionAddress,
         publicKey,
-        contractAddresses,
-        hostChainId,
+        contractsInfo.addresses as string[],
+        contractsInfo.chainId as number,
         requestValidity.startTimestamp.toString(),
         requestValidity.durationDays.toString(),
+        extraDataV0,
       );
 
       // Sign the message with the user
@@ -708,7 +740,14 @@ describe("Decryption", function () {
       const userDecryptedShares = createBytes32s(kmsSigners.length);
 
       const eip712ResponseMessages = userDecryptedShares.map((userDecryptedShare) =>
-        createEIP712ResponseUserDecrypt(gatewayChainId, decryptionAddress, publicKey, ctHandles, userDecryptedShare),
+        createEIP712ResponseUserDecrypt(
+          gatewayChainId,
+          decryptionAddress,
+          publicKey,
+          ctHandles,
+          userDecryptedShare,
+          extraDataV0,
+        ),
       );
 
       // Sign the message with all KMS signers
@@ -751,17 +790,17 @@ describe("Decryption", function () {
       const requestTx = await decryption.userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         user.address,
         publicKey,
         userSignature,
+        extraDataV0,
       );
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey);
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV0);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -773,17 +812,17 @@ describe("Decryption", function () {
       const requestTx = await decryption.userDecryptionRequest(
         singleCtHandleContractPair,
         requestValidity,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         user.address,
         publicKey,
         userSignature,
+        extraDataV0,
       );
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey);
+        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey, extraDataV0);
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
@@ -791,46 +830,53 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           [],
           requestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "EmptyCtHandleContractPairs");
     });
 
     it("Should revert because contract addresses is empty", async function () {
+      const emptyContractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: [],
+        chainId: hostChainId,
+      };
       await expect(
         decryption.userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
-          hostChainId,
-          [],
+          emptyContractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "EmptyContractAddresses");
     });
 
     it("Should revert because contract addresses exceeds maximum length allowed", async function () {
       // Create a list of contract addresses exceeding the maximum length allowed
-      const largeContractAddresses = createRandomAddresses(15);
+      const largeContractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: createRandomAddresses(15),
+        chainId: hostChainId,
+      };
 
       await expect(
         decryption.userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
-          hostChainId,
-          largeContractAddresses,
+          largeContractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "ContractAddressesMaxLengthExceeded")
-        .withArgs(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, largeContractAddresses.length);
+        .withArgs(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, largeContractsInfo.addresses.length);
     });
 
     it("Should revert because durationDays is null", async function () {
@@ -844,11 +890,11 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           ctHandleContractPairs,
           invalidRequestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "InvalidNullDurationDays")
@@ -867,11 +913,11 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           ctHandleContractPairs,
           invalidRequestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "MaxDurationDaysExceeded")
@@ -891,11 +937,11 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           ctHandleContractPairs,
           futureRequestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "StartTimestampInFuture");
     });
@@ -915,11 +961,11 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           ctHandleContractPairs,
           expiredRequestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "UserDecryptionRequestExpired");
     });
@@ -940,11 +986,11 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           invalidFHETypeCtHandleContractPairs,
           requestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "InvalidFHEType")
@@ -967,11 +1013,11 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           unsupportedFHETypeCtHandleContractPairs,
           requestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "UnsupportedFHEType")
@@ -1001,11 +1047,11 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           largeByteSizeCtHandleContractPairs,
           requestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "MaxDecryptionRequestBitSizeExceeded")
@@ -1022,21 +1068,24 @@ describe("Decryption", function () {
       ];
 
       // Include the user address in the list of contract addresses
-      const contractAddressesWithUserAddress = [user.address];
+      const userInContractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: [user.address],
+        chainId: hostChainId,
+      };
 
       await expect(
         decryption.userDecryptionRequest(
           userAddressCtHandleContractPairs,
           requestValidity,
-          hostChainId,
-          contractAddressesWithUserAddress,
+          userInContractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "UserAddressInContractAddresses")
-        .withArgs(user.address, contractAddressesWithUserAddress);
+        .withArgs(user.address, userInContractsInfo.addresses);
     });
 
     it("Should revert because the user is not allowed for user decryption on a ctHandle", async function () {
@@ -1044,11 +1093,11 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           fakeUserAddress,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
@@ -1060,11 +1109,11 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           fakeContractAddressCtHandleContractPairs,
           requestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
@@ -1076,19 +1125,19 @@ describe("Decryption", function () {
       // We need to do this because `userDecryptionRequest` first checks if the accounts have access
       // to the handle
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress);
+        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
+        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
       }
 
       await expect(
         decryption.userDecryptionRequest(
           [newCtHandleContractPair],
           requestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
@@ -1103,11 +1152,11 @@ describe("Decryption", function () {
       const requestTx = decryption.userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         user.address,
         publicKey,
         fakeSignature,
+        extraDataV0,
       );
 
       // Check request event
@@ -1121,11 +1170,11 @@ describe("Decryption", function () {
       await decryption.userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         user.address,
         publicKey,
         userSignature,
+        extraDataV0,
       );
 
       // Create a fake signature from the fake signer
@@ -1133,7 +1182,9 @@ describe("Decryption", function () {
 
       // Check that the transaction fails because the signer is not a registered KMS signer
       await expect(
-        decryption.connect(kmsTxSenders[0]).userDecryptionResponse(decryptionId, userDecryptedShares[0], fakeSignature),
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], fakeSignature, extraDataV0),
       )
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsSigner")
         .withArgs(fakeSigner.address);
@@ -1142,22 +1193,30 @@ describe("Decryption", function () {
     it("Should revert because the message sender is not a KMS transaction sender", async function () {
       // Check that the transaction fails because the msg.sender is not a registered KMS transaction sender
       await expect(
-        decryption.connect(fakeTxSender).userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]),
+        decryption
+          .connect(fakeTxSender)
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
       )
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
         .withArgs(fakeTxSender.address);
     });
 
     it("Should revert because contract in ctHandleContractPairs not included in contractAddresses list", async function () {
+      const fakeContractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: fakeContractAddresses,
+        chainId: hostChainId,
+      };
+
       // Create EIP712 message using the fake contract address list
       const decryptionAddress = await decryption.getAddress();
       const fakeEip712RequestMessage = createEIP712RequestUserDecrypt(
         decryptionAddress,
         publicKey,
-        fakeContractAddresses,
-        hostChainId,
+        fakeContractsInfo.addresses as string[],
+        fakeContractsInfo.chainId as number,
         requestValidity.startTimestamp.toString(),
         requestValidity.durationDays.toString(),
+        extraDataV0,
       );
 
       // Sign the message with the user
@@ -1167,11 +1226,11 @@ describe("Decryption", function () {
       const requestTx = decryption.userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
-        hostChainId,
-        fakeContractAddresses,
+        fakeContractsInfo,
         user.address,
         publicKey,
         fakeUserSignature,
+        extraDataV0,
       );
 
       // Check that the request fails because the contract address is not included in the contractAddresses list
@@ -1195,19 +1254,19 @@ describe("Decryption", function () {
         await ciphertextCommits
           .connect(coprocessorTxSenders[i])
           .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress);
+        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
+        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
       }
 
       // Request user decryption with ctMaterials tied to different key IDs
       const requestTx = decryption.userDecryptionRequest(
         [...ctHandleContractPairs, newCtHandleContractPair],
         requestValidity,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         user.address,
         publicKey,
         userSignature,
+        extraDataV0,
       );
 
       // Check that different key IDs are not allowed for batched user decryption
@@ -1229,23 +1288,23 @@ describe("Decryption", function () {
       await decryption.userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         user.address,
         publicKey,
         userSignature,
+        extraDataV0,
       );
 
       // Trigger a first user decryption response
       await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
 
       // Check that a KMS node cannot sign a second time for the same user decryption
       await expect(
         decryption
           .connect(kmsTxSenders[0])
-          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]),
+          .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
       )
         .to.be.revertedWithCustomError(decryption, "KmsNodeAlreadySigned")
         .withArgs(decryptionId, kmsSigners[0].address);
@@ -1256,31 +1315,31 @@ describe("Decryption", function () {
       await decryption.userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         user.address,
         publicKey,
         userSignature,
+        extraDataV0,
       );
 
       // Trigger three valid user decryption responses using different KMS transaction senders
       await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
 
       await decryption
         .connect(kmsTxSenders[1])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
 
       const responseTx3 = await decryption
         .connect(kmsTxSenders[2])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
       // Consensus should be reached at the third response (reconstruction threshold)
       // Check 3rd response event: it should only contain 3 valid signatures
       await expect(responseTx3)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, userDecryptedShares.slice(0, 3), kmsSignatures.slice(0, 3));
+        .withArgs(decryptionId, userDecryptedShares.slice(0, 3), kmsSignatures.slice(0, 3), extraDataV0);
 
       // Check that the user decryption is done
       await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
@@ -1291,29 +1350,29 @@ describe("Decryption", function () {
       await decryption.userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         user.address,
         publicKey,
         userSignature,
+        extraDataV0,
       );
 
       // Trigger three valid user decryption responses using different KMS transaction senders
       const responseTx1 = await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
 
       const responseTx2 = await decryption
         .connect(kmsTxSenders[1])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
 
       await decryption
         .connect(kmsTxSenders[2])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
       const responseTx4 = await decryption
         .connect(kmsTxSenders[3])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3], extraDataV0);
 
       // Check that the 1st, 2nd and 4th responses do not emit an event:
       // - 1st and 2nd responses are ignored because consensus is not reached yet
@@ -1321,6 +1380,22 @@ describe("Decryption", function () {
       await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponse");
       await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponse");
       await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponse");
+    });
+
+    it("Should revert in case of invalid requestID in response", async function () {
+      // Try calling userDecryptionResponse with null (invalid) id
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(0, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
+
+      // Try calling userDecryptionResponse with too high (not requested yet) id
+      await expect(
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(100000, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
     });
 
     it("Should revert because the contract is paused", async function () {
@@ -1332,28 +1407,31 @@ describe("Decryption", function () {
         decryption.userDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           user.address,
           publicKey,
           userSignature,
+          extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
     });
 
     describe("Checks", function () {
       it("Should not revert because user decryption is ready", async function () {
-        await expect(decryption.checkUserDecryptionReady(user.address, ctHandleContractPairs)).to.not.be.reverted;
+        await expect(decryption.checkUserDecryptionReady(user.address, ctHandleContractPairs, extraDataV0)).to.not.be
+          .reverted;
       });
 
       it("Should revert because the user is not allowed for user decryption on a ctHandle", async function () {
-        await expect(decryption.checkUserDecryptionReady(fakeUserAddress, ctHandleContractPairs))
+        await expect(decryption.checkUserDecryptionReady(fakeUserAddress, ctHandleContractPairs, extraDataV0))
           .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
           .withArgs(ctHandleContractPairs[0].ctHandle, fakeUserAddress);
       });
 
       it("Should revert because a contract is not allowed for user decryption on a ctHandle", async function () {
-        await expect(decryption.checkUserDecryptionReady(user.address, fakeContractAddressCtHandleContractPairs))
+        await expect(
+          decryption.checkUserDecryptionReady(user.address, fakeContractAddressCtHandleContractPairs, extraDataV0),
+        )
           .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
           .withArgs(fakeContractAddressCtHandleContractPairs[0].ctHandle, fakeContractAddress);
       });
@@ -1363,11 +1441,11 @@ describe("Decryption", function () {
         // We need to do this because `checkUserDecryptionReady` first checks if the accounts
         // have access to the handle
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address);
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
         }
 
-        await expect(decryption.checkUserDecryptionReady(user.address, [newCtHandleContractPair]))
+        await expect(decryption.checkUserDecryptionReady(user.address, [newCtHandleContractPair], extraDataV0))
           .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
           .withArgs(newCtHandle);
       });
@@ -1395,10 +1473,14 @@ describe("Decryption", function () {
       delegatedAddress,
     };
     const contractAddress = createRandomAddress();
-    const contractAddresses = [contractAddress];
     const publicKey = createBytes32();
     const startTimestamp = getDateInSeconds();
     const durationDays = 120;
+    const contractsInfo: IDecryption.ContractsInfoStruct = {
+      addresses: [contractAddress],
+      chainId: hostChainId,
+    };
+
     const requestValidity: IDecryption.RequestValidityStruct = {
       startTimestamp,
       durationDays,
@@ -1442,14 +1524,14 @@ describe("Decryption", function () {
       // Allow account
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, delegatorAddress);
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, delegatorAddress, extraDataV0);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress, extraDataV0);
         }
       }
 
       // Delegate account
       for (const txSender of coprocessorTxSenders) {
-        await multichainAcl.connect(txSender).delegateAccount(hostChainId, delegationAccounts, contractAddresses);
+        await multichainAcl.connect(txSender).delegateAccount(hostChainId, delegationAccounts, contractsInfo.addresses);
       }
 
       // Create EIP712 messages
@@ -1457,11 +1539,12 @@ describe("Decryption", function () {
       const eip712RequestMessage = createEIP712RequestDelegatedUserDecrypt(
         decryptionAddress,
         publicKey,
-        contractAddresses,
-        delegatorAddress.toString(),
-        hostChainId,
+        contractsInfo.addresses as string[],
+        delegatorAddress,
+        contractsInfo.chainId as number,
         requestValidity.startTimestamp.toString(),
         requestValidity.durationDays.toString(),
+        extraDataV0,
       );
 
       // Sign the message with the delegated account
@@ -1471,13 +1554,14 @@ describe("Decryption", function () {
 
       const userDecryptedShares = createBytes32s(kmsSigners.length);
 
-      const eip712ResponseMessages: EIP712[] = userDecryptedShares.map((userDecryptedShare) =>
+      const eip712ResponseMessages = userDecryptedShares.map((userDecryptedShare) =>
         createEIP712ResponseUserDecrypt(
           gatewayChainId,
           decryptionAddress,
           publicKey,
           ctHandleContractPairs.map((pair) => pair.ctHandle.toString()),
           userDecryptedShare,
+          extraDataV0,
         ),
       );
 
@@ -1519,16 +1603,22 @@ describe("Decryption", function () {
         ctHandleContractPairs,
         requestValidity,
         delegationAccounts,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         publicKey,
         delegatedSignature,
+        extraDataV0,
       );
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), delegationAccounts.delegatedAddress, publicKey);
+        .withArgs(
+          decryptionId,
+          toValues(snsCiphertextMaterials),
+          delegationAccounts.delegatedAddress,
+          publicKey,
+          extraDataV0,
+        );
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -1540,16 +1630,22 @@ describe("Decryption", function () {
         singleCtHandleContractPairs,
         requestValidity,
         delegationAccounts,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         publicKey,
         delegatedSignature,
+        extraDataV0,
       );
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), delegationAccounts.delegatedAddress, publicKey);
+        .withArgs(
+          decryptionId,
+          toValues(singleSnsCiphertextMaterials),
+          delegationAccounts.delegatedAddress,
+          publicKey,
+          extraDataV0,
+        );
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
@@ -1558,45 +1654,53 @@ describe("Decryption", function () {
           [],
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "EmptyCtHandleContractPairs");
     });
 
     it("Should revert because contract addresses is empty", async function () {
+      const contractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: [],
+        chainId: hostChainId,
+      };
+
       await expect(
         decryption.delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          [],
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "EmptyContractAddresses");
     });
 
     it("Should revert because contract addresses exceeds maximum length allowed", async function () {
       // Create a list of contract addresses exceeding the maximum length allowed
-      const largeContractAddresses = createRandomAddresses(15);
+      const contractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: createRandomAddresses(15),
+        chainId: hostChainId,
+      };
 
       await expect(
         decryption.delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          largeContractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "ContractAddressesMaxLengthExceeded")
-        .withArgs(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, largeContractAddresses.length);
+        .withArgs(MAX_USER_DECRYPT_CONTRACT_ADDRESSES, contractsInfo.addresses.length);
     });
 
     it("Should revert because durationDays is null", async function () {
@@ -1611,10 +1715,10 @@ describe("Decryption", function () {
           ctHandleContractPairs,
           invalidRequestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "InvalidNullDurationDays")
@@ -1634,10 +1738,10 @@ describe("Decryption", function () {
           ctHandleContractPairs,
           invalidRequestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "MaxDurationDaysExceeded")
@@ -1658,10 +1762,10 @@ describe("Decryption", function () {
           ctHandleContractPairs,
           futureRequestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "StartTimestampInFuture");
     });
@@ -1682,10 +1786,10 @@ describe("Decryption", function () {
           ctHandleContractPairs,
           expiredRequestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "UserDecryptionRequestExpired");
     });
@@ -1707,10 +1811,10 @@ describe("Decryption", function () {
           invalidFHETypeCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "InvalidFHEType")
@@ -1734,10 +1838,10 @@ describe("Decryption", function () {
           unsupportedFHETypeCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "UnsupportedFHEType")
@@ -1768,10 +1872,10 @@ describe("Decryption", function () {
           largeByteSizeCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "MaxDecryptionRequestBitSizeExceeded")
@@ -1787,7 +1891,10 @@ describe("Decryption", function () {
         },
       ];
 
-      const contractAddressesWithDelegatorAddress = [delegatorAddress];
+      const delegatorInContractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: [delegatorAddress],
+        chainId: hostChainId,
+      };
 
       // Check that the request fails because the delegated address is included in the ctHandleContractPairs list
       await expect(
@@ -1795,14 +1902,14 @@ describe("Decryption", function () {
           delegatorAddressCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddressesWithDelegatorAddress,
+          delegatorInContractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "DelegatorAddressInContractAddresses")
-        .withArgs(delegatorAddress, contractAddressesWithDelegatorAddress);
+        .withArgs(delegatorAddress, delegatorInContractsInfo.addresses);
     });
 
     it("Should revert because the delegator is not allowed to access a handle", async function () {
@@ -1811,10 +1918,10 @@ describe("Decryption", function () {
           ctHandleContractPairs,
           requestValidity,
           fakeDelegatorDelegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
@@ -1827,10 +1934,10 @@ describe("Decryption", function () {
           fakeContractAddressCtHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
@@ -1844,8 +1951,8 @@ describe("Decryption", function () {
         for (const coprocessorTxSender of coprocessorTxSenders) {
           await multichainAcl
             .connect(coprocessorTxSender)
-            .allowAccount(newCtHandle, delegationAccounts.delegatorAddress);
-          await multichainAcl.connect(coprocessorTxSender).allowAccount(newCtHandle, contractAddress);
+            .allowAccount(newCtHandle, delegationAccounts.delegatorAddress, extraDataV0);
+          await multichainAcl.connect(coprocessorTxSender).allowAccount(newCtHandle, contractAddress, extraDataV0);
         }
       }
 
@@ -1856,10 +1963,10 @@ describe("Decryption", function () {
           [newCtHandleContractPair],
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
@@ -1867,15 +1974,19 @@ describe("Decryption", function () {
     });
 
     it("Should revert because the delegated address has not been delegated for a contract", async function () {
+      const fakeContractInContractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: [...contractsInfo.addresses, fakeContractAddress],
+        chainId: hostChainId,
+      };
       await expect(
         decryption.delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          [...contractAddresses, fakeContractAddress],
+          fakeContractInContractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(multichainAcl, "AccountNotDelegated")
@@ -1891,10 +2002,10 @@ describe("Decryption", function () {
         ctHandleContractPairs,
         requestValidity,
         delegationAccounts,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         publicKey,
         fakeSignature,
+        extraDataV0,
       );
 
       // Check that the request has been reverted because of an invalid EIP712 user request signature
@@ -1902,16 +2013,21 @@ describe("Decryption", function () {
     });
 
     it("Should revert because contract in ctHandleContractPairs is not included in contractAddresses list", async function () {
+      const fakeContractsInfo: IDecryption.ContractsInfoStruct = {
+        addresses: fakeContractAddresses,
+        chainId: hostChainId,
+      };
+
       // Check that the request fails because the contract address is not included in the contractAddresses list
       await expect(
         decryption.delegatedUserDecryptionRequest(
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          fakeContractAddresses,
+          fakeContractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       )
         .to.be.revertedWithCustomError(decryption, "ContractNotInContractAddresses")
@@ -1934,8 +2050,8 @@ describe("Decryption", function () {
         await ciphertextCommits
           .connect(coprocessorTxSenders[i])
           .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, delegatorAddress);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress);
+        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, delegatorAddress, extraDataV0);
+        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
       }
 
       // Request user decryption with ctMaterials tied to different key IDs
@@ -1943,10 +2059,10 @@ describe("Decryption", function () {
         [...ctHandleContractPairs, newCtHandleContractPair],
         requestValidity,
         delegationAccounts,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         publicKey,
         delegatedSignature,
+        extraDataV0,
       );
 
       // Check that different key IDs are not allowed for batched user decryption
@@ -1969,30 +2085,30 @@ describe("Decryption", function () {
         ctHandleContractPairs,
         requestValidity,
         delegationAccounts,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         publicKey,
         delegatedSignature,
+        extraDataV0,
       );
 
       // Trigger three valid user decryption responses using different KMS transaction senders
       await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
 
       await decryption
         .connect(kmsTxSenders[1])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
 
       const responseTx3 = await decryption
         .connect(kmsTxSenders[2])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
       // Consensus should be reached at the third response (reconstruction threshold)
       // Check 3rd response event: it should only contain 3 valid signatures
       await expect(responseTx3)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, userDecryptedShares.slice(0, 3), kmsSignatures.slice(0, 3));
+        .withArgs(decryptionId, userDecryptedShares.slice(0, 3), kmsSignatures.slice(0, 3), extraDataV0);
 
       // Check that the user decryption is done
       await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
@@ -2004,28 +2120,28 @@ describe("Decryption", function () {
         ctHandleContractPairs,
         requestValidity,
         delegationAccounts,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         publicKey,
         delegatedSignature,
+        extraDataV0,
       );
 
       // Trigger three valid user decryption responses using different KMS transaction senders
       const responseTx1 = await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
 
       const responseTx2 = await decryption
         .connect(kmsTxSenders[1])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
 
       await decryption
         .connect(kmsTxSenders[2])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
       const responseTx4 = await decryption
         .connect(kmsTxSenders[3])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3], extraDataV0);
 
       // Check that the 1st, 2nd and 4th responses do not emit an event:
       // - 1st and 2nd responses are ignored because consensus is not reached yet
@@ -2045,10 +2161,10 @@ describe("Decryption", function () {
           ctHandleContractPairs,
           requestValidity,
           delegationAccounts,
-          hostChainId,
-          contractAddresses,
+          contractsInfo,
           publicKey,
           delegatedSignature,
+          extraDataV0,
         ),
       ).to.be.revertedWithCustomError(decryption, "EnforcedPause");
     });
@@ -2060,7 +2176,8 @@ describe("Decryption", function () {
             hostChainId,
             delegationAccounts,
             ctHandleContractPairs,
-            contractAddresses,
+            contractsInfo.addresses,
+            extraDataV0,
           ),
         ).to.not.be.reverted;
       });
@@ -2070,7 +2187,7 @@ describe("Decryption", function () {
         for (const txSender of coprocessorTxSenders) {
           await multichainAcl
             .connect(txSender)
-            .delegateAccount(hostChainId, fakeDelegatorDelegationAccounts, contractAddresses);
+            .delegateAccount(hostChainId, fakeDelegatorDelegationAccounts, contractsInfo.addresses);
         }
 
         await expect(
@@ -2078,7 +2195,8 @@ describe("Decryption", function () {
             hostChainId,
             fakeDelegatorDelegationAccounts,
             ctHandleContractPairs,
-            contractAddresses,
+            contractsInfo.addresses,
+            extraDataV0,
           ),
         )
           .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
@@ -2091,7 +2209,8 @@ describe("Decryption", function () {
             hostChainId,
             delegationAccounts,
             fakeContractAddressCtHandleContractPairs,
-            contractAddresses,
+            contractsInfo.addresses,
+            extraDataV0,
           ),
         )
           .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
@@ -2100,9 +2219,13 @@ describe("Decryption", function () {
 
       it("Should revert because the delegated address has not been delegated for a contract", async function () {
         await expect(
-          decryption.checkDelegatedUserDecryptionReady(hostChainId, delegationAccounts, ctHandleContractPairs, [
-            fakeContractAddress,
-          ]),
+          decryption.checkDelegatedUserDecryptionReady(
+            hostChainId,
+            delegationAccounts,
+            ctHandleContractPairs,
+            [fakeContractAddress],
+            extraDataV0,
+          ),
         )
           .to.be.revertedWithCustomError(multichainAcl, "AccountNotDelegated")
           .withArgs(hostChainId, toValues(delegationAccounts), fakeContractAddress);
@@ -2113,8 +2236,8 @@ describe("Decryption", function () {
         // We need to do this because `checkDelegatedUserDecryptionReady` first checks if the accounts
         // have access to the handle
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, delegatorAddress);
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, delegatorAddress, extraDataV0);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
         }
 
         await expect(
@@ -2122,7 +2245,8 @@ describe("Decryption", function () {
             hostChainId,
             delegationAccounts,
             [newCtHandleContractPair],
-            contractAddresses,
+            contractsInfo.addresses,
+            extraDataV0,
           ),
         )
           .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
