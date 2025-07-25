@@ -532,6 +532,18 @@ describe("Decryption", function () {
       await expect(responseTx4).to.not.emit(decryption, "PublicDecryptionResponse");
     });
 
+    it("Should revert in case of invalid requestID in response", async function () {
+      // Try calling publicDecryptionResponse with null (invalid) id
+      await expect(
+        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(0, decryptedResult, kmsSignatures[0]),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
+
+      // Try calling publicDecryptionResponse with too high (not requested yet) id
+      await expect(
+        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(100000, decryptedResult, kmsSignatures[0]),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
+    });
+
     it("Should revert because the contract is paused", async function () {
       // Pause the contract
       await decryption.connect(owner).pause();
@@ -1320,6 +1332,18 @@ describe("Decryption", function () {
       await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponse");
       await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponse");
       await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponse");
+    });
+
+    it("Should revert in case of invalid requestID in response", async function () {
+      // Try calling userDecryptionResponse with null (invalid) id
+      await expect(
+        decryption.connect(kmsTxSenders[0]).userDecryptionResponse(0, userDecryptedShares[0], kmsSignatures[0]),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
+
+      // Try calling userDecryptionResponse with too high (not requested yet) id
+      await expect(
+        decryption.connect(kmsTxSenders[0]).userDecryptionResponse(100000, userDecryptedShares[0], kmsSignatures[0]),
+      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
     });
 
     it("Should revert because the contract is paused", async function () {
