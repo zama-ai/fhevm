@@ -12,13 +12,10 @@ use alloy::{
     sol_types::Eip712Domain,
 };
 use anyhow::anyhow;
-use connector_utils::types::{
-    KmsGrpcRequest,
-    fhe::{extract_fhe_type_from_handle, fhe_type_to_string},
-};
+use connector_utils::types::{KmsGrpcRequest, fhe::fhe_type_to_string};
 use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use kms_grpc::kms::v1::{
-    CiphertextFormat, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
+    PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
 use std::borrow::Cow;
 use tracing::info;
@@ -133,10 +130,7 @@ where
         // Extract and log FHE types for all ciphertexts
         let fhe_types: Vec<String> = sns_ciphertext_materials
             .iter()
-            .map(|(handle, _)| {
-                let fhe_type = extract_fhe_type_from_handle(handle);
-                fhe_type_to_string(fhe_type).to_string()
-            })
+            .map(|ct| fhe_type_to_string(ct.fhe_type).to_string())
             .collect();
 
         info!(
@@ -147,27 +141,7 @@ where
             fhe_types.join(", ")
         );
 
-        // Prepare typed ciphertexts for the user decryption request
-        let typed_ciphertexts = sns_ciphertext_materials
-            .into_iter()
-            .map(|(handle, ciphertext)| {
-                let fhe_type = extract_fhe_type_from_handle(&handle);
-                info!(
-                    "Handle: {}\nRetrieved S3 ciphertext of length: {}, FHE Type: {}",
-                    hex::encode(&handle),
-                    ciphertext.len(),
-                    fhe_type
-                );
-                TypedCiphertext {
-                    ciphertext,
-                    external_handle: handle,
-                    fhe_type,
-                    ciphertext_format: CiphertextFormat::BigExpanded.into(),
-                }
-            })
-            .collect();
-
-        Ok(typed_ciphertexts)
+        Ok(sns_ciphertext_materials)
     }
 }
 
