@@ -200,6 +200,22 @@ describe("InputVerification", function () {
       await expect(txResponse3).to.not.emit(inputVerification, "VerifyProofResponse");
     });
 
+    it("Should revert in case of invalid zkProofId in response", async function () {
+      // Try calling userDecryptionResponse with null (invalid) id
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(0, ctHandles, signatures[0], extraDataV0),
+      ).to.be.revertedWithCustomError(inputVerification, "VerifyProofNotRequested");
+
+      // Try calling verifyProofResponse with too high (not requested yet) id
+      await expect(
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(100000, ctHandles, signatures[0], extraDataV0),
+      ).to.be.revertedWithCustomError(inputVerification, "VerifyProofNotRequested");
+    });
+
     it("Should verify a proof with 2 valid responses and 1 valid proof rejection response", async function () {
       // Trigger a valid proof rejection with the first coprocessor transaction sender
       await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);

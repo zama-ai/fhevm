@@ -30,6 +30,8 @@ pub struct RawConfig {
     pub tx_retry_interval_ms: u64,
     #[serde(default = "default_responses_batch_size")]
     pub responses_batch_size: u8,
+    #[serde(default = "default_gas_multiplier_percent")]
+    pub gas_multiplier_percent: usize,
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: String,
     #[serde(default = "default_healthcheck_timeout_secs")]
@@ -54,6 +56,10 @@ fn default_tx_retry_interval_ms() -> u64 {
 
 fn default_responses_batch_size() -> u8 {
     10
+}
+
+fn default_gas_multiplier_percent() -> usize {
+    130 // 130% gas increase by default
 }
 
 impl DeserializeRawConfig for RawConfig {}
@@ -84,6 +90,7 @@ impl Default for RawConfig {
             tx_retries: default_tx_retries(),
             tx_retry_interval_ms: default_tx_retry_interval_ms(),
             responses_batch_size: default_responses_batch_size(),
+            gas_multiplier_percent: default_gas_multiplier_percent(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
         }

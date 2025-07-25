@@ -7,6 +7,7 @@ interface IInputVerification {
     error CoprocessorAlreadyVerified(uint256 zkProofId, address txSender, address signer);
     error ProofNotRejected(uint256 zkProofId);
     error ProofNotVerified(uint256 zkProofId);
+    error VerifyProofNotRequested(uint256 zkProofId);
 
     event RejectProofResponse(uint256 indexed zkProofId);
     event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChainId, address contractAddress, address userAddress, bytes ciphertextWithZKProof, bytes extraData);
@@ -279,6 +280,17 @@ interface IInputVerification {
   {
     "type": "error",
     "name": "ProofNotVerified",
+    "inputs": [
+      {
+        "name": "zkProofId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "VerifyProofNotRequested",
     "inputs": [
       {
         "name": "zkProofId",
@@ -647,6 +659,81 @@ error ProofNotVerified(uint256 zkProofId);
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "ProofNotVerified(uint256)";
             const SELECTOR: [u8; 4] = [197u8, 121u8, 167u8, 145u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
+                )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `VerifyProofNotRequested(uint256)` and selector `0x4711083f`.
+```solidity
+error VerifyProofNotRequested(uint256 zkProofId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct VerifyProofNotRequested {
+        #[allow(missing_docs)]
+        pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<VerifyProofNotRequested> for UnderlyingRustTuple<'_> {
+            fn from(value: VerifyProofNotRequested) -> Self {
+                (value.zkProofId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for VerifyProofNotRequested {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { zkProofId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for VerifyProofNotRequested {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "VerifyProofNotRequested(uint256)";
+            const SELECTOR: [u8; 4] = [71u8, 17u8, 8u8, 63u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2188,6 +2275,8 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         ProofNotRejected(ProofNotRejected),
         #[allow(missing_docs)]
         ProofNotVerified(ProofNotVerified),
+        #[allow(missing_docs)]
+        VerifyProofNotRequested(VerifyProofNotRequested),
     }
     #[automatically_derived]
     impl IInputVerificationErrors {
@@ -2200,6 +2289,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [47u8, 167u8, 49u8, 116u8],
             [58u8, 205u8, 66u8, 83u8],
+            [71u8, 17u8, 8u8, 63u8],
             [197u8, 121u8, 167u8, 145u8],
             [249u8, 237u8, 67u8, 31u8],
         ];
@@ -2208,7 +2298,7 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
     impl alloy_sol_types::SolInterface for IInputVerificationErrors {
         const NAME: &'static str = "IInputVerificationErrors";
         const MIN_DATA_LENGTH: usize = 32usize;
-        const COUNT: usize = 4usize;
+        const COUNT: usize = 5usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2223,6 +2313,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 }
                 Self::ProofNotVerified(_) => {
                     <ProofNotVerified as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::VerifyProofNotRequested(_) => {
+                    <VerifyProofNotRequested as alloy_sol_types::SolError>::SELECTOR
                 }
             }
         }
@@ -2270,6 +2363,19 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                             .map(IInputVerificationErrors::ProofNotRejected)
                     }
                     ProofNotRejected
+                },
+                {
+                    fn VerifyProofNotRequested(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IInputVerificationErrors> {
+                        <VerifyProofNotRequested as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IInputVerificationErrors::VerifyProofNotRequested)
+                    }
+                    VerifyProofNotRequested
                 },
                 {
                     fn ProofNotVerified(
@@ -2331,6 +2437,11 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                         inner,
                     )
                 }
+                Self::VerifyProofNotRequested(inner) => {
+                    <VerifyProofNotRequested as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
             }
         }
         #[inline]
@@ -2356,6 +2467,12 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 }
                 Self::ProofNotVerified(inner) => {
                     <ProofNotVerified as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::VerifyProofNotRequested(inner) => {
+                    <VerifyProofNotRequested as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

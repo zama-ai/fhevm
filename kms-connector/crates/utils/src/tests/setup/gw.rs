@@ -1,4 +1,9 @@
-use crate::{config::KmsWallet, conn::WalletGatewayProvider, tests::setup::pick_free_port};
+use crate::{
+    config::KmsWallet,
+    conn::WalletGatewayProvider,
+    provider::{FillersWithoutNonceManagement, NonceManagedProvider},
+    tests::setup::pick_free_port,
+};
 use alloy::{
     primitives::{Address, ChainId, FixedBytes},
     providers::{ProviderBuilder, WsConnect},
@@ -74,13 +79,17 @@ impl GatewayInstance {
             DEPLOYER_PRIVATE_KEY,
             Some(ChainId::from(*CHAIN_ID as u64)),
         )?;
+        let wallet_addr = wallet.address();
 
-        let provider = ProviderBuilder::new()
+        let inner_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet)
             .on_ws(WsConnect::new(Self::anvil_ws_endpoint_impl(
                 anvil_host_port,
             )))
             .await?;
+        let provider = NonceManagedProvider::new(inner_provider, wallet_addr);
 
         Ok(GatewayInstance::new(anvil, anvil_host_port, provider))
     }

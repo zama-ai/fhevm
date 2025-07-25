@@ -281,6 +281,11 @@ contract Decryption is
     ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
+        /// @dev forbids reponse for not yet requested decryptionId
+        if (decryptionId > $._decryptionRequestCounter || decryptionId == 0) {
+            revert DecryptionNotRequested(decryptionId);
+        }
+
         /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
         PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
             $.publicCtHandles[decryptionId],
@@ -489,8 +494,13 @@ contract Decryption is
         bytes calldata extraData
     ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
-        UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
 
+        /// @dev forbids reponse for not yet requested decryptionId
+        if (decryptionId > $._decryptionRequestCounter || decryptionId == 0) {
+            revert DecryptionNotRequested(decryptionId);
+        }
+
+        UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
         /// @dev Initialize the UserDecryptResponseVerification structure for the signature validation.
         UserDecryptResponseVerification memory userDecryptResponseVerification = UserDecryptResponseVerification(
             userDecryptionPayload.publicKey,

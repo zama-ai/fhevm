@@ -160,6 +160,11 @@ contract InputVerification is
     ) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
+        /// @dev forbids reponse for not yet requested zkProofId
+        if (zkProofId > $.zkProofIdCounter || zkProofId == 0) {
+            revert VerifyProofNotRequested(zkProofId);
+        }
+
         /// @dev Retrieve stored ZK Proof verification request inputs.
         ZKProofInput memory zkProofInput = $._zkProofInputs[zkProofId];
 

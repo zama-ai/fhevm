@@ -29,6 +29,7 @@ interface IDecryption {
     error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
     error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
     error DecryptionNotDone(uint256 decryptionId);
+    error DecryptionNotRequested(uint256 decryptionId);
     error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
     error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCiphertextMaterial invalidSnsCtMaterial);
     error EmptyContractAddresses();
@@ -647,6 +648,17 @@ interface IDecryption {
   {
     "type": "error",
     "name": "DecryptionNotDone",
+    "inputs": [
+      {
+        "name": "decryptionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "DecryptionNotRequested",
     "inputs": [
       {
         "name": "decryptionId",
@@ -2330,6 +2342,81 @@ error DecryptionNotDone(uint256 decryptionId);
             > as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "DecryptionNotDone(uint256)";
             const SELECTOR: [u8; 4] = [11u8, 240u8, 20u8, 6u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.decryptionId),
+                )
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `DecryptionNotRequested(uint256)` and selector `0xd48af942`.
+```solidity
+error DecryptionNotRequested(uint256 decryptionId);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct DecryptionNotRequested {
+        #[allow(missing_docs)]
+        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<DecryptionNotRequested> for UnderlyingRustTuple<'_> {
+            fn from(value: DecryptionNotRequested) -> Self {
+                (value.decryptionId,)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for DecryptionNotRequested {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self { decryptionId: tuple.0 }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for DecryptionNotRequested {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "DecryptionNotRequested(uint256)";
+            const SELECTOR: [u8; 4] = [212u8, 138u8, 249u8, 66u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -5964,6 +6051,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         DecryptionNotDone(DecryptionNotDone),
         #[allow(missing_docs)]
+        DecryptionNotRequested(DecryptionNotRequested),
+        #[allow(missing_docs)]
         DelegatorAddressInContractAddresses(DelegatorAddressInContractAddresses),
         #[allow(missing_docs)]
         DifferentKeyIdsNotAllowed(DifferentKeyIdsNotAllowed),
@@ -6011,6 +6100,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [195u8, 68u8, 106u8, 199u8],
             [197u8, 171u8, 70u8, 126u8],
             [207u8, 174u8, 146u8, 31u8],
+            [212u8, 138u8, 249u8, 66u8],
             [220u8, 77u8, 120u8, 177u8],
             [222u8, 40u8, 89u8, 193u8],
             [231u8, 244u8, 137u8, 93u8],
@@ -6021,7 +6111,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionErrors {
         const NAME: &'static str = "IDecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 16usize;
+        const COUNT: usize = 17usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -6033,6 +6123,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::DecryptionNotDone(_) => {
                     <DecryptionNotDone as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::DecryptionNotRequested(_) => {
+                    <DecryptionNotRequested as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::DelegatorAddressInContractAddresses(_) => {
                     <DelegatorAddressInContractAddresses as alloy_sol_types::SolError>::SELECTOR
@@ -6251,6 +6344,19 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     DifferentKeyIdsNotAllowed
                 },
                 {
+                    fn DecryptionNotRequested(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <DecryptionNotRequested as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionErrors::DecryptionNotRequested)
+                    }
+                    DecryptionNotRequested
+                },
+                {
                     fn UserAddressInContractAddresses(
                         data: &[u8],
                         validate: bool,
@@ -6328,6 +6434,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::DecryptionNotDone(inner) => {
                     <DecryptionNotDone as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::DecryptionNotRequested(inner) => {
+                    <DecryptionNotRequested as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -6415,6 +6526,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::DecryptionNotDone(inner) => {
                     <DecryptionNotDone as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::DecryptionNotRequested(inner) => {
+                    <DecryptionNotRequested as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
