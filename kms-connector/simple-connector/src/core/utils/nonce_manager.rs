@@ -345,7 +345,7 @@ where
     }
 
     /// Send transaction immediately with optimized gas settings for parallel processing
-    /// Simple, clean implementation - complex retry logic handled by receipt analysis
+    /// Handles gas estimation and 30% boost centrally for all transaction types
     async fn send_transaction_immediately(
         &self,
         mut tx: TransactionRequest,
@@ -354,14 +354,65 @@ where
         // Set nonce for immediate sending
         tx.nonce = Some(expected_nonce);
 
-        if let Some(gas_limit) = tx.gas {
-            tx.gas = Some(gas_limit * 130 / 100); // 30% gas limit boost
-            debug!(
-                "Applied optimized gas settings for immediate send (nonce: {}): gas_limit={}",
-                expected_nonce,
-                tx.gas.unwrap()
-            );
-        }
+        // Always estimate gas fresh with 100ms retry for resilience
+        let gas_estimation = match self.provider.estimate_gas(tx.clone()).await {
+            Ok(estimation) => {
+                info!(
+                    "Fresh gas estimation for immediate send (nonce: {}): {}",
+                    expected_nonce, estimation
+                );
+                estimation
+            }
+            Err(first_error) => {
+                warn!(
+                    "Gas estimation failed for nonce {}: {} - retrying in 100ms",
+                    expected_nonce, first_error
+                );
+
+                // Wait 100ms and retry once
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+                match self.provider.estimate_gas(tx.clone()).await {
+                    Ok(estimation) => {
+                        info!(
+                            "Gas estimation retry succeeded for nonce {}: {}",
+                            expected_nonce, estimation
+                        );
+                        estimation
+                    }
+                    Err(retry_error) => {
+                        error!(
+                            "Gas estimation failed twice for nonce {}: first={}, retry={} - using fallback",
+                            expected_nonce, first_error, retry_error
+                        );
+
+                        // Fallback strategies
+                        if let Some(existing_gas) = tx.gas {
+                            info!(
+                                "Using existing gas limit: {} for nonce: {}",
+                                existing_gas, expected_nonce
+                            );
+                            existing_gas
+                        } else {
+                            let fallback_gas = 2_000_000u64; // High fallback for complex decryption contract calls (observed: ~1.8M gas)
+                            warn!(
+                                "Using fallback gas limit: {} for nonce: {} due to estimation failures",
+                                fallback_gas, expected_nonce
+                            );
+                            fallback_gas
+                        }
+                    }
+                }
+            }
+        };
+
+        // Apply 30% gas boost to estimated or fallback gas
+        let boosted_gas = gas_estimation * 130 / 100;
+        tx.gas = Some(boosted_gas);
+        info!(
+            "Applied 30% gas boost for immediate send (nonce: {}): {} → {}",
+            expected_nonce, gas_estimation, boosted_gas
+        );
 
         // Single send attempt - let receipt analysis handle any failures
         match self.provider.send_transaction(tx).await {

@@ -20,6 +20,7 @@ use crate::core::utils::eip712::verify_user_decryption_eip712;
 use crate::error::Result;
 
 /// Convert hex RequestId string to decimal for consistent logging
+#[inline]
 fn request_id_to_decimal(hex_request_id: &str) -> String {
     // Try to parse hex string as U256 and convert to decimal
     if let Ok(bytes) = alloy::hex::decode(hex_request_id) {
