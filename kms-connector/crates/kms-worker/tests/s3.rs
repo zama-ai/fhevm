@@ -13,10 +13,11 @@ async fn test_get_ciphertext_from_s3() -> anyhow::Result<()> {
     let config = Config::default();
     let mock_provider = ProviderBuilder::new().on_mocked_client(Asserter::new());
 
+    let handle = &0_u32.to_be_bytes(); // dummy handle
     let bucket_url = format!("{}/ct128", test_instance.s3_url());
     let s3_service = S3Service::new(&config, mock_provider);
     s3_service
-        .retrieve_s3_ciphertext_with_retry(vec![bucket_url], &hex::decode(S3_CT)?, S3_CT)
+        .retrieve_s3_ciphertext_with_retry(vec![bucket_url], handle, &hex::decode(S3_CT)?, S3_CT)
         .await
         .unwrap();
 
@@ -40,11 +41,13 @@ async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
     let config = Config::default();
     let mock_provider = ProviderBuilder::new().on_mocked_client(Asserter::new());
 
+    let handle = &0_u32.to_be_bytes(); // dummy handle
     let bucket_url = format!("{}/ct128", test_instance.s3_url());
     let s3_service = S3Service::new(&config, mock_provider);
     if let Some(ct) = s3_service
         .retrieve_s3_ciphertext_with_retry(
             vec![bucket_url],
+            handle,
             &hex::decode(S3_CT_UNSTORED)?,
             S3_CT_UNSTORED,
         )
