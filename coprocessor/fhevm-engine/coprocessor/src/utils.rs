@@ -179,6 +179,7 @@ pub fn db_url(args: &crate::daemon_cli::Args) -> String {
 fn test_invalid_handle_too_short() {
     let comp = vec![AsyncComputation {
         operation: 1,
+        transaction_id: vec![0],
         output_handle: vec![],
         inputs: vec![
             AsyncComputationInput {
@@ -204,6 +205,7 @@ fn test_invalid_handle_too_short() {
 fn test_invalid_handle_too_long() {
     let comp = vec![AsyncComputation {
         operation: 1,
+        transaction_id: vec![0],
         output_handle: vec![0u8; 257],
         inputs: vec![
             AsyncComputationInput {
@@ -228,6 +230,7 @@ fn test_simple_circular_dependency_detection() {
     let comp = vec![
         AsyncComputation {
             operation: 1,
+            transaction_id: vec![0],
             output_handle: vec![0],
             inputs: vec![
                 AsyncComputationInput {
@@ -240,6 +243,7 @@ fn test_simple_circular_dependency_detection() {
         },
         AsyncComputation {
             operation: 1,
+            transaction_id: vec![0],
             output_handle: vec![1],
             inputs: vec![
                 AsyncComputationInput {
@@ -272,6 +276,7 @@ fn test_multi_level_circular_dependency_detection() {
     let comp = vec![
         AsyncComputation {
             operation: 1,
+            transaction_id: vec![0],
             output_handle: vec![0],
             inputs: vec![
                 AsyncComputationInput {
@@ -284,6 +289,7 @@ fn test_multi_level_circular_dependency_detection() {
         },
         AsyncComputation {
             operation: 1,
+            transaction_id: vec![0],
             output_handle: vec![3],
             inputs: vec![
                 AsyncComputationInput {
@@ -296,6 +302,7 @@ fn test_multi_level_circular_dependency_detection() {
         },
         AsyncComputation {
             operation: 1,
+            transaction_id: vec![0],
             output_handle: vec![4],
             inputs: vec![
                 AsyncComputationInput {

@@ -32,6 +32,10 @@ pub struct Args {
     #[arg(long, default_value_t = 10)]
     pub work_items_batch_size: i32,
 
+    /// Number of dependence chains to fetch per worker
+    #[arg(long, default_value_t = 2)]
+    pub dependence_chains_per_worker: i32,
+
     /// Tenant key cache size
     #[arg(long, default_value_t = 32)]
     pub tenant_key_cache_size: i32,

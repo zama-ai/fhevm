@@ -115,7 +115,7 @@ impl<'a> Scheduler<'a> {
 
     #[cfg(not(feature = "gpu"))]
     async fn schedule_fine_grain(&mut self) -> Result<()> {
-        let mut set: JoinSet<TaskResult> = JoinSet::new();
+        let mut set: JoinSet<(usize, TaskResult)> = JoinSet::new();
         let sks = self.sks.clone();
         tfhe::set_server_key(sks.clone());
         // Prime the scheduler with all nodes without dependences
@@ -128,6 +128,7 @@ impl<'a> Scheduler<'a> {
                 .ok_or(SchedulerError::DataflowGraphError)?;
             if Self::is_ready(node) {
                 let opcode = node.opcode;
+                let is_allowed = node.is_allowed;
                 let inputs: Vec<SupportedFheCiphertexts> = node
                     .inputs
                     .iter()
@@ -141,7 +142,7 @@ impl<'a> Scheduler<'a> {
                     .collect::<Result<Vec<_>>>()?;
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(sks.clone());
-                    run_computation(opcode, inputs, idx)
+                    run_computation(opcode, inputs, idx, is_allowed)
                 });
             }
         }
@@ -163,6 +164,7 @@ impl<'a> Scheduler<'a> {
                         DFGTaskInput::Value(output.0.clone());
                     if Self::is_ready(child_node) {
                         let opcode = child_node.opcode;
+                        let is_allowed = child_node.is_allowed;
                         let inputs: Vec<SupportedFheCiphertexts> = child_node
                             .inputs
                             .iter()
@@ -176,7 +178,7 @@ impl<'a> Scheduler<'a> {
                             .collect::<Result<Vec<_>>>()?;
                         set.spawn_blocking(move || {
                             tfhe::set_server_key(sks.clone());
-                            run_computation(opcode, inputs, child_index.index())
+                            run_computation(opcode, inputs, child_index.index(), is_allowed)
                         });
                     }
                 }
@@ -191,7 +193,7 @@ impl<'a> Scheduler<'a> {
     async fn schedule_coarse_grain(&mut self, strategy: PartitionStrategy) -> Result<()> {
         let sks = self.sks.clone();
         tfhe::set_server_key(sks.clone());
-        let mut set: JoinSet<(Vec<TaskResult>, NodeIndex)> = JoinSet::new();
+        let mut set: JoinSet<(Vec<(usize, TaskResult)>, NodeIndex)> = JoinSet::new();
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         let _ = match strategy {
             PartitionStrategy::MaxLocality => {
@@ -218,7 +220,8 @@ impl<'a> Scheduler<'a> {
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
                     let opcode = n.opcode;
-                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                    let is_allowed = n.is_allowed;
+                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                 }
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(sks.clone());
@@ -270,7 +273,8 @@ impl<'a> Scheduler<'a> {
                             .node_weight_mut(*nidx)
                             .ok_or(SchedulerError::DataflowGraphError)?;
                         let opcode = n.opcode;
-                        args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                        let is_allowed = n.is_allowed;
+                        args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                     }
                     set.spawn_blocking(move || {
                         tfhe::set_server_key(sks.clone());
@@ -307,7 +311,8 @@ impl<'a> Scheduler<'a> {
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
                     let opcode = n.opcode;
-                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                    let is_allowed = n.is_allowed;
+                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                 }
                 comps.push((std::mem::take(&mut args), index));
             }
@@ -335,7 +340,7 @@ impl<'a> Scheduler<'a> {
     #[cfg(feature = "gpu")]
     async fn schedule_fine_grain(&mut self) -> Result<()> {
         let now = std::time::SystemTime::now();
-        let mut set: JoinSet<TaskResult> = JoinSet::new();
+        let mut set: JoinSet<(usize, TaskResult)> = JoinSet::new();
         let keys = self.csks.clone();
         let mut rr = 0;
         // Prime the scheduler with all nodes without dependences
@@ -351,6 +356,7 @@ impl<'a> Scheduler<'a> {
                 rr += 1;
                 tfhe::set_server_key(key.clone());
                 let opcode = node.opcode;
+                let is_allowed = node.is_allowed;
                 let inputs: Vec<SupportedFheCiphertexts> = node
                     .inputs
                     .iter()
@@ -364,7 +370,7 @@ impl<'a> Scheduler<'a> {
                     .collect::<Result<Vec<_>>>()?;
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(key);
-                    run_computation(opcode, inputs, idx)
+                    run_computation(opcode, inputs, idx, is_allowed)
                 });
             }
         }
@@ -396,6 +402,7 @@ impl<'a> Scheduler<'a> {
                         let key = keys[loc].clone();
                         tfhe::set_server_key(key.clone());
                         let opcode = child_node.opcode;
+                        let is_allowed = child_node.is_allowed;
                         let inputs: Vec<SupportedFheCiphertexts> = child_node
                             .inputs
                             .iter()
@@ -409,7 +416,7 @@ impl<'a> Scheduler<'a> {
                             .collect::<Result<Vec<_>>>()?;
                         set.spawn_blocking(move || {
                             tfhe::set_server_key(key);
-                            run_computation(opcode, inputs, child_index.index())
+                            run_computation(opcode, inputs, child_index.index(), is_allowed)
                         });
                     }
                 }
@@ -429,7 +436,7 @@ impl<'a> Scheduler<'a> {
     async fn schedule_coarse_grain(&mut self, strategy: PartitionStrategy) -> Result<()> {
         let keys = self.csks.clone();
         tfhe::set_server_key(keys[0].clone());
-        let mut set: JoinSet<(Vec<TaskResult>, NodeIndex)> = JoinSet::new();
+        let mut set: JoinSet<(Vec<(usize, TaskResult)>, NodeIndex)> = JoinSet::new();
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         let _ = match strategy {
             PartitionStrategy::MaxLocality => {
@@ -460,7 +467,8 @@ impl<'a> Scheduler<'a> {
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
                     let opcode = n.opcode;
-                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                    let is_allowed = n.is_allowed;
+                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                 }
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(key);
@@ -521,7 +529,8 @@ impl<'a> Scheduler<'a> {
                             .node_weight_mut(*nidx)
                             .ok_or(SchedulerError::DataflowGraphError)?;
                         let opcode = n.opcode;
-                        args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                        let is_allowed = n.is_allowed;
+                        args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                     }
                     set.spawn_blocking(move || {
                         tfhe::set_server_key(key);
@@ -559,7 +568,8 @@ impl<'a> Scheduler<'a> {
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
                     let opcode = n.opcode;
-                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                    let is_allowed = n.is_allowed;
+                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                 }
                 comps.push((std::mem::take(&mut args), index));
             }
@@ -731,15 +741,14 @@ fn partition_components(
     Ok(())
 }
 
-type TaskResult = (usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>);
+type TaskResult = Result<(SupportedFheCiphertexts, Option<(i16, Vec<u8>)>)>;
 
 fn execute_partition(
-    computations: Vec<(i32, Vec<DFGTaskInput>, NodeIndex)>,
+    computations: Vec<(i32, Vec<DFGTaskInput>, NodeIndex, bool)>,
     task_id: NodeIndex,
-) -> (Vec<TaskResult>, NodeIndex) {
-    let mut res: HashMap<usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>> =
-        HashMap::with_capacity(computations.len());
-    'comps: for (opcode, inputs, nidx) in computations {
+) -> (Vec<(usize, TaskResult)>, NodeIndex) {
+    let mut res: HashMap<usize, TaskResult> = HashMap::with_capacity(computations.len());
+    'comps: for (opcode, inputs, nidx, is_allowed) in computations {
         let mut cts = Vec::with_capacity(inputs.len());
         for i in inputs.iter() {
             match i {
@@ -770,7 +779,7 @@ fn execute_partition(
                 }
             }
         }
-        let (node_index, result) = run_computation(opcode, cts, nidx.index());
+        let (node_index, result) = run_computation(opcode, cts, nidx.index(), is_allowed);
         res.insert(node_index, result);
     }
     (Vec::from_iter(res), task_id)
@@ -780,17 +789,25 @@ fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
     graph_node_index: usize,
-) -> TaskResult {
+    is_allowed: bool,
+) -> (usize, TaskResult) {
     let op = FheOperation::try_from(operation);
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
             let (ct_type, ct_bytes) = inputs[0].compress();
-            (graph_node_index, Ok((inputs[0].clone(), ct_type, ct_bytes)))
+            (
+                graph_node_index,
+                Ok((inputs[0].clone(), Some((ct_type, ct_bytes)))),
+            )
         }
         Ok(_) => match perform_fhe_operation(operation as i16, &inputs) {
             Ok(result) => {
-                let (ct_type, ct_bytes) = result.compress();
-                (graph_node_index, Ok((result, ct_type, ct_bytes)))
+                if is_allowed {
+                    let (ct_type, ct_bytes) = result.compress();
+                    (graph_node_index, Ok((result, Some((ct_type, ct_bytes)))))
+                } else {
+                    (graph_node_index, Ok((result, None)))
+                }
             }
             Err(e) => (graph_node_index, Err(e.into())),
         },
