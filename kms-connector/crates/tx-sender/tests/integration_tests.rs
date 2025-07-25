@@ -174,6 +174,7 @@ async fn start_test_tx_sender(
         test_instance.decryption_contract().clone(),
         10,
         Duration::from_millis(100),
+        130,
     );
     let tx_sender = TransactionSender::new(response_picker, tx_sender_inner, response_remover);
 

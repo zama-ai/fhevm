@@ -95,9 +95,16 @@ impl DbKmsResponsePicker {
     async fn pick_public_decryption_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
         sqlx::query(
             "
-                SELECT decryption_id, decrypted_result, signature
-                FROM public_decryption_responses
-                LIMIT $1
+                UPDATE public_decryption_responses
+                SET under_process = TRUE
+                FROM (
+                    SELECT decryption_id
+                    FROM public_decryption_responses
+                    WHERE under_process = FALSE
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE public_decryption_responses.decryption_id = resp.decryption_id
+                RETURNING resp.decryption_id, decrypted_result, signature
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -111,9 +118,16 @@ impl DbKmsResponsePicker {
     async fn pick_user_decryption_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
         sqlx::query(
             "
-                SELECT decryption_id, user_decrypted_shares, signature
-                FROM user_decryption_responses
-                LIMIT $1
+                UPDATE user_decryption_responses
+                SET under_process = TRUE
+                FROM (
+                    SELECT decryption_id
+                    FROM user_decryption_responses
+                    WHERE under_process = FALSE
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE user_decryption_responses.decryption_id = resp.decryption_id
+                RETURNING resp.decryption_id, user_decrypted_shares, signature
             ",
         )
         .bind(self.responses_batch_size as i16)
