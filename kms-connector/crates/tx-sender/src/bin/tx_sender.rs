@@ -2,7 +2,7 @@ use tx_sender::core::{Config, TransactionSender};
 
 use connector_utils::{
     cli::{Cli, Subcommands},
-    otlp::init_otlp_setup,
+    monitoring::{otlp::init_otlp_setup, server::start_monitoring_server},
     signal::install_signal_handlers,
 };
 use std::process::ExitCode;
@@ -34,14 +34,12 @@ async fn run() -> anyhow::Result<()> {
 
             let cancel_token = CancellationToken::new();
             install_signal_handlers(cancel_token.clone())?;
-            init_otlp_setup(
-                config.service_name.clone(),
-                config.metrics_endpoint,
-                cancel_token.clone(),
-            )?;
+            init_otlp_setup(config.service_name.clone())?;
+            let monitoring_endpoint = config.monitoring_endpoint;
 
             info!("Starting TransactionSender with config: {:?}", config);
-            let tx_sender = TransactionSender::from_config(config).await?;
+            let (tx_sender, state) = TransactionSender::from_config(config).await?;
+            start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
             tx_sender.start(cancel_token).await;
         }
     }

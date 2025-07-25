@@ -2,7 +2,7 @@ use kms_worker::core::{Config, KmsWorker};
 
 use connector_utils::{
     cli::{Cli, Subcommands},
-    otlp::init_otlp_setup,
+    monitoring::{otlp::init_otlp_setup, server::start_monitoring_server},
     signal::install_signal_handlers,
 };
 use std::process::ExitCode;
@@ -34,14 +34,12 @@ async fn run() -> anyhow::Result<()> {
 
             let cancel_token = CancellationToken::new();
             install_signal_handlers(cancel_token.clone())?;
-            init_otlp_setup(
-                config.service_name.clone(),
-                config.metrics_endpoint,
-                cancel_token.clone(),
-            )?;
+            init_otlp_setup(config.service_name.clone())?;
+            let monitoring_endpoint = config.monitoring_endpoint;
 
             info!("Starting KmsWorker with config: {:?}", config);
-            let kms_worker = KmsWorker::from_config(config).await?;
+            let (kms_worker, state) = KmsWorker::from_config(config).await?;
+            start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
             kms_worker.start(cancel_token).await;
         }
     }

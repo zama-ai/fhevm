@@ -97,34 +97,34 @@ impl KmsConnector {
         info!("Setting up KMS Connector sub-components...");
         let mut gw_listener_conf = gw_listener::core::Config {
             database_url: test_instance.db_url().to_string(),
-            gateway_url: test_instance.anvil().ws_endpoint(),
+            gateway_url: test_instance.anvil_ws_endpoint(),
             chain_id: *CHAIN_ID as u64,
             ..Default::default()
         };
         gw_listener_conf.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
         gw_listener_conf.kms_management_contract.address = KMS_MANAGEMENT_MOCK_ADDRESS;
-        let gw_listener = GatewayListener::from_config(gw_listener_conf).await?;
+        let (gw_listener, _) = GatewayListener::from_config(gw_listener_conf).await?;
 
         let mut kms_worker_conf = kms_worker::core::Config {
             database_url: test_instance.db_url().to_string(),
             kms_core_endpoint: test_instance.kms_url().to_string(),
-            gateway_url: test_instance.anvil().ws_endpoint(),
+            gateway_url: test_instance.anvil_ws_endpoint(),
             chain_id: *CHAIN_ID as u64,
             ..Default::default()
         };
         kms_worker_conf.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
         kms_worker_conf.gateway_config_contract.address = GATEWAY_CONFIG_MOCK_ADDRESS;
-        let kms_worker = KmsWorker::from_config(kms_worker_conf).await?;
+        let (kms_worker, _) = KmsWorker::from_config(kms_worker_conf).await?;
 
         let mut tx_sender_conf = tx_sender::core::Config::default().await;
         tx_sender_conf.database_url = test_instance.db_url().to_string();
-        tx_sender_conf.gateway_url = test_instance.anvil().ws_endpoint();
+        tx_sender_conf.gateway_url = test_instance.anvil_ws_endpoint();
         tx_sender_conf.chain_id = *CHAIN_ID as u64;
         tx_sender_conf.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
         tx_sender_conf.kms_management_contract.address = KMS_MANAGEMENT_MOCK_ADDRESS;
         tx_sender_conf.wallet =
             KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?;
-        let tx_sender = TransactionSender::from_config(tx_sender_conf).await?;
+        let (tx_sender, _) = TransactionSender::from_config(tx_sender_conf).await?;
         info!("KMS Connector sub-components successfully setup!");
 
         Ok(Self {

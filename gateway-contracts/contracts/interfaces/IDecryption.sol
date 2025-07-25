@@ -164,6 +164,12 @@ interface IDecryption {
     error DecryptionNotDone(uint256 decryptionId);
 
     /**
+     * @notice Error indicating that the (public, user, delegated user) decryption is not requested yet.
+     * @param decryptionId The decryption request ID.
+     */
+    error DecryptionNotRequested(uint256 decryptionId);
+
+    /**
      * @notice Requests a public decryption.
      * @param ctHandles The handles of the ciphertexts to decrypt.
      */

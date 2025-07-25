@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "coprocessor",
-    "executor",
     "fhevm-engine-common",
     "fhevm-listener",
     "gw-listener",

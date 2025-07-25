@@ -1,9 +1,11 @@
+use super::{Config, EventPublisher};
 use crate::{
     core::DbEventPublisher,
-    metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS, EVENT_STORAGE_ERRORS},
+    monitoring::{
+        health::State,
+        metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS, EVENT_STORAGE_ERRORS},
+    },
 };
-
-use super::{Config, EventPublisher};
 use alloy::{contract::Event, network::Ethereum, providers::Provider, sol_types::SolEvent};
 use connector_utils::{
     conn::{GatewayProvider, connect_to_db, connect_to_gateway},
@@ -32,6 +34,9 @@ where
 
     /// The entity responsible of events publication to some external storage.
     publisher: Publ,
+
+    /// The configuration of the `GatewayListener`.
+    config: Config,
 }
 
 impl<Prov, Publ> GatewayListener<Prov, Publ>
@@ -50,6 +55,7 @@ where
             decryption_contract,
             kms_management_contract,
             publisher,
+            config: config.clone(),
         }
     }
 
@@ -84,11 +90,21 @@ where
     async fn subscribe_to_events<'a, E>(
         &'a self,
         event_name: &str,
-        event_filter: Event<(), &'a Prov, E>,
+        mut event_filter: Event<(), &'a Prov, E>,
     ) where
         E: Into<GatewayEvent> + SolEvent + Send + Sync,
     {
-        info!("Starting {event_name} event subscriptions...");
+        info!(
+            "Starting {} event subscriptions from block {}...",
+            event_name,
+            self.config
+                .from_block_number
+                .map(|b| b.to_string())
+                .unwrap_or_else(|| "latest".into())
+        );
+        if let Some(from_block_number) = self.config.from_block_number {
+            event_filter = event_filter.from_block(from_block_number);
+        }
         let mut events = match event_filter.watch().await {
             Ok(filter) => filter.into_stream(),
             Err(err) => {
@@ -166,12 +182,14 @@ where
 
 impl GatewayListener<GatewayProvider, DbEventPublisher> {
     /// Creates a new `GatewayListener` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<Self> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let publisher = DbEventPublisher::new(db_pool);
+        let publisher = DbEventPublisher::new(db_pool.clone());
 
         let provider = connect_to_gateway(&config.gateway_url).await?;
-        Ok(GatewayListener::new(&config, provider, publisher))
+        let state = State::new(db_pool, provider.clone(), config.healthcheck_timeout);
+        let gw_listener = GatewayListener::new(&config, provider, publisher);
+        Ok((gw_listener, state))
     }
 }
 

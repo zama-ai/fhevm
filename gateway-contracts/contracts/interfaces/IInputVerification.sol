@@ -65,6 +65,12 @@ interface IInputVerification {
     error ProofNotRejected(uint256 zkProofId);
 
     /**
+     * @notice Error indicating that the ZK Proof is not requested yet.
+     * @param zkProofId The zkProof request ID.
+     */
+    error VerifyProofNotRequested(uint256 zkProofId);
+
+    /**
      * @notice Requests the verification of a ZK Proof.
      * @param contractChainId The ID of the blockchain the contract belongs to.
      * @param contractAddress The address of the dapp the input is used for.
