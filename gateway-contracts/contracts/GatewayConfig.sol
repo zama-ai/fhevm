@@ -301,6 +301,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
     }
 
+    function checkIsGatewayConfigOwner(address sender) external view virtual {
+        if (sender != owner()) {
+            revert OwnableUnauthorizedAccount(sender);
+        }
+    }
+
     /// @dev See {IGatewayConfig-getPauser}.
     function getPauser() external view virtual returns (address) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
@@ -417,6 +423,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
                     Strings.toString(PATCH_VERSION)
                 )
             );
+    }
+
+    function getOwner() external view virtual returns (address) {
+        return owner();
     }
 
     /**

@@ -43,11 +43,10 @@ task("task:setContractAddress")
         encoding: "utf8",
         flag: "a",
       });
+      console.log(`${name} address ${address} written successfully!`);
     } catch (err) {
       console.error(`Failed to write ${name} address:`, err);
     }
-
-    console.log(`${name} address ${address} written successfully!`);
   });
 
 // Deploy all the EmptyUUPS proxy contracts

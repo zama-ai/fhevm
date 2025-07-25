@@ -70,7 +70,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     website: getRequiredEnvVar("PROTOCOL_WEBSITE"),
   };
 
-  // Parse the pauser address
+  // Parse the pauser smart account address
   const pauserAddress = getRequiredEnvVar(`PAUSER_ADDRESS`);
 
   // Parse the MPC threshold

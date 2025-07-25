@@ -4,6 +4,7 @@ import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
 import "@typechain/hardhat";
 import dotenv from "dotenv";
+import "hardhat-dependency-compiler";
 import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task, types } from "hardhat/config";
 import { resolve } from "path";
@@ -15,8 +16,10 @@ import "./tasks/blockExplorerVerify";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
+import "./tasks/deployment/smart_accounts";
 import "./tasks/getters";
 import "./tasks/upgradeContracts";
+import { getRequiredEnvVar } from "./tasks/utils/loadVariables";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
@@ -52,10 +55,24 @@ task("compile:specific", "Compiles only the specified contract")
     await hre.run("compile");
   });
 
+task("coverage", "Runs the Solidity Coverage suite").setAction(async (_, hre, runSuper) => {
+  const pauserAddress = getRequiredEnvVar("SOLIDITY_COVERAGE_PAUSER_ADDRESS");
+  process.env.PAUSER_ADDRESS = pauserAddress;
+
+  await runSuper();
+});
+
 task("test", "Runs the test suite, optionally skipping setup tasks")
   .addOptionalParam("skipSetup", "Set to true to skip setup tasks", false, types.boolean)
   .setAction(async ({ skipSetup }, hre, runSuper) => {
     if (!skipSetup) {
+      // Deploy Smart Accounts with the deployer account as the owner
+      const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+      const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+
+      await hre.run("task:deployOwnerSmartAccount", { owners: [deployer.address], threshold: 1 });
+      await hre.run("task:deployPauserSmartAccount", { owners: [deployer.address], threshold: 1 });
+
       await hre.run("task:deployAllGatewayContracts");
       // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
       // for local testing
@@ -158,6 +175,12 @@ const config: HardhatUserConfig = {
       evmVersion: "cancun",
       viaIR: false,
     },
+  },
+  dependencyCompiler: {
+    paths: [
+      "@safe-global/safe-contracts/contracts/proxies/SafeProxyFactory.sol",
+      "@safe-global/safe-contracts/contracts/Safe.sol",
+    ],
   },
   warnings: {
     // Turn off all warnings for mocked contracts

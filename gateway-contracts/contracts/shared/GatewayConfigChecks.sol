@@ -36,4 +36,9 @@ abstract contract GatewayConfigChecks {
         _GATEWAY_CONFIG.checkHostChainIsRegistered(HandleOps.extractChainId(handle));
         _;
     }
+
+    modifier onlyGatewayConfigOwner() {
+        _GATEWAY_CONFIG.checkIsGatewayConfigOwner(msg.sender);
+        _;
+    }
 }
