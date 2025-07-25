@@ -3,31 +3,13 @@ use alloy::{
     hex,
     primitives::{Bytes, U256, Uint},
 };
+use anyhow::anyhow;
 use kms_grpc::kms::v1::TypedPlaintext;
 use tfhe::FheTypes;
 use tracing::error;
 
-/// Gets the string representation of a FHE type.
-pub fn fhe_type_to_string(fhe_type: i32) -> &'static str {
-    match fhe_type {
-        t if t == FheTypes::Bool as i32 => "EBOOL",
-        t if t == FheTypes::Uint4 as i32 => "EUINT4",
-        t if t == FheTypes::Uint8 as i32 => "EUINT8",
-        t if t == FheTypes::Uint16 as i32 => "EUINT16",
-        t if t == FheTypes::Uint32 as i32 => "EUINT32",
-        t if t == FheTypes::Uint64 as i32 => "EUINT64",
-        t if t == FheTypes::Uint128 as i32 => "EUINT128",
-        t if t == FheTypes::Uint160 as i32 => "EUINT160",
-        t if t == FheTypes::Uint256 as i32 => "EUINT256",
-        t if t == FheTypes::Uint512 as i32 => "EUINT512",
-        t if t == FheTypes::Uint1024 as i32 => "EUINT1024",
-        t if t == FheTypes::Uint2048 as i32 => "EUINT2048",
-        _ => "UNKNOWN",
-    }
-}
-
 /// Extracts the FHE type from handle bytes.
-pub fn extract_fhe_type_from_handle(bytes: &[u8]) -> i32 {
+pub fn extract_fhe_type_from_handle(bytes: &[u8]) -> anyhow::Result<FheTypes> {
     // Format: keccak256(keccak256(bundleCiphertext)+index)[0:29] + index + type + version
     // - Last byte (31): Version (currently 0)
     // - Second-to-last byte (30): FHE Type
@@ -35,30 +17,12 @@ pub fn extract_fhe_type_from_handle(bytes: &[u8]) -> i32 {
     // - Rest (0-28): Hash data
     if bytes.len() >= 32 {
         let type_byte = bytes[30]; // FHE type is at index 30
-
-        if type_byte >= 12 {
-            error!("Unknown FHE type byte: {}, must be less than 12", type_byte);
-            return FheTypes::Bool as i32;
-        }
-
-        match type_byte {
-            0 => FheTypes::Bool as i32,
-            1 => FheTypes::Uint4 as i32,
-            2 => FheTypes::Uint8 as i32,
-            3 => FheTypes::Uint16 as i32,
-            4 => FheTypes::Uint32 as i32,
-            5 => FheTypes::Uint64 as i32,
-            6 => FheTypes::Uint128 as i32,
-            7 => FheTypes::Uint160 as i32,
-            8 => FheTypes::Uint256 as i32,
-            9 => FheTypes::Uint512 as i32,
-            10 => FheTypes::Uint1024 as i32,
-            11 => FheTypes::Uint2048 as i32,
-            _ => unreachable!(), // We checked type_byte < 12 above
-        }
+        FheTypes::try_from(type_byte as i32).map_err(anyhow::Error::from)
     } else {
-        error!("Handle too short: {} bytes, expected 32 bytes", bytes.len());
-        FheTypes::Bool as i32
+        Err(anyhow!(
+            "Handle too short: {} bytes, expected 32 bytes",
+            bytes.len()
+        ))
     }
 }
 

@@ -57,7 +57,7 @@ impl S3Instance {
             mc anonymous set public myminio/kms-public &&
             mc anonymous set public myminio/ct64 &&
             mc anonymous set public myminio/ct128 &&
-            mc put /data/{S3_CT} myminio/ct128",
+            mc cp /data/{S3_CT} --attr Ct-Format=uncompressed_on_cpu myminio/ct128/{S3_CT}",
             self.url
         );
 
