@@ -103,7 +103,7 @@ impl PublicDecryptRequestCacheStore {
             // Leader: do not wait, caller should send request and later call persist_value
             debug!("Cache miss on {key}, leader elected, caller should send request");
             cache_operation(CacheType::PublicDecrypt, CacheOperation::Miss);
-            return Ok(None);
+            Ok(None)
         } else {
             // Follower: wait for notification
             notify.notified().await;

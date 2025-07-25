@@ -36,8 +36,8 @@ use alloy::primitives::Address;
 use alloy::signers::Signer;
 use clap::Parser;
 use fhevm_relayer::store::{
-    BlockNumberStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore, UserDecryptRequestCacheStore,
-    UserDecryptResponseCacheStore,
+    BlockNumberStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore,
+    UserDecryptRequestCacheStore, UserDecryptResponseCacheStore,
 };
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -288,11 +288,16 @@ async fn main() -> eyre::Result<()> {
                 Arc::clone(&fhevm_event_log_handler),
             );
 
+            let public_decrypt_caches =
+                fhevm_relayer::blockchain::gateway::public_decrypt_handler::PublicDecryptCaches {
+                    responses: public_decrypt_responses_cache,
+                    requests: public_decrypt_requests_cache,
+                };
+
             let public_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
                 Arc::new(PublicDecryptGatewayHandler::new(
                     Arc::clone(&orchestrator),
-                    public_decrypt_responses_cache,
-                    public_decrypt_requests_cache,
+                    public_decrypt_caches,
                     tx_service_gateway.clone(),
                     tx_config.clone(),
                     settings.contracts.clone(),

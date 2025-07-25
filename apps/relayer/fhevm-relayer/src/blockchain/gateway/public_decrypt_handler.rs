@@ -32,6 +32,12 @@ use tokio::task;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+#[derive(Clone)]
+pub struct PublicDecryptCaches {
+    pub responses: Arc<PublicDecryptResponseCacheStore>,
+    pub requests: Arc<PublicDecryptRequestCacheStore>,
+}
+
 struct PublicDecryptionRequestProcessor {
     handler: Arc<GatewayHandler>,
 }
@@ -51,8 +57,7 @@ impl ReceiptProcessor for PublicDecryptionRequestProcessor {
 #[derive(Clone)]
 pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-    public_decryption_responses_cache: Arc<PublicDecryptResponseCacheStore>,
-    public_decryption_requests_cache: Arc<PublicDecryptRequestCacheStore>,
+    caches: PublicDecryptCaches,
     public_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
@@ -63,8 +68,7 @@ pub struct GatewayHandler {
 impl GatewayHandler {
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
-        public_decryption_responses_cache: Arc<PublicDecryptResponseCacheStore>,
-        public_decryption_requests_cache: Arc<PublicDecryptRequestCacheStore>,
+        caches: PublicDecryptCaches,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
@@ -73,8 +77,7 @@ impl GatewayHandler {
     ) -> Self {
         Self {
             dispatcher,
-            public_decryption_responses_cache,
-            public_decryption_requests_cache,
+            caches,
             tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
             public_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
@@ -91,11 +94,7 @@ impl GatewayHandler {
         api_version: &ApiVersion,
     ) -> bool {
         // Uses deduplication logic: get_value will block if another request is in-flight and return once the original request is sent and updated in cache.
-        match self
-            .public_decryption_requests_cache
-            .get_value(decrypt_request)
-            .await
-        {
+        match self.caches.requests.get_value(decrypt_request).await {
             Ok(None) => {
                 // First request for this payload. Nothing to do with regards to cache.
                 return false;
@@ -105,11 +104,7 @@ impl GatewayHandler {
                 // Look for response and use if found.
                 // If not, queue decryption_id. Response will be routed once available.
                 if let Some(decryption_id) = optional_decryption_id {
-                    match self
-                        .public_decryption_responses_cache
-                        .get_value(decryption_id)
-                        .await
-                    {
+                    match self.caches.responses.get_value(decryption_id).await {
                         Ok(optional_decryption_response) => {
                             if let Some(decryption_response) = optional_decryption_response {
                                 let next_event_data = RelayerEventData::PublicDecrypt(
@@ -339,7 +334,8 @@ impl GatewayHandler {
 
         // Cache the request -> decryption_id mapping for future requests and notify waiters
         if let Err(e) = self
-            .public_decryption_requests_cache
+            .caches
+            .requests
             .persist_value(&decrypt_request, decryption_public_id)
             .await
         {
@@ -425,7 +421,8 @@ impl GatewayHandler {
 
                             // Store response in cache for future requests
                             if let Err(e) = self
-                                .public_decryption_responses_cache
+                                .caches
+                                .responses
                                 .persist_value(public_decryption_id, decrypt_response.clone())
                                 .await
                             {
@@ -601,7 +598,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 // Check cache first to see if we can skip transaction making
                 if self
                     .public_decrypt_cache_check(
-                        &decrypt_request,
+                        decrypt_request,
                         &event.request_id,
                         &event.api_version,
                     )
@@ -611,7 +608,7 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
                 }
 
                 // Clone the decrypt_request to avoid borrowing issues
-                self.send_public_decryption_request_to_gateway(event.clone(), &decrypt_request)
+                self.send_public_decryption_request_to_gateway(event.clone(), decrypt_request)
                     .await;
             }
             RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
