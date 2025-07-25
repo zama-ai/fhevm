@@ -22,7 +22,7 @@ use tracing::info;
 async fn test_publish_public_decryption() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
-    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
+    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
     info!("Mocking PublicDecryptionRequest on Anvil...");
@@ -64,7 +64,7 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
 async fn test_publish_user_decryption() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
-    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
+    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
     info!("Mocking UserDecryptionRequest on Anvil...");
@@ -121,7 +121,7 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
 async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
-    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
+    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
     info!("Mocking PreprocessKeygenRequest on Anvil...");
@@ -161,7 +161,7 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
 async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
-    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
+    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
     info!("Mocking PreprocessKskgenRequest on Anvil...");
@@ -201,7 +201,7 @@ async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
 async fn test_publish_keygen() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
-    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
+    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
     info!("Mocking KeygenRequest on Anvil...");
@@ -240,7 +240,7 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
 async fn test_publish_kskgen() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
-    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
+    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
     info!("Mocking KskgenRequest on Anvil...");
@@ -287,7 +287,7 @@ async fn test_publish_kskgen() -> anyhow::Result<()> {
 async fn test_publish_crsgen() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
-    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone());
+    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
     tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
 
     info!("Mocking CrsgenRequest on Anvil...");
@@ -320,15 +320,104 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
     Ok(gw_listener_task?.await?)
 }
 
+#[tokio::test]
+async fn test_catchup() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let cancel_token = CancellationToken::new();
+
+    info!("Mocking PublicDecryptionRequest on Anvil...");
+    let pending_tx1 = test_instance
+        .decryption_contract()
+        .publicDecryptionRequest(vec![])
+        .send()
+        .await?;
+    let receipt1 = pending_tx1.get_receipt().await?;
+    let tx1 = test_instance
+        .provider()
+        .get_transaction_by_hash(receipt1.transaction_hash)
+        .await?
+        .unwrap();
+    info!(
+        "Tx1 successfully sent in block {}!",
+        tx1.block_number.unwrap()
+    );
+
+    let pending_tx2 = test_instance
+        .decryption_contract()
+        .publicDecryptionRequest(vec![])
+        .send()
+        .await?;
+    let receipt2 = pending_tx2.get_receipt().await?;
+    let tx2 = test_instance
+        .provider()
+        .get_transaction_by_hash(receipt2.transaction_hash)
+        .await?
+        .unwrap();
+    info!(
+        "Tx2 successfully sent in block {}!",
+        tx2.block_number.unwrap()
+    );
+
+    // Ensure that the two transactions are in different blocks.
+    assert_ne!(tx1.block_number, tx2.block_number);
+
+    // Start the listener after the transactions are sent.
+    let gw_listener_task = start_test_listener(
+        &test_instance,
+        cancel_token.clone(),
+        Some(tx1.block_number.unwrap()),
+    );
+
+    loop {
+        info!("Checking event is stored in DB...");
+        let row =
+            sqlx::query("SELECT decryption_id, sns_ct_materials FROM public_decryption_requests")
+                .fetch_all(test_instance.db())
+                .await?;
+
+        if row.len() < 2 {
+            info!("Not all events found yet, retrying...");
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            continue;
+        }
+
+        let decryption_id1 = U256::from_le_bytes(row[0].try_get::<[u8; 32], _>("decryption_id")?);
+        let sns_ct_materials =
+            row[0].try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
+        assert_eq!(decryption_id1, U256::from(1));
+        assert_eq!(
+            sns_ct_materials,
+            vec![SnsCiphertextMaterialDbItem::default()]
+        );
+
+        let decryption_id2 = U256::from_le_bytes(row[1].try_get::<[u8; 32], _>("decryption_id")?);
+        let sns_ct_materials =
+            row[1].try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
+        assert_eq!(decryption_id2, U256::from(2));
+        assert_eq!(
+            sns_ct_materials,
+            vec![SnsCiphertextMaterialDbItem::default()]
+        );
+        break;
+    }
+
+    info!("Event successfully stored! Stopping GatewayListener...");
+
+    cancel_token.cancel();
+    Ok(gw_listener_task?.await?)
+}
+
 fn start_test_listener(
     test_instance: &TestInstance,
     cancel_token: CancellationToken,
+    from_block_number: Option<u64>,
 ) -> anyhow::Result<JoinHandle<()>> {
     let publisher = DbEventPublisher::new(test_instance.db().clone());
 
     let mut config = Config::default();
     config.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
     config.kms_management_contract.address = KMS_MANAGEMENT_MOCK_ADDRESS;
+    config.from_block_number = from_block_number;
     let gw_listener = GatewayListener::new(&config, test_instance.provider().clone(), publisher);
 
     Ok(tokio::spawn(gw_listener.start(cancel_token)))

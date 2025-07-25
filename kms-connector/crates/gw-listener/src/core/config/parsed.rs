@@ -28,6 +28,8 @@ pub struct Config {
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
     pub healthcheck_timeout: Duration,
+    /// Optional block number to start processing from.
+    pub from_block_number: Option<u64>,
 }
 
 impl Config {
@@ -73,6 +75,7 @@ impl Config {
             service_name: raw_config.service_name,
             monitoring_endpoint,
             healthcheck_timeout,
+            from_block_number: raw_config.from_block_number,
         })
     }
 }
