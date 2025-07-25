@@ -302,7 +302,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IGatewayConfig-getPauser}.
-    function getPauser() external view virtual returns (address) {
+        /**
+     * @notice Returns the current address allowed to pause the contract.
+    * @return pauser The address of the designated pauser.
+    */
+    function getPauser() external view virtual returns (address pauser) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.pauser;
     }
@@ -312,12 +316,15 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.protocolMetadata;
     }
-
-    /// @dev See {IGatewayConfig-getMpcThreshold}.
-    function getMpcThreshold() external view virtual returns (uint256) {
+        /**
+     * @notice Returns the current MPC threshold set in the protocol.
+     * @return threshold The MPC threshold value.
+     */
+    function getMpcThreshold() external view virtual returns (uint256 threshold) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.mpcThreshold;
     }
+
 
     /// @dev See {IGatewayConfig-getPublicDecryptionThreshold}.
     function getPublicDecryptionThreshold() external view virtual returns (uint256) {
@@ -403,8 +410,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         return $.custodianSignerAddresses;
     }
 
-    /// @dev See {IGatewayConfig-getVersion}.
-    function getVersion() external pure virtual returns (string memory) {
+        /**
+     * @notice Returns the version of the GatewayConfig contract.
+     * @return version A human-readable semantic version string.
+     */
+    function getVersion() external pure virtual returns (string memory version) {
         return
             string(
                 abi.encodePacked(
@@ -418,6 +428,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
                 )
             );
     }
+
 
     /**
      * @dev Sets the MPC threshold.
