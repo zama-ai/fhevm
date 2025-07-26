@@ -23,7 +23,7 @@ const getCoin = async (address: string) => {
   const containerName = process.env['TEST_CONTAINER_NAME'] || 'zama-dev-fhevm-validator-1';
   const response = await exec(`docker exec -i ${containerName} faucet ${address} | grep height`);
   const res = JSON.parse(response.stdout);
-  if (res.raw_log.match('account sequence mismatch')) await getCoin(address);
+  if (res.raw_log.includes('account sequence mismatch')) await getCoin(address);
 };
 
 const faucet = async (address: string) => {
