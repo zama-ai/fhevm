@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "CREATE DATABASE coprocessor;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "b7d5ed966527dfc500ce529e0249d96c058a06c18a02ed117ad2f4140fbc470f"
+}

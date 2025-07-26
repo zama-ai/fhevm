@@ -1,6 +1,8 @@
 use crate::aws_upload::check_is_ready;
 use crate::keyset::fetch_keyset;
 use crate::squash_noise::SquashNoiseCiphertext;
+use crate::BigCiphertext;
+use crate::Ciphertext128Format;
 use crate::HandleItem;
 use crate::KeySet;
 use crate::UploadJob;
@@ -153,6 +155,7 @@ pub(crate) async fn run_loop(
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
     let tenant_api_key = &conf.tenant_api_key;
+    let enable_compression = conf.enable_compression;
     let conf = &conf.db;
 
     let mut listener = PgListener::connect_with(pool).await?;
@@ -168,7 +171,7 @@ pub(crate) async fn run_loop(
     telemetry::end_span(s);
     t.end();
 
-    info!(target: "worker", "Fetched keyset for tenant");
+    info!(target: "worker", "Fetched keyset for tenant {}", tenant_api_key);
 
     let mut gc_ticker = interval(conf.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
@@ -183,7 +186,7 @@ pub(crate) async fn run_loop(
             *value = SystemTime::now();
         }
 
-        match fetch_and_execute_sns_tasks(pool, tx, &keys, conf).await {
+        match fetch_and_execute_sns_tasks(pool, tx, &keys, conf, enable_compression).await {
             Ok(maybe_remaining) => {
                 if maybe_remaining {
                     if token.is_cancelled() {
@@ -282,6 +285,7 @@ async fn fetch_and_execute_sns_tasks(
     tx: &Sender<UploadJob>,
     keys: &KeySet,
     conf: &DBConfig,
+    enable_compression: bool,
 ) -> Result<bool, ExecutionError> {
     let mut db_txn = match pool.begin().await {
         Ok(txn) => txn,
@@ -302,7 +306,7 @@ async fn fetch_and_execute_sns_tasks(
         let t = telemetry::tracer("batch_execution");
         t.set_attribute("count", tasks.len().to_string());
 
-        process_tasks(&mut tasks, keys, tx)?;
+        process_tasks(&mut tasks, keys, tx, enable_compression)?;
         update_computations_status(trx, &tasks).await?;
 
         let s = t.child_span("batch_store_ciphertext128");
@@ -372,7 +376,7 @@ pub async fn query_sns_tasks(
                 tenant_id,
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
-                ct128_uncompressed: Arc::new(Vec::new()), // to be computed
+                ct128: Arc::new(BigCiphertext::default()), // to be computed
                 otel: telemetry::tracer_with_handle("task", handle),
             })
         })
@@ -396,6 +400,7 @@ fn process_tasks(
     tasks: &mut [HandleItem],
     keys: &KeySet,
     tx: &Sender<UploadJob>,
+    enable_compression: bool,
 ) -> Result<(), ExecutionError> {
     for task in tasks.iter_mut() {
         let ct64_compressed = task.ct64_compressed.as_ref();
@@ -416,24 +421,21 @@ fn process_tasks(
         let mut span = task.otel.child_span("squash_noise");
         telemetry::attribute(&mut span, "ct_type", ct_type);
 
-        match ct.squash_noise_and_serialize() {
-            Ok(squashed_noise_serialized) => {
+        match ct.squash_noise_and_serialize(enable_compression) {
+            Ok(bytes) => {
                 telemetry::end_span(span);
-                info!(target: "sns", { handle }, "Ciphertext converted, length: {}", squashed_noise_serialized.len());
+                info!(target: "sns", { handle }, "Ciphertext converted, length: {}, compressed: {}", bytes.len(), enable_compression);
 
-                // Optional: Decrypt and log for debugging
                 #[cfg(feature = "test_decrypt_128")]
-                {
-                    if let Some(client_key) = &keys.client_key {
-                        let ct = ct
-                            .decrypt_squash_noise(client_key, &squashed_noise_serialized)
-                            .expect("Failed to decrypt");
+                decrypt_big_ct(keys, &bytes, &ct, &task.handle, enable_compression);
 
-                        info!(target: "sns", { handle }, "Decrypted plaintext: {:?}", ct);
-                    }
-                }
+                let format = if enable_compression {
+                    Ciphertext128Format::CompressedOnCpu
+                } else {
+                    Ciphertext128Format::UncompressedOnCpu
+                };
 
-                task.ct128_uncompressed = Arc::new(squashed_noise_serialized);
+                task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
             }
             Err(err) => {
                 telemetry::end_span_with_err(span, err.to_string());
@@ -478,8 +480,8 @@ async fn update_ciphertext128(
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
-        if !task.ct128_uncompressed.is_empty() {
-            let ciphertext128 = &task.ct128_uncompressed;
+        if !task.ct128.is_empty() {
+            let ciphertext128 = task.ct128.bytes();
             let s = task.otel.child_span("ct128_db_insert");
 
             // Insert the ciphertext128 into the database for reliability
@@ -489,7 +491,7 @@ async fn update_ciphertext128(
                     UPDATE ciphertexts
                     SET ciphertext128 = $1
                     WHERE handle = $2;",
-                ciphertext128.as_ref(),
+                ciphertext128,
                 task.handle
             )
             .execute(db_txn.as_mut())
@@ -521,7 +523,7 @@ async fn update_computations_status(
     tasks: &[HandleItem],
 ) -> Result<(), ExecutionError> {
     for task in tasks {
-        if !task.ct128_uncompressed.is_empty() {
+        if !task.ct128.is_empty() {
             sqlx::query!(
                 "
                 UPDATE pbs_computations
@@ -559,4 +561,27 @@ fn decompress_ct(
 
     let result = SupportedFheCiphertexts::decompress(ct_type, compressed_ct)?;
     Ok(result)
+}
+#[cfg(feature = "test_decrypt_128")]
+/// Decrypts a squashed noise ciphertext and returns the decrypted value.
+/// This function is used for testing purposes only.
+fn decrypt_big_ct(
+    keys: &KeySet,
+    squashed_noise_serialized: &[u8],
+    ct: &SupportedFheCiphertexts,
+    handle: &[u8],
+    is_compressed: bool,
+) {
+    {
+        if let Some(client_key) = &keys.client_key {
+            let ct = if is_compressed {
+                ct.decrypt_squash_noise_compressed(client_key, squashed_noise_serialized)
+            } else {
+                ct.decrypt_squash_noise(client_key, squashed_noise_serialized)
+            }
+            .expect("Failed to decrypt");
+
+            info!(target: "sns", "Decrypted plaintext: {:?}, handle: {}", ct, compact_hex(handle));
+        }
+    }
 }

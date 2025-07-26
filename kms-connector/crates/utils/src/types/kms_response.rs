@@ -1,9 +1,6 @@
 use std::fmt::Display;
 
-use crate::types::{
-    GatewayEvent, KmsGrpcResponse,
-    fhe::{abi_encode_plaintexts, fhe_type_to_string},
-};
+use crate::types::{GatewayEvent, KmsGrpcResponse, fhe::abi_encode_plaintexts};
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{PublicDecryptionResponse, UserDecryptionResponse};
@@ -56,9 +53,8 @@ impl KmsResponse {
 
         for pt in &payload.plaintexts {
             debug!(
-                "Public decryption result type: {} for request {}",
-                fhe_type_to_string(pt.fhe_type),
-                decryption_id
+                "Public decryption result type: {:?} for request {}",
+                pt.fhe_type, decryption_id
             );
         }
 
@@ -96,9 +92,8 @@ impl KmsResponse {
 
         for ct in &payload.signcrypted_ciphertexts {
             debug!(
-                "User decryption result type: {} for request {}",
-                fhe_type_to_string(ct.fhe_type),
-                decryption_id
+                "User decryption result type: {:?} for request {}",
+                ct.fhe_type, decryption_id
             );
         }
 
