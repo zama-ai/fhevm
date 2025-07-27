@@ -33,7 +33,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     /// @notice Returned if the handlesList array is empty.
     error HandlesListIsEmpty();
 
-    /// @notice Returned if the the delegatee contract is not already delegatee for sender & delegator addresses.
+    /// @notice Returned if the delegatee contract is not already delegatee for sender & delegator addresses.
     /// @param delegatee delegatee address.
     /// @param contractAddress contract address.
     error NotDelegatedYet(address delegatee, address contractAddress);

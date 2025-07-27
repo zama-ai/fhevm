@@ -1037,7 +1037,7 @@ function generateSolidityACLMethods(fheTypes: AdjustedFheType[]): string {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
      */
     function isPubliclyDecryptable(e${fheType.type.toLowerCase()} value) internal view returns (bool) {
       return Impl.isPubliclyDecryptable(e${fheType.type.toLowerCase()}.unwrap(value));

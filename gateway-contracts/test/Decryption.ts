@@ -708,7 +708,7 @@ describe("Decryption", function () {
     // Define utility values
     const tenDaysInSeconds = 10 * 24 * 60 * 60;
 
-    // Allow access the the handles for the user and the contract
+    // Allow access the handles for the user and the contract
     async function prepareUserDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
       const { decryption, multichainAcl, kmsSigners, coprocessorTxSenders } = fixtureData;

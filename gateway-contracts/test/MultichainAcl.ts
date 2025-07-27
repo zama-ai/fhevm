@@ -198,7 +198,7 @@ describe("MultichainAcl", function () {
     const newDelegated = createRandomAddress();
 
     beforeEach(async function () {
-      // Delegate access to the the account and its contracts
+      // Delegate access to the account and its contracts
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await multichainAcl
           .connect(coprocessorTxSenders[i])

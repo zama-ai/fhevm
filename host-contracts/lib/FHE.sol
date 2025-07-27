@@ -8499,7 +8499,7 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
      */
     function isPubliclyDecryptable(ebool value) internal view returns (bool) {
         return Impl.isPubliclyDecryptable(ebool.unwrap(value));
@@ -8552,7 +8552,7 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
      */
     function isPubliclyDecryptable(euint8 value) internal view returns (bool) {
         return Impl.isPubliclyDecryptable(euint8.unwrap(value));
@@ -8605,7 +8605,7 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
      */
     function isPubliclyDecryptable(euint16 value) internal view returns (bool) {
         return Impl.isPubliclyDecryptable(euint16.unwrap(value));
@@ -8658,7 +8658,7 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
      */
     function isPubliclyDecryptable(euint32 value) internal view returns (bool) {
         return Impl.isPubliclyDecryptable(euint32.unwrap(value));
@@ -8711,7 +8711,7 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
      */
     function isPubliclyDecryptable(euint64 value) internal view returns (bool) {
         return Impl.isPubliclyDecryptable(euint64.unwrap(value));
@@ -8764,7 +8764,7 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
      */
     function isPubliclyDecryptable(euint128 value) internal view returns (bool) {
         return Impl.isPubliclyDecryptable(euint128.unwrap(value));
@@ -8817,7 +8817,7 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
      */
     function isPubliclyDecryptable(eaddress value) internal view returns (bool) {
         return Impl.isPubliclyDecryptable(eaddress.unwrap(value));
@@ -8870,7 +8870,7 @@ library FHE {
     }
 
     /**
-     * @dev Returns whether the the value is publicly decryptable.
+     * @dev Returns whether the value is publicly decryptable.
      */
     function isPubliclyDecryptable(euint256 value) internal view returns (bool) {
         return Impl.isPubliclyDecryptable(euint256.unwrap(value));
