@@ -190,7 +190,7 @@ Options:
       --database-url <DATABASE_URL>
           Postgres database url. If unspecified DATABASE_URL environment variable is used
       --keys-file-path <KEYS_FILE_PATH>
-          KeySet file. If unspecified the the keys are read from the database (not implemented)
+          KeySet file. If unspecified the keys are read from the database (not implemented)
       --service-name <SERVICE_NAME>
           sns-executor service name in OTLP traces (not implemented) [default: sns-executor]
   -h, --help
