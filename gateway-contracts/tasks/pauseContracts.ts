@@ -32,9 +32,6 @@ async function pauseContract(name: string, ethers: HardhatEthersHelpers, useInte
 
   // Get the proxy address
   const proxyAddress = getRequiredEnvVar(addressEnvVarName);
-  if (!proxyAddress) {
-    throw new Error(`Address variable ${addressEnvVarName} not found`);
-  }
 
   // Pause the contract
   const contract = await ethers.getContractAt(name, proxyAddress, pauser);
@@ -66,9 +63,6 @@ async function unpauseContract(name: string, ethers: HardhatEthersHelpers, useIn
 
   // Get the proxy address
   const proxyAddress = getRequiredEnvVar(addressEnvVarName);
-  if (!proxyAddress) {
-    throw new Error(`Address variable ${addressEnvVarName} not found`);
-  }
 
   // Unpause the contract
   const contract = await ethers.getContractAt(name, proxyAddress, deployer);
