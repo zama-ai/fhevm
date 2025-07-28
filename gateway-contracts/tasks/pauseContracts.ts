@@ -9,8 +9,8 @@ import { ADDRESSES_DIR } from "../hardhat.config";
 import { getRequiredEnvVar } from "./utils/loadVariables";
 import { pascalCaseToSnakeCase } from "./utils/stringOps";
 
-// Helper function to pause a contract
-async function pauseContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
+// Helper function to get a Gateway contract and its proxy address
+async function getGatewayContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
   // Get the pauser wallet
   const pauserPrivateKey = getRequiredEnvVar("PAUSER_PRIVATE_KEY");
   const pauser = new Wallet(pauserPrivateKey).connect(ethers.provider);
@@ -33,39 +33,28 @@ async function pauseContract(name: string, ethers: HardhatEthersHelpers, useInte
   // Get the proxy address
   const proxyAddress = getRequiredEnvVar(addressEnvVarName);
 
-  // Pause the contract
   const contract = await ethers.getContractAt(name, proxyAddress, pauser);
+
+  return { contract, proxyAddress };
+}
+
+// Helper function to pause a contract
+async function pauseSingleContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
+  // Get the contract and its address
+  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress);
+
+  // Pause the contract
   await contract.pause();
 
   console.log(`${name} contract successfully paused at address: ${proxyAddress}\n`);
 }
 
 // Helper function to unpause a contract
-async function unpauseContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
-  // Get a deployer wallet (the owner of the contracts)
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
-
-  // Get contract factories
-  if (useInternalAddress) {
-    const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
-
-    if (!fs.existsSync(envFilePath)) {
-      throw new Error(`Environment file not found: ${envFilePath}`);
-    }
-
-    dotenv.config({ path: envFilePath, override: true });
-  }
-
-  // Determine env variable name for the proxy contract address
-  const nameSnakeCase = pascalCaseToSnakeCase(name);
-  const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
-
-  // Get the proxy address
-  const proxyAddress = getRequiredEnvVar(addressEnvVarName);
+async function unpauseSingleContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
+  // Get the contract and its address
+  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress);
 
   // Unpause the contract
-  const contract = await ethers.getContractAt(name, proxyAddress, deployer);
   await contract.unpause();
 
   console.log(`${name} contract successfully unpaused at address: ${proxyAddress}\n`);
@@ -81,7 +70,7 @@ task("task:pauseInputVerification")
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await pauseContract("InputVerification", ethers, useInternalProxyAddress);
+    await pauseSingleContract("InputVerification", ethers, useInternalProxyAddress);
   });
 
 // Pause the Decryption contract
@@ -93,7 +82,7 @@ task("task:pauseDecryption")
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await pauseContract("Decryption", ethers, useInternalProxyAddress);
+    await pauseSingleContract("Decryption", ethers, useInternalProxyAddress);
   });
 
 // Unpausing tasks
@@ -106,7 +95,7 @@ task("task:unpauseInputVerification")
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await unpauseContract("InputVerification", ethers, useInternalProxyAddress);
+    await unpauseSingleContract("InputVerification", ethers, useInternalProxyAddress);
   });
 
 // Unpause the Decryption contract
@@ -118,12 +107,12 @@ task("task:unpauseDecryption")
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, { ethers }) {
-    await unpauseContract("Decryption", ethers, useInternalProxyAddress);
+    await unpauseSingleContract("Decryption", ethers, useInternalProxyAddress);
   });
 
 // Pause all the contracts
-// The following contracts are pausable but don't have pausable functions yet, so we don't need to
-// pause them for now:
+// The following contracts are pausable but don't have pausable functions yet, so they are
+// not paused by the `pauseAllGatewayContracts()` function for now:
 // - CiphertextCommits
 // - MultichainAcl
 // - GatewayConfig
@@ -137,13 +126,17 @@ task("task:pauseAllGatewayContracts")
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
-    console.log("Pause InputVerification contract:");
-    await hre.run("task:pauseInputVerification", { useInternalProxyAddress });
+    console.log("Pause all Gateway contracts:");
 
-    console.log("Pause Decryption contract:");
-    await hre.run("task:pauseDecryption", { useInternalProxyAddress });
+    const name = "GatewayConfig";
 
-    console.log("Contract pause done!");
+    // Get the GatewayConfig contract and its address
+    const { contract, proxyAddress } = await getGatewayContract(name, hre.ethers, useInternalProxyAddress);
+
+    // Pause all the Gateway contracts
+    await contract.pauseAllGatewayContracts();
+
+    console.log(`All Gateway contracts successfully paused through contract ${name} at address: ${proxyAddress}`);
   });
 
 // Unpause all the contracts
@@ -156,11 +149,14 @@ task("task:unpauseAllGatewayContracts")
     types.boolean,
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
-    console.log("Unpause InputVerification contract:");
-    await hre.run("task:unpauseInputVerification", { useInternalProxyAddress });
+    console.log("Unpause all Gateway contracts:");
+    const name = "GatewayConfig";
 
-    console.log("Unpause Decryption contract:");
-    await hre.run("task:unpauseDecryption", { useInternalProxyAddress });
+    // Get the GatewayConfig contract and its address
+    const { contract, proxyAddress } = await getGatewayContract(name, hre.ethers, useInternalProxyAddress);
 
-    console.log("Contract unpause done!");
+    // Unpause all the Gateway contracts
+    await contract.unpauseAllGatewayContracts();
+
+    console.log(`All Gateway contracts successfully unpaused through contract ${name} at address: ${proxyAddress}`);
   });

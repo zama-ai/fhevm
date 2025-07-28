@@ -506,11 +506,23 @@ describe("InputVerification", function () {
       expect(await inputVerification.paused()).to.be.false;
     });
 
-    it("Should revert on pause because sender is not pauser address", async function () {
-      const notPauser = createRandomWallet();
-      await expect(inputVerification.connect(notPauser).pause())
-        .to.be.revertedWithCustomError(inputVerification, "NotPauser")
-        .withArgs(notPauser.address);
+    it("Should revert on pause because sender is not the pauser", async function () {
+      const fakePauser = createRandomWallet();
+
+      await expect(inputVerification.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(inputVerification, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
+    });
+
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await inputVerification.connect(pauser).pause();
+
+      const fakeOwner = createRandomWallet();
+
+      await expect(inputVerification.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(inputVerification, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
     });
   });
 });
