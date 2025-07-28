@@ -13,13 +13,15 @@ interface IInputVerification {
      * @param contractAddress The address of the dapp requiring the ZK Proof verification.
      * @param userAddress The address of the user providing the input.
      * @param ciphertextWithZKProof The combination of the ciphertext (plain text signed with user PK) and the ZK Proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event VerifyProofRequest(
         uint256 indexed zkProofId,
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
-        bytes ciphertextWithZKProof
+        bytes ciphertextWithZKProof,
+        bytes extraData
     );
 
     /**
@@ -76,12 +78,14 @@ interface IInputVerification {
      * @param contractAddress The address of the dapp the input is used for.
      * @param userAddress The address of the user providing the input.
      * @param ciphertextWithZKProof The combination of the ciphertext (plain text signed with user PK) and the ZK Proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function verifyProofRequest(
         uint256 contractChainId,
         address contractAddress,
         address userAddress,
-        bytes calldata ciphertextWithZKProof
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
     ) external;
 
     /**
@@ -89,8 +93,14 @@ interface IInputVerification {
      * @param zkProofId The ID of the requested ZK Proof.
      * @param ctHandles The coprocessor's computed ciphertext handles.
      * @param signature The coprocessor's signature.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function verifyProofResponse(uint256 zkProofId, bytes32[] calldata ctHandles, bytes calldata signature) external;
+    function verifyProofResponse(
+        uint256 zkProofId,
+        bytes32[] calldata ctHandles,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external;
 
     /**
      * @notice Rejects an incorrect ZK Proof verification request.
@@ -99,8 +109,9 @@ interface IInputVerification {
      * easily verify the sender's identity through `msg.sender`.
      *
      * @param zkProofId The ID of the requested ZK Proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function rejectProofResponse(uint256 zkProofId) external;
+    function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external;
 
     /**
      * @notice Checks that a ZK Proof has been verified.
