@@ -37,12 +37,11 @@ impl GatewayEvent {
             .iter()
             .map(SnsCiphertextMaterial::from)
             .collect();
-        let extra_data = row.try_get::<Vec<u8>, _>("extra_data")?.into();
 
         Ok(GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             snsCtMaterials: sns_ct_materials,
-            extraData: extra_data,
+            extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
         }))
     }
 
@@ -53,14 +52,13 @@ impl GatewayEvent {
             .iter()
             .map(SnsCiphertextMaterial::from)
             .collect();
-        let extra_data = row.try_get::<Vec<u8>, _>("extra_data")?.into();
 
         Ok(GatewayEvent::UserDecryption(UserDecryptionRequest {
             decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             snsCtMaterials: sns_ct_materials,
             userAddress: row.try_get::<[u8; 20], _>("user_address")?.into(),
             publicKey: row.try_get::<Vec<u8>, _>("public_key")?.into(),
-            extraData: extra_data,
+            extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
         }))
     }
 

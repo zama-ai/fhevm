@@ -1,5 +1,5 @@
 use alloy::{
-    primitives::{Address, U256},
+    primitives::{Address, Bytes, U256},
     providers::Provider,
 };
 use connector_utils::tests::{
@@ -9,7 +9,7 @@ use connector_utils::tests::{
     },
 };
 use connector_utils::types::db::SnsCiphertextMaterialDbItem;
-use fhevm_gateway_rust_bindings::decryption::IDecryption::RequestValidity;
+use fhevm_gateway_rust_bindings::decryption::IDecryption::{ContractsInfo, RequestValidity};
 use gw_listener::core::{Config, DbEventPublisher, GatewayListener};
 use sqlx::Row;
 use std::time::Duration;
@@ -28,7 +28,7 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
     info!("Mocking PublicDecryptionRequest on Anvil...");
     let pending_tx = test_instance
         .decryption_contract()
-        .publicDecryptionRequest(vec![])
+        .publicDecryptionRequest(vec![], Bytes::new())
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -75,10 +75,10 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
         .userDecryptionRequest(
             vec![],
             RequestValidity::default(),
-            U256::default(),
-            vec![],
+            ContractsInfo::default(),
             rand_user_addr,
             rand_pub_key.clone().into(),
+            vec![].into(),
             vec![].into(),
         )
         .send()
@@ -328,7 +328,7 @@ async fn test_catchup() -> anyhow::Result<()> {
     info!("Mocking PublicDecryptionRequest on Anvil...");
     let pending_tx1 = test_instance
         .decryption_contract()
-        .publicDecryptionRequest(vec![])
+        .publicDecryptionRequest(vec![], Bytes::new())
         .send()
         .await?;
     let receipt1 = pending_tx1.get_receipt().await?;
@@ -344,7 +344,7 @@ async fn test_catchup() -> anyhow::Result<()> {
 
     let pending_tx2 = test_instance
         .decryption_contract()
-        .publicDecryptionRequest(vec![])
+        .publicDecryptionRequest(vec![], Bytes::new())
         .send()
         .await?;
     let receipt2 = pending_tx2.get_receipt().await?;
