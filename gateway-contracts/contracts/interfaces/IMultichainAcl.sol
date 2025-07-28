@@ -92,17 +92,15 @@ interface IMultichainAcl {
     /**
      * @notice Allows access to the ciphertext handle for public decryption.
      * @param ctHandle The ciphertext handle.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function allowPublicDecrypt(bytes32 ctHandle, bytes calldata extraData) external;
+    function allowPublicDecrypt(bytes32 ctHandle) external;
 
     /**
      * @notice Allows an account to access a ciphertext handle.
      * @param ctHandle The handle of the ciphertext.
      * @param accountAddress The address of the account to allow.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function allowAccount(bytes32 ctHandle, address accountAddress, bytes calldata extraData) external;
+    function allowAccount(bytes32 ctHandle, address accountAddress) external;
 
     /**
      * @notice Delegates the access to the delegated and contract addresses.

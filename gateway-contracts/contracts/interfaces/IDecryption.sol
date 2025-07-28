@@ -10,16 +10,6 @@ import "../shared/Structs.sol";
  */
 interface IDecryption {
     /**
-     * @notice A struct that specifies information about the contracts to be used in the decryption.
-     */
-    struct ContractsInfo {
-        /// @notice The chain ID of the contracts to be used in the decryption
-        uint256 chainId;
-        /// @notice The list of contract addresses to be used in the decryption
-        address[] addresses;
-    }
-
-    /**
      * @notice A struct that specifies the validity period of a request, starting at "startTimestamp"
      * and remaining valid for "durationDays".
      */
@@ -37,27 +27,16 @@ interface IDecryption {
      * @notice Emitted when an public decryption request is made.
      * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    event PublicDecryptionRequest(
-        uint256 indexed decryptionId,
-        SnsCiphertextMaterial[] snsCtMaterials,
-        bytes extraData
-    );
+    event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials);
 
     /**
      * @notice Emitted when an public decryption response is made.
      * @param decryptionId The decryption request ID associated with the response.
      * @param decryptedResult The decrypted result.
      * @param signatures The signatures of all the KMS connectors that responded.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    event PublicDecryptionResponse(
-        uint256 indexed decryptionId,
-        bytes decryptedResult,
-        bytes[] signatures,
-        bytes extraData
-    );
+    event PublicDecryptionResponse(uint256 indexed decryptionId, bytes decryptedResult, bytes[] signatures);
 
     /**
      * @notice Emitted when a user decryption request is made.
@@ -65,14 +44,12 @@ interface IDecryption {
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      * @param userAddress The user's address.
      * @param publicKey The user's public key for used reencryption.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         address userAddress,
-        bytes publicKey,
-        bytes extraData
+        bytes publicKey
     );
 
     /**
@@ -80,14 +57,8 @@ interface IDecryption {
      * @param decryptionId The decryption request ID associated with the response.
      * @param userDecryptedShares The list of decryption shares reencrypted with the user's public key.
      * @param signatures The signatures of all the KMS connectors that responded.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    event UserDecryptionResponse(
-        uint256 indexed decryptionId,
-        bytes[] userDecryptedShares,
-        bytes[] signatures,
-        bytes extraData
-    );
+    event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecryptedShares, bytes[] signatures);
 
     /// @notice Error indicating that the input list of handles is empty.
     error EmptyCtHandles();
@@ -201,42 +172,39 @@ interface IDecryption {
     /**
      * @notice Requests a public decryption.
      * @param ctHandles The handles of the ciphertexts to decrypt.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function publicDecryptionRequest(bytes32[] calldata ctHandles, bytes calldata extraData) external;
+    function publicDecryptionRequest(bytes32[] calldata ctHandles) external;
 
     /**
      * @notice Responds to a public decryption request.
      * @param decryptionId The decryption request ID associated with the response.
      * @param decryptedResult The decrypted result.
      * @param signature The signature of the KMS connector that responded.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function publicDecryptionResponse(
         uint256 decryptionId,
         bytes calldata decryptedResult,
-        bytes calldata signature,
-        bytes calldata extraData
+        bytes calldata signature
     ) external;
 
     /**
      * @notice Requests a user decryption.
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
-     * @param contractsInfo The chain ID and contract addresses to be used in the decryption.
+     * @param contractsChainId The chain ID of the given contract addresses figuring in the signed EIP-712 message.
+     * @param contractAddresses The contract addresses figuring in the signed EIP-712 message.
      * @param userAddress The user's address.
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function userDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
         RequestValidity calldata requestValidity,
-        ContractsInfo calldata contractsInfo,
+        uint256 contractsChainId,
+        address[] calldata contractAddresses,
         address userAddress,
         bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
+        bytes calldata signature
     ) external;
 
     /**
@@ -244,19 +212,19 @@ interface IDecryption {
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
      * @param delegationAccounts The user's address and the delegated account address for the user decryption.
-     * @param contractsInfo The chain ID and contract addresses to be used in the decryption.
+     * @param contractsChainId The chain ID of the given contract addresses figuring in the signed EIP-712 message.
+     * @param contractAddresses The contract addresses figuring in the signed EIP-712 message.
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function delegatedUserDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
         RequestValidity calldata requestValidity,
         DelegationAccounts calldata delegationAccounts,
-        ContractsInfo calldata contractsInfo,
+        uint256 contractsChainId,
+        address[] calldata contractAddresses,
         bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
+        bytes calldata signature
     ) external;
 
     /**
@@ -264,32 +232,27 @@ interface IDecryption {
      * @param decryptionId The decryption request ID associated with the response.
      * @param userDecryptedShare The partial decryption share reencrypted with the user's public key.
      * @param signature The signature of the KMS connector that responded.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function userDecryptionResponse(
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
-        bytes calldata signature,
-        bytes calldata extraData
+        bytes calldata signature
     ) external;
 
     /**
      * @notice Checks if handles are ready to be decrypted publicly.
      * @param ctHandles The ciphertext handles.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function checkPublicDecryptionReady(bytes32[] calldata ctHandles, bytes calldata extraData) external view;
+    function checkPublicDecryptionReady(bytes32[] calldata ctHandles) external view;
 
     /**
      * @notice Checks if handles are ready to be decrypted by a user.
      * @param userAddress The user's address.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function checkUserDecryptionReady(
         address userAddress,
-        CtHandleContractPair[] calldata ctHandleContractPairs,
-        bytes calldata extraData
+        CtHandleContractPair[] calldata ctHandleContractPairs
     ) external view;
 
     /**
@@ -298,14 +261,12 @@ interface IDecryption {
      * @param delegationAccounts The delegator and delegated address.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param contractAddresses The contract addresses.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     function checkDelegatedUserDecryptionReady(
         uint256 contractsChainId,
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
-        address[] calldata contractAddresses,
-        bytes calldata extraData
+        address[] calldata contractAddresses
     ) external view;
 
     /**

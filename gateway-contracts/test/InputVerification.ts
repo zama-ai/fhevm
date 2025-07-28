@@ -37,9 +37,6 @@ describe("InputVerification", function () {
   const fakeSigner = createRandomWallet();
   const fakeZkProofId = 2;
 
-  // Define extra data for version 0
-  const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
-
   describe("Deployment", function () {
     let inputVerificationFactory: InputVerification__factory;
     let inputVerification: InputVerification;
@@ -84,23 +81,16 @@ describe("InputVerification", function () {
         contractAddress,
         userAddress,
         ciphertextWithZKProof,
-        extraDataV0,
       );
 
       await expect(txResponse)
         .to.emit(inputVerification, "VerifyProofRequest")
-        .withArgs(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
+        .withArgs(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     });
 
     it("Should revert because the contract's chain ID does not correspond to a registered host chain", async function () {
       await expect(
-        inputVerification.verifyProofRequest(
-          fakeHostChainId,
-          contractAddress,
-          userAddress,
-          ciphertextWithZKProof,
-          extraDataV0,
-        ),
+        inputVerification.verifyProofRequest(fakeHostChainId, contractAddress, userAddress, ciphertextWithZKProof),
       )
         .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
@@ -114,8 +104,8 @@ describe("InputVerification", function () {
       await expect(
         inputVerification
           .connect(owner)
-          .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0),
-      ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
+          .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof),
+      ).to.be.revertedWithCustomError(inputVerification, "EnforcedPause");
     });
   });
 
@@ -149,30 +139,21 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
-        extraDataV0,
       );
 
       // Get the EIP712 signatures
       signatures = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
 
       // The ZK proof ID will always be 1 since we reset the state of the network before each test (using fixtures)
-      await inputVerification.verifyProofRequest(
-        contractChainId,
-        contractAddress,
-        userAddress,
-        ciphertextWithZKProof,
-        extraDataV0,
-      );
+      await inputVerification.verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     });
 
     it("Should verify proof with 2 valid responses", async function () {
       // Trigger two valid proof verification responses
-      await inputVerification
-        .connect(coprocessorTxSenders[0])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0);
+      await inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]);
       let txResponse = await inputVerification
         .connect(coprocessorTxSenders[1])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[1], extraDataV0);
+        .verifyProofResponse(zkProofId, ctHandles, signatures[1]);
 
       // Consensus should be reached at the second response
       // Check 2nd response event: it should only contain 2 valid signatures
@@ -185,13 +166,11 @@ describe("InputVerification", function () {
       // Trigger three valid proof verification responses
       let txResponse1 = await inputVerification
         .connect(coprocessorTxSenders[0])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0);
-      await inputVerification
-        .connect(coprocessorTxSenders[1])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[1], extraDataV0);
+        .verifyProofResponse(zkProofId, ctHandles, signatures[0]);
+      await inputVerification.connect(coprocessorTxSenders[1]).verifyProofResponse(zkProofId, ctHandles, signatures[1]);
       let txResponse3 = inputVerification
         .connect(coprocessorTxSenders[2])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[2], extraDataV0);
+        .verifyProofResponse(zkProofId, ctHandles, signatures[2]);
 
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet
@@ -203,29 +182,25 @@ describe("InputVerification", function () {
     it("Should revert in case of invalid zkProofId in response", async function () {
       // Try calling userDecryptionResponse with null (invalid) id
       await expect(
-        inputVerification
-          .connect(coprocessorTxSenders[0])
-          .verifyProofResponse(0, ctHandles, signatures[0], extraDataV0),
+        inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(0, ctHandles, signatures[0]),
       ).to.be.revertedWithCustomError(inputVerification, "VerifyProofNotRequested");
 
       // Try calling verifyProofResponse with too high (not requested yet) id
       await expect(
-        inputVerification
-          .connect(coprocessorTxSenders[0])
-          .verifyProofResponse(100000, ctHandles, signatures[0], extraDataV0),
+        inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(100000, ctHandles, signatures[0]),
       ).to.be.revertedWithCustomError(inputVerification, "VerifyProofNotRequested");
     });
 
     it("Should verify a proof with 2 valid responses and 1 valid proof rejection response", async function () {
       // Trigger a valid proof rejection with the first coprocessor transaction sender
-      await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);
+      await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId);
 
       // Trigger a first valid proof verification response with:
       // - the second coprocessor transaction sender
       // - the second coprocessor signer's signature
       let txResponse2 = inputVerification
         .connect(coprocessorTxSenders[1])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[1], extraDataV0);
+        .verifyProofResponse(zkProofId, ctHandles, signatures[1]);
 
       // Consensus should not be reached at the second response since the first response is a proof rejection
       // Check 2nd response event: it should not emit an event (either for proof verification or rejection)
@@ -238,7 +213,7 @@ describe("InputVerification", function () {
       // - the third coprocessor signer's signature
       let txResponse3 = inputVerification
         .connect(coprocessorTxSenders[2])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[2], extraDataV0);
+        .verifyProofResponse(zkProofId, ctHandles, signatures[2]);
 
       // Consensus should be reached at the third response
       // Check 3rd response event: it should only contain 2 valid signatures
@@ -257,7 +232,6 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
-        extraDataV0,
       );
 
       // Get the EIP712 signatures
@@ -268,14 +242,14 @@ describe("InputVerification", function () {
       // - a fake signature (unexpected)
       await inputVerification
         .connect(coprocessorTxSenders[0])
-        .verifyProofResponse(zkProofId, newCtHandles, fakeSignature, extraDataV0);
+        .verifyProofResponse(zkProofId, newCtHandles, fakeSignature);
 
       // Trigger a first valid proof verification response with:
       // - the second coprocessor transaction sender
       // - the second coprocessor signer's signature
       let txResponse2 = inputVerification
         .connect(coprocessorTxSenders[1])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[1], extraDataV0);
+        .verifyProofResponse(zkProofId, ctHandles, signatures[1]);
 
       // Consensus should not be reached at the second response since the first response is malicious
       // Check 2nd response event: it should not emit an event for proof verification
@@ -286,7 +260,7 @@ describe("InputVerification", function () {
       // - the third coprocessor signer's signature
       let txResponse3 = inputVerification
         .connect(coprocessorTxSenders[2])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[2], extraDataV0);
+        .verifyProofResponse(zkProofId, ctHandles, signatures[2]);
 
       // Consensus should be reached at the third response
       // Check 3rd response event: it should only contain 2 valid signatures
@@ -299,15 +273,11 @@ describe("InputVerification", function () {
       // Trigger a first proof response with :
       // - the first coprocessor transaction sender
       // - the first coprocessor signer's signature
-      await inputVerification
-        .connect(coprocessorTxSenders[0])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0);
+      await inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]);
 
       // Check that a coprocessor signer cannot sign a second time for the same proof
       await expect(
-        inputVerification
-          .connect(coprocessorTxSenders[0])
-          .verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0),
+        inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]),
       )
         .revertedWithCustomError(inputVerification, "CoprocessorAlreadyVerified")
         .withArgs(zkProofId, coprocessorTxSenders[0].address, coprocessorSigners[0].address);
@@ -317,15 +287,13 @@ describe("InputVerification", function () {
       // Trigger a proof verification response with:
       // - the first coprocessor transaction sender
       // - the first coprocessor signer's signature
-      await inputVerification
-        .connect(coprocessorTxSenders[0])
-        .verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0);
+      await inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]);
 
       // Check that the coprocessor transaction sender representing the above coprocessor signer
       // cannot reject the same proof
       // The address in the error message is the coprocessor signer's address as we are checking
       // the coprocessor signer's address here, not the coprocessor transaction sender's address
-      await expect(inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0))
+      await expect(inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId))
         .revertedWithCustomError(inputVerification, "CoprocessorAlreadyVerified")
         .withArgs(zkProofId, coprocessorTxSenders[0].address, coprocessorSigners[0].address);
     });
@@ -336,18 +304,14 @@ describe("InputVerification", function () {
 
       // Check that triggering a proof response using a signature from a non-coprocessor signer reverts
       await expect(
-        inputVerification
-          .connect(coprocessorTxSenders[0])
-          .verifyProofResponse(zkProofId, ctHandles, fakeSignature, extraDataV0),
+        inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, fakeSignature),
       )
         .revertedWithCustomError(gatewayConfig, "NotCoprocessorSigner")
         .withArgs(fakeSigner.address);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
-      await expect(
-        inputVerification.connect(fakeTxSender).verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0),
-      )
+      await expect(inputVerification.connect(fakeTxSender).verifyProofResponse(zkProofId, ctHandles, signatures[0]))
         .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
@@ -357,7 +321,7 @@ describe("InputVerification", function () {
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await inputVerification
           .connect(coprocessorTxSenders[i])
-          .verifyProofResponse(zkProofId, ctHandles, signatures[i], extraDataV0);
+          .verifyProofResponse(zkProofId, ctHandles, signatures[i]);
       }
 
       await expect(inputVerification.checkProofVerified(zkProofId)).not.to.be.reverted;
@@ -391,19 +355,13 @@ describe("InputVerification", function () {
       inputVerificationAddress = await inputVerification.getAddress();
 
       // The ZK proof ID will always be 1 since we reset the state of the network before each test (using fixtures)
-      await inputVerification.verifyProofRequest(
-        contractChainId,
-        contractAddress,
-        userAddress,
-        ciphertextWithZKProof,
-        extraDataV0,
-      );
+      await inputVerification.verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
     });
 
     it("Should reject a proof with 2 valid responses", async function () {
       // Trigger two valid proof rejection responses using different coprocessor transaction senders
-      await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);
-      let txResponse = inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId, extraDataV0);
+      await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId);
+      let txResponse = inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId);
 
       // Consensus should be reached at the second response
       await expect(txResponse).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
@@ -411,11 +369,9 @@ describe("InputVerification", function () {
 
     it("Should ignore other valid responses", async function () {
       // Trigger three valid proof rejection responses using different coprocessor transaction senders
-      let txResponse1 = await inputVerification
-        .connect(coprocessorTxSenders[0])
-        .rejectProofResponse(zkProofId, extraDataV0);
-      await inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId, extraDataV0);
-      let txResponse3 = inputVerification.connect(coprocessorTxSenders[2]).rejectProofResponse(zkProofId, extraDataV0);
+      let txResponse1 = await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId);
+      await inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId);
+      let txResponse3 = inputVerification.connect(coprocessorTxSenders[2]).rejectProofResponse(zkProofId);
 
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet
@@ -433,7 +389,6 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
-        extraDataV0,
       );
 
       // Get the EIP712 signatures
@@ -442,13 +397,11 @@ describe("InputVerification", function () {
       // Trigger a valid proof verification response with:
       // - the first coprocessor transaction sender
       // - the first coprocessor signer's signature
-      await inputVerification
-        .connect(coprocessorTxSenders[0])
-        .verifyProofResponse(zkProofId, ctHandles, signature1, extraDataV0);
+      await inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signature1);
 
       // Trigger a valid proof rejection response with the second coprocessor transaction sender
       // representing the second coprocessor signer
-      let txResponse2 = inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId, extraDataV0);
+      let txResponse2 = inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId);
 
       // Consensus should not be reached at the second response since the first response is a proof verification
       // Check 2nd response event: it should not emit an event (either for proof verification or rejection)
@@ -458,7 +411,7 @@ describe("InputVerification", function () {
 
       // Trigger a second valid proof rejection response with the third coprocessor transaction sender
       // representing the third coprocessor signer
-      let txResponse3 = inputVerification.connect(coprocessorTxSenders[2]).rejectProofResponse(zkProofId, extraDataV0);
+      let txResponse3 = inputVerification.connect(coprocessorTxSenders[2]).rejectProofResponse(zkProofId);
 
       // Consensus should be reached at the third response
       await expect(txResponse3).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
@@ -469,10 +422,10 @@ describe("InputVerification", function () {
       const coprocessorSigner = coprocessorSigners[0];
 
       // Trigger a first proof response
-      await inputVerification.connect(coprocessorTxSender).rejectProofResponse(zkProofId, extraDataV0);
+      await inputVerification.connect(coprocessorTxSender).rejectProofResponse(zkProofId);
 
       // Check that a coprocessor transaction sender cannot send a second response for the same proof
-      await expect(inputVerification.connect(coprocessorTxSender).rejectProofResponse(zkProofId, extraDataV0))
+      await expect(inputVerification.connect(coprocessorTxSender).rejectProofResponse(zkProofId))
         .revertedWithCustomError(inputVerification, "CoprocessorAlreadyRejected")
         .withArgs(zkProofId, coprocessorTxSender.address, coprocessorSigner.address);
     });
@@ -489,28 +442,23 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
-        extraDataV0,
       );
 
       // Get the EIP712 signatures
       const [signature1] = await getSignaturesZKPoK(eip712Message, coprocessorSigners);
 
       // Trigger a first proof response
-      await inputVerification.connect(coprocessorTxSender).rejectProofResponse(zkProofId, extraDataV0);
+      await inputVerification.connect(coprocessorTxSender).rejectProofResponse(zkProofId);
 
       // Check that a Coprocessor transaction sender cannot send a second response for the same proof
-      await expect(
-        inputVerification
-          .connect(coprocessorTxSender)
-          .verifyProofResponse(zkProofId, ctHandles, signature1, extraDataV0),
-      )
+      await expect(inputVerification.connect(coprocessorTxSender).verifyProofResponse(zkProofId, ctHandles, signature1))
         .revertedWithCustomError(inputVerification, "CoprocessorAlreadyRejected")
         .withArgs(zkProofId, coprocessorTxSender.address, coprocessorSigner.address);
     });
 
     it("Should revert because the sender is not a coprocessor transaction sender", async function () {
       // Check that triggering a proof response with a non-coprocessor transaction sender reverts
-      await expect(inputVerification.connect(fakeTxSender).rejectProofResponse(zkProofId, extraDataV0))
+      await expect(inputVerification.connect(fakeTxSender).rejectProofResponse(zkProofId))
         .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
@@ -518,7 +466,7 @@ describe("InputVerification", function () {
     it("Should check that a proof has been rejected", async function () {
       // Trigger two valid proof verification responses
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await inputVerification.connect(coprocessorTxSenders[i]).rejectProofResponse(zkProofId, extraDataV0);
+        await inputVerification.connect(coprocessorTxSenders[i]).rejectProofResponse(zkProofId);
       }
 
       await expect(inputVerification.checkProofRejected(zkProofId)).to.not.be.reverted;
