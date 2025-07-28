@@ -121,7 +121,7 @@ mod tests {
     use super::*;
     use connector_utils::{
         tests::rand::{rand_signature, rand_u256},
-        types::{GatewayEvent, KmsResponse},
+        types::{GatewayEvent, KmsResponse, UserDecryptionResponse},
     };
     use std::time::Duration;
     use tracing_test::traced_test;
@@ -177,11 +177,12 @@ mod tests {
     impl EventProcessor for MockEventProcessor {
         type Event = GatewayEvent;
         async fn process(&mut self, _event: &Self::Event) -> anyhow::Result<KmsResponse> {
-            Ok(KmsResponse::UserDecryption {
+            Ok(KmsResponse::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
                 signature: rand_signature(),
-            })
+                extra_data: vec![],
+            }))
         }
     }
 
