@@ -62,6 +62,10 @@ services:
       - "8001:8080" 
     networks:
       - console-net
+    volumes:
+      - type: bind
+        target: /usr/share/nginx/html/scripts/env.js
+        source: ${PWD}/apps/front/src/public/scripts/env.compose.js
     depends_on:
       back:
         condition: service_started

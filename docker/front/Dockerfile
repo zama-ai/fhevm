@@ -21,7 +21,6 @@ RUN pnpm --filter=front build
 RUN pnpm deploy --filter=front --prod /prod/front
 RUN cp -r apps/front/dist /prod/front/
 RUN mkdir -p /prod/front/dist/scripts
-COPY ./apps/front/src/public/scripts /prod/front/dist/scripts
 
 # --- Runtime stage ---
 FROM nginx:1.28-alpine3.21 AS runtime

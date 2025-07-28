@@ -34,7 +34,7 @@ RUN --mount=type=ssh \
     <<EOF
 set -e
 # TODO: investigate why sqlite3 is required to build diesel if only postgres is specified
-apt-get update && apt-get install libssl-dev git musl-dev pkg-config libpq-dev libsqlite3-dev -y
+apt-get update && apt-get install libssl-dev git musl-dev pkg-config libpq-dev libsqlite3-dev clang -y
 ls -R && cargo build --locked --release
 cp ./target/release/$APP_NAME /bin/server
 EOF
