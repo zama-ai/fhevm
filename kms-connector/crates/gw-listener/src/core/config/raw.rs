@@ -5,6 +5,7 @@
 use connector_utils::{
     config::{DeserializeRawConfig, RawContractConfig},
     monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
+    tasks::default_task_limit,
 };
 use serde::{Deserialize, Serialize};
 
@@ -20,6 +21,8 @@ pub struct RawConfig {
     pub kms_management_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
+    #[serde(default = "default_task_limit")]
+    pub task_limit: usize,
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: String,
     #[serde(default = "default_healthcheck_timeout_secs")]
@@ -56,6 +59,7 @@ impl Default for RawConfig {
                 domain_version: Some("1".to_string()),
             },
             service_name: default_service_name(),
+            task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
             from_block_number: None,
