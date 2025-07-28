@@ -546,7 +546,7 @@ describe("Decryption", function () {
 
     it("Should revert because the contract is paused", async function () {
       // Pause the contract
-      await decryption.connect(owner).pause();
+      await decryption.connect(pauser).pause();
 
       // Try calling paused public decryption request
       await expect(decryption.publicDecryptionRequest(ctHandles)).to.be.revertedWithCustomError(
@@ -1348,7 +1348,7 @@ describe("Decryption", function () {
 
     it("Should revert because the contract is paused", async function () {
       // Pause the contract
-      await decryption.connect(owner).pause();
+      await decryption.connect(pauser).pause();
 
       // Try calling paused user decryption request
       await expect(
@@ -2060,7 +2060,7 @@ describe("Decryption", function () {
 
     it("Should revert because the contract is paused", async function () {
       // Pause the contract
-      await decryption.connect(owner).pause();
+      await decryption.connect(pauser).pause();
 
       // Try calling paused delegated user decryption request
       await expect(
@@ -2162,12 +2162,12 @@ describe("Decryption", function () {
       pauser = fixtureData.pauser;
     });
 
-    it("Should pause and unpause contract with owner address", async function () {
+    it("Should pause the contract with the pauser and unpause with the owner", async function () {
       // Check that the contract is not paused
       expect(await decryption.paused()).to.be.false;
 
-      // Pause the contract with the owner address
-      await expect(decryption.connect(owner).pause()).to.emit(decryption, "Paused").withArgs(owner);
+      // Pause the contract with the pauser address
+      await expect(decryption.connect(pauser).pause()).to.emit(decryption, "Paused").withArgs(pauser);
       expect(await decryption.paused()).to.be.true;
 
       // Unpause the contract with the owner address
@@ -2175,20 +2175,11 @@ describe("Decryption", function () {
       expect(await decryption.paused()).to.be.false;
     });
 
-    it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
-      expect(await decryption.paused()).to.be.false;
-
-      // Pause the contract with the pauser address
-      await expect(decryption.connect(pauser).pause()).to.emit(decryption, "Paused").withArgs(pauser);
-      expect(await decryption.paused()).to.be.true;
-    });
-
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
-      await expect(decryption.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(decryption, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
+    it("Should revert on pause because sender is not pauser address", async function () {
+      const notPauser = createRandomWallet();
+      await expect(decryption.connect(notPauser).pause())
+        .to.be.revertedWithCustomError(decryption, "NotPauser")
+        .withArgs(notPauser.address);
     });
   });
 });

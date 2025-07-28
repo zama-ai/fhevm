@@ -7,7 +7,7 @@ interface Pausable {
     error ExpectedPause();
     error InvalidInitialization();
     error NotInitializing();
-    error NotOwnerOrPauser(address notOwnerOrPauser);
+    error NotPauser(address notPauser);
     error OwnableInvalidOwner(address owner);
     error OwnableUnauthorizedAccount(address account);
 
@@ -210,10 +210,10 @@ interface Pausable {
   },
   {
     "type": "error",
-    "name": "NotOwnerOrPauser",
+    "name": "NotPauser",
     "inputs": [
       {
-        "name": "notOwnerOrPauser",
+        "name": "notPauser",
         "type": "address",
         "internalType": "address"
       }
@@ -539,15 +539,15 @@ error NotInitializing();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotOwnerOrPauser(address)` and selector `0x46c0d9af`.
+    /**Custom error with signature `NotPauser(address)` and selector `0x206a346e`.
 ```solidity
-error NotOwnerOrPauser(address notOwnerOrPauser);
+error NotPauser(address notPauser);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct NotOwnerOrPauser {
+    pub struct NotPauser {
         #[allow(missing_docs)]
-        pub notOwnerOrPauser: alloy::sol_types::private::Address,
+        pub notPauser: alloy::sol_types::private::Address,
     }
     #[allow(
         non_camel_case_types,
@@ -574,26 +574,26 @@ error NotOwnerOrPauser(address notOwnerOrPauser);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<NotOwnerOrPauser> for UnderlyingRustTuple<'_> {
-            fn from(value: NotOwnerOrPauser) -> Self {
-                (value.notOwnerOrPauser,)
+        impl ::core::convert::From<NotPauser> for UnderlyingRustTuple<'_> {
+            fn from(value: NotPauser) -> Self {
+                (value.notPauser,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotOwnerOrPauser {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotPauser {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { notOwnerOrPauser: tuple.0 }
+                Self { notPauser: tuple.0 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for NotOwnerOrPauser {
+        impl alloy_sol_types::SolError for NotPauser {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotOwnerOrPauser(address)";
-            const SELECTOR: [u8; 4] = [70u8, 192u8, 217u8, 175u8];
+            const SIGNATURE: &'static str = "NotPauser(address)";
+            const SELECTOR: [u8; 4] = [32u8, 106u8, 52u8, 110u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -604,7 +604,7 @@ error NotOwnerOrPauser(address notOwnerOrPauser);
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.notOwnerOrPauser,
+                        &self.notPauser,
                     ),
                 )
             }
@@ -2583,7 +2583,7 @@ function unpause() external;
         #[allow(missing_docs)]
         NotInitializing(NotInitializing),
         #[allow(missing_docs)]
-        NotOwnerOrPauser(NotOwnerOrPauser),
+        NotPauser(NotPauser),
         #[allow(missing_docs)]
         OwnableInvalidOwner(OwnableInvalidOwner),
         #[allow(missing_docs)]
@@ -2600,7 +2600,7 @@ function unpause() external;
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [17u8, 140u8, 218u8, 167u8],
             [30u8, 79u8, 189u8, 247u8],
-            [70u8, 192u8, 217u8, 175u8],
+            [32u8, 106u8, 52u8, 110u8],
             [141u8, 252u8, 32u8, 43u8],
             [215u8, 230u8, 188u8, 248u8],
             [217u8, 60u8, 6u8, 101u8],
@@ -2627,9 +2627,7 @@ function unpause() external;
                 Self::NotInitializing(_) => {
                     <NotInitializing as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::NotOwnerOrPauser(_) => {
-                    <NotOwnerOrPauser as alloy_sol_types::SolError>::SELECTOR
-                }
+                Self::NotPauser(_) => <NotPauser as alloy_sol_types::SolError>::SELECTOR,
                 Self::OwnableInvalidOwner(_) => {
                     <OwnableInvalidOwner as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -2684,17 +2682,17 @@ function unpause() external;
                     OwnableInvalidOwner
                 },
                 {
-                    fn NotOwnerOrPauser(
+                    fn NotPauser(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<PausableErrors> {
-                        <NotOwnerOrPauser as alloy_sol_types::SolError>::abi_decode_raw(
+                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
                                 validate,
                             )
-                            .map(PausableErrors::NotOwnerOrPauser)
+                            .map(PausableErrors::NotPauser)
                     }
-                    NotOwnerOrPauser
+                    NotPauser
                 },
                 {
                     fn ExpectedPause(
@@ -2778,10 +2776,8 @@ function unpause() external;
                         inner,
                     )
                 }
-                Self::NotOwnerOrPauser(inner) => {
-                    <NotOwnerOrPauser as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                Self::NotPauser(inner) => {
+                    <NotPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
                 Self::OwnableInvalidOwner(inner) => {
                     <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_encoded_size(
@@ -2822,11 +2818,8 @@ function unpause() external;
                         out,
                     )
                 }
-                Self::NotOwnerOrPauser(inner) => {
-                    <NotOwnerOrPauser as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                Self::NotPauser(inner) => {
+                    <NotPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::OwnableInvalidOwner(inner) => {
                     <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_encode_raw(
