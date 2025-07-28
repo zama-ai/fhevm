@@ -5,7 +5,7 @@ services:
     image: postgres:15.7
     restart: always
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor-1.local
     ports:
       - '5433:5432'
     healthcheck:
@@ -20,7 +20,7 @@ services:
     container_name: fhevm-1-key-downloader
     image: busybox
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor-1.local
     volumes:
       - keys-cache-1:/keys
     command: >
@@ -43,7 +43,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor-1.local
     environment:
       - KEY_ID=${FHE_KEY_ID}
     command:
@@ -68,7 +68,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor-1.local
     command:
       - fhevm_listener
       - --database-url=${DATABASE_URL}
@@ -98,7 +98,7 @@ services:
       timeout: 5s
       retries: 3
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor-1.local
     command:
       - gw_listener
       - --database-url=${DATABASE_URL}
@@ -125,7 +125,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor-1.local
     command:
       - coprocessor
       - --run-bg-worker
@@ -153,7 +153,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor-1.local
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
@@ -179,7 +179,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor-1.local
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
@@ -217,7 +217,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor.local
+      - ../env/staging/.env.coprocessor-1.local
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}
