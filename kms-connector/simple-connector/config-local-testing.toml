@@ -47,7 +47,11 @@ gateway_config_domain_version = "1"
 
 # Channel buffer size (optimized for local testing)
 # ENV: KMS_CONNECTOR_CHANNEL_SIZE
-channel_size = 2000
+channel_size = 5000
+
+# Maximum concurrent tasks for parallel processing
+# ENV: KMS_CONNECTOR_MAX_CONCURRENT_TASKS
+max_concurrent_tasks = 1000
 
 # Timeout configurations (5 minutes for reliable processing)
 # ENV: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
@@ -58,7 +62,7 @@ user_decryption_timeout_secs = 300
 
 # Connection retry interval (faster recovery)
 # ENV: KMS_CONNECTOR_RETRY_INTERVAL_SECS
-retry_interval_secs = 3
+retry_interval_secs = 1
 
 # Coprocessor verification disabled for local testing
 # ENV: KMS_CONNECTOR_VERIFY_COPROCESSORS
@@ -78,7 +82,7 @@ fixed_send_interval_ms = 0
 
 # Spacing between messages from the same block
 # ENV: KMS_CONNECTOR_MESSAGE_SPACING_MS
-message_spacing_ms = 50
+message_spacing_ms = 5
 
 # Maximum pending events before backpressure
 # ENV: KMS_CONNECTOR_MAX_PENDING_EVENTS
@@ -93,16 +97,12 @@ pending_events_queue_slowdown_threshold = 0.8
 use_polling_mode = true
 
 # Base polling interval when caught up
-# ENV: KMS_CONNECTOR_BASE_POLL_INTERVAL_SECS
-base_poll_interval_secs = 1
-
-# Fast polling interval during catch-up
-# ENV: KMS_CONNECTOR_CATCH_UP_POLL_INTERVAL_MS
-catch_up_poll_interval_ms = 200
+# ENV: KMS_CONNECTOR_BASE_POLL_INTERVAL_MS
+base_poll_interval_ms = 100
 
 # Maximum blocks per batch
 # ENV: KMS_CONNECTOR_MAX_BLOCKS_PER_BATCH
-max_blocks_per_batch = 10
+max_blocks_per_batch = 50
 
 # Blocks behind latest to consider "caught up"
 # ENV: KMS_CONNECTOR_CATCH_UP_THRESHOLD
@@ -120,5 +120,5 @@ catch_up_threshold = 3
 # ENV: KMS_CONNECTOR_S3_CONFIG__REGION, KMS_CONNECTOR_S3_CONFIG__BUCKET, KMS_CONNECTOR_S3_CONFIG__ENDPOINT
 [s3_config]
 region = "eu-west-1"
-bucket = "kms-public"
+bucket = "ct128"
 endpoint = "http://localhost:9000"

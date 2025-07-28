@@ -1,31 +1,54 @@
+use crate::core::backpressure::BackpressureSignal;
+use crate::core::config::Config;
+use crate::core::utils::nonce_manager::SequentialNonceManager;
 use crate::error::{Error, Result};
 use alloy::{
-    network::Ethereum,
-    primitives::{Address, Bytes, U256},
-    providers::{PendingTransactionBuilder, Provider},
-    rpc::types::TransactionRequest,
+    primitives::{Address, Bytes, TxHash, U256},
+    providers::Provider,
+    rpc::types::TransactionReceipt,
 };
 use fhevm_gateway_rust_bindings::decryption::Decryption;
 use std::{sync::Arc, time::Duration};
-use tracing::{debug, info, warn};
+use tokio::sync::broadcast;
+use tracing::{debug, error, info, warn};
 
-/// The time to wait between two transactions attempt.
-const TX_INTERVAL: Duration = Duration::from_millis(100);
-
-/// Adapter for decryption operations
+/// Adapter for decryption operations with sequential nonce management
 #[derive(Clone)]
 pub struct DecryptionAdapter<P> {
     decryption_address: Address,
     provider: Arc<P>,
+    nonce_manager: Arc<SequentialNonceManager<P>>,
 }
 
-impl<P: Provider + Clone> DecryptionAdapter<P> {
-    /// Create a new decryption adapter
-    pub fn new(decryption_address: Address, provider: Arc<P>) -> Self {
-        Self {
+impl<P: Provider + Clone + Send + Sync + 'static> DecryptionAdapter<P> {
+    /// Create a new decryption adapter with sequential nonce management and backpressure signaling
+    pub fn new(
+        decryption_address: Address,
+        provider: Arc<P>,
+        config: &Config,
+    ) -> (Self, broadcast::Receiver<BackpressureSignal>) {
+        // Create backpressure channel for queue monitoring using configured channel size
+        let (backpressure_tx, backpressure_rx) = broadcast::channel(config.channel_size);
+
+        // Use backpressure-enabled nonce manager with config
+        let nonce_manager = Arc::new(SequentialNonceManager::new_with_backpressure(
+            provider.clone(),
+            backpressure_tx,
+            Arc::new(config.clone()),
+        ));
+
+        info!(
+            "DecryptionAdapter initialized with backpressure-enabled nonce manager (channel_size: {})",
+            config.channel_size
+        );
+
+        let adapter = Self {
             decryption_address,
-            provider,
-        }
+            provider: provider.clone(),
+            nonce_manager,
+        };
+
+        (adapter, backpressure_rx)
     }
 
     /// Get the provider
@@ -42,7 +65,7 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
     ) -> Result<()> {
         if signature.len() != 65 {
             return Err(Error::Contract(format!(
-                "Invalid EIP-712 signature length: {}, expected 65 bytes",
+                "PublicDecryptionResponse-{id}: Invalid EIP-712 signature length: {}, expected 65 bytes",
                 signature.len()
             )));
         }
@@ -52,31 +75,122 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             "Using Core's EIP-712 signature for PublicDecryptionResponse-{id}"
         );
 
+        // Build and send transaction (non-blocking with spawned task)
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
+        let call_builder =
+            contract.publicDecryptionResponse(id, result.clone(), signature.clone().into());
+        let call = call_builder.into_transaction_request();
 
-        let call_builder = contract.publicDecryptionResponse(id, result, signature.into());
-        debug!(
-            "PublicDecryptionResponse-{id} calldata length {}",
-            call_builder.calldata().len()
-        );
+        // Spawn non-blocking transaction sending and retry logic
+        let nonce_manager = self.nonce_manager.clone();
+        let provider = self.provider.clone();
+        let decryption_address = self.decryption_address;
+        let response_id = format!("PublicDecryptionResponse-{id}");
 
-        let mut call = call_builder.into_transaction_request();
-        self.estimate_gas(id, &mut call).await;
-        let tx = self.send_tx_with_retry(call).await?;
-
-        // TODO: optimize for low latency
-        let receipt = tx
-            .get_receipt()
-            .await
-            .map_err(|e| Error::Contract(e.to_string()))?;
         info!(
-            "[TRX SUCCESS] PublicDecryptionResponse-{id} sent with trx receipt: {}",
-            receipt.transaction_hash
+            "[TRX INIT] {}: Starting transaction processing",
+            response_id
         );
-        info!(
-            "[GAS] consumed by PublicDecryptionResponse-{id}: {}",
-            receipt.gas_used
-        );
+
+        tokio::spawn(async move {
+            // Gas estimation + 30% boost handled centrally by nonce manager
+            let original_gas_limit = None; // Will be set by nonce manager
+            // Send initial transaction
+            match nonce_manager
+                .send_transaction_queued(call, Some(response_id.clone()))
+                .await
+            {
+                Ok(tx_hash) => {
+                    info!(
+                        "[TRX SENT] {}: Transaction sent successfully - hash: {}",
+                        response_id, tx_hash
+                    );
+
+                    // Analyze receipt and handle retries
+                    match analyze_receipt_with_retry_logic(
+                        provider.clone(),
+                        tx_hash,
+                        id,
+                        original_gas_limit,
+                    )
+                    .await
+                    {
+                        ReceiptAnalysisResult::Success => {
+                            info!(
+                                "[TRX SUCCESS] {}: Transaction confirmed successfully - hash: {}",
+                                response_id, tx_hash
+                            );
+                        }
+                        ReceiptAnalysisResult::NonRetryableFailure { reason, .. } => {
+                            warn!(
+                                "[TRX FAILED] {}: Non-retryable failure - hash: {}, reason: {}",
+                                response_id, tx_hash, reason
+                            );
+                        }
+                        retry_result => {
+                            // Handle retry with fresh gas estimation (30% boost applied automatically)
+                            let retry_reason = match retry_result {
+                                ReceiptAnalysisResult::OutOfGas {
+                                    gas_used,
+                                    gas_limit,
+                                    ..
+                                } => {
+                                    warn!(
+                                        "[TRX RETRY] {}: Out of gas - hash: {}, gas_used: {}, gas_limit: {} ({:.1}%) - preparing retry",
+                                        response_id,
+                                        tx_hash,
+                                        gas_used,
+                                        gas_limit,
+                                        (gas_used as f64 / gas_limit as f64) * 100.0
+                                    );
+                                    "out-of-gas"
+                                }
+                                ReceiptAnalysisResult::ImmediateRetry { reason } => {
+                                    warn!(
+                                        "[TRX RETRY] {}: Immediate retry needed - hash: {}, reason: {} - preparing retry",
+                                        response_id, tx_hash, reason
+                                    );
+                                    "immediate retry"
+                                }
+                                _ => return, // Non-retryable or success cases
+                            };
+
+                            // Rebuild transaction (gas estimation + 30% boost handled by nonce manager)
+                            let contract = Decryption::new(decryption_address, provider.clone());
+                            let retry_call = contract
+                                .publicDecryptionResponse(
+                                    id,
+                                    result.clone(),
+                                    signature.clone().into(),
+                                )
+                                .into_transaction_request();
+                            // Note: No gas set - nonce manager will estimate fresh + apply 30% boost
+
+                            // Send retry (gas estimation + 30% boost applied automatically by nonce manager)
+                            let retry_id = format!("{response_id}-retry");
+                            info!("[TRX RETRY] {}: Submitting retry transaction", retry_id);
+
+                            if let Err(e) = nonce_manager
+                                .send_transaction_queued(retry_call, Some(retry_id.clone()))
+                                .await
+                            {
+                                error!(
+                                    "[TRX RETRY] {}: Failed to submit retry after {}: {}",
+                                    retry_id, retry_reason, e
+                                );
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "[TRX FAILED] {}: Failed to send initial transaction: {}",
+                        response_id, e
+                    );
+                }
+            }
+        });
+
         Ok(())
     }
 
@@ -99,74 +213,264 @@ impl<P: Provider + Clone> DecryptionAdapter<P> {
             "Using Core's EIP-712 signature for UserDecryptionResponse-{id}"
         );
 
+        // Build transaction request
         let contract = Decryption::new(self.decryption_address, self.provider.clone());
+        let call_builder =
+            contract.userDecryptionResponse(id, result.clone(), signature.clone().into());
+        let call = call_builder.into_transaction_request();
 
-        // Create and send transaction
-        let call_builder = contract.userDecryptionResponse(id, result, signature.into());
-        debug!(
-            "UserDecryptionResponse-{id} calldata length {}",
-            call_builder.calldata().len()
-        );
+        // Spawn non-blocking transaction sending and retry logic
+        let nonce_manager = self.nonce_manager.clone();
+        let provider = self.provider.clone();
+        let decryption_address = self.decryption_address;
+        let response_id = format!("UserDecryptionResponse-{id}");
 
-        let mut call = call_builder.into_transaction_request();
-        self.estimate_gas(id, &mut call).await;
-        let tx = self.send_tx_with_retry(call).await?;
-
-        // TODO: optimize for low latency
-        let receipt = tx
-            .get_receipt()
-            .await
-            .map_err(|e| Error::Contract(e.to_string()))?;
         info!(
-            "[TRX SUCCESS] UserDecryptionResponse-{id} sent with trx hash: {}",
-            receipt.transaction_hash
+            "[TRX INIT] {}: Starting transaction processing",
+            response_id
         );
-        info!(
-            "[GAS] consumed by UserDecryptionResponse-{id}: {}",
-            receipt.gas_used
-        );
+
+        tokio::spawn(async move {
+            // Gas estimation + 30% boost handled centrally by nonce manager
+            let original_gas_limit = None; // Will be set by nonce manager
+            // Send initial transaction
+            match nonce_manager
+                .send_transaction_queued(call, Some(response_id.clone()))
+                .await
+            {
+                Ok(tx_hash) => {
+                    info!(
+                        "[TRX SENT] {}: Transaction sent successfully - hash: {}",
+                        response_id, tx_hash
+                    );
+
+                    // Analyze receipt and handle retries
+                    match analyze_receipt_with_retry_logic(
+                        provider.clone(),
+                        tx_hash,
+                        id,
+                        original_gas_limit,
+                    )
+                    .await
+                    {
+                        ReceiptAnalysisResult::Success => {
+                            info!(
+                                "[TRX SUCCESS] {}: Transaction confirmed successfully - hash: {}",
+                                response_id, tx_hash
+                            );
+                        }
+                        ReceiptAnalysisResult::NonRetryableFailure { reason, .. } => {
+                            warn!(
+                                "[TRX FAILED] {}: Non-retryable failure - hash: {}, reason: {}",
+                                response_id, tx_hash, reason
+                            );
+                        }
+                        retry_result => {
+                            // Handle retry with fresh gas estimation (30% boost applied automatically)
+                            let retry_reason = match retry_result {
+                                ReceiptAnalysisResult::OutOfGas {
+                                    gas_used,
+                                    gas_limit,
+                                    ..
+                                } => {
+                                    warn!(
+                                        "[TRX RETRY] {}: Out of gas - hash: {}, gas_used: {}, gas_limit: {} ({:.1}%) - preparing retry",
+                                        response_id,
+                                        tx_hash,
+                                        gas_used,
+                                        gas_limit,
+                                        (gas_used as f64 / gas_limit as f64) * 100.0
+                                    );
+                                    "out-of-gas"
+                                }
+                                ReceiptAnalysisResult::ImmediateRetry { reason } => {
+                                    warn!(
+                                        "[TRX RETRY] {}: Immediate retry needed - hash: {}, reason: {} - preparing retry",
+                                        response_id, tx_hash, reason
+                                    );
+                                    "immediate retry"
+                                }
+                                _ => return, // Non-retryable or success cases
+                            };
+
+                            // Rebuild transaction (gas estimation + 30% boost handled by nonce manager)
+                            let contract = Decryption::new(decryption_address, provider.clone());
+                            let retry_call = contract
+                                .userDecryptionResponse(
+                                    id,
+                                    result.clone(),
+                                    signature.clone().into(),
+                                )
+                                .into_transaction_request();
+                            // Note: No gas set - nonce manager will estimate fresh + apply 30% boost
+
+                            // Send retry (gas estimation + 30% boost applied automatically by nonce manager)
+                            let retry_id = format!("{response_id}-retry");
+                            info!("[TRX RETRY] {}: Submitting retry transaction", retry_id);
+
+                            if let Err(e) = nonce_manager
+                                .send_transaction_queued(retry_call, Some(retry_id.clone()))
+                                .await
+                            {
+                                error!(
+                                    "[TRX RETRY] {}: Failed to submit retry after {}: {}",
+                                    retry_id, retry_reason, e
+                                );
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "[TRX FAILED] {}: Failed to send initial transaction: {}",
+                        response_id, e
+                    );
+                }
+            }
+        });
+
         Ok(())
     }
+}
 
-    /// Estimates the `gas_limit` for the upcoming transaction.
-    async fn estimate_gas(&self, id: U256, call: &mut TransactionRequest) {
-        let gas_estimation = match self.provider.estimate_gas(call.clone()).await {
-            Ok(estimation) => estimation,
-            Err(e) => return warn!(decryption_id = ?id, "Failed to estimate gas for the tx: {e}"),
-        };
-        info!(decryption_id = ?id, "Initial gas estimation for the tx: {gas_estimation}");
+/// Result of receipt analysis for retry decision making
+#[derive(Debug, Clone)]
+enum ReceiptAnalysisResult {
+    /// Transaction succeeded
+    Success,
+    /// Transaction failed due to out of gas
+    OutOfGas {
+        #[allow(dead_code)]
+        receipt: TransactionReceipt,
+        gas_used: u64,
+        gas_limit: u64,
+    },
+    /// Transaction failed for non-retryable reasons
+    NonRetryableFailure {
+        #[allow(dead_code)]
+        receipt: TransactionReceipt,
+        reason: String,
+    },
+    /// Receipt polling error or timeout - should trigger immediate transaction retry
+    ImmediateRetry { reason: String },
+}
 
-        // Increase estimation to 300%
-        // TODO: temporary workaround for out-of-gas errors
-        // Our automatic estimation fails during gas pikes.
-        // (see https://zama-ai.slack.com/archives/C0915Q59CKG/p1749843623276629?thread_ts=1749828466.079719&cid=C0915Q59CKG)
-        let new_gas_value = gas_estimation.saturating_mul(3);
+/// Enhanced receipt analysis with retry decision logic
+async fn analyze_receipt_with_retry_logic<P: Provider + Clone + Send + Sync + 'static>(
+    provider: P,
+    tx_hash: TxHash,
+    id: U256,
+    original_gas_limit: Option<u64>,
+) -> ReceiptAnalysisResult {
+    const MAX_RETRIES: u32 = 15; // Increased for better receipt detection
+    const INITIAL_DELAY_MS: u64 = 200; // Start with 200ms
+    const MAX_DELAY_MS: u64 = 1600; // Cap at 1.6 seconds
+    const OUT_OF_GAS_THRESHOLD: f64 = 0.98; // 98% gas usage indicates likely out-of-gas
 
-        info!(decryption_id = ?id, "Updating `gas_limit` to {new_gas_value}");
-        call.gas = Some(new_gas_value);
-    }
-
-    /// Sends the requested transactions with one retry.
-    async fn send_tx_with_retry(
-        &self,
-        call: TransactionRequest,
-    ) -> Result<PendingTransactionBuilder<Ethereum>> {
-        match self.provider.send_transaction(call.clone()).await {
-            Ok(tx) => Ok(tx),
-            Err(e) => {
-                warn!(
-                    "Retrying to send transaction in {}s after failure: {}",
-                    TX_INTERVAL.as_secs(),
-                    e
+    for attempt in 1..=MAX_RETRIES {
+        match provider.get_transaction_receipt(tx_hash).await {
+            Ok(Some(receipt)) => {
+                info!(
+                    "Transaction receipt found for {}: {} (attempt {})",
+                    id, tx_hash, attempt
                 );
 
-                tokio::time::sleep(TX_INTERVAL).await;
+                // Extract gas usage for reporting
+                let gas_used = Into::<u64>::into(receipt.gas_used);
+                let gas_limit = original_gas_limit.unwrap_or(0);
+                let gas_percentage = if gas_limit > 0 {
+                    (gas_used as f64 / gas_limit as f64) * 100.0
+                } else {
+                    0.0
+                };
 
-                self.provider
-                    .send_transaction(call)
-                    .await
-                    .map_err(|e| Error::Contract(e.to_string()))
+                // Check if transaction succeeded
+                if receipt.status() {
+                    info!(
+                        "DecryptionResponse-{} SUCCESS: gas_used={} gas_limit={} ({:.1}%) tx_hash={} block={:?} tx_index={:?}",
+                        id,
+                        gas_used,
+                        gas_limit,
+                        gas_percentage,
+                        tx_hash,
+                        receipt.block_number,
+                        receipt.transaction_index
+                    );
+                    return ReceiptAnalysisResult::Success;
+                }
+
+                // Transaction failed - analyze the failure reason
+                // (gas_used already extracted above for reporting)
+
+                // Use the original gas limit if provided for out-of-gas detection
+                if let Some(gas_limit) = original_gas_limit {
+                    // Check for out-of-gas condition using the provided gas limit
+                    if gas_used as f64 >= (gas_limit as f64 * OUT_OF_GAS_THRESHOLD) {
+                        warn!(
+                            "DecryptionResponse-{} OUT-OF-GAS: used {} / {} gas ({:.1}%) tx_hash={} block={:?}",
+                            id,
+                            gas_used,
+                            gas_limit,
+                            (gas_used as f64 / gas_limit as f64) * 100.0,
+                            receipt.transaction_hash,
+                            receipt.block_number
+                        );
+                        return ReceiptAnalysisResult::OutOfGas {
+                            receipt,
+                            gas_used,
+                            gas_limit,
+                        };
+                    }
+                } else {
+                    debug!(
+                        "Cannot determine out-of-gas for {} (gas used: {}) - original gas limit not provided",
+                        id, gas_used
+                    );
+                }
+
+                // Other execution failure (or indeterminate)
+                warn!(
+                    "DecryptionResponse-{} FAILED: gas_used={} gas_limit={} ({:.1}%) tx_hash={} block={:?} reason=execution_failed",
+                    id, gas_used, gas_limit, gas_percentage, tx_hash, receipt.block_number
+                );
+                return ReceiptAnalysisResult::NonRetryableFailure {
+                    receipt,
+                    reason: "Transaction execution failed".to_string(),
+                };
+            }
+            Ok(None) => {
+                if attempt < MAX_RETRIES {
+                    // Exponential backoff: 200ms → 400ms → 800ms → 1600ms (capped)
+                    let delay_ms =
+                        std::cmp::min(INITIAL_DELAY_MS * (1 << (attempt - 1)), MAX_DELAY_MS);
+                    debug!(
+                        "Transaction receipt not yet available for {}: {} (attempt {}), retrying in {}ms...",
+                        id, tx_hash, attempt, delay_ms
+                    );
+                    tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                    continue;
+                } else {
+                    warn!(
+                        "Transaction receipt timeout for {}: {} after {} attempts - may be stuck in mempool",
+                        id, tx_hash, MAX_RETRIES
+                    );
+                    return ReceiptAnalysisResult::ImmediateRetry {
+                        reason: format!("Receipt timeout after {MAX_RETRIES} attempts"),
+                    };
+                }
+            }
+            Err(e) => {
+                // Immediate retry strategy: Any receipt polling error triggers immediate transaction retry
+                warn!(
+                    "Receipt polling error for {}: {} - triggering immediate retry",
+                    tx_hash, e
+                );
+                return ReceiptAnalysisResult::ImmediateRetry {
+                    reason: format!("Receipt polling error: {e}"),
+                };
             }
         }
     }
+
+    unreachable!()
 }

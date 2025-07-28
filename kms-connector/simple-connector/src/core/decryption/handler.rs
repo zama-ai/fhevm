@@ -48,6 +48,16 @@ impl<P: Provider + Clone + 'static> DecryptionHandler<P> {
         }
     }
 
+    /// Get the gateway config address from the config
+    pub fn gateway_config_address(&self) -> Address {
+        self.config.gateway_config_address
+    }
+
+    /// Get the provider from the decryption adapter
+    pub fn provider(&self) -> Arc<P> {
+        self.decryption.provider().clone()
+    }
+
     /// Handle a decryption request (both public and user)
     pub async fn handle_decryption_request_response(
         &self,

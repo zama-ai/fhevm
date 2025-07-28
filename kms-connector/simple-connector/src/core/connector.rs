@@ -35,8 +35,17 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
         // Create broadcast channel for shutdown signaling to polling system
         let (shutdown_tx, _) = broadcast::channel(1);
 
-        // Possible gas limit
-        let decryption = DecryptionAdapter::new(config.decryption_address, provider.clone());
+        // Create decryption adapter with config for proper channel sizing
+        let (decryption, backpressure_rx) =
+            DecryptionAdapter::new(config.decryption_address, provider.clone(), &config);
+
+        // Clone backpressure receiver for both EventProcessor and BlockPoller (only needed in polling mode)
+        let (backpressure_rx_for_event_processor, backpressure_rx_for_poller) =
+            if config.use_polling_mode {
+                (Some(backpressure_rx.resubscribe()), Some(backpressure_rx))
+            } else {
+                (None, None)
+            };
 
         let decryption_handler =
             DecryptionHandler::new(decryption.clone(), kms_client.clone(), config.clone());
@@ -46,6 +55,7 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
             config.clone(),
             provider.clone(),
             shutdown.resubscribe(),
+            backpressure_rx_for_event_processor,
         )
         .await?;
 
@@ -53,15 +63,12 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
         let (events, poller) = if config.use_polling_mode {
             info!("Using polling mode for blockchain events");
 
-            // Get backpressure receiver from event processor for polling integration
-            let backpressure_rx = event_processor.get_backpressure_receiver();
-
             let poller = BlockPoller::new(
                 Arc::clone(&provider),
                 Arc::new(config.clone()),
                 event_tx,
                 shutdown_tx.clone(),
-                backpressure_rx,
+                backpressure_rx_for_poller,
             );
             (None, Some(poller))
         } else {

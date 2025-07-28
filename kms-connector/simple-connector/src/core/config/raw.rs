@@ -60,17 +60,13 @@ pub struct RawConfig {
     pub aws_kms_config: Option<AwsKmsConfig>,
     #[serde(default = "default_verify_coprocessors")]
     pub verify_coprocessors: Option<bool>,
-    // Coordination parameters
-    #[serde(default = "default_enable_coordinated_sending")]
-    pub enable_coordinated_sending: bool,
-    #[serde(default = "default_message_send_delta_ms")]
-    pub message_send_delta_ms: u64,
-    #[serde(default = "default_message_spacing_ms")]
-    pub message_spacing_ms: u64,
+    // Backpressure parameters
     #[serde(default = "default_pending_events_max")]
     pub pending_events_max: usize,
     #[serde(default = "default_pending_events_queue_slowdown_threshold")]
     pub pending_events_queue_slowdown_threshold: f32,
+    #[serde(default = "default_max_parallel_transactions")]
+    pub max_parallel_transactions: usize,
     #[serde(default = "default_max_retries")]
     pub max_retries: u32,
     #[serde(default = "default_starting_block_number")]
@@ -80,10 +76,12 @@ pub struct RawConfig {
     // Polling parameters
     #[serde(default = "default_use_polling_mode")]
     pub use_polling_mode: bool,
-    #[serde(default = "default_base_poll_interval_secs")]
-    pub base_poll_interval_secs: u64,
+    #[serde(default = "default_base_poll_interval_ms")]
+    pub base_poll_interval_ms: u64,
     #[serde(default = "default_max_blocks_per_batch")]
     pub max_blocks_per_batch: u64,
+    #[serde(default = "default_gas_boost_percent")]
+    pub gas_boost_percent: u32,
 }
 
 fn default_service_name() -> String {
@@ -91,7 +89,7 @@ fn default_service_name() -> String {
 }
 
 fn default_channel_size() -> usize {
-    1000
+    5000
 }
 
 fn default_public_decryption_timeout() -> u64 {
@@ -103,31 +101,23 @@ fn default_user_decryption_timeout() -> u64 {
 }
 
 fn default_retry_interval() -> u64 {
-    3 // 3 seconds
+    1 // 1 second
 }
 
 fn default_verify_coprocessors() -> Option<bool> {
     Some(false)
 }
 
-fn default_enable_coordinated_sending() -> bool {
-    true
-}
-
-fn default_message_send_delta_ms() -> u64 {
-    1000 // 1000ms delay after block time
-}
-
-fn default_message_spacing_ms() -> u64 {
-    25 // 25ms between messages
-}
-
 fn default_pending_events_max() -> usize {
-    10000 // Maximum 10k pending messages
+    50000 // Maximum pending events before backpressure
 }
 
 fn default_pending_events_queue_slowdown_threshold() -> f32 {
     0.8 // Slow down at 80% capacity
+}
+
+fn default_max_parallel_transactions() -> usize {
+    500
 }
 
 fn default_max_retries() -> u32 {
@@ -139,19 +129,23 @@ fn default_starting_block_number() -> Option<u64> {
 }
 
 fn default_max_concurrent_tasks() -> usize {
-    100 // Maximum 100 concurrent tasks
+    2000
 }
 
 fn default_use_polling_mode() -> bool {
     true // Use WebSocket by default
 }
 
-fn default_base_poll_interval_secs() -> u64 {
-    1 // Poll every 1 second
+fn default_base_poll_interval_ms() -> u64 {
+    100 // Poll every 100 ms
 }
 
 fn default_max_blocks_per_batch() -> u64 {
-    10 // Process 10 blocks per batch
+    25
+}
+
+fn default_gas_boost_percent() -> u32 {
+    30 // 30% gas boost by default
 }
 
 impl RawConfig {
@@ -171,7 +165,11 @@ impl RawConfig {
 
         // Add environment variables last so they take precedence
         info!("Adding environment variables with prefix KMS_CONNECTOR_");
-        builder = builder.add_source(Environment::with_prefix("KMS_CONNECTOR"));
+        builder = builder.add_source(
+            Environment::with_prefix("KMS_CONNECTOR")
+                .prefix_separator("_")
+                .separator("__"),
+        );
 
         let settings = builder
             .build()

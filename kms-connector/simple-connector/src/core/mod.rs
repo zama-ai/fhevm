@@ -1,7 +1,7 @@
+pub mod backpressure;
 pub mod cli;
 pub mod config;
 pub mod connector;
-pub mod coordination;
 pub mod decryption;
 pub mod event_processor;
 pub mod polling;
