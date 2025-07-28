@@ -301,10 +301,16 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
     }
 
+    /// @dev See {IGatewayConfig-checkIsGatewayConfigOwner}.
     function checkIsGatewayConfigOwner(address sender) external view virtual {
         if (sender != owner()) {
             revert NotGatewayConfigOwner(sender);
         }
+    }
+
+    /// @dev See {IGatewayConfig-getOwner}.
+    function getOwner() external view virtual returns (address) {
+        return owner();
     }
 
     /// @dev See {IGatewayConfig-getPauser}.

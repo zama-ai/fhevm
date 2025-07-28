@@ -138,11 +138,7 @@ task("task:transferOwnershipToOwnerSmartAccount")
     const gatewayConfigSnakeCase = pascalCaseToSnakeCase("GatewayConfig");
     const gatewayConfigAddressEnvVarName = `${gatewayConfigSnakeCase.toUpperCase()}_ADDRESS`;
     const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
-    const gatewayConfigContract = await ethers.getContractAt(
-      "Ownable2StepUpgradeable",
-      gatewayConfigContractAddress,
-      // deployer,
-    );
+    const gatewayConfigContract = await ethers.getContractAt("Ownable2StepUpgradeable", gatewayConfigContractAddress);
 
     // Get the OwnerSmartAccount contract from the Safe factory
     const ownerSmartAccountAddressEnvVarName = `${ownerSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
@@ -184,26 +180,6 @@ task("task:transferOwnershipToOwnerSmartAccount")
     const signedMessage = await signer.signMessage(bytesDataHash);
     const flatSig = signedMessage.replace(/1b$/, "1f").replace(/1c$/, "20");
     const signatureBytes = "0x" + flatSig.slice(2);
-
-    /*const signers = [signer];
-
-    // Get the addresses of the signers.
-    const addresses = await Promise.all(signers.map((signer) => signer.getAddress()));
-
-    // Sort the signers by their addresses. The `Safe.execTransaction` expects that the signatures
-    // are sorted by owner address. This is required to easily validate no confirmation duplicates exist.
-    const sortedSigners = signers.sort((a, b) => {
-      const addressA = addresses[signers.indexOf(a)];
-      const addressB = addresses[signers.indexOf(b)];
-      return addressA.localeCompare(addressB, "en", { sensitivity: "base" });
-    });
-
-    let signatureBytes = "0x";
-    for (let i = 0; i < sortedSigners.length; i++) {
-      const signedMessage = await sortedSigners[i].signMessage(bytesDataHash);
-      const flatSig = signedMessage.replace(/1b$/, "1f").replace(/1c$/, "20");
-      signatureBytes += flatSig.slice(2);
-    }*/
 
     // Step 2: Execute the Safe transaction to accept ownership.
     const execTransactionResponse = await ownerSmartAccount.execTransaction(

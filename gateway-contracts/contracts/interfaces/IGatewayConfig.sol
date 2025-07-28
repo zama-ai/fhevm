@@ -260,6 +260,12 @@ interface IGatewayConfig {
     function checkIsGatewayConfigOwner(address sender) external view;
 
     /**
+     * @notice Get the owner of the GatewayConfig contract.
+     * @return The address of the owner.
+     */
+    function getOwner() external view returns (address);
+
+    /**
      * @notice Get the pauser's address.
      * @return The address of the pauser.
      */

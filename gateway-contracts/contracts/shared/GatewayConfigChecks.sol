@@ -37,6 +37,7 @@ abstract contract GatewayConfigChecks {
         _;
     }
 
+    /// @dev Check that the sender is the owner of the GatewayConfig contract.
     modifier onlyGatewayConfigOwner() {
         _GATEWAY_CONFIG.checkIsGatewayConfigOwner(msg.sender);
         _;

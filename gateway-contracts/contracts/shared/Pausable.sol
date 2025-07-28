@@ -31,7 +31,7 @@ abstract contract Pausable is PausableUpgradeable, GatewayConfigChecks {
      * - The contract must not be paused.
      */
     function pause() external virtual {
-        if (msg.sender != _GATEWAY_CONFIG.getPauser()) {
+        if (msg.sender != _GATEWAY_CONFIG.getOwner() && msg.sender != _GATEWAY_CONFIG.getPauser()) {
             revert NotOwnerOrPauser(msg.sender);
         }
         _pause();
