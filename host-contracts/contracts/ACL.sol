@@ -76,7 +76,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
