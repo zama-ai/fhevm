@@ -37,6 +37,7 @@ jobs:
               - kms-connector/crates/utils/**
               - kms-connector/Cargo.toml
               - kms-connector/Cargo.lock
+              - gateway-contracts/rust_bindings/**
 
   build:
     name: kms-connector-kms-worker-docker-build/build
