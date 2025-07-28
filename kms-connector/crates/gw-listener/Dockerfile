@@ -17,24 +17,12 @@ WORKDIR /app
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY kms-connector ./kms-connector
 
-# TODO: Remove SSH configuration once KMS Core repo is public.
-#       This is currently needed as the KMS Connector depends on KMS Core to be built.
 # Install build dependencies
 RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
     --mount=type=cache,target=/var/lib/apk,sharing=locked \
     apk add --no-cache \
-    openssh-keyscan \
     gcc \
     protoc
-
-# Setup SSH and git
-RUN mkdir -p -m 0600 /root/.ssh && \
-    ssh-keyscan -H github.com >> ~/.ssh/known_hosts && \
-    mkdir -p /app/kms-connector/bin
-
-# Configure git with secure token handling
-RUN --mount=type=secret,id=BLOCKCHAIN_ACTIONS_TOKEN,env=BLOCKCHAIN_ACTIONS_TOKEN \
-    git config --global url."https://$BLOCKCHAIN_ACTIONS_TOKEN@github.com".insteadOf ssh://git@github.com
 
 # Build with improved caching
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked cd kms-connector && \
