@@ -64,7 +64,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
     }
 
     async fn remove_proof_by_id(&self, zk_proof_id: i64) -> anyhow::Result<()> {
-        debug!("Removing proof with id {}", zk_proof_id);
+        debug!(zk_proof_id = zk_proof_id, "Removing proof");
         sqlx::query!(
             "DELETE FROM verify_proofs WHERE zk_proof_id = $1",
             zk_proof_id
@@ -81,9 +81,9 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         error: &str,
     ) -> anyhow::Result<()> {
         if current_retry_count == (self.conf.verify_proof_resp_max_retries as i32) - 1 {
-            error!("Max retries reached for proof with ID {}", zk_proof_id);
+            error!(zk_proof_id = zk_proof_id, "Max retries reached for proof");
         }
-        debug!("Updating retry count of proof with ID {}", zk_proof_id);
+        debug!(zk_proof_id = zk_proof_id, "Updating retry count of proof");
         sqlx::query!(
             "UPDATE verify_proofs
             SET
@@ -101,8 +101,8 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
 
     async fn remove_proofs_by_retry_count(&self) -> anyhow::Result<()> {
         debug!(
-            "Removing proof with retry count >= {}",
-            self.conf.verify_proof_resp_max_retries
+            max_retries = self.conf.verify_proof_resp_max_retries,
+            "Removing proofs with retry count >= max_retries"
         );
         sqlx::query!(
             "DELETE FROM verify_proofs WHERE retry_count >= $1",
@@ -118,7 +118,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         txn_request: (i64, impl Into<TransactionRequest>),
         current_retry_count: i32,
     ) -> anyhow::Result<()> {
-        info!("Processing proof with proof ID {}", txn_request.0);
+        info!(zk_proof_id = txn_request.0, "Processing proof");
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request.1,
             &*self.provider,
@@ -137,7 +137,10 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                         payload.as_decoded_interface_error::<InputVerificationErrors>()
                     })
                 {
-                    warn!( "Coprocessor has already verified the proof with ID {}, removing it from the DB", txn_request.0);
+                    warn!(
+                        zk_proof_id = txn_request.0,
+                        "Coprocessor has already verified the proof, removing from DB"
+                    );
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
                 } else if let Some(InputVerificationErrors::CoprocessorAlreadyRejected(_)) =
@@ -145,13 +148,17 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                         payload.as_decoded_interface_error::<InputVerificationErrors>()
                     })
                 {
-                    warn!( "Coprocessor has already rejected the proof with ID {}, removing it from the DB", txn_request.0);
+                    warn!(
+                        zk_proof_id = txn_request.0,
+                        "Coprocessor has already rejected the proof, removing from DB"
+                    );
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
                 } else {
                     error!(
-                        "Transaction {:?} sending failed with error: {}",
-                        overprovisioned_txn_req, e
+                        transaction_request = ?overprovisioned_txn_req,
+                        error = %e,
+                        "Transaction sending failed"
                     );
                     self.update_retry_count_by_proof_id(
                         txn_request.0,
@@ -174,7 +181,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         {
             Ok(receipt) => receipt,
             Err(e) => {
-                error!("Getting receipt failed with error: {}", e);
+                error!(error = %e, "Getting receipt failed");
                 self.update_retry_count_by_proof_id(
                     txn_request.0,
                     current_retry_count,
@@ -186,13 +193,16 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         };
 
         if receipt.status() {
-            info!("Transaction {} succeeded", receipt.transaction_hash);
+            info!(
+                transaction_hash = %receipt.transaction_hash,
+                "Transaction succeeded"
+            );
             self.remove_proof_by_id(txn_request.0).await?;
         } else {
             error!(
-                "Transaction {} failed with status {}",
-                receipt.transaction_hash,
-                receipt.status()
+                transaction_hash = %receipt.transaction_hash,
+                status = receipt.status(),
+                "Transaction failed"
             );
             self.update_retry_count_by_proof_id(
                 txn_request.0,
@@ -236,20 +246,20 @@ where
         )
         .fetch_all(&self.db_pool)
         .await?;
-        info!("Selected {} rows to process", rows.len());
+        info!(rows_count = rows.len(), "Selected rows to process");
         let maybe_has_more_work = rows.len() == self.conf.verify_proof_resp_batch_limit as usize;
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let txn_request = match row.verified {
                 Some(true) => {
-                    info!("Processing verified proof with ID {}", row.zk_proof_id);
+                    info!(zk_proof_id = row.zk_proof_id, "Processing verified proof");
                     let handles = row
                         .handles
                         .ok_or(anyhow::anyhow!("handles field is None"))?;
                     if handles.is_empty() || handles.len() % 32 != 0 {
                         error!(
-                            "Bad handles field, len {} is 0 or not divisible by 32",
-                            handles.len()
+                            handles_len = handles.len(),
+                            "Bad handles field, len is 0 or not divisible by 32"
                         );
                         self.remove_proof_by_id(row.zk_proof_id).await?;
                         continue;
@@ -305,7 +315,7 @@ where
                     }
                 }
                 Some(false) => {
-                    info!("Processing rejected proof with ID {}", row.zk_proof_id);
+                    info!(zk_proof_id = row.zk_proof_id, "Processing rejected proof");
                     if let Some(gas) = self.gas {
                         (
                             row.zk_proof_id,
@@ -325,8 +335,8 @@ where
                 }
                 None => {
                     error!(
-                        "verified field is unexpectedly None for proof with ID {}",
-                        row.zk_proof_id
+                        zk_proof_id = row.zk_proof_id,
+                        "verified field is unexpectedly None for proof"
                     );
                     continue;
                 }

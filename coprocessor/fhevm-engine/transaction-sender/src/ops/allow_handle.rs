@@ -74,7 +74,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
     ) -> anyhow::Result<()> {
         let h = compact_hex(&key.handle);
 
-        info!("Processing transaction, handle: {}", h);
+        info!(handle = h, "Processing transaction");
 
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request,
@@ -90,9 +90,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
             Ok(txn) => txn,
             Err(e) if self.already_allowed_error(&e).is_some() => {
                 warn!(
-                    "Coprocessor {} has already added the ACL entry for handle: {}",
-                    self.already_allowed_error(&e).unwrap(),
-                    h
+                    address = ?self.already_allowed_error(&e),
+                    handle = h,
+                    "Coprocessor has already added the ACL entry"
                 );
                 self.set_txn_is_sent(key).await?;
                 return Ok(());
@@ -104,8 +104,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                     || matches!(&e, RpcError::LocalUsageError(_)) =>
             {
                 warn!(
-                    "Transaction {:?} sending failed with unlimited retry error: {}, handle: {}",
-                    overprovisioned_txn_req, e, h
+                    transaction_request = ?overprovisioned_txn_req,
+                    error = %e,
+                    handle = h,
+                    "Transaction sending failed with unlimited retry error"
                 );
                 self.increment_txn_unlimited_retries_count(
                     key,
@@ -120,8 +122,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
             }
             Err(e) => {
                 warn!(
-                    "Transaction {:?} sending failed with error: {}, handle: {}",
-                    overprovisioned_txn_req, e, h
+                    transaction_request = ?overprovisioned_txn_req,
+                    error = %e,
+                    handle = h,
+                    "Transaction sending failed"
                 );
                 self.increment_txn_limited_retries_count(
                     key,
@@ -145,7 +149,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         {
             Ok(receipt) => receipt,
             Err(e) => {
-                error!("Getting receipt failed with error: {}", e);
+                error!(error = %e, "Getting receipt failed");
                 self.increment_txn_limited_retries_count(
                     key,
                     &e.to_string(),
@@ -159,13 +163,17 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         if receipt.status() {
             self.set_txn_is_sent(key).await?;
 
-            info!("Allow txn: {} succeeded, {}", receipt.transaction_hash, key,);
+            info!(
+                transaction_hash = %receipt.transaction_hash,
+                key = %key,
+                "Allow txn succeeded"
+            );
         } else {
             error!(
-                "allowAccount txn: {} failed with status {}, handle: {}",
-                receipt.transaction_hash,
-                receipt.status(),
-                h
+                transaction_hash = %receipt.transaction_hash,
+                status = receipt.status(),
+                handle = h,
+                "allowAccount txn failed"
             );
 
             self.increment_txn_limited_retries_count(
@@ -220,9 +228,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         db_pool: Pool<Postgres>,
     ) -> Self {
         info!(
-            "Creating MultichainAclOperation with gas: {} and MultichainAcl address: {}",
-            gas.unwrap_or(0),
-            multichain_acl_address,
+            gas = gas.unwrap_or(0),
+            multichain_acl_address = %multichain_acl_address,
+            "Creating MultichainAclOperation"
         );
 
         Self {
@@ -245,15 +253,15 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         if current_limited_retries_count == (self.conf.allow_handle_max_retries as i32) - 1 {
             error!(
                 action = REVIEW,
-                "Max ({}) limited retries reached for key {}",
-                key,
-                self.conf.allow_handle_max_retries
+                key = %key,
+                max_retries = self.conf.allow_handle_max_retries,
+                "Max limited retries reached"
             );
         } else {
             warn!(
-                "Updating limited retry count to {} for key {}",
-                current_limited_retries_count + 1,
-                key
+                limited_reties_count = current_limited_retries_count + 1,
+                key = %key,
+                "Updating limited retry count"
             );
         }
 
@@ -288,13 +296,15 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         {
             error!(
                 action = REVIEW,
-                "{} unlimited retries reached for key {}", current_unlimited_retries_count, key
+                unlimited_retries_count = current_unlimited_retries_count,
+                key = %key,
+                "Unlimited retries threshold reached"
             );
         } else {
             warn!(
-                "Updating unlimited retries count to {}, key {}",
-                current_unlimited_retries_count + 1,
-                key
+                unlimited_retries_count = current_unlimited_retries_count + 1,
+                key = %key,
+                "Updating unlimited retries count"
             );
         }
 
@@ -344,7 +354,7 @@ where
 
         let multichain_acl = MultichainAcl::new(self.multichain_acl_address, self.provider.inner());
 
-        info!("Selected {} rows to process", rows.len());
+        info!(rows_count = rows.len(), "Selected rows to process");
 
         let maybe_has_more_work = rows.len() == self.conf.allow_handle_batch_limit as usize;
 
@@ -354,9 +364,8 @@ where
                 Ok(res) => res,
                 Err(_) => {
                     error!(
-                        "Failed to get chain_id for tenant
-                    id: {}",
-                        row.tenant_id
+                        tenant_id = row.tenant_id,
+                        "Failed to get chain_id for tenant"
                     );
                     continue;
                 }
@@ -369,8 +378,9 @@ where
                 Ok(event_type) => event_type,
                 Err(_) => {
                     error!(
-                        "Invalid event_type: {} for tenant_id: {}",
-                        row.event_type, row.tenant_id
+                        event_type = row.event_type,
+                        tenant_id = row.tenant_id,
+                        "Invalid event_type"
                     );
                     continue;
                 }
@@ -378,8 +388,11 @@ where
 
             let account_addr = row.account_address;
             info!(
-                "Allow handle: {}, event_type: {:?}, account: {:?}, chain_id: {},",
-                h_as_hex, event_type, account_addr, chain_id,
+                handle = h_as_hex,
+                event_type = ?event_type,
+                account = ?account_addr,
+                chain_id = chain_id,
+                "Allow handle"
             );
 
             let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle)?);
@@ -402,8 +415,9 @@ where
                         addr
                     } else {
                         error!(
-                            "Invalid account address: {:?} for tenant_id: {}",
-                            account_addr, row.tenant_id
+                            account_address = ?account_addr,
+                            tenant_id = row.tenant_id,
+                            "Invalid account address"
                         );
                         continue;
                     };
