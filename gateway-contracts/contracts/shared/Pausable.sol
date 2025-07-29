@@ -5,14 +5,13 @@ import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "../interfaces/IGatewayConfig.sol";
-import "./GatewayConfigChecks.sol";
 
 /**
  * @title Pausable.
  * @dev This contract provides an abstract implementation for the pausing features
  * based on the OpenZeppelin PausableUpgradeable contract.
  */
-abstract contract Pausable is PausableUpgradeable, GatewayConfigChecks {
+abstract contract Pausable is PausableUpgradeable {
     /// @notice The address of the GatewayConfig contract
     IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 

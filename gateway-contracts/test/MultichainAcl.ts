@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, MultichainAcl, MultichainAcl__factory, Safe } from "../typechain-types";
+import { GatewayConfig, MultichainAcl, MultichainAcl__factory } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IMultichainAcl interface
 import { DelegationAccountsStruct } from "../typechain-types/contracts/interfaces/IMultichainAcl";

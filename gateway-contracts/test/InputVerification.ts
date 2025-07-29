@@ -497,10 +497,8 @@ describe("InputVerification", function () {
       // Check that the contract is not paused
       expect(await inputVerification.paused()).to.be.false;
 
-      // Pause the contract with the pauser address.
+      // Pause the contract with the pauser address
       await expect(inputVerification.connect(pauser).pause()).to.emit(inputVerification, "Paused").withArgs(pauser);
-
-      // Contract should be paused.
       expect(await inputVerification.paused()).to.be.true;
 
       // Unpause the contract with the owner address (not the pauser)

@@ -1,8 +1,4 @@
-import { OperationType } from "@safe-global/types-kit";
-import { AddressLike, Signer } from "ethers";
 import hre from "hardhat";
-
-import { Safe } from "../../typechain-types";
 
 const DEFAULT_BALANCE = "0x1000000000000000000000000000000000000000";
 

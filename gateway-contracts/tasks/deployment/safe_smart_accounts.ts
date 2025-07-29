@@ -70,16 +70,6 @@ async function deploySafeSmartAccount(
     throw new Error("Safe proxy address not found");
   }
 
-  const envFilePath = path.join(ADDRESSES_DIR, ".env.gateway");
-  const nameSnakeCase = pascalCaseToSnakeCase(name);
-  const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${safeProxyAddress}\n`;
-
-  // Ensure the ADDRESSES_DIR exists or create it
-  fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
-
-  // Write the contract's address in the envFilePath file
-  fs.appendFileSync(envFilePath, envContent, { encoding: "utf8", flag: "a" });
-
   console.log(`${name} successfully deployed at address: ${safeProxyAddress}\n`);
 }
 

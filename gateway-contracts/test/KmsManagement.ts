@@ -894,7 +894,7 @@ describe("KmsManagement", function () {
   describe("Pause", async function () {
     let kmsManagement: KmsManagement;
     let owner: Wallet;
-    let pauser: HardhatEthersSigner;
+    let pauser: SignerWithAddress;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
