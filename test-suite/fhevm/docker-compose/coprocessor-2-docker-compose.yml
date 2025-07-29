@@ -16,7 +16,7 @@ services:
     volumes:
       - db-2:/var/lib/postgresql/data
 
-  key-downloader:
+  key-downloader-2:
     container_name: fhevm-2-key-downloader
     image: busybox
     env_file:
@@ -32,7 +32,7 @@ services:
             wget $KMS_CRS_KEY -O /keys/pp &&
             echo 'Downloaded PP key - All downloads complete'"
 
-  db-migration:
+  db-migration-2:
     container_name: fhevm-2-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
     build:
@@ -53,11 +53,11 @@ services:
     depends_on:
       db-2:
         condition: service_healthy
-      key-downloader:
+      key-downloader-2:
         condition: service_completed_successfully
 
   ####################### COPROCESSOR SERVICES #######################
-  host-listener:
+  host-listener-2:
     container_name: fhevm-2-host-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
     build:
@@ -79,10 +79,10 @@ services:
     depends_on:
       db-2:
         condition: service_healthy
-      db-migration:
+      db-migration-2:
         condition: service_completed_successfully
 
-  gw-listener:
+  gw-listener-2:
     container_name: fhevm-2-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${GW_LISTENER_VERSION}
     build:
@@ -111,10 +111,10 @@ services:
     depends_on:
       db-2:
         condition: service_healthy
-      db-migration:
+      db-migration-2:
         condition: service_completed_successfully
 
-  tfhe-worker:
+  tfhe-worker-2:
     container_name: fhevm-2-tfhe-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}
     build:
@@ -139,10 +139,10 @@ services:
     depends_on:
       db-2:
         condition: service_healthy
-      db-migration:
+      db-migration-2:
         condition: service_completed_successfully
 
-  zkproof-worker:
+  zkproof-worker-2:
     container_name: fhevm-2-zkproof-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${ZKPROOF_WORKER_VERSION}
     build:
@@ -165,10 +165,10 @@ services:
     depends_on:
       db-2:
         condition: service_healthy
-      db-migration:
+      db-migration-2:
         condition: service_completed_successfully
 
-  sns-worker:
+  sns-worker-2:
     container_name: fhevm-2-sns-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${SNS_WORKER_VERSION}
     build:
@@ -203,10 +203,10 @@ services:
     depends_on:
       db-2:
         condition: service_healthy
-      db-migration:
+      db-migration-2:
         condition: service_completed_successfully
 
-  transaction-sender:
+  transaction-sender-2:
     container_name: fhevm-2-transaction-sender
     image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${TX_SENDER_VERSION}
     build:
@@ -237,7 +237,7 @@ services:
     depends_on:
       db-2:
         condition: service_healthy
-      db-migration:
+      db-migration-2:
         condition: service_completed_successfully
 
 volumes:
