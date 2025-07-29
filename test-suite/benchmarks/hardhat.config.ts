@@ -5,8 +5,10 @@ import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 import './tasks/erc20';
+import './tasks/userDecryptBenchmark';
 
-const NUM_ACCOUNTS = 120;
+// This value needs to be above the number of accounts used in the tasks
+const NUM_ACCOUNTS = 1001;
 
 task('compile:specific', 'Compiles only the specified contract')
   .addParam('contract', "The contract's path")
