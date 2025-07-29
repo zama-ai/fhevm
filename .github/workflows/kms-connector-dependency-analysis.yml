@@ -4,7 +4,7 @@ on:
   pull_request:
 
 concurrency:
-  group: deps-analysis-${{ github.ref }}
+  group: kms-connector-deps-analysis-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
