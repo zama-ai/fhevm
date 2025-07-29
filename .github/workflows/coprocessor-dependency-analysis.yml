@@ -4,7 +4,7 @@ on:
   pull_request:
 
 concurrency:
-  group: deps-analysis-${{ github.ref }}
+  group: fhevm-coprocessor-deps-analysis-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
