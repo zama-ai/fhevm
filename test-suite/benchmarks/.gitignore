@@ -1,0 +1,6 @@
+.env
+node_modules
+cache
+types
+artifacts
+keypair.json
