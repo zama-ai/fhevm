@@ -79,6 +79,8 @@ async function deploySafeSmartAccount(
 
   // Write the contract's address in the envFilePath file
   fs.appendFileSync(envFilePath, envContent, { encoding: "utf8", flag: "a" });
+
+  console.log(`${name} successfully deployed at address: ${safeProxyAddress}\n`);
 }
 
 task("task:deployOwnerSafeSmartAccount")
@@ -115,15 +117,24 @@ task("task:deployPauserSafeSmartAccount")
     await deploySafeSmartAccount("PauserSafeSmartAccount", hre, owners, threshold);
   });
 
-task("task:transferGatewayOwnership", "Transfers ownership of the GatewayConfig contract to the OwnerSafeSmartAccount")
-  .addParam("currentOwnerPrivateKey", "Private key of the owner of the GatewayConfig contract", undefined, types.string)
+task(
+  "task:transferGatewayOwnership",
+  "Transfers ownership of the GatewayConfig contract to the passed Safe Smart Account address.",
+)
+  .addParam(
+    "currentOwnerPrivateKey",
+    "Private key of the current owner of the GatewayConfig contract.",
+    undefined,
+    types.string,
+  )
+  .addParam("smartAccountAddress", "Address of the Safe Smart Account receiving ownership", undefined, types.string)
   .addOptionalParam(
     "useInternalProxyAddress",
     "If proxy address from the /addresses directory should be used",
     false,
     types.boolean,
   )
-  .setAction(async function ({ currentOwnerPrivateKey, useInternalProxyAddress }, { ethers }) {
+  .setAction(async function ({ currentOwnerPrivateKey, smartAccountAddress, useInternalProxyAddress }, { ethers }) {
     // Get the currentOwner wallet.
     const currentOwner = new Wallet(currentOwnerPrivateKey).connect(ethers.provider);
 
@@ -140,39 +151,30 @@ task("task:transferGatewayOwnership", "Transfers ownership of the GatewayConfig 
     const gatewayConfigSnakeCase = pascalCaseToSnakeCase("GatewayConfig");
     const gatewayConfigAddressEnvVarName = `${gatewayConfigSnakeCase.toUpperCase()}_ADDRESS`;
     const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
-    const gatewayConfigContract = await ethers.getContractAt("Ownable2StepUpgradeable", gatewayConfigContractAddress);
+    const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
-    // Get the OwnerSafeSmartAccount contract from the Safe factory
-    const ownerSmartAccountSnakeCase = pascalCaseToSnakeCase("OwnerSafeSmartAccount");
-    const ownerSmartAccountAddressEnvVarName = `${ownerSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
-    const ownerSmartAccountAddress = getRequiredEnvVar(ownerSmartAccountAddressEnvVarName);
-
-    console.log(`Transferring Gateway ownership to OwnerSafeSmartAccount at address: ${ownerSmartAccountAddress}`);
-
-    // Step 1 - Transfer ownership of the contract to the OwnerSafeSmartAccount.
-    await gatewayConfigContract.connect(currentOwner).transferOwnership(ownerSmartAccountAddress);
+    // Step 1 - Transfer ownership of the contract to the Safe Smart Account.
+    await gatewayConfigContract.connect(currentOwner).transferOwnership(smartAccountAddress);
 
     console.log(
-      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully transferred to OwnerSafeSmartAccount at address: ${ownerSmartAccountAddress}`,
+      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully transferred to Safe Smart Account at address: ${smartAccountAddress}`,
     );
   });
 
-task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig contract from the OwnerSafeSmartAccount")
-  .addParam(
-    "signerPrivateKey",
-    "Private key of one of the owners of the OwnerSafeSmartAccount",
-    undefined,
-    types.string,
-  )
+task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig contract from the Safe Smart Account")
+  .addParam("ownerPrivateKeys", "List of private keys of the owners of the Safe Smart Account.", undefined, types.json)
+  .addParam("smartAccountAddress", "Address of the Safe Smart Account accepting ownership.", undefined, types.string)
   .addOptionalParam(
     "useInternalProxyAddress",
-    "If proxy address from the /addresses directory should be used",
+    "If proxy address from the /addresses directory should be used.",
     false,
     types.boolean,
   )
-  .setAction(async function ({ signerPrivateKey, useInternalProxyAddress }, { ethers }) {
+  .setAction(async function ({ ownerPrivateKeys, smartAccountAddress, useInternalProxyAddress }, { ethers }) {
     // Get the signer wallet.
-    const signer = new Wallet(signerPrivateKey).connect(ethers.provider);
+    const signers: Wallet[] = ownerPrivateKeys.map((ownerPrivateKey: string) =>
+      new Wallet(ownerPrivateKey).connect(ethers.provider),
+    );
 
     if (useInternalProxyAddress) {
       const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
@@ -189,13 +191,8 @@ task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig cont
     const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
-    // Get the OwnerSafeSmartAccount contract from the Safe factory
-    const ownerSmartAccountSnakeCase = pascalCaseToSnakeCase("OwnerSafeSmartAccount");
-    const ownerSmartAccountAddressEnvVarName = `${ownerSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
-    const ownerSmartAccountAddress = getRequiredEnvVar(ownerSmartAccountAddressEnvVarName);
-    const ownerSmartAccount = await ethers.getContractAt("Safe", ownerSmartAccountAddress);
-
-    console.log(`Accepting ownership from OwnerSafeSmartAccount at address: ${ownerSmartAccountAddress}`);
+    // Get the Safe Smart Account contract from the Safe factory
+    const safeSmartAccount = await ethers.getContractAt("Safe", smartAccountAddress);
 
     // Prepare the Safe transaction to accept ownership.
     const value = 0; // Ether value.
@@ -206,10 +203,10 @@ task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig cont
     const gasPrice = 0; // Maximum gas price that should be used for this transaction.
     const gasToken = ethers.ZeroAddress; // Token address (or 0 if ETH) that is used for the payment.
     const refundReceiver = ethers.ZeroAddress; // Address of receiver of gas payment (or 0 if tx.origin).
-    const nonce = await ownerSmartAccount.nonce();
+    const nonce = await safeSmartAccount.nonce();
 
     // Get the transaction hash for the Safe transaction.
-    const transactionHash = await ownerSmartAccount.getTransactionHash(
+    const transactionHash = await safeSmartAccount.getTransactionHash(
       gatewayConfigContractAddress,
       value,
       data,
@@ -222,14 +219,29 @@ task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig cont
       nonce,
     );
     const bytesDataHash = ethers.getBytes(transactionHash);
+    let signatureBytes = "0x";
 
-    // Sign the transaction hash with the signer account.
-    const signedMessage = await signer.signMessage(bytesDataHash);
-    const flatSig = signedMessage.replace(/1b$/, "1f").replace(/1c$/, "20");
-    const signatureBytes = "0x" + flatSig.slice(2);
+    // Get the addresses of the signers
+    const signerAddresses = await Promise.all(signers.map((signer) => signer.getAddress()));
+
+    // Sort the signers by their addresses
+    // Gnosis Safe requires signatures to be provided in ascending order of the signer addresses
+    // for security and efficiency reasons. See https://docs.safe.global/advanced/smart-account-signatures.
+    const sortedSigners = signers.sort((a, b) => {
+      const addressA = signerAddresses[signers.indexOf(a)];
+      const addressB = signerAddresses[signers.indexOf(b)];
+      return addressA.localeCompare(addressB, "en", { sensitivity: "base" });
+    });
+
+    // Sign the transaction hash with each signer
+    for (const signer of sortedSigners) {
+      const signedMessage = await signer.signMessage(bytesDataHash);
+      const flatSig = signedMessage.replace(/1b$/, "1f").replace(/1c$/, "20");
+      signatureBytes += flatSig.slice(2);
+    }
 
     // Step 2 - Execute the Safe transaction to accept ownership.
-    const execTransactionResponse = await ownerSmartAccount.execTransaction(
+    const execTransactionResponse = await safeSmartAccount.execTransaction(
       gatewayConfigContractAddress,
       value,
       data,
@@ -243,6 +255,6 @@ task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig cont
     );
     await execTransactionResponse.wait();
     console.log(
-      `Ownership of GatewayConfig at address ${gatewayConfigContractAddress} successfully accepted from OwnerSafeSmartAccount at address: ${ownerSmartAccountAddress}`,
+      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully accepted by the Safe Smart Account at address: ${smartAccountAddress}`,
     );
   });
