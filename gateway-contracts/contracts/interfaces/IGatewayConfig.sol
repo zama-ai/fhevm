@@ -111,12 +111,12 @@ interface IGatewayConfig {
     /**
      * @notice Emitted when all the pausable gateway contracts are paused.
      */
-    event AllGatewayContractsPaused();
+    event PauseAllGatewayContracts();
 
     /**
      * @notice Emitted when all the pausable gateway contracts are unpaused.
      */
-    event AllGatewayContractsUnpaused();
+    event UnpauseAllGatewayContracts();
 
     /**
      * @notice Error emitted when an address is not a KMS transaction sender.

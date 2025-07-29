@@ -880,7 +880,7 @@ describe("GatewayConfig", function () {
 
         const txResponse = await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
 
-        await expect(txResponse).to.emit(gatewayConfig, "AllGatewayContractsPaused");
+        await expect(txResponse).to.emit(gatewayConfig, "PauseAllGatewayContracts");
 
         // Check that the pausable contracts are paused
         expect(await decryption.paused()).to.be.true;
@@ -914,7 +914,7 @@ describe("GatewayConfig", function () {
         // Unpause the contract with the owner address
         const txResponse = await gatewayConfig.connect(owner).unpauseAllGatewayContracts();
 
-        await expect(txResponse).to.emit(gatewayConfig, "AllGatewayContractsUnpaused");
+        await expect(txResponse).to.emit(gatewayConfig, "UnpauseAllGatewayContracts");
 
         // Check that the contracts are not paused anymore
         expect(await ciphertextCommits.paused()).to.be.false;

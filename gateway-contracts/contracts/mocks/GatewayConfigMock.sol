@@ -24,9 +24,9 @@ contract GatewayConfigMock {
 
     event AddHostChain(HostChain hostChain);
 
-    event AllGatewayContractsPaused();
+    event PauseAllGatewayContracts();
 
-    event AllGatewayContractsUnpaused();
+    event UnpauseAllGatewayContracts();
 
     function initializeFromEmptyProxy(
         address initialPauser,
@@ -73,10 +73,10 @@ contract GatewayConfigMock {
     }
 
     function pauseAllGatewayContracts() external {
-        emit AllGatewayContractsPaused();
+        emit PauseAllGatewayContracts();
     }
 
     function unpauseAllGatewayContracts() external {
-        emit AllGatewayContractsUnpaused();
+        emit UnpauseAllGatewayContracts();
     }
 }

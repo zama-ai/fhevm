@@ -260,7 +260,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function pauseAllGatewayContracts() external virtual onlyPauser {
         DECRYPTION.pause();
         INPUT_VERIFICATION.pause();
-        emit AllGatewayContractsPaused();
+        emit PauseAllGatewayContracts();
     }
 
     /**
@@ -270,7 +270,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function unpauseAllGatewayContracts() external virtual onlyOwner {
         DECRYPTION.unpause();
         INPUT_VERIFICATION.unpause();
-        emit AllGatewayContractsUnpaused();
+        emit UnpauseAllGatewayContracts();
     }
 
     /// @dev See {IGatewayConfig-checkIsKmsTxSender}.
