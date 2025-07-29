@@ -150,8 +150,6 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         url: url.clone(),
         initial_block_time: 1,
         no_block_immediate_recheck: false,
-        ignore_tfhe_events: false,
-        ignore_acl_events: false,
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
         database_url: DATABASE_URL.into(),
@@ -280,8 +278,6 @@ async fn test_health() -> Result<(), anyhow::Error> {
         url: url.clone(),
         initial_block_time: 1,
         no_block_immediate_recheck: false,
-        ignore_tfhe_events: false,
-        ignore_acl_events: false,
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
         database_url: DATABASE_URL.into(),
@@ -298,8 +294,7 @@ async fn test_health() -> Result<(), anyhow::Error> {
     const HEALTHZ_URL: &str = "http://0.0.0.0:8081/healthz";
 
     // Start listener in background task
-    let listener_handle: tokio::task::JoinHandle<()> =
-        tokio::spawn(main(args.clone()));
+    let listener_handle = tokio::spawn(main(args.clone()));
     for _ in 1..10 {
         let response = reqwest::get(LIVENESS_URL).await;
         if response.is_ok() && response.unwrap().status().is_success() {

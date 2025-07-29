@@ -7,6 +7,7 @@ use alloy::providers::{Provider, ProviderBuilder, RootProvider, WsConnect};
 use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{BlockNumberOrTag, Filter, Log};
 use alloy::sol_types::SolEventInterface;
+use anyhow::anyhow;
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 use std::collections::VecDeque;
@@ -29,12 +30,6 @@ use crate::health_check::{HealthCheck, HealthState};
 pub struct Args {
     #[arg(long, default_value = "ws://0.0.0.0:8545")]
     pub url: String,
-
-    #[arg(long, default_value = "false")]
-    pub ignore_tfhe_events: bool,
-
-    #[arg(long, default_value = "false")]
-    pub ignore_acl_events: bool,
 
     #[arg(long)]
     pub acl_contract_address: String,
@@ -525,27 +520,37 @@ impl InfiniteLogIter {
     }
 }
 
-pub async fn main(args: Args) {
+pub async fn main(args: Args) -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
-    if args.acl_contract_address.is_empty() {
+    let acl_contract_address = if args.acl_contract_address.is_empty() {
         error!("--acl-contract-address cannot be empty");
         #[cfg(not(debug_assertions))] // if release code abort
-        panic!("--acl-contract-address cannot be empty");
-    } else if let Err(err) = Address::from_str(&args.acl_contract_address) {
-        // TODO: remove panic and, instead, propagate the error
-        error!(error = %err, "Invalid ACL contract address");
-        panic!("Invalid acl contract address: {err}");
+        return Err(anyhow!("--acl-contract-address cannot be empty"));
+        #[cfg(debug_assertions)]
+        None
+    } else {
+        Some(
+            Address::from_str(&args.acl_contract_address).map_err(|err| {
+                error!(error = %err, "Invalid ACL contract address");
+                anyhow!("Invalid acl contract address: {err}")
+            })?,
+        )
     };
-    if args.tfhe_contract_address.is_empty() {
+    let tfhe_contract_address = if args.tfhe_contract_address.is_empty() {
         error!("--tfhe-contract-address cannot be empty");
         #[cfg(not(debug_assertions))] // if release code abort
-        panic!("--tfhe-contract-address cannot be empty");
-    } else if let Err(err) = Address::from_str(&args.tfhe_contract_address) {
-        // TODO: remove panic and, instead, propagate the error
-        error!(error = %err, "Invalid TFHE contract address");
-        panic!("Invalid TFHE contract address: {err}");
-    }
+        return Err(anyhow!("--tfhe-contract-address cannot be empty"));
+        #[cfg(debug_assertions)]
+        None
+    } else {
+        Some(
+            Address::from_str(&args.tfhe_contract_address).map_err(|err| {
+                error!(error = %err, "Invalid TFHE contract address");
+                anyhow!("Invalid tfhe contract address: {err}")
+            })?,
+        )
+    };
 
     let cancel_token = CancellationToken::new();
     let health_check = HealthCheck::new(
@@ -626,11 +631,12 @@ pub async fn main(args: Args) {
         if block_tfhe_errors > 0 {
             error!(block_tfhe_errors = block_tfhe_errors, "Errors in block");
         }
-        if !args.ignore_tfhe_events {
+        let current_address = Some(log.inner.address);
+        let is_tfhe_address = current_address == tfhe_contract_address;
+        if tfhe_contract_address.is_none() || is_tfhe_address {
             if let Ok(event) =
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
-                // TODO: filter on contract address if known
                 info!(tfhe_event = ?event, "TFHE event");
                 if let Some(ref mut db) = db {
                     let res = db.insert_tfhe_event(&event).await;
@@ -642,7 +648,8 @@ pub async fn main(args: Args) {
                 continue;
             }
         }
-        if !args.ignore_acl_events {
+        let is_acl_address = current_address == acl_contract_address;
+        if acl_contract_address.is_none() || is_acl_address {
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
@@ -653,6 +660,15 @@ pub async fn main(args: Args) {
                 continue;
             }
         }
+        if is_acl_address || is_tfhe_address {
+            error!(
+                event_address = ?log.inner.address,
+                acl_contract_address = ?acl_contract_address,
+                tfhe_contract_address = ?tfhe_contract_address,
+                "Cannot decode event",
+            );
+        }
     }
     health_check.cancel_token.cancel();
+    anyhow::Result::Ok(())
 }
