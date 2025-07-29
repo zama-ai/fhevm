@@ -1,11 +1,10 @@
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
-import { OperationType } from "@safe-global/types-kit";
 import { expect } from "chai";
 import { ContractFactory, EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
-import { EmptyUUPSProxy, GatewayConfig, Safe } from "../typechain-types";
+import { EmptyUUPSProxy, GatewayConfig } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
 import {
@@ -13,14 +12,7 @@ import {
   CustodianStruct,
   KmsNodeStruct,
 } from "../typechain-types/contracts/interfaces/IGatewayConfig";
-import {
-  UINT64_MAX,
-  createRandomWallet,
-  execSafeTransaction,
-  loadHostChainIds,
-  loadTestVariablesFixture,
-  toValues,
-} from "./utils";
+import { UINT64_MAX, createRandomWallet, loadHostChainIds, loadTestVariablesFixture, toValues } from "./utils";
 
 describe("GatewayConfig", function () {
   // Get the registered host chains' chainIds
@@ -39,8 +31,7 @@ describe("GatewayConfig", function () {
 
   let gatewayConfig: GatewayConfig;
   let owner: Wallet;
-  let pauserSmartAccount: Safe;
-  let pauserAddress: string;
+  let pauser: HardhatEthersSigner;
   let nKmsNodes: number;
   let kmsNodes: KmsNodeStruct[];
   let kmsTxSenders: HardhatEthersSigner[];
@@ -107,7 +98,7 @@ describe("GatewayConfig", function () {
     const fixtureData = await loadFixture(getInputsForDeployFixture);
     gatewayConfig = fixtureData.gatewayConfig;
     owner = fixtureData.owner;
-    pauserAddress = await fixtureData.pauserSmartAccount.getAddress();
+    pauser = fixtureData.pauser;
     nKmsNodes = fixtureData.nKmsNodes;
     kmsTxSenders = fixtureData.kmsTxSenders;
     kmsSigners = fixtureData.kmsSigners;
@@ -141,7 +132,7 @@ describe("GatewayConfig", function () {
         call: {
           fn: "initializeFromEmptyProxy",
           args: [
-            pauserAddress,
+            pauser.address,
             protocolMetadata,
             mpcThreshold,
             publicDecryptionThreshold,
@@ -164,7 +155,7 @@ describe("GatewayConfig", function () {
       // It should emit one event containing the initialization parameters
       expect(initializeGatewayConfigEvents.length).to.equal(1);
       expect(stringifiedEventArgs).to.deep.equal([
-        pauserAddress,
+        pauser.address,
         toValues(protocolMetadata).toString(),
         mpcThreshold,
         toValues(kmsNodes).toString(),
@@ -203,7 +194,7 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauserAddress,
+              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -225,7 +216,7 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauserAddress,
+              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -247,7 +238,7 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauserAddress,
+              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -270,7 +261,7 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauserAddress,
+              pauser.address,
               protocolMetadata,
               highMpcThreshold,
               publicDecryptionThreshold,
@@ -295,7 +286,7 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauserAddress,
+              pauser.address,
               protocolMetadata,
               mpcThreshold,
               nullPublicDecryptionThreshold,
@@ -318,7 +309,7 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauserAddress,
+              pauser.address,
               protocolMetadata,
               mpcThreshold,
               highPublicDecryptionThreshold,
@@ -343,7 +334,7 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauserAddress,
+              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -366,7 +357,7 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauserAddress,
+              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -388,7 +379,7 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauserAddress,
+              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -407,8 +398,7 @@ describe("GatewayConfig", function () {
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       gatewayConfig = fixture.gatewayConfig;
-      pauserSmartAccount = fixture.pauserSmartAccount;
-      pauserAddress = await fixture.pauserSmartAccount.getAddress();
+      pauser = fixture.pauser;
       kmsTxSenders = fixture.kmsTxSenders;
       kmsSigners = fixture.kmsSigners;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
@@ -600,7 +590,7 @@ describe("GatewayConfig", function () {
 
     describe("Pauser", function () {
       it("Should return the initialized pauser address", async function () {
-        expect(await gatewayConfig.getPauser()).to.equal(pauserAddress);
+        expect(await gatewayConfig.getPauser()).to.equal(pauser.address);
       });
 
       it("Should revert because the sender is not the owner", async function () {
@@ -821,7 +811,7 @@ describe("GatewayConfig", function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       gatewayConfig = fixtureData.gatewayConfig;
       owner = fixtureData.owner;
-      pauserSmartAccount = fixtureData.pauserSmartAccount;
+      pauser = fixtureData.pauser;
     });
 
     it("Should pause and unpause contract with owner address", async function () {
@@ -841,12 +831,8 @@ describe("GatewayConfig", function () {
       // Check that the contract is not paused.
       expect(await gatewayConfig.paused()).to.be.false;
 
-      // Get the target contract address and the data to call the pause function.
-      const to = await gatewayConfig.getAddress();
-      const data = gatewayConfig.interface.encodeFunctionData("pause");
-
-      // Execute the Safe transaction through the Pauser Smart Account.
-      await execSafeTransaction([owner], pauserSmartAccount, to, data);
+      // Pause the contract with the pauser address.
+      await expect(gatewayConfig.connect(pauser).pause()).to.emit(gatewayConfig, "Paused").withArgs(pauser);
 
       // Contract should be paused.
       expect(await gatewayConfig.paused()).to.be.true;

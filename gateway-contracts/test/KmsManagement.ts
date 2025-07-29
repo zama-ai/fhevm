@@ -1,11 +1,11 @@
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { HardhatEthersSigner, SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
 import { KmsManagement, KmsManagement__factory, Safe } from "../typechain-types";
-import { createRandomWallet, execSafeTransaction, loadTestVariablesFixture } from "./utils";
+import { createRandomWallet, loadTestVariablesFixture } from "./utils";
 
 describe("KmsManagement", function () {
   const fakeFheParamsName = "FAKE_FHE_PARAMS_NAME";
@@ -156,7 +156,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a preprocessing keygen request
       await expect(kmsManagement.connect(fakeOwner).preprocessKeygenRequest(fheParamsName))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotGatewayConfigOwner")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than a KMS transaction sender cannot trigger a preprocessing
@@ -167,7 +167,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a keygen request
       await expect(kmsManagement.connect(fakeOwner).keygenRequest(0))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotGatewayConfigOwner")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a keygen response
@@ -356,7 +356,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a CRS generation request
       await expect(kmsManagement.connect(fakeOwner).crsgenRequest(fheParamsName))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotGatewayConfigOwner")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a CRS generation response
@@ -469,7 +469,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a preprocessing KSK generation request
       await expect(kmsManagement.connect(fakeOwner).preprocessKskgenRequest(fheParamsName))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotGatewayConfigOwner")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a preprocessing KSK generation response
@@ -479,7 +479,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a KSK generation request
       await expect(kmsManagement.connect(fakeOwner).kskgenRequest(0, 0, 0))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotGatewayConfigOwner")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a KSK generation response
@@ -678,7 +678,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a key activation request
       await expect(kmsManagement.connect(fakeOwner).activateKeyRequest(0))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotGatewayConfigOwner")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than a coprocessor transaction sender cannot trigger a key activation response
@@ -808,12 +808,12 @@ describe("KmsManagement", function () {
 
       // Check that only the owner can set the FHE params
       await expect(kmsManagement.connect(fakeOwner).addFheParams(fheParamsName, fheParamsDigest))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotGatewayConfigOwner")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that only the owner can update the FHE params
       await expect(kmsManagement.connect(fakeOwner).updateFheParams(fheParamsName, fheParamsDigest))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotGatewayConfigOwner")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
     });
 
@@ -894,13 +894,13 @@ describe("KmsManagement", function () {
   describe("Pause", async function () {
     let kmsManagement: KmsManagement;
     let owner: Wallet;
-    let pauserSmartAccount: Safe;
+    let pauser: HardhatEthersSigner;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       kmsManagement = fixtureData.kmsManagement;
       owner = fixtureData.owner;
-      pauserSmartAccount = fixtureData.pauserSmartAccount;
+      pauser = fixtureData.pauser;
     });
 
     it("Should pause and unpause contract with owner address", async function () {
@@ -917,15 +917,11 @@ describe("KmsManagement", function () {
     });
 
     it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
+      // Check that the contract is not paused.
       expect(await kmsManagement.paused()).to.be.false;
 
-      // Get the target contract address and the data to call the pause function.
-      const to = await kmsManagement.getAddress();
-      const data = kmsManagement.interface.encodeFunctionData("pause");
-
-      // Execute the Safe transaction through the Pauser Smart Account.
-      await execSafeTransaction([owner], pauserSmartAccount, to, data);
+      // Pause the contract with the pauser address.
+      await expect(kmsManagement.connect(pauser).pause()).to.emit(kmsManagement, "Paused").withArgs(pauser);
 
       // Contract should be paused.
       expect(await kmsManagement.paused()).to.be.true;

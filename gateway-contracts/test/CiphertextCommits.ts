@@ -4,13 +4,12 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { CiphertextCommits, CiphertextCommits__factory, GatewayConfig, Safe } from "../typechain-types";
+import { CiphertextCommits, CiphertextCommits__factory, GatewayConfig } from "../typechain-types";
 import {
   createBytes32,
   createCtHandle,
   createCtHandles,
   createRandomWallet,
-  execSafeTransaction,
   loadHostChainIds,
   loadTestVariablesFixture,
 } from "./utils";
@@ -42,7 +41,7 @@ describe("CiphertextCommits", function () {
   let ciphertextCommits: CiphertextCommits;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
-  let pauserSmartAccount: Safe;
+  let pauser: HardhatEthersSigner;
 
   async function prepareFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -74,7 +73,7 @@ describe("CiphertextCommits", function () {
     coprocessorTxSenders = fixture.coprocessorTxSenders;
     ciphertextCommits = fixture.ciphertextCommits;
     owner = fixture.owner;
-    pauserSmartAccount = fixture.pauserSmartAccount;
+    pauser = fixture.pauser;
   });
 
   describe("Deployment", function () {
@@ -328,15 +327,11 @@ describe("CiphertextCommits", function () {
     });
 
     it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
+      // Check that the contract is not paused.
       expect(await ciphertextCommits.paused()).to.be.false;
 
-      // Get the target contract address and the data to call the pause function.
-      const to = await ciphertextCommits.getAddress();
-      const data = ciphertextCommits.interface.encodeFunctionData("pause");
-
-      // Execute the Safe transaction through the Pauser Smart Account.
-      await execSafeTransaction([owner], pauserSmartAccount, to, data);
+      // Pause the contract with the pauser address.
+      await expect(ciphertextCommits.connect(pauser).pause()).to.emit(ciphertextCommits, "Paused").withArgs(pauser);
 
       // Contract should be paused.
       expect(await ciphertextCommits.paused()).to.be.true;

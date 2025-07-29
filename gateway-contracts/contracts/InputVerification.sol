@@ -277,7 +277,7 @@ contract InputVerification is
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
     // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayConfigOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
     /**
      * @notice Checks if the coprocessor has already verified or rejected a ZKPoK verification request.

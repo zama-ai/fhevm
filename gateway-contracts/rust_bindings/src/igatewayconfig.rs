@@ -47,7 +47,6 @@ interface IGatewayConfig {
     error NotCoprocessorTxSender(address txSenderAddress);
     error NotCustodianSigner(address signerAddress);
     error NotCustodianTxSender(address txSenderAddress);
-    error NotGatewayConfigOwner(address sender);
     error NotKmsSigner(address signerAddress);
     error NotKmsTxSender(address txSenderAddress);
     error NotPauser(address pauserAddress);
@@ -66,7 +65,6 @@ interface IGatewayConfig {
     function checkIsCoprocessorTxSender(address coprocessorTxSenderAddress) external view;
     function checkIsCustodianSigner(address signerAddress) external view;
     function checkIsCustodianTxSender(address txSenderAddress) external view;
-    function checkIsGatewayConfigOwner(address sender) external view;
     function checkIsKmsSigner(address signerAddress) external view;
     function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
     function getCoprocessor(address coprocessorTxSenderAddress) external view returns (Coprocessor memory);
@@ -196,19 +194,6 @@ interface IGatewayConfig {
     "inputs": [
       {
         "name": "txSenderAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "checkIsGatewayConfigOwner",
-    "inputs": [
-      {
-        "name": "sender",
         "type": "address",
         "internalType": "address"
       }
@@ -1065,17 +1050,6 @@ interface IGatewayConfig {
     "inputs": [
       {
         "name": "txSenderAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotGatewayConfigOwner",
-    "inputs": [
-      {
-        "name": "sender",
         "type": "address",
         "internalType": "address"
       }
@@ -3626,79 +3600,6 @@ error NotCustodianTxSender(address txSenderAddress);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotGatewayConfigOwner(address)` and selector `0x695a90ac`.
-```solidity
-error NotGatewayConfigOwner(address sender);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotGatewayConfigOwner {
-        #[allow(missing_docs)]
-        pub sender: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotGatewayConfigOwner> for UnderlyingRustTuple<'_> {
-            fn from(value: NotGatewayConfigOwner) -> Self {
-                (value.sender,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotGatewayConfigOwner {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { sender: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotGatewayConfigOwner {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotGatewayConfigOwner(address)";
-            const SELECTOR: [u8; 4] = [105u8, 90u8, 144u8, 172u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.sender,
-                    ),
-                )
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NotKmsSigner(address)` and selector `0x2a7c6ef6`.
 ```solidity
 error NotKmsSigner(address signerAddress);
@@ -5468,135 +5369,6 @@ function checkIsCustodianTxSender(address txSenderAddress) external view;
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSenderAddress,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(
-                data: &[u8],
-                validate: bool,
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `checkIsGatewayConfigOwner(address)` and selector `0x07ac6647`.
-```solidity
-function checkIsGatewayConfigOwner(address sender) external view;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkIsGatewayConfigOwnerCall {
-        #[allow(missing_docs)]
-        pub sender: alloy::sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`checkIsGatewayConfigOwner(address)`](checkIsGatewayConfigOwnerCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkIsGatewayConfigOwnerReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkIsGatewayConfigOwnerCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkIsGatewayConfigOwnerCall) -> Self {
-                    (value.sender,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkIsGatewayConfigOwnerCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { sender: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkIsGatewayConfigOwnerReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkIsGatewayConfigOwnerReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkIsGatewayConfigOwnerReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for checkIsGatewayConfigOwnerCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = checkIsGatewayConfigOwnerReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkIsGatewayConfigOwner(address)";
-            const SELECTOR: [u8; 4] = [7u8, 172u8, 102u8, 71u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.sender,
                     ),
                 )
             }
@@ -8886,8 +8658,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         checkIsCustodianTxSender(checkIsCustodianTxSenderCall),
         #[allow(missing_docs)]
-        checkIsGatewayConfigOwner(checkIsGatewayConfigOwnerCall),
-        #[allow(missing_docs)]
         checkIsKmsSigner(checkIsKmsSignerCall),
         #[allow(missing_docs)]
         checkIsKmsTxSender(checkIsKmsTxSenderCall),
@@ -8947,7 +8717,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [7u8, 172u8, 102u8, 71u8],
             [13u8, 142u8, 110u8, 44u8],
             [30u8, 165u8, 189u8, 66u8],
             [37u8, 133u8, 187u8, 101u8],
@@ -8985,7 +8754,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     impl alloy_sol_types::SolInterface for IGatewayConfigCalls {
         const NAME: &'static str = "IGatewayConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 32usize;
+        const COUNT: usize = 31usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -9006,9 +8775,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::checkIsCustodianTxSender(_) => {
                     <checkIsCustodianTxSenderCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::checkIsGatewayConfigOwner(_) => {
-                    <checkIsGatewayConfigOwnerCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::checkIsKmsSigner(_) => {
                     <checkIsKmsSignerCall as alloy_sol_types::SolCall>::SELECTOR
@@ -9104,19 +8870,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 &[u8],
                 bool,
             ) -> alloy_sol_types::Result<IGatewayConfigCalls>] = &[
-                {
-                    fn checkIsGatewayConfigOwner(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <checkIsGatewayConfigOwnerCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigCalls::checkIsGatewayConfigOwner)
-                    }
-                    checkIsGatewayConfigOwner
-                },
                 {
                     fn getVersion(
                         data: &[u8],
@@ -9564,11 +9317,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
-                Self::checkIsGatewayConfigOwner(inner) => {
-                    <checkIsGatewayConfigOwnerCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::checkIsKmsSigner(inner) => {
                     <checkIsKmsSignerCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -9723,12 +9471,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::checkIsCustodianTxSender(inner) => {
                     <checkIsCustodianTxSenderCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::checkIsGatewayConfigOwner(inner) => {
-                    <checkIsGatewayConfigOwnerCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -9925,8 +9667,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         NotCustodianTxSender(NotCustodianTxSender),
         #[allow(missing_docs)]
-        NotGatewayConfigOwner(NotGatewayConfigOwner),
-        #[allow(missing_docs)]
         NotKmsSigner(NotKmsSigner),
         #[allow(missing_docs)]
         NotKmsTxSender(NotKmsTxSender),
@@ -9951,7 +9691,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             [57u8, 22u8, 114u8, 167u8],
             [65u8, 120u8, 222u8, 66u8],
             [82u8, 215u8, 37u8, 245u8],
-            [105u8, 90u8, 144u8, 172u8],
             [132u8, 32u8, 143u8, 35u8],
             [138u8, 240u8, 130u8, 239u8],
             [144u8, 126u8, 102u8, 129u8],
@@ -9969,7 +9708,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 21usize;
+        const COUNT: usize = 20usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -10023,9 +9762,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::NotCustodianTxSender(_) => {
                     <NotCustodianTxSender as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotGatewayConfigOwner(_) => {
-                    <NotGatewayConfigOwner as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotKmsSigner(_) => {
                     <NotKmsSigner as alloy_sol_types::SolError>::SELECTOR
@@ -10171,19 +9907,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::NotCoprocessorTxSender)
                     }
                     NotCoprocessorTxSender
-                },
-                {
-                    fn NotGatewayConfigOwner(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <NotGatewayConfigOwner as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IGatewayConfigErrors::NotGatewayConfigOwner)
-                    }
-                    NotGatewayConfigOwner
                 },
                 {
                     fn InvalidHighPublicDecryptionThreshold(
@@ -10433,11 +10156,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
-                Self::NotGatewayConfigOwner(inner) => {
-                    <NotGatewayConfigOwner as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::NotKmsSigner(inner) => {
                     <NotKmsSigner as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
@@ -10552,12 +10270,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::NotCustodianTxSender(inner) => {
                     <NotCustodianTxSender as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NotGatewayConfigOwner(inner) => {
-                    <NotGatewayConfigOwner as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -11011,17 +10723,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             self.call_builder(
                 &checkIsCustodianTxSenderCall {
                     txSenderAddress,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`checkIsGatewayConfigOwner`] function.
-        pub fn checkIsGatewayConfigOwner(
-            &self,
-            sender: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkIsGatewayConfigOwnerCall, N> {
-            self.call_builder(
-                &checkIsGatewayConfigOwnerCall {
-                    sender,
                 },
             )
         }

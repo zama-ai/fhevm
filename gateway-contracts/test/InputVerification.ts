@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, InputVerification, InputVerification__factory, Safe } from "../typechain-types";
+import { GatewayConfig, InputVerification, InputVerification__factory } from "../typechain-types";
 import {
   EIP712,
   createBytes32,
@@ -12,7 +12,6 @@ import {
   createEIP712ResponseZKPoK,
   createRandomAddress,
   createRandomWallet,
-  execSafeTransaction,
   getSignaturesZKPoK,
   loadTestVariablesFixture,
 } from "./utils";
@@ -535,13 +534,13 @@ describe("InputVerification", function () {
   describe("Pause", async function () {
     let inputVerification: InputVerification;
     let owner: Wallet;
-    let pauserSmartAccount: Safe;
+    let pauser: HardhatEthersSigner;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       inputVerification = fixtureData.inputVerification;
       owner = fixtureData.owner;
-      pauserSmartAccount = fixtureData.pauserSmartAccount;
+      pauser = fixtureData.pauser;
     });
 
     it("Should pause and unpause contract with owner address", async function () {
@@ -558,15 +557,11 @@ describe("InputVerification", function () {
     });
 
     it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
+      // Check that the contract is not paused.
       expect(await inputVerification.paused()).to.be.false;
 
-      // Get the target contract address and the data to call the pause function.
-      const to = await inputVerification.getAddress();
-      const data = inputVerification.interface.encodeFunctionData("pause");
-
-      // Execute the Safe transaction through the Pauser Smart Account.
-      await execSafeTransaction([owner], pauserSmartAccount, to, data);
+      // Pause the contract with the pauser address.
+      await expect(inputVerification.connect(pauser).pause()).to.emit(inputVerification, "Paused").withArgs(pauser);
 
       // Contract should be paused.
       expect(await inputVerification.paused()).to.be.true;

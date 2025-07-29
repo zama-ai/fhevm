@@ -10,9 +10,9 @@ import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../utils/loadVariables";
 import { pascalCaseToSnakeCase } from "../utils/stringOps";
 
-async function deployMultisigSmartAccount(
+async function deploySafeSmartAccount(
   name: string,
-  { run, ethers }: HardhatRuntimeEnvironment,
+  { ethers }: HardhatRuntimeEnvironment,
   owners: string[],
   threshold: number,
 ) {
@@ -70,68 +70,70 @@ async function deployMultisigSmartAccount(
     throw new Error("Safe proxy address not found");
   }
 
+  const envFilePath = path.join(ADDRESSES_DIR, ".env.gateway");
   const nameSnakeCase = pascalCaseToSnakeCase(name);
-  const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
   const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${safeProxyAddress}\n`;
 
   // Ensure the ADDRESSES_DIR exists or create it
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
 
   // Write the contract's address in the envFilePath file
-  fs.writeFileSync(envFilePath, envContent, { encoding: "utf8", flag: "w" });
+  fs.appendFileSync(envFilePath, envContent, { encoding: "utf8", flag: "a" });
 }
 
-task("task:deployOwnerSmartAccount")
-  .addParam("owners", "List of addresses that control the OwnerSmartAccount.", undefined, types.json)
-  .addParam("threshold", "Number of required confirmations for a OwnerSmartAccount transaction.", undefined, types.int)
+task("task:deployOwnerSafeSmartAccount")
+  .addParam("owners", "List of addresses that control the OwnerSafeSmartAccount.", undefined, types.json)
+  .addParam(
+    "threshold",
+    "Number of required confirmations for a OwnerSafeSmartAccount transaction.",
+    undefined,
+    types.int,
+  )
   .setAction(async function ({ owners, threshold }, hre) {
     // Compile contracts from external dependencies (e.g., Safe Smart Account).
     // These are temporarily stored by `hardhat-dependency-compiler`.
     // See the `dependencyCompiler` field in `hardhat.config.ts` for configuration details.
     await hre.run("compile:specific", { contract: "hardhat-dependency-compiler" });
 
-    await deployMultisigSmartAccount("OwnerSmartAccount", hre, owners, threshold);
+    await deploySafeSmartAccount("OwnerSafeSmartAccount", hre, owners, threshold);
   });
 
-task("task:deployPauserSmartAccount")
-  .addParam("owners", "List of addresses that control the PauserSmartAccount.", undefined, types.json)
-  .addParam("threshold", "Number of required confirmations for a PauserSmartAccount transaction.", undefined, types.int)
+task("task:deployPauserSafeSmartAccount")
+  .addParam("owners", "List of addresses that control the PauserSafeSmartAccount.", undefined, types.json)
+  .addParam(
+    "threshold",
+    "Number of required confirmations for a PauserSafeSmartAccount transaction.",
+    undefined,
+    types.int,
+  )
   .setAction(async function ({ owners, threshold }, hre) {
     // Compile contracts from external dependencies (e.g., Safe Smart Account).
     // These are temporarily stored by `hardhat-dependency-compiler`.
     // See the `dependencyCompiler` field in `hardhat.config.ts` for configuration details.
     await hre.run("compile:specific", { contract: "hardhat-dependency-compiler" });
 
-    await deployMultisigSmartAccount("PauserSmartAccount", hre, owners, threshold);
+    await deploySafeSmartAccount("PauserSafeSmartAccount", hre, owners, threshold);
   });
 
-task("task:transferOwnershipToOwnerSmartAccount")
+task("task:transferGatewayOwnership", "Transfers ownership of the GatewayConfig contract to the OwnerSafeSmartAccount")
   .addParam("currentOwnerPrivateKey", "Private key of the owner of the GatewayConfig contract", undefined, types.string)
-  .addParam("signerPrivateKey", "Private key of one of the owners of the OwnerSmartAccount", undefined, types.string)
   .addOptionalParam(
     "useInternalProxyAddress",
     "If proxy address from the /addresses directory should be used",
     false,
     types.boolean,
   )
-  .setAction(async function ({ currentOwnerPrivateKey, signerPrivateKey, useInternalProxyAddress }, { ethers }) {
-    // Get a currentOwner wallet.
-    // const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  .setAction(async function ({ currentOwnerPrivateKey, useInternalProxyAddress }, { ethers }) {
+    // Get the currentOwner wallet.
     const currentOwner = new Wallet(currentOwnerPrivateKey).connect(ethers.provider);
-    const signer = new Wallet(signerPrivateKey).connect(ethers.provider);
 
-    const ownerSmartAccountSnakeCase = pascalCaseToSnakeCase("OwnerSmartAccount");
     if (useInternalProxyAddress) {
       const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
-      const ownerSmartAccountEnvFilePath = path.join(ADDRESSES_DIR, `.env.${ownerSmartAccountSnakeCase}`);
 
       if (!fs.existsSync(gatewayEnvFilePath)) {
         throw new Error(`Environment file not found: ${gatewayEnvFilePath}`);
       }
-      if (!fs.existsSync(ownerSmartAccountEnvFilePath)) {
-        throw new Error(`Environment file not found: ${ownerSmartAccountEnvFilePath}`);
-      }
-      dotenv.config({ path: [gatewayEnvFilePath, ownerSmartAccountEnvFilePath], override: true });
+      dotenv.config({ path: gatewayEnvFilePath, override: true });
     }
 
     // Get the GatewayConfig contract from the Ownable2StepUpgradeable factory
@@ -140,15 +142,60 @@ task("task:transferOwnershipToOwnerSmartAccount")
     const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
     const gatewayConfigContract = await ethers.getContractAt("Ownable2StepUpgradeable", gatewayConfigContractAddress);
 
-    // Get the OwnerSmartAccount contract from the Safe factory
+    // Get the OwnerSafeSmartAccount contract from the Safe factory
+    const ownerSmartAccountSnakeCase = pascalCaseToSnakeCase("OwnerSafeSmartAccount");
+    const ownerSmartAccountAddressEnvVarName = `${ownerSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
+    const ownerSmartAccountAddress = getRequiredEnvVar(ownerSmartAccountAddressEnvVarName);
+
+    console.log(`Transferring Gateway ownership to OwnerSafeSmartAccount at address: ${ownerSmartAccountAddress}`);
+
+    // Step 1 - Transfer ownership of the contract to the OwnerSafeSmartAccount.
+    await gatewayConfigContract.connect(currentOwner).transferOwnership(ownerSmartAccountAddress);
+
+    console.log(
+      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully transferred to OwnerSafeSmartAccount at address: ${ownerSmartAccountAddress}`,
+    );
+  });
+
+task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig contract from the OwnerSafeSmartAccount")
+  .addParam(
+    "signerPrivateKey",
+    "Private key of one of the owners of the OwnerSafeSmartAccount",
+    undefined,
+    types.string,
+  )
+  .addOptionalParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ signerPrivateKey, useInternalProxyAddress }, { ethers }) {
+    // Get the signer wallet.
+    const signer = new Wallet(signerPrivateKey).connect(ethers.provider);
+
+    if (useInternalProxyAddress) {
+      const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
+
+      if (!fs.existsSync(gatewayEnvFilePath)) {
+        throw new Error(`Environment file not found: ${gatewayEnvFilePath}`);
+      }
+      dotenv.config({ path: gatewayEnvFilePath, override: true });
+    }
+
+    // Get the GatewayConfig contract
+    const gatewayConfigSnakeCase = pascalCaseToSnakeCase("GatewayConfig");
+    const gatewayConfigAddressEnvVarName = `${gatewayConfigSnakeCase.toUpperCase()}_ADDRESS`;
+    const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
+    const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
+
+    // Get the OwnerSafeSmartAccount contract from the Safe factory
+    const ownerSmartAccountSnakeCase = pascalCaseToSnakeCase("OwnerSafeSmartAccount");
     const ownerSmartAccountAddressEnvVarName = `${ownerSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
     const ownerSmartAccountAddress = getRequiredEnvVar(ownerSmartAccountAddressEnvVarName);
     const ownerSmartAccount = await ethers.getContractAt("Safe", ownerSmartAccountAddress);
 
-    console.log(`Transferring ownerships to OwnerSmartAccount at address: ${ownerSmartAccountAddress}`);
-
-    // Step 1: Transfer ownership of the contract to the OwnerSmartAccount.
-    await gatewayConfigContract.connect(currentOwner).transferOwnership(ownerSmartAccountAddress);
+    console.log(`Accepting ownership from OwnerSafeSmartAccount at address: ${ownerSmartAccountAddress}`);
 
     // Prepare the Safe transaction to accept ownership.
     const value = 0; // Ether value.
@@ -181,7 +228,7 @@ task("task:transferOwnershipToOwnerSmartAccount")
     const flatSig = signedMessage.replace(/1b$/, "1f").replace(/1c$/, "20");
     const signatureBytes = "0x" + flatSig.slice(2);
 
-    // Step 2: Execute the Safe transaction to accept ownership.
+    // Step 2 - Execute the Safe transaction to accept ownership.
     const execTransactionResponse = await ownerSmartAccount.execTransaction(
       gatewayConfigContractAddress,
       value,
@@ -196,6 +243,6 @@ task("task:transferOwnershipToOwnerSmartAccount")
     );
     await execTransactionResponse.wait();
     console.log(
-      `Ownership of GatewayConfig at address ${gatewayConfigContractAddress} successfully transferred to OwnerSmartAccount at address: ${ownerSmartAccountAddress}`,
+      `Ownership of GatewayConfig at address ${gatewayConfigContractAddress} successfully accepted from OwnerSafeSmartAccount at address: ${ownerSmartAccountAddress}`,
     );
   });

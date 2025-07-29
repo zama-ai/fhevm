@@ -172,12 +172,6 @@ interface IGatewayConfig {
     error ChainIdNotUint64(uint256 chainId);
 
     /**
-     * @notice Error emitted when an address is not the owner of the GatewayConfig contract.
-     * @param sender The address that is not the owner.
-     */
-    error NotGatewayConfigOwner(address sender);
-
-    /**
      * @notice Update the pauser address.
      * @param newPauser The new pauser address.
      */
@@ -252,12 +246,6 @@ interface IGatewayConfig {
      * @param chainId The chain ID to check.
      */
     function checkHostChainIsRegistered(uint256 chainId) external view;
-
-    /**
-     * @notice Check if the given address is the owner of the GatewayConfig contract.
-     * @param sender The address to check.
-     */
-    function checkIsGatewayConfigOwner(address sender) external view;
 
     /**
      * @notice Get the owner of the GatewayConfig contract.

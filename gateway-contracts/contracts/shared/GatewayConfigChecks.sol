@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
+import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
-import "../interfaces/IGatewayConfig.sol";
-import "../libraries/HandleOps.sol";
+import { IGatewayConfig } from "../interfaces/IGatewayConfig.sol";
+import { HandleOps } from "../libraries/HandleOps.sol";
 
 /**
  * @title GatewayConfig Checks
@@ -12,6 +13,12 @@ import "../libraries/HandleOps.sol";
 abstract contract GatewayConfigChecks {
     /// @notice The address of the GatewayConfig contract
     IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
+
+    /**
+     * @notice Error emitted when an address is not the owner of the GatewayConfig contract.
+     * @param sender The address that is not the owner.
+     */
+    error NotGatewayOwner(address sender);
 
     /// @notice Checks if the sender is a coprocessor transaction sender.
     modifier onlyCoprocessorTxSender() {
@@ -38,8 +45,10 @@ abstract contract GatewayConfigChecks {
     }
 
     /// @dev Check that the sender is the owner of the GatewayConfig contract.
-    modifier onlyGatewayConfigOwner() {
-        _GATEWAY_CONFIG.checkIsGatewayConfigOwner(msg.sender);
+    modifier onlyGatewayOwner() {
+        if (msg.sender != Ownable2StepUpgradeable(gatewayConfigAddress).owner()) {
+            revert NotGatewayOwner(msg.sender);
+        }
         _;
     }
 }

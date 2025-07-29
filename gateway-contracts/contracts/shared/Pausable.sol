@@ -45,7 +45,7 @@ abstract contract Pausable is PausableUpgradeable, GatewayConfigChecks {
      * - Only owner can unpause.
      * - The contract must be paused.
      */
-    function unpause() external virtual onlyGatewayConfigOwner {
+    function unpause() external virtual onlyGatewayOwner {
         _unpause();
     }
 }

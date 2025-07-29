@@ -34,8 +34,11 @@ async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
 async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCustodians: number) {
   // Get signers
   // - the owner owns the contracts and can initialize the protocol, update FHE params
+  // - the pauser can pause the protocol
   const owner = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY"), hre.ethers.provider);
   await fund(owner.address);
+  const pauser = await hre.ethers.getSigner(getRequiredEnvVar("PAUSER_ADDRESS"));
+  await checkIsHardhatSigner(pauser);
 
   // Load the KMS transaction senders
   const kmsTxSenders = [];
@@ -108,6 +111,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
 
   return {
     owner,
+    pauser,
     kmsTxSenders,
     kmsSigners,
     kmsNodeIps,
@@ -160,13 +164,6 @@ export async function loadTestVariablesFixture() {
   // Load the Decryption contract
   const decryption = await hre.ethers.getContractAt("Decryption", getRequiredEnvVar("DECRYPTION_ADDRESS"));
 
-  // Load the Pauser smart account
-  const parsedEnvPauserSmartAccount = dotenv.parse(fs.readFileSync("addresses/.env.pauser_smart_account"));
-  const pauserSmartAccount = await hre.ethers.getContractAt(
-    "Safe",
-    parsedEnvPauserSmartAccount.PAUSER_SMART_ACCOUNT_ADDRESS,
-  );
-
   // Load the FHE parameters
   const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
   const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
@@ -179,7 +176,6 @@ export async function loadTestVariablesFixture() {
     multichainAcl,
     decryption,
     inputVerification,
-    pauserSmartAccount,
     chainIds,
     nKmsNodes,
     nCoprocessors,
