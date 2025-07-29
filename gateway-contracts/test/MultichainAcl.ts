@@ -36,9 +36,6 @@ describe("MultichainAcl", function () {
   const ctHandleFakeChainId = createCtHandle(fakeHostChainId);
   const fakeTxSender = createRandomWallet();
 
-  // Define extra data for version 0
-  const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
-
   let gatewayConfig: GatewayConfig;
   let multichainAcl: MultichainAcl;
   let coprocessorTxSenders: HardhatEthersSigner[];
@@ -82,40 +79,34 @@ describe("MultichainAcl", function () {
     beforeEach(async function () {
       // Allow the address to access the handle
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, accountAddress, extraDataV0);
+        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, accountAddress);
       }
     });
 
     it("Should revert because the hostChainId is not registered in the GatewayConfig contract", async function () {
       // Check that allowing an account to use a ciphertext on a fake chain ID reverts
-      await expect(
-        multichainAcl
-          .connect(coprocessorTxSenders[0])
-          .allowAccount(ctHandleFakeChainId, newAccountAddress, extraDataV0),
-      )
+      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandleFakeChainId, newAccountAddress))
         .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
     it("Should allow account to use the ciphertext", async function () {
       // Trigger two allow calls with different coprocessor transaction senders
-      await multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
-      const txResponse = multichainAcl
-        .connect(coprocessorTxSenders[1])
-        .allowAccount(ctHandle, newAccountAddress, extraDataV0);
+      await multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress);
+      const txResponse = multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress);
 
       // Check that the right event is emitted
       await expect(txResponse).to.emit(multichainAcl, "AllowAccount").withArgs(ctHandle, newAccountAddress);
     });
 
     it("Should revert because coprocessor tries to allow account twice", async function () {
-      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, accountAddress, extraDataV0))
+      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, accountAddress))
         .revertedWithCustomError(multichainAcl, "CoprocessorAlreadyAllowedAccount")
         .withArgs(ctHandle, accountAddress, coprocessorTxSenders[0].address);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
-      await expect(multichainAcl.connect(fakeTxSender).allowAccount(ctHandle, newAccountAddress, extraDataV0))
+      await expect(multichainAcl.connect(fakeTxSender).allowAccount(ctHandle, newAccountAddress))
         .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
@@ -141,33 +132,33 @@ describe("MultichainAcl", function () {
     beforeEach(async function () {
       // Allow the handle to be publicly decrypted
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle, extraDataV0);
+        await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle);
       }
     });
 
     it("Should revert because the hostChainId is not registered in the GatewayConfig contract", async function () {
-      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandleFakeChainId, extraDataV0))
+      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandleFakeChainId))
         .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
     it("Should allow for public decryption", async function () {
       // Trigger two allow calls with different coprocessor transaction senders
-      await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle, extraDataV0);
-      const txResponse = multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle, extraDataV0);
+      await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle);
+      const txResponse = multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle);
 
       // Check that the right event is emitted
       await expect(txResponse).to.emit(multichainAcl, "AllowPublicDecrypt").withArgs(newCtHandle);
     });
 
     it("Should revert because coprocessor tries to allow public decryption twice", async function () {
-      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle, extraDataV0))
+      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle))
         .revertedWithCustomError(multichainAcl, "CoprocessorAlreadyAllowedPublicDecrypt")
         .withArgs(ctHandle, coprocessorTxSenders[0].address);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
-      await expect(multichainAcl.connect(fakeTxSender).allowPublicDecrypt(newCtHandle, extraDataV0))
+      await expect(multichainAcl.connect(fakeTxSender).allowPublicDecrypt(newCtHandle))
         .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
@@ -305,12 +296,12 @@ describe("MultichainAcl", function () {
   });
 
   describe("Pause", async function () {
-    it("Should pause and unpause contract with owner address", async function () {
+    it("Should pause the contract with the pauser and unpause with the owner", async function () {
       // Check that the contract is not paused
       expect(await multichainAcl.paused()).to.be.false;
 
-      // Pause the contract with the owner address
-      await expect(multichainAcl.connect(owner).pause()).to.emit(multichainAcl, "Paused").withArgs(owner);
+      // Pause the contract with the pauser address
+      await expect(multichainAcl.connect(pauser).pause()).to.emit(multichainAcl, "Paused").withArgs(pauser);
       expect(await multichainAcl.paused()).to.be.true;
 
       // Unpause the contract with the owner address
@@ -318,22 +309,23 @@ describe("MultichainAcl", function () {
       expect(await multichainAcl.paused()).to.be.false;
     });
 
-    it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused.
-      expect(await multichainAcl.paused()).to.be.false;
+    it("Should revert on pause because sender is not the pauser", async function () {
+      const fakePauser = createRandomWallet();
 
-      // Pause the contract with the pauser address.
-      await expect(multichainAcl.connect(pauser).pause()).to.emit(multichainAcl, "Paused").withArgs(pauser);
-
-      // Contract should be paused.
-      expect(await multichainAcl.paused()).to.be.true;
+      await expect(multichainAcl.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(multichainAcl, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
     });
 
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
-      await expect(multichainAcl.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(multichainAcl, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await multichainAcl.connect(pauser).pause();
+
+      const fakeOwner = createRandomWallet();
+
+      await expect(multichainAcl.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(multichainAcl, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
     });
   });
 });

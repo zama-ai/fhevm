@@ -5,6 +5,7 @@
 use connector_utils::{
     config::{AwsKmsConfig, DeserializeRawConfig, RawContractConfig},
     monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
+    tasks::default_task_limit,
 };
 use serde::{Deserialize, Serialize};
 
@@ -32,6 +33,8 @@ pub struct RawConfig {
     pub responses_batch_size: u8,
     #[serde(default = "default_gas_multiplier_percent")]
     pub gas_multiplier_percent: usize,
+    #[serde(default = "default_task_limit")]
+    pub task_limit: usize,
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: String,
     #[serde(default = "default_healthcheck_timeout_secs")]
@@ -91,6 +94,7 @@ impl Default for RawConfig {
             tx_retry_interval_ms: default_tx_retry_interval_ms(),
             responses_batch_size: default_responses_batch_size(),
             gas_multiplier_percent: default_gas_multiplier_percent(),
+            task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
         }

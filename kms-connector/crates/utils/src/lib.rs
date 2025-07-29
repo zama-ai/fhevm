@@ -4,6 +4,7 @@ pub mod conn;
 pub mod monitoring;
 pub mod provider;
 pub mod signal;
+pub mod tasks;
 pub mod types;
 
 #[cfg(feature = "tests")]

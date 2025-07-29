@@ -45,6 +45,9 @@ pub struct Config {
     /// Timeout to connect to a S3 bucket.
     pub s3_connect_timeout: Duration,
 
+    /// The maximum number of tasks that can be executed concurrently.
+    pub task_limit: usize,
+
     // TODO: implement to increase security
     /// Whether to verify coprocessors against the `GatewayConfig` contract (defaults to false).
     pub verify_coprocessors: bool,
@@ -114,6 +117,7 @@ impl Config {
             s3_config: raw_config.s3_config,
             s3_ciphertext_retrieval_retries: raw_config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: s3_ciphertext_retrieval_timeout,
+            task_limit: raw_config.task_limit,
             verify_coprocessors: raw_config.verify_coprocessors,
             monitoring_endpoint,
             healthcheck_timeout,

@@ -109,10 +109,14 @@ interface IGatewayConfig {
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
 
     /**
-     * @notice Error emitted when an address is not the pauser.
-     * @param pauserAddress The address that is not the pauser.
+     * @notice Emitted when all the pausable gateway contracts are paused.
      */
-    error NotPauser(address pauserAddress);
+    event PauseAllGatewayContracts();
+
+    /**
+     * @notice Emitted when all the pausable gateway contracts are unpaused.
+     */
+    event UnpauseAllGatewayContracts();
 
     /**
      * @notice Error emitted when an address is not a KMS transaction sender.
@@ -206,6 +210,16 @@ interface IGatewayConfig {
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
 
     /**
+     * @notice Pause all pausable gateway contracts.
+     */
+    function pauseAllGatewayContracts() external;
+
+    /**
+     * @notice Unpause all pausable gateway contracts.
+     */
+    function unpauseAllGatewayContracts() external;
+
+    /**
      * @notice Check if an address is a registered KMS transaction sender.
      * @param kmsTxSenderAddress The address to check.
      */
@@ -246,12 +260,6 @@ interface IGatewayConfig {
      * @param chainId The chain ID to check.
      */
     function checkHostChainIsRegistered(uint256 chainId) external view;
-
-    /**
-     * @notice Get the owner of the GatewayConfig contract.
-     * @return The address of the owner.
-     */
-    function getOwner() external view returns (address);
 
     /**
      * @notice Get the pauser's address.

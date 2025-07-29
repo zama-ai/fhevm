@@ -1,15 +1,15 @@
-name: coprocessor-dependency-analysis
+name: kms-connector-dependency-analysis
 
 on:
   pull_request:
 
 concurrency:
-  group: fhevm-coprocessor-deps-analysis-${{ github.ref }}
+  group: kms-connector-deps-analysis-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check-changes:
-    name: coprocessor-dependency-analysis/check-changes
+    name: kms-connector-dependency-analysis/check-changes
     permissions:
       actions: 'read'
       contents: 'read'
@@ -26,10 +26,10 @@ jobs:
         with:
           filters: |
             rust-files:
-              - .github/workflows/coprocessor-dependency-analysis.yml
-              - coprocessor/fhevm-engine/**
+              - .github/workflows/kms-connector-dependency-analysis.yml
+              - kms-connector/**
   dependencies-check:
-    name: coprocessor-dependency-analysis/dependencies-check (bpr)
+    name: kms-connector-dependency-analysis/dependencies-check (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
     runs-on: ubuntu-latest
@@ -55,17 +55,17 @@ jobs:
 
       - name: Check that Cargo.lock is the source of truth
         run: |
-          cd coprocessor/fhevm-engine
+          cd kms-connector
           cargo update -w --locked || (echo "Error: Cargo.lock is out of sync. Please run 'cargo update' locally and commit changes" && exit 1)
 
       - name: License whitelist
         run: |
-          cd coprocessor/fhevm-engine
-          cargo-deny deny check license --deny license-not-encountered
+          cd kms-connector
+          cargo-deny deny check license
 
       - name: Security issue whitelist
         run: |
-          cd coprocessor/fhevm-engine
+          cd kms-connector
           cargo-audit audit
 
 permissions:
