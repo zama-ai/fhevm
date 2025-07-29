@@ -107,7 +107,7 @@ pub struct Args {
     pub lifo: bool,
 
     /// Enable compression of big ciphertexts before uploading to S3
-    #[arg(long, default_value_t = false)]
+    #[arg(long, default_value_t = true)]
     pub enable_compression: bool,
 }
 
