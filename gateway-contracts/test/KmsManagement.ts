@@ -1,10 +1,10 @@
-import { HardhatEthersSigner, SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
-import { KmsManagement, KmsManagement__factory, Safe } from "../typechain-types";
+import { KmsManagement, KmsManagement__factory } from "../typechain-types";
 import { createRandomWallet, loadTestVariablesFixture } from "./utils";
 
 describe("KmsManagement", function () {
