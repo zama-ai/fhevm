@@ -10,7 +10,10 @@ use crate::{
     },
     monitoring::health::{KmsHealthClient, State},
 };
-use connector_utils::conn::{GatewayProvider, connect_to_db, connect_to_gateway};
+use connector_utils::{
+    conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    tasks::spawn_with_limit,
+};
 use std::fmt::Display;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -56,21 +59,22 @@ where
     async fn run(mut self) {
         loop {
             match self.event_picker.pick_events().await {
-                Ok(events) => self.spawn_event_handling_tasks(events),
+                Ok(events) => self.spawn_event_handling_tasks(events).await,
                 Err(e) => warn!("Error while picking events: {e}"),
             };
         }
     }
 
     /// Spawns a new task to handle each event.
-    fn spawn_event_handling_tasks(&self, events: Vec<T>) {
+    async fn spawn_event_handling_tasks(&self, events: Vec<T>) {
         for event in events {
             let event_processor = self.event_processor.clone();
             let response_publisher = self.response_publisher.clone();
 
-            tokio::spawn(async move {
+            spawn_with_limit(async move {
                 Self::handle_event(event_processor, response_publisher, event).await
-            });
+            })
+            .await;
         }
     }
 

@@ -101,6 +101,7 @@ jobs:
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         env:
+          CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector_version }}
           CONNECTOR_GW_LISTENER_VERSION: ${{ inputs.connector_version }}
           CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector_version }}
           CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector_version }}

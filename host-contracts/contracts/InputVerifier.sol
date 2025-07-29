@@ -9,6 +9,7 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
+import {HANDLE_VERSION} from "./shared/Constants.sol";
 
 /**
  * @title    InputVerifier.
@@ -93,9 +94,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 public constant EIP712_INPUT_VERIFICATION_TYPEHASH = keccak256(bytes(EIP712_INPUT_VERIFICATION_TYPE));
-
-    /// @notice Handle version.
-    uint8 public constant HANDLE_VERSION = 0;
 
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "InputVerifier";
@@ -336,6 +334,14 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     function isSigner(address account) public view virtual returns (bool) {
         InputVerifierStorage storage $ = _getInputVerifierStorage();
         return $.isSigner[account];
+    }
+
+    /**
+     * @notice        Getter for the handle version.
+     * @return uint8 The current version for new handles.
+     */
+    function getHandleVersion() external pure virtual returns (uint8) {
+        return HANDLE_VERSION;
     }
 
     /**

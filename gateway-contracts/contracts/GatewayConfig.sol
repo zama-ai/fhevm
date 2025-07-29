@@ -3,7 +3,10 @@ pragma solidity ^0.8.24;
 
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./interfaces/IGatewayConfig.sol";
+import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
+import { decryptionAddress, inputVerificationAddress } from "../addresses/GatewayAddresses.sol";
+import { Decryption } from "./Decryption.sol";
+import { InputVerification } from "./InputVerification.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/Pausable.sol";
 
@@ -28,6 +31,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
     uint64 private constant REINITIALIZER_VERSION = 3;
+
+    /// @notice The address of the all gateway contracts
+    Decryption private constant DECRYPTION = Decryption(decryptionAddress);
+    InputVerification private constant INPUT_VERIFICATION = InputVerification(inputVerificationAddress);
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.GatewayConfig
@@ -243,6 +250,27 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         $.hostChains.push(hostChain);
         $._isHostChainRegistered[hostChain.chainId] = true;
         emit AddHostChain(hostChain);
+    }
+
+    /**
+     * @dev See {IGatewayConfig-pauseAllGatewayContracts}.
+     * Contracts that are technically pausable but do not provide any pausable functions are not
+     * paused. If at least one of the contracts is already paused, the function will revert.
+     */
+    function pauseAllGatewayContracts() external virtual onlyPauser {
+        DECRYPTION.pause();
+        INPUT_VERIFICATION.pause();
+        emit PauseAllGatewayContracts();
+    }
+
+    /**
+     * @dev See {IGatewayConfig-unpauseAllGatewayContracts}.
+     * If at least one of the contracts is not paused, the function will revert.
+     */
+    function unpauseAllGatewayContracts() external virtual onlyOwner {
+        DECRYPTION.unpause();
+        INPUT_VERIFICATION.unpause();
+        emit UnpauseAllGatewayContracts();
     }
 
     /// @dev See {IGatewayConfig-checkIsKmsTxSender}.

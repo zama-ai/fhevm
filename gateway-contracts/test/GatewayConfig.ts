@@ -4,7 +4,15 @@ import { expect } from "chai";
 import { ContractFactory, EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
-import { EmptyUUPSProxy, GatewayConfig } from "../typechain-types";
+import {
+  CiphertextCommits,
+  Decryption,
+  EmptyUUPSProxy,
+  GatewayConfig,
+  InputVerification,
+  KmsManagement,
+  MultichainAcl,
+} from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
 import {
@@ -807,6 +815,9 @@ describe("GatewayConfig", function () {
   });
 
   describe("Pause", async function () {
+    const fakeOwner = createRandomWallet();
+    const fakePauser = createRandomWallet();
+
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       gatewayConfig = fixtureData.gatewayConfig;
@@ -814,12 +825,12 @@ describe("GatewayConfig", function () {
       pauser = fixtureData.pauser;
     });
 
-    it("Should pause and unpause contract with owner address", async function () {
+    it("Should pause the contract with the pauser and unpause with the owner", async function () {
       // Check that the contract is not paused
       expect(await gatewayConfig.paused()).to.be.false;
 
-      // Pause the contract with the owner address
-      await expect(gatewayConfig.connect(owner).pause()).to.emit(gatewayConfig, "Paused").withArgs(owner);
+      // Pause the contract with the pauser address
+      await expect(gatewayConfig.connect(pauser).pause()).to.emit(gatewayConfig, "Paused").withArgs(pauser);
       expect(await gatewayConfig.paused()).to.be.true;
 
       // Unpause the contract with the owner address
@@ -827,20 +838,99 @@ describe("GatewayConfig", function () {
       expect(await gatewayConfig.paused()).to.be.false;
     });
 
-    it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
-      expect(await gatewayConfig.paused()).to.be.false;
-
-      // Pause the contract with the pauser address
-      await expect(gatewayConfig.connect(pauser).pause()).to.emit(gatewayConfig, "Paused").withArgs(pauser);
-      expect(await gatewayConfig.paused()).to.be.true;
+    it("Should revert on pause because sender is not the pauser", async function () {
+      await expect(gatewayConfig.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(gatewayConfig, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
     });
 
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
-      await expect(gatewayConfig.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(gatewayConfig, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await gatewayConfig.connect(pauser).pause();
+
+      await expect(gatewayConfig.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(gatewayConfig, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
+    });
+
+    describe("Pause all gateway contracts", function () {
+      let ciphertextCommits: CiphertextCommits;
+      let decryption: Decryption;
+      let inputVerification: InputVerification;
+      let kmsManagement: KmsManagement;
+      let multichainAcl: MultichainAcl;
+
+      before(async function () {
+        const fixtureData = await loadFixture(loadTestVariablesFixture);
+        ciphertextCommits = fixtureData.ciphertextCommits;
+        decryption = fixtureData.decryption;
+        inputVerification = fixtureData.inputVerification;
+        kmsManagement = fixtureData.kmsManagement;
+        multichainAcl = fixtureData.multichainAcl;
+      });
+
+      it("Should pause all the Gateway contracts with the pauser", async function () {
+        // Check that the contracts are not paused
+        expect(await ciphertextCommits.paused()).to.be.false;
+        expect(await decryption.paused()).to.be.false;
+        expect(await gatewayConfig.paused()).to.be.false;
+        expect(await inputVerification.paused()).to.be.false;
+        expect(await kmsManagement.paused()).to.be.false;
+        expect(await multichainAcl.paused()).to.be.false;
+
+        const txResponse = await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+
+        await expect(txResponse).to.emit(gatewayConfig, "PauseAllGatewayContracts");
+
+        // Check that the pausable contracts are paused
+        expect(await decryption.paused()).to.be.true;
+        expect(await inputVerification.paused()).to.be.true;
+
+        // Check that the non-pausable contracts are not paused
+        // The following contracts are pausable but don't have pausable functions yet, so they are
+        // not paused by the `pauseAllGatewayContracts()` function for now:
+        // - CiphertextCommits
+        // - MultichainAcl
+        // - GatewayConfig
+        // In addition, the `KmsManagement` contract is not used yet, so we don't need to pause it for now.
+        // See https://github.com/zama-ai/fhevm-internal/issues/180
+        expect(await ciphertextCommits.paused()).to.be.false;
+        expect(await multichainAcl.paused()).to.be.false;
+        expect(await gatewayConfig.paused()).to.be.false;
+        expect(await kmsManagement.paused()).to.be.false;
+      });
+
+      it("Should revert on pause all gateway contracts because the sender is not the pauser", async function () {
+        await expect(gatewayConfig.connect(fakePauser).pauseAllGatewayContracts()).to.be.revertedWithCustomError(
+          gatewayConfig,
+          "NotPauser",
+        );
+      });
+
+      it("Should unpause all the gateway contracts with the owner", async function () {
+        // Pause the contract with the pauser address
+        await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+
+        // Unpause the contract with the owner address
+        const txResponse = await gatewayConfig.connect(owner).unpauseAllGatewayContracts();
+
+        await expect(txResponse).to.emit(gatewayConfig, "UnpauseAllGatewayContracts");
+
+        // Check that the contracts are not paused anymore
+        expect(await ciphertextCommits.paused()).to.be.false;
+        expect(await decryption.paused()).to.be.false;
+        expect(await gatewayConfig.paused()).to.be.false;
+        expect(await inputVerification.paused()).to.be.false;
+        expect(await kmsManagement.paused()).to.be.false;
+        expect(await multichainAcl.paused()).to.be.false;
+      });
+
+      it("Should revert on unpause all gateway contracts because the sender is not the owner", async function () {
+        await expect(gatewayConfig.connect(fakeOwner).unpauseAllGatewayContracts()).to.be.revertedWithCustomError(
+          gatewayConfig,
+          "OwnableUnauthorizedAccount",
+        );
+      });
     });
   });
 });
