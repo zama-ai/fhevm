@@ -25,13 +25,8 @@ async fn run() -> anyhow::Result<()> {
         Subcommands::Validate { config } => {
             Config::from_env_and_file(Some(config)).await?;
         }
-        Subcommands::Start { config, name } => {
-            // Load config and potentially override service name
-            let mut config = Config::from_env_and_file(config.as_ref()).await?;
-            if let Some(name) = name {
-                config.service_name = name;
-                info!("Using custom service name: {}", config.service_name);
-            }
+        Subcommands::Start { config } => {
+            let config = Config::from_env_and_file(config.as_ref()).await?;
 
             let cancel_token = CancellationToken::new();
             set_task_limit(config.task_limit);
