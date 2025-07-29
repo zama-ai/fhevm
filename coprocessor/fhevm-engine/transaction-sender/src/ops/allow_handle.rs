@@ -94,7 +94,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                     handle = h,
                     "Coprocessor has already added the ACL entry"
                 );
-                self.set_txn_is_sent(key).await?;
+                self.set_txn_is_sent(key, None, None).await?;
                 return Ok(());
             }
             // Consider transport errors and local usage errors as something that must be retried infinitely.
@@ -161,7 +161,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         };
 
         if receipt.status() {
-            self.set_txn_is_sent(key).await?;
+            self.set_txn_is_sent(
+                key,
+                Some(receipt.transaction_hash.as_slice()),
+                receipt.block_number.map(|bn| bn as i64),
+            )
+            .await?;
 
             info!(
                 transaction_hash = %receipt.transaction_hash,
@@ -202,13 +207,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
             })
     }
 
-    async fn set_txn_is_sent(&self, key: &Key) -> anyhow::Result<()> {
+    async fn set_txn_is_sent(
+        &self,
+        key: &Key,
+        txn_hash: Option<&[u8]>,
+        txn_block_number: Option<i64>,
+    ) -> anyhow::Result<()> {
         sqlx::query!(
             "UPDATE allowed_handles
-                 SET txn_is_sent = true
-                 WHERE handle = $1
-                 AND account_address = $2
-                 AND tenant_id = $3",
+                 SET
+                    txn_is_sent = true,
+                    txn_hash = $1,
+                    txn_block_number = $2
+                 WHERE handle = $3
+                 AND account_address = $4
+                 AND tenant_id = $5",
+            txn_hash,
+            txn_block_number,
             key.handle,
             key.account_addr,
             key.tenant_id
