@@ -103,6 +103,7 @@ jobs:
         if: github.event_name == 'release'
         run: |
           {
+            echo "CONNECTOR_DB_MIGRATION_VERSION"=${{ github.ref_name }}
             echo "CONNECTOR_GW_LISTENER_VERSION=${{ github.ref_name }}"
             echo "CONNECTOR_KMS_WORKER_VERSION=${{ github.ref_name }}"
             echo "CONNECTOR_TX_SENDER_VERSION=${{ github.ref_name }}"
@@ -120,6 +121,7 @@ jobs:
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         env:
+          CONNECTOR_DB_MIGRATION_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_DB_MIGRATION_VERSION }}
           CONNECTOR_GW_LISTENER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_GW_LISTENER_VERSION }}
           CONNECTOR_KMS_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_KMS_WORKER_VERSION }}
           CONNECTOR_TX_SENDER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_TX_SENDER_VERSION }}
