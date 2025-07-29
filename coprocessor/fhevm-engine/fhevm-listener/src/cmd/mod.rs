@@ -147,7 +147,7 @@ impl InfiniteLogIter {
         };
         Self {
             url: args.url.clone(),
-            block_time: args.catchup_margin,
+            block_time: args.initial_block_time,
             no_block_immediate_recheck: args.no_block_immediate_recheck,
             contract_addresses,
             catchup_blocks: None,
