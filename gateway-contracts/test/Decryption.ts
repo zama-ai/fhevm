@@ -2175,11 +2175,23 @@ describe("Decryption", function () {
       expect(await decryption.paused()).to.be.false;
     });
 
-    it("Should revert on pause because sender is not pauser address", async function () {
-      const notPauser = createRandomWallet();
-      await expect(decryption.connect(notPauser).pause())
-        .to.be.revertedWithCustomError(decryption, "NotPauser")
-        .withArgs(notPauser.address);
+    it("Should revert on pause because sender is not the pauser", async function () {
+      const fakePauser = createRandomWallet();
+
+      await expect(decryption.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(decryption, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
+    });
+
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await decryption.connect(pauser).pause();
+
+      const fakeOwner = createRandomWallet();
+
+      await expect(decryption.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(decryption, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
     });
   });
 });

@@ -309,11 +309,23 @@ describe("MultichainAcl", function () {
       expect(await multichainAcl.paused()).to.be.false;
     });
 
-    it("Should revert on pause because sender is not pauser address", async function () {
-      const notPauser = createRandomWallet();
-      await expect(multichainAcl.connect(notPauser).pause())
-        .to.be.revertedWithCustomError(multichainAcl, "NotPauser")
-        .withArgs(notPauser.address);
+    it("Should revert on pause because sender is not the pauser", async function () {
+      const fakePauser = createRandomWallet();
+
+      await expect(multichainAcl.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(multichainAcl, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
+    });
+
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await multichainAcl.connect(pauser).pause();
+
+      const fakeOwner = createRandomWallet();
+
+      await expect(multichainAcl.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(multichainAcl, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
     });
   });
 });

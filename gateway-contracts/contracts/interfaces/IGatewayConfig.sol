@@ -109,6 +109,16 @@ interface IGatewayConfig {
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
 
     /**
+     * @notice Emitted when all the pausable gateway contracts are paused.
+     */
+    event PauseAllGatewayContracts();
+
+    /**
+     * @notice Emitted when all the pausable gateway contracts are unpaused.
+     */
+    event UnpauseAllGatewayContracts();
+
+    /**
      * @notice Error emitted when an address is not a KMS transaction sender.
      * @param txSenderAddress The address that is not a KMS transaction sender.
      */
@@ -198,6 +208,16 @@ interface IGatewayConfig {
      * @param newUserDecryptionThreshold The new user decryption threshold.
      */
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
+
+    /**
+     * @notice Pause all pausable gateway contracts.
+     */
+    function pauseAllGatewayContracts() external;
+
+    /**
+     * @notice Unpause all pausable gateway contracts.
+     */
+    function unpauseAllGatewayContracts() external;
 
     /**
      * @notice Check if an address is a registered KMS transaction sender.

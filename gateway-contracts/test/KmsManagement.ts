@@ -916,11 +916,23 @@ describe("KmsManagement", function () {
       expect(await kmsManagement.paused()).to.be.false;
     });
 
-    it("Should revert on pause because sender is not pauser address", async function () {
-      const notPauser = createRandomWallet();
-      await expect(kmsManagement.connect(notPauser).pause())
-        .to.be.revertedWithCustomError(kmsManagement, "NotPauser")
-        .withArgs(notPauser.address);
+    it("Should revert on pause because sender is not the pauser", async function () {
+      const fakePauser = createRandomWallet();
+
+      await expect(kmsManagement.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(kmsManagement, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
+    });
+
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await kmsManagement.connect(pauser).pause();
+
+      const fakeOwner = createRandomWallet();
+
+      await expect(kmsManagement.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(kmsManagement, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
     });
   });
 });
