@@ -47,6 +47,11 @@
         "ordinal": 8,
         "name": "txn_unlimited_retries_count",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "ciphertext128_format",
+        "type_info": "Int2"
       }
     ],
     "parameters": {
@@ -64,6 +69,7 @@
       false,
       true,
       true,
+      false,
       false
     ]
   },

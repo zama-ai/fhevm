@@ -12,8 +12,11 @@ use std::{
     io::{Read, Write},
     time::Duration,
 };
+
 use test_harness::instance::{DBInstance, ImportMode};
-use tfhe::{prelude::FheDecrypt, ClientKey, SquashedNoiseFheUint};
+use tfhe::{
+    prelude::FheDecrypt, ClientKey, CompressedSquashedNoiseCiphertextList, SquashedNoiseFheUint,
+};
 use tokio::{sync::mpsc, time::sleep};
 use tracing::Level;
 
@@ -22,8 +25,10 @@ const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
 
 #[tokio::test]
 #[ignore = "requires valid SnS keys in CI"]
-async fn test_fhe_ciphertext128() {
-    let (conn, client_key, _rx, _test_instance) = setup().await.expect("valid setup");
+async fn test_fhe_ciphertext128_with_compression() {
+    const WITH_COMPRESSION: bool = true;
+    let (conn, client_key, _rx, _test_instance) =
+        setup(WITH_COMPRESSION).await.expect("valid setup");
     let tf: TestFile = read_test_file("ciphertext64.bin");
 
     test_decryptable(
@@ -33,6 +38,7 @@ async fn test_fhe_ciphertext128() {
         &tf.ciphertext64.clone(),
         tf.decrypted,
         true,
+        WITH_COMPRESSION,
     )
     .await
     .expect("test_decryptable, first_fhe_computation = true");
@@ -43,9 +49,30 @@ async fn test_fhe_ciphertext128() {
         &tf.ciphertext64,
         tf.decrypted,
         false,
+        WITH_COMPRESSION,
     )
     .await
     .expect("test_decryptable, first_fhe_computation = false");
+}
+
+#[tokio::test]
+#[ignore = "requires valid SnS keys in CI"]
+async fn test_fhe_ciphertext128_no_compression() {
+    const NO_COMPRESSION: bool = false;
+    let (conn, client_key, _rx, _test_instance) = setup(NO_COMPRESSION).await.expect("valid setup");
+    let tf: TestFile = read_test_file("ciphertext64.bin");
+
+    test_decryptable(
+        &conn,
+        &client_key,
+        &tf.handle.into(),
+        &tf.ciphertext64.clone(),
+        tf.decrypted,
+        true,
+        NO_COMPRESSION,
+    )
+    .await
+    .expect("test_decryptable, first_fhe_computation = true");
 }
 
 async fn test_decryptable(
@@ -55,6 +82,7 @@ async fn test_decryptable(
     ciphertext: &Vec<u8>,
     expected_result: i64,
     first_fhe_computation: bool, // first insert ciphertext64 in DB
+    with_compression: bool,
 ) -> anyhow::Result<()> {
     clean_up(pool, handle).await?;
 
@@ -72,14 +100,31 @@ async fn test_decryptable(
 
     // wait until ciphertext.large_ct is not NULL
     let data = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10).await?;
-    let v: SquashedNoiseFheUint = safe_deserialize(&data).unwrap();
-    let clear: u128 = v.decrypt(client_key.as_ref().unwrap());
 
-    println!("Decrypted value: {clear}");
+    println!("Ciphertext data len: {:?}", data.len());
+
+    let cleartext = if with_compression {
+        let list: CompressedSquashedNoiseCiphertextList = safe_deserialize(&data)?;
+        let v: SquashedNoiseFheUint = list
+            .get(0)?
+            .ok_or_else(|| anyhow::anyhow!("Failed to get the first element from the list"))?;
+        let r: u128 = v.decrypt(
+            client_key
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Client key is not available for decryption"))?,
+        );
+        r
+    } else {
+        let v: SquashedNoiseFheUint = safe_deserialize(&data)?;
+        let r: u128 = v.decrypt(client_key.as_ref().unwrap());
+        r
+    };
+
+    println!("Cleartext: {cleartext}");
 
     assert!(
-        clear == expected_result as u128,
-        "Decrypted value does not match expected value",
+        cleartext == expected_result as u128,
+        "Cleartext value does not match expected value",
     );
 
     anyhow::Result::<()>::Ok(())
@@ -253,7 +298,9 @@ async fn test_garbage_collect() {
     );
 }
 
-async fn setup() -> anyhow::Result<(
+async fn setup(
+    enable_compression: bool,
+) -> anyhow::Result<(
     sqlx::PgPool,
     Option<ClientKey>,
     tokio::sync::mpsc::Receiver<UploadJob>,
@@ -285,6 +332,7 @@ async fn setup() -> anyhow::Result<(
             liveness_threshold: Duration::from_secs(10),
             port: 8080,
         },
+        enable_compression,
     };
 
     let pool = sqlx::postgres::PgPoolOptions::new()

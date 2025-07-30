@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT tenant_id, handle, ciphertext, ciphertext128\n        FROM ciphertext_digest \n        WHERE ciphertext IS NULL OR ciphertext128 IS NULL\n        FOR UPDATE SKIP LOCKED\n        LIMIT $1;",
+  "query": "SELECT tenant_id, handle, ciphertext, ciphertext128, ciphertext128_format \n        FROM ciphertext_digest \n        WHERE ciphertext IS NULL OR ciphertext128 IS NULL\n        FOR UPDATE SKIP LOCKED\n        LIMIT $1;",
   "describe": {
     "columns": [
       {
@@ -22,6 +22,11 @@
         "ordinal": 3,
         "name": "ciphertext128",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "ciphertext128_format",
+        "type_info": "Int2"
       }
     ],
     "parameters": {
@@ -33,8 +38,9 @@
       false,
       false,
       true,
-      true
+      true,
+      false
     ]
   },
-  "hash": "678bc00e540559d8c3912dbcb2c45d1d2022be7bf005f5c2a44a0c92b97de011"
+  "hash": "f43b3e3791b58d7d3b227528b34da11f4de7d5b922579e8713754b34e6ca51d4"
 }
