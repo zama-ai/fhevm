@@ -1,6 +1,7 @@
 use crate::db_utils::setup_test_user;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 pub struct DBInstance {
     _container: Option<testcontainers::ContainerAsync<testcontainers::GenericImage>>,
@@ -11,6 +12,14 @@ pub struct DBInstance {
 impl DBInstance {
     pub fn db_url(&self) -> &str {
         self.db_url.as_str()
+    }
+}
+
+impl Drop for DBInstance {
+    fn drop(&mut self) {
+        warn!("Dropping DBInstance, terminating the database container");
+        drop(self.parent_token.clone());
+        drop(self._container.take());
     }
 }
 

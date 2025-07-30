@@ -49,7 +49,7 @@ pub struct Args {
     #[arg(long, default_value = None)]
     pub end_at_block: Option<u64>,
 
-    #[arg(long, default_value = None, help = "A Coprocessor API key is needed for database access")]
+    #[arg(long, help = "A Coprocessor API key is needed for database access")]
     pub coprocessor_api_key: Option<Uuid>,
 
     #[arg(
@@ -169,17 +169,10 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn get_chain_id_or_panic(&self) -> ChainId {
-        // TODO: remove expect and, instead, propagate the error
+    async fn get_chain_id(&self) -> anyhow::Result<ChainId> {
         let ws = WsConnect::new(&self.url);
-        let provider = ProviderBuilder::new()
-            .connect_ws(ws)
-            .await
-            .expect("Cannot connect to host chain");
-        provider
-            .get_chain_id()
-            .await
-            .expect("Cannot retrieve chain id")
+        let provider = ProviderBuilder::new().connect_ws(ws).await?;
+        Ok(provider.get_chain_id().await?)
     }
 
     async fn catchup_block_from(
@@ -577,7 +570,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
     let mut log_iter =
         InfiniteLogIter::new(&args, health_check.health_state.clone());
-    let chain_id = log_iter.get_chain_id_or_panic().await;
+    let chain_id = log_iter.get_chain_id().await?;
     info!(chain_id = chain_id, "Chain ID");
 
     let mut db = if !args.database_url.is_empty() {
@@ -585,15 +578,30 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             let mut db = Database::new(
                 &args.database_url,
                 &coprocessor_api_key,
-                chain_id,
                 args.dependence_cache_size,
             )
-            .await;
+            .await?;
             if log_iter.start_at_block.is_none() {
                 log_iter.start_at_block = db
                     .read_last_valid_block()
                     .await
                     .map(|n| n - args.catchup_margin as i64);
+            }
+            if chain_id != db.chain_id {
+                error!(
+                    chain_id_blockchain = ?chain_id,
+                    chain_id_db = ?db.chain_id,
+                    tenant_id = ?db.tenant_id,
+                    coprocessor_api_key = ?coprocessor_api_key,
+                    "Chain ID mismatch with database",
+                );
+                return Err(anyhow!(
+                    "Chain ID mismatch with database, blockchain: {} vs db: {}, tenant_id: {}, coprocessor_api_key: {}",
+                    chain_id,
+                    db.chain_id,
+                    db.tenant_id,
+                    coprocessor_api_key
+                ));
             }
             Some(db)
         } else {
