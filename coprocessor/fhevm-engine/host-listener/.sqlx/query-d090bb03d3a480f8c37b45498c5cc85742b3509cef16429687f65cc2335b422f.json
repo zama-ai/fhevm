@@ -1,12 +1,17 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT tenant_id FROM tenants WHERE tenant_api_key = $1",
+  "query": "SELECT tenant_id, chain_id FROM tenants WHERE tenant_api_key = $1",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
         "name": "tenant_id",
         "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "chain_id",
+        "type_info": "Int8"
       }
     ],
     "parameters": {
@@ -15,8 +20,9 @@
       ]
     },
     "nullable": [
+      false,
       false
     ]
   },
-  "hash": "69e5a39a57d25b91b21c5fa00f45e614a9d71b97e5bdd8118f4d7d986a48aeb5"
+  "hash": "d090bb03d3a480f8c37b45498c5cc85742b3509cef16429687f65cc2335b422f"
 }
