@@ -330,25 +330,18 @@ impl InfiniteLogIter {
                 Ok(provider) => {
                     let catch_up_from =
                         self.catchup_block_from(&provider).await;
-                    let mut filter = Filter::new().from_block(catch_up_from);
-                    if let Some(end_at_block) = self.end_at_block {
-                        filter = filter
-                            .to_block(BlockNumberOrTag::Number(end_at_block));
-                        // inclusive
-                    }
                     self.catchup_blocks = Some((
                         catch_up_from.as_number().unwrap_or(0),
                         self.end_at_block,
                     ));
-                    if !self.contract_addresses.is_empty() {
-                        filter = filter.address(self.contract_addresses.clone())
-                    }
-                    info!(url = %self.url, "Listening on");
-                    info!(contracts = ?self.contract_addresses, "Contracts addresses");
-                    // note subcribing to real-time before reading catchup
-                    // events to have the minimal gap between the two
+                    // catchup is done just after the subscription
+                    // to have the minimal gap between the two
                     // TODO: but it does not guarantee no gap for now
                     // (implementation dependant)
+                    let filter =
+                        Filter::new().address(self.contract_addresses.clone());
+                    // subscribe_logs does not honor from_block and sometime not to_block
+                    // so we rely on catchup_blocks and end_at_block_reached
                     self.stream = Some(
                         provider
                             .subscribe_logs(&filter)
@@ -357,6 +350,8 @@ impl InfiniteLogIter {
                             .into_stream(),
                     );
                     self.provider = Some(provider);
+                    info!(url = %self.url, "Listening on");
+                    info!(contracts = ?self.contract_addresses, "Contracts addresses");
                     return;
                 }
                 Err(err) => {
@@ -421,6 +416,16 @@ impl InfiniteLogIter {
         }
     }
 
+    fn end_at_block_reached(&self, log: &Log) -> bool {
+        let Some(end_at_block) = self.end_at_block else {
+            return false;
+        };
+        let Some(current_block) = log.block_number else {
+            return false;
+        };
+        current_block > end_at_block
+    }
+
     async fn next(&mut self) -> Option<Log> {
         let mut not_initialized = self.stream.is_none();
         self.prev_event = self.current_event.take();
@@ -445,18 +450,19 @@ impl InfiniteLogIter {
                     // the stream ends, could be a restart of the full node, or
                     // just a temporary gap
                     self.stream = None;
-                    if let (Some(end_at_block), Some(last_seen_block)) =
-                        (self.end_at_block, self.last_valid_block)
-                    {
-                        if end_at_block == last_seen_block {
-                            return None;
-                        }
-                    }
                     info!("Nothing to read, retrying");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                     continue;
                 }
                 LogOrBlockTimeout::Log(Some(log)) => {
+                    if self.end_at_block_reached(&log) {
+                        info!(
+                            block = log.block_number,
+                            end_at_block = self.end_at_block,
+                            "Stopping due to --end-at-block"
+                        );
+                        return None;
+                    }
                     info!(log = ?log, "Log event");
                     self.current_event = Some(log);
                     if self.is_first_of_block() {
