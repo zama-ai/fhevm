@@ -11,19 +11,25 @@ use connector_utils::tests::{
 use connector_utils::types::db::SnsCiphertextMaterialDbItem;
 use fhevm_gateway_rust_bindings::decryption::IDecryption::RequestValidity;
 use gw_listener::core::{Config, DbEventPublisher, GatewayListener};
+use rstest::rstest;
 use sqlx::Row;
 use std::time::Duration;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 
+#[rstest]
+#[timeout(Duration::from_secs(120))]
 #[tokio::test]
 #[ignore = "flaky tests to be fixed"]
 async fn test_publish_public_decryption() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
-    tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
+
+    test_instance
+        .wait_for_log("Waiting for next PublicDecryptionRequest...")
+        .await;
 
     info!("Mocking PublicDecryptionRequest on Anvil...");
     let pending_tx = test_instance
@@ -39,7 +45,10 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
         .unwrap();
     info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    test_instance
+        .wait_for_log("Event successfully stored in DB!")
+        .await;
+
     info!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT decryption_id, sns_ct_materials FROM public_decryption_requests")
         .fetch_one(test_instance.db())
@@ -59,13 +68,18 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
     Ok(gw_listener_task?.await?)
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(120))]
 #[tokio::test]
 #[ignore = "flaky tests to be fixed"]
 async fn test_publish_user_decryption() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
-    tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
+
+    test_instance
+        .wait_for_log("Waiting for next UserDecryptionRequest...")
+        .await;
 
     info!("Mocking UserDecryptionRequest on Anvil...");
     let rand_user_addr = rand_address();
@@ -91,7 +105,10 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
         .unwrap();
     info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    test_instance
+        .wait_for_log("Event successfully stored in DB!")
+        .await;
+
     info!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT decryption_id, sns_ct_materials, user_address, public_key FROM user_decryption_requests")
         .fetch_one(test_instance.db())
@@ -116,13 +133,18 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
     Ok(gw_listener_task?.await?)
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(120))]
 #[tokio::test]
 #[ignore = "flaky tests to be fixed"]
 async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
-    tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
+
+    test_instance
+        .wait_for_log("Waiting for next PreprocessKeygenRequest...")
+        .await;
 
     info!("Mocking PreprocessKeygenRequest on Anvil...");
     let pending_tx = test_instance
@@ -138,7 +160,10 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
         .unwrap();
     info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    test_instance
+        .wait_for_log("Event successfully stored in DB!")
+        .await;
+
     info!("Checking event is stored in DB...");
     let row = sqlx::query(
         "SELECT pre_keygen_request_id, fhe_params_digest FROM preprocess_keygen_requests",
@@ -156,13 +181,18 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
     Ok(gw_listener_task?.await?)
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(120))]
 #[tokio::test]
 #[ignore = "flaky tests to be fixed"]
 async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
-    tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
+
+    test_instance
+        .wait_for_log("Waiting for next PreprocessKskgenRequest...")
+        .await;
 
     info!("Mocking PreprocessKskgenRequest on Anvil...");
     let pending_tx = test_instance
@@ -178,7 +208,10 @@ async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
         .unwrap();
     info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    test_instance
+        .wait_for_log("Event successfully stored in DB!")
+        .await;
+
     info!("Checking event is stored in DB...");
     let row = sqlx::query(
         "SELECT pre_kskgen_request_id, fhe_params_digest FROM preprocess_kskgen_requests",
@@ -196,13 +229,18 @@ async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
     Ok(gw_listener_task?.await?)
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(120))]
 #[tokio::test]
 #[ignore = "flaky tests to be fixed"]
 async fn test_publish_keygen() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
-    tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
+
+    test_instance
+        .wait_for_log("Waiting for next KeygenRequest...")
+        .await;
 
     info!("Mocking KeygenRequest on Anvil...");
     let rand_id = rand_u256();
@@ -219,7 +257,10 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
         .unwrap();
     info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    test_instance
+        .wait_for_log("Event successfully stored in DB!")
+        .await;
+
     info!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT pre_key_id, fhe_params_digest FROM keygen_requests")
         .fetch_one(test_instance.db())
@@ -235,13 +276,18 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
     Ok(gw_listener_task?.await?)
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(120))]
 #[tokio::test]
 #[ignore = "flaky tests to be fixed"]
 async fn test_publish_kskgen() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
-    tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
+
+    test_instance
+        .wait_for_log("Waiting for next KskgenRequest...")
+        .await;
 
     info!("Mocking KskgenRequest on Anvil...");
     let rand_id = rand_u256();
@@ -260,7 +306,10 @@ async fn test_publish_kskgen() -> anyhow::Result<()> {
         .unwrap();
     info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    test_instance
+        .wait_for_log("Event successfully stored in DB!")
+        .await;
+
     info!("Checking event is stored in DB...");
     let row = sqlx::query(
         "SELECT pre_ksk_id, source_key_id, dest_key_id, fhe_params_digest FROM kskgen_requests",
@@ -282,13 +331,18 @@ async fn test_publish_kskgen() -> anyhow::Result<()> {
     Ok(gw_listener_task?.await?)
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(120))]
 #[tokio::test]
 #[ignore = "flaky tests to be fixed"]
 async fn test_publish_crsgen() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
-    tokio::time::sleep(Duration::from_millis(200)).await; // Waiting for the gw_listener to subscribe events
+
+    test_instance
+        .wait_for_log("Waiting for next CrsgenRequest...")
+        .await;
 
     info!("Mocking CrsgenRequest on Anvil...");
     let pending_tx = test_instance
@@ -304,7 +358,10 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
         .unwrap();
     info!("Tx successfully sent!");
 
-    tokio::time::sleep(Duration::from_millis(600)).await; // Waiting for the gw_listener to process event
+    test_instance
+        .wait_for_log("Event successfully stored in DB!")
+        .await;
+
     info!("Checking event is stored in DB...");
     let row = sqlx::query("SELECT crsgen_request_id, fhe_params_digest FROM crsgen_requests")
         .fetch_one(test_instance.db())
@@ -320,10 +377,12 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
     Ok(gw_listener_task?.await?)
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(120))]
 #[tokio::test]
 #[ignore = "flaky tests to be fixed"]
 async fn test_catchup() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
 
     info!("Mocking PublicDecryptionRequest on Anvil...");
@@ -369,39 +428,38 @@ async fn test_catchup() -> anyhow::Result<()> {
         Some(tx1.block_number.unwrap()),
     );
 
-    loop {
-        info!("Checking event is stored in DB...");
-        let row =
-            sqlx::query("SELECT decryption_id, sns_ct_materials FROM public_decryption_requests")
-                .fetch_all(test_instance.db())
-                .await?;
-
-        if row.len() < 2 {
-            info!("Not all events found yet, retrying...");
-            tokio::time::sleep(Duration::from_millis(500)).await;
-            continue;
-        }
-
-        let decryption_id1 = U256::from_le_bytes(row[0].try_get::<[u8; 32], _>("decryption_id")?);
-        let sns_ct_materials =
-            row[0].try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
-        assert_eq!(decryption_id1, U256::from(1));
-        assert_eq!(
-            sns_ct_materials,
-            vec![SnsCiphertextMaterialDbItem::default()]
-        );
-
-        let decryption_id2 = U256::from_le_bytes(row[1].try_get::<[u8; 32], _>("decryption_id")?);
-        let sns_ct_materials =
-            row[1].try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
-        assert_eq!(decryption_id2, U256::from(2));
-        assert_eq!(
-            sns_ct_materials,
-            vec![SnsCiphertextMaterialDbItem::default()]
-        );
-        break;
+    for _ in 0..2 {
+        test_instance
+            .wait_for_log("Event successfully stored in DB!")
+            .await;
     }
 
+    info!("Checking event is stored in DB...");
+    let row = sqlx::query("SELECT decryption_id, sns_ct_materials FROM public_decryption_requests")
+        .fetch_all(test_instance.db())
+        .await?;
+
+    if row.len() < 2 {
+        panic!("Not all events found yet...");
+    }
+
+    let decryption_id1 = U256::from_le_bytes(row[0].try_get::<[u8; 32], _>("decryption_id")?);
+    let sns_ct_materials =
+        row[0].try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
+    assert_eq!(decryption_id1, U256::from(1));
+    assert_eq!(
+        sns_ct_materials,
+        vec![SnsCiphertextMaterialDbItem::default()]
+    );
+
+    let decryption_id2 = U256::from_le_bytes(row[1].try_get::<[u8; 32], _>("decryption_id")?);
+    let sns_ct_materials =
+        row[1].try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
+    assert_eq!(decryption_id2, U256::from(2));
+    assert_eq!(
+        sns_ct_materials,
+        vec![SnsCiphertextMaterialDbItem::default()]
+    );
     info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
