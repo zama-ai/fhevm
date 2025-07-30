@@ -1,5 +1,5 @@
 services:
-  ####################### DATABASE SETUP #######################
+  ######################## DATABASE SETUP #######################
   db-0:
     container_name: fhevm-0-coprocessor-db
     image: postgres:15.7
