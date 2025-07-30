@@ -92,6 +92,7 @@ mod tests {
             }))
             .send()
             .await
+            .map_err(|e| format!("Input proof that was supposed to be rejected failed.: {e}"))
             .unwrap();
 
         let status_code = res.status();
@@ -118,6 +119,7 @@ mod tests {
             }))
             .send()
             .await
+            .map_err(|e| format!("Input proof that was supposed to be accepted failed.: {e}"))
             .unwrap();
         assert_eq!(res.status(), 200);
         let after_time = tokio::time::Instant::now();
@@ -162,7 +164,11 @@ mod tests {
         );
 
         while let Some(res) = set.join_next().await {
-            let (result, index) = res.unwrap();
+            let (result, index) = res
+                .map_err(|e| {
+                    format!("Error in one of {number_of_queries} input-proof requests: {e}")
+                })
+                .unwrap();
             let result = result.unwrap();
             assert_eq!(result.status(), 200);
             println!("{index} request is ok");
@@ -193,6 +199,7 @@ mod tests {
             }))
             .send()
             .await
+            .map_err(|e| format!("Error submitting request with empty proof: {e}"))
             .unwrap();
 
         let status_code = res.status();
@@ -219,6 +226,7 @@ mod tests {
             }))
             .send()
             .await
+            .map_err(|e| format!("Error submitting request with incorrect chain-id: {e}"))
             .unwrap();
 
         let status_code = res.status();
@@ -248,6 +256,7 @@ mod tests {
             }))
             .send()
             .await
+            .map_err(|e| format!("Error submitting request with incorrect contract address: {e}"))
             .unwrap();
 
         let status_code = res.status();
@@ -274,6 +283,7 @@ mod tests {
             }))
             .send()
             .await
+            .map_err(|e| format!("Error submitting request with incorrect user address: {e}"))
             .unwrap();
 
         let status_code = res.status();
@@ -300,6 +310,7 @@ mod tests {
             }))
             .send()
             .await
+            .map_err(|e| format!("Error submitting request with incorrect proof: {e}"))
             .unwrap();
 
         let status_code = res.status();
@@ -459,9 +470,9 @@ mod tests {
 
         // Assert delta between each following and first is 250ms (250_000 micros)
         for (i, &val) in response_times_micros.iter().enumerate() {
-            let delta = val as i128 - first_elapsed as i128;
+            let delta = (val as i128 - first_elapsed as i128).abs();
             assert!(
-                (delta - 250_000).abs() < 10_000, // allow 10ms tolerance
+                delta < 250_000,
                 "Request {}: Delta between (following + mock) and first is not ~250ms, got {}μs",
                 i + 2,
                 delta

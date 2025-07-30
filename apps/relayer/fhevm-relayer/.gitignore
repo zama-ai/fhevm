@@ -4,6 +4,8 @@ debug/
 target/
 target-test/
 
+.git
+
 # Database directory for crash recovery
 .database/
 

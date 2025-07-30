@@ -127,6 +127,7 @@ async fn main() -> eyre::Result<()> {
         metrics::init_metrics(&registry);
         metrics::init_http_metrics(&registry, &settings.http_metrics);
         metrics::init_cache_metrics(&registry);
+        metrics::init_transaction_metrics(&registry);
         let metrics_endpoint = settings.metrics_endpoint.clone();
         let registry_clone = registry.clone();
 
@@ -211,6 +212,7 @@ async fn main() -> eyre::Result<()> {
                     Arc::clone(&orchestrator),
                     tx_service_host.clone(),
                     tx_config.clone(),
+                    settings.networks.fhevm.chain_id,
                 ));
 
             // Create the storage components for event persistence
@@ -250,6 +252,7 @@ async fn main() -> eyre::Result<()> {
                     tx_service_gateway.clone(),
                     tx_config.clone(),
                     settings.contracts.clone(),
+                    settings.networks.gateway.chain_id,
                 ));
 
             // Register input event handlers
@@ -303,6 +306,7 @@ async fn main() -> eyre::Result<()> {
                     settings.contracts.clone(),
                     gateway_settings.http_url.clone(),
                     settings.transaction.clone().ciphertext_check_retry.clone(),
+                    gateway_settings.chain_id,
                 ));
 
             let user_decrypt_gateway_handler: Arc<dyn EventHandler<RelayerEvent>> =
@@ -315,6 +319,7 @@ async fn main() -> eyre::Result<()> {
                     settings.contracts,
                     gateway_settings.http_url.clone(),
                     settings.transaction.clone().ciphertext_check_retry.clone(),
+                    settings.networks.gateway.chain_id,
                 ));
 
             orchestrator.register_handler(

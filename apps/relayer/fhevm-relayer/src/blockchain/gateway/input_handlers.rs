@@ -12,7 +12,9 @@ use crate::{
         traits::{Event, EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
-    transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
+    transaction::{
+        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
+    },
 };
 use std::str::FromStr;
 
@@ -58,10 +60,15 @@ impl GatewayHandler {
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
+        gateway_chain_id: u64,
     ) -> Self {
         Self {
             dispatcher,
-            tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
+            tx_helper: Arc::new(TransactionHelper::new(
+                tx_service,
+                tx_config,
+                gateway_chain_id,
+            )),
             input_verification_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
         }
@@ -273,7 +280,7 @@ impl GatewayHandler {
 
         self.tx_helper
             .send_transaction(
-                "input_request",
+                TransactionType::InputRequest,
                 input_verification_address,
                 || {
                     ComputeCalldata::verify_proof_req(

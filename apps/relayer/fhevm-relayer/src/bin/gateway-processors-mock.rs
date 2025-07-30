@@ -16,6 +16,7 @@ use fhevm_relayer::{
     gateway_processors_mock::{
         event_listener_gateway, GatewayProcessorsEvent, GatewayProcessorsHandler,
     },
+    metrics::{init_cache_metrics, init_http_metrics, init_transaction_metrics},
     orchestrator::{
         hooks::EventLoggingHook,
         traits::{EventHandler, HandlerRegistry, HookRegistry},
@@ -23,6 +24,7 @@ use fhevm_relayer::{
     },
     transaction::{TransactionService, TxConfig},
 };
+use prometheus::Registry;
 
 /// Main entry point for the FHE Event Relayer service.
 ///
@@ -40,6 +42,11 @@ async fn main() -> eyre::Result<()> {
         Settings::new(None).map_err(|e| eyre::eyre!("Failed to load configuration: {}", e))?;
 
     init_tracing(&settings.log)?;
+
+    let registry = Registry::new();
+    init_http_metrics(&registry, &settings.http_metrics);
+    init_cache_metrics(&registry);
+    init_transaction_metrics(&registry);
 
     settings
         .validate_addresses()
@@ -98,6 +105,7 @@ async fn main() -> eyre::Result<()> {
             tx_service_gateway.clone(),
             tx_config.clone(),
             settings.contracts,
+            settings.networks.gateway.chain_id,
         ));
 
     // Register input event handlers

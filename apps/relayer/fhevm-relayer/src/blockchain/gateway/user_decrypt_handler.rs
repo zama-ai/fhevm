@@ -16,7 +16,9 @@ use crate::{
         Orchestrator, TokioEventDispatcher,
     },
     store::{UserDecryptRequestCacheStore, UserDecryptResponseCacheStore},
-    transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
+    transaction::{
+        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
+    },
 };
 
 impl From<&HandleContractPair> for Decryption::CtHandleContractPair {
@@ -87,10 +89,15 @@ impl GatewayHandler {
         contracts: ContractConfig,
         gateway_http_url: String,
         retry_config: RetrySettings,
+        gateway_chain_id: u64,
     ) -> Self {
         Self {
             dispatcher,
-            tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
+            tx_helper: Arc::new(TransactionHelper::new(
+                tx_service,
+                tx_config,
+                gateway_chain_id,
+            )),
             user_decryption_responses_cache,
             user_decryption_requests_cache,
             user_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
@@ -149,13 +156,21 @@ impl GatewayHandler {
                             "Error: {err} trying to store user-decrypt request for request: {}",
                             event.request_id
                         );
+                        self_clone
+                            .user_decryption_requests_cache
+                            .unlock(&user_decrypt_request)
+                            .await;
                     }
-
+                    // TODO: handle for all matching requests
                     self_clone
                         .handle_successful_user_decryption_request(event_clone, user_decryption_id)
                         .await;
                 }
                 Err(e) => {
+                    self_clone
+                        .user_decryption_requests_cache
+                        .unlock(&user_decrypt_request)
+                        .await;
                     self_clone.handle_failed_request(event_clone, e).await;
                 }
             }
@@ -495,7 +510,7 @@ impl GatewayHandler {
 
         self.tx_helper
             .send_transaction(
-                "user_decryption_request",
+                TransactionType::UserDecryptRequest,
                 decryption_address,
                 || ComputeCalldata::user_decryption_req(user_decrypt_request.clone()),
                 &processor,

@@ -13,7 +13,9 @@ use crate::{
         Orchestrator, TokioEventDispatcher,
     },
     store::{PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore},
-    transaction::{ReceiptProcessor, TransactionHelper, TransactionService, TxConfig},
+    transaction::{
+        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
+    },
 };
 use std::{str::FromStr, time::Duration};
 
@@ -66,6 +68,7 @@ pub struct GatewayHandler {
 }
 
 impl GatewayHandler {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         caches: PublicDecryptCaches,
@@ -74,11 +77,16 @@ impl GatewayHandler {
         contracts: ContractConfig,
         gateway_http_url: String,
         retry_config: RetrySettings,
+        gateway_chain_id: u64,
     ) -> Self {
         Self {
             dispatcher,
             caches,
-            tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
+            tx_helper: Arc::new(TransactionHelper::new(
+                tx_service,
+                tx_config,
+                gateway_chain_id,
+            )),
             public_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
             gateway_http_url,
@@ -296,6 +304,11 @@ impl GatewayHandler {
                         .await;
                 }
                 Err(e) => {
+                    self_clone
+                        .caches
+                        .requests
+                        .unlock(&public_decryption_request_clone)
+                        .await;
                     self_clone.handle_failed_request(event.clone(), e).await;
                 }
             }
@@ -578,7 +591,7 @@ impl GatewayHandler {
             })?;
         self.tx_helper
             .send_transaction(
-                "decryption_request",
+                TransactionType::PublicDecryptRequest,
                 decryption_address,
                 || ComputeCalldata::public_decryption_req(handles.clone()),
                 &processor,

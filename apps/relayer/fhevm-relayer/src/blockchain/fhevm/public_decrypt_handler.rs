@@ -14,7 +14,7 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
-    transaction::{TransactionHelper, TransactionService, TxConfig},
+    transaction::{helper::TransactionType, TransactionHelper, TransactionService, TxConfig},
 };
 use alloy::primitives::{Address, FixedBytes, Uint};
 use alloy::rpc::types::Log;
@@ -49,11 +49,12 @@ impl FhevmHandler {
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
+        chain_id: u64,
     ) -> Self {
         Self {
             dispatcher,
             context_data: dashmap::DashMap::new(),
-            tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
+            tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config, chain_id)),
         }
     }
 
@@ -235,9 +236,11 @@ impl FhevmHandler {
             signatures: public_decryption_response.signatures,
         };
         self.tx_helper
-            .send_transaction_simple("decryption_response", req.contract_caller, || {
-                ComputeCalldata::callback_req(req, public_decrypt_response.clone())
-            })
+            .send_transaction_simple(
+                TransactionType::PublicDecryptCallback,
+                req.contract_caller,
+                || ComputeCalldata::callback_req(req, public_decrypt_response.clone()),
+            )
             .await
     }
 

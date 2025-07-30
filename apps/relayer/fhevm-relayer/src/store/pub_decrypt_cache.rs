@@ -5,6 +5,7 @@ use crate::{
 };
 use alloy::primitives::U256;
 use anyhow::Result;
+use dashmap::mapref::entry::Entry;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tracing::debug;
@@ -61,61 +62,63 @@ impl PublicDecryptRequestCacheStore {
         Ok(())
     }
 
+    pub async fn unlock(&self, request: &PublicDecryptRequest) {
+        let key = Self::make_key(request);
+        if let Some((_, notify)) = self.in_flight.remove(&key) {
+            notify.notify_waiters();
+        }
+    }
+
     /// Get the decryption ID for a request, deduplicating concurrent requests.
     /// Returns Ok(Some(decryption_id)) if found, Ok(None) if leader (should send request), and Ok(Some(decryption_id)) after notification for followers.
     pub async fn get_value(&self, request: &PublicDecryptRequest) -> Result<Option<U256>> {
         let key = Self::make_key(request);
 
-        // Acquire per-key lock to serialize check/insert
-        let lock = self
-            .key_locks
-            .entry(key.clone())
-            .or_insert_with(|| Arc::new(Mutex::new(())))
-            .clone();
-        let _guard = lock.lock().await;
+        loop {
+            // Acquire per-key lock to serialize check/insert
+            let lock = self
+                .key_locks
+                .entry(key.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone();
+            let _guard = lock.lock().await;
 
-        // Check persistent cache first
-        if let Some(value) = self.kv_store.get(&key).await? {
-            let on_chain_decryption_id = serde_json::from_str(&value)?;
-            debug!("Cache hit on {key} with {on_chain_decryption_id}");
-            cache_operation(CacheType::PublicDecrypt, CacheOperation::Hit);
-            return Ok(Some(on_chain_decryption_id));
-        }
-
-        // If not present, set up Notify for in-flight requests
-        let entry = self.in_flight.entry(key.clone());
-        let is_leader;
-        let notify = match entry {
-            dashmap::mapref::entry::Entry::Occupied(e) => {
-                is_leader = false;
-                e.get().clone()
-            }
-            dashmap::mapref::entry::Entry::Vacant(e) => {
-                is_leader = true;
-                e.insert(Arc::new(Notify::new())).clone()
-            }
-        };
-
-        // Release lock before waiting
-        drop(_guard);
-
-        if is_leader {
-            // Leader: do not wait, caller should send request and later call persist_value
-            debug!("Cache miss on {key}, leader elected, caller should send request");
-            cache_operation(CacheType::PublicDecrypt, CacheOperation::Miss);
-            Ok(None)
-        } else {
-            // Follower: wait for notification
-            notify.notified().await;
-
-            // After notification, check persistent cache again
+            // Check persistent cache first
             if let Some(value) = self.kv_store.get(&key).await? {
                 let on_chain_decryption_id = serde_json::from_str(&value)?;
-                debug!("Cache hit after notify on {key} with {on_chain_decryption_id}");
+                debug!("Cache hit on {key} with {on_chain_decryption_id}");
                 cache_operation(CacheType::PublicDecrypt, CacheOperation::Hit);
                 return Ok(Some(on_chain_decryption_id));
             }
-            anyhow::bail!("Cache miss after notify on {key}");
+
+            // If not present, set up Notify for in-flight requests
+            let entry = self.in_flight.entry(key.clone());
+            let is_leader;
+            let notify = match entry {
+                Entry::Occupied(e) => {
+                    is_leader = false;
+                    e.get().clone()
+                }
+                Entry::Vacant(e) => {
+                    is_leader = true;
+                    e.insert(Arc::new(Notify::new())).clone()
+                }
+            };
+
+            // Release lock before waiting
+            drop(_guard);
+
+            if is_leader {
+                // Leader: do not wait, caller should send request and later call persist_value
+                debug!("Cache miss on {key}, leader elected, caller should send request");
+                cache_operation(CacheType::PublicDecrypt, CacheOperation::Miss);
+                return Ok(None);
+            } else {
+                // Follower: wait for notification
+                debug!("Waiting for leader to notify.");
+                notify.notified().await;
+                continue;
+            }
         }
     }
 }

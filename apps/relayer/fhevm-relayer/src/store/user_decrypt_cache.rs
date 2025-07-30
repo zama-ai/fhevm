@@ -1,12 +1,15 @@
 use crate::{
-    core::event::{UserDecryptRequest, UserDecryptResponse},
+    core::event::{RequestValidity, UserDecryptRequest, UserDecryptResponse},
     metrics::{cache_operation, CacheOperation, CacheType},
     store::key_value_db::KVStore,
 };
-use alloy::primitives::U256;
+use alloy::primitives::{Bytes, U256};
 use anyhow::Result;
+use dashmap::mapref::entry::Entry;
+use dashmap::DashMap;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
+use tokio::sync::{Mutex, Notify};
 use tracing::debug;
 use xxhash_rust::xxh3::Xxh3;
 
@@ -65,18 +68,58 @@ impl UserDecryptResponseCacheStore {
 /// UserDecryptRequest -> RelayerRequestId
 pub struct UserDecryptRequestCacheStore {
     kv_store: Arc<dyn KVStore>,
+    in_flight: DashMap<String, Arc<Notify>>,
+    key_locks: DashMap<String, Arc<Mutex<()>>>,
 }
+
+// TODO: at the moment we cache full requests, so sets of ciphertexts.
+// If the same list of ciphertexts is requested but in different requests, or one ciphertext is
+// missing from the following request, we would cache-miss.
+// We need to check if from the KMS response it would be possible to cache the requests and results
+// separately using hash(single-cipher, pub-key) as key to be more flexible, and request only needed
+// ciphertexts.
 
 impl UserDecryptRequestCacheStore {
     pub fn new(kv_store: Arc<dyn KVStore>) -> Self {
-        Self { kv_store }
+        Self {
+            kv_store,
+            in_flight: DashMap::new(),
+            key_locks: DashMap::new(),
+        }
     }
 
-    fn make_key(request: &UserDecryptRequest) -> String {
+    pub fn make_key(request: &UserDecryptRequest) -> String {
         let mut hasher = Xxh3::with_seed(0);
-        request.hash(&mut hasher);
+        // NOTE: we can safely remove the EIP-712 signature and the request validity from the cache
+        // because these are only used on-chain prior to receiving a decryption-id.
+        // So if these are invalid we would never get a decryption-id and thus not store a value in
+        // cache.
+        // If the value is valid then we get a decryption-id thus waiting for the KMS to fulfill
+        // the request.
+        // But any request with a same set of ciphertexts and public-key would have the same
+        // result.
+        let modified_request = UserDecryptRequest {
+            ct_handle_contract_pairs: request.ct_handle_contract_pairs.clone(),
+            request_validity: RequestValidity {
+                start_timestamp: U256::default(),
+                duration_days: U256::default(),
+            },
+            contracts_chain_id: request.contracts_chain_id,
+            contract_addresses: request.contract_addresses.clone(),
+            user_address: request.user_address,
+            signature: Bytes::default(),
+            public_key: request.public_key.clone(),
+        };
+        modified_request.hash(&mut hasher);
         let hashed = hasher.finish();
         format!("{USER_DECRYPT_REQUEST_CACHE_PREFIX}:{hashed}")
+    }
+
+    pub async fn unlock(&self, request: &UserDecryptRequest) {
+        let key = Self::make_key(request);
+        if let Some((_, notify)) = self.in_flight.remove(&key) {
+            notify.notify_waiters();
+        }
     }
 
     pub async fn persist_value(
@@ -87,20 +130,70 @@ impl UserDecryptRequestCacheStore {
         let key = Self::make_key(request);
         let value = serde_json::to_string(&on_chain_decryption_id)?;
         self.kv_store.put(&key, &value).await?;
+
+        // Notify all waiters and clean up
+        if let Some((_, notify)) = self.in_flight.remove(&key) {
+            notify.notify_waiters();
+        }
+        if let Some((_, lock)) = self.key_locks.remove(&key) {
+            // Drop the lock
+            drop(lock);
+        }
         Ok(())
     }
 
     pub async fn get_value(&self, request: &UserDecryptRequest) -> Result<Option<U256>> {
         let key = Self::make_key(request);
-        if let Some(value) = self.kv_store.get(&key).await? {
-            let response = serde_json::from_str(&value)?;
-            debug!("Cache hit on {key} with {response}");
-            cache_operation(CacheType::UserDecryptRequest, CacheOperation::Hit);
-            return Ok(Some(response));
+
+        // Retry loop with leader election for cache coordination
+        loop {
+            // Acquire per-key lock to serialize check/insert
+            let lock = self
+                .key_locks
+                .entry(key.clone())
+                .or_insert_with(|| Arc::new(Mutex::new(())))
+                .clone();
+            let _guard = lock.lock().await;
+
+            // Check persistent cache
+            if let Some(value) = self.kv_store.get(&key).await? {
+                let response = serde_json::from_str(&value)?;
+                debug!("Cache hit on {key} with {response}");
+                cache_operation(CacheType::UserDecryptRequest, CacheOperation::Hit);
+                return Ok(Some(response));
+            }
+
+            // If not present, set up Notify for in-flight requests
+            let entry = self.in_flight.entry(key.clone());
+            let is_leader: bool;
+            let notify = match entry {
+                Entry::Occupied(e) => {
+                    debug!("Cache request is not leader.");
+                    is_leader = false;
+                    e.get().clone()
+                }
+                Entry::Vacant(e) => {
+                    debug!("Cache request is leader.");
+                    is_leader = true;
+                    e.insert(Arc::new(Notify::new())).clone()
+                }
+            };
+
+            // Release lock before waiting
+            drop(_guard);
+
+            if is_leader {
+                // Leader: do not wait, caller should send request and later call persist_value
+                debug!("Cache miss on {key}, leader elected, caller should send request");
+                cache_operation(CacheType::UserDecryptRequest, CacheOperation::Miss);
+                return Ok(None);
+            } else {
+                // Follower: wait for notification
+                debug!("Waiting for leader to notify.");
+                notify.notified().await;
+                continue;
+            }
         }
-        debug!("Cache miss on {key}");
-        cache_operation(CacheType::UserDecryptRequest, CacheOperation::Miss);
-        Ok(None)
     }
 }
 

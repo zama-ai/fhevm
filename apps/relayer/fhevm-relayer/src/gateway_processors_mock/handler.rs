@@ -13,7 +13,7 @@ use crate::{
         PublicDecryptionEventData,
     },
     orchestrator::traits::EventHandler,
-    transaction::{TransactionHelper, TransactionService, TxConfig},
+    transaction::{helper::TransactionType, TransactionHelper, TransactionService, TxConfig},
 };
 use std::str::FromStr;
 
@@ -53,9 +53,14 @@ impl GatewayProcessorsHandler {
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
+        gateway_chain_id: u64,
     ) -> Self {
         Self {
-            tx_helper: Arc::new(TransactionHelper::new(tx_service, tx_config)),
+            tx_helper: Arc::new(TransactionHelper::new(
+                tx_service,
+                tx_config,
+                gateway_chain_id,
+            )),
             contracts,
         }
     }
@@ -170,9 +175,11 @@ impl GatewayProcessorsHandler {
                 )
             })?;
         self.tx_helper
-            .send_transaction_simple("input_response", input_verification_address, || {
-                ComputeCalldata::reject_proof_response(input_verification_id)
-            })
+            .send_transaction_simple(
+                TransactionType::InputResponse,
+                input_verification_address,
+                || ComputeCalldata::reject_proof_response(input_verification_id),
+            )
             .await?;
 
         Ok(())
@@ -195,13 +202,17 @@ impl GatewayProcessorsHandler {
                 )
             })?;
         self.tx_helper
-            .send_transaction_simple("input_response", input_verification_address, || {
-                ComputeCalldata::verify_proof_response(
-                    input_verification_id,
-                    handles.clone(),
-                    signature.clone(),
-                )
-            })
+            .send_transaction_simple(
+                TransactionType::InputResponse,
+                input_verification_address,
+                || {
+                    ComputeCalldata::verify_proof_response(
+                        input_verification_id,
+                        handles.clone(),
+                        signature.clone(),
+                    )
+                },
+            )
             .await?;
 
         Ok(())
@@ -221,9 +232,11 @@ impl GatewayProcessorsHandler {
                 )
             })?;
         self.tx_helper
-            .send_transaction_simple("decryption_response", decryption_address, || {
-                ComputeCalldata::decryption_response(req.clone(), decryption_address)
-            })
+            .send_transaction_simple(
+                TransactionType::PublicDecryptResponse,
+                decryption_address,
+                || ComputeCalldata::decryption_response(req.clone(), decryption_address),
+            )
             .await?;
 
         Ok(())
@@ -242,9 +255,11 @@ impl GatewayProcessorsHandler {
                 )
             })?;
         self.tx_helper
-            .send_transaction_simple("decryption_response", decryption_address, || {
-                ComputeCalldata::user_decryption_response(req.clone())
-            })
+            .send_transaction_simple(
+                TransactionType::UserDecryptResponse,
+                decryption_address,
+                || ComputeCalldata::user_decryption_response(req.clone()),
+            )
             .await?;
 
         Ok(())
