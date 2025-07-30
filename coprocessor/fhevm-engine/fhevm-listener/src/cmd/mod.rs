@@ -22,7 +22,7 @@ use rustls;
 use tokio_util::sync::CancellationToken;
 
 use crate::contracts::{AclContract, TfheContract};
-use crate::database::tfhe_event_propagate::{ChainId, Database};
+use crate::database::tfhe_event_propagate::Database;
 use crate::health_check::{HealthCheck, HealthState};
 
 #[derive(Parser, Debug, Clone)]
@@ -129,6 +129,8 @@ enum LogOrBlockTimeout {
     BlockTimeout,
 }
 
+type ChainId = u64;
+
 impl InfiniteLogIter {
     fn new(args: &Args, health: HealthState) -> Self {
         let mut contract_addresses = vec![];
@@ -162,17 +164,10 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn get_chain_id_or_panic(&self) -> ChainId {
-        // TODO: remove expect and, instead, propagate the error
+    async fn get_chain_id(&self) -> anyhow::Result<ChainId> {
         let ws = WsConnect::new(&self.url);
-        let provider = ProviderBuilder::new()
-            .connect_ws(ws)
-            .await
-            .expect("Cannot connect to host chain");
-        provider
-            .get_chain_id()
-            .await
-            .expect("Cannot retrieve chain id")
+        let provider = ProviderBuilder::new().connect_ws(ws).await?;
+        Ok(provider.get_chain_id().await?)
     }
 
     async fn catchup_block_from(
@@ -570,22 +565,34 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
     let mut log_iter =
         InfiniteLogIter::new(&args, health_check.health_state.clone());
-    let chain_id = log_iter.get_chain_id_or_panic().await;
+    let chain_id = log_iter.get_chain_id().await?;
     info!(chain_id = chain_id, "Chain ID");
 
     let mut db = if !args.database_url.is_empty() {
         if let Some(coprocessor_api_key) = args.coprocessor_api_key {
-            let mut db = Database::new(
-                &args.database_url,
-                &coprocessor_api_key,
-                chain_id,
-            )
-            .await;
+            let mut db =
+                Database::new(&args.database_url, &coprocessor_api_key).await;
             if log_iter.start_at_block.is_none() {
                 log_iter.start_at_block = db
                     .read_last_valid_block()
                     .await
                     .map(|n| n - args.catchup_margin as i64);
+            }
+            if chain_id != db.chain_id as u64 {
+                error!(
+                    chain_id_blockchain = ?chain_id,
+                    chain_id_db = ?db.chain_id,
+                    tenant_id = ?db.tenant_id,
+                    coprocessor_api_key = ?coprocessor_api_key,
+                    "Chain ID mismatch with database",
+                );
+                return Err(anyhow!(
+                    "Chain ID mismatch with database, blockchain: {} vs db: {}, tenant_id: {}, coprocessor_api_key: {}",
+                    chain_id,
+                    db.chain_id,
+                    db.tenant_id,
+                    coprocessor_api_key
+                ));
             }
             Some(db)
         } else {

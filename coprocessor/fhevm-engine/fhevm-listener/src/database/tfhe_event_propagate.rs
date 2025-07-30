@@ -23,7 +23,7 @@ type CoprocessorApiKey = Uuid;
 type FheOperation = i32;
 pub type Handle = FixedBytes<32>;
 pub type TenantId = i32;
-pub type ChainId = u64;
+pub type ChainIdDb = i32;
 pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
@@ -44,18 +44,17 @@ pub fn retry_on_sqlx_error(err: &SqlxError) -> bool {
 pub struct Database {
     url: String,
     pool: sqlx::Pool<Postgres>,
-    tenant_id: TenantId,
-    chain_id: ChainId,
+    pub tenant_id: TenantId,
+    pub chain_id: ChainIdDb,
 }
 
 impl Database {
     pub async fn new(
         url: &str,
         coprocessor_api_key: &CoprocessorApiKey,
-        chain_id: ChainId,
     ) -> Self {
         let pool = Self::new_pool(url).await;
-        let tenant_id =
+        let (tenant_id, chain_id) =
             Self::find_tenant_id_or_panic(&pool, coprocessor_api_key).await;
         Database {
             url: url.into(),
@@ -95,13 +94,13 @@ impl Database {
         self.pool = Self::new_pool(&self.url).await;
     }
 
-    pub async fn find_tenant_id_or_panic(
+    async fn find_tenant_id_or_panic(
         pool: &sqlx::Pool<Postgres>,
         tenant_api_key: &CoprocessorApiKey,
-    ) -> TenantId {
+    ) -> (TenantId, ChainIdDb) {
         let query = || {
-            sqlx::query_scalar!(
-                r#"SELECT tenant_id FROM tenants WHERE tenant_api_key = $1"#,
+            sqlx::query!(
+                r#"SELECT tenant_id, chain_id FROM tenants WHERE tenant_api_key = $1"#,
                 tenant_api_key.into()
             )
             .fetch_one(pool)
@@ -109,7 +108,7 @@ impl Database {
         // retry mecanism
         loop {
             match query().await {
-                Ok(tenant_id) => return tenant_id,
+                Ok(record) => return (record.tenant_id, record.chain_id),
                 Err(err) if retry_on_sqlx_error(&err) => {
                     error!(error = %err, "Error requesting tenant id, retrying");
                     tokio::time::sleep(Duration::from_secs(1)).await;

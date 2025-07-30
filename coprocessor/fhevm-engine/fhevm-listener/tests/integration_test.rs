@@ -106,7 +106,6 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         .block_time_f64(1.0)
         .args(["--accounts", "15"])
         .spawn();
-    let chain_id = anvil.chain_id();
     let nb_wallet = anvil.keys().len() as i64;
     eprintln!("Nb wallet {}", nb_wallet);
     let mut wallets = vec![];
@@ -176,8 +175,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     eprintln!("First kill, check database valid block has been updated");
     listener_handle.abort();
     let mut database =
-        Database::new(test_instance.db_url(), &coprocessor_api_key, chain_id)
-            .await;
+        Database::new(test_instance.db_url(), &coprocessor_api_key).await;
     let last_block = database.read_last_valid_block().await;
     assert!(last_block.is_some());
     assert!(last_block.unwrap() > 1);
