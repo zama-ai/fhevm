@@ -33,7 +33,7 @@ jobs:
           filters: |
             coprocessor-sns-worker:
               - .github/workflows/coprocessor-docker-build-sns-worker.yml
-              - coprocessor/fhevm-engine/sns-executor/**
+              - coprocessor/fhevm-engine/sns-worker/**
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
   build:
@@ -57,5 +57,5 @@ jobs:
       docker-context: "."
       push_image: true
       image-name: "fhevm/coprocessor/sns-worker"
-      docker-file: "coprocessor/fhevm-engine/sns-executor/Dockerfile"
+      docker-file: "coprocessor/fhevm-engine/sns-worker/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-sns-worker"

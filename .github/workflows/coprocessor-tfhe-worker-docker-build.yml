@@ -33,7 +33,7 @@ jobs:
           filters: |
             coprocessor-tfhe-worker:
               - .github/workflows/coprocessor-tfhe-worker-docker-build.yml
-              - coprocessor/fhevm-engine/coprocessor/**
+              - coprocessor/fhevm-engine/tfhe-worker/**
               - coprocessor/fhevm-engine/Cargo.toml
               - coprocessor/fhevm-engine/Cargo.lock
   build:
@@ -57,5 +57,5 @@ jobs:
       docker-context: "."
       push_image: true
       image-name: "fhevm/coprocessor/tfhe-worker"
-      docker-file: "coprocessor/fhevm-engine/coprocessor/Dockerfile"
+      docker-file: "coprocessor/fhevm-engine/tfhe-worker/Dockerfile"
       app-cache-dir: "fhevm-coprocessor-tfhe-worker"
