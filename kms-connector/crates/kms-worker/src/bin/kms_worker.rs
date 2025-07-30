@@ -27,11 +27,11 @@ async fn run() -> anyhow::Result<()> {
         }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref())?;
+            init_otlp_setup(config.service_name.clone())?;
 
             let cancel_token = CancellationToken::new();
             set_task_limit(config.task_limit);
             install_signal_handlers(cancel_token.clone())?;
-            init_otlp_setup(config.service_name.clone())?;
             let monitoring_endpoint = config.monitoring_endpoint;
 
             info!("Starting KmsWorker with config: {:?}", config);
