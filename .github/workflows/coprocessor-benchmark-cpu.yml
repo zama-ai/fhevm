@@ -143,7 +143,7 @@ jobs:
 
       - name: Init database
         run: make init_db
-        working-directory: coprocessor/fhevm-engine/coprocessor
+        working-directory: coprocessor/fhevm-engine/tfhe-worker
 
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -157,7 +157,7 @@ jobs:
       - name: Run benchmarks on CPU
         run: |
           DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TXN_SENDER_TEST_GLOBAL_LOCALSTACK=1 BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" FHEVM_DF_SCHEDULE="${{ inputs.scheduling_policy }}" make -e "benchmark_${{ inputs.benchmarks }}_cpu"
-        working-directory: coprocessor/fhevm-engine/coprocessor
+        working-directory: coprocessor/fhevm-engine/tfhe-worker
 
       - name: Parse results
         run: |

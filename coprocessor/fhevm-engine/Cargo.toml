@@ -1,11 +1,11 @@
 [workspace]
 resolver = "2"
 members = [
-    "coprocessor",
+    "tfhe-worker",
     "fhevm-engine-common",
-    "fhevm-listener",
+    "host-listener",
     "gw-listener",
-    "sns-executor",
+    "sns-worker",
     "transaction-sender",
     "zkproof-worker",
     "test-harness",
