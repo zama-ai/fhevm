@@ -21,7 +21,7 @@ WORKDIR /app/coprocessor/fhevm-engine
 # Later on, it will be extended to replace initialize_db.sh completely
 RUN mkdir /fhevm-keys && \
     cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p coprocessor --bin utils
+    SQLX_OFFLINE=true cargo build --release -p tfhe-worker --bin utils
 
 # Stage 2: Runtime image
 FROM cgr.dev/chainguard/postgres:latest AS prod
