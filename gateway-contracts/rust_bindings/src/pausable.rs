@@ -6,7 +6,6 @@ interface Pausable {
     error EnforcedPause();
     error ExpectedPause();
     error InvalidInitialization();
-    error NotGatewayOwner(address sender);
     error NotInitializing();
     error NotOwnerOrGatewayConfig(address notOwnerOrGatewayConfig);
     error NotPauser(address notPauser);
@@ -105,17 +104,6 @@ interface Pausable {
     "type": "error",
     "name": "InvalidInitialization",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "NotGatewayOwner",
-    "inputs": [
-      {
-        "name": "sender",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
   },
   {
     "type": "error",
@@ -382,79 +370,6 @@ error InvalidInitialization();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotGatewayOwner(address)` and selector `0x0e56cf3d`.
-```solidity
-error NotGatewayOwner(address sender);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotGatewayOwner {
-        #[allow(missing_docs)]
-        pub sender: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotGatewayOwner> for UnderlyingRustTuple<'_> {
-            fn from(value: NotGatewayOwner) -> Self {
-                (value.sender,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotGatewayOwner {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { sender: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotGatewayOwner {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotGatewayOwner(address)";
-            const SELECTOR: [u8; 4] = [14u8, 86u8, 207u8, 61u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.sender,
-                    ),
-                )
             }
         }
     };
@@ -1570,8 +1485,6 @@ function unpause() external;
         #[allow(missing_docs)]
         InvalidInitialization(InvalidInitialization),
         #[allow(missing_docs)]
-        NotGatewayOwner(NotGatewayOwner),
-        #[allow(missing_docs)]
         NotInitializing(NotInitializing),
         #[allow(missing_docs)]
         NotOwnerOrGatewayConfig(NotOwnerOrGatewayConfig),
@@ -1589,7 +1502,6 @@ function unpause() external;
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [14u8, 86u8, 207u8, 61u8],
             [32u8, 106u8, 52u8, 110u8],
             [56u8, 137u8, 22u8, 187u8],
             [141u8, 252u8, 32u8, 43u8],
@@ -1603,7 +1515,7 @@ function unpause() external;
     impl alloy_sol_types::SolInterface for PausableErrors {
         const NAME: &'static str = "PausableErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 8usize;
+        const COUNT: usize = 7usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -1615,9 +1527,6 @@ function unpause() external;
                 }
                 Self::InvalidInitialization(_) => {
                     <InvalidInitialization as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::NotGatewayOwner(_) => {
-                    <NotGatewayOwner as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotInitializing(_) => {
                     <NotInitializing as alloy_sol_types::SolError>::SELECTOR
@@ -1650,19 +1559,6 @@ function unpause() external;
                 &[u8],
                 bool,
             ) -> alloy_sol_types::Result<PausableErrors>] = &[
-                {
-                    fn NotGatewayOwner(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<PausableErrors> {
-                        <NotGatewayOwner as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(PausableErrors::NotGatewayOwner)
-                    }
-                    NotGatewayOwner
-                },
                 {
                     fn NotPauser(
                         data: &[u8],
@@ -1779,11 +1675,6 @@ function unpause() external;
                         inner,
                     )
                 }
-                Self::NotGatewayOwner(inner) => {
-                    <NotGatewayOwner as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::NotInitializing(inner) => {
                     <NotInitializing as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -1821,12 +1712,6 @@ function unpause() external;
                 }
                 Self::InvalidInitialization(inner) => {
                     <InvalidInitialization as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::NotGatewayOwner(inner) => {
-                    <NotGatewayOwner as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
