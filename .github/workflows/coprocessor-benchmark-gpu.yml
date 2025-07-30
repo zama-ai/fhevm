@@ -193,7 +193,7 @@ jobs:
 
       - name: Init database
         run: make init_db
-        working-directory: coprocessor/fhevm-engine/coprocessor
+        working-directory: coprocessor/fhevm-engine/tfhe-worker
 
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -211,7 +211,7 @@ jobs:
       - name: Run benchmarks on GPU
         run: |
           BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" FHEVM_DF_SCHEDULE="${{ inputs.scheduling_policy }}" BENCHMARK_TYPE="${{ inputs.benchmark_type }}" OPTIMIZATION_TARGET="${{ inputs.optimization_target }}" make -e "benchmark_${{ inputs.benchmarks }}_gpu"
-        working-directory: coprocessor/fhevm-engine/coprocessor
+        working-directory: coprocessor/fhevm-engine/tfhe-worker
 
       - name: Parse results
         run: |
@@ -224,7 +224,7 @@ jobs:
           --commit-date "${{ env.COMMIT_DATE }}" \
           --bench-date "${{ env.BENCH_DATE }}" \
           --walk-subdirs \
-          --crate "coprocessor/fhevm-engine/coprocessor" \
+          --crate "coprocessor/fhevm-engine/tfhe-worker" \
           --name-suffix "operation_batch_size_${{ inputs.batch_size }}-schedule_${{ inputs.scheduling_policy }}-optimization_target_${{ inputs.optimization_target }}"
 
       - name: Upload parsed results artifact
