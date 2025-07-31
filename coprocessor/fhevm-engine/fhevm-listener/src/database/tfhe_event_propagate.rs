@@ -75,6 +75,7 @@ impl Database {
                 .min_connections(2)
                 .max_lifetime(Duration::from_secs(10 * 60))
                 .max_connections(8)
+                .acquire_timeout(Duration::from_secs(5))
                 .connect_with(options.clone())
         };
         let mut pool = connect().await;
