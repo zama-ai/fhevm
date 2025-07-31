@@ -36,6 +36,8 @@ describe("InputVerification", function () {
   const fakeTxSender = createRandomWallet();
   const fakeSigner = createRandomWallet();
   const fakeZkProofId = 2;
+  const nullZkProofId = 0;
+  const tooHighZkProofId = 100000;
 
   describe("Deployment", function () {
     let inputVerificationFactory: InputVerification__factory;
@@ -181,15 +183,17 @@ describe("InputVerification", function () {
       await expect(txResponse3).to.not.emit(inputVerification, "VerifyProofResponse");
     });
 
-    it("Should revert in case of invalid zkProofId in response", async function () {
-      // Try calling userDecryptionResponse with null (invalid) id
+    it("Should revert in case of invalid zkProofId in verify proof response", async function () {
+      // Check that a verify proof response with null (invalid) zkProofId reverts
       await expect(
-        inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(0, ctHandles, signatures[0]),
+        inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(nullZkProofId, ctHandles, signatures[0]),
       ).to.be.revertedWithCustomError(inputVerification, "VerifyProofNotRequested");
 
-      // Try calling verifyProofResponse with too high (not requested yet) id
+      // Check that a verify proof response with too high (not requested yet) zkProofId reverts
       await expect(
-        inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(100000, ctHandles, signatures[0]),
+        inputVerification
+          .connect(coprocessorTxSenders[0])
+          .verifyProofResponse(tooHighZkProofId, ctHandles, signatures[0]),
       ).to.be.revertedWithCustomError(inputVerification, "VerifyProofNotRequested");
     });
 
@@ -417,6 +421,18 @@ describe("InputVerification", function () {
 
       // Consensus should be reached at the third response
       await expect(txResponse3).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
+    });
+
+    it("Should revert in case of invalid zkProofId in reject proof response", async function () {
+      // Check that a reject proof response with null (invalid) zkProofId reverts
+      await expect(
+        inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(nullZkProofId),
+      ).to.be.revertedWithCustomError(inputVerification, "VerifyProofNotRequested");
+
+      // Check that a reject proof response with too high (not requested yet) zkProofId reverts
+      await expect(
+        inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(tooHighZkProofId),
+      ).to.be.revertedWithCustomError(inputVerification, "VerifyProofNotRequested");
     });
 
     it("Should revert because of two rejections from the same coprocessor", async function () {

@@ -197,6 +197,11 @@ contract InputVerification is
     function rejectProofResponse(uint256 zkProofId) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
+        // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
+        if (zkProofId > $.zkProofIdCounter || zkProofId == 0) {
+            revert VerifyProofNotRequested(zkProofId);
+        }
+
         /**
          * @dev Retrieve the coprocessor signer address from the GatewayConfig contract using the
          * coprocessor transaction sender address.
