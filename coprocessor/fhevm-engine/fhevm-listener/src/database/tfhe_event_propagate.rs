@@ -1,6 +1,7 @@
 use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
+use anyhow::Result;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::utils::compact_hex;
 use sqlx::postgres::PgConnectOptions;
@@ -52,16 +53,16 @@ impl Database {
     pub async fn new(
         url: &str,
         coprocessor_api_key: &CoprocessorApiKey,
-    ) -> Self {
+    ) -> Result<Self> {
         let pool = Self::new_pool(url).await;
         let (tenant_id, chain_id) =
-            Self::find_tenant_id_or_panic(&pool, coprocessor_api_key).await;
-        Database {
+            Self::find_tenant_id(&pool, coprocessor_api_key).await?;
+        Ok(Database {
             url: url.into(),
             tenant_id,
             chain_id,
             pool,
-        }
+        })
     }
 
     async fn new_pool(url: &str) -> PgPool {
@@ -94,10 +95,10 @@ impl Database {
         self.pool = Self::new_pool(&self.url).await;
     }
 
-    async fn find_tenant_id_or_panic(
+    async fn find_tenant_id(
         pool: &sqlx::Pool<Postgres>,
         tenant_api_key: &CoprocessorApiKey,
-    ) -> (TenantId, ChainIdDb) {
+    ) -> Result<(TenantId, ChainIdDb)> {
         let query = || {
             sqlx::query!(
                 r#"SELECT tenant_id, chain_id FROM tenants WHERE tenant_api_key = $1"#,
@@ -108,16 +109,16 @@ impl Database {
         // retry mecanism
         loop {
             match query().await {
-                Ok(record) => return (record.tenant_id, record.chain_id),
+                Ok(record) => return Ok((record.tenant_id, record.chain_id)),
                 Err(err) if retry_on_sqlx_error(&err) => {
                     error!(error = %err, "Error requesting tenant id, retrying");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
                 Err(SqlxError::RowNotFound) => {
-                    panic!("No tenant found for the provided API key, please check your API key")
+                    return Err(SqlxError::RowNotFound.into());
                 }
                 Err(err) => {
-                    panic!("Error requesting tenant id {err}, aborting")
+                    return Err(err.into());
                 }
             }
         }

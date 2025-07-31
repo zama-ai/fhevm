@@ -175,7 +175,8 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     eprintln!("First kill, check database valid block has been updated");
     listener_handle.abort();
     let mut database =
-        Database::new(test_instance.db_url(), &coprocessor_api_key).await;
+        Database::new(&args.database_url, &args.coprocessor_api_key.unwrap())
+            .await?;
     let last_block = database.read_last_valid_block().await;
     assert!(last_block.is_some());
     assert!(last_block.unwrap() > 1);

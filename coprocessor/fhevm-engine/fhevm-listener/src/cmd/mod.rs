@@ -49,7 +49,7 @@ pub struct Args {
     #[arg(long, default_value = None)]
     pub end_at_block: Option<u64>,
 
-    #[arg(long, default_value = None, help = "A Coprocessor API key is needed for database access")]
+    #[arg(long, help = "A Coprocessor API key is needed for database access")]
     pub coprocessor_api_key: Option<Uuid>,
 
     #[arg(
@@ -571,7 +571,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let mut db = if !args.database_url.is_empty() {
         if let Some(coprocessor_api_key) = args.coprocessor_api_key {
             let mut db =
-                Database::new(&args.database_url, &coprocessor_api_key).await;
+                Database::new(&args.database_url, &coprocessor_api_key).await?;
             if log_iter.start_at_block.is_none() {
                 log_iter.start_at_block = db
                     .read_last_valid_block()
