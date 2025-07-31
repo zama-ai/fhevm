@@ -731,7 +731,7 @@ pub fn does_fhe_operation_support_scalar(op: &SupportedFheOperations) -> bool {
 
 // add operations here that don't support both encrypted operands
 pub fn does_fhe_operation_support_both_encrypted_operands(op: &SupportedFheOperations) -> bool {
-    !matches!(op, SupportedFheOperations::FheDiv)
+    !matches!(op, SupportedFheOperations::FheDiv) || !matches!(op, SupportedFheOperations::FheRem)
 }
 
 pub fn perform_fhe_operation(

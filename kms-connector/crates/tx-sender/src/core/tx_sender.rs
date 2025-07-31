@@ -16,6 +16,7 @@ use anyhow::anyhow;
 use connector_utils::{
     conn::{WalletGatewayProvider, connect_to_db, connect_to_gateway_with_wallet},
     types::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse},
+    tasks::spawn_with_limit,
 };
 use fhevm_gateway_rust_bindings::decryption::Decryption::{self, DecryptionInstance};
 use std::time::Duration;
@@ -63,20 +64,21 @@ where
     async fn run(mut self) {
         loop {
             match self.response_picker.pick_responses().await {
-                Ok(responses) => self.spawn_response_handling_tasks(responses),
+                Ok(responses) => self.spawn_response_handling_tasks(responses).await,
                 Err(e) => warn!("Error while picking responses: {e}"),
             };
         }
     }
 
     /// Spawns a new task to handle each response.
-    fn spawn_response_handling_tasks(&self, responses: Vec<KmsResponse>) {
+    async fn spawn_response_handling_tasks(&self, responses: Vec<KmsResponse>) {
         for response in responses {
             let inner = self.inner.clone();
             let response_remover = self.response_remover.clone();
-            tokio::spawn(
-                async move { Self::handle_response(inner, response_remover, response).await },
-            );
+            spawn_with_limit(async move {
+                Self::handle_response(inner, response_remover, response).await
+            })
+            .await;
         }
     }
 

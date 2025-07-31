@@ -68,6 +68,7 @@ describe("InputVerification", function () {
     let inputVerification: InputVerification;
     let contractChainId: number;
     let owner: Wallet;
+    let pauser: HardhatEthersSigner;
 
     before(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -75,6 +76,7 @@ describe("InputVerification", function () {
       inputVerification = fixture.inputVerification;
       contractChainId = fixture.chainIds[0];
       owner = fixture.owner;
+      pauser = fixture.pauser;
     });
 
     it("Should request a proof verification", async function () {
@@ -108,7 +110,7 @@ describe("InputVerification", function () {
 
     it("Should revert because the contract is paused", async function () {
       // Pause the contract
-      await inputVerification.connect(owner).pause();
+      await inputVerification.connect(pauser).pause();
 
       // Try calling paused verify proof request
       await expect(
@@ -128,7 +130,7 @@ describe("InputVerification", function () {
     let inputVerificationAddress: string;
     let eip712Message: EIP712;
     let signatures: string[];
-    let owner: Wallet;
+    let pauser: HardhatEthersSigner;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -137,7 +139,7 @@ describe("InputVerification", function () {
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       contractChainId = fixture.chainIds[0];
-      owner = fixture.owner;
+      pauser = fixture.pauser;
 
       inputVerificationAddress = await inputVerification.getAddress();
 
@@ -377,7 +379,7 @@ describe("InputVerification", function () {
     let coprocessorSigners: HardhatEthersSigner[];
     let contractChainId: number;
     let inputVerificationAddress: string;
-    let owner: Wallet;
+    let pauser: HardhatEthersSigner;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -386,7 +388,7 @@ describe("InputVerification", function () {
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       contractChainId = fixture.chainIds[0];
-      owner = fixture.owner;
+      pauser = fixture.pauser;
 
       inputVerificationAddress = await inputVerification.getAddress();
 
@@ -543,33 +545,36 @@ describe("InputVerification", function () {
       pauser = fixtureData.pauser;
     });
 
-    it("Should pause and unpause contract with owner address", async function () {
-      // Check that the contract is not paused
-      expect(await inputVerification.paused()).to.be.false;
-
-      // Pause the contract with the owner address
-      await expect(inputVerification.connect(owner).pause()).to.emit(inputVerification, "Paused").withArgs(owner);
-      expect(await inputVerification.paused()).to.be.true;
-
-      // Unpause the contract with the owner address
-      await expect(inputVerification.connect(owner).unpause()).to.emit(inputVerification, "Unpaused").withArgs(owner);
-      expect(await inputVerification.paused()).to.be.false;
-    });
-
-    it("Should pause contract with pauser address", async function () {
+    it("Should pause the contract with the pauser and unpause with the owner", async function () {
       // Check that the contract is not paused
       expect(await inputVerification.paused()).to.be.false;
 
       // Pause the contract with the pauser address
       await expect(inputVerification.connect(pauser).pause()).to.emit(inputVerification, "Paused").withArgs(pauser);
       expect(await inputVerification.paused()).to.be.true;
+
+      // Unpause the contract with the owner address (not the pauser)
+      await expect(inputVerification.connect(owner).unpause()).to.emit(inputVerification, "Unpaused").withArgs(owner);
+      expect(await inputVerification.paused()).to.be.false;
     });
 
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
-      await expect(inputVerification.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(inputVerification, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
+    it("Should revert on pause because sender is not the pauser", async function () {
+      const fakePauser = createRandomWallet();
+
+      await expect(inputVerification.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(inputVerification, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
+    });
+
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await inputVerification.connect(pauser).pause();
+
+      const fakeOwner = createRandomWallet();
+
+      await expect(inputVerification.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(inputVerification, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
     });
   });
 });

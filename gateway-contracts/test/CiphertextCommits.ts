@@ -313,12 +313,12 @@ describe("CiphertextCommits", function () {
   });
 
   describe("Pause", async function () {
-    it("Should pause and unpause contract with owner address", async function () {
+    it("Should pause the contract with the pauser and unpause with the owner", async function () {
       // Check that the contract is not paused
       expect(await ciphertextCommits.paused()).to.be.false;
 
-      // Pause the contract with the owner address
-      await expect(ciphertextCommits.connect(owner).pause()).to.emit(ciphertextCommits, "Paused").withArgs(owner);
+      // Pause the contract with the pauser address
+      await expect(ciphertextCommits.connect(pauser).pause()).to.emit(ciphertextCommits, "Paused").withArgs(pauser);
       expect(await ciphertextCommits.paused()).to.be.true;
 
       // Unpause the contract with the owner address
@@ -326,21 +326,23 @@ describe("CiphertextCommits", function () {
       expect(await ciphertextCommits.paused()).to.be.false;
     });
 
-    it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
-      expect(await ciphertextCommits.paused()).to.be.false;
+    it("Should revert on pause because sender is not the pauser", async function () {
+      const fakePauser = createRandomWallet();
 
-      // Pause the contract with the pauser address
-      await expect(ciphertextCommits.connect(pauser).pause()).to.emit(ciphertextCommits, "Paused").withArgs(pauser);
-      expect(await ciphertextCommits.paused()).to.be.true;
+      await expect(ciphertextCommits.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(ciphertextCommits, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
     });
 
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await ciphertextCommits.connect(pauser).pause();
 
-      await expect(ciphertextCommits.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(ciphertextCommits, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
+      const fakeOwner = createRandomWallet();
+
+      await expect(ciphertextCommits.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(ciphertextCommits, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
     });
   });
 });

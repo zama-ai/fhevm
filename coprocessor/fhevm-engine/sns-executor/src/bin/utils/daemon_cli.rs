@@ -105,6 +105,10 @@ pub struct Args {
     /// if false, default FIFO (First In, First Out) processing is used
     #[arg(long, default_value_t = false)]
     pub lifo: bool,
+
+    /// Enable compression of big ciphertexts before uploading to S3
+    #[arg(long, default_value_t = true)]
+    pub enable_compression: bool,
 }
 
 pub fn parse_args() -> Args {

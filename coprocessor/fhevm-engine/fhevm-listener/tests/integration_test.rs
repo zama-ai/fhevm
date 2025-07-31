@@ -5,6 +5,7 @@ use alloy::sol;
 use futures_util::future::try_join_all;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
+use test_harness::instance::ImportMode;
 use tracing::Level;
 
 use alloy::providers::{Provider, ProviderBuilder, WalletProvider, WsConnect};
@@ -37,8 +38,6 @@ use crate::ACLTest::ACLTestInstance;
 use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 
 const NB_EVENTS_PER_WALLET: i64 = 400;
-const DATABASE_URL: &str =
-    "postgresql://postgres:postgres@localhost:5432/coprocessor";
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
@@ -98,6 +97,11 @@ async fn emit_events<P, N>(
 #[tokio::test]
 #[serial(db)]
 async fn test_listener_restart() -> Result<(), anyhow::Error> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("valid db instance");
+
     let anvil = Anvil::new()
         .block_time_f64(1.0)
         .args(["--accounts", "15"])
@@ -115,23 +119,7 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
 
     let db_pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(DATABASE_URL)
-        .await?;
-
-    sqlx::query!("TRUNCATE computations")
-        .execute(&db_pool)
-        .await?;
-    sqlx::query!("TRUNCATE blocks_valid")
-        .execute(&db_pool)
-        .await?;
-    let count = sqlx::query!("SELECT COUNT(*) FROM computations")
-        .fetch_one(&db_pool)
-        .await?
-        .count
-        .unwrap_or(0);
-    assert_eq!(count, 0);
-    sqlx::query!("TRUNCATE allowed_handles")
-        .execute(&db_pool)
+        .connect(test_instance.db_url())
         .await?;
 
     let coprocessor_api_key =
@@ -150,11 +138,9 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         url: url.clone(),
         initial_block_time: 1,
         no_block_immediate_recheck: false,
-        ignore_tfhe_events: false,
-        ignore_acl_events: false,
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
-        database_url: DATABASE_URL.into(),
+        database_url: test_instance.db_url().to_string(),
         coprocessor_api_key: Some(coprocessor_api_key),
         start_at_block: None,
         end_at_block: None,
@@ -190,14 +176,15 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     eprintln!("First kill, check database valid block has been updated");
     listener_handle.abort();
     let mut database =
-        Database::new(DATABASE_URL, &coprocessor_api_key, chain_id).await;
+        Database::new(test_instance.db_url(), &coprocessor_api_key, chain_id)
+            .await;
     let last_block = database.read_last_valid_block().await;
     assert!(last_block.is_some());
     assert!(last_block.unwrap() > 1);
 
     let db_pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(DATABASE_URL)
+        .connect(test_instance.db_url())
         .await?;
     let mut tfhe_events_count = 0;
     let mut acl_events_count = 0;
@@ -247,6 +234,11 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[serial(db)]
 async fn test_health() -> Result<(), anyhow::Error> {
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("valid db instance");
+
     let mut anvil = Anvil::new()
         .block_time_f64(1.0)
         .args(["--accounts", "1"])
@@ -267,7 +259,7 @@ async fn test_health() -> Result<(), anyhow::Error> {
 
     let db_pool = PgPoolOptions::new()
         .max_connections(1)
-        .connect(DATABASE_URL)
+        .connect(test_instance.db_url())
         .await?;
 
     let coprocessor_api_key = Some(
@@ -280,11 +272,9 @@ async fn test_health() -> Result<(), anyhow::Error> {
         url: url.clone(),
         initial_block_time: 1,
         no_block_immediate_recheck: false,
-        ignore_tfhe_events: false,
-        ignore_acl_events: false,
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
-        database_url: DATABASE_URL.into(),
+        database_url: test_instance.db_url().to_string(),
         coprocessor_api_key,
         start_at_block: None,
         end_at_block: None,
@@ -298,8 +288,7 @@ async fn test_health() -> Result<(), anyhow::Error> {
     const HEALTHZ_URL: &str = "http://0.0.0.0:8081/healthz";
 
     // Start listener in background task
-    let listener_handle: tokio::task::JoinHandle<()> =
-        tokio::spawn(main(args.clone()));
+    let listener_handle = tokio::spawn(main(args.clone()));
     for _ in 1..10 {
         let response = reqwest::get(LIVENESS_URL).await;
         if response.is_ok() && response.unwrap().status().is_success() {

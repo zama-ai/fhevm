@@ -402,12 +402,12 @@ contract ACLTest is Test {
     }
 
     /**
-     * @dev Tests that only the owner/pauser can pause the contract.
+     * @dev Tests that only the pauser can pause the contract.
      */
-    function test_OnlyOwnerOrPauserCanPause(address randomAccount) public {
+    function test_OnlyPauserCanPause(address randomAccount) public {
         _upgradeProxy();
-        vm.assume(randomAccount != owner && randomAccount != pauser);
-        vm.expectPartialRevert(ACL.NotOwnerOrPauser.selector);
+        vm.assume(randomAccount != pauser);
+        vm.expectPartialRevert(ACL.NotPauser.selector);
         vm.prank(randomAccount);
         acl.pause();
     }
@@ -418,7 +418,7 @@ contract ACLTest is Test {
     function test_OnlyOwnerCanUnpause(address randomAccount) public {
         _upgradeProxy();
         vm.assume(randomAccount != owner);
-        vm.prank(owner);
+        vm.prank(pauser);
         acl.pause();
         vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
         vm.prank(randomAccount);
@@ -430,7 +430,7 @@ contract ACLTest is Test {
      */
     function test_PauserCannotUnpause() public {
         _upgradeProxy();
-        vm.prank(owner);
+        vm.prank(pauser);
         acl.pause();
         vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
         vm.prank(pauser);
@@ -443,7 +443,7 @@ contract ACLTest is Test {
     function test_CannotCallAllowIfPaused() public {
         _upgradeProxy();
         bytes32 mockHandle = keccak256(abi.encodePacked("handle"));
-        vm.prank(owner);
+        vm.prank(pauser);
         acl.pause();
 
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
@@ -458,7 +458,7 @@ contract ACLTest is Test {
         _upgradeProxy();
         bytes32 mockHandle = keccak256(abi.encodePacked("handle"));
 
-        vm.prank(owner);
+        vm.prank(pauser);
         acl.pause();
 
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
@@ -471,7 +471,7 @@ contract ACLTest is Test {
      */
     function test_CannotCallAllowForDecryptionIfPaused() public {
         _upgradeProxy();
-        vm.prank(owner);
+        vm.prank(pauser);
         acl.pause();
 
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
@@ -492,7 +492,7 @@ contract ACLTest is Test {
         vm.prank(sender);
         acl.delegateAccount(delegatee, contractAddresses);
 
-        vm.prank(owner);
+        vm.prank(pauser);
         acl.pause();
 
         vm.prank(sender);
@@ -513,7 +513,7 @@ contract ACLTest is Test {
         vm.prank(sender);
         acl.delegateAccount(delegatee, contractAddresses);
 
-        vm.prank(owner);
+        vm.prank(pauser);
         acl.pause();
 
         vm.prank(sender);
@@ -526,7 +526,7 @@ contract ACLTest is Test {
      */
     function test_CannotUpdatePauserIfPaused(address randomAccount) public {
         _upgradeProxy();
-        vm.prank(owner);
+        vm.prank(pauser);
         acl.pause();
 
         vm.expectPartialRevert(PausableUpgradeable.EnforcedPause.selector);

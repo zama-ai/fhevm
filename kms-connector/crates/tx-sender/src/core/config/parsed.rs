@@ -3,11 +3,12 @@
 //! The `raw` module is first used to deserialize the configuration.
 
 use super::raw::RawConfig;
-use connector_utils::config::{
-    AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result,
+use connector_utils::{
+    config::{AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result},
+    monitoring::otlp::default_dispatcher,
 };
 use std::{net::SocketAddr, path::Path, time::Duration};
-use tracing::info;
+use tracing::{error, info};
 
 /// Configuration of the `TransactionSender`.
 #[derive(Clone, Debug)]
@@ -36,6 +37,8 @@ pub struct Config {
     pub responses_batch_size: u8,
     /// The gas multiplier percentage after each transaction attempt.
     pub gas_multiplier_percent: usize,
+    /// The maximum number of tasks that can be executed concurrently.
+    pub task_limit: usize,
     /// The monitoring server endpoint of the `TransactionSender`.
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
@@ -48,14 +51,15 @@ impl Config {
     /// Environment variables take precedence over file configuration.
     /// Environment variables are prefixed with KMS_CONNECTOR_.
     pub async fn from_env_and_file<P: AsRef<Path>>(path: Option<P>) -> Result<Self> {
+        let _dispatcher_guard = tracing::dispatcher::set_default(&default_dispatcher());
         if let Some(config_path) = &path {
             info!("Loading config from: {}", config_path.as_ref().display());
         } else {
             info!("Loading config using environment variables only");
         }
 
-        let raw_config = RawConfig::from_env_and_file(path)?;
-        Self::parse(raw_config).await
+        let raw_config = RawConfig::from_env_and_file(path).inspect_err(|e| error!("{e}"))?;
+        Self::parse(raw_config).await.inspect_err(|e| error!("{e}"))
     }
 
     async fn parse(raw_config: RawConfig) -> Result<Self> {
@@ -63,6 +67,7 @@ impl Config {
             .monitoring_endpoint
             .parse::<SocketAddr>()
             .map_err(|e| Error::InvalidConfig(e.to_string()))?;
+
         let wallet = Self::parse_kms_wallet(
             raw_config.chain_id,
             raw_config.private_key,
@@ -102,6 +107,7 @@ impl Config {
             tx_retry_interval,
             responses_batch_size: raw_config.responses_batch_size,
             gas_multiplier_percent: raw_config.gas_multiplier_percent,
+            task_limit: raw_config.task_limit,
             monitoring_endpoint,
             healthcheck_timeout,
         })
@@ -138,7 +144,7 @@ mod tests {
     use alloy::primitives::Address;
     use connector_utils::config::RawContractConfig;
     use serial_test::serial;
-    use std::{env, fs, str::FromStr};
+    use std::{env, fs, path::Path, str::FromStr};
     use tempfile::NamedTempFile;
 
     fn cleanup_env_vars() {

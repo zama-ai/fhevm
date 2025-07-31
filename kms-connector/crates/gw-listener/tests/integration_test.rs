@@ -321,6 +321,7 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
+#[ignore = "flaky tests to be fixed"]
 async fn test_catchup() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();

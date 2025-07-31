@@ -3,9 +3,12 @@
 //! The `raw` module is first used to deserialize the configuration.
 
 use crate::core::config::raw::{RawConfig, S3Config};
-use connector_utils::config::{ContractConfig, DeserializeRawConfig, Error, Result};
+use connector_utils::{
+    config::{ContractConfig, DeserializeRawConfig, Error, Result},
+    monitoring::otlp::default_dispatcher,
+};
 use std::{net::SocketAddr, path::Path, time::Duration};
-use tracing::info;
+use tracing::{error, info};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug)]
@@ -45,6 +48,9 @@ pub struct Config {
     /// Timeout to connect to a S3 bucket.
     pub s3_connect_timeout: Duration,
 
+    /// The maximum number of tasks that can be executed concurrently.
+    pub task_limit: usize,
+
     // TODO: implement to increase security
     /// Whether to verify coprocessors against the `GatewayConfig` contract (defaults to false).
     pub verify_coprocessors: bool,
@@ -61,14 +67,16 @@ impl Config {
     /// Environment variables take precedence over file configuration.
     /// Environment variables are prefixed with KMS_CONNECTOR_.
     pub fn from_env_and_file<P: AsRef<Path>>(path: Option<P>) -> Result<Self> {
-        if let Some(config_path) = &path {
-            info!("Loading config from: {}", config_path.as_ref().display());
-        } else {
-            info!("Loading config using environment variables only");
-        }
+        tracing::dispatcher::with_default(&default_dispatcher(), || {
+            if let Some(config_path) = &path {
+                info!("Loading config from: {}", config_path.as_ref().display());
+            } else {
+                info!("Loading config using environment variables only");
+            }
 
-        let raw_config = RawConfig::from_env_and_file(path)?;
-        Self::parse(raw_config)
+            let raw_config = RawConfig::from_env_and_file(path).inspect_err(|e| error!("{e}"))?;
+            Self::parse(raw_config).inspect_err(|e| error!("{e}"))
+        })
     }
 
     fn parse(raw_config: RawConfig) -> Result<Self> {
@@ -114,6 +122,7 @@ impl Config {
             s3_config: raw_config.s3_config,
             s3_ciphertext_retrieval_retries: raw_config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: s3_ciphertext_retrieval_timeout,
+            task_limit: raw_config.task_limit,
             verify_coprocessors: raw_config.verify_coprocessors,
             monitoring_endpoint,
             healthcheck_timeout,
@@ -134,7 +143,7 @@ mod tests {
     use alloy::primitives::Address;
     use connector_utils::config::RawContractConfig;
     use serial_test::serial;
-    use std::{env, fs, str::FromStr};
+    use std::{env, fs, path::Path, str::FromStr};
     use tempfile::NamedTempFile;
 
     fn cleanup_env_vars() {

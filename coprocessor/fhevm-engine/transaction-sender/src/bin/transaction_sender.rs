@@ -189,7 +189,10 @@ async fn main() -> anyhow::Result<()> {
             .await
         {
             Ok(inner_provider) => {
-                info!("Connected to Gateway at {}", conf.gateway_url);
+                info!(
+                    gateway_url = %conf.gateway_url,
+                    "Connected to Gateway"
+                );
                 break NonceManagedProvider::new(
                     inner_provider,
                     Some(wallet.default_signer().address()),
@@ -197,8 +200,10 @@ async fn main() -> anyhow::Result<()> {
             }
             Err(e) => {
                 error!(
-                    "Failed to connect to Gateway at {} on startup: {}, retrying in {:?}",
-                    conf.gateway_url, e, conf.provider_retry_interval
+                    gateway_url = %conf.gateway_url,
+                    error = %e,
+                    retry_interval = ?conf.provider_retry_interval,
+                    "Failed to connect to Gateway on startup, retrying"
                 );
                 tokio::time::sleep(conf.provider_retry_interval).await;
             }
@@ -262,12 +267,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Check results
     if let Err(e) = sender_result {
-        error!("Transaction sender error: {}", e);
+        error!(error = %e, "Transaction sender error");
         return Err(e);
     }
 
     if let Err(e) = http_result {
-        error!("HTTP server error: {}", e);
+        error!(error = %e, "HTTP server error");
         return Err(e);
     }
 

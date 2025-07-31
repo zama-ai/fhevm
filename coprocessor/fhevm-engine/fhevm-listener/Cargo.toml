@@ -36,6 +36,7 @@ alloy = { workspace = true, features = ["node-bindings"] }
 anyhow = { workspace = true }
 reqwest = "0.12.20"
 serial_test = { workspace = true }
+test-harness = { path = "../test-harness" }
 
 [build-dependencies]
 foundry-compilers = { workspace = true }

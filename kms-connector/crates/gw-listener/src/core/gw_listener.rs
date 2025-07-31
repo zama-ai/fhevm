@@ -9,6 +9,7 @@ use crate::{
 use alloy::{contract::Event, network::Ethereum, providers::Provider, sol_types::SolEvent};
 use connector_utils::{
     conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    tasks::spawn_with_limit,
     types::GatewayEvent,
 };
 use fhevm_gateway_rust_bindings::{
@@ -89,10 +90,10 @@ where
     /// the `GatewayListener`.
     async fn subscribe_to_events<'a, E>(
         &'a self,
-        event_name: &str,
+        event_name: &'static str,
         mut event_filter: Event<(), &'a Prov, E>,
     ) where
-        E: Into<GatewayEvent> + SolEvent + Send + Sync,
+        E: Into<GatewayEvent> + SolEvent + Send + Sync + 'static,
     {
         info!(
             "Starting {} event subscriptions from block {}...",
@@ -126,10 +127,14 @@ where
             };
             EVENT_RECEIVED_COUNTER.inc();
 
-            if let Err(err) = self.publisher.publish(event.into()).await {
-                error!("Failed to publish {event_name}: {err}");
-                EVENT_STORAGE_ERRORS.inc();
-            }
+            let publisher = self.publisher.clone();
+            spawn_with_limit(async move {
+                if let Err(err) = publisher.publish(event.into()).await {
+                    error!("Failed to publish {event_name}: {err}");
+                    EVENT_STORAGE_ERRORS.inc();
+                }
+            })
+            .await;
         }
     }
 

@@ -3,9 +3,12 @@
 //! The `raw` module is first used to deserialize the configuration.
 
 use super::raw::RawConfig;
-use connector_utils::config::{ContractConfig, DeserializeRawConfig, Error, Result};
+use connector_utils::{
+    config::{ContractConfig, DeserializeRawConfig, Error, Result},
+    monitoring::otlp::default_dispatcher,
+};
 use std::{net::SocketAddr, path::Path, time::Duration};
-use tracing::info;
+use tracing::{error, info};
 
 /// Configuration of the `GatewayListener`.
 #[derive(Clone, Debug)]
@@ -24,6 +27,8 @@ pub struct Config {
     pub kms_management_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
+    /// The maximum number of tasks that can be executed concurrently.
+    pub task_limit: usize,
     /// The monitoring server endpoint of the `GatewayListener`.
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
@@ -38,14 +43,16 @@ impl Config {
     /// Environment variables take precedence over file configuration.
     /// Environment variables are prefixed with KMS_CONNECTOR_.
     pub fn from_env_and_file<P: AsRef<Path>>(path: Option<P>) -> Result<Self> {
-        if let Some(config_path) = &path {
-            info!("Loading config from: {}", config_path.as_ref().display());
-        } else {
-            info!("Loading config using environment variables only");
-        }
+        tracing::dispatcher::with_default(&default_dispatcher(), || {
+            if let Some(config_path) = &path {
+                info!("Loading config from: {}", config_path.as_ref().display());
+            } else {
+                info!("Loading config using environment variables only");
+            }
 
-        let raw_config = RawConfig::from_env_and_file(path)?;
-        Self::parse(raw_config)
+            let raw_config = RawConfig::from_env_and_file(path).inspect_err(|e| error!("{e}"))?;
+            Self::parse(raw_config).inspect_err(|e| error!("{e}"))
+        })
     }
 
     fn parse(raw_config: RawConfig) -> Result<Self> {
@@ -73,6 +80,7 @@ impl Config {
             decryption_contract,
             kms_management_contract,
             service_name: raw_config.service_name,
+            task_limit: raw_config.task_limit,
             monitoring_endpoint,
             healthcheck_timeout,
             from_block_number: raw_config.from_block_number,
@@ -93,7 +101,7 @@ mod tests {
     use alloy::primitives::Address;
     use connector_utils::config::RawContractConfig;
     use serial_test::serial;
-    use std::{env, fs, str::FromStr};
+    use std::{env, fs, path::Path, str::FromStr};
     use tempfile::NamedTempFile;
 
     fn cleanup_env_vars() {

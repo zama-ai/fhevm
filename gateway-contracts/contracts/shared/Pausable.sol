@@ -16,22 +16,41 @@ abstract contract Pausable is Ownable2StepUpgradeable, PausableUpgradeable {
     IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /**
-     * @notice Error emitted when an address is not the owner or the pauser.
-     * @param notOwnerOrPauser The address that is not the owner or the pauser.
+     * @notice Error emitted when an address is not the pauser.
+     * @param notPauser The address that is not the pauser.
      */
-    error NotOwnerOrPauser(address notOwnerOrPauser);
+    error NotPauser(address notPauser);
+
+    /**
+     * @notice Error emitted when an address is not the pauser or the gateway config.
+     * @param notPauserOrGatewayConfig The address that is not the pauser or the gateway config.
+     */
+    error NotPauserOrGatewayConfig(address notPauserOrGatewayConfig);
+
+    /**
+     * @notice Error emitted when an address is not the owner or the gateway config.
+     * @param notOwnerOrGatewayConfig The address that is not the owner or the gateway config.
+     */
+    error NotOwnerOrGatewayConfig(address notOwnerOrGatewayConfig);
+
+    modifier onlyPauser() {
+        if (msg.sender != _GATEWAY_CONFIG.getPauser()) {
+            revert NotPauser(msg.sender);
+        }
+        _;
+    }
 
     /**
      * @dev Triggers stopped state.
      *
      * Requirements:
      *
-     * - Only owner or pauser addresses can pause.
+     * - Only pauser addresses can pause.
      * - The contract must not be paused.
      */
     function pause() external virtual {
-        if (msg.sender != owner() && msg.sender != _GATEWAY_CONFIG.getPauser()) {
-            revert NotOwnerOrPauser(msg.sender);
+        if (msg.sender != _GATEWAY_CONFIG.getPauser() && msg.sender != gatewayConfigAddress) {
+            revert NotPauserOrGatewayConfig(msg.sender);
         }
         _pause();
     }
@@ -44,7 +63,10 @@ abstract contract Pausable is Ownable2StepUpgradeable, PausableUpgradeable {
      * - Only owner can unpause.
      * - The contract must be paused.
      */
-    function unpause() external virtual onlyOwner {
+    function unpause() external virtual {
+        if (msg.sender != owner() && msg.sender != gatewayConfigAddress) {
+            revert NotOwnerOrGatewayConfig(msg.sender);
+        }
         _unpause();
     }
 }

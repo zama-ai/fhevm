@@ -116,9 +116,9 @@ pub async fn wait_for_ciphertext(
         .fetch_one(pool)
         .await;
 
-        if let Result::Ok(record) = record {
-            if let Some(ciphertext128) = record.ciphertext128 {
-                return anyhow::Ok(ciphertext128);
+        if let Ok(record) = record {
+            if let Some(ciphertext128) = record.ciphertext128.filter(|c| !c.is_empty()) {
+                return Ok(ciphertext128);
             }
         }
 
