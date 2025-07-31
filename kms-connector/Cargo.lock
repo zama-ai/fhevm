@@ -3516,6 +3516,7 @@ dependencies = [
  "connector-utils",
  "fhevm_gateway_rust_bindings",
  "prometheus",
+ "rstest",
  "serde",
  "serial_test",
  "sqlx",
