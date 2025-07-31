@@ -21,6 +21,9 @@ test: clean
 coverage: clean
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat coverage
 
+report-gas: clean
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test test/gas-reports/*
+
 get-accounts:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts --num-accounts 20
 

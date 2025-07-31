@@ -167,6 +167,10 @@ export async function loadTestVariablesFixture() {
   const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
   const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
 
+  // Load the decryption thresholds
+  const publicDecryptionThreshold = parseInt(getRequiredEnvVar("PUBLIC_DECRYPTION_THRESHOLD"));
+  const userDecryptionThreshold = parseInt(getRequiredEnvVar("USER_DECRYPTION_THRESHOLD"));
+
   return {
     ...fixtureData,
     gatewayConfig,
@@ -181,5 +185,7 @@ export async function loadTestVariablesFixture() {
     nCustodians,
     fheParamsName,
     fheParamsDigest,
+    publicDecryptionThreshold,
+    userDecryptionThreshold,
   };
 }
