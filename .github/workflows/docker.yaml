@@ -20,6 +20,8 @@ permissions:
   contents: read
   packages: write
 
+# TODO: migrate to zama-ai/ci-templates/.github/workflows/docker_common.yml
+
 jobs:
   # Detect which files have changed
   detect_changes:
@@ -173,11 +175,11 @@ jobs:
         id: docker-tags
         run: |
           gitsha=$(git rev-parse --short "$GITHUB_SHA")
-          TAGS="ghcr.io/zama-zws/console/${{ matrix.service }}:${gitsha}"
+          TAGS="ghcr.io/zama-ai/console/${{ matrix.service }}:${gitsha}"
           
           # Only add latest tag if pushing to main branch
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
-            TAGS="${TAGS}\nghcr.io/zama-zws/console/${{ matrix.service }}:latest"
+            TAGS="${TAGS}\nghcr.io/zama-ai/console/${{ matrix.service }}:latest"
           fi
           
           echo "tags<<EOF" >> $GITHUB_OUTPUT

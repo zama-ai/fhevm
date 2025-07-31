@@ -4,25 +4,25 @@ on:
   pull_request:
     paths:
       - .github/workflows/docker_relayer.yml
-      - src/**
-      - config/**
-      - Dockerfile
-      - .hadolint.yaml
-      - Makefile
-      - Cargo.toml
-      - Cargo.lock
+      - apps/relayer/fhevm-relayer/src/**
+      - apps/relayer/fhevm-relayer/config/**
+      - apps/relayer/fhevm-relayer/Dockerfile
+      - apps/relayer/fhevm-relayer/.hadolint.yaml
+      - apps/relayer/fhevm-relayer/Makefile
+      - apps/relayer/fhevm-relayer/Cargo.toml
+      - apps/relayer/fhevm-relayer/Cargo.lock
   push:
     branches:
       - main
     paths:
       - .github/workflows/docker_relayer.yml
-      - src/**
-      - config/**
-      - Dockerfile
-      - .hadolint.yaml
-      - Makefile
-      - Cargo.toml
-      - Cargo.lock
+      - apps/relayer/fhevm-relayer/src/**
+      - apps/relayer/fhevm-relayer/config/**
+      - apps/relayer/fhevm-relayer/Dockerfile
+      - apps/relayer/fhevm-relayer/.hadolint.yaml
+      - apps/relayer/fhevm-relayer/Makefile
+      - apps/relayer/fhevm-relayer/Cargo.toml
+      - apps/relayer/fhevm-relayer/Cargo.lock
   release:
     types:
       - published
@@ -42,7 +42,8 @@ jobs:
       id-token: "write"
       packages: "write"
     with:
-      working-directory: "."
+      working-directory: "apps/relayer/fhevm-relayer"
+      docker-context: "apps/relayer/fhevm-relayer"
       push_image: true
       image-name: "fhevm-relayer"
       docker-file: "Dockerfile"
@@ -58,8 +59,8 @@ jobs:
       packages: "write"
     with:
       ref: 
-      working-directory: "./oracle"
-      docker-context: "./oracle"
+      working-directory: "apps/relayer/fhevm-relayer/oracle"
+      docker-context: "apps/relayer/fhevm-relayer/oracle"
       push_image: true
       image-name: "fhevm-relayer-decryption-oracle-contracts"
       docker-file: "Dockerfile"

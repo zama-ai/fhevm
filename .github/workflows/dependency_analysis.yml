@@ -2,17 +2,23 @@ name: Dependency analysis
 
 on:
   pull_request:
+    paths:
+    - "apps/relayer/fhevm-relayer"
     paths-ignore:
-    - "deployments/**"
-    - "hardhat/**"
+    - "apps/relayer/fhevm-relayer/deployments/**"
+    - "apps/relayer/fhevm-relayer/hardhat/**"
 
 concurrency:
   group: deps-analysis-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+
   dependencies-check:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/relayer/fhevm-relayer
     steps:
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

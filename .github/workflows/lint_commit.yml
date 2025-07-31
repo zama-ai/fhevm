@@ -2,9 +2,6 @@ name: Commitlint
 
 on:
   pull_request:
-    paths-ignore:
-      - "deployments/**"
-      - "hardhat/**"
 
 jobs:
   commitlint:
@@ -16,10 +13,14 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
-          node-version: 20.x
+          node-version: 22.x
       - name: Install commitlint
         run: |
-          npm install @commitlint/config-conventional@^18 conventional-changelog-atom @commitlint/types@^18
-          npm install -g @commitlint/cli@^18
-      - name: Validate all commits from PR
-        run: npx commitlint --config .github/config/commitlint.config.js --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+          # NOTE: we need to remove `package.json` because `catalog` use in package.json breaks NPM
+          # and for some reason unknown to me `npm i -g` parses `package.json`
+          rm package.json
+          npm install --force --no-package-lock --no-save @commitlint/config-conventional@^18 conventional-changelog-atom @commitlint/types@^18
+          npm install --force --no-package-lock --no-save -g @commitlint/cli@^18
+      # TODO: Re-enable once fhevm-relayer is merged
+      # - name: Validate all commits from PR
+      #   run: npx commitlint --config .github/config/commitlint.config.js --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose

@@ -16,6 +16,9 @@ jobs:
   ## TODO: add a job to verify the tagged commit
   package:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/relayer/fhevm-relayer
     outputs:
       hash: ${{ steps.hash.outputs.hash }}
     steps:
@@ -50,6 +53,9 @@ jobs:
   publish_release:
     needs: [package]
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/relayer/fhevm-relayer
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

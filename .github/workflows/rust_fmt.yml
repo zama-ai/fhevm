@@ -2,9 +2,8 @@ name: Rust Formatting
 
 on:
   pull_request:
-    paths-ignore:
-      - "deployments/**"
-      - "hardhat/**"
+    paths:
+    - "apps/relayer/fhevm-relayer"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
@@ -13,6 +12,9 @@ concurrency:
 jobs:
   rust-formatting:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/relayer/fhevm-relayer
 
     steps:
     - name: Checkout code

@@ -2,9 +2,8 @@ name: Rust Unit Tests
 
 on:
   pull_request:
-    paths-ignore:
-      - "deployments/**"
-      - "hardhat/**"
+    paths:
+      - "apps/relayer/fhevm-relayer"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
@@ -13,6 +12,9 @@ concurrency:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/relayer/fhevm-relayer
     env:
       RUST_BACKTRACE: 1
 
@@ -22,8 +24,8 @@ jobs:
       uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
       with:
         registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GHCR_READ_TOKEN }}
+        username: ${{ secrets.BOT_USERNAME }}
+        password: ${{ secrets.RELAYER_TOKEN }}
 
     - name: Checkout code
       uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
