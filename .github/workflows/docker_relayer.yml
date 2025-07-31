@@ -45,7 +45,7 @@ jobs:
       working-directory: "apps/relayer/fhevm-relayer"
       docker-context: "apps/relayer/fhevm-relayer"
       push_image: true
-      image-name: "fhevm-relayer"
+      image-name: "console/fhevm-relayer"
       docker-file: "Dockerfile"
       arm-build: true
   docker-oracle:
@@ -62,6 +62,6 @@ jobs:
       working-directory: "apps/relayer/fhevm-relayer/oracle"
       docker-context: "apps/relayer/fhevm-relayer/oracle"
       push_image: true
-      image-name: "fhevm-relayer-decryption-oracle-contracts"
+      image-name: "console/fhevm-relayer-decryption-oracle-contracts"
       docker-file: "Dockerfile"
       arm-build: true
