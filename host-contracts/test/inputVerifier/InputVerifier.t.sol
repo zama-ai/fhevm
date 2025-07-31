@@ -222,12 +222,14 @@ contract InputVerifierTest is Test {
      */
     function _computeInputProof(
         bytes32[] memory handles,
-        bytes[] memory signatures
+        bytes[] memory signatures,
+        bytes memory extraData
     ) internal pure returns (bytes memory inputProof) {
         inputProof = abi.encodePacked(uint8(handles.length), uint8(signatures.length), handles);
         for (uint256 i = 0; i < signatures.length; i++) {
             inputProof = abi.encodePacked(inputProof, signatures[i]);
         }
+        inputProof = abi.encodePacked(inputProof, extraData);
     }
 
     /**
@@ -307,7 +309,7 @@ contract InputVerifierTest is Test {
             chainId,
             extraData
         );
-        inputProof = _computeInputProof(handles, signatures);
+        inputProof = _computeInputProof(handles, signatures, extraData);
 
         context.userAddress = userAddress;
         context.contractAddress = contractAddress;
@@ -333,7 +335,6 @@ contract InputVerifierTest is Test {
     {
         address userAddress = address(1234);
         address contractAddress = address(2222);
-        bytes memory extraData = hex"00";
         bytes32[] memory cleartextValues = new bytes32[](1);
         FheType[] memory fheTypes = new FheType[](1);
         fheTypes[0] = FheType.Uint64;
@@ -346,7 +347,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 chainId,
-                extraData,
+                hex"00",
                 handleVersion,
                 signers
             );
@@ -655,7 +656,7 @@ contract InputVerifierTest is Test {
     /**
      * @dev Tests that the verifyCiphertext function fails if the length of the input proof is invalid.
      */
-    function test_VerifyCiphertextFailsIfDeserializingInputProofFail(uint256 randomValue) public {
+    function test_VerifyCiphertextFailsIfDeserializingInputProofFail() public {
         _upgradeProxyWithSigners(3);
 
         (
@@ -664,11 +665,14 @@ contract InputVerifierTest is Test {
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
 
-        /// @dev We increase the length of the input proof by adding a random value at the end.
-        inputProof = abi.encodePacked(inputProof, randomValue);
+        /// @dev We truncate the length of the input proof to make it incomplete.
+        bytes memory truncatedInputProof = new bytes(10);
+        for (uint256 i = 0; i < 10; i++) {
+            truncatedInputProof[i] = inputProof[i];
+        }
 
         vm.expectRevert(InputVerifier.DeserializingInputProofFail.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyCiphertext(context, mockInputHandle, truncatedInputProof);
     }
 
     /**
