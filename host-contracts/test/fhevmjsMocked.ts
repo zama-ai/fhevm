@@ -398,6 +398,9 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       signaturesCoproc.map((sigCopro) => (inputProof += sigCopro.slice(2)));
       listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
 
+      // Append the extra data to the input proof
+      inputProof = ethers.concat([inputProof, extraDataV0]);
+
       return {
         handles,
         inputProof,

@@ -333,6 +333,7 @@ contract InputVerifierTest is Test {
     {
         address userAddress = address(1234);
         address contractAddress = address(2222);
+        bytes memory extraData = hex"00";
         bytes32[] memory cleartextValues = new bytes32[](1);
         FheType[] memory fheTypes = new FheType[](1);
         fheTypes[0] = FheType.Uint64;
@@ -345,7 +346,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 chainId,
-                hex"00",
+                extraData,
                 handleVersion,
                 signers
             );
