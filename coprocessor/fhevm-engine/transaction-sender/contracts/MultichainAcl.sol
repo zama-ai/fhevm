@@ -17,14 +17,14 @@ contract MultichainAcl {
         alreadyAllowedRevert = _alreadyAllowedRevert;
     }
 
-    function allowAccount(bytes32 ctHandle, address accountAddress) public {
+    function allowAccount(bytes32 ctHandle, address accountAddress, bytes calldata /* extraData */) public {
         if (alreadyAllowedRevert) {
             revert CoprocessorAlreadyAllowedAccount(ctHandle, accountAddress, msg.sender);
         }
         emit AllowAccount(ctHandle, accountAddress);
     }
 
-    function allowPublicDecrypt(bytes32 ctHandle) public {
+    function allowPublicDecrypt(bytes32 ctHandle, bytes calldata /* extraData */) public {
         if (alreadyAllowedRevert) {
             revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
         }

@@ -44,8 +44,8 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
         .await
         .ok_or_else(|| anyhow!("Failed to capture PublicDecryptionResponse"))??;
     match inserted_response {
-        KmsResponse::PublicDecryption { decryption_id, .. } => {
-            assert_eq!(response.decryptionId, decryption_id)
+        KmsResponse::PublicDecryption(r) => {
+            assert_eq!(response.decryptionId, r.decryption_id)
         }
         _ => unreachable!(),
     }
@@ -93,8 +93,8 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
         .await
         .ok_or_else(|| anyhow!("Failed to capture UserDecryptionResponse"))??;
     match inserted_response {
-        KmsResponse::UserDecryption { decryption_id, .. } => {
-            assert_eq!(response.decryptionId, decryption_id)
+        KmsResponse::UserDecryption(r) => {
+            assert_eq!(response.decryptionId, r.decryption_id)
         }
         _ => unreachable!(),
     }
@@ -137,8 +137,8 @@ async fn stress_test() -> anyhow::Result<()> {
     let mut responses_id = Vec::with_capacity(nb_response);
     for _ in 0..nb_response {
         match insert_rand_user_decrypt_response(test_instance.db()).await? {
-            KmsResponse::UserDecryption { decryption_id, .. } => {
-                responses_id.push(decryption_id);
+            KmsResponse::UserDecryption(r) => {
+                responses_id.push(r.decryption_id);
             }
             _ => unreachable!(),
         }

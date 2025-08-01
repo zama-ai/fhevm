@@ -132,7 +132,7 @@ pub async fn setup_anvil_gateway(host_port: u16) -> anyhow::Result<ContainerAsyn
 
     info!("Deploying Gateway mock contracts...");
     let _deploy_mock_container =
-        GenericImage::new("ghcr.io/zama-ai/fhevm/gateway-contracts", "v0.7.6")
+        GenericImage::new("ghcr.io/zama-ai/fhevm/gateway-contracts", "a405734")
             .with_wait_for(WaitFor::message_on_stdout("Mock contract deployment done!"))
             .with_env_var("HARDHAT_NETWORK", "staging")
             .with_env_var(

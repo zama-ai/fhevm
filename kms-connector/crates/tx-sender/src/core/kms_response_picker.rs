@@ -104,7 +104,7 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE public_decryption_responses.decryption_id = resp.decryption_id
-                RETURNING resp.decryption_id, decrypted_result, signature
+                RETURNING resp.decryption_id, decrypted_result, signature, extra_data
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -127,7 +127,7 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE user_decryption_responses.decryption_id = resp.decryption_id
-                RETURNING resp.decryption_id, user_decrypted_shares, signature
+                RETURNING resp.decryption_id, user_decrypted_shares, signature, extra_data
             ",
         )
         .bind(self.responses_batch_size as i16)
