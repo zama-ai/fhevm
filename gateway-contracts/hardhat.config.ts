@@ -4,6 +4,7 @@ import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
 import "@typechain/hardhat";
 import dotenv from "dotenv";
+import "hardhat-dependency-compiler";
 import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task, types } from "hardhat/config";
 import { resolve } from "path";
@@ -15,6 +16,7 @@ import "./tasks/blockExplorerVerify";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
+import "./tasks/deployment/safe_smart_accounts";
 import "./tasks/getters";
 import "./tasks/upgradeContracts";
 
@@ -158,6 +160,12 @@ const config: HardhatUserConfig = {
       evmVersion: "cancun",
       viaIR: false,
     },
+  },
+  dependencyCompiler: {
+    paths: [
+      "@safe-global/safe-contracts/contracts/proxies/SafeProxyFactory.sol",
+      "@safe-global/safe-contracts/contracts/Safe.sol",
+    ],
   },
   warnings: {
     // Turn off all warnings for mocked contracts

@@ -745,6 +745,7 @@ describe("Decryption", function () {
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
+      pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       userSignature = fixtureData.userSignature;
       kmsSignatures = fixtureData.kmsSignatures;
@@ -1525,6 +1526,7 @@ describe("Decryption", function () {
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
+      pauser = fixtureData.pauser;
       snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       delegatedSignature = fixtureData.delegatedSignature;
       kmsSignatures = fixtureData.kmsSignatures;
