@@ -140,7 +140,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                         )
                         SELECT pg_notify($6, '')",
                         request.zkProofId.to::<i64>(),
-                        request.contractChainId.to::<i32>(),
+                        request.contractChainId.to::<i64>(),
                         request.contractAddress.to_string(),
                         request.userAddress.to_string(),
                         Some(request.ciphertextWithZKProof.as_ref()),

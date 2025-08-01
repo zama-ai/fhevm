@@ -188,7 +188,7 @@ impl From<CoprocessorError> for tonic::Status {
 
 pub struct TfheTenantKeys {
     pub tenant_id: i32,
-    pub chain_id: i32,
+    pub chain_id: i64,
     pub verifying_contract_address: String,
     pub acl_contract_address: String,
     pub sks: tfhe::ServerKey,
