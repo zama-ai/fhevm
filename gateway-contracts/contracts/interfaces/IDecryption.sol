@@ -223,7 +223,7 @@ interface IDecryption {
      * @notice Requests a user decryption.
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
-     * @param contractsInfo The chain ID and contract addresses to be used in the decryption.
+     * @param contractsInfo The contracts' information (chain ID, addresses).
      * @param userAddress The user's address.
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
@@ -244,7 +244,7 @@ interface IDecryption {
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
      * @param delegationAccounts The user's address and the delegated account address for the user decryption.
-     * @param contractsInfo The chain ID and contract addresses to be used in the decryption.
+     * @param contractsInfo The contracts' information (chain ID, addresses).
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -294,7 +294,7 @@ interface IDecryption {
 
     /**
      * @notice Checks if handles are ready to be decrypted by a delegated address.
-     * @param contractsChainId The contract's chain ID.
+     * @param contractsChainId The host chain ID, where the contracts are deployed.
      * @param delegationAccounts The delegator and delegated address.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param contractAddresses The contract addresses.

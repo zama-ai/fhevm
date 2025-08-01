@@ -50,8 +50,6 @@ contract Decryption is
         bytes publicKey;
         /// @notice The contract addresses that verification is requested for.
         address[] contractAddresses;
-        /// @notice The chain ID of the contract addresses.
-        uint256 contractsChainId;
         /// @notice The start timestamp of the user decryption request.
         uint256 startTimestamp;
         /// @notice The duration in days of the user decryption request after the start timestamp.
@@ -84,8 +82,6 @@ contract Decryption is
         address[] contractAddresses;
         /// @notice The address of the account that delegates access to its handles.
         address delegatorAddress;
-        /// @notice The chain ID of the contract addresses.
-        uint256 contractsChainId;
         /// @notice The start timestamp of the user decryption request.
         uint256 startTimestamp;
         /// @notice The duration in days of the user decryption request after the start timestamp.
@@ -132,8 +128,8 @@ contract Decryption is
 
     /// @notice The definition of the UserDecryptRequestVerification structure typed data.
     string private constant EIP712_USER_DECRYPT_REQUEST_TYPE =
-        "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 contractsChainId,"
-        "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
+        "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 startTimestamp,"
+        "uint256 durationDays,bytes extraData)";
 
     /// @notice The hash of the UserDecryptRequestVerification structure typed data definition
     /// @notice used for signature validation.
@@ -141,7 +137,7 @@ contract Decryption is
 
     string private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
         "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
-        "uint256 contractsChainId,uint256 startTimestamp,uint256 durationDays,bytes extraData)";
+        "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
 
     bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
         keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
@@ -379,14 +375,18 @@ contract Decryption is
         UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
             publicKey,
             contractsInfo.addresses,
-            contractsInfo.chainId,
             requestValidity.startTimestamp,
             requestValidity.durationDays,
             extraData
         );
 
         /// @dev Validate the received EIP712 signature on the user decryption request.
-        _validateUserDecryptRequestEIP712Signature(userDecryptRequestVerification, userAddress, signature);
+        _validateUserDecryptRequestEIP712Signature(
+            userDecryptRequestVerification,
+            userAddress,
+            signature,
+            contractsInfo.chainId
+        );
 
         /// @dev Fetch the ciphertexts from the CiphertextCommits contract
         /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
@@ -461,7 +461,6 @@ contract Decryption is
                 publicKey,
                 contractsInfo.addresses,
                 delegationAccounts.delegatorAddress,
-                contractsInfo.chainId,
                 requestValidity.startTimestamp,
                 requestValidity.durationDays,
                 extraData
@@ -471,7 +470,8 @@ contract Decryption is
         _validateDelegatedUserDecryptRequestEIP712Signature(
             delegatedUserDecryptRequestVerification,
             delegationAccounts.delegatedAddress,
-            signature
+            signature,
+            contractsInfo.chainId
         );
 
         /// @dev Fetch the ciphertexts from the CiphertextCommits contract
@@ -699,13 +699,16 @@ contract Decryption is
     /// @notice Validates the EIP712 signature for a given user decryption request
     /// @dev This function checks that the signer address is the same as the user address.
     /// @param userDecryptRequestVerification The signed UserDecryptRequestVerification structure
+    /// @param userAddress The address of the user.
     /// @param signature The signature to be validated
+    /// @param contractsChainId The chain ID of the contracts.
     function _validateUserDecryptRequestEIP712Signature(
         UserDecryptRequestVerification memory userDecryptRequestVerification,
         address userAddress,
-        bytes calldata signature
+        bytes calldata signature,
+        uint256 contractsChainId
     ) internal view virtual {
-        bytes32 digest = _hashUserDecryptRequestVerification(userDecryptRequestVerification);
+        bytes32 digest = _hashUserDecryptRequestVerification(userDecryptRequestVerification, contractsChainId);
         address signer = ECDSA.recover(digest, signature);
         if (signer != userAddress) {
             revert InvalidUserSignature(signature);
@@ -715,13 +718,19 @@ contract Decryption is
     /// @notice Validates the EIP712 signature for a given user decryption request
     /// @dev This function checks that the signer address is the same as the delegated address.
     /// @param delegatedUserDecryptRequestVerification The signed DelegatedUserDecryptRequestVerification structure
+    /// @param delegatedAddress The address of the delegated user.
     /// @param signature The signature to be validated
+    /// @param contractsChainId The chain ID of the contracts.
     function _validateDelegatedUserDecryptRequestEIP712Signature(
         DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
         address delegatedAddress,
-        bytes calldata signature
+        bytes calldata signature,
+        uint256 contractsChainId
     ) internal view virtual {
-        bytes32 digest = _hashDelegatedUserDecryptRequestVerification(delegatedUserDecryptRequestVerification);
+        bytes32 digest = _hashDelegatedUserDecryptRequestVerification(
+            delegatedUserDecryptRequestVerification,
+            contractsChainId
+        );
         address signer = ECDSA.recover(digest, signature);
         if (signer != delegatedAddress) {
             revert InvalidUserSignature(signature);
@@ -763,29 +772,32 @@ contract Decryption is
 
     /// @notice Computes the hash of a given UserDecryptRequestVerification structured data.
     /// @param userDecryptRequestVerification The UserDecryptRequestVerification structure to hash.
+    /// @param contractsChainId The chain ID of the contracts.
     /// @return The hash of the UserDecryptRequestVerification structure.
     function _hashUserDecryptRequestVerification(
-        UserDecryptRequestVerification memory userDecryptRequestVerification
+        UserDecryptRequestVerification memory userDecryptRequestVerification,
+        uint256 contractsChainId
     ) internal view virtual returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
                 EIP712_USER_DECRYPT_REQUEST_TYPE_HASH,
                 keccak256(userDecryptRequestVerification.publicKey),
                 keccak256(abi.encodePacked(userDecryptRequestVerification.contractAddresses)),
-                userDecryptRequestVerification.contractsChainId,
                 userDecryptRequestVerification.startTimestamp,
                 userDecryptRequestVerification.durationDays,
                 keccak256(abi.encodePacked(userDecryptRequestVerification.extraData))
             )
         );
-        return _hashTypedDataV4CustomChainId(userDecryptRequestVerification.contractsChainId, structHash);
+        return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
     }
 
     /// @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.
     /// @param delegatedUserDecryptRequestVerification The DelegatedUserDecryptRequestVerification structure to hash.
+    /// @param contractsChainId The chain ID of the contracts.
     /// @return The hash of the DelegatedUserDecryptRequestVerification structure.
     function _hashDelegatedUserDecryptRequestVerification(
-        DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification
+        DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
+        uint256 contractsChainId
     ) internal view virtual returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
@@ -793,13 +805,12 @@ contract Decryption is
                 keccak256(delegatedUserDecryptRequestVerification.publicKey),
                 keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.contractAddresses)),
                 delegatedUserDecryptRequestVerification.delegatorAddress,
-                delegatedUserDecryptRequestVerification.contractsChainId,
                 delegatedUserDecryptRequestVerification.startTimestamp,
                 delegatedUserDecryptRequestVerification.durationDays,
                 keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.extraData))
             )
         );
-        return _hashTypedDataV4CustomChainId(delegatedUserDecryptRequestVerification.contractsChainId, structHash);
+        return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
     }
 
     /// @notice Computes the hash of a given UserDecryptResponseVerification structured data.
