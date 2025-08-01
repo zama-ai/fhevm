@@ -59,7 +59,7 @@ pub async fn check_if_api_key_is_valid<T>(
 }
 
 pub struct FetchTenantKeyResult {
-    pub chain_id: i32,
+    pub chain_id: i64,
     pub verifying_contract_address: String,
     pub acl_contract_address: String,
     pub server_key: tfhe::ServerKey,
