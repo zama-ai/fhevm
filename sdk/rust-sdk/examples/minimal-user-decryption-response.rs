@@ -12,12 +12,11 @@ use gateway_sdk::{
     FhevmSdkBuilder, Result, blockchain::bindings::Decryption::CtHandleContractPair,
     utils::validate_address_from_str,
 };
-use std::{path, str::FromStr};
+use std::str::FromStr;
 fn main() -> Result<()> {
     println!("🔓 Processing user decryption...");
 
     let sdk = FhevmSdkBuilder::new()
-        .with_keys_directory(path::PathBuf::from("./keys"))
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111) // Example: Ethereum Sepolia
         .with_decryption_contract("0x1234567890123456789012345678901234567bbb")
