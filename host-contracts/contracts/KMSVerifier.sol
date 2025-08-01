@@ -21,6 +21,12 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
     /// @param invalidSigner Address of the invalid signer.
     error KMSInvalidSigner(address invalidSigner);
 
+    /// @notice Returned if the deserializing of the decryption proof fails.
+    error DeserializingDecryptionProofFail();
+
+    /// @notice Returned if the decryption proof is empty.
+    error EmptyDecryptionProof();
+
     /// @notice Returned if the KMS signer to add is the null address.
     error KMSSignerNull();
 
@@ -179,8 +185,18 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
         bytes memory decryptedResult,
         bytes memory decryptionProof
     ) public virtual returns (bool) {
-        /// @dev The decryptionProof is the numSigners + signatureKMSSigners + extraData (1 + 65 * numSigners + extraData bytes)
+        if (decryptionProof.length == 0) {
+            revert EmptyDecryptionProof();
+        }
+
+        /// @dev The decryptionProof is the numSigners + kmsSignatures + extraData (1 + 65*numSigners + extraData bytes)
         uint256 numSigners = uint256(uint8(decryptionProof[0]));
+
+        /// @dev Check that the decryptionProof is long enough to contain at least the numSigners + kmsSignatures
+        if (decryptionProof.length < 1 + 65 * numSigners) {
+            revert DeserializingDecryptionProofFail();
+        }
+
         bytes[] memory signatures = new bytes[](numSigners);
         for (uint256 j = 0; j < numSigners; j++) {
             signatures[j] = new bytes(65);
