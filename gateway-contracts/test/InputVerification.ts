@@ -338,6 +338,39 @@ describe("InputVerification", function () {
       expect(proofVerificationConsensusTxSenders).to.deep.equal(expectedCoprocessorTxSenders);
     });
 
+    it("Should get verify proof response materials from consensus", async function () {
+      // Trigger 2 valid proof verification responses with different coprocessor transaction senders
+      await inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]);
+      await inputVerification.connect(coprocessorTxSenders[1]).verifyProofResponse(zkProofId, ctHandles, signatures[1]);
+
+      const expectedVerifyProofResponseMaterials = [ctHandles, signatures.slice(0, 2)];
+
+      // Check that the proof verification response materials come from the 2 coprocessor transaction
+      // senders, at the moment the consensus is reached
+      const verifyProofResponseMaterials = await inputVerification.getVerifyProofResponseMaterials(zkProofId);
+      expect(verifyProofResponseMaterials).to.deep.equal(expectedVerifyProofResponseMaterials);
+
+      // Trigger a third valid proof verification response with the third coprocessor transaction sender
+      await inputVerification.connect(coprocessorTxSenders[2]).verifyProofResponse(zkProofId, ctHandles, signatures[2]);
+
+      const expectedVerifyProofResponseMaterials2 = [ctHandles, signatures.slice(0, 3)];
+
+      // Check that the proof verification response materials come from the 3 coprocessor transaction
+      // senders, after the consensus is reached
+      const verifyProofResponseMaterials2 = await inputVerification.getVerifyProofResponseMaterials(zkProofId);
+      expect(verifyProofResponseMaterials2).to.deep.equal(expectedVerifyProofResponseMaterials2);
+    });
+
+    it("Should revert and not get verify proof response materials from consensus because consensus is not reached", async function () {
+      // Trigger a valid proof verification response with the first coprocessor transaction sender
+      await inputVerification.connect(coprocessorTxSenders[0]).verifyProofResponse(zkProofId, ctHandles, signatures[0]);
+
+      await expect(inputVerification.getVerifyProofResponseMaterials(zkProofId)).to.be.revertedWithCustomError(
+        inputVerification,
+        "ProofNotVerified",
+      );
+    });
+
     it("Should revert in case of invalid zkProofId in verify proof response", async function () {
       // Check that a verify proof response with null (invalid) zkProofId reverts
       await expect(
