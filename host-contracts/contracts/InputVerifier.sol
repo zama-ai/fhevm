@@ -204,7 +204,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         if (!isProofCached) {
             /// @dev bundleCiphertext is compressedPackedCT+ZKPOK
             ///      inputHandle is keccak256(keccak256(bundleCiphertext)+index)[0:20] + index[21] + chainId[22:29] + type[30] + version[31]
-            ///      and inputProof is numHandles + numSigners + handles + coprocessorSignatures (1 + 1 + numHandles*32 + 65*numSigners)
+            ///      and inputProof is numHandles + numSigners + handles + coprocessorSignatures (1 + 1 + 32*numHandles + 65*numSigners + extraData bytes)
 
             uint256 inputProofLen = inputProof.length;
             if (inputProofLen == 0) revert EmptyInputProof();
