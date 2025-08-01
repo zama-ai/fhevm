@@ -14,7 +14,7 @@ interface IKMSVerifier {
     function verifyDecryptionEIP712KMSSignatures(
         bytes32[] memory handlesList,
         bytes memory decryptedResult,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) external returns (bool);
 }
 
@@ -8924,9 +8924,9 @@ library FHE {
      * @dev     otherwise fake decryption results could be submitted.
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
      */
-    function checkSignatures(uint256 requestID, bytes[] memory signatures) internal {
+    function checkSignatures(uint256 requestID, bytes memory decryptionProof) internal {
         bytes32[] memory handlesList = loadRequestedHandles(requestID);
-        bool isVerified = verifySignatures(handlesList, signatures);
+        bool isVerified = verifySignatures(handlesList, decryptionProof);
         if (!isVerified) {
             revert InvalidKMSSignatures();
         }
@@ -8948,7 +8948,7 @@ library FHE {
      * @dev Private low-level function used to extract the decryptedResult bytes array and verify the KMS signatures.
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
      */
-    function verifySignatures(bytes32[] memory handlesList, bytes[] memory signatures) private returns (bool) {
+    function verifySignatures(bytes32[] memory handlesList, bytes memory decryptionProof) private returns (bool) {
         uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
         uint256 length = getSignedDataLength(handlesList);
         bytes memory decryptedResult = new bytes(length);
@@ -8960,7 +8960,7 @@ library FHE {
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 handlesList,
                 decryptedResult,
-                signatures
+                decryptionProof
             );
     }
 
@@ -8978,7 +8978,6 @@ library FHE {
                 revert UnsupportedHandleType();
             }
         }
-        signedDataLength += 32; // add offset of signatures
         return signedDataLength;
     }
 
