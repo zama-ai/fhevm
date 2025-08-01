@@ -4,9 +4,8 @@ on:
   pull_request:
     paths:
     - "apps/relayer/fhevm-relayer"
-    paths-ignore:
-    - "apps/relayer/fhevm-relayer/deployments/**"
-    - "apps/relayer/fhevm-relayer/hardhat/**"
+    - "!apps/relayer/fhevm-relayer/deployments/**"
+    - "!apps/relayer/fhevm-relayer/hardhat/**"
 
 concurrency:
   group: deps-analysis-${{ github.ref }}
