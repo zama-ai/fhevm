@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT block_number FROM blocks_valid WHERE chain_id = $1 ORDER BY block_number DESC LIMIT 1;\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "69eea32069c04ab351856d18f4b53d059e01468778eea9588aff3f8aee6171a7"
+}

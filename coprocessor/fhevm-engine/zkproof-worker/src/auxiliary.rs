@@ -8,7 +8,7 @@ pub(crate) struct ZkData {
     pub contract_address: String,
     pub user_address: String,
     pub acl_contract_address: String,
-    pub chain_id: i32,
+    pub chain_id: i64,
 }
 
 impl ZkData {

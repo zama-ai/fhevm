@@ -159,7 +159,7 @@ pub async fn execute_verify_proofs_loop(
 async fn execute_worker(
     conf: &Config,
     pool: &sqlx::Pool<sqlx::Postgres>,
-    tenant_key_cache: &Arc<RwLock<LruCache<i32, TfheTenantKeys>>>,
+    tenant_key_cache: &Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
     let mut listener = PgListener::connect_with(pool).await?;
@@ -206,7 +206,7 @@ async fn execute_worker(
 /// Fetch, verify a single proof and then compute signature
 async fn execute_verify_proof_routine(
     pool: &PgPool,
-    tenant_key_cache: &Arc<RwLock<LruCache<i32, TfheTenantKeys>>>,
+    tenant_key_cache: &Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
     conf: &Config,
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
@@ -222,7 +222,7 @@ async fn execute_verify_proof_routine(
     {
         let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
-        let chain_id: i32 = row.get("chain_id");
+        let chain_id: i64 = row.get("chain_id");
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
 

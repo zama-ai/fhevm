@@ -199,7 +199,7 @@ pub async fn setup_test_user(
 }
 
 pub async fn insert_random_tenant(pool: &PgPool) -> Result<i32, sqlx::Error> {
-    let chain_id: i32 = rand::rng().random_range(1..10000);
+    let chain_id: i64 = rand::rng().random_range(1..10000);
     let key_id_i32: i32 = rand::rng().random_range(1..10000);
 
     let verifying_contract_address: String = rand::rng()
