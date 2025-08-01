@@ -7783,6 +7783,7 @@ library FHE {
     function select(ebool control, ebool a, ebool b) internal returns (ebool) {
         return ebool.wrap(Impl.select(ebool.unwrap(control), ebool.unwrap(a), ebool.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
@@ -7790,6 +7791,7 @@ library FHE {
     function select(ebool control, euint8 a, euint8 b) internal returns (euint8) {
         return euint8.wrap(Impl.select(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
@@ -7797,6 +7799,7 @@ library FHE {
     function select(ebool control, euint16 a, euint16 b) internal returns (euint16) {
         return euint16.wrap(Impl.select(ebool.unwrap(control), euint16.unwrap(a), euint16.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
@@ -7804,6 +7807,7 @@ library FHE {
     function select(ebool control, euint32 a, euint32 b) internal returns (euint32) {
         return euint32.wrap(Impl.select(ebool.unwrap(control), euint32.unwrap(a), euint32.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
@@ -7811,6 +7815,7 @@ library FHE {
     function select(ebool control, euint64 a, euint64 b) internal returns (euint64) {
         return euint64.wrap(Impl.select(ebool.unwrap(control), euint64.unwrap(a), euint64.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
@@ -7818,6 +7823,7 @@ library FHE {
     function select(ebool control, euint128 a, euint128 b) internal returns (euint128) {
         return euint128.wrap(Impl.select(ebool.unwrap(control), euint128.unwrap(a), euint128.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
@@ -7825,6 +7831,7 @@ library FHE {
     function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
         return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
@@ -7832,6 +7839,7 @@ library FHE {
     function select(ebool control, euint256 a, euint256 b) internal returns (euint256) {
         return euint256.wrap(Impl.select(ebool.unwrap(control), euint256.unwrap(a), euint256.unwrap(b)));
     }
+
     /**
      * @dev Casts an encrypted integer from 'euint16' to 'euint8'.
      */
