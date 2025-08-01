@@ -1,6 +1,7 @@
 use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
+use anyhow::Result;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::utils::compact_hex;
 use sqlx::postgres::PgConnectOptions;
@@ -23,7 +24,7 @@ type CoprocessorApiKey = Uuid;
 type FheOperation = i32;
 pub type Handle = FixedBytes<32>;
 pub type TenantId = i32;
-pub type ChainId = u64;
+pub type ChainIdDb = i32;
 pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
@@ -44,25 +45,24 @@ pub fn retry_on_sqlx_error(err: &SqlxError) -> bool {
 pub struct Database {
     url: String,
     pool: sqlx::Pool<Postgres>,
-    tenant_id: TenantId,
-    chain_id: ChainId,
+    pub tenant_id: TenantId,
+    pub chain_id: ChainIdDb,
 }
 
 impl Database {
     pub async fn new(
         url: &str,
         coprocessor_api_key: &CoprocessorApiKey,
-        chain_id: ChainId,
-    ) -> Self {
+    ) -> Result<Self> {
         let pool = Self::new_pool(url).await;
-        let tenant_id =
-            Self::find_tenant_id_or_panic(&pool, coprocessor_api_key).await;
-        Database {
+        let (tenant_id, chain_id) =
+            Self::find_tenant_id(&pool, coprocessor_api_key).await?;
+        Ok(Database {
             url: url.into(),
             tenant_id,
             chain_id,
             pool,
-        }
+        })
     }
 
     async fn new_pool(url: &str) -> PgPool {
@@ -75,6 +75,7 @@ impl Database {
                 .min_connections(2)
                 .max_lifetime(Duration::from_secs(10 * 60))
                 .max_connections(8)
+                .acquire_timeout(Duration::from_secs(5))
                 .connect_with(options.clone())
         };
         let mut pool = connect().await;
@@ -95,13 +96,13 @@ impl Database {
         self.pool = Self::new_pool(&self.url).await;
     }
 
-    pub async fn find_tenant_id_or_panic(
+    async fn find_tenant_id(
         pool: &sqlx::Pool<Postgres>,
         tenant_api_key: &CoprocessorApiKey,
-    ) -> TenantId {
+    ) -> Result<(TenantId, ChainIdDb)> {
         let query = || {
-            sqlx::query_scalar!(
-                r#"SELECT tenant_id FROM tenants WHERE tenant_api_key = $1"#,
+            sqlx::query!(
+                r#"SELECT tenant_id, chain_id FROM tenants WHERE tenant_api_key = $1"#,
                 tenant_api_key.into()
             )
             .fetch_one(pool)
@@ -109,16 +110,16 @@ impl Database {
         // retry mecanism
         loop {
             match query().await {
-                Ok(tenant_id) => return tenant_id,
+                Ok(record) => return Ok((record.tenant_id, record.chain_id)),
                 Err(err) if retry_on_sqlx_error(&err) => {
                     error!(error = %err, "Error requesting tenant id, retrying");
                     tokio::time::sleep(Duration::from_secs(1)).await;
                 }
                 Err(SqlxError::RowNotFound) => {
-                    panic!("No tenant found for the provided API key, please check your API key")
+                    return Err(SqlxError::RowNotFound.into());
                 }
                 Err(err) => {
-                    panic!("Error requesting tenant id {err}, aborting")
+                    return Err(err.into());
                 }
             }
         }
