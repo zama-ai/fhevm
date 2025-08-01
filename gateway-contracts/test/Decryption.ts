@@ -167,6 +167,8 @@ describe("Decryption", function () {
   // Define fake values
   const fakeTxSender = createRandomWallet();
   const fakeSigner = createRandomWallet();
+  const nullDecryptionId = 0;
+  const tooHighDecryptionId = 100000;
 
   let gatewayConfig: GatewayConfig;
   let kmsManagement: KmsManagement;
@@ -532,15 +534,19 @@ describe("Decryption", function () {
       await expect(responseTx4).to.not.emit(decryption, "PublicDecryptionResponse");
     });
 
-    it("Should revert in case of invalid requestID in response", async function () {
-      // Try calling publicDecryptionResponse with null (invalid) id
+    it("Should revert in case of invalid decryptionId in public decryption response", async function () {
+      // Check that a public decryption response with null (invalid) decryptionId reverts
       await expect(
-        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(0, decryptedResult, kmsSignatures[0]),
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(nullDecryptionId, decryptedResult, kmsSignatures[0]),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
 
-      // Try calling publicDecryptionResponse with too high (not requested yet) id
+      // Check that a public decryption response with too high (not requested yet) decryptionId reverts
       await expect(
-        decryption.connect(kmsTxSenders[0]).publicDecryptionResponse(100000, decryptedResult, kmsSignatures[0]),
+        decryption
+          .connect(kmsTxSenders[0])
+          .publicDecryptionResponse(tooHighDecryptionId, decryptedResult, kmsSignatures[0]),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
     });
 
@@ -1334,15 +1340,19 @@ describe("Decryption", function () {
       await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponse");
     });
 
-    it("Should revert in case of invalid requestID in response", async function () {
-      // Try calling userDecryptionResponse with null (invalid) id
+    it("Should revert in case of invalid decryptionId in user decryption response", async function () {
+      // Check that a user decryption response with null (invalid) decryptionId reverts
       await expect(
-        decryption.connect(kmsTxSenders[0]).userDecryptionResponse(0, userDecryptedShares[0], kmsSignatures[0]),
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(nullDecryptionId, userDecryptedShares[0], kmsSignatures[0]),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
 
-      // Try calling userDecryptionResponse with too high (not requested yet) id
+      // Check that a user decryption response with too high (not requested yet) decryptionId reverts
       await expect(
-        decryption.connect(kmsTxSenders[0]).userDecryptionResponse(100000, userDecryptedShares[0], kmsSignatures[0]),
+        decryption
+          .connect(kmsTxSenders[0])
+          .userDecryptionResponse(tooHighDecryptionId, userDecryptedShares[0], kmsSignatures[0]),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
     });
 
