@@ -1,0 +1,44 @@
+@startuml Gateway Interactions
+
+skinparam sequenceMessageAlign center
+
+title "Gateway Interactions: Decrypt, Rencrypt, Verify Proven Ciphertext"
+
+participant     "Dapp"              as dapp
+participant     "FHE Enabled Node"   as hbc
+
+participant     "ZK Proof Verifier\n(Trusted Service)" as zkverifier
+
+participant     Gateway             as gw
+participant     "Persistence"       as persistence 
+
+participant     "KMS Blockchain"    as kmsbc
+participant     "KMS Connector"     as kmsconn
+participant     "KMS Core"          as kmscore
+
+
+
+
+
+group Verify Proven Ciphertext
+
+dapp -> gw: Verify Proven Ct\n(ct, zk proof)
+gw -> zkverifier: Attest ZK \n(ct, zk proof)
+zkverifier -> zkverifier: Verify zk proof
+
+alt #Salmon if proof is invalid
+zkverifier -> gw: Error: Proof is invalid
+gw -> dapp: Error: Proof is invalid
+else #Aquamarine if proof is valid
+zkverifier -> zkverifier: Attest proof
+zkverifier -> gw: Attestation of zk proof
+gw -> hbc: Store ciphertext\n(ct)
+hbc -> gw: Result\n(ct_handle, attestation of storage)
+gw -> dapp: Result\n(ct_handle, Attestation of storage,\nAttestation of zk proof)
+end
+
+end
+
+
+
+@enduml

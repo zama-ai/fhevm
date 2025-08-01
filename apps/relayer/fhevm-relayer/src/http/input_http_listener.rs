@@ -1,0 +1,235 @@
+use crate::core::event::{
+    ApiVersion, InputProofEventData, InputProofEventId, InputProofRequest, RelayerEvent,
+    RelayerEventData,
+};
+use crate::core::utils::{de_string_or_number, OnceHandler};
+use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
+use crate::orchestrator::Orchestrator;
+use axum::{extract::Json, http::StatusCode, response::IntoResponse};
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::oneshot;
+use tracing::{info, instrument, span, Level};
+
+/// Represents the payload coming into the endpoint for input proof.
+#[derive(Debug, Deserialize, Clone, Serialize)]
+#[allow(non_snake_case)]
+pub struct InputProofRequestJson {
+    #[serde(deserialize_with = "de_string_or_number")]
+    pub contractChainId: String, // Hex encoded uint256 string with 0x prefix.
+    pub contractAddress: String, // Hex encoded address with 0x prefix.
+    pub userAddress: String,     // Hex encoded address with 0x prefix.
+    pub ciphertextWithInputVerification: String, // List of hex encoded binary proof without 0x prefix.
+}
+
+impl InputProofRequestJson {
+    pub fn validate(&self) -> Result<(), String> {
+        // Add other validations here.
+        if self.ciphertextWithInputVerification.is_empty() {
+            Err("Input Verification cannot be empty.".to_string())
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// Represents the response from the endpoint for input proof.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InputProofResponseJson {
+    pub response: InputProofResponsePayloadJson,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct InputProofResponsePayloadJson {
+    pub handles: Vec<String>, // Ordered List of hex encoded handles with 0x prefix.
+    pub signatures: Vec<String>, // Attestation signatures for Input verification for the ordered list of handles.
+}
+
+/// Represents the error response from the endpoint for input proof.
+#[derive(Debug, Serialize, Clone, Deserialize)]
+pub struct InputProofErrorResponseJson {
+    pub message: String,
+}
+
+pub struct InputProofHandler<D>
+where
+    D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>,
+{
+    orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
+    api_version: ApiVersion,
+}
+
+impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProofHandler<D> {
+    pub fn new(orchestrator: Arc<Orchestrator<D, RelayerEvent>>, api_version: ApiVersion) -> Self {
+        Self {
+            orchestrator,
+            api_version,
+        }
+    }
+
+    ///
+    // pub contractChainId: String, // Hex encoded uint256 string with 0x prefix.
+    // pub contractAddress: String, // Hex encoded address with 0x prefix.
+    // pub userAddress: String,     // Hex encoded address with 0x prefix.
+    /// Handles requests to the endpoint for input proof.
+    #[instrument(name="handle-input", skip_all, fields(contract=%payload.contractAddress, contract_chain_id=%payload.contractChainId, userAddress=%payload.userAddress))]
+    pub async fn handle(&self, Json(payload): Json<InputProofRequestJson>) -> impl IntoResponse {
+        info!("Handling input proof request");
+        // Validate the payload
+        if let Err(message) = payload.validate() {
+            let error_response = InputProofErrorResponseJson { message };
+            return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+        }
+
+        let request_id = self.orchestrator.new_request_id();
+        let _span = span!(Level::INFO, "handle-input-req", request_id = %request_id); // Add other relevant top-level details
+
+        info!("Validated and assigned request id: {}", request_id);
+
+        // Register once handlers for receiving the decryption response from the gateway
+        let (gateway_response_handler, gateway_response_rx): (
+            OnceHandler<RelayerEvent>,
+            oneshot::Receiver<RelayerEvent>,
+        ) = OnceHandler::new();
+        let gateway_response_handler = Arc::new(gateway_response_handler);
+
+        self.orchestrator.register_once_handler(
+            InputProofEventId::RespRcvdFromGw.into(),
+            request_id,
+            gateway_response_handler,
+        );
+        info!("Registered once handler for handling input proof gateway response");
+
+        // Register once handlers for receiving the decryption response from the gateway
+        let (error_handler, error_rx): (
+            OnceHandler<RelayerEvent>,
+            oneshot::Receiver<RelayerEvent>,
+        ) = OnceHandler::new();
+        let error_handler = Arc::new(error_handler);
+
+        self.orchestrator.register_once_handler(
+            InputProofEventId::Failed.into(),
+            request_id,
+            error_handler,
+        );
+        info!("Registered once handler for handling input proof failure");
+
+        let request_data: InputProofRequest = match payload.try_into() {
+            Ok(event_data) => event_data,
+            Err(message) => {
+                let error_response = InputProofErrorResponseJson {
+                    message: message.to_string(),
+                };
+                return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+            }
+        };
+        let request_data = InputProofEventData::ReqRcvdFromUser {
+            input_proof_request: request_data,
+        };
+
+        let event = RelayerEvent::new(
+            request_id,
+            self.api_version,
+            RelayerEventData::InputProof(request_data),
+        );
+        let _ = self.orchestrator.dispatch_event(event).await;
+        info!("dispatched event to orchestrator to initiate processing");
+
+        let _waiting_for_response_span =
+            span!(Level::INFO, "waiting-for-response", request_id = %request_id);
+        info!("waiting for response event");
+
+        // Wait for response or error on the rx of Oneshot channels concurrently.
+        use futures::pin_mut;
+        pin_mut!(gateway_response_rx);
+        pin_mut!(error_rx);
+
+        tokio::select! {
+            res = &mut gateway_response_rx => {
+                match res {
+                    Ok(event) => {
+                        info!("Response event type {:?}", event.data);
+                        match event.data {
+                            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
+                                input_proof_response,
+                            }) => {
+                                let response_json = InputProofResponseJson::from(input_proof_response);
+                                info!("Sending success reponse to user");
+                                (StatusCode::OK, Json(response_json)).into_response()
+                            },
+                            _ => {
+                                info!(
+                                    "sending error reponse to user as response event is not expected type"
+                                );
+                                let error_response = InputProofErrorResponseJson {
+                                    message: "request could not be completed 3".to_string(),
+                                };
+                                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        info!("received error while waiting for response event");
+                        let error_response = InputProofErrorResponseJson {
+                            message: "Failed to receive response from the gateway.".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
+                }
+            }
+            res = &mut error_rx => {
+                match res {
+                    Ok(_event) => {
+                        info!("received error event on error_rx");
+                        let error_response = InputProofErrorResponseJson {
+                            message: "REQUEST FAILED RESPONSE".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
+                    Err(_) => {
+                        info!("received error while waiting for error event on error_rx");
+                        let error_response = InputProofErrorResponseJson {
+                            message: "Failed to receive error response from the gateway.".to_string(),
+                        };
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_deserialize_input_proof_request_json() {
+        // Define a sample JSON input.
+        let json_data = r#"
+        {
+                   "contractChainId": "123456",
+                   "contractAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
+                   "userAddress": "0x12B064FB845C1cc05e9493856a1D637a73e944bE",
+                   "ciphertextWithInputVerification": "abcdef"
+        }
+        "#;
+
+        // Deserialize the JSON string into the struct.
+        let request: InputProofRequestJson =
+            serde_json::from_str(json_data).expect("JSON deserialization failed");
+
+        // Assert that each field was deserialized correctly.
+        assert_eq!(request.contractChainId, "123456");
+        assert_eq!(
+            request.contractAddress,
+            "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
+        );
+        assert_eq!(
+            request.userAddress,
+            "0x12B064FB845C1cc05e9493856a1D637a73e944bE"
+        );
+        assert_eq!(request.ciphertextWithInputVerification, "abcdef");
+    }
+}

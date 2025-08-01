@@ -1,0 +1,156 @@
+@startuml Gateway Architecture
+
+package "Gateway Core" {
+
+  enum Operation {
+    Decrypt
+    Reencrypt
+  }
+
+  enum Request {
+    DecryptRequest
+    ReencryptResponse
+  }
+
+  enum RequestStatus {
+    Received                
+    InsufficientPermission  
+    SendingToKMS            
+    SentToKMS               
+    KMSResponseReceived     
+    SendingResponse         
+    SentResponse
+  }
+
+  class KMSDecryptRequest {
+    +ct_handle: Bytes
+    +block_height: Integer
+  }
+
+  class DecryptRequest {
+    +ct_handle: Bytes
+    +block_height: Integer
+
+    +status: RequestStatus
+
+    +has_permission: bool
+
+    +response: DecryptResponse
+    +response_error: String
+
+    +new() DecryptRequest
+    +update_permission(has_permission: bool): error
+    +prepare_kms_request(): KMSDecryptRequest, error
+    +add_kms_response(response: DecryptResponse, error: String): error
+    +prepare_response(response: DecryptResponse, error: String): error
+    +complete(): error
+  }
+
+  class DecryptResponse {
+    +plain_text: Bytes
+  }
+
+  class KMSReencryptRequest {
+    +ct_handle: Bytes
+    +block_height: Integer
+    +user_public_key: Bytes
+  }
+
+  class ReencryptRequest {
+    +ct_handle: Bytes
+    +block_height: Integer
+    +user_public_key: Bytes
+
+    +status: RequestStatus
+
+    +has_permission: bool
+
+    +response: ReencryptResponse
+    +response_error: String
+
+    +new() ReencryptRequest
+    +update_permission(has_permission: bool): error
+    +prepare_kms_request(): KMSRencryptRequest, error
+    +add_kms_response(response: RencryptResponse, error: String): error
+    +prepare_response(response: RencryptResponse, error: String): error
+    +complete(): error
+  }
+
+  class ReencryptResponse {
+    +encrypted_plain_text: Bytes
+  }
+
+  class GatewayCore {
+    +config: GatewayCoreConfig
+
+    +decrypt_requests: map<ct_handle, DecryptRequest>
+    +reencrypt_requests: map<ct_handle, ReencryptRequest>
+
+    +host_blockchain: HostBlockchain
+    +persistence: Persistence
+    +kms: KMS
+
+    +new(config: GatewayCoreConfig): GatewayCore
+    +run(): error
+    +shutdown(): error
+  }
+
+  class GatewayCoreConfig {
+  }
+
+  interface HostBlockchain {
+    +new(config: HostBlockchainConfig): BlockchainHost
+
+    +listen_for_decrypt_requests(): chan DecryptRequest, error
+    +send_decrypt_response(response: DecryptResponse): error
+
+    +listen_for_reencrypt_requests(): chan ReencryptRequest, error
+    +send_encrypted_response(response: ReencryptResponse): error
+
+    +has_permission(ct_handle: Bytes, block_height: Integer, operation: Operation): bool, error
+    +was_request_sent() bool, error
+  }
+
+  class HostBlockchainConfig {
+  }
+
+  interface Persistence {
+    +new(config: PersistenceConfig): Persistence
+
+    +update_decrypt_reqquest(request: DecryptRequest): error
+    +update_reencrypt_request(request: ReencryptRequest): error
+
+    +restore(): chan DecryptRequest, chan ReencryptRequest, error
+  }
+
+  class PersistenceConfig {
+  } 
+
+
+  interface KMS {
+    +new(config: KMSConfig): KMS
+
+    +send_decrypt_request(request: KMSDecryptRequest): error
+    +listen_for_decrypt_responses(): chan DecryptResponse, error
+    +check_if_decrypt_request_exists(ct_handle: Bytes, block_height: Integer): bool, error
+
+
+    +send_reencrypt_request(request: KMSReencryptRequest): error
+    +listen_for_reencrypt_responses(): chan ReencryptResponse, error
+    +check_if_reencrypt_request_exists(ct_handle: Bytes, block_height: Integer): bool, error
+  }
+
+  class KMSConfig {
+  }
+
+  GatewayCore -[hidden]up-> GatewayCoreConfig
+  HostBlockchain -[hidden]down-> HostBlockchainConfig
+  Persistence -[hidden]down-> PersistenceConfig
+  KMS -[hidden]down-> KMSConfig
+  
+  GatewayCore --|> HostBlockchain
+  GatewayCore --|> Persistence
+  GatewayCore --|> KMS
+}
+
+@enduml

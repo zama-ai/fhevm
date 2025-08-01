@@ -1,0 +1,58 @@
+@startuml Gateway Interactions
+
+skinparam sequenceMessageAlign center
+
+title "Gateway Interactions: Decrypt, Rencrypt, Verify Proven Ciphertext"
+
+participant     "Dapp"              as dapp
+participant     "FHE Enabled Node"   as hbc
+
+participant     "ZK Proof Verifier\n(Trusted Service)" as zkverifier
+
+participant     Gateway             as gw
+participant     "Persistence"       as persistence 
+
+participant     "KMS Blockchain"    as kmsbc
+participant     "KMS Connector"     as kmsconn
+participant     "KMS Core"          as kmscore
+
+
+
+group Retrieve FHE keys aka /keyurl
+
+dapp -> gw: Get public key material info\n()
+gw -> kmsbc: Get keygen info\n(key_id)
+kmsbc -> kmsbc: ASC query
+alt #Salmon if keygenResponse is invalid/empty
+kmsbc -> gw: Error: No key response values found associated with key ID 
+gw -> dapp: Error: Fail to fetch public key material
+else #Aquamarine if keygenResponse is valid
+kmsbc -> gw: KeyGenResponse[]\n(pks_digest, pks_sig, sks_digest, sks_sig)
+gw -> kmsbc: Get storage base URL\n()
+kmsbc -> kmsbc: CSC query
+alt #Salmon if storage base URL is invalid/empty
+kmsbc -> gw: Error: No storage base URL found in CSC
+gw -> dapp: Error: Fail to fetch public key material
+else #Aquamarine if storage base URL is valid
+kmsbc -> gw: Return URL\n(storage_base_url)
+gw -> gw: Prepare FHE key Urls
+
+gw -> kmsbc: Get crsgen info\n(crs_id)
+kmsbc -> kmsbc: ASC query
+alt #Salmon if crsgenResponse is invalid/empty
+kmsbc -> gw: Error: No crs response values found associated with crs ID 
+gw -> dapp: Error: Fail to fetch public key material
+else #Aquamarine if crsgenResponse is valid
+kmsbc -> gw: crsGenResponse[]\n(req_id, sig, max_num_bits...)
+end
+gw -> gw: Prepare KeyUrlInfoResponse
+gw -> dapp: KeyUrlInfoResponse\n(fhe_Key_Info[], CRS_Info[], verf_public_key[])
+
+end
+
+end
+
+end
+
+
+@enduml

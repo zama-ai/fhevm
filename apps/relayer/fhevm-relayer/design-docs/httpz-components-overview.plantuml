@@ -1,0 +1,162 @@
+@startuml httpz-components-overview
+
+' Define color labels
+' As reference (Zama's colors)
+!define yellow #ffd208
+!define orange #ffb243
+!define black #000000
+
+!define keygen #red
+!define copro_management #pink
+!define input #green
+!define decrypt #blue
+!define oracle #cyan
+!define acl #ffb243
+!define compute #purple
+
+legend right
+    |Color| Type |
+    |<keygen>| Key Generation |
+    |<copro_management>| Coprocessor management |
+    |<acl>| Access Control |
+    |<compute>| FHE Computation |
+    |<input>| Input creation |
+    |<decrypt>| User Decryption |
+    |<oracle>| Oracle / Public Decryption |
+endlegend
+
+title "HTTPZ Components Overview"
+
+skinparam PackageBorderColor white
+skinparam PackageBackgroundColor lightgrey
+skinparam PackageStyle rectangle
+skinparam ComponentStyle rectangle
+
+
+actor User
+
+package "ZWS" as zws{
+package "ZWS HTTP Relayer (optional)" as relayer {
+  component "User Decrypt" as decrypt_relayer
+  component "Input" as input_relayer
+}
+
+package "ZWS L1 Relayer (optional)" as l1_relayer {
+  component "Oracle" as l1_relayer_decrypt
+}
+}
+
+
+package "Host L1" as fhevmBc {
+  [Dapp Contract] as fhevm_dappContract
+    [Oracle Contract] as fhevm_OracleContract
+      [ACL Contract] as fhevm_aclContract
+        [TFHE Executor Contract] as fhevm_tfheExecutorContract
+          [Input Verifier] as fhevm_inputVerifierContract
+}
+
+package "Gateway L2" as httpzRollup {
+  component "Gateway ACL" as httpzRollup_aclContract
+    component "ZkPoK Manager" as httpzRollup_ZkPoKManagerContract
+    component "Decryption Manager" as httpzRollup_decryptionManagerContract
+    component "Coprocessor Manager" as httpzRollup_coprocessorManagerContract
+    component "Domain Manager" as httpzRollup_domainManagerContract
+}
+
+package "Ciphertext DA" as ciphertextDa{
+  component "Ciphertext Storage" as ciphertextDa_ciphertextStorage
+}
+
+package "KeyChain DA" as keychainDA{
+  component "Keys Storage" as keychainDA_Api
+}
+
+package "Kms Party" as kms_party {
+package "Kms Core" as kmsCore {
+  component "Decrypt" as kmsCore_decrypt
+  component "Key Generation" as kmsCore_keygen
+}
+
+package "KMS connector" as kmsConnector {
+  component "Decrypt" as kmsConnector_decrypt
+  component "Key Generation" as kmsConnector_keygen
+}
+}
+
+
+package "Coprocessor party" as copro_party {
+package "Coprocessor" as coprocessor {
+  component "Compute Handler" as coprocessor_computeHandler
+  component "Input Handler" as coprocessor_inputHandler
+  component "ACL Handler" as coprocessor_aclHandler
+}
+
+package "ZkPoK Service" as coprocessor_zkpokService {
+  component "ZkPok Verifier" as zkpokService_zkpokVerifier
+}
+package "Coprocessor DA" as coprocessorDa{
+  component "Ciphertext Storage" as coprocessorDa_ciphertextStorage
+}
+
+package "Coprocessor Identity" as coprocessorId{
+  component "Coprocessor Identity Keys" as coprocessorId_keys
+}
+
+package "Coprocessor Keys" as coprocessorKeys{
+  component "Coprocessor FHE Keys" as coprocessorKeys_keys
+}
+
+}
+
+' Coprocessor management
+coprocessorId_keys -[copro_management]-> "1" httpzRollup_coprocessorManagerContract
+httpzRollup_coprocessorManagerContract -[copro_management]-> "2" httpzRollup_domainManagerContract
+
+
+' Compute
+fhevm_dappContract -[compute]-> "1" fhevm_tfheExecutorContract
+fhevm_tfheExecutorContract  -[compute]-> "2" coprocessor_computeHandler
+coprocessor_computeHandler -[compute]-> "3" coprocessorDa_ciphertextStorage
+
+' ACL
+fhevm_aclContract -[acl]-> "1" coprocessor_aclHandler
+coprocessor_aclHandler -[acl]-> "2" httpzRollup_aclContract
+httpzRollup_aclContract -[acl]-> "3" ciphertextDa_ciphertextStorage
+
+' Input
+User -[input]-> "1" input_relayer
+input_relayer -[input]-> "2" httpzRollup_ZkPoKManagerContract
+httpzRollup_ZkPoKManagerContract -[input]-> "3" coprocessor_inputHandler
+coprocessor_inputHandler -[input]-> "4" zkpokService_zkpokVerifier
+coprocessor_inputHandler -[input]-> "5" coprocessorDa_ciphertextStorage
+User -[input]-> "6" fhevm_dappContract
+fhevm_dappContract -[input]-> "7" fhevm_inputVerifierContract
+
+' User Decrypt
+User -[decrypt]-> "1" decrypt_relayer
+decrypt_relayer -[decrypt]-> "2" httpzRollup_decryptionManagerContract
+httpzRollup_decryptionManagerContract -[decrypt]-> "3"  kmsConnector_decrypt
+kmsConnector_decrypt <-[decrypt]-> "4"  ciphertextDa_ciphertextStorage
+kmsConnector_decrypt -[decrypt]-> "5"  kmsCore_decrypt
+kmsCore_decrypt -[decrypt]-> "6" httpzRollup_decryptionManagerContract
+
+
+' Oracle
+fhevm_dappContract -[oracle]-> "1" fhevm_OracleContract
+fhevm_OracleContract -[oracle]-> "2" l1_relayer_decrypt
+l1_relayer_decrypt -[oracle]-> "3" httpzRollup_decryptionManagerContract
+httpzRollup_decryptionManagerContract -[oracle]-> "4"  kmsConnector_decrypt
+kmsConnector_decrypt <-[oracle]-> "5"  ciphertextDa_ciphertextStorage
+kmsConnector_decrypt -[oracle]-> "6"  kmsCore_decrypt
+kmsCore_decrypt -[oracle]-> "7" httpzRollup_decryptionManagerContract
+httpzRollup_decryptionManagerContract -[oracle]-> "8" l1_relayer_decrypt  
+l1_relayer_decrypt -[oracle]-> "9" fhevm_dappContract  
+
+
+' Key generation
+httpzRollup_domainManagerContract -[keygen]-> "1" kmsConnector_keygen : event
+kmsConnector_keygen -[keygen]-> "2" kmsCore_keygen
+kmsCore_keygen -[keygen]-> "3" httpzRollup_domainManagerContract
+kmsCore_keygen -[keygen]-> "3" keychainDA_Api
+
+@enduml

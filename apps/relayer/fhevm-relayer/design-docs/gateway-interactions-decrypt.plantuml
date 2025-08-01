@@ -1,0 +1,77 @@
+@startuml Gateway Interactions
+
+skinparam sequenceMessageAlign center
+
+title "Gateway Interactions: Decrypt, Rencrypt, Verify Proven Ciphertext"
+
+participant     "Dapp"              as dapp
+participant     "FHE Enabled Node"   as hbc
+
+participant     "ZK Proof Verifier\n(Trusted Service)" as zkverifier
+
+participant     Gateway             as gw
+participant     "Persistence"       as persistence 
+
+participant     "KMS Blockchain"    as kmsbc
+participant     "KMS Connector"     as kmsconn
+participant     "KMS Core"          as kmscore
+
+
+
+group Decrypt
+
+hbc -> gw: Decrypt\n(ct_handle, block height)
+gw -> hbc: Read permission\n(ct_handle, block height, decryption)
+hbc -> gw: Permission value: true/false\n(ct_handle, block height)
+
+alt #Salmon Permission == false
+note over gw
+How do we notify the Dapp in this case ?
+end note
+else #Aquamarine Permission == true
+gw -> kmsbc: Decrypt\n(ct_handle, block height)
+
+kmsbc -> kmsconn: Decrypt\n(ct_handle, block height)
+kmsconn -> hbc: Read permission\n(ct_handle, block height, decryption)
+hbc -> kmsconn: Permission value: true/false\n(ct_handle, block height)
+
+
+alt #Salmon Permission == false
+kmsconn -> kmsbc: Insufficient permission
+note over kmsconn, kmsbc
+This can only happen if gateway was being malicious
+while checking permission.
+end note 
+else #Aquamarine Permission == true
+kmsconn -> hbc: Fetch ciphertext\n(ct_handle)
+hbc -> kmsconn: Ciphertext value\nor\nError: Ciphertext not found
+
+alt #Salmon ct_handle is not found 
+kmsconn -> kmsbc: Error: Ciphertext not found
+
+note over kmsconn, kmsbc
+Should we check if ct_handle is valid in the gateway to avoid
+reaching this point unless gateway is malicious ?
+end note
+
+else #Aquamarine ct_handle is found
+kmsconn -> kmscore: Decrypt\n(ciphertext)
+kmscore -> kmsconn: Decrypt Response\n(plaintext, eip712 signature)
+kmsconn -> kmsbc: Decrypt Response \n(plaintext, eip712 signature)
+end
+end 
+end 
+
+alt #Salmon if any error
+kmsbc -> gw: Error: Decrypt failed
+gw -> hbc: Error: Decrypt failed
+else #Aquamarine if no error
+kmsbc -> gw: Decrypt Response \n(plaintext, eip712 signature)\nor\nError (if any)
+gw -> hbc: Decrypt Response \n(plaintext, eip712 signature)\nor\nError (if any)
+end
+
+end
+
+
+
+@enduml

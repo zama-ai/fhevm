@@ -1,0 +1,66 @@
+name: "Docker - fhevm Relayer"
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/docker_relayer.yml
+      - src/**
+      - config/**
+      - Dockerfile
+      - .hadolint.yaml
+      - Makefile
+      - Cargo.toml
+      - Cargo.lock
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/docker_relayer.yml
+      - src/**
+      - config/**
+      - Dockerfile
+      - .hadolint.yaml
+      - Makefile
+      - Cargo.toml
+      - Cargo.lock
+  release:
+    types:
+      - published
+
+concurrency:
+  group: relayer-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  docker-relayer:
+    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
+    secrets:
+      GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      working-directory: "."
+      push_image: true
+      image-name: "fhevm-relayer"
+      docker-file: "Dockerfile"
+      arm-build: true
+  docker-oracle:
+    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@44333c96991d6747e0bef6a3308bfd98b20390f8 # main
+    secrets:
+      GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
+    permissions:
+      contents: "read"
+      id-token: "write"
+      packages: "write"
+    with:
+      ref: 
+      working-directory: "./oracle"
+      docker-context: "./oracle"
+      push_image: true
+      image-name: "fhevm-relayer-decryption-oracle-contracts"
+      docker-file: "Dockerfile"
+      arm-build: true

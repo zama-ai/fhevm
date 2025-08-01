@@ -1,0 +1,82 @@
+
+# config/local.yaml.example
+# Example local configuration - Copy this file to local.yaml and adjust values as needed
+# Command to copy: cp config/local.yaml.example config/local.yaml
+
+environment: development
+
+networks:
+  fhevm:
+    ws_url: "ws://localhost:8756"
+    http_url: "http://localhost:8756"
+    chain_id: 123456
+    retry_delay: 1000
+    max_reconnection_attempts: 3
+    # Optional: set the starting block number for event subscriptions
+    # last_block_number: 0
+
+  gateway:
+    ws_url: "ws://localhost:8757"
+    http_url: "http://localhost:8757"
+    chain_id: 654321
+    retry_delay: 1000
+    max_reconnection_attempts: 3
+    # Optional: set the starting block number for event subscriptions
+    # last_block_number: 0
+
+http_endpoint: "0.0.0.0:3000"
+metrics_endpoint: "0.0.0.0:9898"
+
+http_metrics:
+  histogram_buckets: [0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30, 32, 34, 36, 40]
+
+keyurl:
+    fhe_public_key:
+      data_id: "fhe-public-key-data-id"
+      url: "http://0.0.0.0:3001/publicKey.bin"
+    crs:
+      data_id: "crs-data-id"
+      url: "http://0.0.0.0:3001/crs2048.bin"
+
+transaction:
+  private_key_fhevm: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+  private_key_gateway: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+  gas_limit: 150000
+  max_priority_fee: 2000000000
+  timeout_secs: 30
+  confirmations: 1
+  retry:
+    enabled: false
+    max_attempts: 3
+    base_delay_secs: 2
+    max_delay_secs: 60
+    mock_mode: false
+  ciphertext_check_retry:
+    enabled: false
+    max_attempts: 75
+    base_delay_secs: 3
+    max_delay_secs: 225
+
+contracts:
+  # Example local contract addresses - Update these after deployment
+  decryption_oracle_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
+  decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
+  input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
+
+log:
+  # Choose format: compact, pretty, or json
+  format: "pretty"
+  # Show source code location for debugging
+  show_file_line: false
+  # Show thread IDs for concurrency debugging
+  show_thread_ids: false
+  # Include timestamps in logs
+  show_timestamp: true
+
+db_path_rocksdb: "./.database"
+
+# Instructions:
+# 1. Copy this file to local.yaml: cp config/local.yaml.example config/local.yaml
+# 2. Update the contract addresses after deploying your contracts
+# 3. Adjust the ws_url to match your local Ethereum node
+# 4. Modify log settings based on your debugging needs
