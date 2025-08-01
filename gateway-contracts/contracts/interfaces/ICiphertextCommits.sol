@@ -83,6 +83,14 @@ interface ICiphertextCommits {
     function checkCiphertextMaterial(bytes32 ctHandle) external view;
 
     /**
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus
+     * for an add ciphertext material.
+     * @param ctHandle The handle to retrieve the coprocessor transaction sender addresses for.
+     * @return The list of coprocessor transaction sender addresses.
+     */
+    function getAddCiphertextMaterialConsensusTxSenders(bytes32 ctHandle) external view returns (address[] memory);
+
+    /**
      * @notice Returns the versions of the CiphertextCommits contract in SemVer format.
      * @dev This is conventionally used for upgrade features.
      */

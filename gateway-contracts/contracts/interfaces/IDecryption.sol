@@ -276,6 +276,12 @@ interface IDecryption {
     function checkDecryptionDone(uint256 decryptionId) external view;
 
     /**
+     * @notice Returns the KMS transaction sender addresses that were involved in the consensus for a decryption request.
+     * @param decryptionId The decryption request ID.
+     */
+    function getDecryptionConsensusTxSenders(uint256 decryptionId) external view returns (address[] memory);
+
+    /**
      * @notice Returns the versions of the Decryption contract in SemVer format.
      * @dev This is conventionally used for upgrade features.
      */

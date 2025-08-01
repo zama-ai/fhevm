@@ -115,6 +115,18 @@ interface IInputVerification {
     function checkProofRejected(uint256 zkProofId) external view;
 
     /**
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for a proof verification.
+     * @param zkProofId The ZK Proof ID.
+     */
+    function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
+
+    /**
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for a proof rejection.
+     * @param zkProofId The ZK Proof ID.
+     */
+    function getRejectProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
+
+    /**
      * @notice Returns the versions of the InputVerification contract in SemVer format.
      * @dev This is conventionally used for upgrade features.
      */

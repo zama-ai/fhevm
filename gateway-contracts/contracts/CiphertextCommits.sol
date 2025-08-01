@@ -60,8 +60,12 @@ contract CiphertextCommits is
         /// @notice The mapping of the coprocessor transaction senders that have already added the ciphertext handle.
         mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAdded)) 
             _alreadyAddedCoprocessorTxSenders;
-        /// @notice The mapping of the coprocessor transaction senders that have added the ciphertext.
+        // ----------------------------------------------------------------------------------------------
+        // Transaction sender addresses from consensus state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The coprocessor transaction senders involved in a consensus for a ciphertext material addition.
         mapping(bytes32 addCiphertextHash => address[] coprocessorTxSenderAddresses) _coprocessorTxSenderAddresses;
+        /// @notice The digest of the ciphertext material addition that reached consensus for a handle.
         mapping(bytes32 ctHandle => bytes32 addCiphertextHash) _ctHandleConsensusHash;
     }
 
@@ -130,18 +134,16 @@ contract CiphertextCommits is
         // in the contract anyway
         $._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender] = true;
 
-        // It's important to consider the hash and not the handle to make sure only the transaction
-        // senders associated to the same inputs are considered in tne event emitted once consensus
-        // is reached. Else, malicious copro that provide fake digests along valid handles could see
-        // their transaction sender being added to this event
-        // In particular, this means that a "late" (see right below) valid coprocessor's transaction
-        // sender address will still be added in the list, which than can be retrieved using the
-        // `getCiphertextMaterials` and `getSnsCiphertextMaterials` methods
+        // Store the coprocessor transaction sender address for the ciphertext material addition
+        // It's important to consider the hash and not the handle to make sure we only gather the
+        // transaction senders associated to the same ciphertext material addition. This allows to
+        // be able to retrieve all the transaction senders involved in a consensus
+        // In particular, this means that a "late" (see right below) valid coprocessor transaction
+        // sender address will still be added in the list
         $._coprocessorTxSenderAddresses[addCiphertextHash].push(msg.sender);
 
-        // Only send the event if consensus has not been reached in a previous call and the consensus
-        // is reached in the current call.
-        // This means a "late" valid addition will not be reverted, just ignored
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (
             !$._isCiphertextMaterialAdded[ctHandle] &&
             _isConsensusReached($._addCiphertextHashCounters[addCiphertextHash])
@@ -154,10 +156,9 @@ contract CiphertextCommits is
             // A ciphertext handle should only be added once, ever
             $._isCiphertextMaterialAdded[ctHandle] = true;
 
-            // As explained above, a "late" valid coprocessor could still see its transaction sender
-            // address be added to the list after consensus. This var is here to make the
-            // `getCiphertextMaterials` and `getSneCiphertextMaterials` methods retrieve this list
-            // more easily
+            // A "late" valid coprocessor could still see its transaction sender address be added to
+            // the list after consensus. This variable is here to be able to retrieve this list later
+            // by only knowing the handle, since a consensus can only happen once per handle
             $._ctHandleConsensusHash[ctHandle] = addCiphertextHash;
 
             emit AddCiphertextMaterial(
@@ -179,8 +180,8 @@ contract CiphertextCommits is
         for (uint256 i = 0; i < ctHandles.length; i++) {
             checkCiphertextMaterial(ctHandles[i]);
 
-            // Get the unique hash associated to the handle in order to retrieve the list of transaction
-            // sender address that participated in the consensus
+            // Get the unique hash associated to the handle in order to retrieve the list of coprocessor
+            // transaction sender address that were involved in the consensus
             bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandles[i]];
 
             ctMaterials[i] = CiphertextMaterial(
@@ -217,6 +218,23 @@ contract CiphertextCommits is
         }
 
         return snsCtMaterials;
+    }
+
+    /**
+     * @dev See {ICiphertextCommits-getAddCiphertextMaterialConsensusTxSenders}.
+     * The list remains empty until the consensus is reached.
+     */
+    function getAddCiphertextMaterialConsensusTxSenders(
+        bytes32 ctHandle
+    ) external view virtual returns (address[] memory) {
+        CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
+
+        // Get the unique hash associated to the handle in order to retrieve the list of transaction
+        // sender address that participated in the consensus
+        // This digest remains the default value (0x0) until the consensus is reached.
+        bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandle];
+
+        return $._coprocessorTxSenderAddresses[addCiphertextHash];
     }
 
     /// @notice See {ICiphertextCommits-getVersion}.
