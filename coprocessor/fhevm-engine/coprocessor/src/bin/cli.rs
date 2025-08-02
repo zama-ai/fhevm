@@ -96,6 +96,7 @@ fn smoke_test(tenant_api_key: String, coprocessor_url: String) {
             let output_handle = rand::rng().random::<u64>().to_be_bytes().to_vec();
             let num_a = rand::rng().random::<u32>().to_be_bytes().to_vec();
             let num_b = rand::rng().random::<u32>().to_be_bytes().to_vec();
+            let transaction_id = rand::rng().random::<u64>().to_be_bytes().to_vec();
 
             println!(
                 "Trivially encrypting numbers 0x{} and 0x{} with handles 0x{} and 0x{}",
@@ -137,6 +138,7 @@ fn smoke_test(tenant_api_key: String, coprocessor_url: String) {
                     computations: vec![
                         AsyncComputation {
                             operation: FheOperation::FheAdd.into(),
+			    transaction_id,
                             output_handle: output_handle.clone(),
                             inputs: vec![
                                 AsyncComputationInput {

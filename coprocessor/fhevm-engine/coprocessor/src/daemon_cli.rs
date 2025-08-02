@@ -29,8 +29,12 @@ pub struct Args {
     pub server_maximum_ciphertexts_to_get: usize,
 
     /// Work items batch size
-    #[arg(long, default_value_t = 10)]
+    #[arg(long, default_value_t = 100)]
     pub work_items_batch_size: i32,
+
+    /// Number of dependence chains to fetch per worker
+    #[arg(long, default_value_t = 20)]
+    pub dependence_chains_per_batch: i32,
 
     /// Tenant key cache size
     #[arg(long, default_value_t = 32)]

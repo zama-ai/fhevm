@@ -48,6 +48,7 @@ message TrivialEncryptRequestSingle {
 
 message AsyncComputation {
   fhevm.common.FheOperation operation = 1;
+  bytes transaction_id = 2;
   bytes output_handle = 3;
   repeated AsyncComputationInput inputs = 4;
 }
