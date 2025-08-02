@@ -2,6 +2,7 @@ use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use fhevm_engine_common::types::AllowEvents;
+use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::compact_hex;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
@@ -12,8 +13,6 @@ use std::time::Duration;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
-
-use fhevm_engine_common::types::SupportedFheOperations;
 
 use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::TfheContract;
@@ -27,6 +26,8 @@ pub type ChainId = u64;
 pub type ToType = u8;
 pub type ScalarByte = FixedBytes<1>;
 pub type ClearConst = Uint<256, 4>;
+
+const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
 
 pub fn retry_on_sqlx_error(err: &SqlxError) -> bool {
     match err {
@@ -46,6 +47,7 @@ pub struct Database {
     pool: sqlx::Pool<Postgres>,
     tenant_id: TenantId,
     chain_id: ChainId,
+    bucket_cache: tokio::sync::RwLock<lru::LruCache<Handle, Handle>>,
 }
 
 impl Database {
@@ -53,15 +55,24 @@ impl Database {
         url: &str,
         coprocessor_api_key: &CoprocessorApiKey,
         chain_id: ChainId,
+        bucket_cache_size: u16,
     ) -> Self {
         let pool = Self::new_pool(url).await;
         let tenant_id =
             Self::find_tenant_id_or_panic(&pool, coprocessor_api_key).await;
+        let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
+            std::num::NonZeroU16::new(
+                bucket_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
+            )
+            .unwrap()
+            .into(),
+        ));
         Database {
             url: url.into(),
             tenant_id,
             chain_id,
             pool,
+            bucket_cache,
         }
     }
 
@@ -124,8 +135,9 @@ impl Database {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_computation_bytes(
-        &mut self,
+        &self,
         tenant_id: TenantId,
         result: &Handle,
         dependencies_handles: &[&Handle],
@@ -133,7 +145,15 @@ impl Database {
                                          * dependencies_handles */
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
+        log: &alloy::rpc::types::Log<TfheContractEvents>,
     ) -> Result<(), SqlxError> {
+        let bucket = self
+            .sort_computation_into_bucket(
+                result,
+                dependencies_handles,
+                &log.transaction_hash,
+            )
+            .await;
         let dependencies_handles = dependencies_handles
             .iter()
             .map(|d| d.to_vec())
@@ -145,18 +165,28 @@ impl Database {
             dependencies,
             fhe_operation,
             scalar_byte,
+            log,
+            &bucket,
         )
         .await
     }
 
     async fn insert_computation(
-        &mut self,
+        &self,
         tenant_id: TenantId,
         result: &Handle,
         dependencies: &[&Handle],
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
+        log: &alloy::rpc::types::Log<TfheContractEvents>,
     ) -> Result<(), SqlxError> {
+        let bucket = self
+            .sort_computation_into_bucket(
+                result,
+                dependencies,
+                &log.transaction_hash,
+            )
+            .await;
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
         self.insert_computation_inner(
@@ -165,75 +195,122 @@ impl Database {
             dependencies,
             fhe_operation,
             scalar_byte,
+            log,
+            &bucket,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_computation_inner(
-        &mut self,
+        &self,
         tenant_id: TenantId,
         result: &Handle,
         dependencies: Vec<Vec<u8>>,
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
+        log: &alloy::rpc::types::Log<TfheContractEvents>,
+        bucket: &Handle,
     ) -> Result<(), SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
         let output_handle = result.to_vec();
-        let query = || {
-            sqlx::query!(
-                r#"
+        let query = sqlx::query!(
+            r#"
             INSERT INTO computations (
                 tenant_id,
                 output_handle,
                 dependencies,
                 fhe_operation,
-                is_scalar
+                is_scalar,
+                dependence_chain_id,
+                transaction_id
             )
-            VALUES ($1, $2, $3, $4, $5)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (tenant_id, output_handle) DO NOTHING
             "#,
-                tenant_id as i32,
-                output_handle,
-                &dependencies,
-                fhe_operation as i16,
-                is_scalar
-            )
-        };
-        // retry mecanism
-        loop {
-            match query().execute(&self.pool).await {
-                Ok(_) => return Ok(()),
-                Err(err) if retry_on_sqlx_error(&err) => {
-                    error!(
-                        error = %err,
-                        "Database I/O error, will retry indefinitely"
-                    );
-                    self.reconnect().await;
-                }
-                Err(sqlx_err) => {
-                    return Err(sqlx_err);
-                }
+            tenant_id as i32,
+            output_handle,
+            &dependencies,
+            fhe_operation as i16,
+            is_scalar,
+            bucket.to_vec(),
+            log.transaction_hash.map(|txh| txh.to_vec())
+        );
+        query.execute(&self.pool).await.map(|_| ())
+    }
+
+    async fn sort_computation_into_bucket(
+        &self,
+        output: &Handle,
+        dependencies: &[&Handle],
+        transaction_hash: &Option<Handle>,
+    ) -> Handle {
+        // If the transaction ID is a hit in the cache, update its
+        // last use and add the output handle in the bucket
+        if let Some(txh) = transaction_hash {
+            // We need a write access here as get updates the LRUcache
+            let mut bucket_cache_write = self.bucket_cache.write().await;
+            if let Some(ce) = bucket_cache_write.get(txh).cloned() {
+                bucket_cache_write.put(*output, ce);
+                return ce;
             }
         }
+        // If any input dependence is a match, return its bucket. This
+        // computation is in a connected component with other ops in
+        // this bucket
+        let bucket_cache_read = self.bucket_cache.read().await;
+        for d in dependencies {
+            // We peek here as the reuse is less likely than the use
+            // of the new handle which we add - because handles
+            // operate under single assinment
+            if let Some(ce) = bucket_cache_read.peek(*d).cloned() {
+                drop(bucket_cache_read);
+                let mut bucket_cache_write = self.bucket_cache.write().await;
+                bucket_cache_write.put(*output, ce);
+                // As the transaction hash was not in the cache, add
+                // it to this bucket as well
+                if let Some(txh) = transaction_hash {
+                    bucket_cache_write.put(*txh, ce);
+                }
+                return ce;
+            }
+        }
+        drop(bucket_cache_read);
+        // If this computation is not linked to any others, assign it
+        // to a new empty bucket and add output handle and transaction
+        // hash where relevant
+        let mut bucket_cache_write = self.bucket_cache.write().await;
+        bucket_cache_write.put(*output, *output);
+        if let Some(txh) = transaction_hash {
+            bucket_cache_write.put(*txh, *output);
+        }
+        *output
     }
 
     #[rustfmt::skip]
-    pub async fn insert_tfhe_event(
+    async fn insert_tfhe_event_no_retry(
         &mut self,
-        event: &Log<TfheContractEvents>
+        log: &alloy::rpc::types::Log<TfheContractEvents>,
     ) -> Result<(), SqlxError> {
         use TfheContract as C;
         use TfheContractEvents as E;
         const HAS_SCALAR : FixedBytes::<1> = FixedBytes([1]); // if any dependency is a scalar.
         const NO_SCALAR : FixedBytes::<1> = FixedBytes([0]); // if all dependencies are handles.
         // ciphertext type
+        let event = &log.inner;
         let ty = |to_type: &ToType| vec![*to_type];
         let as_bytes = |x: &ClearConst| x.to_be_bytes_vec();
         let tenant_id = self.tenant_id;
         let fhe_operation = event_to_op_int(event);
+        let insert_computation = |result, dependencies, scalar_byte| {
+            self.insert_computation(tenant_id, result, dependencies, fhe_operation, scalar_byte, log)
+        };
+        let insert_computation_bytes = |result, dependencies_handles, dependencies_bytes, scalar_byte| {
+            self.insert_computation_bytes(tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
+        };
         match &event.data {
             E::Cast(C::Cast {ct, toType, result, ..})
-            => self.insert_computation_bytes(tenant_id, result, &[ct], &[ty(toType)], fhe_operation, &HAS_SCALAR).await,
+            => insert_computation_bytes(result, &[ct], &[ty(toType)], &HAS_SCALAR).await,
 
             E::FheAdd(C::FheAdd {lhs, rhs, scalarByte, result, ..})
             | E::FheBitAnd(C::FheBitAnd {lhs, rhs, scalarByte, result, ..})
@@ -249,10 +326,10 @@ impl Database {
             | E::FheShl(C::FheShl {lhs, rhs, scalarByte, result, ..})
             | E::FheShr(C::FheShr {lhs, rhs, scalarByte, result, ..})
             | E::FheSub(C::FheSub {lhs, rhs, scalarByte, result, ..})
-            => self.insert_computation(tenant_id, result, &[lhs, rhs], fhe_operation, scalarByte).await,
+            => insert_computation(result, &[lhs, rhs], scalarByte).await,
 
             E::FheIfThenElse(C::FheIfThenElse {control, ifTrue, ifFalse, result, ..})
-            => self.insert_computation(tenant_id, result, &[control, ifTrue, ifFalse], fhe_operation, &NO_SCALAR).await,
+            => insert_computation(result, &[control, ifTrue, ifFalse], &NO_SCALAR).await,
 
             | E::FheEq(C::FheEq {lhs, rhs, scalarByte, result, ..})
             | E::FheGe(C::FheGe {lhs, rhs, scalarByte, result, ..})
@@ -260,21 +337,21 @@ impl Database {
             | E::FheLe(C::FheLe {lhs, rhs, scalarByte, result, ..})
             | E::FheLt(C::FheLt {lhs, rhs, scalarByte, result, ..})
             | E::FheNe(C::FheNe {lhs, rhs, scalarByte, result, ..})
-            => self.insert_computation(tenant_id, result, &[lhs, rhs], fhe_operation, scalarByte).await,
+            => insert_computation(result, &[lhs, rhs], scalarByte).await,
 
 
             E::FheNeg(C::FheNeg {ct, result, ..})
             | E::FheNot(C::FheNot {ct, result, ..})
-            => self.insert_computation(tenant_id, result, &[ct], fhe_operation, &NO_SCALAR).await,
+            => insert_computation(result, &[ct], &NO_SCALAR).await,
 
             | E::FheRand(C::FheRand {randType, seed, result, ..})
-            => self.insert_computation_bytes(tenant_id, result, &[], &[seed.to_vec(), ty(randType)], fhe_operation, &HAS_SCALAR).await,
+            => insert_computation_bytes(result, &[], &[seed.to_vec(), ty(randType)], &HAS_SCALAR).await,
 
             | E::FheRandBounded(C::FheRandBounded {upperBound, randType, seed, result, ..})
-            => self.insert_computation_bytes(tenant_id, result, &[], &[seed.to_vec(), as_bytes(upperBound), ty(randType)], fhe_operation, &HAS_SCALAR).await,
+            => insert_computation_bytes(result, &[], &[seed.to_vec(), as_bytes(upperBound), ty(randType)], &HAS_SCALAR).await,
 
             | E::TrivialEncrypt(C::TrivialEncrypt {pt, toType, result, ..})
-            => self.insert_computation_bytes(tenant_id, result, &[], &[as_bytes(pt), ty(toType)], fhe_operation, &HAS_SCALAR).await,
+            => insert_computation_bytes(result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR).await,
 
             | E::Initialized(_)
             | E::OwnershipTransferStarted(_)
@@ -282,6 +359,30 @@ impl Database {
             | E::Upgraded(_)
             | E::VerifyCiphertext(_)
             => Ok(()),
+        }
+    }
+
+    #[rustfmt::skip]
+    pub async fn insert_tfhe_event(
+        &mut self,
+        log: &alloy::rpc::types::Log<TfheContractEvents>,
+    ) -> Result<(), SqlxError> {
+        loop {
+            let result = self.insert_tfhe_event_no_retry(log).await;
+            match result {
+                Ok(_) => return Ok(()),
+                Err(err) if retry_on_sqlx_error(&err) => {
+                    error!(
+                        error = %err,
+                        "Database I/O error, will retry indefinitely"
+                    );
+                    self.reconnect().await;
+                    continue;
+                }
+                Err(sqlx_err) => {
+                    return Err(sqlx_err);
+                }
+            }
         }
     }
 

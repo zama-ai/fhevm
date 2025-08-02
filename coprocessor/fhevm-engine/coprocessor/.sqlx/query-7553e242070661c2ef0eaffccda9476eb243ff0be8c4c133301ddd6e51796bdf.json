@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT count(1) FROM computations WHERE NOT is_completed",
+  "query": "SELECT count(1) FROM allowed_handles WHERE is_computed = FALSE",
   "describe": {
     "columns": [
       {
@@ -16,5 +16,5 @@
       null
     ]
   },
-  "hash": "178c9241515c7f5c5db241db9ab71ee4593526120eec7c5c3e1b28b5be4385c6"
+  "hash": "7553e242070661c2ef0eaffccda9476eb243ff0be8c4c133301ddd6e51796bdf"
 }

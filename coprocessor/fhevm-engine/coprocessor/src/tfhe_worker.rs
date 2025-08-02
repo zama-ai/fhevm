@@ -86,7 +86,7 @@ async fn tfhe_worker_cycle(
     populate_cache_with_tenant_keys(vec![1i32], &pool, &tenant_key_cache).await?;
 
     let mut listener = PgListener::connect_with(&pool).await.unwrap();
-    listener.listen("work_available").await?;
+    listener.listen("event_allowed_handle").await?;
 
     let mut immedially_poll_more_work = false;
     loop {
@@ -95,7 +95,7 @@ async fn tfhe_worker_cycle(
             tokio::select! {
                 _ = listener.try_recv() => {
                     WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
-                    info!(target: "tfhe_worker", "Received work_available notification from postgres");
+                    info!(target: "tfhe_worker", "Received event_allowed_handle notification from postgres");
                 },
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(args.worker_polling_interval_ms)) => {
                     WORK_ITEMS_POLL_COUNTER.inc();
@@ -103,6 +103,7 @@ async fn tfhe_worker_cycle(
                 },
             };
         }
+        immedially_poll_more_work = false;
         let loop_span = tracer.start("worker_iteration");
         let loop_ctx = opentelemetry::Context::current_with_span(loop_span);
         let mut s = tracer.start_with_context("acquire_connection", &loop_ctx);
@@ -117,21 +118,98 @@ async fn tfhe_worker_cycle(
         let now = std::time::SystemTime::now();
         let the_work = query!(
             "
-            SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar
+WITH selected_computations AS (
+  -- Get all computations from such transactions
+  (
+    SELECT 
+      c.tenant_id, 
+      c.output_handle, 
+      ah.handle, 
+      ah.is_computed
+    FROM computations c
+    LEFT JOIN allowed_handles ah
+      ON c.output_handle = ah.handle
+    WHERE c.transaction_id IN (
+      -- Select transaction IDs with uncomputed handles
+      -- out of the dependence buckets
+      SELECT transaction_id 
+      FROM computations
+      WHERE is_completed = FALSE
+        AND is_error = FALSE
+        AND dependence_chain_id IN (
+          WITH dep_chains AS (
+            -- Find oldest uncomputed allowed handles and
+            -- get their dependence buckets
+            SELECT dependence_chain_id
             FROM computations
-            WHERE is_completed = false
-            AND is_error = false
-            ORDER BY schedule_order
-            LIMIT $1
-            FOR UPDATE SKIP LOCKED
-        ",
-            args.work_items_batch_size as i32
+            WHERE (tenant_id, output_handle) IN (
+              SELECT tenant_id, handle
+              FROM allowed_handles
+              WHERE is_computed = FALSE
+              ORDER BY allowed_at
+              LIMIT $2
+            )
+          )
+          SELECT DISTINCT dependence_chain_id FROM dep_chains
+        )
+      -- In case an ACL event is missed and we get a late allow event
+      UNION
+      (
+        SELECT transaction_id
+        FROM computations
+        WHERE (tenant_id, output_handle) IN (
+          SELECT tenant_id, handle
+          FROM allowed_handles
+          WHERE is_computed = FALSE
+          ORDER BY allowed_at
+          LIMIT $2
+        )
+      )
+      LIMIT $1
+    )
+  )
+  -- For legacy reasons (or whenever no transaction ID is
+  -- available) we need to also select unsorted
+  -- computations
+  UNION ALL
+  (
+    SELECT 
+      tenant_id, 
+      output_handle, 
+      NULL AS handle, 
+      NULL AS is_computed
+    FROM computations 
+    WHERE is_completed = FALSE
+      AND is_error = FALSE
+      AND transaction_id IS NULL  
+    ORDER BY schedule_order
+    LIMIT $1
+  )
+)
+-- Acquire all computations from this transaction set
+SELECT 
+  c.tenant_id, 
+  c.output_handle, 
+  c.dependencies, 
+  c.fhe_operation, 
+  c.is_scalar,
+  sc.handle IS NOT NULL AS is_allowed, 
+  c.dependence_chain_id,
+  COALESCE(c.transaction_id) AS transaction_id, 
+  c.is_completed, 
+  sc.is_computed
+FROM computations c
+JOIN selected_computations sc
+  ON c.tenant_id = sc.tenant_id
+  AND c.output_handle = sc.output_handle
+FOR UPDATE SKIP LOCKED            ",
+            args.work_items_batch_size as i32,
+            args.dependence_chains_per_batch as i32,
         )
         .fetch_all(trx.as_mut())
         .await?;
         s.set_attribute(KeyValue::new("count", the_work.len() as i64));
         s.end();
-        immedially_poll_more_work = !the_work.is_empty();
         if the_work.is_empty() {
             continue;
         }
@@ -140,21 +218,48 @@ async fn tfhe_worker_cycle(
         // Make sure we process each tenant independently to avoid
         // setting different keys from different tenants in the worker
         // threads
-        let work_by_tenant = the_work.into_iter().into_group_map_by(|k| k.tenant_id);
+        let mut work_by_tenant = the_work.into_iter().into_group_map_by(|k| k.tenant_id);
 
         let mut s = tracer.start_with_context("populate_key_cache", &loop_ctx);
         let mut cts_to_query: BTreeSet<&[u8]> = BTreeSet::new();
         let mut tenants_to_query: BTreeSet<i32> = BTreeSet::new();
         let mut keys_to_query: BTreeSet<i32> = BTreeSet::new();
         let key_cache = tenant_key_cache.read().await;
-        for (tenant_id, work) in work_by_tenant.iter() {
+        // Clear unneeded work items
+        for (_, work) in work_by_tenant.iter_mut() {
+            let mut work_to_remove = vec![];
+            for (idx, w) in work.iter_mut().enumerate() {
+                // If this handle is already marked as computed in
+                // allowed_handles, we don't need to re-compute it
+                // (nor any other intermediate handles it depends on,
+                // which will be marked as unneeded during compute
+                // graph finalization).  Remove it from the work set.
+                if w.is_computed.unwrap_or(false) {
+                    work_to_remove.push(idx);
+                }
+            }
+            for idx in work_to_remove.iter().rev() {
+                work.remove(*idx);
+            }
+        }
+        for (tenant_id, work) in work_by_tenant.iter_mut() {
             let _ = tenants_to_query.insert(*tenant_id);
             if !key_cache.contains(tenant_id) {
                 let _ = keys_to_query.insert(*tenant_id);
             }
-            for w in work.iter() {
+            for w in work.iter_mut() {
                 for dh in &w.dependencies {
                     let _ = cts_to_query.insert(dh);
+                }
+                // If this operation is not part of a labelled
+                // transaction, we need to treat it as if its output
+                // is allowed (meaning that we will consider it needed
+                // and will save its output in the DB) as otherwise we
+                // cannot reasonably keep track of all needed
+                // operations within the set of computations that are
+                // not part of a transaction
+                if w.transaction_id.is_none() {
+                    w.is_allowed = Some(true);
                 }
             }
         }
@@ -239,7 +344,7 @@ async fn tfhe_worker_cycle(
             // Now build the DF graph for the computations that can
             // proceed and record those that can't
             let mut graph = DFGraph::default();
-            let mut uncomputable: HashMap<usize, ()> = HashMap::new();
+            let mut uncomputable: HashMap<usize, Handle> = HashMap::new();
             let mut producer_indexes: HashMap<&Handle, usize> = HashMap::new();
             let mut consumer_indexes: HashMap<usize, usize> = HashMap::new();
             'work_items: for (widx, w) in work.iter().enumerate() {
@@ -267,7 +372,7 @@ async fn tfhe_worker_cycle(
                     } else {
                         // If this cannot be computed, we need to
                         // exclude it from the DF graph.
-                        uncomputable.insert(widx, ());
+                        uncomputable.insert(widx, w.output_handle.clone());
                         continue 'work_items;
                     }
                 }
@@ -276,6 +381,8 @@ async fn tfhe_worker_cycle(
                     w.output_handle.clone(),
                     w.fhe_operation.into(),
                     input_ciphertexts.clone(),
+                    w.is_allowed.unwrap_or(true),
+                    widx,
                 )?;
                 producer_indexes.insert(&w.output_handle, n.index());
                 consumer_indexes.insert(widx, n.index());
@@ -318,6 +425,7 @@ async fn tfhe_worker_cycle(
                     }
                 }
             }
+            graph.finalize();
             s_schedule.end();
 
             // Execute the DFG with the current tenant's keys
@@ -337,46 +445,53 @@ async fn tfhe_worker_cycle(
                 sched.schedule().await?;
             }
             // Extract the results from the graph
-            let mut res = graph.get_results();
+            let mut graph_results = graph.get_results();
 
-            for (idx, w) in work.iter().enumerate() {
-                // Filter out computations that could not complete
-                if uncomputable.contains_key(&idx) {
-                    // Update timestamp of uncomputable computation
-                    let mut s =
-                        tracer.start_with_context("update_unschedulable_computation", &loop_ctx);
-                    s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
-                    s.set_attribute(KeyValue::new(
-                        "handle",
-                        format!("0x{}", hex::encode(&w.output_handle)),
-                    ));
-                    let _ = query!(
-                        "
+            // Update uncomputable ops schedule orders
+            {
+                let mut s =
+                    tracer.start_with_context("update_unschedulable_computations", &loop_ctx);
+                s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+                s.set_attributes(
+                    uncomputable
+                        .values()
+                        .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+                );
+                let _ = query!(
+                    "
                             UPDATE computations
                             SET schedule_order = CURRENT_TIMESTAMP
                             WHERE tenant_id = $1
-                            AND output_handle = $2
+                            AND output_handle = ANY($2::BYTEA[])
                         ",
-                        w.tenant_id,
-                        w.output_handle
-                    )
-                    .execute(trx.as_mut())
-                    .await?;
-                    s.end();
-                    continue;
-                }
-                let r = &mut res
-                    .iter_mut()
-                    .find(|(h, _)| *h == w.output_handle)
-                    .unwrap()
-                    .1;
+                    *tenant_id,
+                    &uncomputable.into_values().collect::<Vec<_>>()
+                )
+                .execute(trx.as_mut())
+                .await?;
+                s.end();
+            }
+            // Traverse computations that have been scheduled and
+            // upload their results/errors
+            let mut handles_to_udate = vec![];
+            let mut intermediate_handles_to_udate = vec![];
+            let mut cts_to_insert = vec![];
+            for result in graph_results.iter_mut() {
+                let idx = result.work_index;
+                let result = &mut result.result;
 
                 let finished_work_unit: Result<
                     _,
-                    (Box<(dyn std::error::Error + Send + Sync)>, i32, Vec<u8>),
-                > = r
+                    (Box<dyn std::error::Error + Send + Sync>, i32, Vec<u8>),
+                > = result
                     .as_mut()
-                    .map(|rok| (w, rok.0, std::mem::take(&mut rok.1)))
+                    .map(|rok| {
+                        if let Some((ct_type, ref mut ct_bytes)) = rok {
+                            (&work[idx], Some((ct_type, std::mem::take(ct_bytes))))
+                        } else {
+                            (&work[idx], None)
+                        }
+                    })
                     .map_err(|rerr| {
                         if rerr.downcast_ref::<FhevmError>().is_some() {
                             let mut swap_val = FhevmError::BadInputs;
@@ -386,8 +501,8 @@ async fn tfhe_worker_cycle(
                             );
                             (
                                 CoprocessorError::FhevmError(swap_val).into(),
-                                w.tenant_id,
-                                w.output_handle.clone(),
+                                work[idx].tenant_id,
+                                work[idx].output_handle.clone(),
                             )
                         } else {
                             (
@@ -397,55 +512,31 @@ async fn tfhe_worker_cycle(
                                         .unwrap_or(&SchedulerError::SchedulerError),
                                 )
                                 .into(),
-                                w.tenant_id,
-                                w.output_handle.clone(),
+                                work[idx].tenant_id,
+                                work[idx].output_handle.clone(),
                             )
                         }
                     });
                 match finished_work_unit {
-                    Ok((w, db_type, db_bytes)) => {
-                        let mut s = tracer.start_with_context("insert_ct_into_db", &loop_ctx);
-                        s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
-                        s.set_attribute(KeyValue::new(
-                            "handle",
-                            format!("0x{}", hex::encode(&w.output_handle)),
-                        ));
-                        s.set_attribute(KeyValue::new("ciphertext_type", db_type as i64));
-                        let _ = query!("
-                        INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
-                        VALUES($1, $2, $3, $4, $5)
-                        ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
-                    ", w.tenant_id, w.output_handle, &db_bytes, current_ciphertext_version(), db_type)
-                    .execute(trx.as_mut())
-                    .await?;
-
-                        // Notify all workers that new ciphertext is inserted
-                        // For now, it's only the SnS workers that are listening for these events
-                        let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
-                            .execute(trx.as_mut())
-                            .await?;
-
-                        s.end();
-                        let mut s = tracer.start_with_context("update_computation", &loop_ctx);
-                        s.set_attribute(KeyValue::new("tenant_id", w.tenant_id as i64));
-                        s.set_attribute(KeyValue::new(
-                            "handle",
-                            format!("0x{}", hex::encode(&w.output_handle)),
-                        ));
-                        s.set_attribute(KeyValue::new("ciphertext_type", db_type as i64));
-                        let _ = query!(
-                            "
-                            UPDATE computations
-                            SET is_completed = true, completed_at = CURRENT_TIMESTAMP
-                            WHERE tenant_id = $1
-                            AND output_handle = $2
-                        ",
+                    Ok((w, Some((db_type, db_bytes)))) => {
+                        cts_to_insert.push((
                             w.tenant_id,
-                            w.output_handle
-                        )
-                        .execute(trx.as_mut())
-                        .await?;
-                        s.end();
+                            (
+                                w.output_handle.clone(),
+                                (db_bytes, (current_ciphertext_version(), *db_type)),
+                            ),
+                        ));
+                        handles_to_udate.push(w.output_handle.clone());
+                        // As we've completed useful computation on an
+                        // allowed handle, we poll for work again
+                        // without waiting for a notification.
+                        immedially_poll_more_work = true;
+                        WORK_ITEMS_PROCESSED_COUNTER.inc();
+                    }
+                    Ok((w, None)) => {
+                        // Non allowed handles are still marked as
+                        // complete but we don't upload the CT
+                        intermediate_handles_to_udate.push(w.output_handle.clone());
                         WORK_ITEMS_PROCESSED_COUNTER.inc();
                     }
                     Err((err, tenant_id, output_handle)) => {
@@ -482,6 +573,96 @@ async fn tfhe_worker_cycle(
                     }
                 }
             }
+            let mut s = tracer.start_with_context("insert_ct_into_db", &loop_ctx);
+            s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+            s.set_attributes(cts_to_insert.iter().map(|(_, (h, (_, (_, _))))| {
+                KeyValue::new("handle", format!("0x{}", hex::encode(h)))
+            }));
+            s.set_attributes(cts_to_insert.iter().map(|(_, (_, (_, (_, db_type))))| {
+                KeyValue::new("ciphertext_type", *db_type as i64)
+            }));
+            #[allow(clippy::type_complexity)]
+            let (tenant_ids, (handles, (ciphertexts, (ciphertext_versions, ciphertext_types)))): (
+                Vec<_>,
+                (Vec<_>, (Vec<_>, (Vec<_>, Vec<_>))),
+            ) = cts_to_insert.into_iter().unzip();
+            let _ = query!(
+			"
+                    INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+                    SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::BYTEA[], $4::SMALLINT[], $5::SMALLINT[])
+                    ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
+                    ",
+		&tenant_ids, &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types)
+			.execute(trx.as_mut())
+			.await?;
+            // Notify all workers that new ciphertext is inserted
+            // For now, it's only the SnS workers that are listening for these events
+            let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
+                .execute(trx.as_mut())
+                .await?;
+            s.end();
+
+            let mut s = tracer.start_with_context("update_computation", &loop_ctx);
+            s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+            s.set_attributes(
+                handles_to_udate
+                    .iter()
+                    .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+            );
+            let _ = query!(
+                "
+                UPDATE computations
+                SET is_completed = true, completed_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = $1
+                AND output_handle = ANY($2::BYTEA[])
+            ",
+                *tenant_id,
+                &handles_to_udate
+            )
+            .execute(trx.as_mut())
+            .await?;
+            s.end();
+            let mut s = tracer.start_with_context("update_allowed_handles_is_computed", &loop_ctx);
+            s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+            s.set_attributes(
+                handles_to_udate
+                    .iter()
+                    .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+            );
+            let _ = query!(
+                "
+                UPDATE allowed_handles
+                SET is_computed = TRUE
+                WHERE tenant_id = $1
+                AND handle = ANY($2::BYTEA[])
+            ",
+                *tenant_id,
+                &handles_to_udate
+            )
+            .execute(trx.as_mut())
+            .await?;
+            s.end();
+            let mut s = tracer.start_with_context("update_intermediate_computation", &loop_ctx);
+            s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+            s.set_attributes(
+                intermediate_handles_to_udate
+                    .iter()
+                    .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+            );
+            let _ = query!(
+                "
+                UPDATE computations
+                SET is_completed = true, completed_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = $1
+                AND output_handle = ANY($2::BYTEA[])
+            ",
+                *tenant_id,
+                &intermediate_handles_to_udate
+            )
+            .execute(trx.as_mut())
+            .await?;
+            s.end();
+
             s_outer.end();
         }
         s.end();

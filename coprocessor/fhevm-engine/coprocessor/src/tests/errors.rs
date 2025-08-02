@@ -320,6 +320,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     let test_u64 = &handles[4];
 
     {
+        let transaction_id = next_handle();
         // test circular dependencies
         let output_handle_a = next_handle();
         let output_handle_b = next_handle();
@@ -331,6 +332,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
         let async_computations = vec![
             AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: output_handle_a.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -343,6 +345,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             },
             AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: output_handle_b.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -355,6 +358,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             },
             AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: output_handle_c.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -387,10 +391,12 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     }
 
     {
+        let transaction_id = next_handle();
         // test invalid binary op between uncast types
         let output_handle_a = next_handle();
         let async_computations = vec![AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id,
             output_handle: output_handle_a.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -415,10 +421,12 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     }
 
     {
+        let transaction_id = next_handle();
         // empty ciphertext handle
         let output_handle_a = next_handle();
         let async_computations = vec![AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id,
             output_handle: output_handle_a.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -448,10 +456,12 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     }
 
     {
+        let transaction_id = next_handle();
         // ciphertext handle too long
         let output_handle_a = next_handle();
         let async_computations = vec![AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id,
             output_handle: output_handle_a.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -483,10 +493,12 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     }
 
     {
+        let transaction_id = next_handle();
         // computation too many inputs
         let output_handle_a = next_handle();
         let async_computations = vec![AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id,
             output_handle: output_handle_a.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -521,10 +533,12 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     }
 
     {
+        let transaction_id = next_handle();
         // scalar operand on the left
         let output_handle_a = next_handle();
         let async_computations = vec![AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id,
             output_handle: output_handle_a.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -556,10 +570,12 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     }
 
     {
+        let transaction_id = next_handle();
         // scalar division by zero
         let output_handle_a = next_handle();
         let async_computations = vec![AsyncComputation {
             operation: FheOperation::FheDiv.into(),
+            transaction_id,
             output_handle: output_handle_a.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -591,10 +607,12 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     }
 
     {
+        let transaction_id = next_handle();
         // binary boolean inputs
         let output_handle_a = next_handle();
         let async_computations = vec![AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id,
             output_handle: output_handle_a.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -619,10 +637,12 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
     }
 
     {
+        let transaction_id = next_handle();
         // unary boolean inputs
         let output_handle_a = next_handle();
         let async_computations = vec![AsyncComputation {
             operation: FheOperation::FheNeg.into(),
+            transaction_id,
             output_handle: output_handle_a.clone(),
             inputs: vec![AsyncComputationInput {
                 input: Some(Input::InputHandle(test_bool.handle.clone())),
