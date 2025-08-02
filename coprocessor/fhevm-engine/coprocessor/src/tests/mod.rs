@@ -10,7 +10,8 @@ use crate::server::coprocessor::{
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use tonic::metadata::MetadataValue;
 use utils::{
-    decrypt_ciphertexts, default_api_key, random_handle, wait_until_all_ciphertexts_computed,
+    allow_handle, decrypt_ciphertexts, default_api_key, random_handle,
+    wait_until_all_allowed_handles_computed,
 };
 
 mod errors;
@@ -34,6 +35,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_header = format!("bearer {}", default_api_key());
     let ct_type = 4; // i32
 
+    let transaction_id = random_handle().to_be_bytes();
     let h1 = random_handle().to_be_bytes();
     let h2 = random_handle().to_be_bytes();
     let h3 = random_handle().to_be_bytes();
@@ -71,6 +73,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
             computations: vec![
                 AsyncComputation {
                     operation: FheOperation::FheAdd.into(),
+                    transaction_id: transaction_id.to_vec(),
                     output_handle: h3.to_vec(),
                     inputs: vec![
                         AsyncComputationInput {
@@ -83,6 +86,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
                 },
                 AsyncComputation {
                     operation: FheOperation::FheAdd.into(),
+                    transaction_id: transaction_id.to_vec(),
                     output_handle: h4.to_vec(),
                     inputs: vec![
                         AsyncComputationInput {
@@ -103,8 +107,10 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
         println!("compute request: {:?}", resp);
     }
 
+    allow_handle(&h3.to_vec(), &pool).await?;
+    allow_handle(&h4.to_vec(), &pool).await?;
     println!("sleeping for computation to complete...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     // decrypt values
     {

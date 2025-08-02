@@ -1,8 +1,8 @@
 #[path = "./utils.rs"]
 mod utils;
 use crate::utils::{
-    default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app,
-    wait_until_all_ciphertexts_computed, write_to_json, OperatorType,
+    allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
+    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, OperatorType,
 };
 use coprocessor::server::common::FheOperation;
 use coprocessor::server::coprocessor::{async_computation_input::Input, AsyncComputationInput};
@@ -64,7 +64,7 @@ fn main() {
         });
     }
     if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
-        for num_elems in [10, 50, 200] {
+        for num_elems in [10, 50] {
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
@@ -113,7 +113,7 @@ fn main() {
         });
     }
     if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
-        for num_elems in [10, 50, 200] {
+        for num_elems in [10, 50] {
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
@@ -142,7 +142,7 @@ fn main() {
     if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
         let bench_name = "dex::swap_request_dep";
         let mut group = c.benchmark_group(bench_name);
-        for num_elems in [10, 50, 200] {
+        for num_elems in [10, 50] {
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
@@ -171,7 +171,7 @@ fn main() {
 
         let bench_name = "dex::swap_claim_dep";
         let mut group = c.benchmark_group(bench_name);
-        for num_elems in [10, 50, 200] {
+        for num_elems in [10, 50] {
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::whitepaper::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
@@ -269,6 +269,7 @@ async fn swap_request_whitepaper(
     assert_eq!(first_resp.input_handles.len(), 10);
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         // Swap request inputs
         let from_balance_0 = first_resp.input_handles[0].handle.clone();
         let from_balance_0 = AsyncComputationInput {
@@ -319,16 +320,19 @@ async fn swap_request_whitepaper(
         let _new_from_amount_handle_0 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle_0.clone(),
             inputs: vec![from_balance_0.clone(), amount_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_target_handle_0.clone(),
             inputs: vec![current_dex_balance_0.clone(), amount_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle_0.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -366,16 +370,19 @@ async fn swap_request_whitepaper(
         let _new_from_amount_handle_1 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle_1.clone(),
             inputs: vec![from_balance_1.clone(), amount_1.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_target_handle_1.clone(),
             inputs: vec![current_dex_balance_1.clone(), amount_1.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle_1.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -419,11 +426,13 @@ async fn swap_request_whitepaper(
         let pending_total_token_1_in = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: sent_0_handle.clone(),
             inputs: vec![new_current_balance_0.clone(), current_dex_balance_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: sent_1_handle.clone(),
             inputs: vec![new_current_balance_1.clone(), current_dex_balance_1.clone()],
         });
@@ -435,24 +444,33 @@ async fn swap_request_whitepaper(
         };
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_0_in_handle.clone(),
             inputs: vec![to_balance_0.clone(), sent_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_1_in_handle.clone(),
             inputs: vec![to_balance_1.clone(), sent_1.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_total_token_0_in.clone(),
             inputs: vec![total_dex_token_0_in.clone(), sent_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_total_token_1_in.clone(),
             inputs: vec![total_dex_token_1_in.clone(), sent_1.clone()],
         });
+
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -470,9 +488,11 @@ async fn swap_request_whitepaper(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -569,6 +589,7 @@ async fn swap_request_no_cmux(
     assert_eq!(first_resp.input_handles.len(), 10);
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         // Swap request inputs
         let from_balance_0 = first_resp.input_handles[0].handle.clone();
         let from_balance_0 = AsyncComputationInput {
@@ -619,11 +640,13 @@ async fn swap_request_no_cmux(
         let _new_from_amount_handle_0 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle_0.clone(),
             inputs: vec![from_balance_0.clone(), amount_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: cast_has_enough_funds_handle_0.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -636,6 +659,7 @@ async fn swap_request_no_cmux(
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: select_amount_handle_0.clone(),
             inputs: vec![
                 amount_0.clone(),
@@ -646,6 +670,7 @@ async fn swap_request_no_cmux(
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle_0.clone(),
             inputs: vec![
                 current_dex_balance_0.clone(),
@@ -673,11 +698,13 @@ async fn swap_request_no_cmux(
         let _new_from_amount_handle_1 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle_1.clone(),
             inputs: vec![from_balance_1.clone(), amount_1.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: cast_has_enough_funds_handle_1.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -690,6 +717,7 @@ async fn swap_request_no_cmux(
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: select_amount_handle_1.clone(),
             inputs: vec![
                 amount_1.clone(),
@@ -700,6 +728,7 @@ async fn swap_request_no_cmux(
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle_1.clone(),
             inputs: vec![
                 current_dex_balance_1.clone(),
@@ -733,11 +762,13 @@ async fn swap_request_no_cmux(
         let pending_total_token_1_in = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: sent_0_handle.clone(),
             inputs: vec![new_current_balance_0.clone(), current_dex_balance_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: sent_1_handle.clone(),
             inputs: vec![new_current_balance_1.clone(), current_dex_balance_1.clone()],
         });
@@ -749,24 +780,33 @@ async fn swap_request_no_cmux(
         };
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_0_in_handle.clone(),
             inputs: vec![to_balance_0.clone(), sent_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_1_in_handle.clone(),
             inputs: vec![to_balance_1.clone(), sent_1.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_total_token_0_in.clone(),
             inputs: vec![total_dex_token_0_in.clone(), sent_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_total_token_1_in.clone(),
             inputs: vec![total_dex_token_1_in.clone(), sent_1.clone()],
         });
+
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -784,9 +824,11 @@ async fn swap_request_no_cmux(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -883,6 +925,7 @@ async fn swap_claim_whitepaper(
     assert_eq!(first_resp.input_handles.len(), 6);
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         // Swap claim inputs
         let pending_0_in = first_resp.input_handles[0].handle.clone();
         let pending_0_in = AsyncComputationInput {
@@ -920,6 +963,7 @@ async fn swap_claim_whitepaper(
         if total_dex_token_1_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_pending_1_in.clone(),
                 inputs: vec![
                     pending_1_in,
@@ -931,6 +975,7 @@ async fn swap_claim_whitepaper(
             let mul_temp = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: mul_temp.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -945,6 +990,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheDiv.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_amount_0_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -959,6 +1005,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: amount_0_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -977,6 +1024,7 @@ async fn swap_claim_whitepaper(
             let new_from_amount_handle_0 = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheGe.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: has_enough_funds_handle_0.clone(),
                 inputs: vec![
                     current_dex_balance_0.clone(),
@@ -987,6 +1035,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_target_handle_0.clone(),
                 inputs: vec![
                     old_balance_0.clone(),
@@ -997,6 +1046,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheIfThenElse.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_handle_0.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1010,6 +1060,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheSub.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_target_handle_0.clone(),
                 inputs: vec![
                     current_dex_balance_0.clone(),
@@ -1020,6 +1071,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheIfThenElse.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_handle_0.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1031,10 +1083,13 @@ async fn swap_claim_whitepaper(
                     current_dex_balance_0.clone(),
                 ],
             });
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
         if total_dex_token_0_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_pending_0_in.clone(),
                 inputs: vec![
                     pending_0_in,
@@ -1046,6 +1101,7 @@ async fn swap_claim_whitepaper(
             let mul_temp = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: mul_temp.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1060,6 +1116,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheDiv.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_amount_1_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1074,6 +1131,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: amount_1_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1092,6 +1150,7 @@ async fn swap_claim_whitepaper(
             let new_from_amount_handle_1 = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheGe.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: has_enough_funds_handle_1.clone(),
                 inputs: vec![
                     current_dex_balance_1.clone(),
@@ -1102,6 +1161,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_target_handle_1.clone(),
                 inputs: vec![
                     old_balance_1.clone(),
@@ -1112,6 +1172,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheIfThenElse.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_handle_1.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1125,6 +1186,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheSub.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_target_handle_1.clone(),
                 inputs: vec![
                     current_dex_balance_1.clone(),
@@ -1135,6 +1197,7 @@ async fn swap_claim_whitepaper(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheIfThenElse.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_handle_1.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1146,6 +1209,8 @@ async fn swap_claim_whitepaper(
                     current_dex_balance_1.clone(),
                 ],
             });
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -1164,9 +1229,11 @@ async fn swap_claim_whitepaper(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -1263,6 +1330,7 @@ async fn swap_claim_no_cmux(
     assert_eq!(first_resp.input_handles.len(), 6);
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         // Swap claim inputs
         let pending_0_in = first_resp.input_handles[0].handle.clone();
         let pending_0_in = AsyncComputationInput {
@@ -1300,6 +1368,7 @@ async fn swap_claim_no_cmux(
         if total_dex_token_1_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_pending_1_in.clone(),
                 inputs: vec![
                     pending_1_in,
@@ -1311,6 +1380,7 @@ async fn swap_claim_no_cmux(
             let mul_temp = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: mul_temp.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1325,6 +1395,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheDiv.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_amount_0_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1339,6 +1410,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: amount_0_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1358,6 +1430,7 @@ async fn swap_claim_no_cmux(
             let new_from_amount_handle_0 = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheGe.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: has_enough_funds_handle_0.clone(),
                 inputs: vec![
                     current_dex_balance_0.clone(),
@@ -1368,6 +1441,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: cast_has_enough_funds_handle_0.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1380,6 +1454,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: select_amount_handle_0.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1392,6 +1467,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_handle_0.clone(),
                 inputs: vec![
                     old_balance_0.clone(),
@@ -1402,6 +1478,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheSub.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_handle_0.clone(),
                 inputs: vec![
                     current_dex_balance_0.clone(),
@@ -1410,11 +1487,14 @@ async fn swap_claim_no_cmux(
                     },
                 ],
             });
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
 
         if total_dex_token_0_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_pending_0_in.clone(),
                 inputs: vec![
                     pending_0_in,
@@ -1426,6 +1506,7 @@ async fn swap_claim_no_cmux(
             let mul_temp = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: mul_temp.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1440,6 +1521,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheDiv.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_amount_1_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1454,6 +1536,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: amount_1_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1472,6 +1555,7 @@ async fn swap_claim_no_cmux(
             let new_from_amount_handle_1 = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheGe.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: has_enough_funds_handle_1.clone(),
                 inputs: vec![
                     current_dex_balance_1.clone(),
@@ -1482,6 +1566,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: cast_has_enough_funds_handle_1.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1494,6 +1579,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: select_amount_handle_1.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -1506,6 +1592,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_handle_1.clone(),
                 inputs: vec![
                     old_balance_1.clone(),
@@ -1516,6 +1603,7 @@ async fn swap_claim_no_cmux(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheSub.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_handle_1.clone(),
                 inputs: vec![
                     current_dex_balance_1.clone(),
@@ -1524,6 +1612,8 @@ async fn swap_claim_no_cmux(
                     },
                 ],
             });
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -1542,9 +1632,11 @@ async fn swap_claim_no_cmux(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -1652,6 +1744,7 @@ async fn swap_request_whitepaper_dep(
     };
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         // Swap request inputs
         let from_balance_0 = first_resp.input_handles[0].handle.clone();
         let from_balance_0 = AsyncComputationInput {
@@ -1694,16 +1787,19 @@ async fn swap_request_whitepaper_dep(
         let _new_from_amount_handle_0 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle_0.clone(),
             inputs: vec![from_balance_0.clone(), amount_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_target_handle_0.clone(),
             inputs: vec![current_dex_balance_0.clone(), amount_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle_0.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -1741,16 +1837,19 @@ async fn swap_request_whitepaper_dep(
         let _new_from_amount_handle_1 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle_1.clone(),
             inputs: vec![from_balance_1.clone(), amount_1.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_target_handle_1.clone(),
             inputs: vec![current_dex_balance_1.clone(), amount_1.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle_1.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -1794,11 +1893,13 @@ async fn swap_request_whitepaper_dep(
         let pending_total_token_1_in = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: sent_0_handle.clone(),
             inputs: vec![new_current_balance_0.clone(), current_dex_balance_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: sent_1_handle.clone(),
             inputs: vec![new_current_balance_1.clone(), current_dex_balance_1.clone()],
         });
@@ -1810,27 +1911,36 @@ async fn swap_request_whitepaper_dep(
         };
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_0_in_handle.clone(),
             inputs: vec![to_balance_0.clone(), sent_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_1_in_handle.clone(),
             inputs: vec![to_balance_1.clone(), sent_1.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_total_token_0_in.clone(),
             inputs: vec![total_dex_token_0_in.clone(), sent_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_total_token_1_in.clone(),
             inputs: vec![total_dex_token_1_in.clone(), sent_1.clone()],
         });
         // Update DEX balance handles
         current_dex_balance_0 = new_current_balance_0.clone();
         current_dex_balance_1 = new_current_balance_1.clone();
+
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -1848,9 +1958,11 @@ async fn swap_request_whitepaper_dep(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -1957,6 +2069,7 @@ async fn swap_request_no_cmux_dep(
     };
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         // Swap request inputs
         let from_balance_0 = first_resp.input_handles[0].handle.clone();
         let from_balance_0 = AsyncComputationInput {
@@ -1999,11 +2112,13 @@ async fn swap_request_no_cmux_dep(
         let _new_from_amount_handle_0 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle_0.clone(),
             inputs: vec![from_balance_0.clone(), amount_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: cast_has_enough_funds_handle_0.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -2016,6 +2131,7 @@ async fn swap_request_no_cmux_dep(
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: select_amount_handle_0.clone(),
             inputs: vec![
                 amount_0.clone(),
@@ -2026,6 +2142,7 @@ async fn swap_request_no_cmux_dep(
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle_0.clone(),
             inputs: vec![
                 current_dex_balance_0.clone(),
@@ -2053,11 +2170,13 @@ async fn swap_request_no_cmux_dep(
         let _new_from_amount_handle_1 = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle_1.clone(),
             inputs: vec![from_balance_1.clone(), amount_1.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: cast_has_enough_funds_handle_1.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -2070,6 +2189,7 @@ async fn swap_request_no_cmux_dep(
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: select_amount_handle_1.clone(),
             inputs: vec![
                 amount_1.clone(),
@@ -2080,6 +2200,7 @@ async fn swap_request_no_cmux_dep(
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle_1.clone(),
             inputs: vec![
                 current_dex_balance_1.clone(),
@@ -2113,11 +2234,13 @@ async fn swap_request_no_cmux_dep(
         let pending_total_token_1_in = next_handle();
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: sent_0_handle.clone(),
             inputs: vec![new_current_balance_0.clone(), current_dex_balance_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: sent_1_handle.clone(),
             inputs: vec![new_current_balance_1.clone(), current_dex_balance_1.clone()],
         });
@@ -2129,27 +2252,36 @@ async fn swap_request_no_cmux_dep(
         };
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_0_in_handle.clone(),
             inputs: vec![to_balance_0.clone(), sent_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_1_in_handle.clone(),
             inputs: vec![to_balance_1.clone(), sent_1.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_total_token_0_in.clone(),
             inputs: vec![total_dex_token_0_in.clone(), sent_0.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: pending_total_token_1_in.clone(),
             inputs: vec![total_dex_token_1_in.clone(), sent_1.clone()],
         });
         // Update DEX balance handles
         current_dex_balance_0 = new_current_balance_0.clone();
         current_dex_balance_1 = new_current_balance_1.clone();
+
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -2167,9 +2299,11 @@ async fn swap_request_no_cmux_dep(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -2276,6 +2410,7 @@ async fn swap_claim_whitepaper_dep(
     };
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         // Swap claim inputs
         let pending_0_in = first_resp.input_handles[0].handle.clone();
         let pending_0_in = AsyncComputationInput {
@@ -2305,6 +2440,7 @@ async fn swap_claim_whitepaper_dep(
         if total_dex_token_1_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_pending_1_in.clone(),
                 inputs: vec![
                     pending_1_in,
@@ -2316,6 +2452,7 @@ async fn swap_claim_whitepaper_dep(
             let mul_temp = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: mul_temp.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2330,6 +2467,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheDiv.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_amount_0_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2344,6 +2482,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: amount_0_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2362,6 +2501,7 @@ async fn swap_claim_whitepaper_dep(
             let new_from_amount_handle_0 = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheGe.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: has_enough_funds_handle_0.clone(),
                 inputs: vec![
                     current_dex_balance_0.clone(),
@@ -2372,6 +2512,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_target_handle_0.clone(),
                 inputs: vec![
                     old_balance_0.clone(),
@@ -2382,6 +2523,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheIfThenElse.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_handle_0.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2395,6 +2537,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheSub.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_target_handle_0.clone(),
                 inputs: vec![
                     current_dex_balance_0.clone(),
@@ -2405,6 +2548,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheIfThenElse.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_handle_0.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2420,10 +2564,13 @@ async fn swap_claim_whitepaper_dep(
             current_dex_balance_0 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_0.clone())),
             };
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
         if total_dex_token_0_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_pending_0_in.clone(),
                 inputs: vec![
                     pending_0_in,
@@ -2435,6 +2582,7 @@ async fn swap_claim_whitepaper_dep(
             let mul_temp = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: mul_temp.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2449,6 +2597,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheDiv.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_amount_1_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2463,6 +2612,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: amount_1_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2481,6 +2631,7 @@ async fn swap_claim_whitepaper_dep(
             let new_from_amount_handle_1 = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheGe.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: has_enough_funds_handle_1.clone(),
                 inputs: vec![
                     current_dex_balance_1.clone(),
@@ -2491,6 +2642,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_target_handle_1.clone(),
                 inputs: vec![
                     old_balance_1.clone(),
@@ -2501,6 +2653,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheIfThenElse.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_handle_1.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2514,6 +2667,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheSub.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_target_handle_1.clone(),
                 inputs: vec![
                     current_dex_balance_1.clone(),
@@ -2524,6 +2678,7 @@ async fn swap_claim_whitepaper_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheIfThenElse.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_handle_1.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2539,6 +2694,8 @@ async fn swap_claim_whitepaper_dep(
             current_dex_balance_1 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_1.clone())),
             };
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -2557,9 +2714,11 @@ async fn swap_claim_whitepaper_dep(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -2666,6 +2825,7 @@ async fn swap_claim_no_cmux_dep(
     };
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         // Swap claim inputs
         let pending_0_in = first_resp.input_handles[0].handle.clone();
         let pending_0_in = AsyncComputationInput {
@@ -2695,6 +2855,7 @@ async fn swap_claim_no_cmux_dep(
         if total_dex_token_1_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_pending_1_in.clone(),
                 inputs: vec![
                     pending_1_in,
@@ -2706,6 +2867,7 @@ async fn swap_claim_no_cmux_dep(
             let mul_temp = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: mul_temp.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2720,6 +2882,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheDiv.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_amount_0_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2734,6 +2897,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: amount_0_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2753,6 +2917,7 @@ async fn swap_claim_no_cmux_dep(
             let new_from_amount_handle_0 = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheGe.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: has_enough_funds_handle_0.clone(),
                 inputs: vec![
                     current_dex_balance_0.clone(),
@@ -2763,6 +2928,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: cast_has_enough_funds_handle_0.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2775,6 +2941,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: select_amount_handle_0.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2787,6 +2954,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_handle_0.clone(),
                 inputs: vec![
                     old_balance_0.clone(),
@@ -2797,6 +2965,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheSub.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_handle_0.clone(),
                 inputs: vec![
                     current_dex_balance_0.clone(),
@@ -2809,11 +2978,14 @@ async fn swap_claim_no_cmux_dep(
             current_dex_balance_0 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_0.clone())),
             };
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
 
         if total_dex_token_0_in != 0 {
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_pending_0_in.clone(),
                 inputs: vec![
                     pending_0_in,
@@ -2825,6 +2997,7 @@ async fn swap_claim_no_cmux_dep(
             let mul_temp = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: mul_temp.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2839,6 +3012,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheDiv.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: big_amount_1_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2853,6 +3027,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: amount_1_out.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2871,6 +3046,7 @@ async fn swap_claim_no_cmux_dep(
             let new_from_amount_handle_1 = next_handle();
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheGe.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: has_enough_funds_handle_1.clone(),
                 inputs: vec![
                     current_dex_balance_1.clone(),
@@ -2881,6 +3057,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheCast.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: cast_has_enough_funds_handle_1.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2893,6 +3070,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheMul.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: select_amount_handle_1.clone(),
                 inputs: vec![
                     AsyncComputationInput {
@@ -2905,6 +3083,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_to_amount_handle_1.clone(),
                 inputs: vec![
                     old_balance_1.clone(),
@@ -2915,6 +3094,7 @@ async fn swap_claim_no_cmux_dep(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheSub.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: new_from_amount_handle_1.clone(),
                 inputs: vec![
                     current_dex_balance_1.clone(),
@@ -2927,6 +3107,8 @@ async fn swap_claim_no_cmux_dep(
             current_dex_balance_1 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_1.clone())),
             };
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -2945,9 +3127,11 @@ async fn swap_claim_no_cmux_dep(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),

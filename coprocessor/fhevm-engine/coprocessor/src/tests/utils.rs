@@ -1,8 +1,10 @@
 use crate::daemon_cli::Args;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
+use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::utils::{safe_deserialize, safe_deserialize_key};
 use rand::Rng;
+use sqlx::Postgres;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
@@ -43,6 +45,10 @@ pub fn default_api_key() -> &'static str {
 
 pub fn default_tenant_id() -> i32 {
     1
+}
+
+pub fn default_dependence_cache_size() -> u16 {
+    128
 }
 
 pub fn random_handle() -> u64 {
@@ -92,6 +98,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         server_maximum_ciphertexts_to_schedule: 5000,
         server_maximum_ciphertexts_to_get: 5000,
         work_items_batch_size: 40,
+        dependence_chains_per_batch: 10,
         tenant_key_cache_size: 4,
         coprocessor_fhe_threads: 4,
         maximum_handles_per_input: 255,
@@ -172,7 +179,7 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     })
 }
 
-pub async fn wait_until_all_ciphertexts_computed(
+pub async fn wait_until_all_allowed_handles_computed(
     test_instance: &TestInstance,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -182,7 +189,7 @@ pub async fn wait_until_all_ciphertexts_computed(
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        let count = sqlx::query!("SELECT count(*) FROM computations WHERE NOT is_completed")
+        let count = sqlx::query!("SELECT count(1) FROM allowed_handles WHERE is_computed = FALSE")
             .fetch_one(&pool)
             .await?;
         let current_count = count.count.unwrap();
@@ -327,4 +334,23 @@ pub async fn decrypt_ciphertexts(
 
     let values = values.into_iter().map(|i| i.1).collect::<Vec<_>>();
     Ok(values)
+}
+
+pub async fn allow_handle(
+    handle: &Vec<u8>,
+    pool: &sqlx::Pool<Postgres>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let tenant_id = default_tenant_id();
+    let account_address = String::new();
+    let event_type = AllowEvents::AllowedForDecryption;
+    let _query =
+            sqlx::query!(
+                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+                     ON CONFLICT DO NOTHING;",
+                tenant_id,
+                handle,
+                account_address,
+                event_type as i16,
+            ).execute(pool).await?;
+    Ok(())
 }
