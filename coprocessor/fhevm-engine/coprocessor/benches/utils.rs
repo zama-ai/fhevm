@@ -1,7 +1,8 @@
 use coprocessor::daemon_cli::Args;
+use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::utils::safe_deserialize_key;
 use rand::Rng;
-use sqlx::query;
+use sqlx::{query, Postgres};
 use std::sync::atomic::{AtomicU16, Ordering};
 use std::sync::Arc;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
@@ -91,6 +92,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         server_maximum_ciphertexts_to_schedule: 20000,
         server_maximum_ciphertexts_to_get: 20000,
         work_items_batch_size: ecfg.batch_size,
+        dependence_chains_per_batch: 2000,
         tenant_key_cache_size: 4,
         coprocessor_fhe_threads: 128,
         maximum_handles_per_input: 255,
@@ -164,7 +166,50 @@ async fn setup_test_app_custom_docker() -> Result<TestInstance, Box<dyn std::err
     })
 }
 
-pub async fn wait_until_all_ciphertexts_computed(
+#[allow(dead_code)]
+pub async fn allow_handle(
+    handle: &Vec<u8>,
+    pool: &sqlx::Pool<Postgres>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let tenant_id = default_tenant_id();
+    let account_address = String::new();
+    let event_type = AllowEvents::AllowedForDecryption;
+    let _query =
+            sqlx::query!(
+                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+                     ON CONFLICT DO NOTHING;",
+                tenant_id,
+                handle,
+                account_address,
+                event_type as i16,
+            ).execute(pool).await?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub async fn allow_handles(
+    handles: &Vec<Vec<u8>>,
+    pool: &sqlx::Pool<Postgres>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let tenant_id = vec![default_tenant_id(); handles.len()];
+    let account_address = vec![String::new(); handles.len()];
+    let event_type = vec![AllowEvents::AllowedForDecryption as i16; handles.len()];
+    let _query = sqlx::query!(
+        "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type)
+                 SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::TEXT[], $4::SMALLINT[])
+                 ON CONFLICT DO NOTHING;",
+        &tenant_id,
+        handles,
+        &account_address,
+        &event_type,
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub async fn wait_until_all_allowed_handles_computed(
     db_url: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let pool = sqlx::postgres::PgPoolOptions::new()
@@ -174,7 +219,7 @@ pub async fn wait_until_all_ciphertexts_computed(
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        let count = sqlx::query!("SELECT count(1) FROM computations WHERE NOT is_completed")
+        let count = sqlx::query!("SELECT count(1) FROM allowed_handles WHERE is_computed = FALSE")
             .fetch_one(&pool)
             .await?;
         let current_count = count.count.unwrap();
@@ -836,7 +881,7 @@ impl EnvConfig {
         };
         let batch_size: i32 = match env::var("BENCHMARK_BATCH_SIZE") {
             Ok(val) => val.parse::<i32>().unwrap(),
-            Err(_) => 400,
+            Err(_) => 4000,
         };
         let scheduling_policy: String = match env::var("FHEVM_DF_SCHEDULE") {
             Ok(val) => val,

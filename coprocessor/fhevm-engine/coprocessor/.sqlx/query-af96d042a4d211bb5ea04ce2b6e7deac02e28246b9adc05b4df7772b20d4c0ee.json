@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type)\n                 SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::TEXT[], $4::SMALLINT[])\n                 ON CONFLICT DO NOTHING;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4Array",
+        "ByteaArray",
+        "TextArray",
+        "Int2Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "af96d042a4d211bb5ea04ce2b6e7deac02e28246b9adc05b4df7772b20d4c0ee"
+}

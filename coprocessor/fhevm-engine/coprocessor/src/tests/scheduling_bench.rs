@@ -6,8 +6,8 @@ use crate::server::coprocessor::{
     InputToUpload, InputUploadBatch,
 };
 use crate::tests::utils::{
-    decrypt_ciphertexts, default_api_key, default_tenant_id, random_handle, setup_test_app,
-    wait_until_all_ciphertexts_computed,
+    allow_handle, decrypt_ciphertexts, default_api_key, default_tenant_id, random_handle,
+    setup_test_app, wait_until_all_allowed_handles_computed,
 };
 use fhevm_engine_common::utils::safe_serialize;
 use std::str::FromStr;
@@ -57,6 +57,7 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
     let keys = &keys[0];
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
         let the_list = builder
             .push(100_u64) // Balance source
@@ -111,16 +112,19 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
 
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_target_handle.clone(),
             inputs: vec![bald.clone(), trxa.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -134,11 +138,13 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_from_amount_target_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheIfThenElse.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_from_amount_handle.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -162,8 +168,12 @@ async fn schedule_erc20_whitepaper() -> Result<(), Box<dyn std::error::Error>> {
     );
     let _resp = client.async_compute(compute_request).await?;
 
+    for h in output_handles.iter() {
+        allow_handle(h, &pool).await?;
+    }
+
     println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -220,6 +230,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
     let keys = &keys[0];
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
         let the_list = builder
             .push(100_u64) // Balance source
@@ -274,11 +285,13 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
 
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: cast_has_enough_funds_handle.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -291,6 +304,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: select_amount_handle.clone(),
             inputs: vec![
                 trxa.clone(),
@@ -301,6 +315,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle.clone(),
             inputs: vec![
                 bald.clone(),
@@ -311,6 +326,7 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_from_amount_handle.clone(),
             inputs: vec![
                 bals.clone(),
@@ -331,8 +347,12 @@ async fn schedule_erc20_no_cmux() -> Result<(), Box<dyn std::error::Error>> {
     );
     let _resp = client.async_compute(compute_request).await?;
 
+    for h in output_handles.iter() {
+        allow_handle(h, &pool).await?;
+    }
+
     println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -417,6 +437,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
     };
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
         let the_list = builder
             .push(100_u64) // Balance source
@@ -466,11 +487,13 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
 
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheGe.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: has_enough_funds_handle.clone(),
             inputs: vec![bals.clone(), trxa.clone()],
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheCast.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: cast_has_enough_funds_handle.clone(),
             inputs: vec![
                 AsyncComputationInput {
@@ -483,6 +506,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheMul.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: select_amount_handle.clone(),
             inputs: vec![
                 trxa.clone(),
@@ -493,6 +517,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_to_amount_handle.clone(),
             inputs: vec![
                 bald.clone(),
@@ -503,6 +528,7 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
         });
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheSub.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_from_amount_handle.clone(),
             inputs: vec![
                 bals.clone(),
@@ -527,8 +553,12 @@ async fn schedule_dependent_erc20_no_cmux() -> Result<(), Box<dyn std::error::Er
     );
     let _resp = client.async_compute(compute_request).await?;
 
+    for h in output_handles.iter() {
+        allow_handle(h, &pool).await?;
+    }
+
     println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -614,11 +644,13 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         let new_counter = next_handle();
         output_handles.push(new_counter.clone());
 
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_counter.clone(),
             inputs: vec![
                 counter.clone(),
@@ -644,8 +676,11 @@ async fn counter_increment() -> Result<(), Box<dyn std::error::Error>> {
     );
     let _resp = client.async_compute(compute_request).await?;
 
+    for h in output_handles.iter() {
+        allow_handle(h, &pool).await?;
+    }
     println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;
@@ -736,6 +771,7 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
         });
     }
     let mut output_handle = next_handle();
+    let transaction_id = next_handle();
     for _ in 0..num_levels {
         for i in 0..num_comps_at_level {
             output_handle = next_handle();
@@ -744,6 +780,7 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: output_handle.clone(),
                 inputs: vec![level_inputs[2 * i].clone(), level_inputs[2 * i + 1].clone()],
             });
@@ -766,8 +803,12 @@ async fn tree_reduction() -> Result<(), Box<dyn std::error::Error>> {
     );
     let _resp = client.async_compute(compute_request).await?;
 
+    for h in output_handles.iter() {
+        allow_handle(h, &pool).await?;
+    }
+
     println!("Computations scheduled, waiting upon completion...");
-    wait_until_all_ciphertexts_computed(&app).await?;
+    wait_until_all_allowed_handles_computed(&app).await?;
 
     let decrypt_request = output_handles.clone();
     let resp = decrypt_ciphertexts(&pool, 1, decrypt_request).await?;

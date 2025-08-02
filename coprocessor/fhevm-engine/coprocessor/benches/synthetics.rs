@@ -1,8 +1,8 @@
 #[path = "./utils.rs"]
 mod utils;
 use crate::utils::{
-    default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app,
-    wait_until_all_ciphertexts_computed, write_to_json, OperatorType,
+    allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
+    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, OperatorType,
 };
 use coprocessor::server::common::FheOperation;
 use coprocessor::server::coprocessor::{async_computation_input::Input, AsyncComputationInput};
@@ -66,14 +66,7 @@ fn main() {
     }
 
     if ecfg.benchmark_type == "THROUGHPUT" || ecfg.benchmark_type == "ALL" {
-        for num_elems in [
-            10,
-            50,
-            200,
-            500,
-            #[cfg(feature = "gpu")]
-            2000,
-        ] {
+        for num_elems in [10, 50, 200, 500] {
             group.throughput(Throughput::Elements(num_elems));
             let bench_id =
                 format!("{bench_name}::throughput::counter::FHEUint64::{num_elems}_elems::{bench_optimization_target}");
@@ -167,11 +160,13 @@ async fn counter_increment(
     };
 
     for _ in 0..=(num_samples - 1) as u32 {
+        let transaction_id = next_handle();
         let new_counter = next_handle();
         output_handles.push(new_counter.clone());
 
         async_computations.push(AsyncComputation {
             operation: FheOperation::FheAdd.into(),
+            transaction_id: transaction_id.clone(),
             output_handle: new_counter.clone(),
             inputs: vec![
                 counter.clone(),
@@ -186,6 +181,8 @@ async fn counter_increment(
             input: Some(Input::InputHandle(new_counter.clone())),
         };
     }
+
+    allow_handle(output_handles.last().unwrap(), &pool).await?;
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
         computations: async_computations,
@@ -202,9 +199,11 @@ async fn counter_increment(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),
@@ -307,6 +306,7 @@ async fn tree_reduction(
         });
     }
     let mut output_handle = next_handle();
+    let transaction_id = next_handle();
     for _ in 0..num_levels {
         for i in 0..num_comps_at_level {
             output_handle = next_handle();
@@ -315,6 +315,7 @@ async fn tree_reduction(
             });
             async_computations.push(AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
+                transaction_id: transaction_id.clone(),
                 output_handle: output_handle.clone(),
                 inputs: vec![level_inputs[2 * i].clone(), level_inputs[2 * i + 1].clone()],
             });
@@ -325,7 +326,8 @@ async fn tree_reduction(
         }
         level_inputs = std::mem::take(&mut level_outputs);
     }
-    output_handles.push(output_handle);
+    output_handles.push(output_handle.clone());
+    allow_handle(&output_handle, &pool).await?;
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
         computations: async_computations,
@@ -342,9 +344,11 @@ async fn tree_reduction(
             let db_url = app_ref.db_url().to_string();
             let now = SystemTime::now();
             let _ = tokio::task::spawn_blocking(move || {
-                Runtime::new()
-                    .unwrap()
-                    .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+                Runtime::new().unwrap().block_on(async {
+                    wait_until_all_allowed_handles_computed(db_url)
+                        .await
+                        .unwrap()
+                });
                 println!(
                     "Execution time: {} -- {}",
                     now.elapsed().unwrap().as_millis(),

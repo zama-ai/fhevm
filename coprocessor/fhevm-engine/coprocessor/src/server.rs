@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::error::Error;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
@@ -392,7 +392,7 @@ impl CoprocessorService {
             let mut blocking_span = tracer.child_span("blocking_ciphertext_list_expand");
             blocking_span.set_attributes(vec![KeyValue::new("idx", idx as i64)]);
             tfhe_work_set.spawn_blocking(
-                move || -> Result<_, (Box<(dyn std::error::Error + Send + Sync)>, usize)> {
+                move || -> Result<_, (Box<dyn std::error::Error + Send + Sync>, usize)> {
                     let mut span = tracer.child_span("set_server_key");
                     tfhe::set_server_key(server_key.clone());
                     span.end();
@@ -408,7 +408,7 @@ impl CoprocessorService {
                     let expanded =
                         try_expand_ciphertext_list(&cloned_input.input_payload, &public_params)
                             .map_err(|e| {
-                                let err: Box<(dyn std::error::Error + Send + Sync)> = Box::new(e);
+                                let err: Box<dyn std::error::Error + Send + Sync> = Box::new(e);
                                 (err, idx)
                             })?;
 
@@ -431,7 +431,7 @@ impl CoprocessorService {
         while let Some(output) = tfhe_work_set.join_next().await {
             let (cts, idx, hash) = output
                 .map_err(|e| {
-                    let err: Box<(dyn std::error::Error + Sync + Send)> = Box::new(e);
+                    let err: Box<dyn std::error::Error + Sync + Send> = Box::new(e);
                     tonic::Status::from_error(err)
                 })?
                 .map_err(|e| tonic::Status::from_error(e.0))?;
@@ -667,6 +667,8 @@ impl CoprocessorService {
             are_comps_scalar.push(is_computation_scalar);
         }
 
+        let computation_buckets: Vec<Bucket> =
+            sort_computations_into_bucket(&sorted_computations).await;
         let mut tx_span = tracer.child_span("db_transaction");
         let mut trx = self
             .pool
@@ -674,7 +676,6 @@ impl CoprocessorService {
             .await
             .map_err(Into::<CoprocessorError>::into)?;
 
-        let mut new_work_available = false;
         for (idx, comp) in sorted_computations.iter().enumerate() {
             let fhe_operation: i16 = comp.operation.try_into().map_err(|_| {
                 CoprocessorError::FhevmError(FhevmError::UnknownFheOperation(comp.operation))
@@ -684,7 +685,7 @@ impl CoprocessorService {
                 "handle",
                 format!("0x{}", hex::encode(&comp.output_handle)),
             )]);
-            let res = query!(
+            let _ = query!(
                 "
                     INSERT INTO computations(
                         tenant_id,
@@ -692,31 +693,24 @@ impl CoprocessorService {
                         dependencies,
                         fhe_operation,
                         is_completed,
-                        is_scalar
+                        is_scalar,
+                        dependence_chain_id,
+                        transaction_id
                     )
-                    VALUES($1, $2, $3, $4, false, $5)
+                    VALUES($1, $2, $3, $4, false, $5, $6, $7)
                     ON CONFLICT (tenant_id, output_handle) DO NOTHING
                 ",
                 tenant_id,
                 comp.output_handle,
                 &computations_inputs[idx],
                 fhe_operation,
-                are_comps_scalar[idx]
+                are_comps_scalar[idx],
+                computation_buckets[idx],
+                comp.transaction_id
             )
             .execute(trx.as_mut())
             .await
             .map_err(Into::<CoprocessorError>::into)?;
-            span.end();
-            if res.rows_affected() > 0 {
-                new_work_available = true;
-            }
-        }
-        if new_work_available {
-            let mut span = tracer.child_span("db_new_work_notification");
-            query!("NOTIFY work_available")
-                .execute(trx.as_mut())
-                .await
-                .map_err(Into::<CoprocessorError>::into)?;
             span.end();
         }
         trx.commit().await.map_err(Into::<CoprocessorError>::into)?;
@@ -894,4 +888,33 @@ impl CoprocessorService {
 
         Ok(tonic::Response::new(result))
     }
+}
+
+type Handle = Vec<u8>;
+type Bucket = Vec<u8>;
+
+async fn sort_computations_into_bucket(
+    computations: &[&crate::server::coprocessor::AsyncComputation],
+) -> Vec<Bucket> {
+    let mut res: Vec<Bucket> = vec![vec![0]; computations.len()];
+    let mut bucket_map: HashMap<Handle, Bucket> = HashMap::with_capacity(computations.len());
+    'comps: for (idx, comp) in computations.iter().enumerate() {
+        let output = &comp.output_handle;
+        for ih in comp.inputs.iter() {
+            let Some(Input::InputHandle(input)) = &ih.input else {
+                continue;
+            };
+            let Some(ce) = bucket_map.get(input).cloned() else {
+                continue;
+            };
+            bucket_map.insert(output.to_owned(), ce.to_owned());
+            res[idx] = ce;
+            continue 'comps;
+        }
+        // If this computation is not linked to any others, assign it
+        // to a new bucket
+        res[idx] = output.to_owned();
+        bucket_map.insert(output.to_owned(), res[idx].to_owned());
+    }
+    res
 }
