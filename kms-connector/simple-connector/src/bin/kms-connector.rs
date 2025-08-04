@@ -116,6 +116,10 @@ async fn setup_signal_handlers(shutdown_tx: broadcast::Sender<()>) -> Result<Joi
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Failed to install AWS-LC crypto provider");
+
     let cli = Cli::parse();
 
     // Setup logging
