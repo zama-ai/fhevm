@@ -128,6 +128,13 @@ jobs:
         run: |
           RUST_BACKTRACE=full cargo test
 
+      - name: Check directory
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Directory contents:"
+          ls -la
+        
       - name: Run examples
         env:
           BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
