@@ -24,25 +24,6 @@ async function getKMSSigners() {
   return kmsSigners;
 }
 
-/**
- * An object that maps numeric keys to their corresponding ciphertext types.
- * The keys represent different types of ciphertexts, and the values are their
- * respective type names as strings.
- */
-const CiphertextType = {
-  0: 'bool',
-  2: 'uint8', // corresponding to euint8
-  3: 'uint16',
-  4: 'uint32',
-  5: 'uint64',
-  6: 'uint128',
-  7: 'address',
-  8: 'uint256',
-  9: 'bytes',
-  10: 'bytes',
-  11: 'bytes',
-};
-
 let toSkip: BigInt[] = [];
 
 const currentTime = (): string => {
@@ -143,28 +124,16 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       if (!allTrue(isAllowedForDec)) {
         throw new Error('Some handle is not authorized for decryption');
       }
-      const types = typesList.map((num: string | number) => CiphertextType[num]);
       const values = await Promise.all(handles.map(async (handle: string) => await getClearText(handle)));
-
-      const valuesFormatted = values.map((value, index) =>
-        types[index] === 'address' ? '0x' + BigInt(value).toString(16).padStart(40, '0') : value,
-      );
-
-      const valuesFormatted2 = valuesFormatted.map((value, index) =>
-        typesList[index] === 9 ? '0x' + BigInt(value).toString(16).padStart(128, '0') : value,
-      );
-      const valuesFormatted3 = valuesFormatted2.map((value, index) =>
-        typesList[index] === 10 ? '0x' + BigInt(value).toString(16).padStart(256, '0') : value,
-      );
-      const valuesFormatted4 = valuesFormatted3.map((value, index) =>
-        typesList[index] === 11 ? '0x' + BigInt(value).toString(16).padStart(512, '0') : value,
-      );
 
       const abiCoder = new ethers.AbiCoder();
       let encodedData;
       let decryptedResult;
 
-      encodedData = abiCoder.encode(['uint256', ...types, 'bytes[]'], [31, ...valuesFormatted4, []]); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
+      encodedData = abiCoder.encode(
+        ['uint256', ...Array(values.length).fill('uint256'), 'bytes[]'],
+        [31, ...values, []],
+      ); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
       // + adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
       decryptedResult = '0x' + encodedData.slice(66).slice(0, -64); // we pop the dummy requestID to get the correct value to pass for `decryptedCts` + we also pop the last 32 bytes (empty bytes[])
 
@@ -173,7 +142,11 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       const calldata =
         callbackSelector +
         abiCoder
-          .encode(['uint256', ...types, 'bytes[]'], [requestID, ...valuesFormatted4, decryptResultsEIP712signatures])
+          .encode(
+            ['uint256', ...Array(values.length).fill('uint256'), 'bytes[]'],
+            [requestID, ...values, decryptResultsEIP712signatures],
+          )
+
           .slice(2);
 
       const txData = {

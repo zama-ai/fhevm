@@ -65,6 +65,12 @@ interface IInputVerification {
     error ProofNotRejected(uint256 zkProofId);
 
     /**
+     * @notice Error indicating that the ZK Proof is not requested yet.
+     * @param zkProofId The zkProof request ID.
+     */
+    error VerifyProofNotRequested(uint256 zkProofId);
+
+    /**
      * @notice Requests the verification of a ZK Proof.
      * @param contractChainId The ID of the blockchain the contract belongs to.
      * @param contractAddress The address of the dapp the input is used for.
@@ -107,6 +113,18 @@ interface IInputVerification {
      * @param zkProofId The ID of the ZK Proof.
      */
     function checkProofRejected(uint256 zkProofId) external view;
+
+    /**
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for a proof verification.
+     * @param zkProofId The ZK Proof ID.
+     */
+    function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
+
+    /**
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for a proof rejection.
+     * @param zkProofId The ZK Proof ID.
+     */
+    function getRejectProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
 
     /**
      * @notice Returns the versions of the InputVerification contract in SemVer format.

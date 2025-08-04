@@ -1,14 +1,14 @@
 use crate::{
     conn::WalletGatewayProvider,
-    tests::setup::{DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
+    tests::setup::{CustomTestWriter, DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
 };
-use alloy::node_bindings::AnvilInstance;
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::DecryptionInstance,
     gatewayconfig::GatewayConfig::GatewayConfigInstance,
     kmsmanagement::KmsManagement::KmsManagementInstance,
 };
 use sqlx::{Pool, Postgres};
+use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tracing_subscriber::EnvFilter;
 
 /// The integration test environment.
@@ -19,11 +19,23 @@ pub struct TestInstance {
     gateway: Option<GatewayInstance>,
     s3: Option<S3Instance>,
     kms: Option<KmsInstance>,
+
+    /// Receiver channel to read/check log printed via the `tracing` crate.
+    log_rx: UnboundedReceiver<String>,
 }
 
 impl TestInstance {
     pub fn builder() -> TestInstanceBuilder {
         TestInstanceBuilder::default()
+    }
+
+    /// Consumes the logs of the `log_rx` channel until it finds the expected one.
+    pub async fn wait_for_log(&mut self, log: &str) {
+        let mut logs_received = String::new();
+        while !logs_received.contains(log) {
+            let next_log = self.log_rx.recv().await.expect("log channel closed");
+            logs_received.push_str(&next_log);
+        }
     }
 
     pub fn db(&self) -> &Pool<Postgres> {
@@ -40,10 +52,6 @@ impl TestInstance {
             .as_ref()
             .expect("KmsInstance has not been setup")
             .url
-    }
-
-    pub fn anvil(&self) -> &AnvilInstance {
-        &self.gateway().anvil
     }
 
     pub fn provider(&self) -> &WalletGatewayProvider {
@@ -71,6 +79,10 @@ impl TestInstance {
     pub fn s3_url(&self) -> &str {
         &self.s3.as_ref().expect("S3 has not been setup").url
     }
+
+    pub fn anvil_ws_endpoint(&self) -> String {
+        self.gateway().anvil_ws_endpoint()
+    }
 }
 
 pub struct TestInstanceBuilder {
@@ -79,15 +91,18 @@ pub struct TestInstanceBuilder {
     gateway: Option<GatewayInstance>,
     s3: Option<S3Instance>,
     kms: Option<KmsInstance>,
+    log_rx: UnboundedReceiver<String>,
 }
 
 impl Default for TestInstanceBuilder {
     fn default() -> Self {
+        let (log_tx, log_rx) = mpsc::unbounded_channel();
+
         let subscriber = tracing_subscriber::fmt()
             .with_env_filter(
                 EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
             )
-            .with_test_writer()
+            .with_writer(CustomTestWriter::new(log_tx))
             .finish();
 
         Self {
@@ -96,6 +111,7 @@ impl Default for TestInstanceBuilder {
             gateway: None,
             s3: None,
             kms: None,
+            log_rx,
         }
     }
 }
@@ -133,6 +149,7 @@ impl TestInstanceBuilder {
             gateway: self.gateway,
             s3: self.s3,
             kms: self.kms,
+            log_rx: self.log_rx,
         }
     }
 

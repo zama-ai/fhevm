@@ -38,6 +38,7 @@ jobs:
           connector:
             - '.github/workflows/sdk-rust-sdk-*'
             - 'sdk-rust-sdk/src/**'
+            - 'sdk-rust-sdk/examples/*'
             - 'sdk-rust-sdk/Cargo.toml'
 
   start-runner:
@@ -126,6 +127,19 @@ jobs:
           BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           RUST_BACKTRACE=full cargo test
+
+      - name: Check directory
+        run: |
+          echo "Current directory:"
+          pwd
+          echo "Directory contents:"
+          ls -la
+        
+      - name: Run examples
+        env:
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+        run: |
+          ./scripts/run-examples.sh
 
   stop-runner:
     name: sdk-rust-sdk-tests/stop-runner

@@ -1,4 +1,4 @@
-use crate::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS};
+use crate::monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS};
 use anyhow::anyhow;
 use connector_utils::types::GatewayEvent;
 use sqlx::{Pool, Postgres, postgres::PgListener};

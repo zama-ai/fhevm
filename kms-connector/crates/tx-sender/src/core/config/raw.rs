@@ -4,7 +4,8 @@
 
 use connector_utils::{
     config::{AwsKmsConfig, DeserializeRawConfig, RawContractConfig},
-    otlp::default_metrics_endpoint,
+    monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
+    tasks::default_task_limit,
 };
 use serde::{Deserialize, Serialize};
 
@@ -14,17 +15,13 @@ pub struct RawConfig {
     pub database_url: String,
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
-    #[serde(default = "default_metrics_endpoint")]
-    pub metrics_endpoint: String,
     pub gateway_url: String,
     pub chain_id: u64,
     pub decryption_contract: RawContractConfig,
     pub kms_management_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
-    #[serde(default)]
     pub private_key: Option<String>,
-    #[serde(default)]
     pub aws_kms_config: Option<AwsKmsConfig>,
     #[serde(default = "default_tx_retries")]
     pub tx_retries: u8,
@@ -32,6 +29,14 @@ pub struct RawConfig {
     pub tx_retry_interval_ms: u64,
     #[serde(default = "default_responses_batch_size")]
     pub responses_batch_size: u8,
+    #[serde(default = "default_gas_multiplier_percent")]
+    pub gas_multiplier_percent: usize,
+    #[serde(default = "default_task_limit")]
+    pub task_limit: usize,
+    #[serde(default = "default_monitoring_endpoint")]
+    pub monitoring_endpoint: String,
+    #[serde(default = "default_healthcheck_timeout_secs")]
+    pub healthcheck_timeout_secs: u64,
 }
 
 fn default_service_name() -> String {
@@ -54,6 +59,10 @@ fn default_responses_batch_size() -> u8 {
     10
 }
 
+fn default_gas_multiplier_percent() -> usize {
+    130 // 130% gas increase by default
+}
+
 impl DeserializeRawConfig for RawConfig {}
 
 // Default implementation for testing purpose
@@ -62,7 +71,6 @@ impl Default for RawConfig {
         Self {
             database_url: "postgres://postgres:postgres@localhost".to_string(),
             database_pool_size: default_database_pool_size(),
-            metrics_endpoint: "0.0.0.0:9100".to_string(),
             gateway_url: "ws://localhost:8545".to_string(),
             chain_id: 1,
             decryption_contract: RawContractConfig {
@@ -83,6 +91,10 @@ impl Default for RawConfig {
             tx_retries: default_tx_retries(),
             tx_retry_interval_ms: default_tx_retry_interval_ms(),
             responses_batch_size: default_responses_batch_size(),
+            gas_multiplier_percent: default_gas_multiplier_percent(),
+            task_limit: default_task_limit(),
+            monitoring_endpoint: default_monitoring_endpoint(),
+            healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
         }
     }
 }

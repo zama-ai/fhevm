@@ -10,6 +10,7 @@ import {HCULimit} from "./HCULimit.sol";
 import {aclAdd, hcuLimitAdd, inputVerifierAdd} from "../addresses/FHEVMHostAddresses.sol";
 
 import {FheType} from "./shared/FheType.sol";
+import {HANDLE_VERSION} from "./shared/Constants.sol";
 import {FHEEvents} from "./FHEEvents.sol";
 
 /**
@@ -46,10 +47,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
 
     /// @notice Returned if the type is not the expected one.
     error InvalidType();
-
-    /// @notice Returned if it uses the wrong overloaded function (for functions fheEq/fheNe),
-    ///         which does not handle scalar.
-    error IsScalar();
 
     /// @notice Returned if operation is supported only for a scalar (functions fheDiv/fheRem).
     error IsNotScalar();
@@ -109,9 +106,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
         fheRand,
         fheRandBounded
     }
-
-    /// @notice Handle version.
-    uint8 public constant HANDLE_VERSION = 0;
 
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "FHEVMExecutor";
@@ -434,7 +428,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        if (scalar == 0x01 && uint8(lhsType) > 8) revert IsScalar();
 
         result = _binaryOp(Operators.fheEq, lhs, rhs, scalar, FheType.Bool);
         hcuLimit.checkHCUForFheEq(lhsType, scalar, lhs, rhs, result);
@@ -459,7 +452,6 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
         bytes1 scalar = scalarByte & 0x01;
-        if (scalar == 0x01 && uint8(lhsType) > 8) revert IsScalar();
 
         result = _binaryOp(Operators.fheNe, lhs, rhs, scalar, FheType.Bool);
         hcuLimit.checkHCUForFheNe(lhsType, scalar, lhs, rhs, result);
@@ -769,6 +761,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
      */
     function getInputVerifierAddress() public view virtual returns (address) {
         return address(inputVerifier);
+    }
+
+    /**
+     * @notice        Getter for the handle version.
+     * @return uint8 The current version for new handles.
+     */
+    function getHandleVersion() external pure virtual returns (uint8) {
+        return HANDLE_VERSION;
     }
 
     /**

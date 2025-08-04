@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       changes-e2e-docker: ${{ steps.filter.outputs.e2e-docker }}
+      changes-benchmarks-docker: ${{ steps.filter.outputs.benchmarks-docker }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -34,6 +35,9 @@ jobs:
             e2e-docker:
               - '.github/workflows/test-suite-docker-build.yml'
               - 'test-suite/e2e/**'
+            benchmarks-docker:
+              - '.github/workflows/test-suite-docker-build.yml'
+              - 'test-suite/benchmarks/**'
   docker-e2e-image:
     name: test-suite-docker-build/docker-e2e-image (bpr)
     needs: check-changes
@@ -57,3 +61,26 @@ jobs:
       image-name: "fhevm/test-suite/e2e"
       docker-file: "./test-suite/e2e/Dockerfile"
       app-cache-dir: "fhevm-test-suite-e2e"
+  docker-benchmarks-image:
+    name: test-suite-docker-build/docker-benchmarks-image (bpr)
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-benchmarks-docker == 'true' || github.event_name == 'release' }}
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6323a1e8e260961562b66a9f33a608f86cd6c831
+    secrets:
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+      attestations: 'write'
+      packages: 'write'
+      id-token: 'write'
+    with:
+      working-directory: "test-suite"
+      docker-context: "test-suite"
+      push_image: true
+      image-name: "fhevm/test-suite/benchmarks"
+      docker-file: "./test-suite/benchmarks/Dockerfile"
+      app-cache-dir: "fhevm-test-suite-benchmarks"

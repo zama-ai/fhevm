@@ -1,4 +1,4 @@
-import { HardhatEthersSigner, SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { Wallet } from "ethers";
@@ -40,7 +40,7 @@ describe("MultichainAcl", function () {
   let multichainAcl: MultichainAcl;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
-  let pauser: SignerWithAddress;
+  let pauser: HardhatEthersSigner;
 
   beforeEach(async function () {
     // Initialize used global variables before each test
@@ -90,13 +90,72 @@ describe("MultichainAcl", function () {
         .withArgs(fakeHostChainId);
     });
 
-    it("Should allow account to use the ciphertext", async function () {
-      // Trigger two allow calls with different coprocessor transaction senders
+    it("Should allow account with 2 valid responses", async function () {
+      // Trigger 2 allow calls with different coprocessor transaction senders
       await multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress);
       const txResponse = multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress);
 
-      // Check that the right event is emitted
+      // Consensus should be reached at the second response
       await expect(txResponse).to.emit(multichainAcl, "AllowAccount").withArgs(ctHandle, newAccountAddress);
+    });
+
+    it("Should allow account with 2 valid responses and ignore the other valid one", async function () {
+      // Trigger 3 allow account calls with different coprocessor transaction senders
+      const txResponse1 = await multichainAcl
+        .connect(coprocessorTxSenders[0])
+        .allowAccount(ctHandle, newAccountAddress);
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress);
+      const txResponse3 = await multichainAcl
+        .connect(coprocessorTxSenders[2])
+        .allowAccount(ctHandle, newAccountAddress);
+
+      // Check that the 1st and 3rd responses do not emit an event:
+      // - 1st response is ignored because consensus is not reached yet
+      // - 3rd response is ignored (not reverted) even though it is late
+      await expect(txResponse1).to.not.emit(multichainAcl, "AllowAccount");
+      await expect(txResponse3).to.not.emit(multichainAcl, "AllowAccount");
+    });
+
+    it("Should get all valid coprocessor transaction senders from allow account consensus", async function () {
+      // Trigger an allow account calls using the first coprocessor transaction sender
+      await multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress);
+
+      const expectedCoprocessorTxSenders1 = coprocessorTxSenders.slice(0, 1).map((s) => s.address);
+
+      // Get the coprocessor transaction sender that answered first, before the consensus is reached
+      // Since the consensus is directly made in the "request" call, the list represents the coprocessor
+      // transaction sender that answered, and is accessible before the consensus is reached
+      const proofRejectionConsensusTxSenders1 = await multichainAcl.getAllowAccountConsensusTxSenders(
+        ctHandle,
+        newAccountAddress,
+      );
+      expect(proofRejectionConsensusTxSenders1).to.deep.equal(expectedCoprocessorTxSenders1);
+
+      // Trigger an allow account calls using the second coprocessor transaction sender
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress);
+
+      const expectedCoprocessorTxSenders2 = coprocessorTxSenders.slice(0, 2).map((s) => s.address);
+
+      // Check that the coprocessor transaction senders that were involved in the consensus are the
+      // first 2 coprocessor transaction senders, at the moment the consensus is reached
+      const proofRejectionConsensusTxSenders2 = await multichainAcl.getAllowAccountConsensusTxSenders(
+        ctHandle,
+        newAccountAddress,
+      );
+      expect(proofRejectionConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
+
+      // Trigger an allow account calls using the third coprocessor transaction sender
+      await multichainAcl.connect(coprocessorTxSenders[2]).allowAccount(ctHandle, newAccountAddress);
+
+      const expectedCoprocessorTxSenders3 = coprocessorTxSenders.map((s) => s.address);
+
+      // Check that the coprocessor transaction senders that were involved in the consensus are the 3
+      // coprocessor transaction senders, after the consensus is reached
+      const proofRejectionConsensusTxSenders3 = await multichainAcl.getAllowAccountConsensusTxSenders(
+        ctHandle,
+        newAccountAddress,
+      );
+      expect(proofRejectionConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
     it("Should revert because coprocessor tries to allow account twice", async function () {
@@ -126,16 +185,6 @@ describe("MultichainAcl", function () {
         .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
         .withArgs(newCtHandle, accountAddress);
     });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await multichainAcl.connect(owner).pause();
-
-      // Try calling paused allow account
-      await expect(
-        multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress),
-      ).to.be.revertedWithCustomError(multichainAcl, "EnforcedPause");
-    });
   });
 
   describe("Allow public decrypt", async function () {
@@ -152,13 +201,62 @@ describe("MultichainAcl", function () {
         .withArgs(fakeHostChainId);
     });
 
-    it("Should allow for public decryption", async function () {
-      // Trigger two allow calls with different coprocessor transaction senders
+    it("Should allow for public decryption with 2 valid responses", async function () {
+      // Trigger 2 allow calls with different coprocessor transaction senders
       await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle);
       const txResponse = multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle);
 
-      // Check that the right event is emitted
+      // Consensus should be reached at the second response
       await expect(txResponse).to.emit(multichainAcl, "AllowPublicDecrypt").withArgs(newCtHandle);
+    });
+
+    it("Should allow public decryption with 2 valid responses and ignore the other valid one", async function () {
+      // Trigger 3 allow public decryption calls with different coprocessor transaction senders
+      const txResponse1 = await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle);
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle);
+      const txResponse3 = await multichainAcl.connect(coprocessorTxSenders[2]).allowPublicDecrypt(newCtHandle);
+
+      // Check that the 1st and 3rd responses do not emit an event:
+      // - 1st response is ignored because consensus is not reached yet
+      // - 3rd response is ignored (not reverted) even though it is late
+      await expect(txResponse1).to.not.emit(multichainAcl, "AllowPublicDecrypt");
+      await expect(txResponse3).to.not.emit(multichainAcl, "AllowPublicDecrypt");
+    });
+
+    it("Should get all valid coprocessor transaction senders from allow public decryption consensus", async function () {
+      // Trigger an allow public decryption calls using the first coprocessor transaction sender
+      await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle);
+
+      const expectedCoprocessorTxSenders1 = coprocessorTxSenders.slice(0, 1).map((s) => s.address);
+
+      // Get the coprocessor transaction sender that answered first, before the consensus is reached
+      // Since the consensus is directly made in the "request" call, the list represents the coprocessor
+      // transaction sender that answered, and is accessible before the consensus is reached
+      const proofRejectionConsensusTxSenders1 =
+        await multichainAcl.getAllowPublicDecryptConsensusTxSenders(newCtHandle);
+      expect(proofRejectionConsensusTxSenders1).to.deep.equal(expectedCoprocessorTxSenders1);
+
+      // Trigger an allow public decryption calls using the second coprocessor transaction sender
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle);
+
+      const expectedCoprocessorTxSenders2 = coprocessorTxSenders.slice(0, 2).map((s) => s.address);
+
+      // Check that the coprocessor transaction senders that were involved in the consensus are the
+      // first 2 coprocessor transaction senders, at the moment the consensus is reached
+      const proofRejectionConsensusTxSenders2 =
+        await multichainAcl.getAllowPublicDecryptConsensusTxSenders(newCtHandle);
+      expect(proofRejectionConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
+
+      // Trigger an allow public decryption calls using the third coprocessor transaction sender
+      await multichainAcl.connect(coprocessorTxSenders[2]).allowPublicDecrypt(newCtHandle);
+
+      const expectedCoprocessorTxSenders3 = coprocessorTxSenders.map((s) => s.address);
+
+      // Check that the coprocessor transaction senders that were involved in the consensus are the 3
+      // coprocessor transaction senders, after the consensus is reached
+      const proofRejectionConsensusTxSenders3 =
+        await multichainAcl.getAllowPublicDecryptConsensusTxSenders(newCtHandle);
+      expect(proofRejectionConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
     it("Should revert because coprocessor tries to allow public decryption twice", async function () {
@@ -182,16 +280,6 @@ describe("MultichainAcl", function () {
         .to.be.revertedWithCustomError(multichainAcl, "PublicDecryptNotAllowed")
         .withArgs(newCtHandle);
     });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await multichainAcl.connect(owner).pause();
-
-      // Try calling paused allow public decrypt
-      await expect(
-        multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle),
-      ).to.be.revertedWithCustomError(multichainAcl, "EnforcedPause");
-    });
   });
 
   describe("Delegate account", async function () {
@@ -207,6 +295,10 @@ describe("MultichainAcl", function () {
     // Define new delegation accounts (they will not be used for delegation by default)
     const newDelegator = createRandomAddress();
     const newDelegated = createRandomAddress();
+    const newDelegationAccounts: DelegationAccountsStruct = {
+      delegatorAddress: newDelegator,
+      delegatedAddress: newDelegated,
+    };
 
     beforeEach(async function () {
       // Delegate access to the the account and its contracts
@@ -217,14 +309,8 @@ describe("MultichainAcl", function () {
       }
     });
 
-    it("Should delegate account", async function () {
-      // Define new accounts to use for delegation
-      const newDelegationAccounts: DelegationAccountsStruct = {
-        delegatorAddress: newDelegator,
-        delegatedAddress: newDelegated,
-      };
-
-      // Trigger two allow calls with different coprocessor transaction senders
+    it("Should delegate account with 2 valid responses", async function () {
+      // Trigger 2 delegate calls with different coprocessor transaction senders
       await multichainAcl
         .connect(coprocessorTxSenders[0])
         .delegateAccount(hostChainId, newDelegationAccounts, allowedContracts);
@@ -232,10 +318,80 @@ describe("MultichainAcl", function () {
         .connect(coprocessorTxSenders[1])
         .delegateAccount(hostChainId, newDelegationAccounts, allowedContracts);
 
-      // Then
+      // Consensus should be reached at the second response
       await expect(txResponse)
         .to.emit(multichainAcl, "DelegateAccount")
         .withArgs(hostChainId, toValues(newDelegationAccounts), allowedContracts);
+    });
+
+    it("Should delegate account with 2 valid responses and ignore the other valid one", async function () {
+      // Trigger 3 delegate account calls with different coprocessor transaction senders
+      const txResponse1 = await multichainAcl
+        .connect(coprocessorTxSenders[0])
+        .delegateAccount(hostChainId, newDelegationAccounts, allowedContracts);
+      await multichainAcl
+        .connect(coprocessorTxSenders[1])
+        .delegateAccount(hostChainId, newDelegationAccounts, allowedContracts);
+      const txResponse3 = await multichainAcl
+        .connect(coprocessorTxSenders[2])
+        .delegateAccount(hostChainId, newDelegationAccounts, allowedContracts);
+
+      // Check that the 1st and 3rd responses do not emit an event:
+      // - 1st response is ignored because consensus is not reached yet
+      // - 3rd response is ignored (not reverted) even though it is late
+      await expect(txResponse1).to.not.emit(multichainAcl, "DelegateAccount");
+      await expect(txResponse3).to.not.emit(multichainAcl, "DelegateAccount");
+    });
+
+    it("Should get all valid coprocessor transaction senders from delegate account consensus", async function () {
+      // Trigger a delegate account calls using the first coprocessor transaction sender
+      await multichainAcl
+        .connect(coprocessorTxSenders[0])
+        .delegateAccount(hostChainId, newDelegationAccounts, allowedContracts);
+
+      const expectedCoprocessorTxSenders1 = coprocessorTxSenders.slice(0, 1).map((s) => s.address);
+
+      // Get the coprocessor transaction sender that answered first, before the consensus is reached
+      // Since the consensus is directly made in the "request" call, the list represents the coprocessor
+      // transaction sender that answered, and is accessible before the consensus is reached
+      const proofRejectionConsensusTxSenders1 = await multichainAcl.getDelegateAccountConsensusTxSenders(
+        hostChainId,
+        newDelegationAccounts,
+        allowedContracts,
+      );
+      expect(proofRejectionConsensusTxSenders1).to.deep.equal(expectedCoprocessorTxSenders1);
+
+      // Trigger a delegate account calls using the second coprocessor transaction sender
+      await multichainAcl
+        .connect(coprocessorTxSenders[1])
+        .delegateAccount(hostChainId, newDelegationAccounts, allowedContracts);
+
+      const expectedCoprocessorTxSenders2 = coprocessorTxSenders.slice(0, 2).map((s) => s.address);
+
+      // Check that the coprocessor transaction senders that were involved in the consensus are the
+      // first 2 coprocessor transaction senders, at the moment the consensus is reached
+      const proofRejectionConsensusTxSenders2 = await multichainAcl.getDelegateAccountConsensusTxSenders(
+        hostChainId,
+        newDelegationAccounts,
+        allowedContracts,
+      );
+      expect(proofRejectionConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
+
+      // Trigger a delegate account calls using the third coprocessor transaction sender
+      await multichainAcl
+        .connect(coprocessorTxSenders[2])
+        .delegateAccount(hostChainId, newDelegationAccounts, allowedContracts);
+
+      const expectedCoprocessorTxSenders3 = coprocessorTxSenders.map((s) => s.address);
+
+      // Check that the coprocessor transaction senders that were involved in the consensus are the 3
+      // coprocessor transaction senders, after the consensus is reached
+      const proofRejectionConsensusTxSenders3 = await multichainAcl.getDelegateAccountConsensusTxSenders(
+        hostChainId,
+        newDelegationAccounts,
+        allowedContracts,
+      );
+      expect(proofRejectionConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
     it("Should revert because coprocessor tries to delegate account twice", async function () {
@@ -313,27 +469,15 @@ describe("MultichainAcl", function () {
         .revertedWithCustomError(multichainAcl, "AccountNotDelegated")
         .withArgs(hostChainId, toValues(fakeDelegationAccounts), allowedContracts[0]);
     });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await multichainAcl.connect(owner).pause();
-
-      // Try calling paused delegate account
-      await expect(
-        multichainAcl
-          .connect(coprocessorTxSenders[0])
-          .delegateAccount(hostChainId, delegationAccounts, allowedContracts),
-      ).to.be.revertedWithCustomError(multichainAcl, "EnforcedPause");
-    });
   });
 
   describe("Pause", async function () {
-    it("Should pause and unpause contract with owner address", async function () {
+    it("Should pause the contract with the pauser and unpause with the owner", async function () {
       // Check that the contract is not paused
       expect(await multichainAcl.paused()).to.be.false;
 
-      // Pause the contract with the owner address
-      await expect(multichainAcl.connect(owner).pause()).to.emit(multichainAcl, "Paused").withArgs(owner);
+      // Pause the contract with the pauser address
+      await expect(multichainAcl.connect(pauser).pause()).to.emit(multichainAcl, "Paused").withArgs(pauser);
       expect(await multichainAcl.paused()).to.be.true;
 
       // Unpause the contract with the owner address
@@ -341,20 +485,23 @@ describe("MultichainAcl", function () {
       expect(await multichainAcl.paused()).to.be.false;
     });
 
-    it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
-      expect(await multichainAcl.paused()).to.be.false;
+    it("Should revert on pause because sender is not the pauser", async function () {
+      const fakePauser = createRandomWallet();
 
-      // Pause the contract with the pauser address
-      await expect(multichainAcl.connect(pauser).pause()).to.emit(multichainAcl, "Paused").withArgs(pauser);
-      expect(await multichainAcl.paused()).to.be.true;
+      await expect(multichainAcl.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(multichainAcl, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
     });
 
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
-      await expect(multichainAcl.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(multichainAcl, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await multichainAcl.connect(pauser).pause();
+
+      const fakeOwner = createRandomWallet();
+
+      await expect(multichainAcl.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(multichainAcl, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
     });
   });
 });

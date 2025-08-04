@@ -1,4 +1,4 @@
-import { createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk';
+import { createInstance as createFhevmInstance } from '@zama-fhe/relayer-sdk/node';
 import { network } from 'hardhat';
 
 import type { Signers } from './signers';

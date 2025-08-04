@@ -1,15 +1,15 @@
 # Table of contents
 
-- [Welcome to fhEVM](README.md)
+- [Welcome to FHEVM](README.md)
 
 ## Getting Started
 
 - [Quick start](getting_started/quick_start.md)
-- fhEVM
-  - fhEVM-native
+- FHEVM
+  - FHEVM-native
     - [Executor](getting_started/fhevm/native/executor.md)
     - [Configuration](getting_started/fhevm/native/configuration.md)
-  - fhEVM-coprocessor
+  - FHEVM-coprocessor
     - [Coprocessor Backend](getting_started/fhevm/coprocessor/coprocessor_backend.md)
     - [Configuration](getting_started/fhevm/coprocessor/configuration.md)
 - Gateway
@@ -23,16 +23,16 @@
 ## Fundamentals
 
 - [Overview](fundamentals/overview.md)
-- fhEVM
+- FHEVM
   - [Contracts](fundamentals/fhevm/contracts.md)
   - [Inputs](fundamentals/fhevm/inputs.md)
   - [Symbolic Execution](fundamentals/fhevm/symbolic_execution.md)
-  - fhEVM-native
+  - FHEVM-native
     - [Architecture](fundamentals/fhevm/native/architecture.md)
     - [FHE Computation](fundamentals/fhevm/native/fhe_computation.md)
     - [Storage](fundamentals/fhevm/native/storage.md)
     - [Genesis](fundamentals/fhevm/native/genesis.md)
-  - fhEVM-coprocessor
+  - FHEVM-coprocessor
     - [Architecture](fundamentals/fhevm/coprocessor/architecture.md)
     - [FHE Computation](fundamentals/fhevm/coprocessor/fhe_computation.md)
 - Gateway
@@ -54,7 +54,7 @@
 
 ## References
 
-- [fhEVM API specifications](references/fhevm_api.md)
+- [FHEVM API specifications](references/fhevm_api.md)
 - [Gateway API specifications](references/gateway_api.md)
 
 ## Developer

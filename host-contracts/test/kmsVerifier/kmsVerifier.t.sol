@@ -70,6 +70,7 @@ contract KMSVerifierTest is Test {
         bytes32 hashTypeData = MessageHashUtils.toTypedDataHash(_computeDomainSeparator(), structHash);
         return hashTypeData;
     }
+
     /**
      * @dev Computes the EIP-712 domain separator.
      * This function retrieves the domain parameters from the `kmsVerifier` contract,

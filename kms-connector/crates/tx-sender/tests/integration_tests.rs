@@ -19,11 +19,17 @@ use tx_sender::core::{
 };
 
 #[rstest]
-#[timeout(Duration::from_secs(10))]
+#[timeout(Duration::from_secs(20))]
 #[tokio::test]
 #[ignore = "flaky tests to be fixed"]
 async fn test_process_public_decryption_response() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut response_stream = test_instance
+        .decryption_contract()
+        .PublicDecryptionResponse_filter()
+        .watch()
+        .await?
+        .into_stream();
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
@@ -33,12 +39,6 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
     info!("PublicDecryptionResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
-    let mut response_stream = test_instance
-        .decryption_contract()
-        .PublicDecryptionResponse_filter()
-        .watch()
-        .await?
-        .into_stream();
     let (response, _) = response_stream
         .next()
         .await
@@ -51,8 +51,11 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
     }
     info!("Response successfully sent to Anvil!");
 
+    test_instance
+        .wait_for_log("Successfully removed response from DB!")
+        .await;
+
     info!("Checking response has been removed from DB...");
-    tokio::time::sleep(Duration::from_millis(300)).await; // give some time for the removal
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(decryption_id) FROM public_decryption_responses")
             .fetch_one(test_instance.db())
@@ -65,11 +68,17 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(10))]
+#[timeout(Duration::from_secs(20))]
 #[tokio::test]
 #[ignore = "flaky tests to be fixed"]
 async fn test_process_user_decryption_response() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut response_stream = test_instance
+        .decryption_contract()
+        .UserDecryptionResponse_filter()
+        .watch()
+        .await?
+        .into_stream();
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
@@ -79,12 +88,6 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
     info!("UserDecryptionResponse successfully stored!");
 
     info!("Checking response has been sent to Anvil...");
-    let mut response_stream = test_instance
-        .decryption_contract()
-        .UserDecryptionResponse_filter()
-        .watch()
-        .await?
-        .into_stream();
     let (response, _) = response_stream
         .next()
         .await
@@ -97,8 +100,11 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
     }
     info!("Response successfully sent to Anvil!");
 
+    test_instance
+        .wait_for_log("Successfully removed response from DB!")
+        .await;
+
     info!("Checking response has been removed from DB...");
-    tokio::time::sleep(Duration::from_millis(300)).await; // give some time for the removal
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(decryption_id) FROM user_decryption_responses")
             .fetch_one(test_instance.db())
@@ -110,10 +116,18 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
     Ok(tx_sender_task.await?)
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(30))]
 #[tokio::test]
-#[ignore = "to enable when performance will be improved"]
+#[ignore = "flaky tests to be fixed"]
 async fn stress_test() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let response_stream = test_instance
+        .decryption_contract()
+        .UserDecryptionResponse_filter()
+        .watch()
+        .await?
+        .into_stream();
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
@@ -132,13 +146,6 @@ async fn stress_test() -> anyhow::Result<()> {
     info!("{nb_response} UserDecryptionResponse successfully stored!");
 
     info!("Checking responses has been sent to Anvil...");
-    let response_stream = test_instance
-        .decryption_contract()
-        .UserDecryptionResponse_filter()
-        .watch()
-        .await?
-        .into_stream();
-
     let mut anvil_responses_id = response_stream
         .map(|res| res.unwrap())
         .map(|(r, _)| r.decryptionId)
@@ -174,6 +181,7 @@ async fn start_test_tx_sender(
         test_instance.decryption_contract().clone(),
         10,
         Duration::from_millis(100),
+        130,
     );
     let tx_sender = TransactionSender::new(response_picker, tx_sender_inner, response_remover);
 
