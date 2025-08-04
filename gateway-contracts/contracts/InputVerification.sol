@@ -103,6 +103,11 @@ contract InputVerification is
         mapping(uint256 zkProofId => bytes32 verifyProofConsensusDigest) verifyProofConsensusDigest;
         /// @notice The coprocessor transaction senders involved in a consensus for a proof rejection.
         mapping(uint256 zkProofId => address[] coprocessorTxSenderAddresses) rejectProofConsensusTxSenders;
+        // ----------------------------------------------------------------------------------------------
+        // Verify proof response state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The ctHandles of the proof verification response that reached consensus.
+        mapping(uint256 zkProofId => bytes32[] ctHandles) verifyProofCtHandles;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -130,6 +135,14 @@ contract InputVerification is
      * @notice Re-initializes the contract from V1.
      */
     function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
+    /// @dev See {IInputVerification-checkProofVerified}.
+    function checkProofVerified(uint256 zkProofId) public view virtual {
+        InputVerificationStorage storage $ = _getInputVerificationStorage();
+        if (!$.verifiedZKProofs[zkProofId]) {
+            revert ProofNotVerified(zkProofId);
+        }
+    }
 
     /// @dev See {IInputVerification-verifyProofRequest}.
     function verifyProofRequest(
@@ -208,6 +221,10 @@ contract InputVerification is
             // verification request.
             $.verifyProofConsensusDigest[zkProofId] = digest;
 
+            // Store the ctHandles for the proof verification response in order to be able to
+            // retrieve it later
+            $.verifyProofCtHandles[zkProofId] = ctHandles;
+
             emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
         }
     }
@@ -251,14 +268,6 @@ contract InputVerification is
         }
     }
 
-    /// @dev See {IInputVerification-checkProofVerified}.
-    function checkProofVerified(uint256 zkProofId) external view virtual {
-        InputVerificationStorage storage $ = _getInputVerificationStorage();
-        if (!$.verifiedZKProofs[zkProofId]) {
-            revert ProofNotVerified(zkProofId);
-        }
-    }
-
     /// @dev See {IInputVerification-checkProofRejected}.
     function checkProofRejected(uint256 zkProofId) external view virtual {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
@@ -288,6 +297,21 @@ contract InputVerification is
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         return $.rejectProofConsensusTxSenders[zkProofId];
+    }
+
+    function getVerifyProofResponseMaterials(
+        uint256 zkProofId
+    ) external view virtual returns (bytes32[] memory, bytes[] memory) {
+        InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        // Check that the proof verification consensus has been reached
+        checkProofVerified(zkProofId);
+
+        // Get the unique digest associated to the proof verification request
+        bytes32 consensusDigest = $.verifyProofConsensusDigest[zkProofId];
+
+        // Return the ctHandles and the verified signatures for the proof verification response
+        return ($.verifyProofCtHandles[zkProofId], $.zkProofSignatures[zkProofId][consensusDigest]);
     }
 
     /// @dev See {IInputVerification-getVersion}.
