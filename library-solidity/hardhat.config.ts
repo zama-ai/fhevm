@@ -51,12 +51,11 @@ task('test', async (_taskArgs, hre, runSuper) => {
     fs.mkdirSync('node_modules/@fhevm/core-contracts/addresses');
   }
 
+  // TODO: dependency conflict with @fhevm/core-contracts which comes from the old version from github.com/zama-ai/fhevm-backend
   const sourceDir = path.resolve(__dirname, 'node_modules/@fhevm/core-contracts/contracts');
   const destinationDir = path.resolve(__dirname, 'fhevmTemp/contracts');
   fs.copySync(sourceDir, destinationDir, { dereference: true });
-  const sourceDir2 = path.resolve(__dirname, 'node_modules/@fhevm/core-contracts/addresses');
-  const destinationDir2 = path.resolve(__dirname, 'fhevmTemp/addresses');
-  fs.copySync(sourceDir2, destinationDir2, { dereference: true });
+
   const sourceDir3 = path.resolve(__dirname, 'node_modules/@zama-fhe/oracle-solidity/contracts');
   const destinationDir3 = path.resolve(__dirname, 'fhevmTemp/contracts');
   fs.copySync(sourceDir3, destinationDir3, { dereference: true });
