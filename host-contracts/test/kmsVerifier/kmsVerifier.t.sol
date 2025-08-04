@@ -426,7 +426,7 @@ contract KMSVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that the verification of EIP-712 KMS signatures fails as expected when invalid signature is added.
+     * @dev Tests that the verification of EIP-712 KMS signatures fails as expected when no signer is added.
      */
     function test_VerifyInputEIP712KMSSignaturesFailAsExpectedIfNoSignerAdded() public {
         _upgradeProxyWithSigners(1);
