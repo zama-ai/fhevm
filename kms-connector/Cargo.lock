@@ -3921,6 +3921,7 @@ dependencies = [
  "fhevm_gateway_rust_bindings",
  "futures",
  "kms-grpc",
+ "rustls 0.23.27",
  "serde",
  "serial_test",
  "sha3",

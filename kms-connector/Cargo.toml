@@ -72,6 +72,9 @@ url = { version = "=2.5.4", default-features = false }
 
 # Testing dependencies
 rand = "=0.8.5"
+rustls = { version = "0.23", features = [
+  "aws-lc-rs",
+], default-features = false } #, features = ["ring", "aws-lc-rs", "std", "tls12"]
 serial_test = "3.2.0"
 tempfile = "=3.19.1"
 testcontainers = "=0.24.0"
