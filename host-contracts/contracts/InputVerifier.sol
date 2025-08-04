@@ -214,8 +214,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
             /// @dev This checks in particular that the list is non-empty.
             if (numHandles <= indexHandle || indexHandle > 254) revert InvalidIndex();
 
+            /// @dev The extraData is the rest of the inputProof bytes after the numHandles + numSigners + handles + coprocessorSignatures.
+            uint256 extraDataOffset = 2 + 32 * numHandles + 65 * numSigners;
+
             /// @dev Check that the inputProof is long enough to contain at least the numHandles + numSigners + handles + coprocessorSignatures
-            if (inputProofLen < 2 + 32 * numHandles + 65 * numSigners) revert DeserializingInputProofFail();
+            if (inputProofLen < extraDataOffset) revert DeserializingInputProofFail();
 
             /// @dev Deserialize handle and check that they are from the correct version.
             bytes32[] memory listHandles = new bytes32[](numHandles);
@@ -242,7 +245,14 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
             ctVerif.userAddress = context.userAddress;
             ctVerif.contractAddress = context.contractAddress;
             ctVerif.contractChainId = block.chainid;
-            ctVerif.extraData = _extractExtraData(inputProof, numHandles, numSigners);
+
+            /// @dev Extract the extraData from the inputProof.
+            uint256 extraDataSize = inputProof.length - extraDataOffset;
+            ctVerif.extraData = new bytes(extraDataSize);
+
+            for (uint i = 0; i < extraDataSize; i++) {
+                ctVerif.extraData[i] = inputProof[extraDataOffset + i];
+            }
 
             _verifyEIP712(ctVerif, signatures);
 
@@ -363,24 +373,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
                     Strings.toString(PATCH_VERSION)
                 )
             );
-    }
-
-    function _extractExtraData(
-        bytes memory inputProof,
-        uint256 numHandles,
-        uint256 numSigners
-    ) internal pure virtual returns (bytes memory extraData) {
-        uint256 handlesSize = numHandles * 32;
-        uint256 signaturesSize = numSigners * 65;
-
-        /// @dev The extraData is the rest of the inputProof bytes after the numHandles + numSigners + handles + coprocessorSignatures.
-        uint256 extraDataOffset = 2 + handlesSize + signaturesSize;
-        uint256 extraDataSize = inputProof.length - extraDataOffset;
-
-        extraData = new bytes(extraDataSize);
-        for (uint i = 0; i < extraDataSize; i++) {
-            extraData[i] = inputProof[extraDataOffset + i];
-        }
     }
 
     function _cacheProof(bytes32 proofKey) internal virtual {
