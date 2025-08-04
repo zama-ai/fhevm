@@ -1,10 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "../fhevmTemp/addresses/ACLAddress.sol";
-import "../fhevmTemp/addresses/InputVerifierAddress.sol";
-import "../fhevmTemp/addresses/KMSVerifierAddress.sol";
-import "../fhevmTemp/addresses/FHEVMExecutorAddress.sol";
+import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd, inputVerifierAdd} from "../fhevmTemp/addresses/FHEVMHostAddresses.sol";
 
 import {FHEVMConfigStruct} from "../lib/Impl.sol";
 
