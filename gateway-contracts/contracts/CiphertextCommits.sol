@@ -51,7 +51,7 @@ contract CiphertextCommits is
         /// @dev It's necessary in case new keys are generated: we need to know what key to use for using a ciphertext.
         mapping(bytes32 ctHandle => uint256 keyId) _keyIds;
         /// @notice The chain IDs associated to the ciphertext handle.
-        mapping(bytes32 ctHandle => uint256 chainId) _chainIds;
+        mapping(bytes32 ctHandle => uint256 chainId) _chainIds; // deprecated
         /// @notice The mapping of already added ciphertexts tied to the given handle.
         mapping(bytes32 ctHandle => bool isAdded) _isCiphertextMaterialAdded;
         /// @notice The counter of confirmations received for a ciphertext to be added.
@@ -151,7 +151,6 @@ contract CiphertextCommits is
             $._ciphertextDigests[ctHandle] = ciphertextDigest;
             $._snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
             $._keyIds[ctHandle] = keyId;
-            $._chainIds[ctHandle] = chainId;
 
             // A ciphertext handle should only be added once, ever
             $._isCiphertextMaterialAdded[ctHandle] = true;

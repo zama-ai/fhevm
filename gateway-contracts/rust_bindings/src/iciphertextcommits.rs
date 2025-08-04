@@ -17,7 +17,6 @@ interface ICiphertextCommits {
     }
 
     error CiphertextMaterialNotFound(bytes32 ctHandle);
-    error CiphertextMaterialNotOnHostChain(bytes32 ctHandle, uint256 chainId);
     error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
 
     event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest, address[] coprocessorTxSenders);
@@ -228,22 +227,6 @@ interface ICiphertextCommits {
         "name": "ctHandle",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "CiphertextMaterialNotOnHostChain",
-    "inputs": [
-      {
-        "name": "ctHandle",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "chainId",
-        "type": "uint256",
-        "internalType": "uint256"
       }
     ]
   },
@@ -936,95 +919,6 @@ error CiphertextMaterialNotFound(bytes32 ctHandle);
                     <alloy::sol_types::sol_data::FixedBytes<
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
-                )
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `CiphertextMaterialNotOnHostChain(bytes32,uint256)` and selector `0x071f391e`.
-```solidity
-error CiphertextMaterialNotOnHostChain(bytes32 ctHandle, uint256 chainId);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct CiphertextMaterialNotOnHostChain {
-        #[allow(missing_docs)]
-        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
-        #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::FixedBytes<32>,
-            alloy::sol_types::sol_data::Uint<256>,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::FixedBytes<32>,
-            alloy::sol_types::private::primitives::aliases::U256,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<CiphertextMaterialNotOnHostChain>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: CiphertextMaterialNotOnHostChain) -> Self {
-                (value.ctHandle, value.chainId)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for CiphertextMaterialNotOnHostChain {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    ctHandle: tuple.0,
-                    chainId: tuple.1,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for CiphertextMaterialNotOnHostChain {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "CiphertextMaterialNotOnHostChain(bytes32,uint256)";
-            const SELECTOR: [u8; 4] = [7u8, 31u8, 57u8, 30u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::FixedBytes<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
                 )
             }
         }
@@ -2386,8 +2280,6 @@ function getVersion() external pure returns (string memory);
         #[allow(missing_docs)]
         CiphertextMaterialNotFound(CiphertextMaterialNotFound),
         #[allow(missing_docs)]
-        CiphertextMaterialNotOnHostChain(CiphertextMaterialNotOnHostChain),
-        #[allow(missing_docs)]
         CoprocessorAlreadyAdded(CoprocessorAlreadyAdded),
     }
     #[automatically_derived]
@@ -2400,7 +2292,6 @@ function getVersion() external pure returns (string memory);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [6u8, 102u8, 203u8, 223u8],
-            [7u8, 31u8, 57u8, 30u8],
             [29u8, 215u8, 37u8, 12u8],
         ];
     }
@@ -2408,15 +2299,12 @@ function getVersion() external pure returns (string memory);
     impl alloy_sol_types::SolInterface for ICiphertextCommitsErrors {
         const NAME: &'static str = "ICiphertextCommitsErrors";
         const MIN_DATA_LENGTH: usize = 32usize;
-        const COUNT: usize = 3usize;
+        const COUNT: usize = 2usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
                 Self::CiphertextMaterialNotFound(_) => {
                     <CiphertextMaterialNotFound as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::CiphertextMaterialNotOnHostChain(_) => {
-                    <CiphertextMaterialNotOnHostChain as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::CoprocessorAlreadyAdded(_) => {
                     <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::SELECTOR
@@ -2456,21 +2344,6 @@ function getVersion() external pure returns (string memory);
                     CiphertextMaterialNotFound
                 },
                 {
-                    fn CiphertextMaterialNotOnHostChain(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsErrors> {
-                        <CiphertextMaterialNotOnHostChain as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(
-                                ICiphertextCommitsErrors::CiphertextMaterialNotOnHostChain,
-                            )
-                    }
-                    CiphertextMaterialNotOnHostChain
-                },
-                {
                     fn CoprocessorAlreadyAdded(
                         data: &[u8],
                         validate: bool,
@@ -2502,11 +2375,6 @@ function getVersion() external pure returns (string memory);
                         inner,
                     )
                 }
-                Self::CiphertextMaterialNotOnHostChain(inner) => {
-                    <CiphertextMaterialNotOnHostChain as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::CoprocessorAlreadyAdded(inner) => {
                     <CoprocessorAlreadyAdded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -2519,12 +2387,6 @@ function getVersion() external pure returns (string memory);
             match self {
                 Self::CiphertextMaterialNotFound(inner) => {
                     <CiphertextMaterialNotFound as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::CiphertextMaterialNotOnHostChain(inner) => {
-                    <CiphertextMaterialNotOnHostChain as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
