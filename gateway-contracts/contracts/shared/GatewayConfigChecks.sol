@@ -46,6 +46,11 @@ abstract contract GatewayConfigChecks {
 
     /// @dev Check that the sender is the owner of the GatewayConfig contract.
     modifier onlyGatewayOwner() {
+        /**
+         * @dev We cast to Ownable2StepUpgradeable instead of importing GatewayConfig
+         * to avoid a circular dependency. Solidity requires that base contracts be defined
+         * before derived contracts, which GatewayConfig would violate in this context.
+         */
         if (msg.sender != Ownable2StepUpgradeable(gatewayConfigAddress).owner()) {
             revert NotGatewayOwner(msg.sender);
         }

@@ -16,8 +16,8 @@ import "./tasks/blockExplorerVerify";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
-import "./tasks/deployment/safe_smart_accounts";
 import "./tasks/getters";
+import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
@@ -161,6 +161,7 @@ const config: HardhatUserConfig = {
       viaIR: false,
     },
   },
+  // This is necessary to have the SafeProxyFactory and Safe artifacts available during tasks execution.
   dependencyCompiler: {
     paths: [
       "@safe-global/safe-contracts/contracts/proxies/SafeProxyFactory.sol",

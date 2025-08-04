@@ -750,6 +750,7 @@ describe("Decryption", function () {
       userSignature = fixtureData.userSignature;
       kmsSignatures = fixtureData.kmsSignatures;
       kmsTxSenders = fixtureData.kmsTxSenders;
+      kmsSigners = fixtureData.kmsSigners;
       coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       userDecryptedShares = fixtureData.userDecryptedShares;
       eip712RequestMessage = fixtureData.eip712RequestMessage;
