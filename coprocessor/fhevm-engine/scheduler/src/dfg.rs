@@ -158,15 +158,22 @@ impl DFGraph {
                 continue;
             };
             if !node.is_needed {
-                unneeded_nodes.push(node_index);
+                unneeded_nodes.push(index);
             }
         }
+        unneeded_nodes.sort();
         // Remove unneeded nodes and their edges
-        for node_index in unneeded_nodes {
-            for edge in edges.edges(node_index) {
-                self.graph.remove_edge(edge.id());
+        for index in unneeded_nodes.iter().rev() {
+            let node_index = NodeIndex::new(*index);
+            let Some(node) = self.graph.node_weight(node_index) else {
+                continue;
+            };
+            if !node.is_needed {
+                for edge in edges.edges(node_index) {
+                    self.graph.remove_edge(edge.id());
+                }
+                self.graph.remove_node(node_index);
             }
-            self.graph.remove_node(node_index);
         }
     }
 }
