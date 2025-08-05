@@ -3200,6 +3200,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_rust_bindings"
 version = "0.1.0-rc14"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0#012bc13d8bc8ed53a592b68a11df263fa21f2510"
 dependencies = [
  "alloy",
  "serde",

@@ -698,7 +698,7 @@ impl CoprocessorService {
                         transaction_id
                     )
                     VALUES($1, $2, $3, $4, false, $5, $6, $7)
-                    ON CONFLICT (tenant_id, output_handle) DO NOTHING
+                    ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
                 ",
                 tenant_id,
                 comp.output_handle,

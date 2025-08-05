@@ -27,7 +27,7 @@ COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
 WORKDIR /app/coprocessor/fhevm-engine
 
-# Build fhevm_listener binary
+# Build host_listener binary
 RUN cargo fetch && \
     SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --release -p host-listener
 

@@ -226,7 +226,7 @@ impl Database {
                 transaction_id
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7)
-            ON CONFLICT (tenant_id, output_handle) DO NOTHING
+            ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
             "#,
             tenant_id as i32,
             output_handle,
