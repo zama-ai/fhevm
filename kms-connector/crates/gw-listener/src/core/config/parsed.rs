@@ -33,6 +33,10 @@ pub struct Config {
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
     pub healthcheck_timeout: Duration,
+    /// The polling interval for decryption requests.
+    pub decryption_polling: Duration,
+    /// The polling interval for key management requests.
+    pub key_management_polling: Duration,
     /// Optional block number to start processing from.
     pub from_block_number: Option<u64>,
 }
@@ -71,6 +75,8 @@ impl Config {
         }
 
         let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
+        let decryption_polling = Duration::from_millis(raw_config.decryption_polling_ms);
+        let key_management_polling = Duration::from_millis(raw_config.key_management_polling_ms);
 
         Ok(Self {
             database_url: raw_config.database_url,
@@ -83,6 +89,8 @@ impl Config {
             task_limit: raw_config.task_limit,
             monitoring_endpoint,
             healthcheck_timeout,
+            decryption_polling,
+            key_management_polling,
             from_block_number: raw_config.from_block_number,
         })
     }
