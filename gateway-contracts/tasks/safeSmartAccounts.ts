@@ -10,28 +10,26 @@ import { ADDRESSES_DIR } from "../hardhat.config";
 import { getRequiredEnvVar } from "./utils/loadVariables";
 import { pascalCaseToSnakeCase } from "./utils/stringOps";
 
-const SAFE_SMART_ACCOUNT_IMPLEMENTATION_NAME = "SafeSmartAccountImplementation";
-const OWNER_SAFE_SMART_ACCOUNT_NAME = "OwnerSafeSmartAccountProxy";
-const PAUSER_SAFE_SMART_ACCOUNT_NAME = "PauserSafeSmartAccountProxy";
+const SAFE_SMART_ACCOUNT_IMPL_NAME = "SafeSmartAccountImplementation";
+const OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME = "OwnerSafeSmartAccountProxy";
+const PAUSER_SAFE_SMART_ACCOUNT_PROXY_NAME = "PauserSafeSmartAccountProxy";
 
 async function getSortedSignatures(signers: Wallet[], transactionHash: string): Promise<string> {
   const bytesDataHash = getBytes(transactionHash);
 
   let signatureBytes = "0x";
 
-  // Get the addresses of the signers
+  // Get the addresses of the signers.
   const signerAddresses = await Promise.all(signers.map((signer) => signer.getAddress()));
 
-  // Sort the signers by their addresses
-  // Gnosis Safe requires signatures to be provided in ascending order of the signer addresses
-  // for security and efficiency reasons. See https://docs.safe.global/advanced/smart-account-signatures.
+  // Sort the signers by their addresses.
   const sortedSigners = signers.sort((a, b) => {
     const addressA = signerAddresses[signers.indexOf(a)];
     const addressB = signerAddresses[signers.indexOf(b)];
     return addressA.localeCompare(addressB, "en", { sensitivity: "base" });
   });
 
-  // Sign the transaction hash with each signer
+  // Sign the transaction hash with each signer.
   for (const signer of sortedSigners) {
     const signedMessage = await signer.signMessage(bytesDataHash);
     const flatSig = signedMessage.replace(/1b$/, "1f").replace(/1c$/, "20");
@@ -53,8 +51,8 @@ async function deploySafeSmartAccountProxy(
   // See the `dependencyCompiler` field in `hardhat.config.ts` for configuration details.
   await run("compile:specific", { contract: "hardhat-dependency-compiler" });
 
-  // Get the Safe Smart Account implementation address from the environment
-  const safeImplNameSnakeCase = pascalCaseToSnakeCase(SAFE_SMART_ACCOUNT_IMPLEMENTATION_NAME);
+  // Get the Safe Smart Account implementation address from the environment.
+  const safeImplNameSnakeCase = pascalCaseToSnakeCase(SAFE_SMART_ACCOUNT_IMPL_NAME);
   if (useInternalSafeImplAddress) {
     const safeEnvFilePath = path.join(ADDRESSES_DIR, `.env.${safeImplNameSnakeCase}`);
     if (!fs.existsSync(safeEnvFilePath)) {
@@ -64,18 +62,18 @@ async function deploySafeSmartAccountProxy(
   }
   const safeImplAddress = getRequiredEnvVar(`${safeImplNameSnakeCase.toUpperCase()}_ADDRESS`);
 
-  // Get the Safe contract
+  // Get the Safe contract.
   const safe = await ethers.getContractAt("Safe", safeImplAddress);
 
-  // Get a deployer wallet
+  // Get the deployer wallet.
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
-  // Deploy a new SafeProxyFactory contract
+  // Deploy a new SafeProxyFactory contract.
   const safeProxyFactoryFactory = await ethers.getContractFactory("SafeProxyFactory", deployer);
   const safeProxyFactory = await safeProxyFactoryFactory.deploy();
 
-  // Prepare the setup transaction data
+  // Prepare the setup transaction data.
   const to = ethers.ZeroAddress; // Contract address for optional delegate call.
   const data = "0x"; // Data payload for optional delegate call.
   const fallbackHandler = ethers.ZeroAddress; // Handler for fallback calls to this contract.
@@ -83,7 +81,7 @@ async function deploySafeSmartAccountProxy(
   const payment = 0; // Value that should be paid.
   const paymentReceiver = ethers.ZeroAddress; // Address that should receive the payment (or 0 if tx.origin).
 
-  // Encode the setup function data
+  // Encode the setup function data.
   const safeData = safe.interface.encodeFunctionData("setup", [
     owners,
     threshold,
@@ -95,7 +93,7 @@ async function deploySafeSmartAccountProxy(
     paymentReceiver,
   ]);
 
-  // Setup the Safe proxy factory
+  // Create the Safe proxy contract.
   const saltNonce = 0n;
   const txResponse = await safeProxyFactory.createProxyWithNonce(safeImplAddress, safeData, saltNonce);
   const txReceipt = await txResponse.wait();
@@ -103,7 +101,7 @@ async function deploySafeSmartAccountProxy(
     throw new Error("Create Safe proxy transaction receipt not found");
   }
 
-  // Get the Safe proxy address from the ProxyCreation event
+  // Get the Safe proxy contract address from the ProxyCreation event.
   const event = txReceipt.logs
     .filter((l: EventLog | Log) => l instanceof EventLog)
     .find((l: EventLog) => l.eventName === safeProxyFactory.getEvent("ProxyCreation").name);
@@ -116,14 +114,15 @@ async function deploySafeSmartAccountProxy(
     throw new Error("Safe proxy address not found");
   }
 
+  // Write the Safe proxy address to the environment file.
   const nameSnakeCase = pascalCaseToSnakeCase(name);
   const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
   const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${safeProxyAddress}\n`;
 
-  // Ensure the ADDRESSES_DIR exists or create it
+  // Ensure the ADDRESSES_DIR exists or create it.
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
 
-  // Write the contract's address in the envFilePath file
+  // Write the contract's address in the envFilePath file.
   fs.writeFileSync(envFilePath, envContent, { encoding: "utf8", flag: "w" });
 
   console.log(`${name} address ${safeProxyAddress} written successfully!`);
@@ -138,16 +137,17 @@ task(
   // See the `dependencyCompiler` field in `hardhat.config.ts` for configuration details.
   await run("compile:specific", { contract: "hardhat-dependency-compiler" });
 
-  // Get a deployer wallet
+  // Get the deployer wallet.
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
-  // Deploy a new Safe implementation contract
+  // Deploy a new Safe implementation contract.
   const safeFactory = await ethers.getContractFactory("Safe", deployer);
   const safe = await safeFactory.deploy();
   const safeAddress = await safe.getAddress();
 
-  const nameSnakeCase = pascalCaseToSnakeCase(SAFE_SMART_ACCOUNT_IMPLEMENTATION_NAME);
+  // Write the Safe implementation address to the environment file.
+  const nameSnakeCase = pascalCaseToSnakeCase(SAFE_SMART_ACCOUNT_IMPL_NAME);
   const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
   const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${safeAddress}\n`;
 
@@ -157,7 +157,7 @@ task(
   // Write the contract's address in the envFilePath file
   fs.writeFileSync(envFilePath, envContent, { encoding: "utf8", flag: "w" });
 
-  console.log(`${name} address ${safeAddress} written successfully!`);
+  console.log(`${SAFE_SMART_ACCOUNT_IMPL_NAME} address ${safeAddress} written successfully!`);
 });
 
 task("task:deployOwnerSafeSmartAccountProxy", "Deploys the OwnerSafeSmartAccountProxy contract")
@@ -176,7 +176,7 @@ task("task:deployOwnerSafeSmartAccountProxy", "Deploys the OwnerSafeSmartAccount
   )
   .setAction(async function ({ owners, threshold, useInternalSafeImplAddress }, hre) {
     await deploySafeSmartAccountProxy(
-      OWNER_SAFE_SMART_ACCOUNT_NAME,
+      OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME,
       owners,
       threshold,
       useInternalSafeImplAddress,
@@ -200,7 +200,7 @@ task("task:deployPauserSafeSmartAccountProxy", "Deploys the PauserSafeSmartAccou
   )
   .setAction(async function ({ owners, threshold, useInternalSafeImplAddress }, hre) {
     await deploySafeSmartAccountProxy(
-      PAUSER_SAFE_SMART_ACCOUNT_NAME,
+      PAUSER_SAFE_SMART_ACCOUNT_PROXY_NAME,
       owners,
       threshold,
       useInternalSafeImplAddress,
@@ -210,7 +210,7 @@ task("task:deployPauserSafeSmartAccountProxy", "Deploys the PauserSafeSmartAccou
 
 task(
   "task:transferGatewayOwnership",
-  `Transfers ownership of the GatewayConfig contract to the ${OWNER_SAFE_SMART_ACCOUNT_NAME}.`,
+  `Transfers ownership of the GatewayConfig contract to the ${OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME}.`,
 )
   .addParam(
     "currentOwnerPrivateKey",
@@ -228,7 +228,7 @@ task(
     // Get the currentOwner wallet.
     const currentOwner = new Wallet(currentOwnerPrivateKey).connect(ethers.provider);
 
-    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_NAME);
+    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME);
 
     if (useInternalProxyAddress) {
       const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
@@ -243,31 +243,31 @@ task(
       dotenv.config({ path: [gatewayEnvFilePath, ownerSafeSmartAccountEnvFilePath], override: true });
     }
 
-    // Get the GatewayConfig contract
+    // Get the GatewayConfig contract.
     const gatewayConfigSnakeCase = pascalCaseToSnakeCase("GatewayConfig");
     const gatewayConfigAddressEnvVarName = `${gatewayConfigSnakeCase.toUpperCase()}_ADDRESS`;
     const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
-    // Get the OwnerSafeSmartAccount address
+    // Get the OwnerSafeSmartAccountProxy address.
     const ownerSafeSmartAccountAddressEnvVarName = `${ownerSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
     const ownerSafeSmartAccountAddress = getRequiredEnvVar(ownerSafeSmartAccountAddressEnvVarName);
 
-    // Step 1 - Transfer ownership of the contract to the OwnerSafeSmartAccount.
+    // Step 1 - Transfer ownership of the contract to the OwnerSafeSmartAccountProxy.
     await gatewayConfigContract.connect(currentOwner).transferOwnership(ownerSafeSmartAccountAddress);
 
     console.log(
-      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully transferred to OwnerSafeSmartAccount at address: ${ownerSafeSmartAccountAddress}`,
+      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully transferred to ${OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME} at address: ${ownerSafeSmartAccountAddress}`,
     );
   });
 
 task(
   "task:acceptGatewayOwnership",
-  `Accepts ownership of the GatewayConfig contract from the ${OWNER_SAFE_SMART_ACCOUNT_NAME}.`,
+  `Accepts ownership of the GatewayConfig contract from the ${OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME}.`,
 )
   .addParam(
     "ownerPrivateKeys",
-    `List of private keys of the owners of the ${OWNER_SAFE_SMART_ACCOUNT_NAME}.`,
+    `List of private keys of the owners of the ${OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME}.`,
     undefined,
     types.json,
   )
@@ -288,7 +288,7 @@ task(
       new Wallet(ownerPrivateKey).connect(ethers.provider),
     );
 
-    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_NAME);
+    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME);
 
     if (useInternalProxyAddress) {
       const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
@@ -303,13 +303,13 @@ task(
       dotenv.config({ path: [gatewayEnvFilePath, ownerSafeSmartAccountEnvFilePath], override: true });
     }
 
-    // Get the GatewayConfig contract
+    // Get the GatewayConfig contract.
     const gatewayConfigSnakeCase = pascalCaseToSnakeCase("GatewayConfig");
     const gatewayConfigAddressEnvVarName = `${gatewayConfigSnakeCase.toUpperCase()}_ADDRESS`;
     const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
-    // Get the OwnerSafeSmartAccount contract
+    // Get the OwnerSafeSmartAccountProxy contract.
     const ownerSafeSmartAccountAddressEnvVarName = `${ownerSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
     const ownerSafeSmartAccountAddress = getRequiredEnvVar(ownerSafeSmartAccountAddressEnvVarName);
     const ownerSafeSmartAccount = await ethers.getContractAt("Safe", ownerSafeSmartAccountAddress);
@@ -339,7 +339,6 @@ task(
       nonce,
     );
 
-    // Sort the signers by their addresses
     // Gnosis Safe requires signatures to be provided in ascending order of the signer addresses
     // for security and efficiency reasons. See https://docs.safe.global/advanced/smart-account-signatures.
     const signatures = await getSortedSignatures(signers, transactionHash);
@@ -359,17 +358,17 @@ task(
     );
     await execTransactionResponse.wait();
     console.log(
-      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully accepted by the OwnerSafeSmartAccount at address: ${ownerSafeSmartAccountAddress}`,
+      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully accepted by the ${OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME} at address: ${ownerSafeSmartAccountAddress}`,
     );
   });
 
 task(
   "task:updateGatewayPauser",
-  `Updates the pauser of the GatewayConfig contract to the ${PAUSER_SAFE_SMART_ACCOUNT_NAME}.`,
+  `Updates the pauser of the GatewayConfig contract to the ${PAUSER_SAFE_SMART_ACCOUNT_PROXY_NAME}.`,
 )
   .addParam(
     "ownerPrivateKeys",
-    `List of private keys of the owners of the ${OWNER_SAFE_SMART_ACCOUNT_NAME}.`,
+    `List of private keys of the owners of the ${OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME}.`,
     undefined,
     types.json,
   )
@@ -390,8 +389,8 @@ task(
       new Wallet(ownerPrivateKey).connect(ethers.provider),
     );
 
-    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_NAME);
-    const pauserSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(PAUSER_SAFE_SMART_ACCOUNT_NAME);
+    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME);
+    const pauserSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(PAUSER_SAFE_SMART_ACCOUNT_PROXY_NAME);
 
     if (useInternalProxyAddress) {
       const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
@@ -416,18 +415,18 @@ task(
       });
     }
 
-    // Get the GatewayConfig contract
+    // Get the GatewayConfig contract.
     const gatewayConfigSnakeCase = pascalCaseToSnakeCase("GatewayConfig");
     const gatewayConfigAddressEnvVarName = `${gatewayConfigSnakeCase.toUpperCase()}_ADDRESS`;
     const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
-    // Get the OwnerSafeSmartAccount contract
+    // Get the OwnerSafeSmartAccountProxy contract.
     const ownerSafeSmartAccountAddressEnvVarName = `${ownerSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
     const ownerSafeSmartAccountAddress = getRequiredEnvVar(ownerSafeSmartAccountAddressEnvVarName);
     const ownerSafeSmartAccount = await ethers.getContractAt("Safe", ownerSafeSmartAccountAddress);
 
-    // Get the PauserSafeSmartAccount address
+    // Get the PauserSafeSmartAccountProxy address.
     const pauserSafeSmartAccountAddressEnvVarName = `${pauserSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
     const pauserSafeSmartAccountAddress = getRequiredEnvVar(pauserSafeSmartAccountAddressEnvVarName);
 
@@ -456,7 +455,6 @@ task(
       nonce,
     );
 
-    // Sort the signers by their addresses
     // Gnosis Safe requires signatures to be provided in ascending order of the signer addresses
     // for security and efficiency reasons. See https://docs.safe.global/advanced/smart-account-signatures.
     const signatures = await getSortedSignatures(signers, transactionHash);
