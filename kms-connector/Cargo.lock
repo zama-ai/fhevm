@@ -1052,7 +1052,7 @@ dependencies = [
  "alloy-transport",
  "futures",
  "http 1.3.1",
- "rustls 0.23.29",
+ "rustls 0.23.31",
  "serde_json",
  "tokio",
  "tokio-tungstenite",
@@ -1858,7 +1858,7 @@ dependencies = [
  "hyper-util",
  "pin-project-lite",
  "rustls 0.21.12",
- "rustls 0.23.29",
+ "rustls 0.23.31",
  "rustls-native-certs 0.8.1",
  "rustls-pki-types",
  "tokio",
@@ -2236,7 +2236,7 @@ dependencies = [
  "hyperlocal",
  "log",
  "pin-project-lite",
- "rustls 0.23.29",
+ "rustls 0.23.31",
  "rustls-native-certs 0.8.1",
  "rustls-pemfile 2.2.0",
  "rustls-pki-types",
@@ -2527,7 +2527,7 @@ dependencies = [
  "bincode 1.3.3",
  "clap",
  "config",
- "fhevm_gateway_rust_bindings 0.1.0-rc14",
+ "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0)",
  "futures",
  "kms-grpc",
  "opentelemetry",
@@ -2535,6 +2535,7 @@ dependencies = [
  "opentelemetry_sdk",
  "prometheus",
  "rand 0.9.2",
+ "rustls 0.23.31",
  "serde",
  "serde_json",
  "serial_test",
@@ -3199,6 +3200,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_rust_bindings"
 version = "0.1.0-rc14"
+source = "git+ssh://git@github.com/zama-ai/fhevm.git?tag=v0.7.9#326241f1f139c791902d24f598207a0fd32849c3"
 dependencies = [
  "alloy",
  "serde",
@@ -3207,7 +3209,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_rust_bindings"
 version = "0.1.0-rc14"
-source = "git+ssh://git@github.com/zama-ai/fhevm.git?tag=v0.7.9#326241f1f139c791902d24f598207a0fd32849c3"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0#012bc13d8bc8ed53a592b68a11df263fa21f2510"
 dependencies = [
  "alloy",
  "serde",
@@ -3523,8 +3525,9 @@ dependencies = [
  "alloy",
  "anyhow",
  "connector-utils",
- "fhevm_gateway_rust_bindings 0.1.0-rc14",
+ "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0)",
  "prometheus",
+ "rstest",
  "serde",
  "serial_test",
  "sqlx",
@@ -3811,7 +3814,7 @@ dependencies = [
  "http 1.3.1",
  "hyper 1.6.0",
  "hyper-util",
- "rustls 0.23.29",
+ "rustls 0.23.31",
  "rustls-native-certs 0.8.1",
  "rustls-pki-types",
  "tokio",
@@ -4260,7 +4263,7 @@ dependencies = [
  "bincode 1.3.3",
  "connector-utils",
  "dashmap",
- "fhevm_gateway_rust_bindings 0.1.0-rc14",
+ "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0)",
  "kms-grpc",
  "prometheus",
  "serde",
@@ -5325,7 +5328,7 @@ dependencies = [
  "quinn-proto",
  "quinn-udp",
  "rustc-hash 2.1.1",
- "rustls 0.23.29",
+ "rustls 0.23.31",
  "socket2 0.5.10",
  "thiserror 2.0.12",
  "tokio",
@@ -5345,7 +5348,7 @@ dependencies = [
  "rand 0.9.2",
  "ring",
  "rustc-hash 2.1.1",
- "rustls 0.23.29",
+ "rustls 0.23.31",
  "rustls-pki-types",
  "slab",
  "thiserror 2.0.12",
@@ -5618,7 +5621,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "quinn",
- "rustls 0.23.29",
+ "rustls 0.23.31",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -5855,9 +5858,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.23.29"
+version = "0.23.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2491382039b29b9b11ff08b76ff6c97cf287671dbb74f0be44bda389fffe9bd1"
+checksum = "c0ebcbd2f03de0fc1122ad9bb24b127a5a6cd51d72604a3f3c50ac459762b6cc"
 dependencies = [
  "aws-lc-rs",
  "log",
@@ -7152,7 +7155,7 @@ version = "0.26.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e727b36a1a0e8b74c376ac2211e40c2c8af09fb4013c60d910495810f008e9b"
 dependencies = [
- "rustls 0.23.29",
+ "rustls 0.23.31",
  "tokio",
 ]
 
@@ -7191,7 +7194,7 @@ checksum = "7a9daff607c6d2bf6c16fd681ccb7eecc83e4e2cdc1ca067ffaadfca5de7f084"
 dependencies = [
  "futures-util",
  "log",
- "rustls 0.23.29",
+ "rustls 0.23.31",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls 0.26.2",
@@ -7505,7 +7508,7 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.9.2",
- "rustls 0.23.29",
+ "rustls 0.23.31",
  "rustls-pki-types",
  "sha1",
  "thiserror 2.0.12",
@@ -7520,7 +7523,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "connector-utils",
- "fhevm_gateway_rust_bindings 0.1.0-rc14",
+ "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0)",
  "prometheus",
  "rstest",
  "serde",

@@ -29,8 +29,8 @@ pub struct HostContracts {
 /// Configuration for the FHEVM SDK.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FhevmConfig {
-    /// Path to the directory containing key files
-    pub keys_directory: PathBuf,
+    /// Path to the directory containing key files. Required to create inputs with the SDK.
+    pub keys_directory: Option<PathBuf>,
     /// Gateway chain ID
     pub gateway_chain_id: u64,
     /// Host chain ID
@@ -133,8 +133,8 @@ impl FhevmSdk {
         ));
         status.push_str(&format!("  Host Chain ID: {}\n", self.config.host_chain_id));
         status.push_str(&format!(
-            "  Keys Directory: {}\n",
-            self.config.keys_directory.display()
+            "  Keys Directory: {:?}\n",
+            self.config.keys_directory
         ));
 
         status.push_str("\nGateway Contracts:\n");
@@ -176,10 +176,15 @@ impl FhevmSdk {
     /// Ensure keys are loaded from the configured path
     fn ensure_keys_loaded(&mut self) -> Result<()> {
         if self.public_key.is_none() || self.crs.is_none() {
-            debug!("Loading keys from {}", self.config.keys_directory.display());
+            let keys_directory = self
+                .config
+                .keys_directory
+                .as_ref()
+                .expect("Keys directory must be configured");
 
+            debug!("Loading keys from {}", keys_directory.display());
             let (public_key, _client_key, _server_key, crs) =
-                utils::load_fhe_keyset(&self.config.keys_directory)?;
+                utils::load_fhe_keyset(keys_directory)?;
 
             info!("Keys loaded successfully");
             self.public_key = Some(Arc::new(public_key));
@@ -480,7 +485,7 @@ impl FhevmSdk {
     ///
     /// # Quick Start Steps
     ///
-    /// 1. **Add handles**: `.with_handles_from_bytes()` - The encrypted data  
+    /// 1. **Add handles**: `.with_handles_from_bytes()` - The encrypted data
     /// 2. **Set user**: `.with_user_address_from_str()` - Who can decrypt
     /// 3. **Add signature**: `.with_signature_from_hex()` - EIP-712 signature
     /// 4. **Add public key**: `.with_public_key_from_hex()` - User's decryption key
@@ -558,7 +563,7 @@ impl FhevmSdk {
             .with_gateway_chain_id(self.config.gateway_chain_id)
     }
 
-    /// Alternative shorter name for discoverability  
+    /// Alternative shorter name for discoverability
     pub fn public_decrypt_response_builder(
         &self,
     ) -> decryption::public::PublicDecryptionResponseBuilder {
@@ -736,10 +741,7 @@ impl FhevmSdkBuilder {
     /// Convert the builder to a config
     fn to_config(&self) -> Result<FhevmConfig> {
         // Validate required fields
-        let keys_directory = self
-            .keys_directory
-            .clone()
-            .ok_or_else(|| FhevmError::InvalidParams("Keys directory is required".to_string()))?;
+        let keys_directory = self.keys_directory.clone();
 
         let gateway_chain_id = self
             .gateway_chain_id
@@ -777,12 +779,16 @@ impl FhevmSdkBuilder {
         // Convert to config and create the SDK
         debug!("Building FhevmSdk from builder");
         let config = self.to_config()?;
+        let is_keys_directory_set = config.keys_directory.is_some();
 
         info!("SDK configuration validated successfully");
 
         let mut fhevm = FhevmSdk::new(config);
-        fhevm.ensure_keys_loaded()?;
-        fhevm.create_input_factory()?;
+
+        if is_keys_directory_set {
+            fhevm.ensure_keys_loaded()?;
+            fhevm.create_input_factory()?;
+        }
 
         // Create and return the SDK
         Ok(fhevm)

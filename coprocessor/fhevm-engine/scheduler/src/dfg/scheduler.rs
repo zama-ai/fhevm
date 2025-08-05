@@ -115,7 +115,7 @@ impl<'a> Scheduler<'a> {
 
     #[cfg(not(feature = "gpu"))]
     async fn schedule_fine_grain(&mut self) -> Result<()> {
-        let mut set: JoinSet<TaskResult> = JoinSet::new();
+        let mut set: JoinSet<(usize, TaskResult)> = JoinSet::new();
         let sks = self.sks.clone();
         tfhe::set_server_key(sks.clone());
         // Prime the scheduler with all nodes without dependences
@@ -128,20 +128,21 @@ impl<'a> Scheduler<'a> {
                 .ok_or(SchedulerError::DataflowGraphError)?;
             if Self::is_ready(node) {
                 let opcode = node.opcode;
+                let is_allowed = node.is_allowed;
                 let inputs: Vec<SupportedFheCiphertexts> = node
                     .inputs
                     .iter()
                     .map(|i| match i {
                         DFGTaskInput::Value(i) => Ok(i.clone()),
                         DFGTaskInput::Compressed((t, c)) => {
-                            SupportedFheCiphertexts::decompress(*t, c)
+                            SupportedFheCiphertexts::decompress_no_memcheck(*t, c)
                         }
                         _ => Err(SchedulerError::UnsatisfiedDependence.into()),
                     })
                     .collect::<Result<Vec<_>>>()?;
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(sks.clone());
-                    run_computation(opcode, inputs, idx)
+                    run_computation(opcode, inputs, idx, is_allowed, 0)
                 });
             }
         }
@@ -163,20 +164,21 @@ impl<'a> Scheduler<'a> {
                         DFGTaskInput::Value(output.0.clone());
                     if Self::is_ready(child_node) {
                         let opcode = child_node.opcode;
+                        let is_allowed = child_node.is_allowed;
                         let inputs: Vec<SupportedFheCiphertexts> = child_node
                             .inputs
                             .iter()
                             .map(|i| match i {
                                 DFGTaskInput::Value(i) => Ok(i.clone()),
                                 DFGTaskInput::Compressed((t, c)) => {
-                                    SupportedFheCiphertexts::decompress(*t, c)
+                                    SupportedFheCiphertexts::decompress_no_memcheck(*t, c)
                                 }
                                 _ => Err(SchedulerError::UnsatisfiedDependence.into()),
                             })
                             .collect::<Result<Vec<_>>>()?;
                         set.spawn_blocking(move || {
                             tfhe::set_server_key(sks.clone());
-                            run_computation(opcode, inputs, child_index.index())
+                            run_computation(opcode, inputs, child_index.index(), is_allowed, 0)
                         });
                     }
                 }
@@ -191,7 +193,7 @@ impl<'a> Scheduler<'a> {
     async fn schedule_coarse_grain(&mut self, strategy: PartitionStrategy) -> Result<()> {
         let sks = self.sks.clone();
         tfhe::set_server_key(sks.clone());
-        let mut set: JoinSet<(Vec<TaskResult>, NodeIndex)> = JoinSet::new();
+        let mut set: JoinSet<(Vec<(usize, TaskResult)>, NodeIndex)> = JoinSet::new();
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         let _ = match strategy {
             PartitionStrategy::MaxLocality => {
@@ -218,11 +220,12 @@ impl<'a> Scheduler<'a> {
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
                     let opcode = n.opcode;
-                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                    let is_allowed = n.is_allowed;
+                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                 }
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(sks.clone());
-                    execute_partition(args, index)
+                    execute_partition(args, index, 0)
                 });
             }
         }
@@ -270,11 +273,12 @@ impl<'a> Scheduler<'a> {
                             .node_weight_mut(*nidx)
                             .ok_or(SchedulerError::DataflowGraphError)?;
                         let opcode = n.opcode;
-                        args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                        let is_allowed = n.is_allowed;
+                        args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                     }
                     set.spawn_blocking(move || {
                         tfhe::set_server_key(sks.clone());
-                        execute_partition(args, dependent_task_index)
+                        execute_partition(args, dependent_task_index, 0)
                     });
                 }
             }
@@ -307,7 +311,8 @@ impl<'a> Scheduler<'a> {
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
                     let opcode = n.opcode;
-                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                    let is_allowed = n.is_allowed;
+                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                 }
                 comps.push((std::mem::take(&mut args), index));
             }
@@ -317,7 +322,8 @@ impl<'a> Scheduler<'a> {
         tokio::task::spawn_blocking(move || {
             tfhe::set_server_key(sks.clone());
             comps.par_iter().for_each_with(src, |src, (args, index)| {
-                src.send(execute_partition(args.to_vec(), *index)).unwrap();
+                src.send(execute_partition(args.to_vec(), *index, 0))
+                    .unwrap();
             });
         })
         .await?;
@@ -335,7 +341,7 @@ impl<'a> Scheduler<'a> {
     #[cfg(feature = "gpu")]
     async fn schedule_fine_grain(&mut self) -> Result<()> {
         let now = std::time::SystemTime::now();
-        let mut set: JoinSet<TaskResult> = JoinSet::new();
+        let mut set: JoinSet<(usize, TaskResult)> = JoinSet::new();
         let keys = self.csks.clone();
         let mut rr = 0;
         // Prime the scheduler with all nodes without dependences
@@ -346,25 +352,27 @@ impl<'a> Scheduler<'a> {
                 .node_weight_mut(index)
                 .ok_or(SchedulerError::DataflowGraphError)?;
             if Self::is_ready(node) {
-                let key = keys[rr % keys.len()].clone();
-                node.locality = (rr % keys.len()) as i32;
+                let gpu_index = rr % keys.len();
+                let key = keys[gpu_index].clone();
+                node.locality = (gpu_index) as i32;
                 rr += 1;
                 tfhe::set_server_key(key.clone());
                 let opcode = node.opcode;
+                let is_allowed = node.is_allowed;
                 let inputs: Vec<SupportedFheCiphertexts> = node
                     .inputs
                     .iter()
                     .map(|i| match i {
                         DFGTaskInput::Value(i) => Ok(i.clone()),
                         DFGTaskInput::Compressed((t, c)) => {
-                            SupportedFheCiphertexts::decompress(*t, c)
+                            SupportedFheCiphertexts::decompress(*t, c, gpu_index)
                         }
                         _ => Err(SchedulerError::UnsatisfiedDependence.into()),
                     })
                     .collect::<Result<Vec<_>>>()?;
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(key);
-                    run_computation(opcode, inputs, idx)
+                    run_computation(opcode, inputs, idx, is_allowed, gpu_index)
                 });
             }
         }
@@ -396,20 +404,21 @@ impl<'a> Scheduler<'a> {
                         let key = keys[loc].clone();
                         tfhe::set_server_key(key.clone());
                         let opcode = child_node.opcode;
+                        let is_allowed = child_node.is_allowed;
                         let inputs: Vec<SupportedFheCiphertexts> = child_node
                             .inputs
                             .iter()
                             .map(|i| match i {
                                 DFGTaskInput::Value(i) => Ok(i.clone()),
                                 DFGTaskInput::Compressed((t, c)) => {
-                                    SupportedFheCiphertexts::decompress(*t, c)
+                                    SupportedFheCiphertexts::decompress(*t, c, loc)
                                 }
                                 _ => Err(SchedulerError::UnsatisfiedDependence.into()),
                             })
                             .collect::<Result<Vec<_>>>()?;
                         set.spawn_blocking(move || {
                             tfhe::set_server_key(key);
-                            run_computation(opcode, inputs, child_index.index())
+                            run_computation(opcode, inputs, child_index.index(), is_allowed, loc)
                         });
                     }
                 }
@@ -429,7 +438,7 @@ impl<'a> Scheduler<'a> {
     async fn schedule_coarse_grain(&mut self, strategy: PartitionStrategy) -> Result<()> {
         let keys = self.csks.clone();
         tfhe::set_server_key(keys[0].clone());
-        let mut set: JoinSet<(Vec<TaskResult>, NodeIndex)> = JoinSet::new();
+        let mut set: JoinSet<(Vec<(usize, TaskResult)>, NodeIndex)> = JoinSet::new();
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         let _ = match strategy {
             PartitionStrategy::MaxLocality => {
@@ -460,11 +469,12 @@ impl<'a> Scheduler<'a> {
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
                     let opcode = n.opcode;
-                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                    let is_allowed = n.is_allowed;
+                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                 }
                 set.spawn_blocking(move || {
                     tfhe::set_server_key(key);
-                    execute_partition(args, index)
+                    execute_partition(args, index, loc)
                 });
             }
         }
@@ -521,11 +531,12 @@ impl<'a> Scheduler<'a> {
                             .node_weight_mut(*nidx)
                             .ok_or(SchedulerError::DataflowGraphError)?;
                         let opcode = n.opcode;
-                        args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                        let is_allowed = n.is_allowed;
+                        args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                     }
                     set.spawn_blocking(move || {
                         tfhe::set_server_key(key);
-                        execute_partition(args, dependent_task_index)
+                        execute_partition(args, dependent_task_index, loc)
                     });
                 }
             }
@@ -559,7 +570,8 @@ impl<'a> Scheduler<'a> {
                         .node_weight_mut(*nidx)
                         .ok_or(SchedulerError::DataflowGraphError)?;
                     let opcode = n.opcode;
-                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx));
+                    let is_allowed = n.is_allowed;
+                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
                 }
                 comps.push((std::mem::take(&mut args), index));
             }
@@ -589,7 +601,8 @@ impl<'a> Scheduler<'a> {
                             tfhe::set_server_key(keys[i].clone());
                             // Sequential iteration over the chunks of data for each stream
                             chunk.iter().for_each(|(args, index)| {
-                                src.send(execute_partition(args.to_vec(), *index)).unwrap();
+                                src.send(execute_partition(args.to_vec(), *index, i))
+                                    .unwrap();
                             });
                         });
                 });
@@ -731,15 +744,15 @@ fn partition_components(
     Ok(())
 }
 
-type TaskResult = (usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>);
+type TaskResult = Result<(SupportedFheCiphertexts, Option<(i16, Vec<u8>)>)>;
 
 fn execute_partition(
-    computations: Vec<(i32, Vec<DFGTaskInput>, NodeIndex)>,
+    computations: Vec<(i32, Vec<DFGTaskInput>, NodeIndex, bool)>,
     task_id: NodeIndex,
-) -> (Vec<TaskResult>, NodeIndex) {
-    let mut res: HashMap<usize, Result<(SupportedFheCiphertexts, i16, Vec<u8>)>> =
-        HashMap::with_capacity(computations.len());
-    'comps: for (opcode, inputs, nidx) in computations {
+    gpu_idx: usize,
+) -> (Vec<(usize, TaskResult)>, NodeIndex) {
+    let mut res: HashMap<usize, TaskResult> = HashMap::with_capacity(computations.len());
+    'comps: for (opcode, inputs, nidx, is_allowed) in computations {
         let mut cts = Vec::with_capacity(inputs.len());
         for i in inputs.iter() {
             match i {
@@ -760,7 +773,7 @@ fn execute_partition(
                     cts.push(v.clone());
                 }
                 DFGTaskInput::Compressed((t, c)) => {
-                    let decomp = SupportedFheCiphertexts::decompress(*t, c);
+                    let decomp = SupportedFheCiphertexts::decompress(*t, c, gpu_idx);
                     if let Ok(decomp) = decomp {
                         cts.push(decomp);
                     } else {
@@ -770,7 +783,7 @@ fn execute_partition(
                 }
             }
         }
-        let (node_index, result) = run_computation(opcode, cts, nidx.index());
+        let (node_index, result) = run_computation(opcode, cts, nidx.index(), is_allowed, gpu_idx);
         res.insert(node_index, result);
     }
     (Vec::from_iter(res), task_id)
@@ -780,17 +793,26 @@ fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
     graph_node_index: usize,
-) -> TaskResult {
+    is_allowed: bool,
+    gpu_idx: usize,
+) -> (usize, TaskResult) {
     let op = FheOperation::try_from(operation);
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
             let (ct_type, ct_bytes) = inputs[0].compress();
-            (graph_node_index, Ok((inputs[0].clone(), ct_type, ct_bytes)))
+            (
+                graph_node_index,
+                Ok((inputs[0].clone(), Some((ct_type, ct_bytes)))),
+            )
         }
-        Ok(_) => match perform_fhe_operation(operation as i16, &inputs) {
+        Ok(_) => match perform_fhe_operation(operation as i16, &inputs, gpu_idx) {
             Ok(result) => {
-                let (ct_type, ct_bytes) = result.compress();
-                (graph_node_index, Ok((result, ct_type, ct_bytes)))
+                if is_allowed {
+                    let (ct_type, ct_bytes) = result.compress();
+                    (graph_node_index, Ok((result, Some((ct_type, ct_bytes)))))
+                } else {
+                    (graph_node_index, Ok((result, None)))
+                }
             }
             Err(e) => (graph_node_index, Err(e.into())),
         },

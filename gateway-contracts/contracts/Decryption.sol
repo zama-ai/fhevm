@@ -201,6 +201,16 @@ contract Decryption is
         mapping(uint256 decryptionId => bool userDecryptionDone) userDecryptionDone;
         /// @notice The user decrypted shares received from user decryption responses.
         mapping(uint256 decryptionId => bytes[] shares) userDecryptedShares;
+        // ----------------------------------------------------------------------------------------------
+        // Transaction sender addresses from consensus state variables:
+        // ----------------------------------------------------------------------------------------------
+        // prettier-ignore
+        /// @notice The KMS transaction senders involved in a consensus for a decryption response.
+        mapping(uint256 decryptionId =>
+            mapping(bytes32 digest => address[] kmsTxSenderAddresses))
+               consensusTxSenderAddresses;
+        /// @notice The digest of the decryption response that reached consensus for a decryption request.
+        mapping(uint256 decryptionId => bytes32 consensusDigest) decryptionConsensusDigest;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -281,7 +291,7 @@ contract Decryption is
     ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        /// @dev forbids reponse for not yet requested decryptionId
+        // Make sure the decryptionId corresponds to a generated decryption request.
         if (decryptionId > $._decryptionRequestCounter || decryptionId == 0) {
             revert DecryptionNotRequested(decryptionId);
         }
@@ -308,10 +318,21 @@ contract Decryption is
         bytes[] storage verifiedSignatures = $._verifiedPublicDecryptSignatures[decryptionId][digest];
         verifiedSignatures.push(signature);
 
-        /// @dev Send the event if and only if the consensus is reached in the current response call.
-        /// @dev This means a "late" response will not be reverted, just ignored
+        // Store the KMS transaction sender address for the public decryption response
+        // It is important to consider the same mapping fields used for the consensus
+        // A "late" valid KMS transaction sender address will still be added in the list.
+        $.consensusTxSenderAddresses[decryptionId][digest].push(msg.sender);
+
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.decryptionDone[decryptionId] && _isConsensusReachedPublic(verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
+
+            // A "late" valid KMS could still see its transaction sender address be added to the list
+            // after consensus. This storage variable is here to be able to retrieve this list later
+            // by only knowing the decryption ID, since a consensus can only happen once per decryption
+            // request, independently of the decryption response type (public or user).
+            $.decryptionConsensusDigest[decryptionId] = digest;
 
             emit PublicDecryptionResponse(decryptionId, decryptedResult, verifiedSignatures, extraData);
         }
@@ -495,7 +516,7 @@ contract Decryption is
     ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        /// @dev forbids reponse for not yet requested decryptionId
+        // Make sure the decryptionId corresponds to a generated decryption request.
         if (decryptionId > $._decryptionRequestCounter || decryptionId == 0) {
             revert DecryptionNotRequested(decryptionId);
         }
@@ -526,10 +547,20 @@ contract Decryption is
         /// @dev Store the user decrypted share for the user decryption response.
         $.userDecryptedShares[decryptionId].push(userDecryptedShare);
 
-        /// @dev Send the event if and only if the consensus is reached in the current response call.
-        /// @dev This means a "late" response will not be reverted, just ignored
+        // Store the KMS transaction sender address for the public decryption response
+        // It is important to consider the same mapping fields used for the consensus
+        // A "late" valid KMS transaction sender address will still be added in the list.
+        // We thus use a zero digest (default value for `bytes32`) to still be able to retrieve the
+        // list later independently of the decryption response type (public or user).
+        $.consensusTxSenderAddresses[decryptionId][0].push(msg.sender);
+
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
             $.decryptionDone[decryptionId] = true;
+
+            // Since we use the default value for `bytes32`, this means we do not need to store the
+            // digest in `decryptionConsensusDigest` here like we do for the public decryption case.
 
             emit UserDecryptionResponse(
                 decryptionId,
@@ -601,6 +632,21 @@ contract Decryption is
         if (!$.decryptionDone[decryptionId]) {
             revert DecryptionNotDone(decryptionId);
         }
+    }
+
+    /**
+     * @dev See {IDecryption-getDecryptionConsensusTxSenders}.
+     * For public decryption, the list remains empty until the consensus is reached.
+     */
+    function getDecryptionConsensusTxSenders(uint256 decryptionId) external view virtual returns (address[] memory) {
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Get the unique digest associated to the decryption request in order to retrieve the list of
+        // KMS transaction sender address that were involved in the consensus
+        // For public decryption, this digest remains the default value (0x0) until the consensus is reached.
+        bytes32 consensusDigest = $.decryptionConsensusDigest[decryptionId];
+
+        return $.consensusTxSenderAddresses[decryptionId][consensusDigest];
     }
 
     /// @dev See {IDecryption-getVersion}.

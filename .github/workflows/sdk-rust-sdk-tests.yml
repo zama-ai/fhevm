@@ -24,7 +24,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       # Each output indicates if files in a specific component were modified
-      changes-connector: ${{ steps.filter.outputs.connector }}
+      changes-rust-sdk: ${{ steps.filter.outputs.rust-sdk }}
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
@@ -35,15 +35,16 @@ jobs:
         # Define paths that trigger specific component workflows
         # Changes to conf-trace affect multiple components
         filters: |
-          connector:
+          rust-sdk:
             - '.github/workflows/sdk-rust-sdk-*'
-            - 'sdk-rust-sdk/src/**'
-            - 'sdk-rust-sdk/Cargo.toml'
+            - 'sdk/rust-sdk/src/**'
+            - 'sdk/rust-sdk/examples/**'
+            - 'sdk/rust-sdk/Cargo.toml'
 
   start-runner:
     name: sdk-rust-sdk-tests/start-runner
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-connector == 'true' }}
+    if: ${{ needs.check-changes.outputs.changes-rust-sdk == 'true' }}
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
@@ -126,6 +127,12 @@ jobs:
           BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
         run: |
           RUST_BACKTRACE=full cargo test
+
+      - name: Run Examples
+        env:
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+        run: |
+          bash scripts/run-examples.sh
 
   stop-runner:
     name: sdk-rust-sdk-tests/stop-runner

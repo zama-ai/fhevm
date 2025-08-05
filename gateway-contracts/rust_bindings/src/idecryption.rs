@@ -50,10 +50,18 @@ interface IDecryption {
     event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecryptedShares, bytes[] signatures, bytes extraData);
 
     function checkDecryptionDone(uint256 decryptionId) external view;
+<<<<<<< HEAD
     function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, address[] memory contractAddresses, bytes memory extraData) external view;
     function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory extraData) external view;
     function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view;
     function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, DelegationAccounts memory delegationAccounts, ContractsInfo memory contractsInfo, bytes memory publicKey, bytes memory signature, bytes memory extraData) external;
+=======
+    function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, address[] memory contractAddresses) external view;
+    function checkPublicDecryptionReady(bytes32[] memory ctHandles) external view;
+    function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs) external view;
+    function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, DelegationAccounts memory delegationAccounts, uint256 contractsChainId, address[] memory contractAddresses, bytes memory publicKey, bytes memory signature) external;
+    function getDecryptionConsensusTxSenders(uint256 decryptionId) external view returns (address[] memory);
+>>>>>>> origin/main
     function getVersion() external pure returns (string memory);
     function publicDecryptionRequest(bytes32[] memory ctHandles, bytes memory extraData) external;
     function publicDecryptionResponse(uint256 decryptionId, bytes memory decryptedResult, bytes memory signature, bytes memory extraData) external;
@@ -278,6 +286,25 @@ interface IDecryption {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getDecryptionConsensusTxSenders",
+    "inputs": [
+      {
+        "name": "decryptionId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -4857,6 +4884,148 @@ function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleCo
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getDecryptionConsensusTxSenders(uint256)` and selector `0x0900cc69`.
+```solidity
+function getDecryptionConsensusTxSenders(uint256 decryptionId) external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getDecryptionConsensusTxSendersCall {
+        #[allow(missing_docs)]
+        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getDecryptionConsensusTxSenders(uint256)`](getDecryptionConsensusTxSendersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getDecryptionConsensusTxSendersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getDecryptionConsensusTxSendersCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getDecryptionConsensusTxSendersCall) -> Self {
+                    (value.decryptionId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getDecryptionConsensusTxSendersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { decryptionId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getDecryptionConsensusTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getDecryptionConsensusTxSendersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getDecryptionConsensusTxSendersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getDecryptionConsensusTxSendersCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getDecryptionConsensusTxSendersReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getDecryptionConsensusTxSenders(uint256)";
+            const SELECTOR: [u8; 4] = [9u8, 0u8, 204u8, 105u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.decryptionId),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
 function getVersion() external pure returns (string memory);
@@ -5690,6 +5859,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         delegatedUserDecryptionRequest(delegatedUserDecryptionRequestCall),
         #[allow(missing_docs)]
+        getDecryptionConsensusTxSenders(getDecryptionConsensusTxSendersCall),
+        #[allow(missing_docs)]
         getVersion(getVersionCall),
         #[allow(missing_docs)]
         publicDecryptionRequest(publicDecryptionRequestCall),
@@ -5709,7 +5880,13 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+<<<<<<< HEAD
             [4u8, 111u8, 158u8, 179u8],
+=======
+            [0u8, 139u8, 195u8, 225u8],
+            [2u8, 253u8, 26u8, 100u8],
+            [9u8, 0u8, 204u8, 105u8],
+>>>>>>> origin/main
             [13u8, 142u8, 110u8, 44u8],
             [111u8, 137u8, 19u8, 188u8],
             [159u8, 152u8, 216u8, 153u8],
@@ -5725,7 +5902,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionCalls {
         const NAME: &'static str = "IDecryptionCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 10usize;
+        const COUNT: usize = 11usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5743,6 +5920,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::delegatedUserDecryptionRequest(_) => {
                     <delegatedUserDecryptionRequestCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getDecryptionConsensusTxSenders(_) => {
+                    <getDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
@@ -5792,6 +5972,19 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionCalls::userDecryptionResponse)
                     }
                     userDecryptionResponse
+                },
+                {
+                    fn getDecryptionConsensusTxSenders(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IDecryptionCalls> {
+                        <getDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IDecryptionCalls::getDecryptionConsensusTxSenders)
+                    }
+                    getDecryptionConsensusTxSenders
                 },
                 {
                     fn getVersion(
@@ -5949,6 +6142,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         inner,
                     )
                 }
+                Self::getDecryptionConsensusTxSenders(inner) => {
+                    <getDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -6003,6 +6201,12 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::delegatedUserDecryptionRequest(inner) => {
                     <delegatedUserDecryptionRequestCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getDecryptionConsensusTxSenders(inner) => {
+                    <getDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -7022,6 +7226,22 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     publicKey,
                     signature,
                     extraData,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`getDecryptionConsensusTxSenders`] function.
+        pub fn getDecryptionConsensusTxSenders(
+            &self,
+            decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<
+            T,
+            &P,
+            getDecryptionConsensusTxSendersCall,
+            N,
+        > {
+            self.call_builder(
+                &getDecryptionConsensusTxSendersCall {
+                    decryptionId,
                 },
             )
         }

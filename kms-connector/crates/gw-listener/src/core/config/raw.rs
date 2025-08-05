@@ -27,6 +27,10 @@ pub struct RawConfig {
     pub monitoring_endpoint: String,
     #[serde(default = "default_healthcheck_timeout_secs")]
     pub healthcheck_timeout_secs: u64,
+    #[serde(default = "default_decryption_polling_ms")]
+    pub decryption_polling_ms: u64,
+    #[serde(default = "default_key_management_polling_ms")]
+    pub key_management_polling_ms: u64,
     pub from_block_number: Option<u64>,
 }
 
@@ -36,6 +40,14 @@ fn default_service_name() -> String {
 
 fn default_database_pool_size() -> u32 {
     16
+}
+
+fn default_decryption_polling_ms() -> u64 {
+    1000 // 1s
+}
+
+fn default_key_management_polling_ms() -> u64 {
+    30000 // 30s
 }
 
 impl DeserializeRawConfig for RawConfig {}
@@ -62,6 +74,8 @@ impl Default for RawConfig {
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
+            decryption_polling_ms: default_decryption_polling_ms(),
+            key_management_polling_ms: default_key_management_polling_ms(),
             from_block_number: None,
         }
     }
