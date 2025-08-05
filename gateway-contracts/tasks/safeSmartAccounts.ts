@@ -3,11 +3,16 @@ import dotenv from "dotenv";
 import { EventLog, Log, Wallet, getBytes } from "ethers";
 import fs from "fs";
 import { task, types } from "hardhat/config";
+import { HardhatRuntimeEnvironment } from "hardhat/types";
 import path from "path";
 
 import { ADDRESSES_DIR } from "../hardhat.config";
 import { getRequiredEnvVar } from "./utils/loadVariables";
 import { pascalCaseToSnakeCase } from "./utils/stringOps";
+
+const SAFE_SMART_ACCOUNT_IMPLEMENTATION_NAME = "SafeSmartAccountImplementation";
+const OWNER_SAFE_SMART_ACCOUNT_NAME = "OwnerSafeSmartAccountProxy";
+const PAUSER_SAFE_SMART_ACCOUNT_NAME = "PauserSafeSmartAccountProxy";
 
 async function getSortedSignatures(signers: Wallet[], transactionHash: string): Promise<string> {
   const bytesDataHash = getBytes(transactionHash);
@@ -36,6 +41,94 @@ async function getSortedSignatures(signers: Wallet[], transactionHash: string): 
   return signatureBytes;
 }
 
+async function deploySafeSmartAccountProxy(
+  name: string,
+  owners: string[],
+  threshold: number,
+  useInternalSafeImplAddress: boolean,
+  { ethers, run }: HardhatRuntimeEnvironment,
+) {
+  // Compile contracts from external dependencies (e.g., Safe Smart Account).
+  // These are temporarily stored by `hardhat-dependency-compiler`.
+  // See the `dependencyCompiler` field in `hardhat.config.ts` for configuration details.
+  await run("compile:specific", { contract: "hardhat-dependency-compiler" });
+
+  // Get the Safe Smart Account implementation address from the environment
+  const safeImplNameSnakeCase = pascalCaseToSnakeCase(SAFE_SMART_ACCOUNT_IMPLEMENTATION_NAME);
+  if (useInternalSafeImplAddress) {
+    const safeEnvFilePath = path.join(ADDRESSES_DIR, `.env.${safeImplNameSnakeCase}`);
+    if (!fs.existsSync(safeEnvFilePath)) {
+      throw new Error(`Environment file not found: ${safeEnvFilePath}`);
+    }
+    dotenv.config({ path: safeEnvFilePath, override: true });
+  }
+  const safeImplAddress = getRequiredEnvVar(`${safeImplNameSnakeCase.toUpperCase()}_ADDRESS`);
+
+  // Get the Safe contract
+  const safe = await ethers.getContractAt("Safe", safeImplAddress);
+
+  // Get a deployer wallet
+  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
+
+  // Deploy a new SafeProxyFactory contract
+  const safeProxyFactoryFactory = await ethers.getContractFactory("SafeProxyFactory", deployer);
+  const safeProxyFactory = await safeProxyFactoryFactory.deploy();
+
+  // Prepare the setup transaction data
+  const to = ethers.ZeroAddress; // Contract address for optional delegate call.
+  const data = "0x"; // Data payload for optional delegate call.
+  const fallbackHandler = ethers.ZeroAddress; // Handler for fallback calls to this contract.
+  const paymentToken = ethers.ZeroAddress; // Token that should be used for the payment (0 is ETH).
+  const payment = 0; // Value that should be paid.
+  const paymentReceiver = ethers.ZeroAddress; // Address that should receive the payment (or 0 if tx.origin).
+
+  // Encode the setup function data
+  const safeData = safe.interface.encodeFunctionData("setup", [
+    owners,
+    threshold,
+    to,
+    data,
+    fallbackHandler,
+    paymentToken,
+    payment,
+    paymentReceiver,
+  ]);
+
+  // Setup the Safe proxy factory
+  const saltNonce = 0n;
+  const txResponse = await safeProxyFactory.createProxyWithNonce(safeImplAddress, safeData, saltNonce);
+  const txReceipt = await txResponse.wait();
+  if (!txReceipt) {
+    throw new Error("Create Safe proxy transaction receipt not found");
+  }
+
+  // Get the Safe proxy address from the ProxyCreation event
+  const event = txReceipt.logs
+    .filter((l: EventLog | Log) => l instanceof EventLog)
+    .find((l: EventLog) => l.eventName === safeProxyFactory.getEvent("ProxyCreation").name);
+  if (!event) {
+    throw new Error("ProxyCreation event not found in transaction receipt");
+  }
+  const safeProxyAddress = event.args.proxy;
+
+  if (safeProxyAddress === ethers.ZeroAddress) {
+    throw new Error("Safe proxy address not found");
+  }
+
+  const nameSnakeCase = pascalCaseToSnakeCase(name);
+  const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
+  const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${safeProxyAddress}\n`;
+
+  // Ensure the ADDRESSES_DIR exists or create it
+  fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
+
+  // Write the contract's address in the envFilePath file
+  fs.writeFileSync(envFilePath, envContent, { encoding: "utf8", flag: "w" });
+
+  console.log(`${name} address ${safeProxyAddress} written successfully!`);
+}
+
 task(
   "task:deploySafeSmartAccountImplementation",
   "Deploys the Safe Smart Account singleton implementation contract",
@@ -54,16 +147,20 @@ task(
   const safe = await safeFactory.deploy();
   const safeAddress = await safe.getAddress();
 
-  console.log(`Safe Smart Account implementation deployed at address: ${safeAddress}`);
+  const nameSnakeCase = pascalCaseToSnakeCase(SAFE_SMART_ACCOUNT_IMPLEMENTATION_NAME);
+  const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
+  const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${safeAddress}\n`;
+
+  // Ensure the ADDRESSES_DIR exists or create it
+  fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
+
+  // Write the contract's address in the envFilePath file
+  fs.writeFileSync(envFilePath, envContent, { encoding: "utf8", flag: "w" });
+
+  console.log(`${name} address ${safeAddress} written successfully!`);
 });
 
-task("task:deploySafeSmartAccountProxy", "Deploys the Safe Smart Account contract")
-  .addParam(
-    "safeSmartAccountImplAddress",
-    "Address of the Safe Smart Account implementation contract.",
-    undefined,
-    types.string,
-  )
+task("task:deployOwnerSafeSmartAccountProxy", "Deploys the OwnerSafeSmartAccountProxy contract")
   .addParam("owners", "List of addresses that control the OwnerSafeSmartAccount.", undefined, types.json)
   .addParam(
     "threshold",
@@ -71,70 +168,49 @@ task("task:deploySafeSmartAccountProxy", "Deploys the Safe Smart Account contrac
     undefined,
     types.int,
   )
-  .setAction(async function ({ safeSmartAccountImplAddress, owners, threshold }, { ethers, run }) {
-    // Compile contracts from external dependencies (e.g., Safe Smart Account).
-    // These are temporarily stored by `hardhat-dependency-compiler`.
-    // See the `dependencyCompiler` field in `hardhat.config.ts` for configuration details.
-    await run("compile:specific", { contract: "hardhat-dependency-compiler" });
-
-    // Get a deployer wallet
-    const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-    const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
-
-    // Get the Safe implementation contract
-    const safeImplementation = await ethers.getContractAt("Safe", safeSmartAccountImplAddress);
-
-    // Deploy a new SafeProxyFactory contract
-    const safeProxyFactoryFactory = await ethers.getContractFactory("SafeProxyFactory", deployer);
-    const safeProxyFactory = await safeProxyFactoryFactory.deploy();
-
-    // Prepare the setup transaction data
-    const to = ethers.ZeroAddress; // Contract address for optional delegate call.
-    const data = "0x"; // Data payload for optional delegate call.
-    const fallbackHandler = ethers.ZeroAddress; // Handler for fallback calls to this contract.
-    const paymentToken = ethers.ZeroAddress; // Token that should be used for the payment (0 is ETH).
-    const payment = 0; // Value that should be paid.
-    const paymentReceiver = ethers.ZeroAddress; // Address that should receive the payment (or 0 if tx.origin).
-
-    // Encode the setup function data
-    const safeData = safeImplementation.interface.encodeFunctionData("setup", [
+  .addOptionalParam(
+    "useInternalSafeImplAddress",
+    "If Safe implementation address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ owners, threshold, useInternalSafeImplAddress }, hre) {
+    await deploySafeSmartAccountProxy(
+      OWNER_SAFE_SMART_ACCOUNT_NAME,
       owners,
       threshold,
-      to,
-      data,
-      fallbackHandler,
-      paymentToken,
-      payment,
-      paymentReceiver,
-    ]);
+      useInternalSafeImplAddress,
+      hre,
+    );
+  });
 
-    // Create the Safe proxy factory
-    const saltNonce = 0n;
-    const txResponse = await safeProxyFactory.createProxyWithNonce(safeSmartAccountImplAddress, safeData, saltNonce);
-    const txReceipt = await txResponse.wait();
-    if (!txReceipt) {
-      throw new Error("Create Safe proxy transaction receipt not found");
-    }
-
-    // Get the Safe proxy address from the ProxyCreation event
-    const event = txReceipt.logs
-      .filter((l: EventLog | Log) => l instanceof EventLog)
-      .find((l: EventLog) => l.eventName === safeProxyFactory.getEvent("ProxyCreation").name);
-    if (!event) {
-      throw new Error("ProxyCreation event not found in transaction receipt");
-    }
-    const safeProxyAddress = event.args.proxy;
-
-    if (safeProxyAddress === ethers.ZeroAddress) {
-      throw new Error("Safe proxy address not found");
-    }
-
-    console.log(`Safe Smart Account proxy successfully deployed at address: ${safeProxyAddress}\n`);
+task("task:deployPauserSafeSmartAccountProxy", "Deploys the PauserSafeSmartAccountProxy contract")
+  .addParam("owners", "List of addresses that control the PauserSafeSmartAccount.", undefined, types.json)
+  .addParam(
+    "threshold",
+    "Number of required confirmations for a PauserSafeSmartAccount transaction.",
+    undefined,
+    types.int,
+  )
+  .addOptionalParam(
+    "useInternalSafeImplAddress",
+    "If Safe implementation address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ owners, threshold, useInternalSafeImplAddress }, hre) {
+    await deploySafeSmartAccountProxy(
+      PAUSER_SAFE_SMART_ACCOUNT_NAME,
+      owners,
+      threshold,
+      useInternalSafeImplAddress,
+      hre,
+    );
   });
 
 task(
   "task:transferGatewayOwnership",
-  "Transfers ownership of the GatewayConfig contract to the passed Safe Smart Account address.",
+  `Transfers ownership of the GatewayConfig contract to the ${OWNER_SAFE_SMART_ACCOUNT_NAME}.`,
 )
   .addParam(
     "currentOwnerPrivateKey",
@@ -142,24 +218,29 @@ task(
     undefined,
     types.string,
   )
-  .addParam("safeSmartAccountAddress", "Address of the Safe Smart Account receiving ownership", undefined, types.string)
   .addOptionalParam(
     "useInternalProxyAddress",
     "If proxy address from the /addresses directory should be used",
     false,
     types.boolean,
   )
-  .setAction(async function ({ currentOwnerPrivateKey, safeSmartAccountAddress, useInternalProxyAddress }, { ethers }) {
+  .setAction(async function ({ currentOwnerPrivateKey, useInternalProxyAddress }, { ethers }) {
     // Get the currentOwner wallet.
     const currentOwner = new Wallet(currentOwnerPrivateKey).connect(ethers.provider);
 
+    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_NAME);
+
     if (useInternalProxyAddress) {
       const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
+      const ownerSafeSmartAccountEnvFilePath = path.join(ADDRESSES_DIR, `.env.${ownerSafeSmartAccountSnakeCase}`);
 
       if (!fs.existsSync(gatewayEnvFilePath)) {
         throw new Error(`Environment file not found: ${gatewayEnvFilePath}`);
       }
-      dotenv.config({ path: gatewayEnvFilePath, override: true });
+      if (!fs.existsSync(ownerSafeSmartAccountEnvFilePath)) {
+        throw new Error(`Environment file not found: ${ownerSafeSmartAccountEnvFilePath}`);
+      }
+      dotenv.config({ path: [gatewayEnvFilePath, ownerSafeSmartAccountEnvFilePath], override: true });
     }
 
     // Get the GatewayConfig contract
@@ -168,21 +249,27 @@ task(
     const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
-    // Step 1 - Transfer ownership of the contract to the Safe Smart Account.
-    await gatewayConfigContract.connect(currentOwner).transferOwnership(safeSmartAccountAddress);
+    // Get the OwnerSafeSmartAccount address
+    const ownerSafeSmartAccountAddressEnvVarName = `${ownerSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
+    const ownerSafeSmartAccountAddress = getRequiredEnvVar(ownerSafeSmartAccountAddressEnvVarName);
+
+    // Step 1 - Transfer ownership of the contract to the OwnerSafeSmartAccount.
+    await gatewayConfigContract.connect(currentOwner).transferOwnership(ownerSafeSmartAccountAddress);
 
     console.log(
-      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully transferred to Safe Smart Account at address: ${safeSmartAccountAddress}`,
+      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully transferred to OwnerSafeSmartAccount at address: ${ownerSafeSmartAccountAddress}`,
     );
   });
 
-task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig contract from the Safe Smart Account")
-  .addParam("ownerPrivateKeys", "List of private keys of the owners of the Safe Smart Account.", undefined, types.json)
+task(
+  "task:acceptGatewayOwnership",
+  `Accepts ownership of the GatewayConfig contract from the ${OWNER_SAFE_SMART_ACCOUNT_NAME}.`,
+)
   .addParam(
-    "safeSmartAccountAddress",
-    "Address of the Safe Smart Account proxy accepting ownership.",
+    "ownerPrivateKeys",
+    `List of private keys of the owners of the ${OWNER_SAFE_SMART_ACCOUNT_NAME}.`,
     undefined,
-    types.string,
+    types.json,
   )
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -190,7 +277,7 @@ task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig cont
     false,
     types.boolean,
   )
-  .setAction(async function ({ ownerPrivateKeys, safeSmartAccountAddress, useInternalProxyAddress }, { ethers, run }) {
+  .setAction(async function ({ ownerPrivateKeys, useInternalProxyAddress }, { ethers, run }) {
     // Compile contracts from external dependencies (e.g., Safe Smart Account).
     // These are temporarily stored by `hardhat-dependency-compiler`.
     // See the `dependencyCompiler` field in `hardhat.config.ts` for configuration details.
@@ -201,13 +288,19 @@ task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig cont
       new Wallet(ownerPrivateKey).connect(ethers.provider),
     );
 
+    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_NAME);
+
     if (useInternalProxyAddress) {
       const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
+      const ownerSafeSmartAccountEnvFilePath = path.join(ADDRESSES_DIR, `.env.${ownerSafeSmartAccountSnakeCase}`);
 
       if (!fs.existsSync(gatewayEnvFilePath)) {
         throw new Error(`Environment file not found: ${gatewayEnvFilePath}`);
       }
-      dotenv.config({ path: gatewayEnvFilePath, override: true });
+      if (!fs.existsSync(ownerSafeSmartAccountEnvFilePath)) {
+        throw new Error(`Environment file not found: ${ownerSafeSmartAccountEnvFilePath}`);
+      }
+      dotenv.config({ path: [gatewayEnvFilePath, ownerSafeSmartAccountEnvFilePath], override: true });
     }
 
     // Get the GatewayConfig contract
@@ -216,8 +309,10 @@ task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig cont
     const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
-    // Get the Safe Smart Account contract from the Safe factory
-    const safeSmartAccount = await ethers.getContractAt("Safe", safeSmartAccountAddress);
+    // Get the OwnerSafeSmartAccount contract
+    const ownerSafeSmartAccountAddressEnvVarName = `${ownerSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
+    const ownerSafeSmartAccountAddress = getRequiredEnvVar(ownerSafeSmartAccountAddressEnvVarName);
+    const ownerSafeSmartAccount = await ethers.getContractAt("Safe", ownerSafeSmartAccountAddress);
 
     // Prepare the Safe transaction to accept ownership.
     const value = 0; // Ether value.
@@ -228,10 +323,10 @@ task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig cont
     const gasPrice = 0; // Maximum gas price that should be used for this transaction.
     const gasToken = ethers.ZeroAddress; // Token address (or 0 if ETH) that is used for the payment.
     const refundReceiver = ethers.ZeroAddress; // Address of receiver of gas payment (or 0 if tx.origin).
-    const nonce = await safeSmartAccount.nonce();
+    const nonce = await ownerSafeSmartAccount.nonce();
 
     // Get the transaction hash for the Safe transaction.
-    const transactionHash = await safeSmartAccount.getTransactionHash(
+    const transactionHash = await ownerSafeSmartAccount.getTransactionHash(
       gatewayConfigContractAddress,
       value,
       data,
@@ -250,7 +345,7 @@ task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig cont
     const signatures = await getSortedSignatures(signers, transactionHash);
 
     // Step 2 - Execute the Safe transaction to accept ownership.
-    const execTransactionResponse = await safeSmartAccount.execTransaction(
+    const execTransactionResponse = await ownerSafeSmartAccount.execTransaction(
       gatewayConfigContractAddress,
       value,
       data,
@@ -264,29 +359,27 @@ task("task:acceptGatewayOwnership", "Accepts ownership of the GatewayConfig cont
     );
     await execTransactionResponse.wait();
     console.log(
-      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully accepted by the Safe Smart Account at address: ${safeSmartAccountAddress}`,
+      `Ownership of Gateway at address ${gatewayConfigContractAddress} successfully accepted by the OwnerSafeSmartAccount at address: ${ownerSafeSmartAccountAddress}`,
     );
   });
 
-task("task:updateGatewayPauser", "Updates the pauser of the GatewayConfig contract using a Safe Smart Account")
-  .addParam("ownerPrivateKeys", "List of private keys of the owners of the Safe Smart Account.", undefined, types.json)
+task(
+  "task:updateGatewayPauser",
+  `Updates the pauser of the GatewayConfig contract to the ${PAUSER_SAFE_SMART_ACCOUNT_NAME}.`,
+)
   .addParam(
-    "safeSmartAccountAddress",
-    "Address of the Safe Smart Account proxy updating the pauser.",
+    "ownerPrivateKeys",
+    `List of private keys of the owners of the ${OWNER_SAFE_SMART_ACCOUNT_NAME}.`,
     undefined,
-    types.string,
+    types.json,
   )
-  .addParam("newPauser", "Address of the new pauser to be set in the GatewayConfig contract.", undefined, types.string)
   .addOptionalParam(
     "useInternalProxyAddress",
     "If proxy address from the /addresses directory should be used.",
     false,
     types.boolean,
   )
-  .setAction(async function (
-    { ownerPrivateKeys, safeSmartAccountAddress, useInternalProxyAddress, newPauser },
-    { ethers, run },
-  ) {
+  .setAction(async function ({ ownerPrivateKeys, useInternalProxyAddress }, { ethers, run }) {
     // Compile contracts from external dependencies (e.g., Safe Smart Account).
     // These are temporarily stored by `hardhat-dependency-compiler`.
     // See the `dependencyCompiler` field in `hardhat.config.ts` for configuration details.
@@ -297,37 +390,60 @@ task("task:updateGatewayPauser", "Updates the pauser of the GatewayConfig contra
       new Wallet(ownerPrivateKey).connect(ethers.provider),
     );
 
+    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_NAME);
+    const pauserSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(PAUSER_SAFE_SMART_ACCOUNT_NAME);
+
     if (useInternalProxyAddress) {
       const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
+      const ownerSafeSmartAccountEnvFilePath = path.join(ADDRESSES_DIR, `.env.${ownerSafeSmartAccountSnakeCase}`);
+      const pauserSafeSmartAccountEnvFilePath = path.join(ADDRESSES_DIR, `.env.${pauserSafeSmartAccountSnakeCase}`);
 
       if (!fs.existsSync(gatewayEnvFilePath)) {
         throw new Error(`Environment file not found: ${gatewayEnvFilePath}`);
       }
-      dotenv.config({ path: gatewayEnvFilePath, override: true });
+
+      if (!fs.existsSync(ownerSafeSmartAccountEnvFilePath)) {
+        throw new Error(`Environment file not found: ${ownerSafeSmartAccountEnvFilePath}`);
+      }
+
+      if (!fs.existsSync(pauserSafeSmartAccountEnvFilePath)) {
+        throw new Error(`Environment file not found: ${pauserSafeSmartAccountEnvFilePath}`);
+      }
+
+      dotenv.config({
+        path: [gatewayEnvFilePath, ownerSafeSmartAccountEnvFilePath, pauserSafeSmartAccountEnvFilePath],
+        override: true,
+      });
     }
 
-    // Get the GatewayConfig contract from the Ownable2StepUpgradeable factory
+    // Get the GatewayConfig contract
     const gatewayConfigSnakeCase = pascalCaseToSnakeCase("GatewayConfig");
     const gatewayConfigAddressEnvVarName = `${gatewayConfigSnakeCase.toUpperCase()}_ADDRESS`;
     const gatewayConfigContractAddress = getRequiredEnvVar(gatewayConfigAddressEnvVarName);
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
-    // Get the Safe Smart Account contract from the Safe factory
-    const safeSmartAccount = await ethers.getContractAt("Safe", safeSmartAccountAddress);
+    // Get the OwnerSafeSmartAccount contract
+    const ownerSafeSmartAccountAddressEnvVarName = `${ownerSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
+    const ownerSafeSmartAccountAddress = getRequiredEnvVar(ownerSafeSmartAccountAddressEnvVarName);
+    const ownerSafeSmartAccount = await ethers.getContractAt("Safe", ownerSafeSmartAccountAddress);
+
+    // Get the PauserSafeSmartAccount address
+    const pauserSafeSmartAccountAddressEnvVarName = `${pauserSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
+    const pauserSafeSmartAccountAddress = getRequiredEnvVar(pauserSafeSmartAccountAddressEnvVarName);
 
     // Prepare the Safe transaction to update the pauser.
     const value = 0; // Ether value.
-    const data = gatewayConfigContract.interface.encodeFunctionData("updatePauser", [newPauser]); // Data payload for the transaction.
+    const data = gatewayConfigContract.interface.encodeFunctionData("updatePauser", [pauserSafeSmartAccountAddress]); // Data payload for the transaction.
     const operation = OperationType.Call; // Operation type.
     const safeTxGas = 0; // Gas that should be used for the safe transaction.
     const baseGas = 0; // Gas costs for that are independent of the transaction execution(e.g. base transaction fee, signature check, payment of the refund)
     const gasPrice = 0; // Maximum gas price that should be used for this transaction.
     const gasToken = ethers.ZeroAddress; // Token address (or 0 if ETH) that is used for the payment.
     const refundReceiver = ethers.ZeroAddress; // Address of receiver of gas payment (or 0 if tx.origin).
-    const nonce = await safeSmartAccount.nonce();
+    const nonce = await ownerSafeSmartAccount.nonce();
 
     // Get the transaction hash for the Safe transaction.
-    const transactionHash = await safeSmartAccount.getTransactionHash(
+    const transactionHash = await ownerSafeSmartAccount.getTransactionHash(
       gatewayConfigContractAddress,
       value,
       data,
@@ -346,7 +462,7 @@ task("task:updateGatewayPauser", "Updates the pauser of the GatewayConfig contra
     const signatures = await getSortedSignatures(signers, transactionHash);
 
     // Execute the Safe transaction to update the pauser.
-    const execTransactionResponse = await safeSmartAccount.execTransaction(
+    const execTransactionResponse = await ownerSafeSmartAccount.execTransaction(
       gatewayConfigContractAddress,
       value,
       data,
@@ -360,6 +476,6 @@ task("task:updateGatewayPauser", "Updates the pauser of the GatewayConfig contra
     );
     await execTransactionResponse.wait();
     console.log(
-      `Pauser of Gateway at address ${gatewayConfigContractAddress} successfully updated to address: ${newPauser}`,
+      `Pauser of Gateway at address ${gatewayConfigContractAddress} successfully updated to address: ${pauserSafeSmartAccountAddress}`,
     );
   });
