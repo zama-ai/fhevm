@@ -52,14 +52,15 @@ async function deploySafeSmartAccountProxy(
   await run("compile:specific", { contract: "hardhat-dependency-compiler" });
 
   // Get the Safe Smart Account implementation address from the environment.
-  const safeImplNameSnakeCase = pascalCaseToSnakeCase(SAFE_SMART_ACCOUNT_IMPL_NAME);
   if (useInternalSafeImplAddress) {
-    const safeEnvFilePath = path.join(ADDRESSES_DIR, `.env.${safeImplNameSnakeCase}`);
-    if (!fs.existsSync(safeEnvFilePath)) {
-      throw new Error(`Environment file not found: ${safeEnvFilePath}`);
+    const safeSmartAccountsEnvFilePath = path.join(ADDRESSES_DIR, ".env.safe_smart_accounts");
+    if (!fs.existsSync(safeSmartAccountsEnvFilePath)) {
+      throw new Error(`Environment file not found: ${safeSmartAccountsEnvFilePath}`);
     }
-    dotenv.config({ path: safeEnvFilePath, override: true });
+    dotenv.config({ path: safeSmartAccountsEnvFilePath, override: true });
   }
+
+  const safeImplNameSnakeCase = pascalCaseToSnakeCase(SAFE_SMART_ACCOUNT_IMPL_NAME);
   const safeImplAddress = getRequiredEnvVar(`${safeImplNameSnakeCase.toUpperCase()}_ADDRESS`);
 
   // Get the Safe contract.
@@ -116,14 +117,14 @@ async function deploySafeSmartAccountProxy(
 
   // Write the Safe proxy address to the environment file.
   const nameSnakeCase = pascalCaseToSnakeCase(name);
-  const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
   const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${safeProxyAddress}\n`;
+  const envFilePath = path.join(ADDRESSES_DIR, ".env.safe_smart_accounts");
 
   // Ensure the ADDRESSES_DIR exists or create it.
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
 
   // Write the contract's address in the envFilePath file.
-  fs.writeFileSync(envFilePath, envContent, { encoding: "utf8", flag: "w" });
+  fs.appendFileSync(envFilePath, envContent, { encoding: "utf8", flag: "a" });
 
   console.log(`${name} address ${safeProxyAddress} written successfully!`);
 }
@@ -148,8 +149,8 @@ task(
 
   // Write the Safe implementation address to the environment file.
   const nameSnakeCase = pascalCaseToSnakeCase(SAFE_SMART_ACCOUNT_IMPL_NAME);
-  const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
   const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${safeAddress}\n`;
+  const envFilePath = path.join(ADDRESSES_DIR, ".env.safe_smart_accounts");
 
   // Ensure the ADDRESSES_DIR exists or create it
   fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
@@ -228,19 +229,17 @@ task(
     // Get the currentOwner wallet.
     const currentOwner = new Wallet(currentOwnerPrivateKey).connect(ethers.provider);
 
-    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME);
-
     if (useInternalProxyAddress) {
-      const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
-      const ownerSafeSmartAccountEnvFilePath = path.join(ADDRESSES_DIR, `.env.${ownerSafeSmartAccountSnakeCase}`);
-
+      const gatewayEnvFilePath = path.join(ADDRESSES_DIR, ".env.gateway");
       if (!fs.existsSync(gatewayEnvFilePath)) {
         throw new Error(`Environment file not found: ${gatewayEnvFilePath}`);
       }
-      if (!fs.existsSync(ownerSafeSmartAccountEnvFilePath)) {
-        throw new Error(`Environment file not found: ${ownerSafeSmartAccountEnvFilePath}`);
+
+      const safeSmartAccountsEnvFilePath = path.join(ADDRESSES_DIR, ".env.safe_smart_accounts");
+      if (!fs.existsSync(safeSmartAccountsEnvFilePath)) {
+        throw new Error(`Environment file not found: ${safeSmartAccountsEnvFilePath}`);
       }
-      dotenv.config({ path: [gatewayEnvFilePath, ownerSafeSmartAccountEnvFilePath], override: true });
+      dotenv.config({ path: [gatewayEnvFilePath, safeSmartAccountsEnvFilePath], override: true });
     }
 
     // Get the GatewayConfig contract.
@@ -250,6 +249,7 @@ task(
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
     // Get the OwnerSafeSmartAccountProxy address.
+    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME);
     const ownerSafeSmartAccountAddressEnvVarName = `${ownerSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
     const ownerSafeSmartAccountAddress = getRequiredEnvVar(ownerSafeSmartAccountAddressEnvVarName);
 
@@ -288,19 +288,17 @@ task(
       new Wallet(ownerPrivateKey).connect(ethers.provider),
     );
 
-    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME);
-
     if (useInternalProxyAddress) {
-      const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
-      const ownerSafeSmartAccountEnvFilePath = path.join(ADDRESSES_DIR, `.env.${ownerSafeSmartAccountSnakeCase}`);
-
+      const gatewayEnvFilePath = path.join(ADDRESSES_DIR, ".env.gateway");
       if (!fs.existsSync(gatewayEnvFilePath)) {
         throw new Error(`Environment file not found: ${gatewayEnvFilePath}`);
       }
-      if (!fs.existsSync(ownerSafeSmartAccountEnvFilePath)) {
-        throw new Error(`Environment file not found: ${ownerSafeSmartAccountEnvFilePath}`);
+
+      const safeSmartAccountsEnvFilePath = path.join(ADDRESSES_DIR, ".env.safe_smart_accounts");
+      if (!fs.existsSync(safeSmartAccountsEnvFilePath)) {
+        throw new Error(`Environment file not found: ${safeSmartAccountsEnvFilePath}`);
       }
-      dotenv.config({ path: [gatewayEnvFilePath, ownerSafeSmartAccountEnvFilePath], override: true });
+      dotenv.config({ path: [gatewayEnvFilePath, safeSmartAccountsEnvFilePath], override: true });
     }
 
     // Get the GatewayConfig contract.
@@ -310,6 +308,7 @@ task(
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
     // Get the OwnerSafeSmartAccountProxy contract.
+    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME);
     const ownerSafeSmartAccountAddressEnvVarName = `${ownerSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
     const ownerSafeSmartAccountAddress = getRequiredEnvVar(ownerSafeSmartAccountAddressEnvVarName);
     const ownerSafeSmartAccount = await ethers.getContractAt("Safe", ownerSafeSmartAccountAddress);
@@ -389,28 +388,19 @@ task(
       new Wallet(ownerPrivateKey).connect(ethers.provider),
     );
 
-    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME);
-    const pauserSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(PAUSER_SAFE_SMART_ACCOUNT_PROXY_NAME);
-
     if (useInternalProxyAddress) {
       const gatewayEnvFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
-      const ownerSafeSmartAccountEnvFilePath = path.join(ADDRESSES_DIR, `.env.${ownerSafeSmartAccountSnakeCase}`);
-      const pauserSafeSmartAccountEnvFilePath = path.join(ADDRESSES_DIR, `.env.${pauserSafeSmartAccountSnakeCase}`);
-
       if (!fs.existsSync(gatewayEnvFilePath)) {
         throw new Error(`Environment file not found: ${gatewayEnvFilePath}`);
       }
 
-      if (!fs.existsSync(ownerSafeSmartAccountEnvFilePath)) {
-        throw new Error(`Environment file not found: ${ownerSafeSmartAccountEnvFilePath}`);
-      }
-
-      if (!fs.existsSync(pauserSafeSmartAccountEnvFilePath)) {
-        throw new Error(`Environment file not found: ${pauserSafeSmartAccountEnvFilePath}`);
+      const safeSmartAccountsEnvFilePath = path.join(ADDRESSES_DIR, ".env.safe_smart_accounts");
+      if (!fs.existsSync(safeSmartAccountsEnvFilePath)) {
+        throw new Error(`Environment file not found: ${safeSmartAccountsEnvFilePath}`);
       }
 
       dotenv.config({
-        path: [gatewayEnvFilePath, ownerSafeSmartAccountEnvFilePath, pauserSafeSmartAccountEnvFilePath],
+        path: [gatewayEnvFilePath, safeSmartAccountsEnvFilePath],
         override: true,
       });
     }
@@ -422,11 +412,13 @@ task(
     const gatewayConfigContract = await ethers.getContractAt("GatewayConfig", gatewayConfigContractAddress);
 
     // Get the OwnerSafeSmartAccountProxy contract.
+    const ownerSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(OWNER_SAFE_SMART_ACCOUNT_PROXY_NAME);
     const ownerSafeSmartAccountAddressEnvVarName = `${ownerSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
     const ownerSafeSmartAccountAddress = getRequiredEnvVar(ownerSafeSmartAccountAddressEnvVarName);
     const ownerSafeSmartAccount = await ethers.getContractAt("Safe", ownerSafeSmartAccountAddress);
 
     // Get the PauserSafeSmartAccountProxy address.
+    const pauserSafeSmartAccountSnakeCase = pascalCaseToSnakeCase(PAUSER_SAFE_SMART_ACCOUNT_PROXY_NAME);
     const pauserSafeSmartAccountAddressEnvVarName = `${pauserSafeSmartAccountSnakeCase.toUpperCase()}_ADDRESS`;
     const pauserSafeSmartAccountAddress = getRequiredEnvVar(pauserSafeSmartAccountAddressEnvVarName);
 
