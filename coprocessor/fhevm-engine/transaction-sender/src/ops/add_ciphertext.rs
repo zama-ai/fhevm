@@ -68,7 +68,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
                     address = ?self.already_added_error(&e),
                     "Coprocessor has already added the ciphertext commit",
                 );
-                self.set_txn_is_sent(handle).await?;
+                self.set_txn_is_sent(handle, None, None).await?;
                 return Ok(());
             }
             // Consider transport errors and local usage errors as something that must be retried infinitely.
@@ -135,7 +135,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         };
 
         if receipt.status() {
-            self.set_txn_is_sent(handle).await?;
+            self.set_txn_is_sent(
+                handle,
+                Some(receipt.transaction_hash.as_slice()),
+                receipt.block_number.map(|bn| bn as i64),
+            )
+            .await?;
             info!(
                 transaction_hash = %receipt.transaction_hash,
                 handle = h,
@@ -174,12 +179,22 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
             })
     }
 
-    async fn set_txn_is_sent(&self, handle: &[u8]) -> anyhow::Result<()> {
+    async fn set_txn_is_sent(
+        &self,
+        handle: &[u8],
+        txn_hash: Option<&[u8]>,
+        txn_block_number: Option<i64>,
+    ) -> anyhow::Result<()> {
         sqlx::query!(
             "UPDATE ciphertext_digest
-            SET txn_is_sent = true
-            WHERE handle = $1",
-            handle,
+            SET
+                txn_is_sent = true,
+                txn_hash = $1,
+                txn_block_number = $2
+            WHERE handle = $3",
+            txn_hash,
+            txn_block_number,
+            handle
         )
         .execute(&self.db_pool)
         .await?;

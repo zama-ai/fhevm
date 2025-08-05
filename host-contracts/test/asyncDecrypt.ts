@@ -124,24 +124,29 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       if (!allTrue(isAllowedForDec)) {
         throw new Error('Some handle is not authorized for decryption');
       }
-
       const values = await Promise.all(handles.map(async (handle: string) => await getClearText(handle)));
 
       const abiCoder = new ethers.AbiCoder();
-      const extraDataV0 = ethers.solidityPacked(['uint8'], [0]);
+      let encodedData;
       let decryptedResult;
 
-      decryptedResult = abiCoder.encode(Array(values.length).fill('uint256'), values); // since ebytesXXX were deprecated, all cleartexts are native static types, i.e encoding works as if they were all uint256 types, and the selector already takes into account correct underlying types
+      encodedData = abiCoder.encode(
+        ['uint256', ...Array(values.length).fill('uint256'), 'bytes[]'],
+        [31, ...values, []],
+      ); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
+      // + adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
+      decryptedResult = '0x' + encodedData.slice(66).slice(0, -64); // we pop the dummy requestID to get the correct value to pass for `decryptedCts` + we also pop the last 32 bytes (empty bytes[])
 
-      const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult, extraDataV0);
+      const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult);
 
       const calldata =
         callbackSelector +
         abiCoder
           .encode(
-            ['uint256', ...Array(values.length).fill('uint256'), 'bytes[]', 'bytes'],
-            [requestID, ...values, decryptResultsEIP712signatures, extraDataV0],
+            ['uint256', ...Array(values.length).fill('uint256'), 'bytes[]'],
+            [requestID, ...values, decryptResultsEIP712signatures],
           )
+
           .slice(2);
 
       const txData = {
@@ -164,24 +169,20 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
   }
 };
 
-async function computeDecryptSignatures(
-  handlesList: string[],
-  decryptedResult: string,
-  extraData: string,
-): Promise<string[]> {
+async function computeDecryptSignatures(handlesList: string[], decryptedResult: string): Promise<string[]> {
   const signatures: string[] = [];
 
   let signers = await getKMSSigners();
 
   for (let idx = 0; idx < signers.length; idx++) {
     const kmsSigner = signers[idx];
-    const signature = await kmsSign(handlesList, decryptedResult, extraData, kmsSigner);
+    const signature = await kmsSign(handlesList, decryptedResult, kmsSigner);
     signatures.push(signature);
   }
   return signatures;
 }
 
-async function kmsSign(handlesList: string[], decryptedResult: string, extraData: string, kmsSigner: Wallet) {
+async function kmsSign(handlesList: string[], decryptedResult: string, kmsSigner: Wallet) {
   const decAdd = process.env.DECRYPTION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;
 
@@ -202,16 +203,11 @@ async function kmsSign(handlesList: string[], decryptedResult: string, extraData
         name: 'decryptedResult',
         type: 'bytes',
       },
-      {
-        name: 'extraData',
-        type: 'bytes',
-      },
     ],
   };
   const message = {
     ctHandles: handlesList,
-    decryptedResult,
-    extraData,
+    decryptedResult: decryptedResult,
   };
 
   const signature = await kmsSigner.signTypedData(domain, types, message);

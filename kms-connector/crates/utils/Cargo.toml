@@ -25,6 +25,7 @@ opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
 prometheus.workspace = true
+rustls.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 sqlx.workspace = true

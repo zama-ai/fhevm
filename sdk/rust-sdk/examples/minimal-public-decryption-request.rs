@@ -1,5 +1,4 @@
 use gateway_sdk::{FhevmError, FhevmSdkBuilder, utils::parse_hex_string};
-use std::path::PathBuf;
 use tracing::{Level, info};
 
 fn main() -> Result<(), FhevmError> {
@@ -10,7 +9,6 @@ fn main() -> Result<(), FhevmError> {
 
     // 1. Create SDK instance
     let sdk = FhevmSdkBuilder::new()
-        .with_keys_directory(PathBuf::from("./keys"))
         .with_gateway_chain_id(43113) // Avalanche testnet
         .with_host_chain_id(11155111) // Ethereum Sepolia
         .with_decryption_contract("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")

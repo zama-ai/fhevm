@@ -21,9 +21,7 @@ pub struct RawConfig {
     pub kms_management_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
-    #[serde(default)]
     pub private_key: Option<String>,
-    #[serde(default)]
     pub aws_kms_config: Option<AwsKmsConfig>,
     #[serde(default = "default_tx_retries")]
     pub tx_retries: u8,

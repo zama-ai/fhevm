@@ -3,11 +3,12 @@
 //! The `raw` module is first used to deserialize the configuration.
 
 use super::raw::RawConfig;
-use connector_utils::config::{
-    AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result,
+use connector_utils::{
+    config::{AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result},
+    monitoring::otlp::default_dispatcher,
 };
 use std::{net::SocketAddr, path::Path, time::Duration};
-use tracing::info;
+use tracing::{error, info};
 
 /// Configuration of the `TransactionSender`.
 #[derive(Clone, Debug)]
@@ -50,14 +51,15 @@ impl Config {
     /// Environment variables take precedence over file configuration.
     /// Environment variables are prefixed with KMS_CONNECTOR_.
     pub async fn from_env_and_file<P: AsRef<Path>>(path: Option<P>) -> Result<Self> {
+        let _dispatcher_guard = tracing::dispatcher::set_default(&default_dispatcher());
         if let Some(config_path) = &path {
             info!("Loading config from: {}", config_path.as_ref().display());
         } else {
             info!("Loading config using environment variables only");
         }
 
-        let raw_config = RawConfig::from_env_and_file(path)?;
-        Self::parse(raw_config).await
+        let raw_config = RawConfig::from_env_and_file(path).inspect_err(|e| error!("{e}"))?;
+        Self::parse(raw_config).await.inspect_err(|e| error!("{e}"))
     }
 
     async fn parse(raw_config: RawConfig) -> Result<Self> {
@@ -65,6 +67,7 @@ impl Config {
             .monitoring_endpoint
             .parse::<SocketAddr>()
             .map_err(|e| Error::InvalidConfig(e.to_string()))?;
+
         let wallet = Self::parse_kms_wallet(
             raw_config.chain_id,
             raw_config.private_key,
@@ -141,7 +144,7 @@ mod tests {
     use alloy::primitives::Address;
     use connector_utils::config::RawContractConfig;
     use serial_test::serial;
-    use std::{env, fs, str::FromStr};
+    use std::{env, fs, path::Path, str::FromStr};
     use tempfile::NamedTempFile;
 
     fn cleanup_env_vars() {

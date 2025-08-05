@@ -1,4 +1,4 @@
-import type { FhevmInstance } from '@zama-fhe/relayer-sdk';
+import type { FhevmInstance } from '@zama-fhe/relayer-sdk/node';
 
 import { EncryptedERC20, Rand } from '../types';
 import { FheType } from './common';
