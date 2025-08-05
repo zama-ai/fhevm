@@ -2527,7 +2527,7 @@ dependencies = [
  "bincode 1.3.3",
  "clap",
  "config",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0)",
+ "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?rev=1b8d95fd9cf4687cc229efb14fd5c1bfb80f3b11)",
  "futures",
  "kms-grpc",
  "opentelemetry",
@@ -3209,7 +3209,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_rust_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0#012bc13d8bc8ed53a592b68a11df263fa21f2510"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=1b8d95fd9cf4687cc229efb14fd5c1bfb80f3b11#1b8d95fd9cf4687cc229efb14fd5c1bfb80f3b11"
 dependencies = [
  "alloy",
  "serde",
@@ -3525,7 +3525,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "connector-utils",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0)",
+ "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?rev=1b8d95fd9cf4687cc229efb14fd5c1bfb80f3b11)",
  "prometheus",
  "rstest",
  "serde",
@@ -4263,7 +4263,7 @@ dependencies = [
  "bincode 1.3.3",
  "connector-utils",
  "dashmap",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0)",
+ "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?rev=1b8d95fd9cf4687cc229efb14fd5c1bfb80f3b11)",
  "kms-grpc",
  "prometheus",
  "serde",
@@ -7523,7 +7523,7 @@ dependencies = [
  "alloy",
  "anyhow",
  "connector-utils",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-0)",
+ "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?rev=1b8d95fd9cf4687cc229efb14fd5c1bfb80f3b11)",
  "prometheus",
  "rstest",
  "serde",
