@@ -2094,15 +2094,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bc2wrap"
-version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=5371aab3115cfb4fb2848e9402a3597e4268e09c#5371aab3115cfb4fb2848e9402a3597e4268e09c"
-dependencies = [
- "bincode 2.0.1",
- "serde",
-]
-
-[[package]]
 name = "bimap"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2539,7 +2530,7 @@ dependencies = [
  "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?rev=1b8d95fd9cf4687cc229efb14fd5c1bfb80f3b11)",
  "futures",
  "git-version",
- "kms-grpc 0.11.0-24",
+ "kms-grpc",
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
@@ -4243,7 +4234,7 @@ dependencies = [
  "dashmap",
  "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.7.9)",
  "futures",
- "kms-grpc 0.11.0-21",
+ "kms-grpc",
  "serde",
  "serial_test",
  "sha3",
@@ -4276,32 +4267,7 @@ dependencies = [
  "tfhe",
  "tfhe-versionable",
  "thiserror 2.0.12",
- "threshold-fhe 0.11.0-21",
- "tonic",
- "tonic-build",
- "tracing",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "kms-grpc"
-version = "0.11.0-24"
-source = "git+https://github.com/zama-ai/kms.git?rev=5371aab3115cfb4fb2848e9402a3597e4268e09c#5371aab3115cfb4fb2848e9402a3597e4268e09c"
-dependencies = [
- "alloy-primitives 1.1.2",
- "alloy-sol-types 1.1.2",
- "anyhow",
- "cfg-if",
- "hex",
- "prost",
- "rand 0.8.5",
- "serde",
- "strum",
- "strum_macros",
- "tfhe",
- "tfhe-versionable",
- "thiserror 2.0.12",
- "threshold-fhe 0.11.0-24",
+ "threshold-fhe",
  "tonic",
  "tonic-build",
  "tracing",
@@ -4319,7 +4285,7 @@ dependencies = [
  "connector-utils",
  "dashmap",
  "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?rev=1b8d95fd9cf4687cc229efb14fd5c1bfb80f3b11)",
- "kms-grpc 0.11.0-24",
+ "kms-grpc",
  "prometheus",
  "rstest",
  "serde",
@@ -7063,52 +7029,7 @@ dependencies = [
  "aes-prng",
  "anyhow",
  "async-trait",
- "bc2wrap 2.0.1 (git+https://github.com/zama-ai/kms.git?tag=v0.11.0-21)",
- "bincode 2.0.1",
- "cfg-if",
- "clap",
- "const_format",
- "dashmap",
- "derive_more 2.0.1",
- "futures",
- "g2p",
- "getrandom 0.2.15",
- "hex",
- "itertools 0.14.0",
- "lazy_static",
- "mockall",
- "ndarray",
- "num-integer",
- "num-traits",
- "oid-registry",
- "paste",
- "prost",
- "rand 0.8.5",
- "rayon",
- "serde",
- "sha2",
- "sha3",
- "statrs",
- "strum",
- "strum_macros",
- "tfhe",
- "tfhe-csprng",
- "tfhe-versionable",
- "tonic-build",
- "tracing",
- "zeroize",
-]
-
-[[package]]
-name = "threshold-fhe"
-version = "0.11.0-24"
-source = "git+https://github.com/zama-ai/kms.git?rev=5371aab3115cfb4fb2848e9402a3597e4268e09c#5371aab3115cfb4fb2848e9402a3597e4268e09c"
-dependencies = [
- "aes",
- "aes-prng",
- "anyhow",
- "async-trait",
- "bc2wrap 2.0.1 (git+https://github.com/zama-ai/kms.git?rev=5371aab3115cfb4fb2848e9402a3597e4268e09c)",
+ "bc2wrap",
  "bincode 2.0.1",
  "cfg-if",
  "clap",
