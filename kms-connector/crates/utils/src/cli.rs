@@ -34,10 +34,6 @@ pub enum Subcommands {
         /// Configuration file path (optional if using environment variables)
         #[arg(short, long, value_name = "FILE")]
         config: Option<PathBuf>,
-
-        /// Optional instance name (overrides service_name in config)
-        #[arg(short, long)]
-        name: Option<String>,
     },
 
     /// Validate a configuration file

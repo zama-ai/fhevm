@@ -27,6 +27,9 @@ interface IMultichainAcl {
     function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view;
     function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
     function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external;
+    function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddress) external view returns (address[] memory);
+    function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view returns (address[] memory);
+    function getDelegateAccountConsensusTxSenders(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view returns (address[] memory);
     function getVersion() external pure returns (string memory);
 }
 ```
@@ -165,6 +168,90 @@ interface IMultichainAcl {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "getAllowAccountConsensusTxSenders",
+    "inputs": [
+      {
+        "name": "ctHandle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "accountAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getAllowPublicDecryptConsensusTxSenders",
+    "inputs": [
+      {
+        "name": "ctHandle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getDelegateAccountConsensusTxSenders",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "delegationAccounts",
+        "type": "tuple",
+        "internalType": "struct DelegationAccounts",
+        "components": [
+          {
+            "name": "delegatorAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "delegatedAddress",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "contractAddresses",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -2576,6 +2663,471 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getAllowAccountConsensusTxSenders(bytes32,address)` and selector `0xae953186`.
+```solidity
+function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddress) external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getAllowAccountConsensusTxSendersCall {
+        #[allow(missing_docs)]
+        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub accountAddress: alloy::sol_types::private::Address,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getAllowAccountConsensusTxSenders(bytes32,address)`](getAllowAccountConsensusTxSendersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getAllowAccountConsensusTxSendersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Address,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::FixedBytes<32>,
+                alloy::sol_types::private::Address,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getAllowAccountConsensusTxSendersCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getAllowAccountConsensusTxSendersCall) -> Self {
+                    (value.ctHandle, value.accountAddress)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getAllowAccountConsensusTxSendersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        ctHandle: tuple.0,
+                        accountAddress: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getAllowAccountConsensusTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getAllowAccountConsensusTxSendersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getAllowAccountConsensusTxSendersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getAllowAccountConsensusTxSendersCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Address,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getAllowAccountConsensusTxSendersReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getAllowAccountConsensusTxSenders(bytes32,address)";
+            const SELECTOR: [u8; 4] = [174u8, 149u8, 49u8, 134u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.accountAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getAllowPublicDecryptConsensusTxSenders(bytes32)` and selector `0x97c49a40`.
+```solidity
+function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getAllowPublicDecryptConsensusTxSendersCall {
+        #[allow(missing_docs)]
+        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getAllowPublicDecryptConsensusTxSenders(bytes32)`](getAllowPublicDecryptConsensusTxSendersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getAllowPublicDecryptConsensusTxSendersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getAllowPublicDecryptConsensusTxSendersCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getAllowPublicDecryptConsensusTxSendersCall) -> Self {
+                    (value.ctHandle,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getAllowPublicDecryptConsensusTxSendersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { ctHandle: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getAllowPublicDecryptConsensusTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getAllowPublicDecryptConsensusTxSendersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getAllowPublicDecryptConsensusTxSendersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getAllowPublicDecryptConsensusTxSendersCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getAllowPublicDecryptConsensusTxSendersReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getAllowPublicDecryptConsensusTxSenders(bytes32)";
+            const SELECTOR: [u8; 4] = [151u8, 196u8, 154u8, 64u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getDelegateAccountConsensusTxSenders(uint256,(address,address),address[])` and selector `0xad8b0b2b`.
+```solidity
+function getDelegateAccountConsensusTxSenders(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getDelegateAccountConsensusTxSendersCall {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub contractAddresses: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::Address,
+        >,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getDelegateAccountConsensusTxSenders(uint256,(address,address),address[])`](getDelegateAccountConsensusTxSendersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getDelegateAccountConsensusTxSendersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                DelegationAccounts,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+                <DelegationAccounts as alloy::sol_types::SolType>::RustType,
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getDelegateAccountConsensusTxSendersCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getDelegateAccountConsensusTxSendersCall) -> Self {
+                    (value.chainId, value.delegationAccounts, value.contractAddresses)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getDelegateAccountConsensusTxSendersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        chainId: tuple.0,
+                        delegationAccounts: tuple.1,
+                        contractAddresses: tuple.2,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getDelegateAccountConsensusTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getDelegateAccountConsensusTxSendersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getDelegateAccountConsensusTxSendersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getDelegateAccountConsensusTxSendersCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                DelegationAccounts,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getDelegateAccountConsensusTxSendersReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getDelegateAccountConsensusTxSenders(uint256,(address,address),address[])";
+            const SELECTOR: [u8; 4] = [173u8, 139u8, 11u8, 43u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                    <DelegationAccounts as alloy_sol_types::SolType>::tokenize(
+                        &self.delegationAccounts,
+                    ),
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
 function getVersion() external pure returns (string memory);
@@ -2714,6 +3266,14 @@ function getVersion() external pure returns (string memory);
         #[allow(missing_docs)]
         delegateAccount(delegateAccountCall),
         #[allow(missing_docs)]
+        getAllowAccountConsensusTxSenders(getAllowAccountConsensusTxSendersCall),
+        #[allow(missing_docs)]
+        getAllowPublicDecryptConsensusTxSenders(
+            getAllowPublicDecryptConsensusTxSendersCall,
+        ),
+        #[allow(missing_docs)]
+        getDelegateAccountConsensusTxSenders(getDelegateAccountConsensusTxSendersCall),
+        #[allow(missing_docs)]
         getVersion(getVersionCall),
     }
     #[automatically_derived]
@@ -2730,6 +3290,9 @@ function getVersion() external pure returns (string memory);
             [29u8, 122u8, 133u8, 134u8],
             [59u8, 206u8, 73u8, 141u8],
             [81u8, 196u8, 29u8, 14u8],
+            [151u8, 196u8, 154u8, 64u8],
+            [173u8, 139u8, 11u8, 43u8],
+            [174u8, 149u8, 49u8, 134u8],
             [230u8, 56u8, 80u8, 138u8],
             [244u8, 197u8, 244u8, 147u8],
         ];
@@ -2738,7 +3301,7 @@ function getVersion() external pure returns (string memory);
     impl alloy_sol_types::SolInterface for IMultichainAclCalls {
         const NAME: &'static str = "IMultichainAclCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 7usize;
+        const COUNT: usize = 10usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2759,6 +3322,15 @@ function getVersion() external pure returns (string memory);
                 }
                 Self::delegateAccount(_) => {
                     <delegateAccountCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getAllowAccountConsensusTxSenders(_) => {
+                    <getAllowAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getAllowPublicDecryptConsensusTxSenders(_) => {
+                    <getAllowPublicDecryptConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getDelegateAccountConsensusTxSenders(_) => {
+                    <getDelegateAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
@@ -2850,6 +3422,49 @@ function getVersion() external pure returns (string memory);
                     checkAccountDelegated
                 },
                 {
+                    fn getAllowPublicDecryptConsensusTxSenders(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <getAllowPublicDecryptConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                IMultichainAclCalls::getAllowPublicDecryptConsensusTxSenders,
+                            )
+                    }
+                    getAllowPublicDecryptConsensusTxSenders
+                },
+                {
+                    fn getDelegateAccountConsensusTxSenders(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <getDelegateAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                IMultichainAclCalls::getDelegateAccountConsensusTxSenders,
+                            )
+                    }
+                    getDelegateAccountConsensusTxSenders
+                },
+                {
+                    fn getAllowAccountConsensusTxSenders(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <getAllowAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(IMultichainAclCalls::getAllowAccountConsensusTxSenders)
+                    }
+                    getAllowAccountConsensusTxSenders
+                },
+                {
                     fn allowAccount(
                         data: &[u8],
                         validate: bool,
@@ -2919,6 +3534,21 @@ function getVersion() external pure returns (string memory);
                         inner,
                     )
                 }
+                Self::getAllowAccountConsensusTxSenders(inner) => {
+                    <getAllowAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getAllowPublicDecryptConsensusTxSenders(inner) => {
+                    <getAllowPublicDecryptConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getDelegateAccountConsensusTxSenders(inner) => {
+                    <getDelegateAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -2959,6 +3589,24 @@ function getVersion() external pure returns (string memory);
                 }
                 Self::delegateAccount(inner) => {
                     <delegateAccountCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getAllowAccountConsensusTxSenders(inner) => {
+                    <getAllowAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getAllowPublicDecryptConsensusTxSenders(inner) => {
+                    <getAllowPublicDecryptConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getDelegateAccountConsensusTxSenders(inner) => {
+                    <getDelegateAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -3633,6 +4281,62 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<T, &P, delegateAccountCall, N> {
             self.call_builder(
                 &delegateAccountCall {
+                    chainId,
+                    delegationAccounts,
+                    contractAddresses,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`getAllowAccountConsensusTxSenders`] function.
+        pub fn getAllowAccountConsensusTxSenders(
+            &self,
+            ctHandle: alloy::sol_types::private::FixedBytes<32>,
+            accountAddress: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<
+            T,
+            &P,
+            getAllowAccountConsensusTxSendersCall,
+            N,
+        > {
+            self.call_builder(
+                &getAllowAccountConsensusTxSendersCall {
+                    ctHandle,
+                    accountAddress,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`getAllowPublicDecryptConsensusTxSenders`] function.
+        pub fn getAllowPublicDecryptConsensusTxSenders(
+            &self,
+            ctHandle: alloy::sol_types::private::FixedBytes<32>,
+        ) -> alloy_contract::SolCallBuilder<
+            T,
+            &P,
+            getAllowPublicDecryptConsensusTxSendersCall,
+            N,
+        > {
+            self.call_builder(
+                &getAllowPublicDecryptConsensusTxSendersCall {
+                    ctHandle,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`getDelegateAccountConsensusTxSenders`] function.
+        pub fn getDelegateAccountConsensusTxSenders(
+            &self,
+            chainId: alloy::sol_types::private::primitives::aliases::U256,
+            delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
+            contractAddresses: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >,
+        ) -> alloy_contract::SolCallBuilder<
+            T,
+            &P,
+            getDelegateAccountConsensusTxSendersCall,
+            N,
+        > {
+            self.call_builder(
+                &getDelegateAccountConsensusTxSendersCall {
                     chainId,
                     delegationAccounts,
                     contractAddresses,

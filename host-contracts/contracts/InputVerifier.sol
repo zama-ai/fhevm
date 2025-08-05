@@ -84,13 +84,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         address contractAddress;
         /// @notice The chainId of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
-        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
-        bytes extraData;
     }
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string public constant EIP712_INPUT_VERIFICATION_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
 
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 public constant EIP712_INPUT_VERIFICATION_TYPEHASH = keccak256(bytes(EIP712_INPUT_VERIFICATION_TYPE));
@@ -240,8 +238,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
             ctVerif.contractAddress = context.contractAddress;
             ctVerif.contractChainId = block.chainid;
 
-            // The extraData field is currently set with a single byte for version, but extendable in the future.
-            ctVerif.extraData = hex"00";
             _verifyEIP712(ctVerif, signatures);
 
             _cacheProof(cacheKey);
@@ -400,8 +396,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
-                        ctVerification.contractChainId,
-                        keccak256(abi.encodePacked(ctVerification.extraData))
+                        ctVerification.contractChainId
                     )
                 )
             );

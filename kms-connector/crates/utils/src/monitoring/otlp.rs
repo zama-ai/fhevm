@@ -3,8 +3,20 @@ use anyhow::anyhow;
 use opentelemetry::{global, trace::TracerProvider};
 use opentelemetry_otlp::SpanExporter;
 use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace::SdkTracerProvider};
+use tracing::Dispatch;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+
+/// Returns a default tracing dispatcher.
+///
+/// Used temporarily during config parsing as OTLP setup needs the service name that is in the
+/// config.
+pub fn default_dispatcher() -> Dispatch {
+    tracing_subscriber::registry()
+        .with(fmt::layer())
+        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .into()
+}
 
 /// Configures the tracing, OpenTelemetry and Prometheus setup for the app.
 ///

@@ -4,17 +4,22 @@ use crate::{
 };
 use alloy::{hex, primitives::Address, providers::Provider, transports::http::reqwest};
 use anyhow::anyhow;
+use connector_utils::types::fhe::extract_fhe_type_from_handle;
 use dashmap::DashMap;
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::SnsCiphertextMaterial,
     gatewayconfig::GatewayConfig::{self, GatewayConfigInstance},
 };
+use kms_grpc::kms::v1::{CiphertextFormat, TypedCiphertext};
 use sha3::{Digest, Keccak256};
 use std::{sync::LazyLock, time::Duration};
 use tracing::{debug, error, info, warn};
 
 /// Global cache for coprocessor S3 bucket URLs.
 static S3_BUCKET_CACHE: LazyLock<DashMap<Address, String>> = LazyLock::new(DashMap::new);
+
+/// The header used to retrieve the ciphertext format from the S3 HTTP response.
+const CT_FORMAT_HEADER: &str = "x-amz-meta-Ct-Format";
 
 /// Struct used to fetch ciphertext from S3 buckets.
 #[derive(Clone)]
@@ -215,7 +220,7 @@ where
     pub async fn retrieve_sns_ciphertext_materials(
         &self,
         sns_materials: Vec<SnsCiphertextMaterial>,
-    ) -> Vec<(Vec<u8>, Vec<u8>)> {
+    ) -> Vec<TypedCiphertext> {
         let mut sns_ciphertext_materials = Vec::new();
 
         for sns_material in sns_materials {
@@ -228,6 +233,7 @@ where
                 .prefetch_coprocessor_buckets(sns_material.coprocessorTxSenderAddresses)
                 .await;
 
+            let handle = sns_material.ctHandle.to_vec();
             let ct_digest = sns_material.snsCiphertextDigest.as_slice();
             let ct_digest_hex = hex::encode(ct_digest);
             if s3_urls.is_empty() {
@@ -236,12 +242,10 @@ where
             }
 
             match self
-                .retrieve_s3_ciphertext_with_retry(s3_urls, ct_digest, &ct_digest_hex)
+                .retrieve_s3_ciphertext_with_retry(s3_urls, &handle, ct_digest, &ct_digest_hex)
                 .await
             {
-                Some(ciphertext) => {
-                    sns_ciphertext_materials.push((sns_material.ctHandle.to_vec(), ciphertext));
-                }
+                Some(ciphertext) => sns_ciphertext_materials.push(ciphertext),
                 None => error!(
                     "Failed to retrieve ciphertext for digest {ct_digest_hex} from any S3 URL"
                 ),
@@ -255,13 +259,14 @@ where
     pub async fn retrieve_s3_ciphertext_with_retry(
         &self,
         s3_urls: Vec<String>,
+        handle: &[u8],
         ciphertext_digest: &[u8],
         digest_hex: &str,
-    ) -> Option<Vec<u8>> {
+    ) -> Option<TypedCiphertext> {
         for i in 1..=self.s3_ciphertext_retrieval_retries {
             for s3_url in s3_urls.iter() {
                 match self
-                    .retrieve_s3_ciphertext(s3_url, ciphertext_digest, digest_hex)
+                    .retrieve_s3_ciphertext(s3_url, handle, ciphertext_digest, digest_hex)
                     .await
                 {
                     Ok(ciphertext) => {
@@ -289,20 +294,28 @@ where
     pub async fn retrieve_s3_ciphertext(
         &self,
         s3_bucket_url: &str,
+        handle: &[u8],
         ciphertext_digest: &[u8],
         digest_hex: &str,
-    ) -> anyhow::Result<Vec<u8>> {
-        info!(
-            "S3 RETRIEVAL START: Retrieving ciphertext with digest {} from S3 bucket {}",
-            digest_hex, s3_bucket_url
-        );
+    ) -> anyhow::Result<TypedCiphertext> {
+        info!("S3 CIPHERTEXT RETRIEVAL START: from bucket {s3_bucket_url}, digest {digest_hex}");
 
         // Direct HTTP retrieval
         let direct_url = format!("{s3_bucket_url}/{digest_hex}");
-        let ciphertext = self.direct_http_retrieval(&direct_url).await?;
+        let (ciphertext, ct_format) = self.direct_http_retrieval(&direct_url).await?;
+
+        // TODO: once tfhe-rs is upgraded to 1.3, replace map().unwrap_or() by ?
+        // Right now it fails test when facing unknown types
+        let fhe_type = extract_fhe_type_from_handle(handle)
+            .map(|t| t as i32)
+            .unwrap_or(0);
+
         info!(
-            "DIRECT HTTP RETRIEVAL SUCCESS: Retrieved {} bytes",
-            ciphertext.len()
+            handle = hex::encode(handle),
+            "S3 CIPHERTEXT RETRIEVAL SUCCESS: format: {}, length: {}, FHE Type: {:?}",
+            ct_format.as_str_name(),
+            ciphertext.len(),
+            fhe_type
         );
 
         // Verify digest
@@ -313,13 +326,21 @@ where
                 "DIGEST MISMATCH: Expected: {digest_hex}, Got: {calculated_digest_hex}",
             ));
         }
-        info!("DIRECT HTTP RETRIEVAL COMPLETE: Successfully verified ciphertext digest");
+        info!("S3 CIPHERTEXT RETRIEVAL COMPLETE: Successfully verified ciphertext digest");
 
-        Ok(ciphertext)
+        Ok(TypedCiphertext {
+            ciphertext,
+            external_handle: handle.to_vec(),
+            fhe_type,
+            ciphertext_format: ct_format.into(),
+        })
     }
 
     /// Retrieves a file directly via HTTP.
-    async fn direct_http_retrieval(&self, url: &str) -> anyhow::Result<Vec<u8>> {
+    async fn direct_http_retrieval(
+        &self,
+        url: &str,
+    ) -> anyhow::Result<(Vec<u8>, CiphertextFormat)> {
         debug!("Attempting direct HTTP retrieval from URL: {}", url);
 
         // Create a reqwest client with appropriate timeouts
@@ -343,13 +364,21 @@ where
             ));
         }
 
+        // Read the ciphertext format from AWS metadata header
+        let ct_format = match response.headers().get(CT_FORMAT_HEADER).map(AsRef::as_ref) {
+            Some(b"compressed_on_cpu") | Some(b"compressed_on_gpu") => {
+                CiphertextFormat::BigCompressed
+            }
+            _ => CiphertextFormat::BigExpanded,
+        };
+
         // Read the response body
         let body = response
             .bytes()
             .await
             .map_err(|e| anyhow!("Failed to read HTTP response body: {}", e))?;
 
-        Ok(body.to_vec())
+        Ok((body.to_vec(), ct_format))
     }
 }
 

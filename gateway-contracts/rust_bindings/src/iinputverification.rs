@@ -15,6 +15,8 @@ interface IInputVerification {
 
     function checkProofRejected(uint256 zkProofId) external view;
     function checkProofVerified(uint256 zkProofId) external view;
+    function getRejectProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
+    function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
     function getVersion() external pure returns (string memory);
     function rejectProofResponse(uint256 zkProofId) external;
     function verifyProofRequest(uint256 contractChainId, address contractAddress, address userAddress, bytes memory ciphertextWithZKProof) external;
@@ -49,6 +51,44 @@ interface IInputVerification {
       }
     ],
     "outputs": [],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getRejectProofConsensusTxSenders",
+    "inputs": [
+      {
+        "name": "zkProofId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getVerifyProofConsensusTxSenders",
+    "inputs": [
+      {
+        "name": "zkProofId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
     "stateMutability": "view"
   },
   {
@@ -1372,6 +1412,290 @@ function checkProofVerified(uint256 zkProofId) external view;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getRejectProofConsensusTxSenders(uint256)` and selector `0x1bbe9fae`.
+```solidity
+function getRejectProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getRejectProofConsensusTxSendersCall {
+        #[allow(missing_docs)]
+        pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getRejectProofConsensusTxSenders(uint256)`](getRejectProofConsensusTxSendersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getRejectProofConsensusTxSendersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getRejectProofConsensusTxSendersCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getRejectProofConsensusTxSendersCall) -> Self {
+                    (value.zkProofId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getRejectProofConsensusTxSendersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { zkProofId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getRejectProofConsensusTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getRejectProofConsensusTxSendersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getRejectProofConsensusTxSendersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getRejectProofConsensusTxSendersCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getRejectProofConsensusTxSendersReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getRejectProofConsensusTxSenders(uint256)";
+            const SELECTOR: [u8; 4] = [27u8, 190u8, 159u8, 174u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getVerifyProofConsensusTxSenders(uint256)` and selector `0xce7e4257`.
+```solidity
+function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getVerifyProofConsensusTxSendersCall {
+        #[allow(missing_docs)]
+        pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getVerifyProofConsensusTxSenders(uint256)`](getVerifyProofConsensusTxSendersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getVerifyProofConsensusTxSendersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getVerifyProofConsensusTxSendersCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getVerifyProofConsensusTxSendersCall) -> Self {
+                    (value.zkProofId,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getVerifyProofConsensusTxSendersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { zkProofId: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getVerifyProofConsensusTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getVerifyProofConsensusTxSendersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getVerifyProofConsensusTxSendersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getVerifyProofConsensusTxSendersCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = getVerifyProofConsensusTxSendersReturn;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getVerifyProofConsensusTxSenders(uint256)";
+            const SELECTOR: [u8; 4] = [206u8, 126u8, 66u8, 87u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(
+                data: &[u8],
+                validate: bool,
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                    .map(Into::into)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
 function getVersion() external pure returns (string memory);
@@ -1965,6 +2289,10 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         #[allow(missing_docs)]
         checkProofVerified(checkProofVerifiedCall),
         #[allow(missing_docs)]
+        getRejectProofConsensusTxSenders(getRejectProofConsensusTxSendersCall),
+        #[allow(missing_docs)]
+        getVerifyProofConsensusTxSenders(getVerifyProofConsensusTxSendersCall),
+        #[allow(missing_docs)]
         getVersion(getVersionCall),
         #[allow(missing_docs)]
         rejectProofResponse(rejectProofResponseCall),
@@ -1985,16 +2313,18 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
             [13u8, 142u8, 110u8, 44u8],
             [18u8, 254u8, 115u8, 21u8],
             [24u8, 20u8, 174u8, 137u8],
+            [27u8, 190u8, 159u8, 174u8],
             [90u8, 81u8, 116u8, 235u8],
             [149u8, 77u8, 39u8, 18u8],
             [190u8, 189u8, 30u8, 106u8],
+            [206u8, 126u8, 66u8, 87u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IInputVerificationCalls {
         const NAME: &'static str = "IInputVerificationCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 6usize;
+        const COUNT: usize = 8usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2003,6 +2333,12 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 }
                 Self::checkProofVerified(_) => {
                     <checkProofVerifiedCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getRejectProofConsensusTxSenders(_) => {
+                    <getRejectProofConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getVerifyProofConsensusTxSenders(_) => {
+                    <getVerifyProofConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
@@ -2077,6 +2413,21 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     checkProofRejected
                 },
                 {
+                    fn getRejectProofConsensusTxSenders(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <getRejectProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                IInputVerificationCalls::getRejectProofConsensusTxSenders,
+                            )
+                    }
+                    getRejectProofConsensusTxSenders
+                },
+                {
                     fn checkProofVerified(
                         data: &[u8],
                         validate: bool,
@@ -2115,6 +2466,21 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     }
                     verifyProofResponse
                 },
+                {
+                    fn getVerifyProofConsensusTxSenders(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <getVerifyProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                IInputVerificationCalls::getVerifyProofConsensusTxSenders,
+                            )
+                    }
+                    getVerifyProofConsensusTxSenders
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -2136,6 +2502,16 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 }
                 Self::checkProofVerified(inner) => {
                     <checkProofVerifiedCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getRejectProofConsensusTxSenders(inner) => {
+                    <getRejectProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getVerifyProofConsensusTxSenders(inner) => {
+                    <getVerifyProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -2170,6 +2546,18 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 }
                 Self::checkProofVerified(inner) => {
                     <checkProofVerifiedCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getRejectProofConsensusTxSenders(inner) => {
+                    <getRejectProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getVerifyProofConsensusTxSenders(inner) => {
+                    <getVerifyProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -2720,6 +3108,38 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<T, &P, checkProofVerifiedCall, N> {
             self.call_builder(
                 &checkProofVerifiedCall {
+                    zkProofId,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`getRejectProofConsensusTxSenders`] function.
+        pub fn getRejectProofConsensusTxSenders(
+            &self,
+            zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<
+            T,
+            &P,
+            getRejectProofConsensusTxSendersCall,
+            N,
+        > {
+            self.call_builder(
+                &getRejectProofConsensusTxSendersCall {
+                    zkProofId,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`getVerifyProofConsensusTxSenders`] function.
+        pub fn getVerifyProofConsensusTxSenders(
+            &self,
+            zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<
+            T,
+            &P,
+            getVerifyProofConsensusTxSendersCall,
+            N,
+        > {
+            self.call_builder(
+                &getVerifyProofConsensusTxSendersCall {
                     zkProofId,
                 },
             )

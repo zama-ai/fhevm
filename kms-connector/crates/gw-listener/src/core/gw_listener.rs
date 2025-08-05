@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::{Config, EventPublisher};
 use crate::{
     core::DbEventPublisher,
@@ -92,6 +94,7 @@ where
         &'a self,
         event_name: &'static str,
         mut event_filter: Event<(), &'a Prov, E>,
+        poll_interval: Duration,
     ) where
         E: Into<GatewayEvent> + SolEvent + Send + Sync + 'static,
     {
@@ -107,7 +110,10 @@ where
             event_filter = event_filter.from_block(from_block_number);
         }
         let mut events = match event_filter.watch().await {
-            Ok(filter) => filter.into_stream(),
+            Ok(mut filter) => {
+                filter.poller = filter.poller.with_poll_interval(poll_interval);
+                filter.into_stream()
+            }
             Err(err) => {
                 return error!("Failed to subscribe to {event_name} events: {err}");
             }
@@ -140,48 +146,76 @@ where
 
     async fn subscribe_to_public_decryption_requests(self) {
         let public_decryption_filter = self.decryption_contract.PublicDecryptionRequest_filter();
-        self.subscribe_to_events("PublicDecryptionRequest", public_decryption_filter)
-            .await;
+        self.subscribe_to_events(
+            "PublicDecryptionRequest",
+            public_decryption_filter,
+            self.config.decryption_polling,
+        )
+        .await;
     }
 
     async fn subscribe_to_user_decryption_requests(self) {
         let user_decryption_filter = self.decryption_contract.UserDecryptionRequest_filter();
-        self.subscribe_to_events("UserDecryptionRequest", user_decryption_filter)
-            .await;
+        self.subscribe_to_events(
+            "UserDecryptionRequest",
+            user_decryption_filter,
+            self.config.decryption_polling,
+        )
+        .await;
     }
 
     async fn subscribe_to_preprocess_keygen_requests(self) {
         let preprocess_keygen_filter = self
             .kms_management_contract
             .PreprocessKeygenRequest_filter();
-        self.subscribe_to_events("PreprocessKeygenRequest", preprocess_keygen_filter)
-            .await;
+        self.subscribe_to_events(
+            "PreprocessKeygenRequest",
+            preprocess_keygen_filter,
+            self.config.key_management_polling,
+        )
+        .await;
     }
 
     async fn subscribe_to_preprocess_kskgen_requests(self) {
         let preprocess_kskgen_filter = self
             .kms_management_contract
             .PreprocessKskgenRequest_filter();
-        self.subscribe_to_events("PreprocessKskgenRequest", preprocess_kskgen_filter)
-            .await;
+        self.subscribe_to_events(
+            "PreprocessKskgenRequest",
+            preprocess_kskgen_filter,
+            self.config.key_management_polling,
+        )
+        .await;
     }
 
     async fn subscribe_to_keygen_requests(self) {
         let keygen_filter = self.kms_management_contract.KeygenRequest_filter();
-        self.subscribe_to_events("KeygenRequest", keygen_filter)
-            .await;
+        self.subscribe_to_events(
+            "KeygenRequest",
+            keygen_filter,
+            self.config.key_management_polling,
+        )
+        .await;
     }
 
     async fn subscribe_to_kskgen_requests(self) {
         let kskgen_filter = self.kms_management_contract.KskgenRequest_filter();
-        self.subscribe_to_events("KskgenRequest", kskgen_filter)
-            .await;
+        self.subscribe_to_events(
+            "KskgenRequest",
+            kskgen_filter,
+            self.config.key_management_polling,
+        )
+        .await;
     }
 
     async fn subscribe_to_crsgen_requests(self) {
         let crsgen_filter = self.kms_management_contract.CrsgenRequest_filter();
-        self.subscribe_to_events("CrsgenRequest", crsgen_filter)
-            .await;
+        self.subscribe_to_events(
+            "CrsgenRequest",
+            crsgen_filter,
+            self.config.key_management_polling,
+        )
+        .await;
     }
 }
 

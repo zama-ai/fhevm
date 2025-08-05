@@ -125,7 +125,7 @@ describe("CiphertextCommits", function () {
         ]);
     });
 
-    it("Should ignore other valid calls", async function () {
+    it("Should add a ciphertext material with 2 valid calls and ignore the other valid one", async function () {
       // Trigger 3 valid add ciphertext material calls
       const resultTx1 = await ciphertextCommits
         .connect(coprocessorTxSenders[0])
@@ -176,6 +176,44 @@ describe("CiphertextCommits", function () {
           coprocessorTxSenders[0].address,
           coprocessorTxSenders[2].address,
         ]);
+    });
+
+    it("Should get all valid coprocessor transaction senders from add ciphertext material consensus", async function () {
+      // Trigger a valid add ciphertext material call using the first coprocessor transaction sender
+      await ciphertextCommits
+        .connect(coprocessorTxSenders[0])
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+
+      // Check that the coprocessor transaction senders list is empty because consensus is not reached yet
+      const addCiphertextMaterialConsensusTxSenders1 =
+        await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle);
+      expect(addCiphertextMaterialConsensusTxSenders1).to.deep.equal([]);
+
+      // Trigger a valid add ciphertext material call using the second coprocessor transaction sender
+      await ciphertextCommits
+        .connect(coprocessorTxSenders[1])
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+
+      const expectedCoprocessorTxSenders2 = coprocessorTxSenders.slice(0, 2).map((s) => s.address);
+
+      // Check that the coprocessor transaction senders that were involved in the consensus are the
+      // 2 coprocessor transaction senders, at the moment the consensus is reached
+      const addCiphertextMaterialConsensusTxSenders2 =
+        await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle);
+      expect(addCiphertextMaterialConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
+
+      // Trigger a valid add ciphertext material call using the third coprocessor transaction sender
+      await ciphertextCommits
+        .connect(coprocessorTxSenders[2])
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+
+      const expectedCoprocessorTxSenders3 = coprocessorTxSenders.map((s) => s.address);
+
+      // Check that the coprocessor transaction senders that were involved in the consensus are the
+      // 3 coprocessor transaction senders, after the consensus is reached
+      const addCiphertextMaterialConsensusTxSenders3 =
+        await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle);
+      expect(addCiphertextMaterialConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {

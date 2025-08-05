@@ -1,8 +1,8 @@
-import dotenv from "dotenv";
-import fs from "fs";
-import { task } from "hardhat/config";
+import dotenv from 'dotenv';
+import fs from 'fs';
+import { task } from 'hardhat/config';
 
-import { getRequiredEnvVar } from "./utils/loadVariables";
+import { getRequiredEnvVar } from './utils/loadVariables';
 
 // Pause the ACL contract
 task('task:pauseACL').setAction(async function (_, { ethers }) {

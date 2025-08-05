@@ -116,9 +116,9 @@ pub async fn wait_for_ciphertext(
         .fetch_one(pool)
         .await;
 
-        if let Result::Ok(record) = record {
-            if let Some(ciphertext128) = record.ciphertext128 {
-                return anyhow::Ok(ciphertext128);
+        if let Ok(record) = record {
+            if let Some(ciphertext128) = record.ciphertext128.filter(|c| !c.is_empty()) {
+                return Ok(ciphertext128);
             }
         }
 
@@ -199,7 +199,7 @@ pub async fn setup_test_user(
 }
 
 pub async fn insert_random_tenant(pool: &PgPool) -> Result<i32, sqlx::Error> {
-    let chain_id: i32 = rand::rng().random_range(1..10000);
+    let chain_id: i64 = rand::rng().random_range(1..10000);
     let key_id_i32: i32 = rand::rng().random_range(1..10000);
 
     let verifying_contract_address: String = rand::rng()

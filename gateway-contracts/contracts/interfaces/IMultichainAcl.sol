@@ -140,6 +140,34 @@ interface IMultichainAcl {
     ) external view;
 
     /**
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for an allow public decrypt.
+     * @param ctHandle The ciphertext handle.
+     */
+    function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view returns (address[] memory);
+
+    /**
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for an allow account.
+     * @param ctHandle The ciphertext handle.
+     * @param accountAddress The address of the account.
+     */
+    function getAllowAccountConsensusTxSenders(
+        bytes32 ctHandle,
+        address accountAddress
+    ) external view returns (address[] memory);
+
+    /**
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for a delegate account.
+     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
+     * @param delegationAccounts The delegator and the delegated addresses.
+     * @param contractAddresses The delegated contract addresses.
+     */
+    function getDelegateAccountConsensusTxSenders(
+        uint256 chainId,
+        DelegationAccounts calldata delegationAccounts,
+        address[] calldata contractAddresses
+    ) external view returns (address[] memory);
+
+    /**
      * @notice Returns the versions of the MultichainACL contract in SemVer format.
      * @dev This is conventionally used for upgrade features.
      */

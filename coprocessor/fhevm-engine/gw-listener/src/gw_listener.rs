@@ -40,8 +40,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
 
     pub async fn run(&self) -> anyhow::Result<()> {
         info!(
-            "Starting Gateway Listener with: {:?}, InputVerification: {}",
-            self.conf, self.input_verification_address
+            conf = ?self.conf,
+            self.input_verification_address = %self.input_verification_address,
+            "Starting Gateway Listener",
         );
         let db_pool = PgPoolOptions::new()
             .max_connections(self.conf.database_pool_size)
@@ -59,8 +60,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 Ok(_) => {}
                 Err(e) => {
                     error!(
-                        "Encountered an error: {:?}, retrying in {} seconds",
-                        e, sleep_duration
+                        error = %e,
+                        sleep_duration = %sleep_duration,
+                        "Encountered an error, retrying",
                     );
                     self.sleep_with_backoff(&mut sleep_duration).await;
                 }
@@ -101,22 +103,22 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                 }
                 item = stream.next() => {
                     if item.is_none() {
-                        error!( "Event stream closed");
+                        error!("Event stream closed");
                         return Err(anyhow::anyhow!("Event stream closed"))
                     }
                     let (request, log) = item.unwrap()?;
-                    info!( "Received event for ZK proof request ID: {}", request.zkProofId);
+                    info!(zk_proof_id = %request.zkProofId, "Received ZK proof request event");
                     match log.block_number {
                         Some(event_block_num) => {
                             match from_block {
                                 BlockNumberOrTag::Latest => {
-                                    info!( "Updating from block from latest to {}", event_block_num);
+                                    info!(event_block_num = event_block_num, "Updating from block");
                                     from_block = BlockNumberOrTag::Number(event_block_num);
                                     self.update_last_block_num(db_pool, Some(event_block_num)).await?;
                                 }
                                 BlockNumberOrTag::Number(from_block_num) => {
                                     if from_block_num < event_block_num {
-                                        info!( "Updating from block from {} to {}", from_block_num, event_block_num);
+                                        info!(from_block_num = from_block_num, event_block_num = event_block_num, "Updating from block");
                                         from_block = BlockNumberOrTag::Number(event_block_num);
                                         self.update_last_block_num(db_pool, Some(event_block_num)).await?;
                                     }
@@ -125,7 +127,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                             }
                         }
                         None => {
-                            error!( "Received an event without a block number, updating from block to latest");
+                            error!("Received an event without a block number, updating from block to latest");
                             from_block = BlockNumberOrTag::Latest;
                             self.update_last_block_num(db_pool, None).await?;
                         }
@@ -140,7 +142,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
                         )
                         SELECT pg_notify($6, '')",
                         request.zkProofId.to::<i64>(),
-                        request.contractChainId.to::<i32>(),
+                        request.contractChainId.to::<i64>(),
                         request.contractAddress.to_string(),
                         request.userAddress.to_string(),
                         Some(request.ciphertextWithZKProof.as_ref()),
@@ -196,7 +198,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         db_pool: &Pool<Postgres>,
         block_num: Option<u64>,
     ) -> anyhow::Result<()> {
-        info!("Updating last block number to: {:?}", block_num);
+        info!(last_block_num = block_num, "Updating last block number");
         sqlx::query!(
             "INSERT into gw_listener_last_block (dummy_id, last_block_num)
             VALUES (true, $1)
