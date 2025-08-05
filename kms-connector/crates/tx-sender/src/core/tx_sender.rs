@@ -15,8 +15,8 @@ use alloy::{
 use anyhow::anyhow;
 use connector_utils::{
     conn::{WalletGatewayProvider, connect_to_db, connect_to_gateway_with_wallet},
-    types::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse},
     tasks::spawn_with_limit,
+    types::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse},
 };
 use fhevm_gateway_rust_bindings::decryption::Decryption::{self, DecryptionInstance};
 use std::time::Duration;

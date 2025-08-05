@@ -42,14 +42,13 @@ async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
     }
 
     println!("Checking PublicDecryptionRequest data...");
-    assert_eq!(
-        events0,
-        vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
+    assert_eq!(events0, vec![GatewayEvent::PublicDecryption(
+        PublicDecryptionRequest {
             decryptionId: id0,
             snsCtMaterials: sns_ct.clone(),
             extraData: vec![].into()
-        })]
-    );
+        }
+    )]);
     println!("Data OK!");
     Ok(())
 }
@@ -92,22 +91,20 @@ async fn test_parallel_event_picker_two_events() -> anyhow::Result<()> {
     let events1 = event_picker1.pick_events().await?;
 
     println!("Checking PublicDecryptionRequest data...");
-    assert_eq!(
-        events0,
-        vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
+    assert_eq!(events0, vec![GatewayEvent::PublicDecryption(
+        PublicDecryptionRequest {
             decryptionId: id0,
             snsCtMaterials: sns_ct.clone(),
             extraData: vec![].into(),
-        })]
-    );
-    assert_eq!(
-        events1,
-        vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
+        }
+    )]);
+    assert_eq!(events1, vec![GatewayEvent::PublicDecryption(
+        PublicDecryptionRequest {
             decryptionId: id1,
             snsCtMaterials: sns_ct,
             extraData: vec![].into(),
-        })]
-    );
+        }
+    )]);
     println!("Data OK!");
     Ok(())
 }
