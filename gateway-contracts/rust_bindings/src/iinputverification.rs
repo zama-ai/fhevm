@@ -2374,18 +2374,12 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [13u8, 142u8, 110u8, 44u8],
             [24u8, 20u8, 174u8, 137u8],
-<<<<<<< HEAD
+            [27u8, 190u8, 159u8, 174u8],
             [49u8, 190u8, 222u8, 163u8],
             [51u8, 128u8, 7u8, 252u8],
             [90u8, 81u8, 116u8, 235u8],
             [167u8, 0u8, 73u8, 150u8],
-=======
-            [27u8, 190u8, 159u8, 174u8],
-            [90u8, 81u8, 116u8, 235u8],
-            [149u8, 77u8, 39u8, 18u8],
-            [190u8, 189u8, 30u8, 106u8],
             [206u8, 126u8, 66u8, 87u8],
->>>>>>> origin/main
         ];
     }
     #[automatically_derived]
@@ -2468,7 +2462,21 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     checkProofRejected
                 },
                 {
-<<<<<<< HEAD
+                    fn getRejectProofConsensusTxSenders(
+                        data: &[u8],
+                        validate: bool,
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <getRejectProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                                validate,
+                            )
+                            .map(
+                                IInputVerificationCalls::getRejectProofConsensusTxSenders,
+                            )
+                    }
+                    getRejectProofConsensusTxSenders
+                },
+                {
                     fn verifyProofResponse(
                         data: &[u8],
                         validate: bool,
@@ -2493,21 +2501,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                             .map(IInputVerificationCalls::rejectProofResponse)
                     }
                     rejectProofResponse
-=======
-                    fn getRejectProofConsensusTxSenders(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
-                        <getRejectProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(
-                                IInputVerificationCalls::getRejectProofConsensusTxSenders,
-                            )
-                    }
-                    getRejectProofConsensusTxSenders
->>>>>>> origin/main
                 },
                 {
                     fn checkProofVerified(
@@ -2535,21 +2528,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     }
                     verifyProofRequest
                 },
-<<<<<<< HEAD
-=======
-                {
-                    fn verifyProofResponse(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
-                        <verifyProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
-                            .map(IInputVerificationCalls::verifyProofResponse)
-                    }
-                    verifyProofResponse
-                },
                 {
                     fn getVerifyProofConsensusTxSenders(
                         data: &[u8],
@@ -2565,7 +2543,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     }
                     getVerifyProofConsensusTxSenders
                 },
->>>>>>> origin/main
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(

@@ -609,16 +609,16 @@ describe("Decryption", function () {
 
     it("Should get all valid KMS transaction senders from public decryption consensus", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles);
+      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Trigger 2 valid public decryption responses
       await decryption
         .connect(kmsTxSenders[0])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0);
 
       await decryption
         .connect(kmsTxSenders[1])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1], extraDataV0);
 
       // Check that the KMS transaction senders list is empty because consensus is not reached yet
       const decryptionConsensusTxSenders1 = await decryption.getDecryptionConsensusTxSenders(decryptionId);
@@ -627,7 +627,7 @@ describe("Decryption", function () {
       // Trigger a third valid public decryption response
       await decryption
         .connect(kmsTxSenders[2])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2], extraDataV0);
 
       const expectedKmsTxSenderAddresses2 = kmsTxSenders.slice(0, 3).map((s) => s.address);
 
@@ -639,7 +639,7 @@ describe("Decryption", function () {
       // Trigger a fourth valid public decryption response
       await decryption
         .connect(kmsTxSenders[3])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[3], extraDataV0);
 
       const expectedKmsTxSenderAddresses3 = kmsTxSenders.map((s) => s.address);
 
@@ -651,20 +651,20 @@ describe("Decryption", function () {
 
     it("Should get valid KMS transaction senders from public decryption consensus and ignore malicious ones", async function () {
       // Request public decryption
-      await decryption.publicDecryptionRequest(ctHandles);
+      await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Trigger 3 valid public decryption responses
       await decryption
         .connect(kmsTxSenders[0])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[0], extraDataV0);
 
       await decryption
         .connect(kmsTxSenders[1])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[1], extraDataV0);
 
       await decryption
         .connect(kmsTxSenders[2])
-        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2]);
+        .publicDecryptionResponse(decryptionId, decryptedResult, kmsSignatures[2], extraDataV0);
 
       const decryptionAddress = await decryption.getAddress();
 
@@ -675,13 +675,14 @@ describe("Decryption", function () {
         decryptionAddress,
         ctHandles,
         fakeDecryptedResult,
+        extraDataV0,
       );
       const [fakeKmsSignature] = await getSignaturesPublicDecrypt(fakeEip712Message, kmsSigners.slice(3, 4));
 
       // Trigger a fourth invalid public decryption response
       await decryption
         .connect(kmsTxSenders[3])
-        .publicDecryptionResponse(decryptionId, fakeDecryptedResult, fakeKmsSignature);
+        .publicDecryptionResponse(decryptionId, fakeDecryptedResult, fakeKmsSignature, extraDataV0);
 
       const expectedKmsTxSenderAddresses = kmsTxSenders.slice(0, 3).map((s) => s.address);
 
@@ -696,14 +697,14 @@ describe("Decryption", function () {
       await expect(
         decryption
           .connect(kmsTxSenders[0])
-          .publicDecryptionResponse(nullDecryptionId, decryptedResult, kmsSignatures[0]),
+          .publicDecryptionResponse(nullDecryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
 
       // Check that a public decryption response with too high (not requested yet) decryptionId reverts
       await expect(
         decryption
           .connect(kmsTxSenders[0])
-          .publicDecryptionResponse(tooHighDecryptionId, decryptedResult, kmsSignatures[0]),
+          .publicDecryptionResponse(tooHighDecryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
     });
 
@@ -712,7 +713,7 @@ describe("Decryption", function () {
       await decryption.connect(pauser).pause();
 
       // Try calling paused public decryption request
-      await expect(decryption.publicDecryptionRequest(ctHandles)).to.be.revertedWithCustomError(
+      await expect(decryption.publicDecryptionRequest(ctHandles, extraDataV0)).to.be.revertedWithCustomError(
         decryption,
         "EnforcedPause",
       );
@@ -1481,17 +1482,17 @@ describe("Decryption", function () {
       await decryption.userDecryptionRequest(
         ctHandleContractPairs,
         requestValidity,
-        hostChainId,
-        contractAddresses,
+        contractsInfo,
         user.address,
         publicKey,
         userSignature,
+        extraDataV0,
       );
 
       // Trigger a valid user decryption response using the first KMS transaction sender
       await decryption
         .connect(kmsTxSenders[0])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
 
       const expectedKmsTxSenderAddresses1 = kmsTxSenders.slice(0, 1).map((s) => s.address);
 
@@ -1504,11 +1505,11 @@ describe("Decryption", function () {
       // Trigger 2 valid user decryption responses using different KMS transaction senders
       await decryption
         .connect(kmsTxSenders[1])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
 
       await decryption
         .connect(kmsTxSenders[2])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
       const expectedKmsTxSenderAddresses2 = kmsTxSenders.slice(0, 3).map((s) => s.address);
 
@@ -1518,7 +1519,7 @@ describe("Decryption", function () {
 
       await decryption
         .connect(kmsTxSenders[3])
-        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3]);
+        .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3], extraDataV0);
 
       const expectedKmsTxSenderAddresses3 = kmsTxSenders.map((s) => s.address);
 
@@ -1532,14 +1533,14 @@ describe("Decryption", function () {
       await expect(
         decryption
           .connect(kmsTxSenders[0])
-          .userDecryptionResponse(nullDecryptionId, userDecryptedShares[0], kmsSignatures[0]),
+          .userDecryptionResponse(nullDecryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
 
       // Check that a user decryption response with too high (not requested yet) decryptionId reverts
       await expect(
         decryption
           .connect(kmsTxSenders[0])
-          .userDecryptionResponse(tooHighDecryptionId, userDecryptedShares[0], kmsSignatures[0]),
+          .userDecryptionResponse(tooHighDecryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
     });
 

@@ -50,18 +50,11 @@ interface IDecryption {
     event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecryptedShares, bytes[] signatures, bytes extraData);
 
     function checkDecryptionDone(uint256 decryptionId) external view;
-<<<<<<< HEAD
     function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, address[] memory contractAddresses, bytes memory extraData) external view;
     function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory extraData) external view;
     function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs, bytes memory extraData) external view;
     function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, DelegationAccounts memory delegationAccounts, ContractsInfo memory contractsInfo, bytes memory publicKey, bytes memory signature, bytes memory extraData) external;
-=======
-    function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, address[] memory contractAddresses) external view;
-    function checkPublicDecryptionReady(bytes32[] memory ctHandles) external view;
-    function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] memory ctHandleContractPairs) external view;
-    function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPairs, RequestValidity memory requestValidity, DelegationAccounts memory delegationAccounts, uint256 contractsChainId, address[] memory contractAddresses, bytes memory publicKey, bytes memory signature) external;
     function getDecryptionConsensusTxSenders(uint256 decryptionId) external view returns (address[] memory);
->>>>>>> origin/main
     function getVersion() external pure returns (string memory);
     function publicDecryptionRequest(bytes32[] memory ctHandles, bytes memory extraData) external;
     function publicDecryptionResponse(uint256 decryptionId, bytes memory decryptedResult, bytes memory signature, bytes memory extraData) external;
@@ -5880,13 +5873,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-<<<<<<< HEAD
             [4u8, 111u8, 158u8, 179u8],
-=======
-            [0u8, 139u8, 195u8, 225u8],
-            [2u8, 253u8, 26u8, 100u8],
             [9u8, 0u8, 204u8, 105u8],
->>>>>>> origin/main
             [13u8, 142u8, 110u8, 44u8],
             [111u8, 137u8, 19u8, 188u8],
             [159u8, 152u8, 216u8, 153u8],

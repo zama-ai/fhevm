@@ -112,11 +112,11 @@ describe("MultichainAcl", function () {
       // Trigger 3 allow account calls with different coprocessor transaction senders
       const txResponse1 = await multichainAcl
         .connect(coprocessorTxSenders[0])
-        .allowAccount(ctHandle, newAccountAddress);
-      await multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress);
+        .allowAccount(ctHandle, newAccountAddress, extraDataV0);
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
       const txResponse3 = await multichainAcl
         .connect(coprocessorTxSenders[2])
-        .allowAccount(ctHandle, newAccountAddress);
+        .allowAccount(ctHandle, newAccountAddress, extraDataV0);
 
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet
@@ -127,7 +127,7 @@ describe("MultichainAcl", function () {
 
     it("Should get all valid coprocessor transaction senders from allow account consensus", async function () {
       // Trigger an allow account calls using the first coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress);
+      await multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
 
       const expectedCoprocessorTxSenders1 = coprocessorTxSenders.slice(0, 1).map((s) => s.address);
 
@@ -141,7 +141,7 @@ describe("MultichainAcl", function () {
       expect(proofRejectionConsensusTxSenders1).to.deep.equal(expectedCoprocessorTxSenders1);
 
       // Trigger an allow account calls using the second coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress);
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
 
       const expectedCoprocessorTxSenders2 = coprocessorTxSenders.slice(0, 2).map((s) => s.address);
 
@@ -154,7 +154,7 @@ describe("MultichainAcl", function () {
       expect(proofRejectionConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
 
       // Trigger an allow account calls using the third coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[2]).allowAccount(ctHandle, newAccountAddress);
+      await multichainAcl.connect(coprocessorTxSenders[2]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
 
       const expectedCoprocessorTxSenders3 = coprocessorTxSenders.map((s) => s.address);
 
@@ -221,9 +221,13 @@ describe("MultichainAcl", function () {
 
     it("Should allow public decryption with 2 valid responses and ignore the other valid one", async function () {
       // Trigger 3 allow public decryption calls with different coprocessor transaction senders
-      const txResponse1 = await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle);
-      await multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle);
-      const txResponse3 = await multichainAcl.connect(coprocessorTxSenders[2]).allowPublicDecrypt(newCtHandle);
+      const txResponse1 = await multichainAcl
+        .connect(coprocessorTxSenders[0])
+        .allowPublicDecrypt(newCtHandle, extraDataV0);
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle, extraDataV0);
+      const txResponse3 = await multichainAcl
+        .connect(coprocessorTxSenders[2])
+        .allowPublicDecrypt(newCtHandle, extraDataV0);
 
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet
@@ -234,7 +238,7 @@ describe("MultichainAcl", function () {
 
     it("Should get all valid coprocessor transaction senders from allow public decryption consensus", async function () {
       // Trigger an allow public decryption calls using the first coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle);
+      await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle, extraDataV0);
 
       const expectedCoprocessorTxSenders1 = coprocessorTxSenders.slice(0, 1).map((s) => s.address);
 
@@ -246,7 +250,7 @@ describe("MultichainAcl", function () {
       expect(proofRejectionConsensusTxSenders1).to.deep.equal(expectedCoprocessorTxSenders1);
 
       // Trigger an allow public decryption calls using the second coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle);
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle, extraDataV0);
 
       const expectedCoprocessorTxSenders2 = coprocessorTxSenders.slice(0, 2).map((s) => s.address);
 
@@ -257,7 +261,7 @@ describe("MultichainAcl", function () {
       expect(proofRejectionConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
 
       // Trigger an allow public decryption calls using the third coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[2]).allowPublicDecrypt(newCtHandle);
+      await multichainAcl.connect(coprocessorTxSenders[2]).allowPublicDecrypt(newCtHandle, extraDataV0);
 
       const expectedCoprocessorTxSenders3 = coprocessorTxSenders.map((s) => s.address);
 

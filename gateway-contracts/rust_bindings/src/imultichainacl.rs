@@ -3326,14 +3326,10 @@ function getVersion() external pure returns (string memory);
             [41u8, 74u8, 135u8, 5u8],
             [59u8, 206u8, 73u8, 141u8],
             [81u8, 196u8, 29u8, 14u8],
-<<<<<<< HEAD
-            [217u8, 7u8, 36u8, 181u8],
-=======
             [151u8, 196u8, 154u8, 64u8],
             [173u8, 139u8, 11u8, 43u8],
             [174u8, 149u8, 49u8, 134u8],
-            [230u8, 56u8, 80u8, 138u8],
->>>>>>> origin/main
+            [217u8, 7u8, 36u8, 181u8],
             [244u8, 197u8, 244u8, 147u8],
         ];
     }
@@ -3462,9 +3458,6 @@ function getVersion() external pure returns (string memory);
                     checkAccountDelegated
                 },
                 {
-<<<<<<< HEAD
-                    fn allowPublicDecrypt(
-=======
                     fn getAllowPublicDecryptConsensusTxSenders(
                         data: &[u8],
                         validate: bool,
@@ -3508,8 +3501,7 @@ function getVersion() external pure returns (string memory);
                     getAllowAccountConsensusTxSenders
                 },
                 {
-                    fn allowAccount(
->>>>>>> origin/main
+                    fn allowPublicDecrypt(
                         data: &[u8],
                         validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
