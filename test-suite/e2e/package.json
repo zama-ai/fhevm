@@ -15,7 +15,7 @@
   "dependencies": {
     "@fhevm/solidity": "^0.7.0-5",
     "@openzeppelin/contracts": "^5.3.0",
-    "@zama-fhe/relayer-sdk": "^0.2.0-3",
+    "@zama-fhe/relayer-sdk": "github:zama-ai/relayer-sdk#89d4d733d7ae2a8d2ae825a1b75f706185810e2a",
     "bigint-buffer": "^1.1.5",
     "dotenv": "^16.0.3"
   }

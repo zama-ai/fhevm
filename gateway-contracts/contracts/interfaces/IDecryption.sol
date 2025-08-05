@@ -191,8 +191,8 @@ interface IDecryption {
      * @notice Requests a user decryption.
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
-     * @param contractsChainId The chain ID of the given contract addresses figuring in the signed EIP-712 message.
-     * @param contractAddresses The contract addresses figuring in the signed EIP-712 message.
+     * @param contractsChainId The host chain ID, where the contracts are deployed.
+     * @param contractAddresses The contract addresses.
      * @param userAddress The user's address.
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
@@ -212,8 +212,8 @@ interface IDecryption {
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
      * @param delegationAccounts The user's address and the delegated account address for the user decryption.
-     * @param contractsChainId The chain ID of the given contract addresses figuring in the signed EIP-712 message.
-     * @param contractAddresses The contract addresses figuring in the signed EIP-712 message.
+     * @param contractsChainId The host chain ID, where the contracts are deployed.
+     * @param contractAddresses The contract addresses.
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
      */
@@ -257,7 +257,7 @@ interface IDecryption {
 
     /**
      * @notice Checks if handles are ready to be decrypted by a delegated address.
-     * @param contractsChainId The contract's chain ID.
+     * @param contractsChainId The host chain ID, where the contracts are deployed.
      * @param delegationAccounts The delegator and delegated address.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param contractAddresses The contract addresses.
