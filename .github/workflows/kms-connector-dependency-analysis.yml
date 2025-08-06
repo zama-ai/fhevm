@@ -50,7 +50,7 @@ jobs:
       - name: Install cargo tools
         run: |
           cargo binstall --no-confirm --force \
-            cargo-audit@0.21.0 \
+            cargo-audit@0.21.2 \
             cargo-deny@0.16.2
 
       - name: Check that Cargo.lock is the source of truth

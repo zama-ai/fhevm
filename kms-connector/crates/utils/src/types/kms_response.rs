@@ -121,7 +121,7 @@ impl PublicDecryptionResponse {
             decryption_id,
             decrypted_result: result.into(),
             signature,
-            extra_data: vec![], // TODO: extract from GRPC request when KMS Core API is changed,
+            extra_data: payload.extra_data,
         })
     }
 }
@@ -155,7 +155,7 @@ impl UserDecryptionResponse {
             decryption_id,
             user_decrypted_shares: serialized_response_payload,
             signature: grpc_response.external_signature,
-            extra_data: vec![], // TODO: extract from GRPC request when KMS Core API is changed,
+            extra_data: grpc_response.extra_data,
         })
     }
 }
