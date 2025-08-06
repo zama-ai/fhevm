@@ -156,7 +156,7 @@ contract KmsManagement is
     /// @dev See {IKmsManagement-preprocessKeygenRequest}.
     function preprocessKeygenRequest(
         string calldata fheParamsName
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
+    ) external virtual onlyGatewayOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
@@ -205,7 +205,7 @@ contract KmsManagement is
     /// @dev See {IKmsManagement-preprocessKskgenRequest}.
     function preprocessKskgenRequest(
         string calldata fheParamsName
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
+    ) external virtual onlyGatewayOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
@@ -252,7 +252,7 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-keygenRequest}.
-    function keygenRequest(uint256 preKeyId) external virtual onlyOwner whenNotPaused {
+    function keygenRequest(uint256 preKeyId) external virtual onlyGatewayOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A key generation request can only be sent once
@@ -301,7 +301,7 @@ contract KmsManagement is
     /// @dev See {IKmsManagement-crsgenRequest}.
     function crsgenRequest(
         string calldata fheParamsName
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
+    ) external virtual onlyGatewayOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev Generate a new crsgenRequestId. This is used to link the FHE params sent in the request
@@ -347,7 +347,7 @@ contract KmsManagement is
         uint256 preKskId,
         uint256 sourceKeyId,
         uint256 destKeyId
-    ) external virtual onlyOwner whenNotPaused {
+    ) external virtual onlyGatewayOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A KSK generation request can only be sent once
@@ -412,7 +412,7 @@ contract KmsManagement is
     }
 
     /// @dev See {IKmsManagement-activateKeyRequest}.
-    function activateKeyRequest(uint256 keyId) external virtual onlyOwner whenNotPaused {
+    function activateKeyRequest(uint256 keyId) external virtual onlyGatewayOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         /// @dev A key activation request can only be sent once
@@ -468,7 +468,7 @@ contract KmsManagement is
     function addFheParams(
         string calldata fheParamsName,
         bytes32 fheParamsDigest
-    ) external virtual onlyOwner whenNotPaused {
+    ) external virtual onlyGatewayOwner whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
         if ($._fheParamsInitialized[fheParamsName]) {
             revert FheParamsAlreadyInitialized(fheParamsName);
@@ -484,7 +484,7 @@ contract KmsManagement is
     function updateFheParams(
         string calldata fheParamsName,
         bytes32 fheParamsDigest
-    ) external virtual onlyOwner fheParamsInitialized(fheParamsName) whenNotPaused {
+    ) external virtual onlyGatewayOwner fheParamsInitialized(fheParamsName) whenNotPaused {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
         $.fheParamsDigests[fheParamsName] = fheParamsDigest;
 
@@ -547,7 +547,7 @@ contract KmsManagement is
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
     // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
     /// @notice Checks if the consensus is reached among the KMS nodes.
     /// @param kmsCounter The number of KMS nodes that agreed
