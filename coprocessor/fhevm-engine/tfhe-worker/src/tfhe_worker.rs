@@ -123,7 +123,8 @@ WITH selected_computations AS (
   (
     SELECT 
       c.tenant_id, 
-      c.output_handle, 
+      c.output_handle,
+      c.transaction_id,
       ah.handle, 
       ah.is_computed
     FROM computations c
@@ -175,7 +176,8 @@ WITH selected_computations AS (
   (
     SELECT 
       tenant_id, 
-      output_handle, 
+      output_handle,
+      transaction_id,
       NULL AS handle, 
       NULL AS is_computed
     FROM computations 
@@ -202,6 +204,7 @@ FROM computations c
 JOIN selected_computations sc
   ON c.tenant_id = sc.tenant_id
   AND c.output_handle = sc.output_handle
+  AND (c.transaction_id = sc.transaction_id OR c.transaction_id IS NULL)
 FOR UPDATE SKIP LOCKED            ",
             args.work_items_batch_size as i32,
             args.dependence_chains_per_batch as i32,
