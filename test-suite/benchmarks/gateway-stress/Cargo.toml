@@ -1,0 +1,40 @@
+[package]
+name = "gateway-stress"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# gateway-sdk.path = "../../../sdk/rust-sdk"
+fhevm_gateway_rust_bindings.path = "../../../gateway-contracts/rust_bindings"
+
+alloy = { version = "0.13", default-features = false, features = [
+    "essentials",
+    "reqwest-rustls-tls",
+    "std",
+    "provider-ws",
+    "signer-aws",
+] }
+anyhow = "1.0.98"
+async-trait = { version = "0.1.88", default-features = false }
+aws-config = { version = "1.8.2", default-features = true }
+aws-sdk-kms = { version = "1.79.0", default-features = true }
+aws-sdk-s3 = { version = "1.98.0", default-features = true }
+clap = { version = "4.5.38", features = ["cargo", "derive"] }
+config = { version = "0.15.13", default-features = false, features = ["toml"] }
+futures = { version = "0.3.31", default-features = false }
+serde = { version = "1.0.219", default-features = false, features = [
+    "derive",
+    "std",
+] }
+serde_json = { version = "1.0.141", default-features = false, features = [
+    "std",
+] }
+tokio = { version = "1.47.0", default-features = false, features = [
+    "macros",
+    "rt-multi-thread",
+    "sync",
+] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", default-features = true, features = [
+    "env-filter",
+] }
