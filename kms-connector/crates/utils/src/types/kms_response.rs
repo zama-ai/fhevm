@@ -1,5 +1,3 @@
-use std::fmt::Display;
-
 use crate::types::{GatewayEvent, KmsGrpcResponse, fhe::abi_encode_plaintexts};
 use alloy::primitives::U256;
 use anyhow::anyhow;
@@ -8,6 +6,7 @@ use kms_grpc::kms::v1::{
     UserDecryptionResponse as GrpcUserDecryptionResponse,
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
+use std::fmt::Display;
 use tracing::{debug, info};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -108,7 +107,7 @@ impl PublicDecryptionResponse {
         let result = abi_encode_plaintexts(&payload.plaintexts);
 
         // Get the external signature
-        let signature = payload
+        let signature = grpc_response
             .external_signature
             .ok_or_else(|| anyhow!("KMS Core did not provide required EIP-712 signature"))?;
 
@@ -121,7 +120,7 @@ impl PublicDecryptionResponse {
             decryption_id,
             decrypted_result: result.into(),
             signature,
-            extra_data: payload.extra_data,
+            extra_data: grpc_response.extra_data,
         })
     }
 }
