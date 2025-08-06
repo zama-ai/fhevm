@@ -67,6 +67,7 @@ async fn test_publish_user_decryption_response() -> anyhow::Result<()> {
             signature: rand_signature.clone(),
             external_signature: rand_signature.clone(),
             payload: Some(UserDecryptionResponsePayload::default()),
+            extra_data: vec![],
         },
     };
     let response = KmsResponse::process(grpc_response)?;
