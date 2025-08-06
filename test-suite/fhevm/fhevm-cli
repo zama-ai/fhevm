@@ -90,6 +90,9 @@ case $COMMAND in
     if [[ "$1" == "--build" ]]; then
       BUILD_ARG="--build"
       shift
+    elif [[ "$1" == "--build-coprocessor" ]]; then
+      BUILD_ARG="--build-coprocessor"
+      shift
     elif [[ -n "$1" ]]; then
       echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown argument for deploy: $1${RESET}"
       usage

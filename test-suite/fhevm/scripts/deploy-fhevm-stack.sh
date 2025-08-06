@@ -30,6 +30,9 @@ for arg in "$@"; do
   if [[ "$arg" == "--build" ]]; then
     FORCE_BUILD=true
     log_info "Force build option detected. Services will be rebuilt."
+  elif [[ "$arg" == "--build-coprocessor" ]]; then
+    FORCE_BUILD_COPROCESSOR=true
+    log_info "Force build option detected. Coprocessor will be rebuilt."
   else
     NEW_ARGS+=("$arg")
   fi
@@ -320,7 +323,7 @@ fi
 
 get_minio_ip "fhevm-minio"
 
-if [ "$FORCE_BUILD" = true ]; then
+if [ "$FORCE_BUILD" = true ] || [ "$FORCE_BUILD_COPROCESSOR" = true ]; then
   run_compose_with_build "coprocessor" "Coprocessor Services" \
     "${PROJECT}-coprocessor-db:running" \
     "${PROJECT}-key-downloader:complete" \
