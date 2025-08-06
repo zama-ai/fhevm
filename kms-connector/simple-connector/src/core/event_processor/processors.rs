@@ -5,8 +5,11 @@ use tracing::{debug, error, info};
 
 use crate::{
     core::{
-        backpressure::BackpressureSignal, config::Config, decryption::handler::DecryptionHandler,
-        polling::remove_block_timestamp, utils::s3_client::S3Client,
+        backpressure::BackpressureSignal,
+        config::Config,
+        decryption::handler::DecryptionHandler,
+        polling::remove_block_timestamp,
+        utils::{s3_client::S3Client, sharding},
     },
     error::Result,
     gw_adapters::events::KmsCoreEvent,
@@ -16,6 +19,7 @@ use crate::{
 pub struct EventProcessor<P> {
     decryption_handler: DecryptionHandler<P>,
     s3_client: S3Client,
+    config: Config,
     shutdown: Option<broadcast::Receiver<()>>,
     // Backpressure receiver for polling system integration
     backpressure_rx: Option<broadcast::Receiver<BackpressureSignal>>,
@@ -35,6 +39,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
         Ok(Self {
             decryption_handler,
             s3_client,
+            config,
             shutdown: Some(shutdown),
             backpressure_rx,
         })
@@ -57,7 +62,26 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
         loop {
             tokio::select! {
                 Some(event) = event_rx.recv() => {
-                    // Log event reception immediately
+                    // Apply sharding filter if enabled
+                    if let Some((shard_id, total_shards)) = sharding::get_shard_config(
+                        self.config.shard_id,
+                        self.config.total_shards
+                    ) {
+                        if let Some(request_id) = sharding::extract_request_id(&event) {
+                            if !sharding::should_handle_request(request_id, shard_id, total_shards) {
+                                info!(
+                                    "Skipping request {} - assigned to different shard (we are shard {} of {})",
+                                    request_id, shard_id, total_shards
+                                );
+                                continue;
+                            }
+                            info!(
+                                "Processing request {} - assigned to our shard {} of {}",
+                                request_id, shard_id, total_shards
+                            );
+                        }
+                    }
+
                     match &event {
                         KmsCoreEvent::PublicDecryptionRequest(req) => {
                             info!("[RECEIVED] PublicDecryptionRequest-{}", req.decryptionId);
@@ -68,7 +92,7 @@ impl<P: Provider + Clone + 'static> EventProcessor<P> {
                         _ => {
                             info!("[RECEIVED] Other event type");
                         }
-                    }
+                    };
 
                     // Spawn concurrent task for processing
                     let decryption_handler = self.decryption_handler.clone();

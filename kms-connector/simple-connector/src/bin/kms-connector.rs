@@ -74,9 +74,11 @@ async fn run_connector(
     shutdown_rx: broadcast::Receiver<()>,
 ) -> Result<()> {
     // Initialize KMS service
-    let kms_core_endpoint = config.kms_core_endpoint.clone();
-    info!("Connecting to KMS-Core at {}", kms_core_endpoint);
-    let kms_provider = Arc::new(KmsServiceImpl::new(&kms_core_endpoint, config.clone()));
+    info!(
+        "Connecting to KMS-Core endpoints: {:?}",
+        config.kms_core_endpoints
+    );
+    let kms_provider = Arc::new(KmsServiceImpl::new(config.clone()));
 
     // Create and start connector
     let (mut connector, event_rx) = KmsCoreConnector::new(
