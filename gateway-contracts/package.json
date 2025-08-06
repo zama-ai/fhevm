@@ -23,6 +23,8 @@
     "@nomicfoundation/hardhat-network-helpers": "^1.0.12",
     "@nomicfoundation/hardhat-verify": "^2.0.13",
     "@openzeppelin/hardhat-upgrades": "^3.9.0",
+    "@safe-global/safe-contracts": "^1.4.1-2",
+    "@safe-global/types-kit": "^3.0.0",
     "@solidity-parser/parser": "^0.20.1",
     "@trivago/prettier-plugin-sort-imports": "^4.3.0",
     "@typechain/ethers-v6": "^0.5.1",
@@ -34,6 +36,7 @@
     "dotenv": "^16.4.7",
     "ethers": "^6.4.0",
     "hardhat": "^2.22.18",
+    "hardhat-dependency-compiler": "^1.2.1",
     "hardhat-ignore-warnings": "^0.2.12",
     "husky": "^9.1.7",
     "license-checker": "^25.0.1",
@@ -49,5 +52,10 @@
   "dependencies": {
     "@openzeppelin/contracts": "^5.2.0",
     "@openzeppelin/contracts-upgradeable": "^5.2.0"
+  },
+  "overrides": {
+    "@safe-global/safe-contracts": {
+      "ethers": "^6.13.5"
+    }
   }
 }

@@ -156,7 +156,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a preprocessing keygen request
       await expect(kmsManagement.connect(fakeOwner).preprocessKeygenRequest(fheParamsName))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than a KMS transaction sender cannot trigger a preprocessing
@@ -167,7 +167,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a keygen request
       await expect(kmsManagement.connect(fakeOwner).keygenRequest(0))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a keygen response
@@ -356,7 +356,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a CRS generation request
       await expect(kmsManagement.connect(fakeOwner).crsgenRequest(fheParamsName))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a CRS generation response
@@ -469,7 +469,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a preprocessing KSK generation request
       await expect(kmsManagement.connect(fakeOwner).preprocessKskgenRequest(fheParamsName))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a preprocessing KSK generation response
@@ -479,7 +479,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a KSK generation request
       await expect(kmsManagement.connect(fakeOwner).kskgenRequest(0, 0, 0))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a KSK generation response
@@ -678,7 +678,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a key activation request
       await expect(kmsManagement.connect(fakeOwner).activateKeyRequest(0))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than a coprocessor transaction sender cannot trigger a key activation response
@@ -800,7 +800,7 @@ describe("KmsManagement", function () {
     });
 
     it("Should revert because of access controls", async function () {
-      const { kmsManagement } = await loadFixture(loadTestVariablesFixture);
+      const { kmsManagement, gatewayConfig } = await loadFixture(loadTestVariablesFixture);
 
       // Get dummy FHE params
       const fheParamsName = "TEST";
@@ -808,12 +808,12 @@ describe("KmsManagement", function () {
 
       // Check that only the owner can set the FHE params
       await expect(kmsManagement.connect(fakeOwner).addFheParams(fheParamsName, fheParamsDigest))
-        .to.be.revertedWithCustomError(kmsManagement, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that only the owner can update the FHE params
       await expect(kmsManagement.connect(fakeOwner).updateFheParams(fheParamsName, fheParamsDigest))
-        .to.be.revertedWithCustomError(kmsManagement, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
     });
 

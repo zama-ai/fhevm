@@ -1,18 +1,24 @@
 use alloy::network::EthereumWallet;
 use alloy::node_bindings::Anvil;
+use alloy::node_bindings::AnvilInstance;
+use alloy::primitives::U256;
+use alloy::providers::fillers::{
+    BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill,
+    NonceFiller, WalletFiller,
+};
+use alloy::providers::{
+    Provider, ProviderBuilder, RootProvider, WalletProvider, WsConnect,
+};
+use alloy::rpc::types::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::sol;
 use futures_util::future::try_join_all;
+use serial_test::serial;
+use sqlx::postgres::PgPoolOptions;
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
 use test_harness::instance::ImportMode;
 use tracing::Level;
-
-use alloy::providers::{Provider, ProviderBuilder, WalletProvider, WsConnect};
-use alloy::rpc::types::TransactionRequest;
-use alloy_primitives::U256;
-use serial_test::serial;
-use sqlx::postgres::PgPoolOptions;
 
 use host_listener::cmd::main;
 use host_listener::cmd::Args;
@@ -94,28 +100,51 @@ async fn emit_events<P, N>(
     }
 }
 
-#[tokio::test]
-#[serial(db)]
-async fn test_listener_restart() -> Result<(), anyhow::Error> {
-    let test_instance =
-        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
-            .await
-            .expect("valid db instance");
-
-    let anvil = Anvil::new()
-        .block_time_f64(1.0)
-        .args(["--accounts", "15"])
-        .spawn();
-    let chain_id = anvil.chain_id();
-    let nb_wallet = anvil.keys().len() as i64;
-    eprintln!("Nb wallet {}", nb_wallet);
+fn wallets(anvil: &AnvilInstance) -> Vec<EthereumWallet> {
     let mut wallets = vec![];
     for key in anvil.keys().iter() {
         let signer: PrivateKeySigner = key.clone().into();
         let wallet = EthereumWallet::new(signer);
         wallets.push(wallet);
     }
-    let url = anvil.ws_endpoint();
+    wallets
+}
+
+type SetupProvider = FillProvider<
+    JoinFill<
+        JoinFill<
+            alloy::providers::Identity,
+            JoinFill<
+                GasFiller,
+                JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>,
+            >,
+        >,
+        WalletFiller<EthereumWallet>,
+    >,
+    RootProvider,
+>;
+
+struct Setup {
+    args: Args,
+    anvil: AnvilInstance,
+    wallets: Vec<EthereumWallet>,
+    acl_contract: ACLTestInstance<SetupProvider>,
+    tfhe_contract: FHEVMExecutorTestInstance<SetupProvider>,
+    db_pool: sqlx::Pool<sqlx::Postgres>,
+    _test_instance: test_harness::instance::DBInstance, // maintain db alive
+}
+
+async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::WARN)
+        .compact()
+        .try_init()
+        .ok();
+
+    let test_instance =
+        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
+            .await
+            .expect("valid db instance");
 
     let db_pool = PgPoolOptions::new()
         .max_connections(1)
@@ -128,14 +157,24 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
             .await?
             .tenant_api_key;
 
+    let anvil = Anvil::new()
+        .block_time_f64(1.0)
+        .args(["--accounts", "15"])
+        .chain_id(node_chain_id.unwrap_or(12345))
+        .spawn();
+
+    let wallets = wallets(&anvil);
+    let url = anvil.ws_endpoint().clone();
+
     let provider = ProviderBuilder::new()
         .wallet(wallets[0].clone())
         .connect_ws(WsConnect::new(url.clone()))
         .await?;
+
     let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
     let acl_contract = ACLTest::deploy(provider.clone()).await?;
     let args = Args {
-        url: url.clone(),
+        url,
         initial_block_time: 1,
         no_block_immediate_recheck: false,
         acl_contract_address: acl_contract.address().to_string(),
@@ -147,9 +186,41 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         catchup_margin: 5,
         catchup_paging: 3,
         log_level: Level::INFO,
-        health_port: 8080,
+        health_port: 8081,
         dependence_cache_size: 128,
     };
+
+    Ok(Setup {
+        args,
+        anvil,
+        wallets,
+        acl_contract,
+        tfhe_contract,
+        db_pool,
+        _test_instance: test_instance,
+    })
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_bad_chain_id() {
+    let setup = setup(Some(54321)).await.expect("setup failed");
+    let listener_handle = tokio::spawn(main(setup.args.clone()));
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+    assert!(listener_handle.is_finished(), "Listener should have failed");
+    let result = listener_handle.await;
+    if let Ok(Err(e)) = result {
+        assert!(e.to_string().contains("Chain ID mismatch"));
+    } else {
+        panic!("Listener should have failed due to chain ID mismatch");
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_listener_restart() -> Result<(), anyhow::Error> {
+    let setup = setup(None).await?;
+    let args = setup.args.clone();
 
     // Start listener in background task
     let listener_handle = tokio::spawn(main(args.clone()));
@@ -157,10 +228,10 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
 
     // Emit first batch of events
-    let wallets_clone = wallets.clone();
-    let url_clone = url.clone();
-    let tfhe_contract_clone = tfhe_contract.clone();
-    let acl_contract_clone = acl_contract.clone();
+    let wallets_clone = setup.wallets.clone();
+    let url_clone = setup.args.url.clone();
+    let tfhe_contract_clone = setup.tfhe_contract.clone();
+    let acl_contract_clone = setup.acl_contract.clone();
     let event_source = tokio::spawn(async move {
         emit_events(
             &wallets_clone,
@@ -177,20 +248,16 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
     eprintln!("First kill, check database valid block has been updated");
     listener_handle.abort();
     let mut database = Database::new(
-        test_instance.db_url(),
-        &coprocessor_api_key,
-        chain_id,
+        &args.database_url,
+        &args.coprocessor_api_key.unwrap(),
         args.dependence_cache_size,
     )
-    .await;
+    .await
+    .unwrap();
     let last_block = database.read_last_valid_block().await;
     assert!(last_block.is_some());
     assert!(last_block.unwrap() > 1);
 
-    let db_pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(test_instance.db_url())
-        .await?;
     let mut tfhe_events_count = 0;
     let mut acl_events_count = 0;
     let mut nb_kill = 1;
@@ -200,13 +267,13 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         let listener_handle = tokio::spawn(main(args.clone()));
         tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
         let tfhe_new_count = sqlx::query!("SELECT COUNT(*) FROM computations")
-            .fetch_one(&db_pool)
+            .fetch_one(&setup.db_pool)
             .await?
             .count
             .unwrap_or(0);
         let acl_new_count =
             sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
-                .fetch_one(&db_pool)
+                .fetch_one(&setup.db_pool)
                 .await?
                 .count
                 .unwrap_or(0);
@@ -228,9 +295,9 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
         );
         tokio::time::sleep(tokio::time::Duration::from_secs_f64(1.5)).await;
     }
-
-    assert_eq!(tfhe_events_count, nb_wallet * NB_EVENTS_PER_WALLET);
-    assert_eq!(acl_events_count, nb_wallet * NB_EVENTS_PER_WALLET);
+    let nb_wallets = setup.wallets.len() as i64;
+    assert_eq!(tfhe_events_count, nb_wallets * NB_EVENTS_PER_WALLET);
+    assert_eq!(acl_events_count, nb_wallets * NB_EVENTS_PER_WALLET);
     eprintln!("Total kills: {nb_kill}");
     assert!(3 < nb_kill);
     Ok(())
@@ -239,62 +306,13 @@ async fn test_listener_restart() -> Result<(), anyhow::Error> {
 #[tokio::test]
 #[serial(db)]
 async fn test_health() -> Result<(), anyhow::Error> {
-    let test_instance =
-        test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
-            .await
-            .expect("valid db instance");
-
-    let mut anvil = Anvil::new()
-        .block_time_f64(1.0)
-        .args(["--accounts", "1"])
-        .spawn();
-    let url = anvil.ws_endpoint();
-    let mut wallets = vec![];
-    for key in anvil.keys().iter() {
-        let signer: PrivateKeySigner = key.clone().into();
-        let wallet = EthereumWallet::new(signer);
-        wallets.push(wallet);
-    }
-    let provider = ProviderBuilder::new()
-        .wallet(wallets[0].clone())
-        .connect_ws(WsConnect::new(url.clone()))
-        .await?;
-    let tfhe_contract = FHEVMExecutorTest::deploy(provider.clone()).await?;
-    let acl_contract = ACLTest::deploy(provider.clone()).await?;
-
-    let db_pool = PgPoolOptions::new()
-        .max_connections(1)
-        .connect(test_instance.db_url())
-        .await?;
-
-    let coprocessor_api_key = Some(
-        sqlx::query!("SELECT tenant_api_key FROM tenants LIMIT 1")
-            .fetch_one(&db_pool)
-            .await?
-            .tenant_api_key,
-    );
-    let args = Args {
-        url: url.clone(),
-        initial_block_time: 1,
-        no_block_immediate_recheck: false,
-        acl_contract_address: acl_contract.address().to_string(),
-        tfhe_contract_address: tfhe_contract.address().to_string(),
-        database_url: test_instance.db_url().to_string(),
-        coprocessor_api_key,
-        start_at_block: None,
-        end_at_block: None,
-        catchup_margin: 5,
-        catchup_paging: 3,
-        log_level: Level::INFO,
-        health_port: 8081,
-        dependence_cache_size: 128,
-    };
+    let mut setup = setup(None).await.expect("setup failed");
 
     const LIVENESS_URL: &str = "http://0.0.0.0:8081/liveness";
     const HEALTHZ_URL: &str = "http://0.0.0.0:8081/healthz";
 
     // Start listener in background task
-    let listener_handle = tokio::spawn(main(args.clone()));
+    let listener_handle = tokio::spawn(main(setup.args.clone()));
     for _ in 1..10 {
         let response = reqwest::get(LIVENESS_URL).await;
         if response.is_ok() && response.unwrap().status().is_success() {
@@ -313,7 +331,7 @@ async fn test_health() -> Result<(), anyhow::Error> {
         eprintln!("response: {:?}", response.text().await);
         return Err(anyhow::anyhow!("Failed to get healthz"));
     }
-    anvil.child_mut().kill().unwrap();
+    setup.anvil.child_mut().kill().unwrap();
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
     let response = reqwest::get(HEALTHZ_URL).await;
     let Ok(response) = response else {
