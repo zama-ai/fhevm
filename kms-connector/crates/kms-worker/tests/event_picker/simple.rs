@@ -41,13 +41,14 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
     let events = event_picker.pick_events().await?;
 
     println!("Checking PublicDecryptionRequest data...");
-    assert_eq!(events, vec![GatewayEvent::PublicDecryption(
-        PublicDecryptionRequest {
+    assert_eq!(
+        events,
+        vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: decryption_id,
             snsCtMaterials: sns_ct,
             extraData: vec![].into(),
-        }
-    )]);
+        })]
+    );
     println!("Data OK!");
     Ok(())
 }
@@ -83,15 +84,16 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
     let events = event_picker.pick_events().await?;
 
     println!("Checking UserDecryptionRequest data...");
-    assert_eq!(events, vec![GatewayEvent::UserDecryption(
-        UserDecryptionRequest {
+    assert_eq!(
+        events,
+        vec![GatewayEvent::UserDecryption(UserDecryptionRequest {
             decryptionId: decryption_id,
             snsCtMaterials: sns_ct,
             userAddress: user_address,
             publicKey: public_key.into(),
             extraData: vec![].into(),
-        }
-    )]);
+        })]
+    );
     println!("Data OK!");
     Ok(())
 }
@@ -118,12 +120,13 @@ async fn test_pick_preprocess_keygen() -> anyhow::Result<()> {
     let events = event_picker.pick_events().await?;
 
     println!("Checking PreprocessKeygenRequest data...");
-    assert_eq!(events, vec![GatewayEvent::PreprocessKeygen(
-        PreprocessKeygenRequest {
+    assert_eq!(
+        events,
+        vec![GatewayEvent::PreprocessKeygen(PreprocessKeygenRequest {
             preKeygenRequestId: pre_keygen_request_id,
             fheParamsDigest: fhe_params_digest,
-        }
-    )]);
+        })]
+    );
     println!("Data OK!");
     Ok(())
 }
@@ -150,12 +153,13 @@ async fn test_pick_preprocess_kskgen() -> anyhow::Result<()> {
     let events = event_picker.pick_events().await?;
 
     println!("Checking PreprocessKskgenRequest data...");
-    assert_eq!(events, vec![GatewayEvent::PreprocessKskgen(
-        PreprocessKskgenRequest {
+    assert_eq!(
+        events,
+        vec![GatewayEvent::PreprocessKskgen(PreprocessKskgenRequest {
             preKskgenRequestId: pre_kskgen_request_id,
             fheParamsDigest: fhe_params_digest,
-        }
-    )]);
+        })]
+    );
     println!("Data OK!");
     Ok(())
 }
@@ -182,10 +186,13 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
     let events = event_picker.pick_events().await?;
 
     println!("Checking KeygenRequest data...");
-    assert_eq!(events, vec![GatewayEvent::Keygen(KeygenRequest {
-        preKeyId: pre_key_id,
-        fheParamsDigest: fhe_params_digest,
-    })]);
+    assert_eq!(
+        events,
+        vec![GatewayEvent::Keygen(KeygenRequest {
+            preKeyId: pre_key_id,
+            fheParamsDigest: fhe_params_digest,
+        })]
+    );
     println!("Data OK!");
     Ok(())
 }
@@ -216,12 +223,15 @@ async fn test_pick_kskgen() -> anyhow::Result<()> {
     let events = event_picker.pick_events().await?;
 
     println!("Checking KskgenRequest data...");
-    assert_eq!(events, vec![GatewayEvent::Kskgen(KskgenRequest {
-        preKskId: pre_ksk_id,
-        sourceKeyId: source_key_id,
-        destKeyId: dest_key_id,
-        fheParamsDigest: fhe_params_digest,
-    })]);
+    assert_eq!(
+        events,
+        vec![GatewayEvent::Kskgen(KskgenRequest {
+            preKskId: pre_ksk_id,
+            sourceKeyId: source_key_id,
+            destKeyId: dest_key_id,
+            fheParamsDigest: fhe_params_digest,
+        })]
+    );
     println!("Data OK!");
     Ok(())
 }
@@ -248,10 +258,13 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
     let events = event_picker.pick_events().await?;
 
     println!("Checking CrsgenRequest data...");
-    assert_eq!(events, vec![GatewayEvent::Crsgen(CrsgenRequest {
-        crsgenRequestId: crsgen_request_id,
-        fheParamsDigest: fhe_params_digest,
-    })]);
+    assert_eq!(
+        events,
+        vec![GatewayEvent::Crsgen(CrsgenRequest {
+            crsgenRequestId: crsgen_request_id,
+            fheParamsDigest: fhe_params_digest,
+        })]
+    );
     println!("Data OK!");
     Ok(())
 }

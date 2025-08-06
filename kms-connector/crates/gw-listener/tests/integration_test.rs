@@ -58,9 +58,10 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
     let sns_ct_materials =
         row.try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
     assert_eq!(decryption_id, U256::ONE);
-    assert_eq!(sns_ct_materials, vec![
-        SnsCiphertextMaterialDbItem::default()
-    ]);
+    assert_eq!(
+        sns_ct_materials,
+        vec![SnsCiphertextMaterialDbItem::default()]
+    );
     info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
@@ -120,9 +121,10 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
         row.try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
 
     assert_eq!(decryption_id, U256::ONE);
-    assert_eq!(sns_ct_materials, vec![
-        SnsCiphertextMaterialDbItem::default()
-    ]);
+    assert_eq!(
+        sns_ct_materials,
+        vec![SnsCiphertextMaterialDbItem::default()]
+    );
     assert_eq!(rand_user_addr, user_address);
     assert_eq!(rand_pub_key, pub_key);
     info!("Event successfully stored! Stopping GatewayListener...");
@@ -445,17 +447,19 @@ async fn test_catchup() -> anyhow::Result<()> {
     let sns_ct_materials =
         row[0].try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
     assert_eq!(decryption_id1, U256::from(1));
-    assert_eq!(sns_ct_materials, vec![
-        SnsCiphertextMaterialDbItem::default()
-    ]);
+    assert_eq!(
+        sns_ct_materials,
+        vec![SnsCiphertextMaterialDbItem::default()]
+    );
 
     let decryption_id2 = U256::from_le_bytes(row[1].try_get::<[u8; 32], _>("decryption_id")?);
     let sns_ct_materials =
         row[1].try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
     assert_eq!(decryption_id2, U256::from(2));
-    assert_eq!(sns_ct_materials, vec![
-        SnsCiphertextMaterialDbItem::default()
-    ]);
+    assert_eq!(
+        sns_ct_materials,
+        vec![SnsCiphertextMaterialDbItem::default()]
+    );
     info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
