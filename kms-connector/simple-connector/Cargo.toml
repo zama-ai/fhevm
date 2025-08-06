@@ -33,7 +33,7 @@ aws-sdk-s3.workspace = true
 tracing-subscriber.workspace = true
 
 # TODO: replace git submodule and path import by git import when fhevm-gateway and kms-core becomes open-source
-fhevm_gateway_rust_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "8e074cda698ccdfea8d4ff5e4b4aaf642e8fafb6" } # v0.7.9
+fhevm_gateway_rust_bindings.workspace= true
 kms-grpc.workspace = true
 chrono = { version = "0.4.41", features = ["serde"] }
 
