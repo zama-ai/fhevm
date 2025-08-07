@@ -7,11 +7,13 @@ gateway_chain_id = 54321
 # Address of the Decryption contract (required)
 decryption_address = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
 
-# The total duration of the Gateway load/stress test
-tests_duration = 1
+# The time during which the tool will send requests burst to the Gateway
+# Format: https://docs.rs/humantime/latest/humantime/
+tests_duration = "5s"
 
 # The interval between two requests burst
-tests_interval = 1
+# Format: https://docs.rs/humantime/latest/humantime/
+tests_interval = "1s"
 
 # The number of parallel requests to send to the Gateway, at each interval
 parallel_requests = 100
@@ -20,6 +22,9 @@ parallel_requests = 100
 ct_handles = [
     "0xf2eac20e8f2385a14094f424c3adb8ee0a713bfcbbff00000000000030390200",
 ]
+
+# Boolean to toggle requests tracking
+track_progress = true
 
 # Private key as a hex string (optional if `aws_kms_config` is configured)
 private_key = "e746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
