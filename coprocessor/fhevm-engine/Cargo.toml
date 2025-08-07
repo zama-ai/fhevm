@@ -21,6 +21,7 @@ alloy = { version = "1.0.17", default-features = false, features = [
     "essentials",
     "std",
     "reqwest-rustls-tls",
+    "provider-anvil-api",
     "provider-ws",
     "signer-aws",
 ] }
