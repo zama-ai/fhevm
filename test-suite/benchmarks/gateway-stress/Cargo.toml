@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 # gateway-sdk.path = "../../../sdk/rust-sdk"
-fhevm_gateway_rust_bindings.path = "../../../gateway-contracts/rust_bindings"
+fhevm_gateway_rust_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.8.0-0", default-features = false }
 
 alloy = { version = "0.13", default-features = false, features = [
     "essentials",
