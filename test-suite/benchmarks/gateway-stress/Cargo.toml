@@ -22,6 +22,11 @@ aws-sdk-s3 = { version = "1.98.0", default-features = true }
 clap = { version = "4.5.38", features = ["cargo", "derive"] }
 config = { version = "0.15.13", default-features = false, features = ["toml"] }
 futures = { version = "0.3.31", default-features = false }
+humantime = "2.2.0"
+humantime-serde = "1.1.1"
+indicatif = { version = "0.18.0", default-features = true, features = [
+    "tokio",
+] }
 serde = { version = "1.0.219", default-features = false, features = [
     "derive",
     "std",

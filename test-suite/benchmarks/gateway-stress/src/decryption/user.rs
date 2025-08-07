@@ -3,6 +3,7 @@ use alloy::{primitives::U256, rpc::types::TransactionReceipt, sol_types::SolEven
 use anyhow::anyhow;
 use fhevm_gateway_rust_bindings::decryption::Decryption;
 
+#[allow(dead_code)]
 fn extract_user_decryption_id_from_receipt(receipt: &TransactionReceipt) -> anyhow::Result<U256> {
     extract_id_from_receipt(
         receipt,
