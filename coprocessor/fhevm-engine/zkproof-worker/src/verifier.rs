@@ -372,6 +372,12 @@ fn try_verify_and_expand_ciphertext_list(
             keys.pks.parameters(), &keys.public_params,
         ))?;
 
+    // TODO: Make sure we don't try to verify and expand an empty list as it would panic with the current version of tfhe-rs.
+    // Could be removed in the future if tfhe-rs is updated to handle empty lists gracefully.
+    if the_list.is_empty() {
+        return Ok(vec![]);
+    }
+
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)
         .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))?;

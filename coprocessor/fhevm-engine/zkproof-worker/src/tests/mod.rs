@@ -1,8 +1,10 @@
+use serial_test::serial;
 use test_harness::db_utils::ACL_CONTRACT_ADDR;
 
 mod utils;
 
 #[tokio::test]
+#[serial(db)]
 async fn test_verify_proof() {
     let (pool, _instance) = utils::setup().await.expect("valid setup");
 
@@ -31,6 +33,25 @@ async fn test_verify_proof() {
 
     // Check if it's invalid
     assert!(!utils::is_valid(&pool, request_id_invalid, max_retries)
+        .await
+        .unwrap());
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_verify_empty_input_list() {
+    let (pool, _instance) = utils::setup().await.expect("valid setup");
+
+    let aux: (crate::auxiliary::ZkData, [u8; 92]) =
+        utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
+    let input = utils::generate_empty_input_list(&pool, &aux.1).await;
+    let request_id = utils::insert_proof(&pool, 101, &input, &aux.0)
+        .await
+        .unwrap();
+
+    let max_retries = 50;
+
+    assert!(utils::is_valid(&pool, request_id, max_retries)
         .await
         .unwrap());
 }
