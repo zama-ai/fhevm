@@ -257,10 +257,10 @@ where
                     let handles = row
                         .handles
                         .ok_or(anyhow::anyhow!("handles field is None"))?;
-                    if handles.is_empty() || handles.len() % 32 != 0 {
+                    if handles.len() % 32 != 0 {
                         error!(
                             handles_len = handles.len(),
-                            "Bad handles field, len is 0 or not divisible by 32"
+                            "Bad handles field, len is not divisible by 32"
                         );
                         self.remove_proof_by_id(row.zk_proof_id).await?;
                         continue;
