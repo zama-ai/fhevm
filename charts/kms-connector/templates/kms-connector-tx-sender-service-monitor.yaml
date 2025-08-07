@@ -1,0 +1,16 @@
+{{- if .Values.kmsConnectorTxSender.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: kms-connector-tx-sender
+    app.kubernetes.io/name: {{ include "kmsConnectorTxSenderName" . }}
+  name: {{ include "kmsConnectorTxSenderName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: kms-connector-tx-sender
+      app.kubernetes.io/name: {{ include "kmsConnectorTxSenderName" . }}
+  endpoints:
+  - port: monitoring
+{{- end -}}
