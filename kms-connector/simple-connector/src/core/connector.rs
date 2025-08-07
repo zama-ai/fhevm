@@ -131,10 +131,11 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
 
             // Check for shutdown signal
             if let Some(shutdown) = &self.shutdown
-                && shutdown.resubscribe().try_recv().is_ok() {
-                    info!("Received shutdown signal while trying to connect to KMS-core");
-                    return Ok(());
-                }
+                && shutdown.resubscribe().try_recv().is_ok()
+            {
+                info!("Received shutdown signal while trying to connect to KMS-core");
+                return Ok(());
+            }
         }
 
         // Process events
@@ -159,10 +160,11 @@ impl<P: Provider + Clone + 'static> KmsCoreConnector<P> {
 
         // 3. Stop event intake system (WebSocket or polling)
         if let Some(events) = &self.events
-            && let Err(e) = events.stop().await {
-                error!("Error during event adapter shutdown: {}", e);
-                // Continue shutdown process despite error
-            }
+            && let Err(e) = events.stop().await
+        {
+            error!("Error during event adapter shutdown: {}", e);
+            // Continue shutdown process despite error
+        }
 
         // Note: BlockPoller handles its own shutdown via broadcast channel
         // so no explicit cleanup needed for polling mode
