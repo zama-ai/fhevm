@@ -290,6 +290,7 @@ where
                     }
                     .eip712_signing_hash(&domain);
                     let signature = self.signer.sign_hash(&signing_hash).await?;
+                    let extra_data = Bytes::new();
 
                     if let Some(gas) = self.gas {
                         (
@@ -299,6 +300,7 @@ where
                                     U256::from(row.zk_proof_id),
                                     handles,
                                     signature.as_bytes().into(),
+                                    extra_data,
                                 )
                                 .into_transaction_request()
                                 .with_gas_limit(gas),
@@ -311,6 +313,7 @@ where
                                     U256::from(row.zk_proof_id),
                                     handles,
                                     signature.as_bytes().into(),
+                                    extra_data,
                                 )
                                 .into_transaction_request(),
                         )
@@ -318,11 +321,13 @@ where
                 }
                 Some(false) => {
                     info!(zk_proof_id = row.zk_proof_id, "Processing rejected proof");
+                    let extra_data = Bytes::new();
+
                     if let Some(gas) = self.gas {
                         (
                             row.zk_proof_id,
                             input_verification
-                                .rejectProofResponse(U256::from(row.zk_proof_id))
+                                .rejectProofResponse(U256::from(row.zk_proof_id), extra_data)
                                 .into_transaction_request()
                                 .with_gas_limit(gas),
                         )
@@ -330,7 +335,7 @@ where
                         (
                             row.zk_proof_id,
                             input_verification
-                                .rejectProofResponse(U256::from(row.zk_proof_id))
+                                .rejectProofResponse(U256::from(row.zk_proof_id), extra_data)
                                 .into_transaction_request(),
                         )
                     }
