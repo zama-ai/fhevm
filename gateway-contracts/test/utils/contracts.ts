@@ -40,73 +40,73 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
   await checkIsHardhatSigner(pauser);
 
   // Load the KMS transaction senders
-  const kmsTxSenders = [];
-  for (let idx = 0; idx < nKmsNodes; idx++) {
-    const kmsTxSender = await hre.ethers.getSigner(getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`));
-    await checkIsHardhatSigner(kmsTxSender);
-    kmsTxSenders.push(kmsTxSender);
-  }
+  const kmsTxSenders = await Promise.all(
+    Array.from({ length: nKmsNodes }, async (_, idx) => {
+      const kmsTxSender = await hre.ethers.getSigner(getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`));
+      await checkIsHardhatSigner(kmsTxSender);
+      return kmsTxSender;
+    })
+  );
 
   // Load the KMS signers
-  const kmsSigners = [];
-  for (let idx = 0; idx < nKmsNodes; idx++) {
-    const kmsSigner = await hre.ethers.getSigner(getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`));
-    await checkIsHardhatSigner(kmsSigner);
-    kmsSigners.push(kmsSigner);
-  }
+  const kmsSigners = await Promise.all(
+    Array.from({ length: nKmsNodes }, async (_, idx) => {
+      const kmsSigner = await hre.ethers.getSigner(getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`));
+      await checkIsHardhatSigner(kmsSigner);
+      return kmsSigner;
+    })
+  );
 
   // Load the KMS node IPs
-  const kmsNodeIps = [];
-  for (let idx = 0; idx < nKmsNodes; idx++) {
-    const kmsNodeIp = getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`);
-    kmsNodeIps.push(kmsNodeIp);
-  }
+  const kmsNodeIps = Array.from({ length: nKmsNodes }, (_, idx) => 
+    getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`)
+  );
 
   // Load the coprocessor transaction senders
-  const coprocessorTxSenders = [];
-  for (let idx = 0; idx < nCoprocessors; idx++) {
-    const coprocessorTxSender = await hre.ethers.getSigner(getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`));
-    await checkIsHardhatSigner(coprocessorTxSender);
-    coprocessorTxSenders.push(coprocessorTxSender);
-  }
+  const coprocessorTxSenders = await Promise.all(
+    Array.from({ length: nCoprocessors }, async (_, idx) => {
+      const coprocessorTxSender = await hre.ethers.getSigner(getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`));
+      await checkIsHardhatSigner(coprocessorTxSender);
+      return coprocessorTxSender;
+    })
+  );
 
   // Load the coprocessor signers
-  const coprocessorSigners = [];
-  for (let idx = 0; idx < nCoprocessors; idx++) {
-    const coprocessorSigner = await hre.ethers.getSigner(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
-    await checkIsHardhatSigner(coprocessorSigner);
-    coprocessorSigners.push(coprocessorSigner);
-  }
+  const coprocessorSigners = await Promise.all(
+    Array.from({ length: nCoprocessors }, async (_, idx) => {
+      const coprocessorSigner = await hre.ethers.getSigner(getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`));
+      await checkIsHardhatSigner(coprocessorSigner);
+      return coprocessorSigner;
+    })
+  );
 
   // Load the coprocessor S3 buckets
-  const coprocessorS3Buckets = [];
-  for (let idx = 0; idx < nCoprocessors; idx++) {
-    const coprocessorS3Bucket = getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`);
-    coprocessorS3Buckets.push(coprocessorS3Bucket);
-  }
+  const coprocessorS3Buckets = Array.from({ length: nCoprocessors }, (_, idx) => 
+    getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`)
+  );
 
   // Load the custodian transaction senders
-  const custodianTxSenders = [];
-  for (let idx = 0; idx < nCustodians; idx++) {
-    const custodianTxSender = await hre.ethers.getSigner(getRequiredEnvVar(`CUSTODIAN_TX_SENDER_ADDRESS_${idx}`));
-    await checkIsHardhatSigner(custodianTxSender);
-    custodianTxSenders.push(custodianTxSender);
-  }
+  const custodianTxSenders = await Promise.all(
+    Array.from({ length: nCustodians }, async (_, idx) => {
+      const custodianTxSender = await hre.ethers.getSigner(getRequiredEnvVar(`CUSTODIAN_TX_SENDER_ADDRESS_${idx}`));
+      await checkIsHardhatSigner(custodianTxSender);
+      return custodianTxSender;
+    })
+  );
 
   // Load the custodian signers
-  const custodianSigners = [];
-  for (let idx = 0; idx < nCustodians; idx++) {
-    const custodianSigner = await hre.ethers.getSigner(getRequiredEnvVar(`CUSTODIAN_SIGNER_ADDRESS_${idx}`));
-    await checkIsHardhatSigner(custodianSigner);
-    custodianSigners.push(custodianSigner);
-  }
+  const custodianSigners = await Promise.all(
+    Array.from({ length: nCustodians }, async (_, idx) => {
+      const custodianSigner = await hre.ethers.getSigner(getRequiredEnvVar(`CUSTODIAN_SIGNER_ADDRESS_${idx}`));
+      await checkIsHardhatSigner(custodianSigner);
+      return custodianSigner;
+    })
+  );
 
   // Load the custodian encryption keys
-  const custodianEncryptionKeys = [];
-  for (let idx = 0; idx < nCustodians; idx++) {
-    const custodianEncryptionKey = getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`);
-    custodianEncryptionKeys.push(custodianEncryptionKey);
-  }
+  const custodianEncryptionKeys = Array.from({ length: nCustodians }, (_, idx) => 
+    getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`)
+  );
 
   return {
     owner,
