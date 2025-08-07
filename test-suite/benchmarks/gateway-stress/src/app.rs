@@ -4,7 +4,7 @@ use crate::{
         wallet::Wallet,
     },
     config::Config,
-    decryption::{send_public_decryption, wait_for_response},
+    decryption::{init_public_decryption_response_listener, public_decryption_burst},
 };
 use alloy::{
     hex,
@@ -19,13 +19,13 @@ use fhevm_gateway_rust_bindings::decryption::{
     Decryption::{self, CtHandleContractPair, DecryptionInstance},
     IDecryption::RequestValidity,
 };
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::time::SystemTime;
 use tokio::{
-    sync::mpsc,
     task::JoinSet,
     time::{Instant, interval},
 };
-use tracing::info;
+use tracing::{debug, info};
 
 type AppProvider = NonceManagedProvider<
     FillProvider<
@@ -61,41 +61,74 @@ impl App {
         })
     }
 
-    pub async fn public(&self) -> anyhow::Result<()> {
-        let start = Instant::now();
+    pub async fn public_decryption_stress_test(&self) -> anyhow::Result<()> {
+        let session_start = Instant::now();
         let mut interval = interval(self.config.tests_interval);
-        let mut tasks = JoinSet::new();
-        let (id_sender, id_receiver) = mpsc::unbounded_channel();
 
-        info!("Subcribing to PublicDecryptionResponse events...");
-        let response_filter = self
-            .decryption_contract
-            .PublicDecryptionResponse_filter()
-            .watch()
-            .await?;
-        info!("Subcribed to PublicDecryptionResponse events!");
+        let mut burst_tasks = JoinSet::new();
+        let mut burst_index = 1;
+        let progress_tracker = MultiProgress::new();
+        let response_listener =
+            init_public_decryption_response_listener(self.decryption_contract.clone()).await?;
 
-        tasks.spawn(wait_for_response(response_filter, id_receiver));
         loop {
-            if start.elapsed() > self.config.tests_duration {
+            interval.tick().await;
+
+            if session_start.elapsed() > self.config.tests_duration {
                 break;
             }
 
-            interval.tick().await;
+            let (requests_pb, responses_pb) =
+                self.init_progress_bars(&progress_tracker, burst_index)?;
 
-            for index in 0..self.config.parallel_requests {
-                tasks.spawn(send_public_decryption(
-                    index,
-                    self.decryption_contract.clone(),
-                    self.config.ct_handles.clone(),
-                    id_sender.clone(),
-                ));
-            }
+            burst_tasks.spawn(public_decryption_burst(
+                burst_index,
+                self.config.clone(),
+                self.decryption_contract.clone(),
+                response_listener.clone(),
+                requests_pb,
+                responses_pb,
+            ));
+
+            burst_index += 1;
         }
-        drop(id_sender); // Dropping sender so `wait_for_responses` can exit properly
 
-        tasks.join_all().await;
+        burst_tasks.join_all().await;
+        let elapsed = session_start.elapsed().as_secs_f64();
+        info!(
+            "Handled all burst in {:.2}s. Throughput: {:.2} tps",
+            elapsed,
+            (self.config.parallel_requests * (burst_index - 1) as u32) as f64 / elapsed as f64
+        );
         Ok(())
+    }
+
+    fn init_progress_bars(
+        &self,
+        progress_tracker: &MultiProgress,
+        burst_index: usize,
+    ) -> anyhow::Result<(ProgressBar, ProgressBar)> {
+        let style = ProgressStyle::with_template(
+            "{prefix:32} [{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}",
+        )?
+        .progress_chars("##-");
+        let prefix = format!("Burst #{burst_index}");
+
+        let requests_pb = progress_tracker.add(
+            ProgressBar::new(self.config.parallel_requests.into())
+                .with_prefix(prefix.clone())
+                .with_message("Sending requests...")
+                .with_style(style.clone()),
+        );
+        let responses_pb = progress_tracker.insert_after(
+            &requests_pb,
+            ProgressBar::new(self.config.parallel_requests.into())
+                .with_prefix(prefix)
+                .with_message("Waiting responses...")
+                .with_style(style),
+        );
+
+        Ok((requests_pb, responses_pb))
     }
 
     pub async fn user(&self) -> anyhow::Result<()> {
@@ -103,7 +136,7 @@ impl App {
         let public_key =
             "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331";
         let user_addr = self.wallet.address();
-        println!("user_addr: {user_addr}");
+        debug!("user_addr: {user_addr}");
         let signature = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)?
@@ -130,7 +163,7 @@ impl App {
                 .await?;
 
             let receipt = decryption_call.get_receipt().await?;
-            println!("{receipt:?}")
+            debug!("{receipt:?}")
         }
         Ok(())
     }
