@@ -7,11 +7,7 @@ use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
-use alloy::{
-    network::Ethereum,
-    primitives::{Bytes, FixedBytes},
-    sol_types::SolStruct,
-};
+use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
@@ -290,11 +286,10 @@ where
                             .parse()
                             .expect("invalid contract address"),
                         contractChainId: U256::from(row.chain_id),
-                        extraData: row.extra_data.into(),
+                        extraData: row.extra_data.clone().into(),
                     }
                     .eip712_signing_hash(&domain);
                     let signature = self.signer.sign_hash(&signing_hash).await?;
-                    let extra_data = Bytes::new();
 
                     if let Some(gas) = self.gas {
                         (
@@ -304,7 +299,7 @@ where
                                     U256::from(row.zk_proof_id),
                                     handles,
                                     signature.as_bytes().into(),
-                                    extra_data,
+                                    row.extra_data.into(),
                                 )
                                 .into_transaction_request()
                                 .with_gas_limit(gas),
@@ -317,7 +312,7 @@ where
                                     U256::from(row.zk_proof_id),
                                     handles,
                                     signature.as_bytes().into(),
-                                    extra_data,
+                                    row.extra_data.into(),
                                 )
                                 .into_transaction_request(),
                         )
@@ -325,13 +320,14 @@ where
                 }
                 Some(false) => {
                     info!(zk_proof_id = row.zk_proof_id, "Processing rejected proof");
-                    let extra_data = Bytes::new();
-
                     if let Some(gas) = self.gas {
                         (
                             row.zk_proof_id,
                             input_verification
-                                .rejectProofResponse(U256::from(row.zk_proof_id), extra_data)
+                                .rejectProofResponse(
+                                    U256::from(row.zk_proof_id),
+                                    row.extra_data.into(),
+                                )
                                 .into_transaction_request()
                                 .with_gas_limit(gas),
                         )
@@ -339,7 +335,10 @@ where
                         (
                             row.zk_proof_id,
                             input_verification
-                                .rejectProofResponse(U256::from(row.zk_proof_id), extra_data)
+                                .rejectProofResponse(
+                                    U256::from(row.zk_proof_id),
+                                    row.extra_data.into(),
+                                )
                                 .into_transaction_request(),
                         )
                     }
