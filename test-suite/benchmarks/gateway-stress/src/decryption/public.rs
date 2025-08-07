@@ -3,7 +3,7 @@ use alloy::{
     primitives::{FixedBytes, U256},
     providers::Provider,
     rpc::types::{Log, TransactionReceipt},
-    sol_types::SolEvent,
+    sol_types::{self, SolEvent},
 };
 use anyhow::anyhow;
 use fhevm_gateway_rust_bindings::decryption::Decryption::{
@@ -26,6 +26,7 @@ use tokio::{
 };
 use tracing::{debug, error, trace};
 
+/// Sends a burst of PublicDecryptionRequest.
 pub async fn public_decryption_burst<P, S>(
     burst_index: usize,
     config: Config,
@@ -35,10 +36,7 @@ pub async fn public_decryption_burst<P, S>(
     responses_pb: ProgressBar,
 ) where
     P: Provider + Clone + 'static,
-    S: Stream<Item = alloy::sol_types::Result<(PublicDecryptionResponse, Log)>>
-        + Unpin
-        + Send
-        + 'static,
+    S: Stream<Item = sol_types::Result<(PublicDecryptionResponse, Log)>> + Unpin + Send + 'static,
 {
     let (id_sender, id_receiver) = mpsc::unbounded_channel();
     let wait_response_task = tokio::spawn(wait_for_burst_responses(
@@ -71,6 +69,7 @@ pub async fn public_decryption_burst<P, S>(
     }
 }
 
+/// Sends a PublicDecryptionRequest transaction to the Gateway.
 #[tracing::instrument(skip(decryption_contract, handles, id_sender))]
 async fn send_public_decryption<P: Provider>(
     index: u32,
@@ -117,6 +116,7 @@ fn extract_public_decryption_id_from_receipt(receipt: &TransactionReceipt) -> an
     )
 }
 
+/// Creates the PublicDecryptionResponse listener.
 pub async fn init_public_decryption_response_listener<P: Provider>(
     decryption_contract: DecryptionInstance<(), P>,
 ) -> anyhow::Result<
@@ -143,6 +143,7 @@ pub async fn init_public_decryption_response_listener<P: Provider>(
     Ok(Arc::new(Mutex::new(response_filter.into_stream())))
 }
 
+/// Waits for all the responses of a requests burst.
 async fn wait_for_burst_responses<S>(
     burst_index: usize,
     response_listener: Arc<Mutex<S>>,
@@ -150,7 +151,7 @@ async fn wait_for_burst_responses<S>(
     config: Config,
     progress_bar: ProgressBar,
 ) where
-    S: Stream<Item = alloy::sol_types::Result<(PublicDecryptionResponse, Log)>> + Unpin,
+    S: Stream<Item = sol_types::Result<(PublicDecryptionResponse, Log)>> + Unpin,
 {
     if let Err(e) = wait_for_burst_responses_inner(
         burst_index,
@@ -173,7 +174,7 @@ async fn wait_for_burst_responses_inner<S>(
     progress_bar: ProgressBar,
 ) -> anyhow::Result<()>
 where
-    S: Stream<Item = alloy::sol_types::Result<(PublicDecryptionResponse, Log)>> + Unpin,
+    S: Stream<Item = sol_types::Result<(PublicDecryptionResponse, Log)>> + Unpin,
 {
     let burst_start = Instant::now();
 
