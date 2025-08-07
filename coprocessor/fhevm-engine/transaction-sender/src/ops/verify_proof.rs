@@ -7,7 +7,7 @@ use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
-use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
+use alloy::{network::Ethereum, primitives::{Bytes, FixedBytes}, sol_types::SolStruct};
 use async_trait::async_trait;
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
