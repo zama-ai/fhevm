@@ -4,7 +4,7 @@ use std::path::PathBuf;
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
 pub struct Cli {
-    /// Sets a custom config file
+    /// The path to the testing configuration file
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
@@ -14,12 +14,12 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Subcommands {
-    /// Public decryption benchmark
+    /// Perform tests with public decryptions only
     Public,
 
-    /// User decryption benchmark
+    /// Perform tests with user decryptions only
     User,
 
-    /// TODO
+    /// Perform tests with mixed decryptions (both public and user)
     Mixed,
 }
