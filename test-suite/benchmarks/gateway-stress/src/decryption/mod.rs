@@ -1,14 +1,14 @@
 mod public;
 mod user;
 
-pub use public::{send_public_decryption, wait_for_response};
+pub use public::{init_public_decryption_response_listener, public_decryption_burst};
 
 use alloy::{
     primitives::{B256, LogData, U256},
     rpc::types::TransactionReceipt,
 };
 use anyhow::anyhow;
-use tracing::{debug, info};
+use tracing::{debug, trace};
 
 fn extract_id_from_receipt<F>(
     receipt: &TransactionReceipt,
@@ -18,13 +18,13 @@ fn extract_id_from_receipt<F>(
 where
     F: Fn(&LogData) -> anyhow::Result<U256>,
 {
-    debug!("Receipt details: {receipt:?}");
+    trace!("Receipt details: {receipt:?}");
 
     for log in receipt.inner.logs().iter() {
         if let Some(first_topic) = log.topics().first() {
             if first_topic == &event_hash {
                 let event_id = decode_fn(log.data())?;
-                info!(
+                debug!(
                     ?receipt.transaction_hash,
                     ?event_id,
                     "Found decryption ID from event"

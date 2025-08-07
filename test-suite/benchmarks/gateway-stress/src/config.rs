@@ -13,10 +13,12 @@ pub struct Config {
     #[serde(deserialize_with = "parse_ct_handles")]
     pub ct_handles: Vec<FixedBytes<32>>,
     #[serde(default = "default_parallel_requests")]
-    pub parallel_requests: u64,
-    #[serde(deserialize_with = "parse_tests_duration")]
+    pub parallel_requests: u32,
+    #[serde(default = "default_track_progress")]
+    pub track_progress: bool,
+    #[serde(with = "humantime_serde", default = "default_tests_duration")]
     pub tests_duration: Duration,
-    #[serde(deserialize_with = "parse_tests_interval")]
+    #[serde(with = "humantime_serde", default = "default_tests_interval")]
     pub tests_interval: Duration,
 }
 
@@ -46,33 +48,20 @@ impl Config {
     }
 }
 
-fn default_parallel_requests() -> u64 {
+fn default_parallel_requests() -> u32 {
     100
 }
 
-const DEFAULT_TESTS_DURATION: Duration = Duration::from_secs(3600);
-const DEFAULT_TESTS_INTERVAL_DURATION: Duration = Duration::from_secs(1);
-
-fn parse_tests_duration<'de, D>(d: D) -> Result<Duration, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let tests_duration = Option::<u64>::deserialize(d)?
-        .map(Duration::from_secs)
-        .unwrap_or(DEFAULT_TESTS_DURATION);
-
-    Ok(tests_duration)
+fn default_tests_duration() -> Duration {
+    Duration::from_secs(3600)
 }
 
-fn parse_tests_interval<'de, D>(d: D) -> Result<Duration, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let tests_interval_duration = Option::<u64>::deserialize(d)?
-        .map(Duration::from_secs)
-        .unwrap_or(DEFAULT_TESTS_INTERVAL_DURATION);
+fn default_tests_interval() -> Duration {
+    Duration::from_secs(1)
+}
 
-    Ok(tests_interval_duration)
+fn default_track_progress() -> bool {
+    true
 }
 
 fn parse_ct_handles<'de, D>(d: D) -> Result<Vec<FixedBytes<32>>, D::Error>
