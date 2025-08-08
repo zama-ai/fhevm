@@ -24,7 +24,6 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 BASE_URL="http://localhost:9000/kms-public/PUB/VerfAddress"
 ENV_HOST="${SCRIPT_DIR}/../env/staging/.env.host.local"
 ENV_GATEWAY="${SCRIPT_DIR}/../env/staging/.env.gateway.local"
-ENV_COPROCESSOR="${SCRIPT_DIR}/../env/staging/.env.coprocessor.local"
 ENV_RELAYER="${SCRIPT_DIR}/../env/staging/.env.relayer.local"
 LOCAL_YAML="${SCRIPT_DIR}/../config/relayer/local.yaml.local"
 KEY_SIGNER_ID=$(docker logs kms-core | grep "Successfully stored public server signing key under the handle" | sed 's/.*handle \([^ ]*\).*/\1/')
@@ -117,32 +116,42 @@ else
     log_info "APP_KEYURL__CRS__URL: $CRS_KEY_URL"
 fi
 
-## COPROCESSOR
-log_info "Updating $ENV_COPROCESSOR..."
-cat $ENV_COPROCESSOR | \
-    sed "s|KMS_PUBLIC_KEY=http://minio:9000/kms-public/PUB/PublicKey/[^$]*|KMS_PUBLIC_KEY=$PUBLIC_KEY_URL|g" | \
-    sed "s|KMS_SERVER_KEY=http://minio:9000/kms-public/PUB/ServerKey/[^$]*|KMS_SERVER_KEY=$SERVER_KEY_URL|g" | \
-    sed "s|KMS_SNS_KEY=http://minio:9000/kms-public/PUB/SnsKey/[^$]*|KMS_SNS_KEY=$SNS_KEY_URL|g" | \
-    sed "s|KMS_CRS_KEY=http://minio:9000/kms-public/PUB/CRS/[^$]*|KMS_CRS_KEY=$CRS_KEY_URL|g" | \
-    sed "s|FHE_KEY_ID=.*|FHE_KEY_ID=$KEY_GEN_ID|g" > /tmp/env.coprocessor.new
+## COPROCESSORS
+for i in {0..2}
+do
+    ENV_COPROCESSOR="${SCRIPT_DIR}/../env/staging/.env.coprocessor-${i}.local"
+    if [ ! -f "$ENV_COPROCESSOR" ]; then
+        log_warn "Coprocessor env file not found, skipping: $ENV_COPROCESSOR"
+        continue
+    fi
 
-# Verify all changes were made
-if grep -q "KMS_PUBLIC_KEY=$PUBLIC_KEY_URL" /tmp/env.coprocessor.new && \
-   grep -q "KMS_SERVER_KEY=$SERVER_KEY_URL" /tmp/env.coprocessor.new && \
-   grep -q "KMS_SNS_KEY=$SNS_KEY_URL" /tmp/env.coprocessor.new && \
-   grep -q "KMS_CRS_KEY=$CRS_KEY_URL" /tmp/env.coprocessor.new && \
-   grep -q "FHE_KEY_ID=$KEY_GEN_ID" /tmp/env.coprocessor.new; then
-    cat /tmp/env.coprocessor.new > "$ENV_COPROCESSOR"
-    log_info "KMS keys successfully updated in $ENV_COPROCESSOR"
-else
-    log_warn "Failed to update some KMS keys in coprocessor environment. Please verify the format and update manually."
-    log_info "Values that should be set:"
-    log_info "KMS_PUBLIC_KEY: $PUBLIC_KEY_URL"
-    log_info "KMS_SERVER_KEY: $SERVER_KEY_URL"
-    log_info "KMS_SNS_KEY: $SNS_KEY_URL"
-    log_info "KMS_CRS_KEY: $CRS_KEY_URL"
-    log_info "FHE_KEY_ID: $KEY_GEN_ID"
-fi
+    log_info "Updating $ENV_COPROCESSOR..."
+    TEMP_FILE="/tmp/env.coprocessor.${i}.new"
+    cat "$ENV_COPROCESSOR" | \
+        sed "s|KMS_PUBLIC_KEY=http://minio:9000/kms-public/PUB/PublicKey/[^$]*|KMS_PUBLIC_KEY=$PUBLIC_KEY_URL|g" | \
+        sed "s|KMS_SERVER_KEY=http://minio:9000/kms-public/PUB/ServerKey/[^$]*|KMS_SERVER_KEY=$SERVER_KEY_URL|g" | \
+        sed "s|KMS_SNS_KEY=http://minio:9000/kms-public/PUB/SnsKey/[^$]*|KMS_SNS_KEY=$SNS_KEY_URL|g" | \
+        sed "s|KMS_CRS_KEY=http://minio:9000/kms-public/PUB/CRS/[^$]*|KMS_CRS_KEY=$CRS_KEY_URL|g" | \
+        sed "s|FHE_KEY_ID=.*|FHE_KEY_ID=$KEY_GEN_ID|g" > "$TEMP_FILE"
+
+    # Verify all changes were made
+    if grep -q "KMS_PUBLIC_KEY=$PUBLIC_KEY_URL" "$TEMP_FILE" && \
+       grep -q "KMS_SERVER_KEY=$SERVER_KEY_URL" "$TEMP_FILE" && \
+       grep -q "KMS_SNS_KEY=$SNS_KEY_URL" "$TEMP_FILE" && \
+       grep -q "KMS_CRS_KEY=$CRS_KEY_URL" "$TEMP_FILE" && \
+       grep -q "FHE_KEY_ID=$KEY_GEN_ID" "$TEMP_FILE"; then
+        cat "$TEMP_FILE" > "$ENV_COPROCESSOR"
+        log_info "KMS keys successfully updated in $ENV_COPROCESSOR"
+    else
+        log_warn "Failed to update some KMS keys in coprocessor environment. Please verify the format and update manually: $ENV_COPROCESSOR"
+        log_info "Values that should be set:"
+        log_info "KMS_PUBLIC_KEY: $PUBLIC_KEY_URL"
+        log_info "KMS_SERVER_KEY: $SERVER_KEY_URL"
+        log_info "KMS_SNS_KEY: $SNS_KEY_URL"
+        log_info "KMS_CRS_KEY: $CRS_KEY_URL"
+        log_info "FHE_KEY_ID: $KEY_GEN_ID"
+    fi
+done
 
 log_info "Configuration files updated successfully!"
 log_info "Signing Key ID: $KEY_SIGNER_ID"
