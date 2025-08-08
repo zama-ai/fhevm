@@ -9,7 +9,8 @@ contract InputVerification {
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
-        bytes ciphertextWithZKProof
+        bytes ciphertextWithZKProof,
+        bytes extraData
     );
 
     uint256 zkProofIdCounter = 0;
@@ -18,7 +19,8 @@ contract InputVerification {
         uint256 contractChainId,
         address contractAddress,
         address userAddress,
-        bytes calldata ciphertextWithZKProof
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
     ) public {
         uint256 zkProofId = zkProofIdCounter;
         zkProofIdCounter += 1;
@@ -27,7 +29,8 @@ contract InputVerification {
             contractChainId,
             contractAddress,
             userAddress,
-            ciphertextWithZKProof
+            ciphertextWithZKProof,
+            extraData
         );
     }
 }

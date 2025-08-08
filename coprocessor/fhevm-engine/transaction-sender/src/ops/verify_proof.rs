@@ -22,6 +22,7 @@ sol! {
         address userAddress;
         address contractAddress;
         uint256 contractChainId;
+        bytes extraData;
     }
 }
 
@@ -236,7 +237,7 @@ where
             self.remove_proofs_by_retry_count().await?;
         }
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count
+            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data
              FROM verify_proofs
              WHERE verified IS NOT NULL AND retry_count < $1
              ORDER BY zk_proof_id
@@ -285,6 +286,7 @@ where
                             .parse()
                             .expect("invalid contract address"),
                         contractChainId: U256::from(row.chain_id),
+                        extraData: row.extra_data.clone().into(),
                     }
                     .eip712_signing_hash(&domain);
                     let signature = self.signer.sign_hash(&signing_hash).await?;
@@ -297,6 +299,7 @@ where
                                     U256::from(row.zk_proof_id),
                                     handles,
                                     signature.as_bytes().into(),
+                                    row.extra_data.into(),
                                 )
                                 .into_transaction_request()
                                 .with_gas_limit(gas),
@@ -309,6 +312,7 @@ where
                                     U256::from(row.zk_proof_id),
                                     handles,
                                     signature.as_bytes().into(),
+                                    row.extra_data.into(),
                                 )
                                 .into_transaction_request(),
                         )
@@ -320,7 +324,10 @@ where
                         (
                             row.zk_proof_id,
                             input_verification
-                                .rejectProofResponse(U256::from(row.zk_proof_id))
+                                .rejectProofResponse(
+                                    U256::from(row.zk_proof_id),
+                                    row.extra_data.into(),
+                                )
                                 .into_transaction_request()
                                 .with_gas_limit(gas),
                         )
@@ -328,7 +335,10 @@ where
                         (
                             row.zk_proof_id,
                             input_verification
-                                .rejectProofResponse(U256::from(row.zk_proof_id))
+                                .rejectProofResponse(
+                                    U256::from(row.zk_proof_id),
+                                    row.extra_data.into(),
+                                )
                                 .into_transaction_request(),
                         )
                     }

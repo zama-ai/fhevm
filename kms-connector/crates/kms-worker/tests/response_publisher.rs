@@ -26,10 +26,9 @@ async fn test_publish_public_decryption_response() -> anyhow::Result<()> {
         decryption_id: rand_decryption_id,
         grpc_response: PublicDecryptionResponse {
             signature: rand_signature.clone(),
-            payload: Some(PublicDecryptionResponsePayload {
-                external_signature: Some(rand_signature.clone()),
-                ..Default::default()
-            }),
+            external_signature: Some(rand_signature.clone()),
+            payload: Some(PublicDecryptionResponsePayload::default()),
+            extra_data: vec![],
         },
     };
     let response = KmsResponse::process(grpc_response)?;
@@ -67,6 +66,7 @@ async fn test_publish_user_decryption_response() -> anyhow::Result<()> {
             signature: rand_signature.clone(),
             external_signature: rand_signature.clone(),
             payload: Some(UserDecryptionResponsePayload::default()),
+            extra_data: vec![],
         },
     };
     let response = KmsResponse::process(grpc_response)?;

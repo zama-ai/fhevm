@@ -57,13 +57,15 @@ contract KMSVerifierTest is Test {
      */
     function _computeDigest(
         bytes32[] memory handlesList,
-        bytes memory decryptedResult
+        bytes memory decryptedResult,
+        bytes memory extraData
     ) internal view returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
                 kmsVerifier.DECRYPTION_RESULT_TYPEHASH(),
                 keccak256(abi.encodePacked(handlesList)),
-                keccak256(decryptedResult)
+                keccak256(decryptedResult),
+                keccak256(abi.encodePacked(extraData))
             )
         );
 
@@ -379,13 +381,21 @@ contract KMSVerifierTest is Test {
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
         bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
-        bytes[] memory signatures = new bytes[](2);
+        bytes memory extraData = abi.encodePacked(uint8(0));
+        bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
 
-        bytes32 digest = _computeDigest(handlesList, decryptedResult);
+        bytes[] memory signatures = new bytes[](2);
         signatures[0] = _computeSignature(privateKeySigner1, digest);
         signatures[1] = _computeSignature(privateKeySigner2, digest);
 
-        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, signatures));
+        bytes memory decryptionProof = abi.encodePacked(
+            uint8(signatures.length),
+            signatures[0],
+            signatures[1],
+            extraData
+        );
+
+        assertTrue(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof));
     }
 
     /**
@@ -396,15 +406,23 @@ contract KMSVerifierTest is Test {
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
         bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
-        bytes[] memory signatures = new bytes[](3);
+        bytes memory extraData = abi.encodePacked(uint8(0));
+        bytes[] memory signatures = new bytes[](2);
 
         bytes32 invalidDigest = bytes32("420");
 
         signatures[0] = _computeSignature(privateKeySigner1, invalidDigest);
         signatures[1] = _computeSignature(privateKeySigner2, invalidDigest);
 
+        bytes memory decryptionProof = abi.encodePacked(
+            uint8(signatures.length),
+            signatures[0],
+            signatures[1],
+            extraData
+        );
+
         vm.expectPartialRevert(KMSVerifier.KMSInvalidSigner.selector);
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, signatures);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
     }
 
     /**
@@ -418,15 +436,22 @@ contract KMSVerifierTest is Test {
         handlesList[2] = bytes32(uint256(323));
 
         bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
-        bytes[] memory signatures = new bytes[](3);
+        bytes memory extraData = abi.encodePacked(uint8(0));
+        bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
 
-        bytes32 digest = _computeDigest(handlesList, decryptedResult);
-
+        bytes[] memory signatures = new bytes[](2);
         signatures[0] = _computeSignature(privateKeySigner1, digest);
         signatures[1] = _computeSignature(privateKeySigner2, digest);
 
+        bytes memory decryptionProof = abi.encodePacked(
+            uint8(signatures.length),
+            signatures[0],
+            signatures[1],
+            extraData
+        );
+
         vm.expectPartialRevert(KMSVerifier.KMSInvalidSigner.selector);
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, signatures);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
     }
 
     /**
@@ -438,10 +463,13 @@ contract KMSVerifierTest is Test {
         bytes32[] memory handlesList = _generateMockHandlesList(3);
 
         bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory extraData = abi.encodePacked(uint8(0));
         bytes[] memory signatures = new bytes[](0);
 
+        bytes memory decryptionProof = abi.encodePacked(uint8(signatures.length), extraData);
+
         vm.expectPartialRevert(KMSVerifier.KMSZeroSignature.selector);
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, signatures);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
     }
 
     /**
@@ -458,13 +486,16 @@ contract KMSVerifierTest is Test {
         /// @dev Mock data for testing purposes.
         bytes32[] memory handlesList = _generateMockHandlesList(3);
         bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
-        bytes[] memory signatures = new bytes[](1);
+        bytes memory extraData = abi.encodePacked(uint8(0));
+        bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
 
-        bytes32 digest = _computeDigest(handlesList, decryptedResult);
+        bytes[] memory signatures = new bytes[](1);
         signatures[0] = _computeSignature(privateKeySigner1, digest);
 
+        bytes memory decryptionProof = abi.encodePacked(uint8(signatures.length), signatures[0], extraData);
+
         vm.expectPartialRevert(KMSVerifier.KMSSignatureThresholdNotReached.selector);
-        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, signatures);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
     }
 
     /**
@@ -481,12 +512,48 @@ contract KMSVerifierTest is Test {
         /// @dev Mock data for testing purposes.
         bytes32[] memory handlesList = _generateMockHandlesList(3);
         bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
-        bytes[] memory signatures = new bytes[](2);
+        bytes memory extraData = abi.encodePacked(uint8(0));
+        bytes32 digest = _computeDigest(handlesList, decryptedResult, extraData);
 
-        bytes32 digest = _computeDigest(handlesList, decryptedResult);
+        bytes[] memory signatures = new bytes[](2);
         signatures[0] = _computeSignature(privateKeySigner1, digest);
         signatures[1] = _computeSignature(privateKeySigner1, digest);
 
-        assertFalse(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, signatures));
+        bytes memory decryptionProof = abi.encodePacked(
+            uint8(signatures.length),
+            signatures[0],
+            signatures[1],
+            extraData
+        );
+
+        assertFalse(kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof));
+    }
+
+    /**
+     * @dev Tests that the verifyDecryptionEIP712KMSSignatures function fails if the decryptionProof is empty.
+     */
+    function test_VerifyInputEIP712KMSSignaturesFailsIfEmptyDecryptionProof() public {
+        _upgradeProxyWithSigners(3);
+        bytes32[] memory handlesList = _generateMockHandlesList(3);
+
+        bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory decryptionProof = new bytes(0);
+
+        vm.expectRevert(KMSVerifier.EmptyDecryptionProof.selector);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
+    }
+
+    /**
+     * @dev Tests that the verifyDecryptionEIP712KMSSignatures function fails if the length of the decryption proof is invalid.
+     */
+    function test_VerifyInputEIP712KMSSignaturesFailsIfDeserializingDecryptionProofFail(uint256 randomValue) public {
+        _upgradeProxyWithSigners(3);
+        bytes32[] memory handlesList = _generateMockHandlesList(3);
+
+        bytes memory decryptedResult = abi.encodePacked(keccak256("test"), keccak256("test"), keccak256("test"));
+        bytes memory decryptionProof = abi.encodePacked(uint8(3), randomValue);
+
+        vm.expectRevert(KMSVerifier.DeserializingDecryptionProofFail.selector);
+        kmsVerifier.verifyDecryptionEIP712KMSSignatures(handlesList, decryptedResult, decryptionProof);
     }
 }

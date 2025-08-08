@@ -47,7 +47,7 @@ async fn test_e2e_public_decrypt() -> anyhow::Result<()> {
     info!("Mocking PublicDecryptionRequest on Anvil...");
     let pending_tx = test_instance
         .decryption_contract()
-        .publicDecryptionRequest(vec![FixedBytes::from_hex(S3_CT).unwrap()])
+        .publicDecryptionRequest(vec![FixedBytes::from_hex(S3_CT).unwrap()], vec![].into())
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;

@@ -41,6 +41,7 @@ impl GatewayEvent {
         Ok(GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             snsCtMaterials: sns_ct_materials,
+            extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
         }))
     }
 
@@ -57,6 +58,7 @@ impl GatewayEvent {
             snsCtMaterials: sns_ct_materials,
             userAddress: row.try_get::<[u8; 20], _>("user_address")?.into(),
             publicKey: row.try_get::<Vec<u8>, _>("public_key")?.into(),
+            extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
         }))
     }
 

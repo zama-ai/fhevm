@@ -84,11 +84,13 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         address contractAddress;
         /// @notice The chainId of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
+        bytes extraData;
     }
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string public constant EIP712_INPUT_VERIFICATION_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
 
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 public constant EIP712_INPUT_VERIFICATION_TYPEHASH = keccak256(bytes(EIP712_INPUT_VERIFICATION_TYPE));
@@ -202,7 +204,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         if (!isProofCached) {
             /// @dev bundleCiphertext is compressedPackedCT+ZKPOK
             ///      inputHandle is keccak256(keccak256(bundleCiphertext)+index)[0:20] + index[21] + chainId[22:29] + type[30] + version[31]
-            ///      and inputProof is len(list_handles) + numSigners + list_handles + signatureCoprocessorSigners (1+1+NUM_HANDLES*32+65*numSigners)
+            ///      and inputProof is numHandles + numSigners + handles + coprocessorSignatures (1 + 1 + 32*numHandles + 65*numSigners + extraData bytes)
 
             uint256 inputProofLen = inputProof.length;
             if (inputProofLen == 0) revert EmptyInputProof();
@@ -211,7 +213,12 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
             /// @dev This checks in particular that the list is non-empty.
             if (numHandles <= indexHandle || indexHandle > 254) revert InvalidIndex();
-            if (inputProofLen != 2 + 32 * numHandles + 65 * numSigners) revert DeserializingInputProofFail();
+
+            /// @dev The extraData is the rest of the inputProof bytes after the numHandles + numSigners + handles + coprocessorSignatures.
+            uint256 extraDataOffset = 2 + 32 * numHandles + 65 * numSigners;
+
+            /// @dev Check that the inputProof is long enough to contain at least the numHandles + numSigners + handles + coprocessorSignatures
+            if (inputProofLen < extraDataOffset) revert DeserializingInputProofFail();
 
             /// @dev Deserialize handle and check that they are from the correct version.
             bytes32[] memory listHandles = new bytes32[](numHandles);
@@ -232,11 +239,20 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
                     signatures[j][i] = inputProof[2 + 32 * numHandles + 65 * j + i];
                 }
             }
+
             CiphertextVerification memory ctVerif;
             ctVerif.ctHandles = listHandles;
             ctVerif.userAddress = context.userAddress;
             ctVerif.contractAddress = context.contractAddress;
             ctVerif.contractChainId = block.chainid;
+
+            /// @dev Extract the extraData from the inputProof.
+            uint256 extraDataSize = inputProof.length - extraDataOffset;
+            ctVerif.extraData = new bytes(extraDataSize);
+
+            for (uint i = 0; i < extraDataSize; i++) {
+                ctVerif.extraData[i] = inputProof[extraDataOffset + i];
+            }
 
             _verifyEIP712(ctVerif, signatures);
 
@@ -396,7 +412,8 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
-                        ctVerification.contractChainId
+                        ctVerification.contractChainId,
+                        keccak256(abi.encodePacked(ctVerification.extraData))
                     )
                 )
             );

@@ -32,7 +32,7 @@ jobs:
         with:
           filters: |
             kms-connector-gw-listener:
-              - .github/workflows/kms-connector-docker-build-gw-listener.yml
+              - .github/workflows/kms-connector-gw-listener-docker-build.yml
               - kms-connector/crates/gw-listener/**
               - kms-connector/crates/utils/**
               - kms-connector/Cargo.toml
