@@ -3285,6 +3285,8 @@ dependencies = [
 name = "fhevm-engine-common"
 version = "0.6.1"
 dependencies = [
+ "alloy",
+ "alloy-provider",
  "anyhow",
  "axum",
  "bigdecimal",
@@ -3883,7 +3885,6 @@ dependencies = [
  "alloy",
  "alloy-primitives 1.2.0",
  "anyhow",
- "axum",
  "clap",
  "fhevm-engine-common",
  "foundry-compilers",
@@ -3900,7 +3901,6 @@ dependencies = [
  "test-harness",
  "tokio",
  "tokio-util",
- "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
 ]
