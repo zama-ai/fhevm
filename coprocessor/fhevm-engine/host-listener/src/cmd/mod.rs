@@ -145,6 +145,24 @@ enum LogOrBlockTimeout {
     BlockTimeout,
 }
 
+mod eth_rpc_err {
+    use alloy::transports::{RpcError, TransportErrorKind};
+    pub fn too_much_blocks_or_events(
+        err: &RpcError<TransportErrorKind>,
+    ) -> bool {
+        // quicknode message about asking too much blocks can vary
+        // e.g. doc: -32602	eth_getLogs and eth_newFilter are limited to a 10,000 blocks range
+        // e.g. tesnet: ErrorResp(ErrorPayload { code: -32614, message: "eth_getLogs is limited to a 10,000 range", data: None })
+        // doc: -32005	Limit Exceeded
+        // also some limitation are from alloy
+        // {"message":"WS connection error","err":"Space limit exceeded: Message too long: 67112162 > 67108864"}
+        let msg = err.to_string();
+        (msg.contains("limited to a") && msg.contains("range"))
+            || msg.contains("Limit Exceeded")
+            || msg.contains("Space limit exceeded: Message too long")
+    }
+}
+
 impl InfiniteLogIter {
     fn new(args: &Args) -> Self {
         let mut contract_addresses = vec![];
@@ -217,11 +235,34 @@ impl InfiniteLogIter {
         BlockNumberOrTag::Number(last_block - catch_size.min(last_block))
     }
 
+    async fn get_blocks_range_no_retry(
+        &mut self,
+        from_block: u64,
+        to_block: u64,
+    ) -> Result<Vec<Log>> {
+        let mut filter =
+            Filter::new().from_block(from_block).to_block(to_block);
+        if !self.contract_addresses.is_empty() {
+            filter = filter.address(self.contract_addresses.clone())
+        }
+        let Some(provider) = self.provider.read().await.clone() else {
+            anyhow::bail!("No provider, inconsistent state");
+        };
+        provider.get_logs(&filter).await.map_err(|err| {
+            if eth_rpc_err::too_much_blocks_or_events(&err) {
+                anyhow::anyhow!("Too much blocks or events: {err}")
+            } else {
+                anyhow::anyhow!("Cannot get logs for {filter:?} due to {err}")
+            }
+        })
+    }
+
     async fn consume_catchup_blocks(&mut self) {
         let Some((_, to_block)) = self.catchup_blocks else {
             return;
         };
         let mut paging_size = self.catchup_paging;
+        let mut remain_retry = 3;
         let (logs, from_block, paging_to_block) = loop {
             let Some((from_block, to_block)) = self.catchup_blocks else {
                 return;
@@ -231,43 +272,31 @@ impl InfiniteLogIter {
             } else {
                 from_block + paging_size
             };
-            let mut filter = Filter::new()
-                .from_block(from_block)
-                .to_block(paging_to_block);
-            if !self.contract_addresses.is_empty() {
-                filter = filter.address(self.contract_addresses.clone())
-            }
-            // TODO: function
-            let logs = {
-                let Some(provider) = &*self.provider.read().await else {
-                    error!("No provider, inconsistent state");
-                    return;
-                };
-                provider.get_logs(&filter).await
-            };
+            let logs = self
+                .get_blocks_range_no_retry(from_block, paging_to_block)
+                .await;
             match logs {
                 Ok(logs) => break (logs, from_block, paging_to_block),
-                Err(err) => {
-                    if err.to_string().contains("limited") {
-                        // too much blocks or logs
-                        if paging_size == 1 {
-                            error!(block=from_block, "Cannot catchup block {filter:?} due to {err}, aborting this block");
-                            self.catchup_blocks =
-                                Some((from_block + 1, to_block));
-                            continue;
-                        } else {
-                            // retry with paging size 1
-                            info!("Retrying catchup with smaller paging size");
-                            paging_size = (paging_size / 2).max(1);
-                            continue;
-                        }
+                Err(err) if from_block == paging_to_block => {
+                    // we asked only one block and it still fails, doing a limited number of retry
+                    if remain_retry > 0 {
+                        warn!(block=from_block, error=?err, remain_retry=remain_retry, "Catchup of block failed, retrying");
+                        remain_retry -= 1;
+                        continue;
                     }
-                    warn!("Cannot get logs for {filter:?} due to {err}");
+                    error!(block=from_block, error=?err, "Catchup of block impossible. Will be retried later after handling a real-time message.");
                     return;
                 }
-            };
+                Err(err) => {
+                    // too big paging size detection cannot be done reliably for all provider
+                    // so it assumes the error is due to too big paging size
+                    // and it retries with reduced paging, this also serves as normal retry for transient error
+                    warn!(error = ?err, "Retrying catchup with smaller paging size.");
+                    paging_size = (paging_size / 2).max(1);
+                    continue;
+                }
+            }
         };
-
         info!(
             nb_events = logs.len(),
             from_block = from_block,
