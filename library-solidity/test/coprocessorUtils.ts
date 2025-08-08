@@ -8,7 +8,7 @@ import { FheType } from '../codegen/common';
 import operatorsPrices from '../codegen/operatorsPrices.json';
 import { ALL_FHE_TYPES } from '../codegen/types';
 
-const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('./fhevmTemp/addresses/.env.exec'));
+const parsedEnvCoprocessor = dotenv.parse(fs.readFileSync('./fhevmTemp/addresses/.env.host'));
 const coprocAddress = parsedEnvCoprocessor.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
 
 let firstBlockListening = 0;
