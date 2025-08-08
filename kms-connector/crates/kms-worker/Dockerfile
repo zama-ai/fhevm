@@ -25,7 +25,8 @@ RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
     protoc
 
 # Build with improved caching
-RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked cd kms-connector && \
+WORKDIR /app/kms-connector
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     cargo build --profile=${LTO_RELEASE} -p kms-worker
 
 # Stage 2: Runtime image
@@ -38,5 +39,8 @@ COPY --from=builder --chown=fhevm:fhevm /app/kms-connector/target/release/kms-wo
 USER fhevm:fhevm
 
 ENTRYPOINT ["/app/kms-connector/bin/kms-worker", "start"]
+
+HEALTHCHECK --interval=1m --timeout=3s \
+    CMD /app/kms-connector/bin/kms-worker health --endpoint "http://127.0.0.1:9100/healthz"
 
 FROM prod AS dev

@@ -46,7 +46,7 @@ pub struct GatewayInstance {
     pub decryption_contract: DecryptionInstance<(), WalletGatewayProvider>,
     pub gateway_config_contract: GatewayConfigInstance<(), WalletGatewayProvider>,
     pub kms_management_contract: KmsManagementInstance<(), WalletGatewayProvider>,
-    _anvil: ContainerAsync<GenericImage>,
+    pub anvil: ContainerAsync<GenericImage>,
     pub anvil_host_port: u16,
 }
 
@@ -67,7 +67,7 @@ impl GatewayInstance {
             decryption_contract,
             gateway_config_contract,
             kms_management_contract,
-            _anvil: anvil,
+            anvil,
             anvil_host_port,
         }
     }

@@ -8,7 +8,7 @@ const POSTGRES_PORT: u16 = 5432;
 
 pub struct DbInstance {
     /// Use to keep the database container running during the tests.
-    _db_container: ContainerAsync<GenericImage>,
+    pub db_container: ContainerAsync<GenericImage>,
     pub db: Pool<Postgres>,
     pub url: String,
 }
@@ -55,7 +55,7 @@ impl DbInstance {
         info!("KMS Connector DB ready!");
 
         Ok(DbInstance {
-            _db_container: container,
+            db_container: container,
             db: pool,
             url: db_url,
         })

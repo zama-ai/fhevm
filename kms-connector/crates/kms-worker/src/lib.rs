@@ -1,2 +1,2 @@
 pub mod core;
-mod monitoring;
+pub mod monitoring;
