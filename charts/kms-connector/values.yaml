@@ -1,16 +1,8 @@
-common_config:
+commonConfig:
   enabled: true
-  database:
-    secret:
-      name: kms-connector-db-url
-      key: kms-connector-db-url
-      value: "postgresql://postgres:postgres@postgresql:5432/kms-connector"
   env:
     - name: KMS_CONNECTOR_DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: kms-connector-db-url
-          key: kms-connector-db-url
+      value: "postgresql://postgres:postgres@postgresql:5432/kms-connector"
     - name: KMS_CONNECTOR_GATEWAY_URL
       value: ws://gateway-anvil-node:8546
     - name: KMS_CONNECTOR_CHAIN_ID
@@ -22,7 +14,7 @@ common_config:
     - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS
       value: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 
-monitoring_config:
+monitoringConfig:
   env:
     - name: OTEL_EXPORTER_OTLP_ENDPOINT
       value: http://otlp-endpoint:4317
