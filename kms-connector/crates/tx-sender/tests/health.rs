@@ -1,3 +1,4 @@
+use alloy::transports::http::reqwest::Url;
 use connector_utils::{
     monitoring::{health::query_healthcheck_endpoint, server::start_monitoring_server},
     tests::setup::{TestInstanceBuilder, pick_free_port},
@@ -19,6 +20,10 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     );
 
     let monitoring_endpoint = SocketAddr::from_str(&format!("127.0.0.1:{}", pick_free_port()))?;
+    let monitoring_url = Some(Url::from_str(&format!(
+        "http://{}/healthz",
+        monitoring_endpoint
+    ))?);
     let cancel_token = CancellationToken::new();
     let monitoring_server_task =
         start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
@@ -29,21 +34,21 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
         .await;
 
     // Test the endpoint while everything is fine
-    query_healthcheck_endpoint::<HealthStatus>(monitoring_endpoint).await?;
+    query_healthcheck_endpoint::<HealthStatus>(monitoring_url.clone()).await?;
 
     // Pause DB and verify healthcheck failure
     test_instance.db_container().pause().await?;
-    query_healthcheck_endpoint::<HealthStatus>(monitoring_endpoint)
+    query_healthcheck_endpoint::<HealthStatus>(monitoring_url.clone())
         .await
         .unwrap_err();
     test_instance.db_container().unpause().await?;
 
     // Test everything is fine
-    query_healthcheck_endpoint::<HealthStatus>(monitoring_endpoint).await?;
+    query_healthcheck_endpoint::<HealthStatus>(monitoring_url.clone()).await?;
 
     // Pause Gateway and verify healthcheck failure
     test_instance.anvil_container().pause().await?;
-    query_healthcheck_endpoint::<HealthStatus>(monitoring_endpoint)
+    query_healthcheck_endpoint::<HealthStatus>(monitoring_url)
         .await
         .unwrap_err();
 

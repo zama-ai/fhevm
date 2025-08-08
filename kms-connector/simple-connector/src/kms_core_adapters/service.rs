@@ -23,11 +23,12 @@ use crate::error::Result;
 fn request_id_to_decimal(hex_request_id: &str) -> String {
     // Try to parse hex string as U256 and convert to decimal
     if let Ok(bytes) = alloy::hex::decode(hex_request_id)
-        && bytes.len() == 32 {
-            let mut array = [0u8; 32];
-            array.copy_from_slice(&bytes);
-            return alloy::primitives::U256::from_be_bytes(array).to_string();
-        }
+        && bytes.len() == 32
+    {
+        let mut array = [0u8; 32];
+        array.copy_from_slice(&bytes);
+        return alloy::primitives::U256::from_be_bytes(array).to_string();
+    }
     // Fallback to original hex string if parsing fails
     hex_request_id.to_string()
 }

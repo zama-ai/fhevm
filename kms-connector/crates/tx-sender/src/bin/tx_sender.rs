@@ -30,9 +30,8 @@ async fn run() -> anyhow::Result<()> {
         Subcommands::Validate { config } => {
             Config::from_env_and_file(Some(config)).await?;
         }
-        Subcommands::Health { config } => {
-            let config = Config::from_env_and_file(config.as_ref()).await?;
-            query_healthcheck_endpoint::<HealthStatus>(config.monitoring_endpoint).await?;
+        Subcommands::Health { endpoint } => {
+            query_healthcheck_endpoint::<HealthStatus>(endpoint).await?;
         }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref()).await?;

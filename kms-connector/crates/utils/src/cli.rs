@@ -1,3 +1,4 @@
+use alloy::transports::http::reqwest::Url;
 use clap::{FromArgMatches, Subcommand, command};
 use std::path::PathBuf;
 
@@ -45,8 +46,8 @@ pub enum Subcommands {
 
     /// Check the health of a running instance of the component
     Health {
-        /// Configuration file path (optional if using environment variables)
-        #[arg(short, long, value_name = "FILE")]
-        config: Option<PathBuf>,
+        /// Healthcheck endpoint to query (optional if using environment variable instead)
+        #[arg(short, long, value_name = "URL")]
+        endpoint: Option<Url>,
     },
 }
