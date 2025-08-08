@@ -42,4 +42,11 @@ pub enum Subcommands {
         #[arg(short, long, value_name = "FILE")]
         config: PathBuf,
     },
+
+    /// Check the health of a running instance of the component
+    Health {
+        /// Configuration file path (optional if using environment variables)
+        #[arg(short, long, value_name = "FILE")]
+        config: Option<PathBuf>,
+    },
 }

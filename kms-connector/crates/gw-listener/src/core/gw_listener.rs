@@ -221,7 +221,7 @@ where
 
 impl GatewayListener<GatewayProvider, DbEventPublisher> {
     /// Creates a new `GatewayListener` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let publisher = DbEventPublisher::new(db_pool.clone());
 

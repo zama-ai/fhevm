@@ -1,6 +1,14 @@
-use alloy::providers::Provider;
+use alloy::{
+    providers::Provider,
+    transports::http::reqwest::{self, StatusCode},
+};
+use anyhow::anyhow;
+use serde::de::DeserializeOwned;
 use sqlx::{Pool, Postgres};
-use std::time::Duration;
+use std::{fmt::Debug, net::SocketAddr, time::Duration};
+use tracing::{error, info};
+
+use crate::monitoring::otlp::default_dispatcher;
 
 /// Interface to perform the healthchecks of the different services of the KMS Connector.
 pub trait Healthcheck {
@@ -51,5 +59,28 @@ pub async fn gateway_healthcheck<P: Provider>(
             errors.push(format!("Gateway connection timed out: {e}"));
             false
         }
+    }
+}
+
+pub async fn query_healthcheck_endpoint<S: Debug + DeserializeOwned>(
+    endpoint: SocketAddr,
+) -> anyhow::Result<()> {
+    let _dispatcher_guard = tracing::dispatcher::set_default(&default_dispatcher());
+    query_healthcheck_endpoint_inner::<S>(endpoint)
+        .await
+        .inspect_err(|e| error!("{e}"))
+}
+
+async fn query_healthcheck_endpoint_inner<S: Debug + DeserializeOwned>(
+    endpoint: SocketAddr,
+) -> anyhow::Result<()> {
+    let healthcheck_response = reqwest::get(format!("http://{}/healthz", endpoint)).await?;
+    let status_code = healthcheck_response.status();
+    let app_state = healthcheck_response.json::<S>().await?;
+    if status_code == StatusCode::OK {
+        info!("Healthcheck success: {app_state:?}");
+        Ok(())
+    } else {
+        Err(anyhow!("Healthcheck success: {app_state:?}"))
     }
 }
