@@ -49,43 +49,57 @@ pub trait KmsService {
 
 #[derive(Debug)]
 pub struct KmsServiceImpl {
-    kms_core_endpoint: String,
+    kms_core_endpoints: Vec<String>,
     running: Arc<AtomicBool>,
-    client: Arc<tokio::sync::Mutex<Option<CoreServiceEndpointClient<Channel>>>>,
+    clients: Arc<tokio::sync::Mutex<Vec<Option<CoreServiceEndpointClient<Channel>>>>>,
     config: Config,
 }
 
 impl KmsServiceImpl {
     /// Create a new KMS service instance
-    pub fn new(kms_core_endpoint: &str, config: Config) -> Self {
+    pub fn new(config: Config) -> Self {
+        let num_endpoints = config.kms_core_endpoints.len();
         Self {
-            kms_core_endpoint: kms_core_endpoint.to_string(),
+            kms_core_endpoints: config.kms_core_endpoints.clone(),
             running: Arc::new(AtomicBool::new(true)),
-            client: Arc::new(tokio::sync::Mutex::new(None)),
+            clients: Arc::new(tokio::sync::Mutex::new(vec![None; num_endpoints])),
             config,
         }
     }
 
-    /// Initialize the KMS client connection
+    /// Initialize all KMS client connections
     pub async fn initialize(&self) -> Result<()> {
-        let channel = Channel::from_shared(self.kms_core_endpoint.clone())
-            .map_err(|e| crate::error::Error::Transport(e.to_string()))?
-            .connect()
-            .await
-            .map_err(|e| crate::error::Error::Transport(e.to_string()))?;
+        let mut clients_guard = self.clients.lock().await;
 
-        let mut client_guard = self.client.lock().await;
-        *client_guard = Some(CoreServiceEndpointClient::new(channel));
-        info!("Connected to KMS-core at {}", self.kms_core_endpoint);
+        for (i, endpoint) in self.kms_core_endpoints.iter().enumerate() {
+            let channel = Channel::from_shared(endpoint.clone())
+                .map_err(|e| crate::error::Error::Transport(e.to_string()))?
+                .connect()
+                .await
+                .map_err(|e| crate::error::Error::Transport(e.to_string()))?;
+
+            clients_guard[i] = Some(CoreServiceEndpointClient::new(channel));
+            info!("Connected to KMS-core at {}", endpoint);
+        }
+
         Ok(())
     }
 
-    /// Get a client, attempting to reconnect if necessary
-    async fn get_client(&self) -> Result<CoreServiceEndpointClient<Channel>> {
+    /// Get a client for a specific request ID using modulo sharding
+    async fn get_client_for_request(
+        &self,
+        request_id: &str,
+    ) -> Result<CoreServiceEndpointClient<Channel>> {
+        // Simple hash of request ID for modulo calculation
+        let request_id_hash = request_id.chars().map(|c| c as u64).sum::<u64>();
+
+        // Select endpoint using modulo sharding
+        let endpoint_index = (request_id_hash % self.kms_core_endpoints.len() as u64) as usize;
+
         loop {
             {
-                let client_guard = self.client.lock().await;
-                if let Some(client) = client_guard.clone() {
+                let clients_guard = self.clients.lock().await;
+                if let Some(client) = clients_guard[endpoint_index].clone() {
                     return Ok(client);
                 }
             }
@@ -169,7 +183,7 @@ impl KmsService for KmsServiceImpl {
         }
 
         let mut client = self
-            .get_client()
+            .get_client_for_request(&request_id.request_id)
             .await
             .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
 
@@ -179,9 +193,10 @@ impl KmsService for KmsServiceImpl {
         // Poll for result with timeout
         self.poll_for_result(self.config.public_decryption_timeout, || {
             let request = Request::new(request_id.clone());
+            let request_id_str = request_id.request_id.clone();
             async move {
                 let mut client = self
-                    .get_client()
+                    .get_client_for_request(&request_id_str)
                     .await
                     .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
                 client.get_public_decryption_result(request).await
@@ -231,7 +246,7 @@ impl KmsService for KmsServiceImpl {
         );
 
         let mut client = self
-            .get_client()
+            .get_client_for_request(&request_id.request_id)
             .await
             .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
 
@@ -241,9 +256,10 @@ impl KmsService for KmsServiceImpl {
         // Poll for result with timeout
         self.poll_for_result(self.config.user_decryption_timeout, || {
             let request = Request::new(request_id.clone());
+            let request_id_str = request_id.request_id.clone();
             async move {
                 let mut client = self
-                    .get_client()
+                    .get_client_for_request(&request_id_str)
                     .await
                     .map_err(|e| Status::unavailable(format!("Failed to get KMS client: {e}")))?;
                 client.get_user_decryption_result(request).await

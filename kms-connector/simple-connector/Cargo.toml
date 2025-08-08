@@ -44,6 +44,7 @@ chrono = { version = "0.4.41", features = ["serde"] }
 [dev-dependencies]
 tempfile.workspace = true
 serial_test.workspace = true
+wiremock = "0.6.4"
 
 [[bin]]
 name = "kms-connector"
