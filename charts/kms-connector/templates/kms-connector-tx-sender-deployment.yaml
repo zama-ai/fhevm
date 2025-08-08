@@ -1,0 +1,75 @@
+{{- if .Values.kmsConnectorTxSender.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kms-connector-tx-sender
+    app.kubernetes.io/name: {{ include "kmsConnectorTxSenderName" . }}
+  name: {{ include "kmsConnectorTxSenderName" . }}
+spec:
+  replicas: {{ .Values.kmsConnectorTxSender.replicas }}
+  selector:
+    matchLabels:
+      app: kms-connector-tx-sender
+  {{- if .Values.kmsConnectorTxSender.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.kmsConnectorTxSender.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: kms-connector-tx-sender
+        app.kubernetes.io/name: {{ include "kmsConnectorTxSenderName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- if and .Values.kmsConnectorTxSender.affinity .Values.kmsConnectorTxSender.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.kmsConnectorTxSender.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.kmsConnectorTxSender.tolerations .Values.kmsConnectorTxSender.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.kmsConnectorTxSender.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.kmsConnectorTxSender.serviceAccountName }}
+      serviceAccountName: {{ .Values.kmsConnectorTxSender.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: kms-connector-tx-sender
+          image: {{ .Values.kmsConnectorTxSender.image.name }}:{{ .Values.kmsConnectorTxSender.image.tag }}
+          env:
+          {{- if .Values.kmsConnectorTxSender.tracing.enabled }}
+{{ toYaml .Values.monitoringConfig.env | nindent 12 }}
+          {{- end }}
+{{ toYaml .Values.commonConfig.env | nindent 12 }}
+{{ toYaml .Values.kmsConnectorTxSender.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.kmsConnectorTxSender.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.kmsConnectorTxSender.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.kmsConnectorTxSender.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.kmsConnectorTxSender.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.kmsConnectorTxSender.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.kmsConnectorTxSender.probes .Values.kmsConnectorTxSender.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.kmsConnectorTxSender.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.kmsConnectorTxSender.probes .Values.kmsConnectorTxSender.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.kmsConnectorTxSender.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}
