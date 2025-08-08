@@ -1,8 +1,0 @@
-# Run commands for the console services
-# fhevm relayer
-services:
-  fhevm-relayer:
-    image: ghcr.io/zama-ai/fhevm-relayer:latest
-    build:
-      context: ./apps/relayer/fhevm-relayer
-      dockerfile: ../../../apps/relayer/fhevm-relayer/Dockerfile

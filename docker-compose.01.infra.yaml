@@ -69,31 +69,9 @@ services:
       retries: 240
       start_period: 60s
 
-  relayer_postgres:
-    image: postgres:17-alpine
-    restart: always
-    container_name: relayer-postgres
-    environment:
-      - POSTGRES_USER=${DB_USERNAME:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
-      - POSTGRES_DB=${DB_NAME:-relayer-db}
-    ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 5s
-    volumes:
-      - relayer_postgres:/var/lib/postgresql/data
-    networks:
-      - console-net
-
 volumes:
   cache:
   console_postgres:
-  relayer_postgres:
   localstack:
 
 # It creates an isolated docker-network

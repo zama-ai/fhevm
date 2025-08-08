@@ -62,13 +62,13 @@ fhevm-test-input:
 # Console + Docker
 .PHONY: console-build console-up console-down console-infra-up console-infra-down console-build-service console-up-service
 console-build:
-	docker compose -f ./docker-compose.02.console.build.yaml -f ./docker-compose.04.console.ghcr.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml -f ./docker-compose.03.console.fhevm-relayer.build.yaml build
+	docker compose --progress=plain -f ./docker-compose.02.console.build.yaml -f ./docker-compose.04.console.ghcr.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml build
 
 console-up:
 	bash scripts/console-up.sh
 
 console-down:
-	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.03.console.fhevm-relayer.run.yaml -f ./docker-compose.03.console.run.yaml -p console down --volumes --remove-orphans
+	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.03.console.run.yaml -p console down --volumes --remove-orphans
 
 console-infra-up:
 	docker compose -f ./docker-compose.01.infra.yaml -f ./docker-compose.03.console.migrate.yaml -f ./docker-compose.04.console.migrate.ghcr.yaml -p console up -d --wait

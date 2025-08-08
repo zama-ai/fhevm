@@ -169,6 +169,8 @@ log:
 sqs_endpoint:
   inbound_queue: http://console-aws:4566/000000000000/relayer-queue
   outbound_queue: http://console-aws:4566/000000000000/orchestrator-queue
+
+db_path_rocksdb: ./cache.db
 """ > ./apps/relayer/fhevm-relayer-compose.yaml
 
 

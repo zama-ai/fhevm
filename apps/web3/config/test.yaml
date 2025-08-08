@@ -25,11 +25,11 @@ fhe:
 
 ethers:
   chainIds:
-    - id: 123456
+    - chainId: 123456
       provider: Ethers
       apiEndpoint: 'ws://localhost:8545'
       rpcEndpoint: 'ws://localhost:8545'
-    - id: 11155111
+    - chainId: 11155111
       provider: Etherscan
       apiEndpoint: https://api-sepolia.etherscan.io/api
       rpcEndpoint: https://rpc.sepolia.org

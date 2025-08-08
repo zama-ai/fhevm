@@ -59,25 +59,3 @@ services:
     networks:
       - console-net
 
-  relayer-migrate:
-    image: rust:1.85
-    container_name: relayer-migrate
-    working_dir: /app
-    env_file:
-      - ./apps/relayer/.env.compose
-    entrypoint: ["/bin/sh", "-c"]
-    command: 
-    - |
-      echo "Waiting for database to be ready..." &&
-      until nc -z console-postgres 5432; do sleep 1; done &&
-      echo "Running migrations..." &&
-      diesel setup && diesel migration run --migration-dir /app/lib/migrations && echo "Done"
-    restart: on-failure
-    depends_on:
-      relayer_postgres:
-        condition: service_healthy
-    volumes: 
-      - ./apps/relayer:/app
-    networks:
-      - console-net
-

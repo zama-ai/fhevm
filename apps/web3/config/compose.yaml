@@ -1,0 +1,31 @@
+common:
+  address: '127.0.0.1'
+  logLevel: 'silent'
+  prettify: true
+  port: 3002
+aws:
+  accessKeyId: 'test'
+  secretAccessKey: 'test'
+  region: 'eu-central-1'
+  endpoint: 'http://console-aws:4566'
+  orchestrator:
+    queueUrl: 'http://console-aws:4566/000000000000/orchestrator-queue'
+  web3:
+    queueUrl: 'http://console-aws:4566/000000000000/web3-queue'
+db:
+  url: 'postgresql://postgres:postgres@console-postgres:5432/console-db?schema=web3'
+redis:
+  host: 'console-redis'
+  port: 6379
+fhe:
+  chainIds:
+    - chainId: 12345
+      contractAddress: %{{ LOCAL_TFHE_EXECUTOR_CONTRACT_ADDRESS }}
+      providerUrl: 'ws://host-node:8545'
+
+ethers:
+  chainIds:
+    - id: 12345
+      provider: Ethers
+      apiEndpoint: 'ws://host-node:8545'
+      rpcEndpoint: 'ws://host-node:8545'

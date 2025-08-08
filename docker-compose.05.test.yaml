@@ -1,7 +1,7 @@
 services:
   tests-e2e-debug:
     container_name: console-tests-e2e-debug
-    image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TESTS_VERSION:-v0.7.0}
+    image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TESTS_VERSION:-v0.8.0}
     env_file:
       - ./external/fhevm/test-suite/fhevm/env/staging/.env.test-suite.local
     environment:
