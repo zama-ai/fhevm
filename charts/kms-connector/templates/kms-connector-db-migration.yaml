@@ -36,7 +36,6 @@ spec:
       containers:
       - name: kms-connector-db-migration
         image: {{ .Values.kmsConnectorDbMigration.image.name }}:{{ .Values.kmsConnectorDbMigration.image.tag }}
-        command: ["/init_db.sh"]
         env:
 {{ toYaml .Values.kmsConnectorDbMigration.env | nindent 12 }}
         resources:
