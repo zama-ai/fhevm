@@ -30,16 +30,33 @@ pub type ClearConst = Uint<256, 4>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
 
-pub fn retry_on_sqlx_error(err: &SqlxError) -> bool {
-    match err {
+const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
+const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
+
+type DbErrorCode = std::borrow::Cow<'static, str>;
+const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLSTATE code for statement cancelled
+
+pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
+    let is_transient = match err {
+        // Transient errors, lots of retries
         SqlxError::Io(_)
         | SqlxError::PoolTimedOut
         | SqlxError::PoolClosed
         | SqlxError::WorkerCrashed
         | SqlxError::Protocol(_) => true,
-        // Other errors should be immdiately propagated up
+        SqlxError::Database(err) if err.code() == Some(STATEMENT_CANCELLED) => {
+            true
+        }
+        // Unknown errors, some retries
         _ => false,
-    }
+    };
+    let will_retry = if is_transient {
+        *retry_count < MAX_RETRY_FOR_TRANSIENT_ERROR
+    } else {
+        *retry_count < MAX_RETRY_ON_UNKNOWN_ERROR
+    };
+    *retry_count += 1;
+    will_retry
 }
 
 // A pool of connection with some cached information and automatic reconnection
@@ -119,17 +136,19 @@ impl Database {
             .fetch_one(pool)
         };
         // retry mecanism
+        let mut retry_count = 0;
         loop {
             match query().await {
                 Ok(record) => {
                     return Ok((record.tenant_id, record.chain_id as u64))
                 }
-                Err(err) if retry_on_sqlx_error(&err) => {
-                    error!(error = %err, "Error requesting tenant id, retrying");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
-                }
                 Err(SqlxError::RowNotFound) => {
                     anyhow::bail!("No tenant found for the provided API key");
+                }
+                Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
+                    error!(error = %err, "Error requesting tenant id, retrying");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
                 }
                 Err(err) => {
                     return Err(err.into());
@@ -370,14 +389,15 @@ impl Database {
         &mut self,
         log: &alloy::rpc::types::Log<TfheContractEvents>,
     ) -> Result<(), SqlxError> {
+        let mut retry_count = 0;
         loop {
             let result = self.insert_tfhe_event_no_retry(log).await;
             match result {
                 Ok(_) => return Ok(()),
-                Err(err) if retry_on_sqlx_error(&err) => {
+                Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
                     error!(
                         error = %err,
-                        "Database I/O error, will retry indefinitely"
+                        "Database I/O error, will retry"
                     );
                     self.reconnect().await;
                     continue;
@@ -560,13 +580,14 @@ impl Database {
                     handle,
                 )
             };
-
+            let mut retry_count = 0;
             loop {
                 match query().execute(&self.pool).await {
                     Ok(_) => break,
-                    Err(err) if retry_on_sqlx_error(&err) => {
-                        error!(error = %err, "Database I/O error, will retry indefinitely");
+                    Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
+                        error!(error = %err, "Database I/O error, will retry");
                         self.reconnect().await;
+                        continue;
                     }
                     Err(sqlx_err) => {
                         return Err(sqlx_err);
@@ -597,13 +618,14 @@ impl Database {
                 event_type as i16,
             )
         };
-
+        let mut retry_count = 0;
         loop {
             match query().execute(&self.pool).await {
                 Ok(_) => break,
-                Err(err) if retry_on_sqlx_error(&err) => {
-                    error!(error = %err, "Database I/O error, will retry indefinitely");
+                Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
+                    error!(error = %err, "Database I/O error, will retry");
                     self.reconnect().await;
+                    continue;
                 }
                 Err(sqlx_err) => {
                     return Err(sqlx_err);
