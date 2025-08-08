@@ -47,8 +47,9 @@ spec:
           image: {{ .Values.kmsConnectorKmsWorker.image.name }}:{{ .Values.kmsConnectorKmsWorker.image.tag }}
           env:
           {{- if .Values.kmsConnectorKmsWorker.tracing.enabled }}
-{{ toYaml .Values.monitoring_config.env | nindent 12 }}
+{{ toYaml .Values.monitoringConfig.env | nindent 12 }}
           {{- end }}
+{{ toYaml .Values.commonConfig.env | nindent 12 }}
 {{ toYaml .Values.kmsConnectorKmsWorker.env | nindent 12 }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorKmsWorker.ports }}

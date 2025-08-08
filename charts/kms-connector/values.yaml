@@ -1,20 +1,12 @@
-common_config:
+commonConfig:
   enabled: true
-  database:
-    secret:
-      name: kms-connector-db-url
-      key: kms-connector-db-url
-      value: "postgresql://postgres:postgres@postgresql:5432/kms-connector"
   env:
     - name: KMS_CONNECTOR_DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: kms-connector-db-url
-          key: kms-connector-db-url
+      value: "postgresql://postgres:postgres@fhevm-db:5432/kms-connector"
     - name: KMS_CONNECTOR_GATEWAY_URL
       value: ws://gateway-anvil-node:8546
     - name: KMS_CONNECTOR_CHAIN_ID
-      value: 54321
+      value: "54321"
     - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
       value: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
     - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
@@ -22,7 +14,7 @@ common_config:
     - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS
       value: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 
-monitoring_config:
+monitoringConfig:
   env:
     - name: OTEL_EXPORTER_OTLP_ENDPOINT
       value: http://otlp-endpoint:4317
@@ -38,10 +30,7 @@ kmsConnectorDbMigration:
     tag: v0.8.0-1
   env:
     - name: DATABASE_URL
-      valueFrom:
-        secretKeyRef:
-          name: kms-connector-db-url
-          key: kms-connector-db-url
+      value: "postgresql://postgres:postgres@fhevm-db:5432/kms-connector"
   serviceAccountName:
   storage:
     size: 2Gi
@@ -59,7 +48,7 @@ kmsConnectorDbMigration:
     items: []
 
 kmsConnectorGwListener:
-  enabled: false
+  enabled: true
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener
@@ -109,7 +98,7 @@ kmsConnectorGwListener:
       maxUnavailable: 0
 
 kmsConnectorKmsWorker:
-  enabled: false
+  enabled: true
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker
@@ -161,25 +150,27 @@ kmsConnectorKmsWorker:
       maxUnavailable: 0
 
 kmsConnectorTxSender:
-  enabled: false
+  enabled: true
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender
     tag: v0.8.0-1
   replicas: 1
+  wallet:
+    secret:
+      name: kms-connector-tx-sender.aws-kms-wallet
+      key: kms-connector-tx-sender.aws-kms-wallet
+      value: ""
   env:
     - name: KMS_CONNECTOR_SERVICE_NAME
       value: kms-connector-tx-sender
-    - name: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
-      valueFrom:
-        secretKeyRef:
-          name: kms-connector-tx-sender.aws-kms-wallet
-          key: kms-connector-tx-sender.aws-kms-wallet
-  wallet:
-    secret:
-      name: wallet
-      key: kms-connector-tx-sender.aws-kms-wallet
-      value: ""
+    - name: KMS_CONNECTOR_PRIVATE_KEY  # Do not use in production!
+      value: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+    # - name: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: kms-connector-tx-sender.aws-kms-wallet
+    #       key: kms-connector-tx-sender.aws-kms-wallet
   tracing:
     enabled: true
   ports:
@@ -224,9 +215,3 @@ kmsConnectorTxSender:
 podAnnotations: {}
 # Set Pod Labels, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 podLabels: {}
-
-podSecurityContext:
-  runAsUser: 1000
-  runAsGroup: 1000
-  fsGroup: 1000
-  runAsNonRoot: true
