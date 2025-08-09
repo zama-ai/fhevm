@@ -40,7 +40,7 @@ USER fhevm:fhevm
 
 ENTRYPOINT ["/app/kms-connector/bin/gw-listener", "start"]
 
-HEALTHCHECK --interval=1m --timeout=3s \
-    CMD /app/kms-connector/bin/gw-listener health --endpoint "http://127.0.0.1:9100/healthz"
+HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
+    CMD ["/app/kms-connector/bin/gw-listener", "health", "--endpoint", "http://127.0.0.1:9100/healthz"]
 
 FROM prod AS dev
