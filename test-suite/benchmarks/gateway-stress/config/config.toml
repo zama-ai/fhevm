@@ -9,25 +9,27 @@ decryption_address = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
 
 # The time during which the tool will send requests burst to the Gateway
 # Format: https://docs.rs/humantime/latest/humantime/
-tests_duration = "5s"
+tests_duration = "500ms"
 
 # The interval between two requests burst
 # Format: https://docs.rs/humantime/latest/humantime/
 tests_interval = "1s"
 
 # The number of parallel requests to send to the Gateway, at each interval
-parallel_requests = 100
+parallel_requests = 1
 
 # The handles used for decryptions
 ct_handles = [
-    "0xf2eac20e8f2385a14094f424c3adb8ee0a713bfcbbff00000000000030390200",
+    # "0xf2eac20e8f2385a14094f424c3adb8ee0a713bfcbbff00000000000030390200",
+    "0x89573fcf0c936f2474b99cfc35c38d6c4e923f6454ff00000000000030390200",
 ]
 
-# Boolean to toggle requests tracking
-track_progress = true
+# The contract allowed for user decrytion on ct_handles
+allowed_contract = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
 
 # Private key as a hex string (optional if `aws_kms_config` is configured)
 private_key = "e746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
+# private_key = "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f"
 
 # AWS KMS configuration (optional if `private_key` is configured)
 # [aws_kms_config]
