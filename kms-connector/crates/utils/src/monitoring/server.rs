@@ -1,7 +1,7 @@
 use crate::monitoring::{health::Healthcheck, otlp::metrics_responder};
 use actix_web::{HttpResponse, web::Data};
 use std::{collections::HashMap, net::SocketAddr};
-use tokio::select;
+use tokio::{select, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
@@ -13,7 +13,11 @@ pub fn default_monitoring_endpoint() -> String {
 }
 
 /// Starts the HTTP server exposing the healthchecks and metrics collection endpoints.
-pub fn start_monitoring_server<S>(endpoint: SocketAddr, state: S, cancel_token: CancellationToken)
+pub fn start_monitoring_server<S>(
+    endpoint: SocketAddr,
+    state: S,
+    cancel_token: CancellationToken,
+) -> JoinHandle<()>
 where
     S: Healthcheck + Clone + Send + Sync + 'static,
 {
@@ -38,7 +42,7 @@ where
             },
             _ = cancel_token.cancelled() => info!("Monitoring server successfully stopped")
         }
-    });
+    })
 }
 
 /// Performs the healthcheck verification using the service's `State`.

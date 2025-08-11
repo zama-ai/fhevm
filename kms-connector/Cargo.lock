@@ -4257,6 +4257,7 @@ dependencies = [
  "fhevm_gateway_rust_bindings",
  "kms-grpc",
  "prometheus",
+ "rstest",
  "serde",
  "serial_test",
  "sha3",

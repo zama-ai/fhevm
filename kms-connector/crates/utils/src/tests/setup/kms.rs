@@ -9,7 +9,7 @@ use tracing::info;
 
 pub struct KmsInstance {
     /// Use to keep the KMS container running during the tests.
-    _container: ContainerAsync<GenericImage>,
+    pub container: ContainerAsync<GenericImage>,
     pub url: String,
 }
 
@@ -58,7 +58,7 @@ impl KmsInstance {
         let kms_port = container.get_host_port_ipv4(50051).await?;
         let kms_url = format!("http://{kms_host}:{kms_port}");
         let kms_instance = KmsInstance {
-            _container: container,
+            container,
             url: kms_url,
         };
 
