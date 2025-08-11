@@ -1,5 +1,7 @@
 name: coprocessor-dependency-analysis
 
+permissions: {}
+
 on:
   pull_request:
 
@@ -32,6 +34,9 @@ jobs:
     name: coprocessor-dependency-analysis/dependencies-check (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions:
+      contents: 'read'
+      checks: 'write'
     runs-on: ubuntu-latest
     steps:
 
@@ -67,7 +72,3 @@ jobs:
         run: |
           cd coprocessor/fhevm-engine
           cargo-audit audit
-
-permissions:
-  contents: 'read'
-  checks: 'write'
