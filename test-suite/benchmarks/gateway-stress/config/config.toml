@@ -1,0 +1,40 @@
+# Gateway WebSocket RPC URL endpoint (required)
+gateway_url = "ws://localhost:8546"
+
+# Chain ID for the Gateway network (required)
+gateway_chain_id = 54321
+
+# Address of the Decryption contract (required)
+decryption_address = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
+
+# The time during which the tool will send requests burst to the Gateway
+# Format: https://docs.rs/humantime/latest/humantime/
+tests_duration = "500ms"
+
+# The interval between two requests burst
+# Format: https://docs.rs/humantime/latest/humantime/
+tests_interval = "1s"
+
+# The number of parallel requests to send to the Gateway, at each interval
+parallel_requests = 1
+
+# The handles used for decryptions
+ct_handles = [
+    # "0xf2eac20e8f2385a14094f424c3adb8ee0a713bfcbbff00000000000030390200",
+    "0x35ba2048cf8454c5fa8256b6877e11889439651b2bff00000000000030390800",
+]
+
+# The contract allowed for user decrytion on ct_handles
+allowed_contract = "0xEE4735Cd04D841AAf40943997cb78C24C8dDE3d6"
+
+# Private key as a hex string (optional if `aws_kms_config` is configured)
+private_key = "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f"
+
+# AWS KMS configuration (optional if `private_key` is configured)
+# [aws_kms_config]
+# AWS KMS key ID for signing
+# key_id = "12345678-1234-1234-1234-123456789012"
+# Optional: AWS region for KMS (if not using default from AWS credentials)
+# region = "us-east-1"
+# Optional: AWS endpoint URL for KMS (for testing or custom endpoints)
+# endpoint = "https://kms.us-east-1.amazonaws.com"
