@@ -9,13 +9,15 @@ pub struct Config {
     pub gateway_chain_id: u64,
     pub decryption_address: Address,
     pub private_key: Option<String>,
+    pub mnemonic: Option<String>,
+    #[serde(default = "default_mnemonic_index")]
+    pub mnemonic_index: usize,
     pub aws_kms_config: Option<AwsKmsConfig>,
     #[serde(deserialize_with = "parse_ct_handles")]
     pub ct_handles: Vec<FixedBytes<32>>,
+    pub allowed_contract: Address,
     #[serde(default = "default_parallel_requests")]
     pub parallel_requests: u32,
-    #[serde(default = "default_track_progress")]
-    pub track_progress: bool,
     #[serde(with = "humantime_serde", default = "default_tests_duration")]
     pub tests_duration: Duration,
     #[serde(with = "humantime_serde", default = "default_tests_interval")]
@@ -52,16 +54,16 @@ fn default_parallel_requests() -> u32 {
     100
 }
 
+fn default_mnemonic_index() -> usize {
+    0
+}
+
 fn default_tests_duration() -> Duration {
     Duration::from_secs(3600)
 }
 
 fn default_tests_interval() -> Duration {
     Duration::from_secs(1)
-}
-
-fn default_track_progress() -> bool {
-    true
 }
 
 fn parse_ct_handles<'de, D>(d: D) -> Result<Vec<FixedBytes<32>>, D::Error>

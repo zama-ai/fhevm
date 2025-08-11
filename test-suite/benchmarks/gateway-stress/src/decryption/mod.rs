@@ -21,16 +21,16 @@ where
     trace!("Receipt details: {receipt:?}");
 
     for log in receipt.inner.logs().iter() {
-        if let Some(first_topic) = log.topics().first() {
-            if first_topic == &event_hash {
-                let event_id = decode_fn(log.data())?;
-                debug!(
-                    ?receipt.transaction_hash,
-                    ?event_id,
-                    "Found decryption ID from event"
-                );
-                return Ok(event_id);
-            }
+        if let Some(first_topic) = log.topics().first()
+            && first_topic == &event_hash
+        {
+            let event_id = decode_fn(log.data())?;
+            debug!(
+                ?receipt.transaction_hash,
+                ?event_id,
+                "Found decryption ID from event"
+            );
+            return Ok(event_id);
         }
     }
 

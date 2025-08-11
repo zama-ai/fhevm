@@ -9,7 +9,7 @@ use crate::{
 use alloy::{
     hex,
     network::EthereumWallet,
-    primitives::{Address, U256},
+    primitives::U256,
     providers::{
         Identity, ProviderBuilder, RootProvider, WsConnect,
         fillers::{FillProvider, JoinFill, WalletFiller},
@@ -107,18 +107,16 @@ impl App {
         info!(
             "Handled all burst in {:.2}s. Throughput: {:.2} tps",
             elapsed,
-            (self.config.parallel_requests * (burst_index - 1) as u32) as f64 / elapsed as f64
+            (self.config.parallel_requests * (burst_index - 1) as u32) as f64 / elapsed
         );
         Ok(())
     }
 
     /// Performs the user decryption stress test.
     pub async fn user(&self) -> anyhow::Result<()> {
-        let contract_address = Address::default();
         let public_key =
             "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331";
         let user_addr = self.wallet.address();
-        debug!("user_addr: {user_addr}");
         let signature = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)?
@@ -129,14 +127,14 @@ impl App {
                 .userDecryptionRequest(
                     vec![CtHandleContractPair {
                         ctHandle: *handle,
-                        contractAddress: contract_address,
+                        contractAddress: self.config.allowed_contract,
                     }],
                     RequestValidity {
                         startTimestamp: U256::from(timestamp),
                         durationDays: U256::ONE,
                     },
                     U256::ZERO, // host chainId
-                    vec![contract_address],
+                    vec![self.config.allowed_contract],
                     user_addr,
                     hex::decode(public_key)?.into(),
                     hex::decode(signature)?.into(),
