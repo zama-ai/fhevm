@@ -13,6 +13,7 @@ alloy = { version = "0.13", default-features = false, features = [
     "std",
     "provider-ws",
     "signer-aws",
+    "signer-mnemonic",
 ] }
 anyhow = "1.0.98"
 async-trait = { version = "0.1.88", default-features = false }

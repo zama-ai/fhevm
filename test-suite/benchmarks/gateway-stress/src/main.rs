@@ -16,6 +16,7 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 
 #[tokio::main]
 async fn main() -> ExitCode {
+    init_tracing();
     if let Err(e) = run().await {
         error!("{e}");
         return ExitCode::FAILURE;
@@ -24,7 +25,6 @@ async fn main() -> ExitCode {
 }
 
 async fn run() -> anyhow::Result<()> {
-    init_tracing();
     let cli = Cli::parse();
     let config = Config::from_env_and_file(cli.config)?;
     info!("Config: {config:?}");

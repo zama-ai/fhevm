@@ -21,8 +21,8 @@ where
     trace!("Receipt details: {receipt:?}");
 
     for log in receipt.inner.logs().iter() {
-        if let Some(first_topic) = log.topics().first() {
-            if first_topic == &event_hash {
+        if let Some(first_topic) = log.topics().first()
+            && first_topic == &event_hash {
                 let event_id = decode_fn(log.data())?;
                 debug!(
                     ?receipt.transaction_hash,
@@ -31,7 +31,6 @@ where
                 );
                 return Ok(event_id);
             }
-        }
     }
 
     Err(anyhow!("Event not found in logs"))
