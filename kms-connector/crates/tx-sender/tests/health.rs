@@ -1,6 +1,9 @@
-use alloy::transports::http::reqwest::Url;
+use alloy::transports::http::reqwest::{self, StatusCode, Url};
 use connector_utils::{
-    monitoring::{health::query_healthcheck_endpoint, server::start_monitoring_server},
+    monitoring::{
+        health::{Healthcheck, query_healthcheck_endpoint},
+        server::{GIT_COMMIT_HASH, LivenessResponse, VersionResponse, start_monitoring_server},
+    },
     tests::setup::{TestInstanceBuilder, pick_free_port},
 };
 use rstest::rstest;
@@ -32,6 +35,31 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     test_instance
         .wait_for_log("Monitoring server listening at")
         .await;
+
+    // Test `liveness` endpoint
+    let url = format!("http://{}/liveness", monitoring_endpoint);
+    let response = reqwest::get(&url).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.json::<LivenessResponse>().await?,
+        LivenessResponse {
+            status_code: "200".to_string(),
+            status: "alive".to_string(),
+        }
+    );
+
+    // Test `version` endpoint
+    let url = format!("http://{}/version", monitoring_endpoint);
+    let response = reqwest::get(&url).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.json::<VersionResponse>().await?,
+        VersionResponse {
+            name: State::service_name().to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            build: GIT_COMMIT_HASH.to_string(),
+        }
+    );
 
     // Test the endpoint while everything is fine
     query_healthcheck_endpoint::<HealthStatus>(monitoring_url.clone()).await?;
