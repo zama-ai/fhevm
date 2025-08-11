@@ -13,6 +13,9 @@ use tracing::{error, info};
 pub trait Healthcheck {
     /// Returns an `HttpResponse` containing the health status of the service.
     fn healthcheck(&self) -> impl Future<Output = actix_web::HttpResponse>;
+
+    /// Returns the name of the service.
+    fn service_name() -> &'static str;
 }
 
 pub fn default_healthcheck_timeout_secs() -> u64 {

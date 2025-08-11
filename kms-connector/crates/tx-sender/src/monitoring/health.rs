@@ -52,6 +52,10 @@ impl Healthcheck for State {
 
         actix_web::HttpResponse::build(status_code).json(status)
     }
+
+    fn service_name() -> &'static str {
+        "kms-connector-tx-sender"
+    }
 }
 
 /// Serializable representation of `TransactionSender`'s health status.
