@@ -1,0 +1,75 @@
+{{- if .Values.kmsConnectorKmsWorker.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kms-connector-kms-worker
+    app.kubernetes.io/name: {{ include "kmsConnectorKmsWorkerName" . }}
+  name: {{ include "kmsConnectorKmsWorkerName" . }}
+spec:
+  replicas: {{ .Values.kmsConnectorKmsWorker.replicas }}
+  selector:
+    matchLabels:
+      app: kms-connector-kms-worker
+  {{- if .Values.kmsConnectorKmsWorker.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.kmsConnectorKmsWorker.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: kms-connector-kms-worker
+        app.kubernetes.io/name: {{ include "kmsConnectorKmsWorkerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- if and .Values.kmsConnectorKmsWorker.affinity .Values.kmsConnectorKmsWorker.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.kmsConnectorKmsWorker.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.kmsConnectorKmsWorker.tolerations .Values.kmsConnectorKmsWorker.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.kmsConnectorKmsWorker.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.kmsConnectorKmsWorker.serviceAccountName }}
+      serviceAccountName: {{ .Values.kmsConnectorKmsWorker.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: kms-connector-kms-worker
+          image: {{ .Values.kmsConnectorKmsWorker.image.name }}:{{ .Values.kmsConnectorKmsWorker.image.tag }}
+          env:
+          {{- if .Values.kmsConnectorKmsWorker.tracing.enabled }}
+{{ toYaml .Values.monitoringConfig.env | nindent 12 }}
+          {{- end }}
+{{ toYaml .Values.commonConfig.env | nindent 12 }}
+{{ toYaml .Values.kmsConnectorKmsWorker.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.kmsConnectorKmsWorker.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.kmsConnectorKmsWorker.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.kmsConnectorKmsWorker.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.kmsConnectorKmsWorker.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.kmsConnectorKmsWorker.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.kmsConnectorKmsWorker.probes .Values.kmsConnectorKmsWorker.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.kmsConnectorKmsWorker.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.kmsConnectorKmsWorker.probes .Values.kmsConnectorKmsWorker.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.kmsConnectorKmsWorker.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}
