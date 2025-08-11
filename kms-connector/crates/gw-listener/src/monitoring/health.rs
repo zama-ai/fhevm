@@ -46,6 +46,10 @@ impl<P: Provider> Healthcheck for State<P> {
 
         actix_web::HttpResponse::build(status_code).json(status)
     }
+
+    fn service_name() -> &'static str {
+        "kms-connector-gw-listener"
+    }
 }
 
 /// Serializable representation of `GatewayListener`'s health status.

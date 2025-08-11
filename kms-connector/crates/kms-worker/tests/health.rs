@@ -1,6 +1,12 @@
-use alloy::transports::http::reqwest::Url;
+use alloy::{
+    providers::RootProvider,
+    transports::http::reqwest::{self, StatusCode, Url},
+};
 use connector_utils::{
-    monitoring::{health::query_healthcheck_endpoint, server::start_monitoring_server},
+    monitoring::{
+        health::{Healthcheck, query_healthcheck_endpoint},
+        server::{GIT_COMMIT_HASH, LivenessResponse, VersionResponse, start_monitoring_server},
+    },
     tests::setup::{TestInstanceBuilder, pick_free_port},
 };
 use kms_worker::monitoring::health::{HealthStatus, KmsHealthClient, State};
@@ -11,7 +17,7 @@ use tokio_util::sync::CancellationToken;
 #[rstest]
 #[timeout(Duration::from_secs(120))]
 #[tokio::test]
-async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
+async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::full().await?;
     let kms_health_client = KmsHealthClient::connect(test_instance.kms_url()).await?;
     let state = State::new(
@@ -34,6 +40,31 @@ async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     test_instance
         .wait_for_log("Monitoring server listening at")
         .await;
+
+    // Test `liveness` endpoint
+    let url = format!("http://{}/liveness", monitoring_endpoint);
+    let response = reqwest::get(&url).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.json::<LivenessResponse>().await?,
+        LivenessResponse {
+            status_code: "200".to_string(),
+            status: "alive".to_string(),
+        }
+    );
+
+    // Test `version` endpoint
+    let url = format!("http://{}/version", monitoring_endpoint);
+    let response = reqwest::get(&url).await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.json::<VersionResponse>().await?,
+        VersionResponse {
+            name: State::<RootProvider>::service_name().to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            build: GIT_COMMIT_HASH.to_string(),
+        }
+    );
 
     // Test the endpoint while everything is fine
     query_healthcheck_endpoint::<HealthStatus>(monitoring_url.clone()).await?;

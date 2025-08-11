@@ -1,6 +1,7 @@
 use crate::monitoring::{health::Healthcheck, otlp::metrics_responder};
 use actix_web::{HttpResponse, web::Data};
-use std::{collections::HashMap, net::SocketAddr};
+use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
 use tokio::{select, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
@@ -28,6 +29,7 @@ where
                 .route("/metrics", actix_web::web::to(metrics_responder))
                 .route("/healthz", actix_web::web::to(healthcheck_responder::<S>))
                 .route("/liveness", actix_web::web::to(liveness_responder))
+                .route("/version", actix_web::web::to(version_responder::<S>))
         })
         .bind(&endpoint)
         {
@@ -52,8 +54,33 @@ async fn healthcheck_responder<S: Healthcheck>(state: Data<S>) -> impl actix_web
 
 /// Responder used to check if the monitoring server is still up and running.
 async fn liveness_responder() -> impl actix_web::Responder {
-    let mut body = HashMap::new();
-    body.insert("status_code", "200");
-    body.insert("status", "alive");
-    HttpResponse::Ok().json(body)
+    HttpResponse::Ok().json(LivenessResponse {
+        status_code: "200".to_string(),
+        status: "alive".to_string(),
+    })
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+pub struct LivenessResponse {
+    pub status_code: String,
+    pub status: String,
+}
+
+/// The commit hash (shor 7 chars format) used during the build of the service.
+pub const GIT_COMMIT_HASH: &str = git_version::git_version!(args = ["--always", "--exclude", "*"]);
+
+/// Responder used to provide version and build information of the service.
+async fn version_responder<S: Healthcheck>() -> impl actix_web::Responder {
+    HttpResponse::Ok().json(VersionResponse {
+        name: S::service_name().to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        build: GIT_COMMIT_HASH.to_string(),
+    })
+}
+
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+pub struct VersionResponse {
+    pub name: String,
+    pub version: String,
+    pub build: String,
 }
