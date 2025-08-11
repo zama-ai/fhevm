@@ -4300,6 +4300,7 @@ dependencies = [
  "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?rev=1b8d95fd9cf4687cc229efb14fd5c1bfb80f3b11)",
  "kms-grpc 0.11.0-24",
  "prometheus",
+ "rstest",
  "serde",
  "serial_test",
  "sha3",
