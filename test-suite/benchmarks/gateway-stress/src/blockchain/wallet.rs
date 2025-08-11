@@ -3,7 +3,12 @@ use alloy::{
     hex::decode,
     network::{EthereumWallet, IntoWallet},
     primitives::{Address, ChainId},
-    signers::{Signer, aws::AwsSigner, k256::ecdsa::SigningKey, local::PrivateKeySigner},
+    signers::{
+        Signer,
+        aws::AwsSigner,
+        k256::ecdsa::SigningKey,
+        local::{MnemonicBuilder, PrivateKeySigner, coins_bip39::English},
+    },
 };
 use anyhow::anyhow;
 use aws_config::BehaviorVersion;
@@ -24,14 +29,42 @@ enum WalletSigner {
 impl Wallet {
     pub async fn from_config(config: &Config) -> anyhow::Result<Self> {
         if let Some(aws_config) = &config.aws_kms_config {
+            info!("Building wallet using AWS KMS configuration...");
             Self::from_aws_kms(aws_config.clone(), Some(config.gateway_chain_id)).await
+        } else if let Some(mnemonic) = &config.mnemonic {
+            info!("Building wallet using mnemonic...");
+            Self::from_mnemonic_with_index(
+                mnemonic,
+                config.mnemonic_index,
+                Some(config.gateway_chain_id),
+            )
         } else if let Some(private_key) = &config.private_key {
+            info!("Building wallet using private key...");
             Self::from_private_key_str(private_key, Some(config.gateway_chain_id))
         } else {
             Err(anyhow!(
                 "Either aws_kms or private_key should be configured"
             ))
         }
+        .inspect(|w| info!("Wallet built successfully, with address: {}!", w.address()))
+    }
+
+    fn from_mnemonic_with_index(
+        phrase: &str,
+        account_index: usize,
+        chain_id: Option<ChainId>,
+    ) -> anyhow::Result<Self> {
+        let derivation_path = format!("m/44'/60'/0'/0/{}", account_index);
+
+        let signer = MnemonicBuilder::<English>::default()
+            .phrase(phrase)
+            .derivation_path(&derivation_path)?
+            .build()?
+            .with_chain_id(chain_id);
+
+        Ok(Self {
+            signer: WalletSigner::Local(signer),
+        })
     }
 
     fn from_private_key_str(private_key: &str, chain_id: Option<ChainId>) -> anyhow::Result<Self> {
