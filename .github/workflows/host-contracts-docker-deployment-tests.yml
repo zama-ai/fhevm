@@ -1,5 +1,7 @@
 name: host-contracts-docker-deployment-tests
 
+permissions: {}
+
 on:
   pull_request:
 
@@ -32,6 +34,10 @@ jobs:
     needs: check-changes
     name: host-contracts-docker-deployment-tests/docker-compose-tests (bpr)
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
+    permissions:
+      contents: 'read'
+      checks: 'write'
+      packages: 'read'
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -90,8 +96,3 @@ jobs:
       if: always()
       run: |
         docker compose down -v --remove-orphans
-
-permissions:
-  contents: 'read'
-  checks: 'write'
-  packages: 'read'
