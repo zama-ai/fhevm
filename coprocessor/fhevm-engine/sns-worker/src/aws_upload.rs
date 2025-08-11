@@ -269,7 +269,7 @@ async fn upload_ciphertexts(
         let key = hex::encode(&ct64_digest);
 
         let mut s = task.otel.child_span("ct64_check_s3");
-        let exists = check_object_exists(client, &conf.bucket_ct128, &key).await?;
+        let exists = check_object_exists(client, &conf.bucket_ct64, &key).await?;
         telemetry::attribute(&mut s, "exists", exists.to_string());
         telemetry::end_span(s);
 
