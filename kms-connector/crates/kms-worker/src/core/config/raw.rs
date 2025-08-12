@@ -26,6 +26,8 @@ pub struct RawConfig {
     pub database_url: String,
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
+    #[serde(default = "default_database_polling_timeout_secs")]
+    pub database_polling_timeout_secs: u64,
     pub gateway_url: String,
     pub kms_core_endpoint: String,
     pub chain_id: u64,
@@ -65,6 +67,10 @@ fn default_service_name() -> String {
 
 fn default_database_pool_size() -> u32 {
     16
+}
+
+fn default_database_polling_timeout_secs() -> u64 {
+    5
 }
 
 fn default_events_batch_size() -> u8 {
@@ -107,6 +113,7 @@ impl Default for RawConfig {
         Self {
             database_url: "postgres://postgres:postgres@localhost".to_string(),
             database_pool_size: 16,
+            database_polling_timeout_secs: default_database_polling_timeout_secs(),
             gateway_url: "ws://localhost:8545".to_string(),
             kms_core_endpoint: "http://localhost:50052".to_string(),
             chain_id: 1,
