@@ -5,7 +5,8 @@ use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
-use fhevm_engine_common::utils::{compact_hex, safe_deserialize_conformant};
+use fhevm_engine_common::utils::safe_deserialize_conformant;
+use hex::encode;
 use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
@@ -18,7 +19,7 @@ use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformancePara
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 
-use crate::{auxiliary, Config, ExecutionError};
+use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX};
 use anyhow::Result;
 
 use std::sync::Arc;
@@ -352,7 +353,7 @@ pub(crate) fn verify_proof(
         .iter()
         .enumerate()
         .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
-        .collect();
+        .collect::<Result<Vec<Ciphertext>, ExecutionError>>()?;
 
     Ok((cts, blob_hash))
 }
@@ -372,10 +373,20 @@ fn try_verify_and_expand_ciphertext_list(
             keys.pks.parameters(), &keys.public_params,
         ))?;
 
+    info!(
+        message = "Input list deserialized",
+        len = format!("{}", the_list.len()),
+        request_id,
+    );
+
     // TODO: Make sure we don't try to verify and expand an empty list as it would panic with the current version of tfhe-rs.
     // Could be removed in the future if tfhe-rs is updated to handle empty lists gracefully.
     if the_list.is_empty() {
         return Ok(vec![]);
+    }
+
+    if the_list.len() > (MAX_INPUT_INDEX + 1) as usize {
+        return Err(ExecutionError::TooManyInputs(the_list.len()));
     }
 
     let expanded: tfhe::CompactCiphertextListExpander = the_list
@@ -392,7 +403,7 @@ fn create_ciphertext(
     ct_idx: usize,
     the_ct: &SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
-) -> Ciphertext {
+) -> Result<Ciphertext, ExecutionError> {
     let (serialized_type, compressed) = the_ct.compress();
     let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(aux_data.chain_id)
         .to_owned()
@@ -410,6 +421,10 @@ fn create_ciphertext(
     let mut handle = handle_hash.finalize().to_vec();
 
     assert_eq!(handle.len(), 32);
+
+    if ct_idx > MAX_INPUT_INDEX as usize {
+        return Err(ExecutionError::TooManyInputs(ct_idx));
+    }
     // idx cast to u8 must succeed because we don't allow
     // more handles than u8 size
     handle[21] = ct_idx as u8;
@@ -432,14 +447,14 @@ fn create_ciphertext(
         aux_data.acl_contract_address.clone(),
     );
 
-    info!("Create new handle: {:?}", compact_hex(&handle));
+    info!("Create new handle: {:?}", encode(&handle));
 
-    Ciphertext {
+    Ok(Ciphertext {
         handle,
         compressed,
         ct_type: serialized_type,
         ct_version: current_ciphertext_version(),
-    }
+    })
 }
 
 /// Returns the number of remaining tasks in the database.
