@@ -120,7 +120,7 @@ impl PublicDecryptionResponse {
             decryption_id,
             decrypted_result: result.into(),
             signature,
-            extra_data: payload.extra_data,
+            extra_data: grpc_response.extra_data,
         })
     }
 }
