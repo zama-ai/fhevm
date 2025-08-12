@@ -14,6 +14,10 @@ USER root
 
 WORKDIR /app
 
+# Copy git directory to include commit hash in build info
+COPY .git ./.git
+
+# Copy sources
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY kms-connector ./kms-connector
 
@@ -25,7 +29,9 @@ RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
     protoc
 
 # Build with improved caching
-RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked cd kms-connector && \
+WORKDIR /app/kms-connector
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    git config --global --add safe.directory /app && \
     cargo build --profile=${LTO_RELEASE} -p gw-listener
 
 # Stage 2: Runtime image
@@ -38,5 +44,8 @@ COPY --from=builder --chown=fhevm:fhevm /app/kms-connector/target/release/gw-lis
 USER fhevm:fhevm
 
 ENTRYPOINT ["/app/kms-connector/bin/gw-listener", "start"]
+
+HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
+    CMD ["/app/kms-connector/bin/gw-listener", "health", "--endpoint", "http://127.0.0.1:9100/healthz"]
 
 FROM prod AS dev

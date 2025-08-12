@@ -1,8 +1,7 @@
 use actix_web::http::StatusCode;
-use connector_utils::{
-    conn::GatewayProvider,
-    monitoring::health::{Healthcheck, database_healthcheck, gateway_healthcheck},
-};
+use alloy::providers::Provider;
+use connector_utils::monitoring::health::{Healthcheck, database_healthcheck, gateway_healthcheck};
+use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 use tokio::time::timeout;
@@ -11,17 +10,17 @@ use tonic_health::pb::{HealthCheckRequest, HealthCheckResponse, health_client::H
 
 #[derive(Clone)]
 /// The struct used to monitor the state of the `KmsWorker`.
-pub struct State {
+pub struct State<P> {
     db_pool: Pool<Postgres>,
-    provider: GatewayProvider,
+    provider: P,
     kms_health_client: KmsHealthClient,
     healthcheck_timeout: Duration,
 }
 
-impl State {
+impl<P: Provider> State<P> {
     pub fn new(
         db_pool: Pool<Postgres>,
-        provider: GatewayProvider,
+        provider: P,
         kms_health_client: KmsHealthClient,
         healthcheck_timeout: Duration,
     ) -> Self {
@@ -34,7 +33,7 @@ impl State {
     }
 }
 
-impl Healthcheck for State {
+impl<P: Provider> Healthcheck for State<P> {
     async fn healthcheck(&self) -> actix_web::HttpResponse {
         let mut errors = vec![];
         let database_connected =
@@ -71,10 +70,14 @@ impl Healthcheck for State {
 
         actix_web::HttpResponse::build(status_code).json(status)
     }
+
+    fn service_name() -> &'static str {
+        "kms-connector-kms-worker"
+    }
 }
 
 /// Serializable representation of `KmsWorker`'s health status.
-#[derive(serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct HealthStatus {
     /// Overall health of the service.
     pub healthy: bool,

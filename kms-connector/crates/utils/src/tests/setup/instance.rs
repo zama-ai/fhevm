@@ -8,6 +8,7 @@ use fhevm_gateway_rust_bindings::{
     kmsmanagement::KmsManagement::KmsManagementInstance,
 };
 use sqlx::{Pool, Postgres};
+use testcontainers::{ContainerAsync, GenericImage};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tracing_subscriber::EnvFilter;
 
@@ -42,6 +43,10 @@ impl TestInstance {
         &self.db.as_ref().expect("DB is not setup").db
     }
 
+    pub fn db_container(&self) -> &ContainerAsync<GenericImage> {
+        &self.db.as_ref().expect("DB is not setup").db_container
+    }
+
     pub fn db_url(&self) -> &str {
         &self.db.as_ref().expect("DB is not setup").url
     }
@@ -56,6 +61,10 @@ impl TestInstance {
 
     pub fn provider(&self) -> &WalletGatewayProvider {
         &self.gateway().provider
+    }
+
+    pub fn anvil_container(&self) -> &ContainerAsync<GenericImage> {
+        &self.gateway().anvil
     }
 
     pub fn decryption_contract(&self) -> &DecryptionInstance<(), WalletGatewayProvider> {
@@ -82,6 +91,10 @@ impl TestInstance {
 
     pub fn anvil_ws_endpoint(&self) -> String {
         self.gateway().anvil_ws_endpoint()
+    }
+
+    pub fn kms_container(&self) -> &ContainerAsync<GenericImage> {
+        &self.kms.as_ref().expect("KMS has not been setup").container
     }
 }
 
@@ -166,5 +179,17 @@ impl TestInstanceBuilder {
         let db = DbInstance::setup().await?;
         let gateway = GatewayInstance::setup().await?;
         Ok(builder.with_db(db).with_gateway(gateway).build())
+    }
+
+    /// Full test setup.
+    pub async fn full() -> anyhow::Result<TestInstance> {
+        let s3_instance = S3Instance::setup().await?;
+        let kms_instance = KmsInstance::setup(&s3_instance.url).await?;
+        let test_instance_builder = TestInstanceBuilder::default()
+            .with_db(DbInstance::setup().await?)
+            .with_gateway(GatewayInstance::setup().await?)
+            .with_s3(s3_instance)
+            .with_kms(kms_instance);
+        Ok(test_instance_builder.build())
     }
 }

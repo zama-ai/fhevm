@@ -15,7 +15,8 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tx_sender::core::{
-    DbKmsResponsePicker, DbKmsResponseRemover, TransactionSender, tx_sender::TransactionSenderInner,
+    Config, DbKmsResponsePicker, DbKmsResponseRemover, TransactionSender,
+    tx_sender::TransactionSenderInner,
 };
 
 #[rstest]
@@ -173,7 +174,8 @@ async fn start_test_tx_sender(
     test_instance: &TestInstance,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<JoinHandle<()>> {
-    let response_picker = DbKmsResponsePicker::connect(test_instance.db().clone(), 10).await?;
+    let response_picker =
+        DbKmsResponsePicker::connect(test_instance.db().clone(), &Config::default().await).await?;
     let response_remover = DbKmsResponseRemover::new(test_instance.db().clone());
 
     let tx_sender_inner = TransactionSenderInner::new(

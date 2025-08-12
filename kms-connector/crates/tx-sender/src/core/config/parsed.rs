@@ -17,6 +17,8 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
+    /// The timeout for polling the database for responses.
+    pub database_polling_timeout: Duration,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The Chain ID of the Gateway.
@@ -91,12 +93,15 @@ impl Config {
             ));
         }
 
+        let database_polling_timeout =
+            Duration::from_secs(raw_config.database_polling_timeout_secs);
         let tx_retry_interval = Duration::from_millis(raw_config.tx_retry_interval_ms);
         let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
 
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
+            database_polling_timeout,
             gateway_url: raw_config.gateway_url,
             chain_id: raw_config.chain_id,
             decryption_contract,

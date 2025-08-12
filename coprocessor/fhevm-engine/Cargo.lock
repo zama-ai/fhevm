@@ -8776,6 +8776,7 @@ dependencies = [
  "hex",
  "lru 0.13.0",
  "rand 0.9.1",
+ "serial_test",
  "sha3",
  "sqlx",
  "test-harness",

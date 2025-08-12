@@ -146,6 +146,125 @@ async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyho
 #[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
+async fn verify_proof_response_empty_handles_success(
+    #[case] signer_type: SignerType,
+) -> anyhow::Result<()> {
+    let env = TestEnvironment::new(signer_type).await?;
+    let provider_deploy = ProviderBuilder::new()
+        .wallet(env.wallet.clone())
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+        .await?;
+    let provider = NonceManagedProvider::new(
+        ProviderBuilder::default()
+            .filler(FillersWithoutNonceManagement::default())
+            .wallet(env.wallet.clone())
+            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+            .await?,
+        Some(env.wallet.default_signer().address()),
+    );
+    let already_verified_revert = false;
+    let already_rejected_revert = false;
+    let other_revert = false;
+    let input_verification = InputVerification::deploy(
+        &provider_deploy,
+        already_verified_revert,
+        already_rejected_revert,
+        other_revert,
+    )
+    .await?;
+    let already_added_revert = false;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
+    let txn_sender = TransactionSender::new(
+        *input_verification.address(),
+        *ciphertext_commits.address(),
+        PrivateKeySigner::random().address(),
+        env.signer.clone(),
+        provider.clone(),
+        env.cancel_token.clone(),
+        env.conf.clone(),
+        None,
+    )
+    .await?;
+
+    let event_filter = input_verification
+        .VerifyProofResponse_filter()
+        .watch()
+        .await?;
+
+    let proof_id: u32 = random();
+
+    let run_handle = tokio::spawn(async move { txn_sender.run().await });
+
+    let event_handle = tokio::spawn(async move {
+        event_filter
+            .into_stream()
+            .take(1)
+            .collect::<Vec<_>>()
+            .await
+            .first()
+            .unwrap()
+            .clone()
+            .unwrap()
+    });
+
+    let contract_chain_id = 42u64;
+
+    // Insert a proof into the database and notify the sender.
+    sqlx::query!(
+        "WITH ins AS (
+            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, true)
+        )
+        SELECT pg_notify($6, '')",
+        proof_id as i64,
+        contract_chain_id as i64,
+        env.contract_address.to_string(),
+        env.user_address.to_string(),
+        &[],
+        env.conf.verify_proof_resp_db_channel
+    )
+    .execute(&env.db_pool)
+    .await?;
+
+    let event: (
+        InputVerification::VerifyProofResponse,
+        alloy::rpc::types::Log,
+    ) = event_handle.await?;
+
+    let expected_proof_id = U256::from(proof_id);
+    let expected_handles: Vec<FixedBytes<32>> = vec![];
+
+    // Make sure data in the event is correct.
+    assert_eq!(event.0.zkProofId, expected_proof_id);
+    assert_eq!(event.0.ctHandles, expected_handles);
+
+    // Make sure the proof is removed from the database.
+    loop {
+        let rows = sqlx::query!(
+            "SELECT *
+             FROM verify_proofs
+             WHERE zk_proof_id = $1",
+            proof_id as i64,
+        )
+        .fetch_all(&env.db_pool)
+        .await?;
+        if rows.is_empty() {
+            break;
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+
+    env.cancel_token.cancel();
+    run_handle.await??;
+    Ok(())
+}
+
+#[rstest]
+#[case::private_key(SignerType::PrivateKey)]
+#[case::aws_kms(SignerType::AwsKms)]
+#[tokio::test]
+#[serial(db)]
 async fn verify_proof_response_concurrent_success(
     #[case] signer_type: SignerType,
 ) -> anyhow::Result<()> {

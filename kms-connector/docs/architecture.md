@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The role of the KMS Connector is to forward Gateway's events to the KMS Core and the responses of
+The role of the KMS Connector is to forward the Gateway's events to the KMS Core and the responses of
 the KMS Core to the Gateway.
 
 The ambition of `fhevm` is to be able to handle thousands of decryptions per second. If the KMS
@@ -16,23 +16,23 @@ Connector does not play its role, it would break the whole `fhevm` flow, so we m
 In order to achieve this, the KMS Connector has been divided into 3 components:
 - **GatewayListener**
   - Multiple listeners, so we do not miss Gateway events if one is down
-  - Each listener listens to a RPC node of the Gateway
+  - Each listener listens to an RPC node of the Gateway
     - Each listener can have backup RPC nodes URL in case the connection with the first one is lost
-  - Each listener tries to write the events it catches in a Postgres DB (only 1 will succeed, the other will ignore the duplicate key error)
-  - The number of listeners should be able to scale up to avoid missing events but also to scale down to not overspend resources when it is not required
- 
+  - Each listener tries to write the events it catches in a Postgres DB (only 1 will succeed, the others will ignore the duplicate key error)
+  - The number of listeners should be able to scale up to avoid missing events but also to scale down to not waste resources when it is not required
+
 - **KmsWorker**
   - One or multiple workers
     - In the first place, we will probably start with only one worker
-    - But we should be able to scale the number of worker to handle more events if required
-  - Get notified by the Postgres DB when new events are stored
-  - Forward the events' requests to the KMS Core, and store its responses to DB
-  - Remove the events from the DB once handled
+    - But we should be able to scale the number of workers to handle more events if required
+  - Gets notified by the Postgres DB when new events are stored
+  - Forwards the events' requests to the KMS Core, and stores its responses to DB
+  - Removes the events from the DB once handled
 
 - **TransactionSender**
   - Only one tx sender
   - Gets notified by the Postgres DB when new KMS Core responses are stored
-  - Forwards the KMS Core response to the Gateway by submitting transactions
+  - Forwards the KMS Core responses to the Gateway by submitting transactions
   - Removes the responses from the DB once forwarded
 
 Here is an overview of the architecture:
@@ -71,7 +71,7 @@ block-beta
     w -- "Pick events \n & \n Put tx" --> db
     w -- "GRPC" --> kms
     kms -- "GRPC" --> w
-    
+
     txs -- "\n Pick \n tx" --> db
     txs -- "Send tx" --> r3
 
@@ -109,27 +109,29 @@ a notification is received.
 Example with `PublicDecryptionResponse` received from the KMS Core:
 
 ```sql
-CREATE TABLE IF NOT EXISTS public_decryption_responses (
+CREATE TABLE IF NOT EXISTS public_decryption_requests (
     decryption_id BYTEA NOT NULL,
-    decrypted_result BYTEA NOT NULL,
-    signatures BYTEA NOT NULL,
+    sns_ct_materials sns_ciphertext_material[] NOT NULL,
+    under_process BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     PRIMARY KEY (decryption_id)
 );
 
-CREATE OR REPLACE FUNCTION notify_public_decryption_response()
+CREATE OR REPLACE FUNCTION notify_public_decryption_request()
     RETURNS trigger AS $$
 BEGIN
-    NOTIFY public_decryption_response_available;
+    NOTIFY public_decryption_request_available;
     RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER trigger_from_public_decryption_responses_insertions
-    AFTER INSERT
-    ON public_decryption_responses
-    FOR EACH STATEMENT
-    EXECUTE FUNCTION notify_public_decryption_response();
+CREATE OR REPLACE FUNCTION notify_user_decryption_request()
+    RETURNS trigger AS $$
+BEGIN
+    NOTIFY user_decryption_request_available;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
 ```
 
 Queries to insert events/responses in the DB use `ON CONFLICT DO NOTHING` to ignore concurrency errors:
@@ -143,30 +145,35 @@ sqlx::query!(
 .await?;
 ```
 
-When a `KmsWorker` picks events in the DB to process them, it uses a database transaction and
-`FOR UPDATE SKIP LOCKED` in its query to lock these events from other workers. Then it can remove
-them when processed without concurrency issue:
+When a `KmsWorker` picks events in the DB to process them, it sets the `under_process` field of the
+associated requests to `TRUE`, to lock these events from other workers. Then it can remove them
+when processed without concurrency issue:
 
 ```rust
-let mut db_tx = db_pool.begin().await?;
 let event = sqlx::query!(
-    "SELECT (decryption_id, sns_ct_materials) FROM public_decryption_requests WHERE decryption_id = $1 FOR UPDATE SKIP LOCKED",
+    "
+        UPDATE public_decryption_requests
+        SET under_process = TRUE
+        FROM (
+            SELECT decryption_id
+            FROM public_decryption_requests
+            WHERE under_process = FALSE
+        ) AS req
+        WHERE public_decryption_requests.decryption_id = req.decryption_id
+        RETURNING req.decryption_id, sns_ct_materials
+    ",
     id
 )
-.fetch_one(&mut db_tx)
+.fetch_one(&mut db_pool)
 .await?;
-
-// Process event...
-
-sqlx::query!(
-    "DELETE FROM public_decryption_requests WHERE decryption_id = $1",
-    id
-)
-.execute(&db_pool)
-.await?;
-
-db_tx.commit().await?;
 ```
+
+Events are automatically deleted from the database when the associated response is inserted in the
+database. If an error happens while processing an event, the `KmsWorker` restores the
+`under_process` field of the associated request to `FALSE` to unlock the event.
+
+Responses are deleted from the database once the transaction to the Gateway has been successfully
+sent.
 
 ## Reliability
 
@@ -175,7 +182,10 @@ db_tx.commit().await?;
 As we will run multiple `GatewayListener` instances, we assume that they will not crash all
 simultaneously, thus that all events emitted by the Gateway would be written in the DB.
 
-So even if we run only one `KmsWorker` which crashes, it will have access to unhandled events when
+There is also a `from_block_number` option in its configuration, to be able to recover all events
+from a given block number.
+
+So even if we run only one `KmsWorker` that crashes, it will have access to unhandled events when
 restarted.
 
 ### Never miss KMS Core responses
@@ -191,9 +201,8 @@ The DB notifications are used to handle events/responses while the KMS Connector
 running. But what about events/responses that happened while the `KmsWorker` or the
 `TransactionSender` was down?
 
-For the `KmsWorker`, when the connections to the DB and to the KMS Core are both (re-)established,
-it will check in the DB if there are previous events to handle, and will process them if so.
-
-For the `TransactionSender`, when the connections to the DB and to a RPC node of the Gateway are
-both (re-)established, it will check in the DB if there are previous responses to submit via
-transactions, and executes them if so.
+Both the `KmsWorker` and the `TransactionSender` have a polling mechanism, in case no notification
+are received from the DB during a certain period of time. If that timeout is reached, they will
+fetch the DB for events/responses even if no notification are received. Thus, after downtime, both
+these services would be able to catch up missed events/responses, even if no new events/responses
+are produced.
