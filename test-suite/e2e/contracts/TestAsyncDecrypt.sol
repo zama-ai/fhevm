@@ -145,7 +145,11 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     /// @notice Callback function for 8-bit unsigned integer decryption
     /// @param decryptedInput The decrypted 8-bit unsigned integer
     /// @return The decrypted value
-    function callbackUint8(uint256 requestID, uint8 decryptedInput, bytes memory decryptionProof) public returns (uint8) {
+    function callbackUint8(
+        uint256 requestID,
+        uint8 decryptedInput,
+        bytes memory decryptionProof
+    ) public returns (uint8) {
         FHE.checkSignatures(requestID, decryptionProof);
         yUint8 = decryptedInput;
         return decryptedInput;

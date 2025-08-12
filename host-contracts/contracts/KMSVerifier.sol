@@ -195,7 +195,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
         /// @dev The extraData is the rest of the decryptionProof bytes after the numSigners + signatures.
         uint256 extraDataOffset = 1 + 65 * numSigners;
 
-        /// @dev Check that the decryptionProof is long enough to contain at least the numSigners + kmsSignatures
+        /// @dev Check that the decryptionProof is long enough to contain at least the numSigners + kmsSignatures.
         if (decryptionProof.length < extraDataOffset) {
             revert DeserializingDecryptionProofFail();
         }
@@ -208,7 +208,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
             }
         }
 
-        /// @dev Extract the extraData from the decryptionProof1 + 65 * numSigners.
+        /// @dev Extract the extraData from the decryptionProof.
         uint256 extraDataSize = decryptionProof.length - extraDataOffset;
         bytes memory extraData = new bytes(extraDataSize);
         for (uint i = 0; i < extraDataSize; i++) {
