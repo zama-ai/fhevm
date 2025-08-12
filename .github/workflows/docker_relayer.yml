@@ -34,7 +34,7 @@ concurrency:
 jobs:
   docker-relayer:
     if: ${{ github.event_name != 'release' || startsWith(github.ref_name, 'fhevm-relayer') }}
-    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@50fc8260e84c0ebab60c7ebf3eddd3c50a29f126 # main
+    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@4d722297aae4626adec8eb5d678dc00a2adc0a72 # main
     secrets:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
@@ -51,7 +51,7 @@ jobs:
       arm-build: true
   docker-oracle:
     if: ${{ github.event_name != 'release' || startsWith(github.ref_name, 'fhevm-relayer') }}
-    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@50fc8260e84c0ebab60c7ebf3eddd3c50a29f126 # main
+    uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@4d722297aae4626adec8eb5d678dc00a2adc0a72 # main
     secrets:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       GRAVITON_BUILDER_SSH_PRIVATE_KEY: ${{ secrets.GRAVITON_BUILDER_SSH_PRIVATE_KEY }}
