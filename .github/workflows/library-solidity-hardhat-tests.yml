@@ -44,6 +44,6 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: cp ./library-solidity/.env.example ./library-solidity/.env
-      - run: npm --prefix ./library-solidity ci --include=optional
+      - run: npm ci --include=optional
       - name: "Run JS/TS tests"
         run: npm --prefix ./library-solidity run test:mock
