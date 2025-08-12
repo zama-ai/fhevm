@@ -162,7 +162,12 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       );
 
       const abiCoder = new ethers.AbiCoder();
-      const decryptedResult = abiCoder.encode(Array(valuesFormatted4.length).fill('uint256'), valuesFormatted4); // since ebytesXXX were deprecated, all cleartexts are native static types, i.e encoding works as if they were all uint256 types, and the selector already takes into account correct underlying types
+      const encodedData = abiCoder.encode(
+        ['uint256', ...Array(valuesFormatted4.length).fill('uint256'), 'bytes[]'],
+        [31, ...valuesFormatted4, []],
+      ); // 31 is just a dummy uint256 requestID to get correct abi encoding for the remaining arguments (i.e everything except the requestID)
+      // + adding also a dummy empty array of bytes for correct abi-encoding when used with signatures
+      const decryptedResult = '0x' + encodedData.slice(66).slice(0, -64); // we pop the dummy requestID to get the correct value to pass for `decryptedCts` + we also pop the last 32 bytes (empty bytes[])
       const extraDataV0 = ethers.solidityPacked(['uint8'], [0]);
 
       const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult, extraDataV0);
@@ -177,7 +182,12 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
 
       const calldata =
         callbackSelector +
-        abiCoder.encode(['uint256', ...types, 'bytes'], [requestID, ...valuesFormatted4, decryptionProof]).slice(2);
+        abiCoder
+          .encode(
+            ['uint256', ...Array(valuesFormatted4.length).fill('uint256'), 'bytes'],
+            [requestID, ...valuesFormatted4, decryptionProof],
+          )
+          .slice(2);
 
       const txData = {
         to: contractCaller,

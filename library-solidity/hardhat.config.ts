@@ -47,12 +47,7 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 });
 
 task('test', async (_taskArgs, hre, runSuper) => {
-  if (!fs.existsSync('node_modules/@fhevm/core-contracts/addresses')) {
-    fs.mkdirSync('node_modules/@fhevm/core-contracts/addresses');
-  }
-
-  // TODO: dependency conflict with @fhevm/core-contracts which comes from the old version from github.com/zama-ai/fhevm-backend
-  const sourceDir = path.resolve(__dirname, 'node_modules/@fhevm/core-contracts/contracts');
+  const sourceDir = path.resolve(__dirname, '../node_modules/@fhevm/core-contracts/contracts');
   const destinationDir = path.resolve(__dirname, 'fhevmTemp/contracts');
   fs.copySync(sourceDir, destinationDir, { dereference: true });
 
