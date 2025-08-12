@@ -6,15 +6,16 @@ use connector_utils::{
     types::{GatewayEvent, db::SnsCiphertextMaterialDbItem},
 };
 use fhevm_gateway_rust_bindings::decryption::Decryption::PublicDecryptionRequest;
-use kms_worker::core::{DbEventPicker, EventPicker};
+use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use tokio::time::timeout;
 
 #[tokio::test]
 async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut event_picker0 = DbEventPicker::connect(test_instance.db().clone(), 10).await?;
-    let mut event_picker1 = DbEventPicker::connect(test_instance.db().clone(), 10).await?;
+    let config = Config::default();
+    let mut event_picker0 = DbEventPicker::connect(test_instance.db().clone(), &config).await?;
+    let mut event_picker1 = DbEventPicker::connect(test_instance.db().clone(), &config).await?;
 
     let id0 = U256::ZERO;
     let sns_ct = vec![rand_sns_ct()];
@@ -56,8 +57,12 @@ async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
 async fn test_parallel_event_picker_two_events() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut event_picker0 = DbEventPicker::connect(test_instance.db().clone(), 1).await?;
-    let mut event_picker1 = DbEventPicker::connect(test_instance.db().clone(), 1).await?;
+    let config = Config {
+        events_batch_size: 1,
+        ..Default::default()
+    };
+    let mut event_picker0 = DbEventPicker::connect(test_instance.db().clone(), &config).await?;
+    let mut event_picker1 = DbEventPicker::connect(test_instance.db().clone(), &config).await?;
 
     let id0 = U256::ZERO;
     let id1 = U256::ONE;

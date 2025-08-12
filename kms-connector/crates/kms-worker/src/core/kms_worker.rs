@@ -100,8 +100,7 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoint).await?;
 
-        let event_picker =
-            DbEventPicker::connect(db_pool.clone(), config.events_batch_size).await?;
+        let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
         let s3_service = S3Service::new(&config, provider.clone());
         let decryption_processor = DecryptionProcessor::new(&config, s3_service);
