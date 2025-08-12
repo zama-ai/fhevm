@@ -64,6 +64,7 @@ impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
         let app = Router::new()
             .route("/healthz", get(health_handler))
             .route("/liveness", get(liveness_handler))
+            .route("/metrics", get(metrics_handler))
             .with_state(self.sender.clone());
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
@@ -113,4 +114,13 @@ async fn liveness_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>
             "status": "alive"
         })),
     )
+}
+
+async fn metrics_handler() -> impl IntoResponse {
+    let encoder = prometheus::TextEncoder::new();
+    let metric_families = prometheus::gather();
+    match encoder.encode_to_string(&metric_families) {
+        Ok(encoded_metrics) => (StatusCode::OK, encoded_metrics),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
 }

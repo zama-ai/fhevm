@@ -1,8 +1,10 @@
 use std::time::Duration;
 
 use crate::{
+    metrics::{ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER, ADD_CIPHERTEXT_MATERIAL_SUCCESS_COUNTER},
     nonce_managed_provider::NonceManagedProvider,
-    overprovision_gas_limit::try_overprovision_gas_limit, REVIEW,
+    overprovision_gas_limit::try_overprovision_gas_limit,
+    REVIEW,
 };
 
 use super::common::try_into_array;
@@ -77,6 +79,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
                 if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
                     || matches!(&e, RpcError::LocalUsageError(_)) =>
             {
+                ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                 warn!(
                     transaction_request = ?overprovisioned_txn_req,
                     error = %e,
@@ -95,6 +98,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
                 );
             }
             Err(e) => {
+                ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                 warn!(
                     transaction_request = ?overprovisioned_txn_req,
                     error = %e,
@@ -123,6 +127,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         {
             Ok(receipt) => receipt,
             Err(e) => {
+                ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
                 error!(error = %e, "Getting receipt failed");
                 self.increment_txn_limited_retries_count(
                     handle,
@@ -146,7 +151,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
                 handle = h,
                 "addCiphertext txn succeeded"
             );
+            ADD_CIPHERTEXT_MATERIAL_SUCCESS_COUNTER.inc();
         } else {
+            ADD_CIPHERTEXT_MATERIAL_FAIL_COUNTER.inc();
             error!(
                 transaction_hash = %receipt.transaction_hash,
                 status = receipt.status(),

@@ -7929,6 +7929,7 @@ dependencies = [
  "foundry-compilers",
  "futures-util",
  "humantime",
+ "prometheus",
  "rand 0.9.1",
  "rstest",
  "semver 1.0.26",
