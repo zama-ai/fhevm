@@ -21,6 +21,7 @@ bincode.workspace = true
 clap.workspace = true
 config.workspace = true
 futures.workspace = true
+git-version.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true

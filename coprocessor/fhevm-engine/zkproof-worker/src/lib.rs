@@ -9,6 +9,10 @@ use std::io;
 use fhevm_engine_common::types::FhevmError;
 use thiserror::Error;
 
+/// The highest index of an input is 254,
+/// cause 255 (0xff) is reserved for handles originating from the FHE operations
+pub const MAX_INPUT_INDEX: u8 = u8::MAX - 1;
+
 #[derive(Error, Debug)]
 pub enum ExecutionError {
     #[error("Database error: {0}")]
@@ -46,6 +50,9 @@ pub enum ExecutionError {
 
     #[error("JoinError error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
+
+    #[error("Too many inputs: {0}")]
+    TooManyInputs(usize),
 }
 
 #[derive(Default, Debug, Clone)]

@@ -102,8 +102,7 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponse
     /// Creates a new `TransactionSender` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let response_picker =
-            DbKmsResponsePicker::connect(db_pool.clone(), config.responses_batch_size).await?;
+        let response_picker = DbKmsResponsePicker::connect(db_pool.clone(), &config).await?;
         let response_remover = DbKmsResponseRemover::new(db_pool.clone());
 
         let provider = connect_to_gateway_with_wallet(&config.gateway_url, config.wallet).await?;
