@@ -88,12 +88,13 @@ where
     }
 
     /// Queue a transaction for sequential processing with optional request ID for logging
-    /// This method is NON-BLOCKING and returns immediately
-    pub async fn send_transaction_queued(
+    /// Returns a receiver for async result handling - enables throughput improvements
+    /// by decoupling transaction submission from result waiting
+    pub async fn send_transaction_queued_async(
         &self,
         mut tx: TransactionRequest,
         request_id: Option<String>,
-    ) -> Result<TxHash> {
+    ) -> Result<oneshot::Receiver<Result<TxHash>>> {
         let request_context = request_id.as_deref().unwrap_or("unknown");
         let request_id_clone = request_id.clone();
 
@@ -222,8 +223,63 @@ where
         // Start processing if not already running (non-blocking spawn)
         self.start_processing_if_needed(address).await;
 
-        // Wait for result from background processor
-        result_receiver
+        // Return receiver immediately for async handling - enables decoupled processing
+        Ok(result_receiver)
+    }
+
+    /// Queue a transaction for sequential processing with FULLY DECOUPLED hash handling
+    /// Returns immediately after queuing - hash processing happens in background tokio::spawn
+    /// This achieves throughput improvements by eliminating all blocking
+    pub async fn send_transaction_queued_decoupled(
+        &self,
+        tx: TransactionRequest,
+        request_id: Option<String>,
+    ) -> Result<()> {
+        let receiver = self
+            .send_transaction_queued_async(tx, request_id.clone())
+            .await?;
+        let request_context = request_id.as_deref().unwrap_or("unknown").to_string();
+
+        // Spawn decoupled hash handler - main flow continues immediately
+        tokio::spawn(async move {
+            match receiver.await {
+                Ok(Ok(hash)) => {
+                    info!(
+                        "[DECOUPLED HASH] {}: Transaction hash received: {}",
+                        request_context, hash
+                    );
+                    // TODO: Additional hash processing can be added here
+                }
+                Ok(Err(e)) => {
+                    error!(
+                        "[DECOUPLED HASH] {}: Transaction failed: {}",
+                        request_context, e
+                    );
+                    // TODO: add retry logic
+                }
+                Err(_) => {
+                    error!(
+                        "[DECOUPLED HASH] {}: Channel closed unexpectedly",
+                        request_context
+                    );
+                    // TODO: add retry logic
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /// Queue a transaction for sequential processing with optional request ID for logging
+    /// This method blocks until completion - maintained for backward compatibility
+    /// For high-throughput scenarios, use send_transaction_queued_decoupled() instead
+    pub async fn send_transaction_queued(
+        &self,
+        tx: TransactionRequest,
+        request_id: Option<String>,
+    ) -> Result<TxHash> {
+        let receiver = self.send_transaction_queued_async(tx, request_id).await?;
+        receiver
             .await
             .map_err(|_| Error::Channel("Transaction cancelled".to_string()))?
     }
