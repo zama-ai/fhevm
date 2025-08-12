@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use fhevm_engine_common::utils::HeartBeat;
 use tokio::sync::RwLock;
 
 use fhevm_engine_common::healthz_server::{
@@ -14,34 +15,11 @@ const CONNECTED_TICK_FRESHNESS: Duration = Duration::from_secs(5); // Need to ch
 /// Represents the health status of the host-listener service
 #[derive(Clone, Debug)]
 pub struct HealthCheck {
-    pub blockchain_timeout_tick: Tick,
-    pub blockchain_tick: Tick,
+    pub blockchain_timeout_tick: HeartBeat,
+    pub blockchain_tick: HeartBeat,
     pub blockchain_provider: Arc<RwLock<Option<BlockchainProvider>>>,
     pub database_pool: Arc<RwLock<sqlx::Pool<sqlx::Postgres>>>,
-    pub database_tick: Tick,
-}
-
-#[derive(Clone, Debug)]
-pub struct Tick(Arc<RwLock<std::time::Instant>>);
-
-impl Tick {
-    pub fn new() -> Self {
-        Self(Arc::new(RwLock::new(std::time::Instant::now())))
-    }
-
-    pub async fn update(&self) {
-        *self.0.write().await = std::time::Instant::now();
-    }
-
-    pub async fn is_recent(&self, freshness: &Duration) -> bool {
-        &self.0.read().await.elapsed() < freshness
-    }
-}
-
-impl Default for Tick {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub database_tick: HeartBeat,
 }
 
 impl HealthCheckService for HealthCheck {
@@ -51,11 +29,7 @@ impl HealthCheckService for HealthCheck {
         let check_alive = self.is_alive().await;
         status.set_custom_check("alive", check_alive, false);
         // blockchain
-        if self
-            .blockchain_tick
-            .is_recent(&CONNECTED_TICK_FRESHNESS)
-            .await
-        {
+        if self.blockchain_tick.is_recent(&CONNECTED_TICK_FRESHNESS) {
             status.set_custom_check("blockchain_provider", true, true);
         } else if let Some(provider) =
             (*self.blockchain_provider.read().await).clone()
@@ -67,11 +41,7 @@ impl HealthCheckService for HealthCheck {
             status.set_custom_check("blockchain_provider", false, true);
         };
         // database
-        if self
-            .database_tick
-            .is_recent(&CONNECTED_TICK_FRESHNESS)
-            .await
-        {
+        if self.database_tick.is_recent(&CONNECTED_TICK_FRESHNESS) {
             status.set_custom_check("database", true, true);
         } else {
             // cloned to ensure the service is not blocked during the IO
@@ -82,13 +52,10 @@ impl HealthCheckService for HealthCheck {
     }
 
     async fn is_alive(&self) -> bool {
-        self.blockchain_tick
-            .is_recent(&IS_ALIVE_TICK_FRESHNESS)
-            .await
+        self.blockchain_tick.is_recent(&IS_ALIVE_TICK_FRESHNESS)
             || self
                 .blockchain_timeout_tick
                 .is_recent(&IS_ALIVE_TICK_FRESHNESS)
-                .await
     }
 
     fn get_version(&self) -> Version {
