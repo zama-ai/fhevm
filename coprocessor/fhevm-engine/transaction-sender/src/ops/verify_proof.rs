@@ -9,7 +9,7 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
 use alloy::{
     network::Ethereum,
-    primitives::{Bytes, FixedBytes},
+    primitives::FixedBytes,
     sol_types::SolStruct,
 };
 use async_trait::async_trait;
