@@ -55,10 +55,11 @@ lazy_static! {
 
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
+    health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         // here we log the errors and make sure we retry
-        if let Err(cycle_error) = tfhe_worker_cycle(&args).await {
+        if let Err(cycle_error) = tfhe_worker_cycle(&args, health_check.clone()).await {
             WORKER_ERRORS_COUNTER.inc();
             error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
         }
@@ -68,6 +69,7 @@ pub async fn run_tfhe_worker(
 
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
+    health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tracer = opentelemetry::global::tracer("tfhe_worker");
 
@@ -213,7 +215,9 @@ FOR UPDATE SKIP LOCKED            ",
         .await?;
         s.set_attribute(KeyValue::new("count", the_work.len() as i64));
         s.end();
+        health_check.update_db_access();
         if the_work.is_empty() {
+            health_check.update_activity();
             continue;
         }
         WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
@@ -444,6 +448,7 @@ FOR UPDATE SKIP LOCKED            ",
                     keys.sks.clone(),
                     #[cfg(feature = "gpu")]
                     keys.gpu_sks.clone(),
+                    health_check.activity_heartbeat.clone(),
                 );
                 sched.schedule().await?;
             }

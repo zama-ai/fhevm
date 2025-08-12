@@ -7362,6 +7362,7 @@ dependencies = [
  "sha3",
  "sqlx",
  "strum 0.26.3",
+ "test-harness",
  "testcontainers",
  "tfhe",
  "tokio",

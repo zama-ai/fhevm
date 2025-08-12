@@ -22,10 +22,11 @@ use tokio_util::sync::CancellationToken;
 
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
+use fhevm_engine_common::utils::HeartBeat;
 
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::tfhe_event_propagate::{ChainId, Database};
-use crate::health_check::{HealthCheck, Tick};
+use crate::health_check::HealthCheck;
 
 pub mod block_history;
 use block_history::{BlockHash, BlockHistory, BlockSummary};
@@ -135,8 +136,8 @@ struct InfiniteLogIter {
     current_event: Option<Log>,
     last_block_event_count: u64,
     last_block_recheck_planned: Option<BlockHash>,
-    pub tick_timeout: Tick,
-    pub tick_block: Tick,
+    pub tick_timeout: HeartBeat,
+    pub tick_block: HeartBeat,
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
 }
@@ -174,8 +175,8 @@ impl InfiniteLogIter {
             current_event: None,
             last_block_event_count: 0,
             last_block_recheck_planned: None,
-            tick_timeout: Tick::default(),
-            tick_block: Tick::default(),
+            tick_timeout: HeartBeat::default(),
+            tick_block: HeartBeat::default(),
             reorg_maximum_duration_in_blocks: args
                 .reorg_maximum_duration_in_blocks,
             block_history: BlockHistory::new(
@@ -710,7 +711,7 @@ impl InfiniteLogIter {
                         .block_has_not_changed(&block_hash_or_0);
                     self.current_event = Some(log);
                     if is_first_of_block {
-                        self.tick_block.update().await;
+                        self.tick_block.update();
                     }
                     // check reorgs update the block history
                     let reorg_planned = self.check_missing_ancestors().await;
@@ -726,7 +727,7 @@ impl InfiniteLogIter {
                     }
                 }
                 LogOrBlockTimeout::BlockTimeout => {
-                    self.tick_timeout.update().await;
+                    self.tick_timeout.update();
                     let prev_block = self.block_history.tip();
                     // check reorgs update the block history
                     warn!(

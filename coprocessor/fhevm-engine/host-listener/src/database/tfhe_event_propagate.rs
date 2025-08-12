@@ -4,7 +4,7 @@ use alloy_primitives::Uint;
 use anyhow::Result;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
-use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::{compact_hex, HeartBeat};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Uuid;
@@ -20,7 +20,6 @@ use tracing::warn;
 use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
-use crate::health_check::Tick;
 
 type CoprocessorApiKey = Uuid;
 type FheOperation = i32;
@@ -72,7 +71,7 @@ pub struct Database {
     pub tenant_id: TenantId,
     pub chain_id: ChainId,
     bucket_cache: tokio::sync::RwLock<lru::LruCache<Handle, Handle>>,
-    pub tick: Tick,
+    pub tick: HeartBeat,
 }
 
 impl Database {
@@ -97,7 +96,7 @@ impl Database {
             chain_id,
             pool: Arc::new(RwLock::new(pool)),
             bucket_cache,
-            tick: Tick::default(),
+            tick: HeartBeat::default(),
         })
     }
 
@@ -408,7 +407,7 @@ impl Database {
             let result = self.insert_tfhe_event_no_retry(log).await;
             match result {
                 Ok(_) => {
-                    self.tick.update().await;
+                    self.tick.update();
                     return Ok(())
                 }
                 Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
@@ -576,7 +575,7 @@ impl Database {
                 );
             }
         }
-        self.tick.update().await;
+        self.tick.update();
         Ok(())
     }
 

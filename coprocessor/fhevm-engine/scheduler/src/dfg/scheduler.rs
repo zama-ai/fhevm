@@ -12,9 +12,11 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::{
-    common::FheOperation, tfhe_ops::perform_fhe_operation, types::SupportedFheCiphertexts,
-};
+use fhevm_engine_common::common::FheOperation;
+use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
+use fhevm_engine_common::types::SupportedFheCiphertexts;
+
+use fhevm_engine_common::utils::HeartBeat;
 use rayon::prelude::*;
 use std::{
     collections::HashMap,
@@ -54,6 +56,7 @@ pub struct Scheduler<'a> {
     sks: tfhe::ServerKey,
     #[cfg(feature = "gpu")]
     csks: Vec<tfhe::CudaServerKey>,
+    activity_heartbeat: HeartBeat,
 }
 
 impl<'a> Scheduler<'a> {
@@ -75,6 +78,7 @@ impl<'a> Scheduler<'a> {
         graph: &'a mut Dag<OpNode, OpEdge>,
         sks: tfhe::ServerKey,
         #[cfg(feature = "gpu")] csks: Vec<tfhe::CudaServerKey>,
+        activity_heartbeat: HeartBeat,
     ) -> Self {
         let edges = graph.map(|_, _| (), |_, edge| *edge);
         Self {
@@ -83,6 +87,7 @@ impl<'a> Scheduler<'a> {
             sks: sks.clone(),
             #[cfg(feature = "gpu")]
             csks: csks.clone(),
+            activity_heartbeat,
         }
     }
 
@@ -148,6 +153,7 @@ impl<'a> Scheduler<'a> {
         }
         // Get results from computations and update dependences of remaining computations
         while let Some(result) = set.join_next().await {
+            self.activity_heartbeat.update();
             let result = result?;
             let index = result.0;
             let node_index = NodeIndex::new(index);
@@ -231,6 +237,7 @@ impl<'a> Scheduler<'a> {
         }
         // Get results from computations and update dependences of remaining computations
         while let Some(result) = set.join_next().await {
+            self.activity_heartbeat.update();
             let mut result = result?;
             let task_index = result.1;
             while let Some((node_index, node_result)) = result.0.pop() {
@@ -327,7 +334,11 @@ impl<'a> Scheduler<'a> {
             });
         })
         .await?;
-        let results: Vec<_> = dest.iter().collect();
+        let mut results = vec![];
+        for v in dest.iter() {
+            self.activity_heartbeat.update();
+            results.push(v);
+        }
         for mut result in results {
             while let Some(o) = result.0.pop() {
                 let index = o.0;
@@ -378,6 +389,7 @@ impl<'a> Scheduler<'a> {
         }
         // Get results from computations and update dependences of remaining computations
         while let Some(result) = set.join_next().await {
+            self.activity_heartbeat.update();
             let result = result?;
             let index = result.0;
             let node_index = NodeIndex::new(index);
@@ -480,6 +492,7 @@ impl<'a> Scheduler<'a> {
         }
         // Get results from computations and update dependences of remaining computations
         while let Some(result) = set.join_next().await {
+            self.activity_heartbeat.update();
             let mut result = result?;
             let task_index = result.1;
             while let Some((node_index, node_result)) = result.0.pop() {
@@ -608,7 +621,11 @@ impl<'a> Scheduler<'a> {
                 });
         })
         .await?;
-        let results: Vec<_> = dest.iter().collect();
+        let mut results = vec![];
+        for v in dest.iter() {
+            self.activity_heartbeat.update();
+            results.push(v);
+        }
         for mut result in results {
             while let Some(o) = result.0.pop() {
                 let index = o.0;

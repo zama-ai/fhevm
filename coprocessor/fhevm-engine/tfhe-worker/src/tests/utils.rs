@@ -37,6 +37,10 @@ impl TestInstance {
     pub fn db_url(&self) -> &str {
         self.db_url.as_str()
     }
+
+    pub fn db_docker_id(&self) -> Option<String> {
+        self._container.as_ref().map(|c| c.id().to_string())
+    }
 }
 
 pub fn default_api_key() -> &'static str {
@@ -111,6 +115,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         coprocessor_private_key: "./coprocessor.key".to_string(),
         service_name: "coprocessor".to_string(),
         log_level: Level::INFO,
+        health_check_port: 8081,
     };
 
     std::thread::spawn(move || {
