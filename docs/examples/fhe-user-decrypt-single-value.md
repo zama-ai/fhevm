@@ -1,4 +1,6 @@
-This example demonstrates the FHE decryption mechanism and highlights a common pitfall developers may encounter.
+This example demonstrates the FHE user decryption mechanism with a single value.
+
+User decryption is a mechanism that allows specific users to decrypt encrypted values while keeping them hidden from others. Unlike public decryption where decrypted values become visible to everyone, user decryption maintains privacy by only allowing authorized users with the proper permissions to view the data. While permissions are granted on-chain through smart contracts, the actual **decryption call occurs off-chain in the frontend application**.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -11,7 +13,7 @@ This ensures Hardhat can compile and test your contracts as expected.
 
 {% tabs %}
 
-{% tab title="DecryptSingleValue.sol" %}
+{% tab title="UserDecryptSingleValue.sol" %}
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -22,9 +24,9 @@ import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /**
  * This trivial example demonstrates the FHE decryption mechanism
- * and highlights a common pitfall developers may encounter.
+ * and highlights common pitfalls developers may encounter.
  */
-contract DecryptSingleValue is SepoliaConfig {
+contract UserDecryptSingleValue is SepoliaConfig {
   euint32 private _trivialEuint32;
 
   // solhint-disable-next-line no-empty-blocks
@@ -37,11 +39,11 @@ contract DecryptSingleValue is SepoliaConfig {
     // Grant FHE permissions to:
     // ✅ The contract caller (`msg.sender`): allows them to decrypt `_trivialEuint32`.
     // ✅ The contract itself (`address(this)`): allows it to operate on `_trivialEuint32` and
-    //    also enables the caller to perform decryption.
+    //    also enables the caller to perform user decryption.
     //
     // Note: If you forget to call `FHE.allowThis(_trivialEuint32)`, the user will NOT be able
-    //       to decrypt the value! Both the contract and the caller must have FHE permissions
-    //       for decryption to succeed.
+    //       to user decrypt the value! Both the contract and the caller must have FHE permissions
+    //       for user decryption to succeed.
     FHE.allowThis(_trivialEuint32);
     FHE.allow(_trivialEuint32, msg.sender);
   }
@@ -53,12 +55,12 @@ contract DecryptSingleValue is SepoliaConfig {
     // ❌ Common FHE permission mistake:
     // ================================================================
     // We grant FHE permissions to the contract caller (`msg.sender`),
-    // expecting they will be able to decrypt the encrypted value later.
+    // expecting they will be able to user decrypt the encrypted value later.
     //
     // However, this will fail! 💥
-    // The contract itself (`address(this)`) also needs FHE permissions to allow decryption.
+    // The contract itself (`address(this)`) also needs FHE permissions to allow user decryption.
     // Without granting the contract access using `FHE.allowThis(...)`,
-    // the decryption attempt by the user will not succeed.
+    // the user decryption attempt by the user will not succeed.
     FHE.allow(_trivialEuint32, msg.sender);
   }
 
@@ -70,10 +72,10 @@ contract DecryptSingleValue is SepoliaConfig {
 
 {% endtab %}
 
-{% tab title="DecryptSingleValue.ts" %}
+{% tab title="UserDecryptSingleValue.ts" %}
 
 ```ts
-import { DecryptSingleValue, DecryptSingleValue__factory } from "../../../types";
+import { UserDecryptSingleValue, UserDecryptSingleValue__factory } from "../../../types";
 import type { Signers } from "../../types";
 import { FhevmType, HardhatFhevmRuntimeEnvironment } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -83,19 +85,19 @@ import * as hre from "hardhat";
 
 async function deployFixture() {
   // Contracts are deployed using the first signer/account by default
-  const factory = (await ethers.getContractFactory("DecryptSingleValue")) as DecryptSingleValue__factory;
-  const decryptSingleValue = (await factory.deploy()) as DecryptSingleValue;
-  const decryptSingleValue_address = await decryptSingleValue.getAddress();
+  const factory = (await ethers.getContractFactory("UserDecryptSingleValue")) as UserDecryptSingleValue__factory;
+  const userUserDecryptSingleValue = (await factory.deploy()) as UserDecryptSingleValue;
+  const userUserDecryptSingleValue_address = await userUserDecryptSingleValue.getAddress();
 
-  return { decryptSingleValue, decryptSingleValue_address };
+  return { userUserDecryptSingleValue, userUserDecryptSingleValue_address };
 }
 
 /**
- * This trivial example demonstrates the FHE decryption mechanism
+ * This trivial example demonstrates the FHE user decryption mechanism
  * and highlights a common pitfall developers may encounter.
  */
-describe("DecryptSingleValue", function () {
-  let contract: DecryptSingleValue;
+describe("UserDecryptSingleValue", function () {
+  let contract: UserDecryptSingleValue;
   let contractAddress: string;
   let signers: Signers;
 
@@ -112,12 +114,12 @@ describe("DecryptSingleValue", function () {
   beforeEach(async function () {
     // Deploy a new contract each time we run a new test
     const deployment = await deployFixture();
-    contractAddress = deployment.decryptSingleValue_address;
-    contract = deployment.decryptSingleValue;
+    contractAddress = deployment.userUserDecryptSingleValue_address;
+    contract = deployment.userUserDecryptSingleValue;
   });
 
   // ✅ Test should succeed
-  it("decryption should succeed", async function () {
+  it("user decryption should succeed", async function () {
     const tx = await contract.connect(signers.alice).initializeUint32(123456);
     await tx.wait();
 
@@ -138,7 +140,7 @@ describe("DecryptSingleValue", function () {
   });
 
   // ❌ Test should fail
-  it("decryption should fail", async function () {
+  it("user decryption should fail", async function () {
     const tx = await contract.connect(signers.alice).initializeUint32Wrong(123456);
     await tx.wait();
 
