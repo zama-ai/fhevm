@@ -22,8 +22,9 @@ jobs:
         with:
           filters: |
             library-solidity:
-              - .github/workflows/library-solidity-npm-tests.yml
+              - .github/workflows/library-solidity-hardhat-tests.yml
               - library-solidity/**
+              - host-contracts/**
   build:
     name: library-solidity-hardhat-tests/build (bpr)
     needs: check-changes
