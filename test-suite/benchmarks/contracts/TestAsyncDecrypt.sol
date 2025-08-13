@@ -376,7 +376,6 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     /// @param decAddress Decrypted address
     /// @param decEuint32 Decrypted 32-bit unsigned integer
     /// @param decEuint256 Decrypted 256-bit unsigned integer
-    /// @param signatures Signatures to verify the authenticity of the decryption
     function callbackMixed(
         uint256 requestID,
         bool decBool,
