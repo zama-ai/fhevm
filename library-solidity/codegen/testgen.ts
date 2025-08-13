@@ -202,6 +202,9 @@ const stateVar = {
   euint64: 'resEuint64',
   euint128: 'resEuint128',
   euint256: 'resEuint256',
+  ebytes64: 'resEbytes64',
+  ebytes128: 'resEbytes128',
+  ebytes256: 'resEbytes256',
 };
 
 /**
@@ -419,13 +422,13 @@ function ensureNumberAcceptableInBitRange(bits: number, input: number | bigint) 
  *
  * This function creates a Solidity contract named `FHEVMTestSuite` followed by the shard number.
  * The contract includes several public variables of different encrypted types (ebool, euint8, euint16, euint32, euint64, euint128, euint256)
- * and a constructor that sets the FHEVM configuration using the default configuration from `FHEVMConfig`.
+ * and a constructor that sets the FHEVM configuration using the default configuration from `CoprocessorConfig`.
  * It also calls the `generateLibCallTest` function to add additional test logic to the contract.
  *
  * @param {OverloadShard} os - The overload shard for which the test contract is generated.
  * @returns {string} The generated Solidity unit test contract as a string.
  */
-export function generateSolidityUnitTestContracts(os: OverloadShard): string {
+export function generateSolidityUnitTestContracts(os: OverloadShard, configBaseDir: string): string {
   const res: string[] = [];
 
   res.push(`
@@ -433,7 +436,7 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
         pragma solidity ^0.8.24;
 
         import "../../lib/FHE.sol";
-        import "../FHEVMConfig.sol";
+        import "${configBaseDir}/CoprocessorConfig.sol";
 
         contract FHEVMTestSuite${os.shardNumber} {
           ebool public resEbool;
@@ -445,7 +448,7 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
           euint256 public resEuint256;
 
           constructor() {
-            FHE.setCoprocessor(FHEVMConfig.defaultConfig());
+            FHE.setCoprocessor(CoprocessorConfig.defaultConfig());
           }
 
     `);

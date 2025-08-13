@@ -13,7 +13,7 @@ npx hardhat compile
 
 - Edit hardhat config
 - `cp .env.example .env` and edit it accordingly
-- Verify contract addresses in `./contracts/E2EFHEVMConfigSepolia.sol`
+- Verify contract addresses in `./contracts/E2ECoprocessorConfig.sol`
 
 ## Launch 
 

@@ -52,19 +52,11 @@ library FHE {
     event DecryptionFulfilled(uint256 indexed requestID);
 
     /**
-     * @notice            Sets the coprocessor addresses.
-     * @param fhevmConfig FHEVM config struct that contains contract addresses.
+     * @notice                  Sets the coprocessor addresses.
+     * @param coprocessorConfig FHEVM config struct that contains contract addresses.
      */
-    function setCoprocessor(FHEVMConfigStruct memory fhevmConfig) internal {
-        Impl.setCoprocessor(fhevmConfig);
-    }
-
-    /**
-     * @notice                  Sets the decryption oracle address.
-     * @param decryptionOracle  The decryption oracle address.
-     */
-    function setDecryptionOracle(address decryptionOracle) internal {
-        Impl.setDecryptionOracle(decryptionOracle);
+    function setCoprocessor(CoprocessorConfigStruct memory coprocessorConfig) internal {
+        Impl.setCoprocessor(coprocessorConfig);
     }
 
     /**
@@ -8900,9 +8892,9 @@ library FHE {
     ) internal returns (uint256 requestID) {
         DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
         requestID = $.counterRequest;
-        FHEVMConfigStruct storage $$ = Impl.getFHEVMConfig();
+        CoprocessorConfigStruct storage $$ = Impl.getCoprocessorConfig();
         IACL($$.ACLAddress).allowForDecryption(ctsHandles);
-        IDecryptionOracle($.DecryptionOracleAddress).requestDecryption{value: msgValue}(
+        IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption{value: msgValue}(
             requestID,
             ctsHandles,
             callbackSelector
@@ -8947,7 +8939,7 @@ library FHE {
         assembly {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
         }
-        FHEVMConfigStruct storage $ = Impl.getFHEVMConfig();
+        CoprocessorConfigStruct storage $ = Impl.getCoprocessorConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 handlesList,

@@ -25,7 +25,16 @@ import { ALL_FHE_TYPES } from './types';
  * 6. Generates TypeScript test code for the split overloads and writes them to the test directory.
  *
  */
-function generateAllFiles() {
+function generateAllFiles(
+  baseDir: string,
+  fheTypeBaseDir: string,
+  configBaseDir: string,
+  keepOverloads: boolean = true,
+) {
+  if (!path.isAbsolute(baseDir)) {
+    throw new Error('Expecting an absolute pathname');
+  }
+
   const numberOfTestSplits = 12;
 
   // Validate the FHE types
@@ -33,27 +42,42 @@ function generateAllFiles() {
   // Validate the operators
   validateOperators(ALL_OPERATORS);
 
+  const libDir = path.join(baseDir, 'lib');
+  const examplesTestsDir = path.join(baseDir, 'examples/tests');
+  const testFhevmOperationsDir = path.join(baseDir, 'test/fhevmOperations');
+
+  mkdirSync(libDir, { recursive: true });
+
   /// Generate core Solidity contract files.
-  writeFileSync('lib/FheType.sol', generateSolidityFheType(ALL_FHE_TYPES));
-  writeFileSync('lib/Impl.sol', generateSolidityImplLib(ALL_OPERATORS));
-  writeFileSync('lib/FHE.sol', generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPES));
+  writeFileSync(path.join(libDir, 'FheType.sol'), generateSolidityFheType(ALL_FHE_TYPES));
+  writeFileSync(path.join(libDir, 'Impl.sol'), generateSolidityImplLib(ALL_OPERATORS, fheTypeBaseDir));
+  writeFileSync(path.join(libDir, 'FHE.sol'), generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPES, fheTypeBaseDir));
 
   // TODO: For now, the testgen only supports automatically generated tests for euintXX.
   /// Generate overloads, split them into shards, and generate Solidity contracts to be used for TypeScript unit test files.
-  writeFileSync(
-    `${path.resolve(__dirname)}/overloads.json`,
-    JSON.stringify(generateOverloads(ALL_FHE_TYPES), (_key, value) =>
-      typeof value === 'bigint' ? value.toString() : value,
-    ),
-  );
+  if (!keepOverloads) {
+    writeFileSync(
+      `${path.resolve(__dirname)}/overloads.json`,
+      JSON.stringify(generateOverloads(ALL_FHE_TYPES), (_key, value) =>
+        typeof value === 'bigint' ? value.toString() : value,
+      ),
+    );
+  }
+
   const overloadShards = splitOverloadsToShards(generateSolidityOverloadTestFiles(ALL_OPERATORS, ALL_FHE_TYPES));
-  mkdirSync('contracts/tests', { recursive: true });
+  mkdirSync(examplesTestsDir, { recursive: true });
   overloadShards.forEach((os) => {
-    writeFileSync(`examples/tests/FHEVMTestSuite${os.shardNumber}.sol`, generateSolidityUnitTestContracts(os));
+    writeFileSync(
+      path.join(examplesTestsDir, `FHEVMTestSuite${os.shardNumber}.sol`),
+      generateSolidityUnitTestContracts(os, configBaseDir),
+    );
   });
 
+  mkdirSync(testFhevmOperationsDir, { recursive: true });
   const tsSplits: string[] = generateTypeScriptTestCode(overloadShards, numberOfTestSplits);
-  tsSplits.forEach((split, splitIdx) => writeFileSync(`test/fhevmOperations/fhevmOperations${splitIdx + 1}.ts`, split));
+  tsSplits.forEach((split, splitIdx) =>
+    writeFileSync(path.join(testFhevmOperationsDir, `fhevmOperations${splitIdx + 1}.ts`), split),
+  );
 }
 
-generateAllFiles();
+generateAllFiles(path.resolve('.'), '.', '..');

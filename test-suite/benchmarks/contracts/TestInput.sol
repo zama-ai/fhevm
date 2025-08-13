@@ -3,9 +3,9 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import { E2EFHEVMConfig } from "./E2EFHEVMConfig.sol";
+import { E2ECoprocessorConfig } from "./E2ECoprocessorConfig.sol";
 
-contract TestInput is E2EFHEVMConfig {
+contract TestInput is E2ECoprocessorConfig {
     uint64 public yUint64;
 
     function requestUint64NonTrivial(externalEuint64 inputHandle, bytes calldata inputProof) public {

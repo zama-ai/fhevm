@@ -117,150 +117,242 @@ describe('FHEVM operations 55', function () {
     this.instance = instance;
   });
 
-  it('test operator "gt" overload (euint16, euint128) => ebool test 1 (44643, 340282366920938463463367473869917467583)', async function () {
+  it('test operator "max" overload (uint128, euint128) => euint128 test 1 (340282366920938463463371751978062779129, 340282366920938463463373751683342743839)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add16(44643n);
-    input.add128(340282366920938463463367473869917467583n);
+
+    input.add128(340282366920938463463373751683342743839n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.gt_euint16_euint128(
+    const tx = await this.contract4.max_uint128_euint128(
+      340282366920938463463371751978062779129n,
       encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
       encryptedAmount.inputProof,
     );
     await tx.wait();
-    const handle = await this.contract4.resEbool();
+    const handle = await this.contract4.resEuint128();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: false,
+      [handle]: 340282366920938463463373751683342743839n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "gt" overload (euint16, euint128) => ebool test 2 (44639, 44643)', async function () {
+  it('test operator "max" overload (uint128, euint128) => euint128 test 2 (340282366920938463463365683663523221971, 340282366920938463463365683663523221975)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add16(44639n);
-    input.add128(44643n);
+
+    input.add128(340282366920938463463365683663523221975n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.gt_euint16_euint128(
+    const tx = await this.contract4.max_uint128_euint128(
+      340282366920938463463365683663523221971n,
       encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
       encryptedAmount.inputProof,
     );
     await tx.wait();
-    const handle = await this.contract4.resEbool();
+    const handle = await this.contract4.resEuint128();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: false,
+      [handle]: 340282366920938463463365683663523221975n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "gt" overload (euint16, euint128) => ebool test 3 (44643, 44643)', async function () {
+  it('test operator "max" overload (uint128, euint128) => euint128 test 3 (340282366920938463463365683663523221975, 340282366920938463463365683663523221975)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add16(44643n);
-    input.add128(44643n);
+
+    input.add128(340282366920938463463365683663523221975n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.gt_euint16_euint128(
+    const tx = await this.contract4.max_uint128_euint128(
+      340282366920938463463365683663523221975n,
       encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
       encryptedAmount.inputProof,
     );
     await tx.wait();
-    const handle = await this.contract4.resEbool();
+    const handle = await this.contract4.resEuint128();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: false,
+      [handle]: 340282366920938463463365683663523221975n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "gt" overload (euint16, euint128) => ebool test 4 (44643, 44639)', async function () {
+  it('test operator "max" overload (uint128, euint128) => euint128 test 4 (340282366920938463463365683663523221975, 340282366920938463463365683663523221971)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add16(44643n);
-    input.add128(44639n);
+
+    input.add128(340282366920938463463365683663523221971n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.gt_euint16_euint128(
+    const tx = await this.contract4.max_uint128_euint128(
+      340282366920938463463365683663523221975n,
       encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
       encryptedAmount.inputProof,
     );
     await tx.wait();
-    const handle = await this.contract4.resEbool();
+    const handle = await this.contract4.resEuint128();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: true,
+      [handle]: 340282366920938463463365683663523221975n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "mul" overload (uint32, euint32) => euint32 test 1 (61625, 60254)', async function () {
+  it('test operator "and" overload (euint32, uint32) => euint32 test 1 (950780529, 938213546)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add32(950780529n);
 
-    input.add32(60254n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.mul_uint32_euint32(61625n, encryptedAmount.handles[0], encryptedAmount.inputProof);
+    const tx = await this.contract4.and_euint32_uint32(
+      encryptedAmount.handles[0],
+      938213546n,
+      encryptedAmount.inputProof,
+    );
     await tx.wait();
     const handle = await this.contract4.resEuint32();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 3713152750n,
+      [handle]: 816316448n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "mul" overload (uint32, euint32) => euint32 test 2 (47908, 47908)', async function () {
+  it('test operator "and" overload (euint32, uint32) => euint32 test 2 (950780525, 950780529)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add32(950780525n);
 
-    input.add32(47908n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.mul_uint32_euint32(47908n, encryptedAmount.handles[0], encryptedAmount.inputProof);
+    const tx = await this.contract4.and_euint32_uint32(
+      encryptedAmount.handles[0],
+      950780529n,
+      encryptedAmount.inputProof,
+    );
     await tx.wait();
     const handle = await this.contract4.resEuint32();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 2295176464n,
+      [handle]: 950780513n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "mul" overload (uint32, euint32) => euint32 test 3 (47908, 47908)', async function () {
+  it('test operator "and" overload (euint32, uint32) => euint32 test 3 (950780529, 950780529)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add32(950780529n);
 
-    input.add32(47908n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.mul_uint32_euint32(47908n, encryptedAmount.handles[0], encryptedAmount.inputProof);
+    const tx = await this.contract4.and_euint32_uint32(
+      encryptedAmount.handles[0],
+      950780529n,
+      encryptedAmount.inputProof,
+    );
     await tx.wait();
     const handle = await this.contract4.resEuint32();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 2295176464n,
+      [handle]: 950780529n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "mul" overload (uint32, euint32) => euint32 test 4 (47908, 47908)', async function () {
+  it('test operator "and" overload (euint32, uint32) => euint32 test 4 (950780529, 950780525)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add32(950780529n);
 
-    input.add32(47908n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.mul_uint32_euint32(47908n, encryptedAmount.handles[0], encryptedAmount.inputProof);
+    const tx = await this.contract4.and_euint32_uint32(
+      encryptedAmount.handles[0],
+      950780525n,
+      encryptedAmount.inputProof,
+    );
     await tx.wait();
     const handle = await this.contract4.resEuint32();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 2295176464n,
+      [handle]: 950780513n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "ne" overload (euint32, euint16) => ebool test 1 (1110823742, 60926)', async function () {
+  it('test operator "mul" overload (euint64, euint32) => euint64 test 1 (2147443143, 2)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add32(1110823742n);
-    input.add16(60926n);
+    input.add64(2147443143n);
+    input.add32(2n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.ne_euint32_euint16(
+    const tx = await this.contract4.mul_euint64_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract4.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    const expectedRes = {
+      [handle]: 4294886286n,
+    };
+    assert.deepEqual(res, expectedRes);
+  });
+
+  it('test operator "mul" overload (euint64, euint32) => euint64 test 2 (37609, 37609)', async function () {
+    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add64(37609n);
+    input.add32(37609n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract4.mul_euint64_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract4.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    const expectedRes = {
+      [handle]: 1414436881n,
+    };
+    assert.deepEqual(res, expectedRes);
+  });
+
+  it('test operator "mul" overload (euint64, euint32) => euint64 test 3 (37609, 37609)', async function () {
+    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add64(37609n);
+    input.add32(37609n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract4.mul_euint64_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract4.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    const expectedRes = {
+      [handle]: 1414436881n,
+    };
+    assert.deepEqual(res, expectedRes);
+  });
+
+  it('test operator "mul" overload (euint64, euint32) => euint64 test 4 (37609, 37609)', async function () {
+    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add64(37609n);
+    input.add32(37609n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract4.mul_euint64_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract4.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    const expectedRes = {
+      [handle]: 1414436881n,
+    };
+    assert.deepEqual(res, expectedRes);
+  });
+
+  it('test operator "ne" overload (euint64, uint64) => ebool test 1 (18442684280855507527, 18444930736089945979)', async function () {
+    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add64(18442684280855507527n);
+
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract4.ne_euint64_uint64(
+      encryptedAmount.handles[0],
+      18444930736089945979n,
       encryptedAmount.inputProof,
     );
     await tx.wait();
@@ -272,14 +364,14 @@ describe('FHEVM operations 55', function () {
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "ne" overload (euint32, euint16) => ebool test 2 (60922, 60926)', async function () {
+  it('test operator "ne" overload (euint64, uint64) => ebool test 2 (18442684280855507523, 18442684280855507527)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add32(60922n);
-    input.add16(60926n);
+    input.add64(18442684280855507523n);
+
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.ne_euint32_euint16(
+    const tx = await this.contract4.ne_euint64_uint64(
       encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
+      18442684280855507527n,
       encryptedAmount.inputProof,
     );
     await tx.wait();
@@ -291,14 +383,14 @@ describe('FHEVM operations 55', function () {
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "ne" overload (euint32, euint16) => ebool test 3 (60926, 60926)', async function () {
+  it('test operator "ne" overload (euint64, uint64) => ebool test 3 (18442684280855507527, 18442684280855507527)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add32(60926n);
-    input.add16(60926n);
+    input.add64(18442684280855507527n);
+
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.ne_euint32_euint16(
+    const tx = await this.contract4.ne_euint64_uint64(
       encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
+      18442684280855507527n,
       encryptedAmount.inputProof,
     );
     await tx.wait();
@@ -310,14 +402,14 @@ describe('FHEVM operations 55', function () {
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "ne" overload (euint32, euint16) => ebool test 4 (60926, 60922)', async function () {
+  it('test operator "ne" overload (euint64, uint64) => ebool test 4 (18442684280855507527, 18442684280855507523)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add32(60926n);
-    input.add16(60922n);
+    input.add64(18442684280855507527n);
+
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.ne_euint32_euint16(
+    const tx = await this.contract4.ne_euint64_uint64(
       encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
+      18442684280855507523n,
       encryptedAmount.inputProof,
     );
     await tx.wait();
@@ -329,88 +421,12 @@ describe('FHEVM operations 55', function () {
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "le" overload (uint64, euint64) => ebool test 1 (18446606398179666429, 18444934541480154237)', async function () {
+  it('test operator "max" overload (euint128, euint32) => euint128 test 1 (340282366920938463463372063437639994843, 3380679538)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-
-    input.add64(18444934541480154237n);
+    input.add128(340282366920938463463372063437639994843n);
+    input.add32(3380679538n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.le_uint64_euint64(
-      18446606398179666429n,
-      encryptedAmount.handles[0],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const handle = await this.contract4.resEbool();
-    const res = await this.instance.publicDecrypt([handle]);
-    const expectedRes = {
-      [handle]: false,
-    };
-    assert.deepEqual(res, expectedRes);
-  });
-
-  it('test operator "le" overload (uint64, euint64) => ebool test 2 (18443201189977032987, 18443201189977032991)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-
-    input.add64(18443201189977032991n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.le_uint64_euint64(
-      18443201189977032987n,
-      encryptedAmount.handles[0],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const handle = await this.contract4.resEbool();
-    const res = await this.instance.publicDecrypt([handle]);
-    const expectedRes = {
-      [handle]: true,
-    };
-    assert.deepEqual(res, expectedRes);
-  });
-
-  it('test operator "le" overload (uint64, euint64) => ebool test 3 (18443201189977032991, 18443201189977032991)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-
-    input.add64(18443201189977032991n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.le_uint64_euint64(
-      18443201189977032991n,
-      encryptedAmount.handles[0],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const handle = await this.contract4.resEbool();
-    const res = await this.instance.publicDecrypt([handle]);
-    const expectedRes = {
-      [handle]: true,
-    };
-    assert.deepEqual(res, expectedRes);
-  });
-
-  it('test operator "le" overload (uint64, euint64) => ebool test 4 (18443201189977032991, 18443201189977032987)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-
-    input.add64(18443201189977032987n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.le_uint64_euint64(
-      18443201189977032991n,
-      encryptedAmount.handles[0],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const handle = await this.contract4.resEbool();
-    const res = await this.instance.publicDecrypt([handle]);
-    const expectedRes = {
-      [handle]: false,
-    };
-    assert.deepEqual(res, expectedRes);
-  });
-
-  it('test operator "xor" overload (euint16, euint128) => euint128 test 1 (49959, 340282366920938463463374350572909216625)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add16(49959n);
-    input.add128(340282366920938463463374350572909216625n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.xor_euint16_euint128(
+    const tx = await this.contract4.max_euint128_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
       encryptedAmount.inputProof,
@@ -419,17 +435,17 @@ describe('FHEVM operations 55', function () {
     const handle = await this.contract4.resEuint128();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 340282366920938463463374350572909166678n,
+      [handle]: 340282366920938463463372063437639994843n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "xor" overload (euint16, euint128) => euint128 test 2 (49955, 49959)', async function () {
+  it('test operator "max" overload (euint128, euint32) => euint128 test 2 (3380679534, 3380679538)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add16(49955n);
-    input.add128(49959n);
+    input.add128(3380679534n);
+    input.add32(3380679538n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.xor_euint16_euint128(
+    const tx = await this.contract4.max_euint128_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
       encryptedAmount.inputProof,
@@ -438,23 +454,99 @@ describe('FHEVM operations 55', function () {
     const handle = await this.contract4.resEuint128();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 4n,
+      [handle]: 3380679538n,
     };
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "xor" overload (euint16, euint128) => euint128 test 3 (49959, 49959)', async function () {
+  it('test operator "max" overload (euint128, euint32) => euint128 test 3 (3380679538, 3380679538)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add16(49959n);
-    input.add128(49959n);
+    input.add128(3380679538n);
+    input.add32(3380679538n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.xor_euint16_euint128(
+    const tx = await this.contract4.max_euint128_euint32(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
       encryptedAmount.inputProof,
     );
     await tx.wait();
     const handle = await this.contract4.resEuint128();
+    const res = await this.instance.publicDecrypt([handle]);
+    const expectedRes = {
+      [handle]: 3380679538n,
+    };
+    assert.deepEqual(res, expectedRes);
+  });
+
+  it('test operator "max" overload (euint128, euint32) => euint128 test 4 (3380679538, 3380679534)', async function () {
+    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add128(3380679538n);
+    input.add32(3380679534n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract4.max_euint128_euint32(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract4.resEuint128();
+    const res = await this.instance.publicDecrypt([handle]);
+    const expectedRes = {
+      [handle]: 3380679538n,
+    };
+    assert.deepEqual(res, expectedRes);
+  });
+
+  it('test operator "xor" overload (euint32, euint64) => euint64 test 1 (943370818, 18443069382736677797)', async function () {
+    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add32(943370818n);
+    input.add64(18443069382736677797n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract4.xor_euint32_euint64(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract4.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    const expectedRes = {
+      [handle]: 18443069383138720231n,
+    };
+    assert.deepEqual(res, expectedRes);
+  });
+
+  it('test operator "xor" overload (euint32, euint64) => euint64 test 2 (943370814, 943370818)', async function () {
+    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add32(943370814n);
+    input.add64(943370818n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract4.xor_euint32_euint64(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract4.resEuint64();
+    const res = await this.instance.publicDecrypt([handle]);
+    const expectedRes = {
+      [handle]: 124n,
+    };
+    assert.deepEqual(res, expectedRes);
+  });
+
+  it('test operator "xor" overload (euint32, euint64) => euint64 test 3 (943370818, 943370818)', async function () {
+    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
+    input.add32(943370818n);
+    input.add64(943370818n);
+    const encryptedAmount = await input.encrypt();
+    const tx = await this.contract4.xor_euint32_euint64(
+      encryptedAmount.handles[0],
+      encryptedAmount.handles[1],
+      encryptedAmount.inputProof,
+    );
+    await tx.wait();
+    const handle = await this.contract4.resEuint64();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
       [handle]: 0n,
@@ -462,97 +554,21 @@ describe('FHEVM operations 55', function () {
     assert.deepEqual(res, expectedRes);
   });
 
-  it('test operator "xor" overload (euint16, euint128) => euint128 test 4 (49959, 49955)', async function () {
+  it('test operator "xor" overload (euint32, euint64) => euint64 test 4 (943370818, 943370814)', async function () {
     const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add16(49959n);
-    input.add128(49955n);
+    input.add32(943370818n);
+    input.add64(943370814n);
     const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.xor_euint16_euint128(
+    const tx = await this.contract4.xor_euint32_euint64(
       encryptedAmount.handles[0],
       encryptedAmount.handles[1],
       encryptedAmount.inputProof,
     );
     await tx.wait();
-    const handle = await this.contract4.resEuint128();
+    const handle = await this.contract4.resEuint64();
     const res = await this.instance.publicDecrypt([handle]);
     const expectedRes = {
-      [handle]: 4n,
-    };
-    assert.deepEqual(res, expectedRes);
-  });
-
-  it('test operator "and" overload (euint32, euint128) => euint128 test 1 (1078309371, 340282366920938463463373236746875294619)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add32(1078309371n);
-    input.add128(340282366920938463463373236746875294619n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.and_euint32_euint128(
-      encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const handle = await this.contract4.resEuint128();
-    const res = await this.instance.publicDecrypt([handle]);
-    const expectedRes = {
-      [handle]: 4297115n,
-    };
-    assert.deepEqual(res, expectedRes);
-  });
-
-  it('test operator "and" overload (euint32, euint128) => euint128 test 2 (1078309367, 1078309371)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add32(1078309367n);
-    input.add128(1078309371n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.and_euint32_euint128(
-      encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const handle = await this.contract4.resEuint128();
-    const res = await this.instance.publicDecrypt([handle]);
-    const expectedRes = {
-      [handle]: 1078309363n,
-    };
-    assert.deepEqual(res, expectedRes);
-  });
-
-  it('test operator "and" overload (euint32, euint128) => euint128 test 3 (1078309371, 1078309371)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add32(1078309371n);
-    input.add128(1078309371n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.and_euint32_euint128(
-      encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const handle = await this.contract4.resEuint128();
-    const res = await this.instance.publicDecrypt([handle]);
-    const expectedRes = {
-      [handle]: 1078309371n,
-    };
-    assert.deepEqual(res, expectedRes);
-  });
-
-  it('test operator "and" overload (euint32, euint128) => euint128 test 4 (1078309371, 1078309367)', async function () {
-    const input = this.instance.createEncryptedInput(this.contract4Address, this.signer.address);
-    input.add32(1078309371n);
-    input.add128(1078309367n);
-    const encryptedAmount = await input.encrypt();
-    const tx = await this.contract4.and_euint32_euint128(
-      encryptedAmount.handles[0],
-      encryptedAmount.handles[1],
-      encryptedAmount.inputProof,
-    );
-    await tx.wait();
-    const handle = await this.contract4.resEuint128();
-    const res = await this.instance.publicDecrypt([handle]);
-    const expectedRes = {
-      [handle]: 1078309363n,
+      [handle]: 124n,
     };
     assert.deepEqual(res, expectedRes);
   });

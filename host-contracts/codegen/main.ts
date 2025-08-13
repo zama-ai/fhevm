@@ -37,8 +37,8 @@ function generateAllFiles() {
 
   /// Generate core Solidity contract files.
   writeFileSync('contracts/shared/FheType.sol', generateSolidityFheType(ALL_FHE_TYPES));
-  writeFileSync('lib/Impl.sol', generateSolidityImplLib(ALL_OPERATORS));
-  writeFileSync('lib/FHE.sol', generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPES));
+  writeFileSync('lib/Impl.sol', generateSolidityImplLib(ALL_OPERATORS, '../contracts/shared'));
+  writeFileSync('lib/FHE.sol', generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPES, '../contracts/shared'));
   writeFileSync('contracts/HCULimit.sol', generateSolidityHCULimit(operatorsPrices));
 
   // TODO: For now, the testgen only supports automatically generated tests for euintXX.
@@ -52,7 +52,10 @@ function generateAllFiles() {
   const overloadShards = splitOverloadsToShards(generateSolidityOverloadTestFiles(ALL_OPERATORS, ALL_FHE_TYPES));
   mkdirSync('contracts/tests', { recursive: true });
   overloadShards.forEach((os) => {
-    writeFileSync(`examples/tests/FHEVMTestSuite${os.shardNumber}.sol`, generateSolidityUnitTestContracts(os));
+    writeFileSync(
+      `examples/tests/FHEVMTestSuite${os.shardNumber}.sol`,
+      generateSolidityUnitTestContracts(os, '../../lib'),
+    );
   });
 
   const tsSplits: string[] = generateTypeScriptTestCode(overloadShards, numberOfTestSplits);
