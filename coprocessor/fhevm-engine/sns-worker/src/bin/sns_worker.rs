@@ -60,6 +60,7 @@ fn construct_config() -> Config {
             port: args.health_check_port,
         },
         enable_compression: args.enable_compression,
+        schedule_policy: args.schedule_policy,
     }
 }
 

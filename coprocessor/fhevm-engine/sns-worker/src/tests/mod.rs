@@ -3,7 +3,7 @@ use crate::{
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_keys,
     squash_noise::safe_deserialize,
-    Config, DBConfig, UploadJob,
+    Config, DBConfig, SchedulePolicy, UploadJob,
 };
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
@@ -333,6 +333,7 @@ async fn setup(
             port: 8080,
         },
         enable_compression,
+        schedule_policy: SchedulePolicy::RayonParallel,
     };
 
     let pool = sqlx::postgres::PgPoolOptions::new()

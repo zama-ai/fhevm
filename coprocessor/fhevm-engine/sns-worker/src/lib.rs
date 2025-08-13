@@ -90,6 +90,24 @@ pub struct Config {
     pub log_level: Level,
     pub health_checks: HealthCheckConfig,
     pub enable_compression: bool,
+    pub schedule_policy: SchedulePolicy,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum SchedulePolicy {
+    Sequential,
+    #[default]
+    RayonParallel,
+}
+
+impl From<String> for SchedulePolicy {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "sequential" => SchedulePolicy::Sequential,
+            "rayon_parallel" => SchedulePolicy::RayonParallel,
+            _ => SchedulePolicy::default(),
+        }
+    }
 }
 
 /// Implement Display for Config
