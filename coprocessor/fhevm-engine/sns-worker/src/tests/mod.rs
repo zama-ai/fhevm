@@ -1,9 +1,8 @@
 use crate::{
-    create_s3_client,
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_keys,
     squash_noise::safe_deserialize,
-    Config, DBConfig, SchedulePolicy, UploadJob,
+    Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
 };
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
@@ -17,7 +16,7 @@ use test_harness::instance::{DBInstance, ImportMode};
 use tfhe::{
     prelude::FheDecrypt, ClientKey, CompressedSquashedNoiseCiphertextList, SquashedNoiseFheUint,
 };
-use tokio::{sync::mpsc, time::sleep};
+use tokio::time::sleep;
 use tracing::Level;
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
@@ -27,8 +26,7 @@ const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
 #[ignore = "requires valid SnS keys in CI"]
 async fn test_fhe_ciphertext128_with_compression() {
     const WITH_COMPRESSION: bool = true;
-    let (conn, client_key, _rx, _test_instance) =
-        setup(WITH_COMPRESSION).await.expect("valid setup");
+    let (conn, client_key, _test_instance) = setup(WITH_COMPRESSION).await.expect("valid setup");
     let tf: TestFile = read_test_file("ciphertext64.bin");
 
     test_decryptable(
@@ -59,7 +57,7 @@ async fn test_fhe_ciphertext128_with_compression() {
 #[ignore = "requires valid SnS keys in CI"]
 async fn test_fhe_ciphertext128_no_compression() {
     const NO_COMPRESSION: bool = false;
-    let (conn, client_key, _rx, _test_instance) = setup(NO_COMPRESSION).await.expect("valid setup");
+    let (conn, client_key, _test_instance) = setup(NO_COMPRESSION).await.expect("valid setup");
     let tf: TestFile = read_test_file("ciphertext64.bin");
 
     test_decryptable(
@@ -298,23 +296,11 @@ async fn test_garbage_collect() {
     );
 }
 
-async fn setup(
-    enable_compression: bool,
-) -> anyhow::Result<(
-    sqlx::PgPool,
-    Option<ClientKey>,
-    tokio::sync::mpsc::Receiver<UploadJob>,
-    DBInstance,
-)> {
-    tracing_subscriber::fmt().json().with_level(true).init();
-    let test_instance = test_harness::instance::setup_test_db(ImportMode::WithAllKeys)
-        .await
-        .expect("valid db instance");
-
-    let conf = Config {
+fn build_test_config(db_url: String, enable_compression: bool) -> Config {
+    Config {
         tenant_api_key: TENANT_API_KEY.to_string(),
         db: DBConfig {
-            url: test_instance.db_url().to_owned(),
+            url: db_url,
             listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),
             batch_limit: 10,
@@ -325,7 +311,18 @@ async fn setup(
             timeout: Duration::from_secs(5),
             lifo: false,
         },
-        s3: crate::S3Config::default(),
+        s3: S3Config {
+            bucket_ct128: "ct128".to_owned(),
+            bucket_ct64: "ct64".to_owned(),
+            max_concurrent_uploads: 10000,
+            retry_policy: S3RetryPolicy {
+                max_retries_per_upload: 100,
+                max_backoff: Duration::from_secs(10),
+                max_retries_timeout: Duration::from_secs(120),
+                recheck_duration: Duration::from_secs(2),
+                regular_recheck_duration: Duration::from_secs(120),
+            },
+        },
         service_name: "test-sns-worker".to_owned(),
         log_level: Level::INFO,
         health_checks: crate::HealthCheckConfig {
@@ -334,7 +331,17 @@ async fn setup(
         },
         enable_compression,
         schedule_policy: SchedulePolicy::RayonParallel,
-    };
+    }
+}
+async fn setup(
+    enable_compression: bool,
+) -> anyhow::Result<(sqlx::PgPool, Option<ClientKey>, DBInstance)> {
+    tracing_subscriber::fmt().json().with_level(true).init();
+    let test_instance = test_harness::instance::setup_test_db(ImportMode::WithAllKeys)
+        .await
+        .expect("valid db instance");
+
+    let conf = build_test_config(test_instance.db_url().to_owned(), enable_compression);
 
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(conf.db.max_connections)
@@ -342,23 +349,17 @@ async fn setup(
         .connect(&conf.db.url)
         .await?;
 
-    let (upload_tx, upload_rx) = mpsc::channel::<UploadJob>(10);
-
     let token = test_instance.parent_token.child_token();
     let (client_key, _) = fetch_keys(&pool, &TENANT_API_KEY.to_owned()).await?;
-    let (client, _) = create_s3_client(&conf).await;
 
     tokio::spawn(async move {
-        crate::compute_128bit_ct(conf, upload_tx, token, client)
-            .await
-            .expect("valid worker");
-        Ok(())
+        crate::run_all(conf, token).await.expect("valid worker run");
     });
 
     // TODO: Replace this with notification from the worker when it's in ready-state
     sleep(Duration::from_secs(5)).await;
 
-    Ok((pool, client_key, upload_rx, test_instance))
+    Ok((pool, client_key, test_instance))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -449,6 +450,11 @@ async fn clean_up(pool: &sqlx::PgPool, handle: &Vec<u8>) -> anyhow::Result<()> {
         .await?;
 
     sqlx::query("DELETE FROM ciphertexts WHERE handle = $1")
+        .bind(handle)
+        .execute(pool)
+        .await?;
+
+    sqlx::query("DELETE FROM ciphertext_digest WHERE handle = $1")
         .bind(handle)
         .execute(pool)
         .await?;
