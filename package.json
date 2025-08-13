@@ -3,7 +3,8 @@
   "workspaces": [
     "host-contracts",
     "library-solidity",
-    "test-suite/e2e"
+    "test-suite/e2e",
+    "test-suite/benchmarks"
   ],
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
