@@ -30,6 +30,8 @@ RUN npm ci && \
 COPY library-solidity ./library-solidity
 COPY test-suite/benchmarks ./test-suite/benchmarks
 
+WORKDIR /app/test-suite/e2e
+
 RUN npx hardhat compile && \
     npx hardhat compile:specific --contract decryptionOracle
 
@@ -46,8 +48,6 @@ COPY --from=builder --chown=fhevm:fhevm /home/fhevm /home/fhevm
 COPY --from=builder --chown=fhevm:fhevm /app /app
 
 USER fhevm:fhevm
-
-WORKDIR /app
 
 ENTRYPOINT ["/bin/bash", "-c"]
 
