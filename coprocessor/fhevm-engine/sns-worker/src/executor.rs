@@ -20,11 +20,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 use tfhe::set_server_key;
+use tfhe::ClientKey;
 use tokio::select;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 use tracing::{debug, error, info};
 
 const RETRY_DB_CONN_INTERVAL: Duration = Duration::from_secs(5);
@@ -428,15 +430,28 @@ fn process_tasks(
     match policy {
         SchedulePolicy::Sequential => {
             for task in batch.iter_mut() {
-                compute_task(task, tx, false, enable_compression, token.clone(), keys);
+                compute_task(
+                    task,
+                    tx,
+                    enable_compression,
+                    token.clone(),
+                    &keys.client_key,
+                );
             }
         }
         SchedulePolicy::RayonParallel => {
             rayon::broadcast(|_| {
                 tfhe::set_server_key(keys.server_key.clone());
             });
+
             batch.par_iter_mut().for_each(|task| {
-                compute_task(task, tx, false, enable_compression, token.clone(), keys);
+                compute_task(
+                    task,
+                    tx,
+                    enable_compression,
+                    token.clone(),
+                    &keys.client_key,
+                );
             });
         }
     }
@@ -447,20 +462,21 @@ fn process_tasks(
 fn compute_task(
     task: &mut HandleItem,
     tx: &Sender<UploadJob>,
-    blocking_send: bool,
     enable_compression: bool,
     token: CancellationToken,
-    keys: &KeySet,
+    _client_key: &Option<ClientKey>,
 ) {
+    let handle = compact_hex(&task.handle);
+
     // Check if the task is cancelled
     if token.is_cancelled() {
-        error!(target: "sns", { handle = ?task.handle }, "Task processing cancelled");
-        return; // Skip empty ciphertexts
+        warn!(target: "sns", { handle }, "Task processing cancelled");
+        return;
     }
 
     let ct64_compressed = task.ct64_compressed.as_ref();
     if ct64_compressed.is_empty() {
-        error!(target: "sns", { handle = ?task.handle }, "Empty ciphertext64, skipping task");
+        error!(target: "sns", { handle }, "Empty ciphertext64, skipping task");
         return; // Skip empty ciphertexts
     }
 
@@ -469,7 +485,6 @@ fn compute_task(
     let ct = decompress_ct(&task.handle, ct64_compressed).unwrap(); // TODO handle error properly
     telemetry::end_span(s);
 
-    let handle = compact_hex(&task.handle);
     let ct_type = ct.type_name().to_owned();
     info!(target: "sns",  { handle, ct_type }, "Converting ciphertext");
 
@@ -478,12 +493,12 @@ fn compute_task(
 
     match ct.squash_noise_and_serialize(enable_compression) {
         // TODO: make configurable
-        Ok(squashed_noise_serialized) => {
+        Ok(bytes) => {
             telemetry::end_span(span);
             info!(target: "sns", { handle }, "Ciphertext converted, length: {}, compressed: {}", bytes.len(), enable_compression);
 
             #[cfg(feature = "test_decrypt_128")]
-            decrypt_big_ct(keys, &bytes, &ct, &task.handle, enable_compression);
+            decrypt_big_ct(_client_key, &bytes, &ct, &task.handle, enable_compression);
 
             let format = if enable_compression {
                 Ciphertext128Format::CompressedOnCpu
@@ -493,19 +508,14 @@ fn compute_task(
 
             task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
 
-            let res = if blocking_send {
-                tx.blocking_send(UploadJob::Normal(task.clone()))
-                    .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
-            } else {
-                tx.try_send(UploadJob::Normal(task.clone()))
-                    .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
-            };
-
             // Start uploading the ciphertexts as soon as the ct128 is computed
             //
             // The service must continue running the squashed noise algorithm,
             // regardless of the availability of the upload worker.
-            if let Err(err) = res {
+            if let Err(err) = tx
+                .try_send(UploadJob::Normal(task.clone()))
+                .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
+            {
                 // This could happen if either we are experiencing a burst of tasks
                 // or the upload worker cannot recover the connection to AWS S3
                 //
@@ -627,18 +637,18 @@ fn decompress_ct(
 /// Decrypts a squashed noise ciphertext and returns the decrypted value.
 /// This function is used for testing purposes only.
 fn decrypt_big_ct(
-    keys: &KeySet,
-    squashed_noise_serialized: &[u8],
+    client_key: &Option<ClientKey>,
+    bytes: &[u8],
     ct: &SupportedFheCiphertexts,
     handle: &[u8],
     is_compressed: bool,
 ) {
     {
-        if let Some(client_key) = &keys.client_key {
+        if let Some(client_key) = &client_key {
             let ct = if is_compressed {
-                ct.decrypt_squash_noise_compressed(client_key, squashed_noise_serialized)
+                ct.decrypt_squash_noise_compressed(client_key, bytes)
             } else {
-                ct.decrypt_squash_noise(client_key, squashed_noise_serialized)
+                ct.decrypt_squash_noise(client_key, bytes)
             }
             .expect("Failed to decrypt");
 
