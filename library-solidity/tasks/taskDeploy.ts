@@ -12,17 +12,21 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   if (process.env.SOLIDITY_COVERAGE !== 'true') {
     await hre.run('clean');
   }
-  await hre.run('compile:specific', { contract: 'examples/' });
+
+  // Compile and deploy all host empty proxy contracts
   await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/shared' });
   await hre.run('task:deployEmptyUUPSProxies');
-  // It needs to recompile to account for the change in addresses.
-  await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/' });
+
+  // Compile and deploy all host contracts
+  await hre.run('compile:specific', { contract: 'examples' });
+  await hre.run('compile:specific', { contract: 'fhevmTemp/contracts' });
   await hre.run('task:deployACL');
   await hre.run('task:deployFHEVMExecutor');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:deployInputVerifier');
   await hre.run('task:deployHCULimit');
   await hre.run('task:deployDecryptionOracle');
+
   console.info('Contract deployment done!');
 });
 

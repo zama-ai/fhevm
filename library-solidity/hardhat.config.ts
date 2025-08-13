@@ -60,7 +60,6 @@ task('test', async (_taskArgs, hre, runSuper) => {
     await hre.run('task:deployAllHostContracts');
   }
 
-  await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
 });
 
