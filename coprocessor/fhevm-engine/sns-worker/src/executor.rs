@@ -488,7 +488,6 @@ fn compute_task(
     telemetry::attribute(&mut span, "ct_type", ct_type);
 
     match ct.squash_noise_and_serialize(enable_compression) {
-        // TODO: make configurable
         Ok(bytes) => {
             telemetry::end_span(span);
             info!(target: "sns", { handle }, "Ciphertext converted, length: {}, compressed: {}", bytes.len(), enable_compression);
