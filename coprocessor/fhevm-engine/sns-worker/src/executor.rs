@@ -5,8 +5,9 @@ use crate::BigCiphertext;
 use crate::Ciphertext128Format;
 use crate::HandleItem;
 use crate::KeySet;
+use crate::SchedulePolicy;
 use crate::UploadJob;
-use crate::{Config, DBConfig, ExecutionError};
+use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::telemetry;
@@ -45,11 +46,6 @@ impl fmt::Display for Order {
             Order::Desc => write!(f, "DESC"),
         }
     }
-}
-
-enum SchedulePolicy {
-    Sequential,
-    RayonParallel,
 }
 
 pub struct SwitchNSquashService {
@@ -163,14 +159,11 @@ pub(crate) async fn run_loop(
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
     let tenant_api_key = &conf.tenant_api_key;
-    let enable_compression = conf.enable_compression;
-    let conf = &conf.db;
-
     let mut listener = PgListener::connect_with(pool).await?;
     info!(target: "worker", "Connected to PostgresDB");
 
     listener
-        .listen_all(conf.listen_channels.iter().map(|v| v.as_str()))
+        .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
     let t = telemetry::tracer("worker_loop_init");
@@ -181,9 +174,9 @@ pub(crate) async fn run_loop(
 
     info!(target: "worker", "Fetched keyset for tenant {}", tenant_api_key);
 
-    let mut gc_ticker = interval(conf.cleanup_interval);
+    let mut gc_ticker = interval(conf.db.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
-    let mut polling_ticker = interval(Duration::from_secs(conf.polling_interval.into()));
+    let mut polling_ticker = interval(Duration::from_secs(conf.db.polling_interval.into()));
 
     loop {
         // Continue looping until the service is cancelled or a critical error occurs
@@ -194,7 +187,7 @@ pub(crate) async fn run_loop(
             *value = SystemTime::now();
         }
 
-        match fetch_and_execute_sns_tasks(pool, tx, &keys, conf, enable_compression, &token).await {
+        match fetch_and_execute_sns_tasks(pool, tx, &keys, conf, &token).await {
             Ok(maybe_remaining) => {
                 if maybe_remaining {
                     if token.is_cancelled() {
@@ -203,11 +196,11 @@ pub(crate) async fn run_loop(
 
                     info!(target: "worker", "more tasks to process, continuing");
                     if let Ok(elapsed) = gc_timestamp.elapsed() {
-                        if elapsed >= conf.cleanup_interval {
+                        if elapsed >= conf.db.cleanup_interval {
                             info!(target: "worker", "gc interval, cleaning up");
                             gc_ticker.reset();
                             gc_timestamp = SystemTime::now();
-                            if let Err(err) = garbage_collect(pool, conf.gc_batch_limit).await {
+                            if let Err(err) = garbage_collect(pool, conf.db.gc_batch_limit).await {
                                 error!(target: "worker", "Failed to garbage collect: {}", err);
                             }
                         }
@@ -241,7 +234,7 @@ pub(crate) async fn run_loop(
             _ = gc_ticker.tick() => {
                 info!(target: "worker", "gc tick, on_idle");
                 gc_timestamp = SystemTime::now();
-                if let Err(err) = garbage_collect(pool, conf.gc_batch_limit).await {
+                if let Err(err) = garbage_collect(pool, conf.db.gc_batch_limit).await {
                     error!(target: "worker", "Failed to garbage collect: {}", err);
                 }
             }
@@ -292,8 +285,7 @@ async fn fetch_and_execute_sns_tasks(
     pool: &PgPool,
     tx: &Sender<UploadJob>,
     keys: &KeySet,
-    conf: &DBConfig,
-    enable_compression: bool,
+    conf: &Config,
     token: &CancellationToken,
 ) -> Result<bool, ExecutionError> {
     let mut db_txn = match pool.begin().await {
@@ -304,13 +296,17 @@ async fn fetch_and_execute_sns_tasks(
         }
     };
 
-    let order = if conf.lifo { Order::Desc } else { Order::Asc };
+    let order = if conf.db.lifo {
+        Order::Desc
+    } else {
+        Order::Asc
+    };
 
     let trx = &mut db_txn;
 
     let mut maybe_remaining = false;
-    if let Some(mut tasks) = query_sns_tasks(trx, conf.batch_limit, order).await? {
-        maybe_remaining = conf.batch_limit as usize == tasks.len();
+    if let Some(mut tasks) = query_sns_tasks(trx, conf.db.batch_limit, order).await? {
+        maybe_remaining = conf.db.batch_limit as usize == tasks.len();
 
         let t = telemetry::tracer("batch_execution");
         t.set_attribute("count", tasks.len().to_string());
@@ -319,8 +315,8 @@ async fn fetch_and_execute_sns_tasks(
             &mut tasks,
             keys,
             tx,
-            enable_compression,
-            SchedulePolicy::RayonParallel, // TODO: make it configurable
+            conf.enable_compression,
+            conf.schedule_policy,
             token.clone(),
         )?;
 
@@ -328,7 +324,7 @@ async fn fetch_and_execute_sns_tasks(
 
         let s = t.child_span("batch_store_ciphertext128");
         update_ciphertext128(trx, &tasks).await?;
-        notify_ciphertext128_ready(trx, &conf.notify_channel).await?;
+        notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
         // Try to enqueue the tasks for upload in the DB
         // This is a best-effort attempt, as the upload worker might not be available
