@@ -30,7 +30,7 @@ RUN npm ci && \
 COPY library-solidity ./library-solidity
 COPY test-suite/benchmarks ./test-suite/benchmarks
 
-WORKDIR /app/test-suite/e2e
+WORKDIR /app/test-suite/benchmarks
 
 RUN npx hardhat compile && \
     npx hardhat compile:specific --contract decryptionOracle
