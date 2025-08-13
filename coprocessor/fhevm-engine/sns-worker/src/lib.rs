@@ -14,12 +14,16 @@ use std::{
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
-    healthz_server::HttpServer, telemetry::OtelTracer, types::FhevmError, utils::compact_hex,
+    healthz_server::HttpServer,
+    telemetry::{self, OtelTracer},
+    types::FhevmError,
+    utils::compact_hex,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
+    spawn,
     sync::mpsc::{self, Sender},
     task,
 };
@@ -402,4 +406,43 @@ pub async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) 
     }
 
     (client, is_ready)
+}
+
+/// Run all SNS worker components.
+pub async fn run_all(
+    config: Config,
+    parent_token: CancellationToken,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Queue of tasks to upload ciphertexts is 10 times the number of concurrent uploads
+    // to avoid blocking the worker
+    // and to allow for some burst of uploads
+    let (uploads_tx, uploads_rx) =
+        mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
+
+    if let Err(err) = telemetry::setup_otlp(&config.service_name) {
+        panic!("Error while initializing tracing: {:?}", err);
+    }
+
+    let conf = config.clone();
+    let token = parent_token.child_token();
+    let tx = uploads_tx.clone();
+    // Initialize the S3 uploader
+    let (client, is_ready) = create_s3_client(&conf).await;
+    let is_ready = Arc::new(AtomicBool::new(is_ready));
+    let s3 = client.clone();
+
+    spawn(async move {
+        if let Err(err) = process_s3_uploads(&conf, uploads_rx, tx, token, s3, is_ready).await {
+            error!("Failed to run the upload-worker : {:?}", err);
+        }
+    });
+
+    // Start the SnS worker
+    let conf = config.clone();
+    let token = parent_token.child_token();
+    if let Err(err) = compute_128bit_ct(conf, uploads_tx, token, client).await {
+        error!("SnS worker failed: {:?}", err);
+    }
+
+    Ok(())
 }
