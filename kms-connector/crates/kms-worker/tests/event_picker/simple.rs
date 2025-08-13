@@ -290,9 +290,10 @@ async fn test_polling_backup() -> anyhow::Result<()> {
         .collect::<Vec<SnsCiphertextMaterialDbItem>>();
     println!("Inserting PublicDecryptionRequest before starting the event picker...");
     sqlx::query!(
-        "INSERT INTO public_decryption_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        vec![],
     )
     .execute(test_instance.db())
     .await?;
@@ -312,6 +313,7 @@ async fn test_polling_backup() -> anyhow::Result<()> {
         vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: decryption_id,
             snsCtMaterials: sns_ct,
+            extraData: vec![].into(),
         })]
     );
     println!("Data OK!");
