@@ -22,7 +22,6 @@ COPY package.json package-lock.json ./
 COPY library-solidity/package.json ./library-solidity/
 COPY test-suite/e2e/package.json ./test-suite/e2e/
 
-
 # Install dependencies
 RUN npm ci && \
     npm prune
