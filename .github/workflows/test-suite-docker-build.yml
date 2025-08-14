@@ -42,11 +42,11 @@ jobs:
     name: test-suite-docker-build/docker-e2e-image (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-e2e-docker == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6323a1e8e260961562b66a9f33a608f86cd6c831
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@eb3c4b3e230849f5132b51ca33be36bf52ff123d
     secrets:
-      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
     permissions:
       actions: 'read'
       contents: 'read'
@@ -65,11 +65,11 @@ jobs:
     name: test-suite-docker-build/docker-benchmarks-image (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-benchmarks-docker == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6323a1e8e260961562b66a9f33a608f86cd6c831
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@eb3c4b3e230849f5132b51ca33be36bf52ff123d
     secrets:
-      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
     permissions:
       actions: 'read'
       contents: 'read'
