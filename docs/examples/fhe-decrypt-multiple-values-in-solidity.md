@@ -21,13 +21,13 @@ import { FHE, ebool, euint32, euint64 } from "@fhevm/solidity/lib/FHE.sol";
 import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 contract DecryptMultipleValuesInSolidity is SepoliaConfig {
-  ebool private _encryptedBool; // = 0 (uninitizalized)
-  euint32 private _encryptedUint32; // = 0 (uninitizalized)
-  euint64 private _encryptedUint64; // = 0 (uninitizalized)
+  ebool private _encryptedBool; // = 0 (uninitialized)
+  euint32 private _encryptedUint32; // = 0 (uninitialized)
+  euint64 private _encryptedUint64; // = 0 (uninitialized)
 
-  bool private _clearBool; // = 0 (uninitizalized)
-  uint32 private _clearUint32; // = 0 (uninitizalized)
-  uint64 private _clearUint64; // = 0 (uninitizalized)
+  bool private _clearBool; // = 0 (uninitialized)
+  uint32 private _clearUint32; // = 0 (uninitialized)
+  uint64 private _clearUint64; // = 0 (uninitialized)
 
   // solhint-disable-next-line no-empty-blocks
   constructor() {}
@@ -156,7 +156,7 @@ describe("DecryptMultipleValuesInSolidity", function () {
 
   // ✅ Test should succeed
   it("decryption should succeed", async function () {
-    // For simplicity, we create 3 trivialy encrypted values on-chain.
+    // For simplicity, we create 3 trivially encrypted values on-chain.
     let tx = await contract.connect(signers.alice).initialize(true, 123456, 78901234567);
     await tx.wait();
 
