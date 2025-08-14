@@ -147,7 +147,7 @@ case $COMMAND in
       esac
     done
 
-    docker_args=("./app/test-suite/e2e/run-tests.sh")
+    docker_args=("./run-tests.sh")
     if [ -n "$VERBOSE" ]; then
       docker_args+=("-v")
     fi

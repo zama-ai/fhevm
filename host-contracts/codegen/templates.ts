@@ -1158,6 +1158,7 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
                 revert UnsupportedHandleType();
             }
         }
+        signedDataLength += 32; // add offset of signatures
         return signedDataLength;
     }
   `,

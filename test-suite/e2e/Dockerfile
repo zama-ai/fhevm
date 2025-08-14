@@ -49,6 +49,8 @@ COPY --from=builder --chown=fhevm:fhevm /app /app
 
 USER fhevm:fhevm
 
+WORKDIR /app/test-suite/e2e
+
 ENTRYPOINT ["/bin/bash", "-c"]
 
 FROM prod AS dev
