@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 
 import "../lib/FHE.sol";
 
-import "../lib/FHEVMConfig.sol";
+import "../lib/CoprocessorConfig.sol";
 
 /// @notice Contract for generating random encrypted numbers
 contract Rand {
@@ -20,7 +20,7 @@ contract Rand {
 
     /// @notice Constructor to set FHE configuration
     constructor() {
-        FHE.setCoprocessor(FHEVMConfig.defaultConfig());
+        FHE.setCoprocessor(CoprocessorConfig.defaultConfig());
     }
 
     /// @notice Generate random 8-bit encrypted unsigned integer
