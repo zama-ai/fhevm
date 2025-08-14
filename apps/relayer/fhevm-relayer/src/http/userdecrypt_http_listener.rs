@@ -70,6 +70,7 @@ pub struct UserDecryptResponseJson {
 pub struct UserDecryptResponsePayloadJson {
     pub payload: Bytes,
     pub signature: Bytes,
+    pub extra_data: Bytes,
 }
 
 /// Represents the error response from the endpoint for user decrypt.

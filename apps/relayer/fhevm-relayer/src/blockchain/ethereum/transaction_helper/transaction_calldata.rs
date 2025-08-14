@@ -1,14 +1,13 @@
 use crate::blockchain::ethereum::bindings::Decryption::{
-    self, publicDecryptionResponseCall, PublicDecryptionRequest, PublicDecryptionResponse,
-    UserDecryptionRequest,
+    self, publicDecryptionResponseCall, PublicDecryptionRequest, UserDecryptionRequest,
 };
 
 use crate::blockchain::ethereum::bindings::Decryption::CtHandleContractPair;
-use crate::blockchain::ethereum::bindings::IDecryption::RequestValidity;
+use crate::blockchain::ethereum::bindings::IDecryption::{ContractsInfo, RequestValidity};
 use crate::blockchain::ethereum::bindings::InputVerification;
 use crate::blockchain::PublicDecryptFhevmRequestData;
 use crate::core::errors::EventProcessingError;
-use crate::core::event::UserDecryptRequest;
+use crate::core::event::{PublicDecryptResponse, UserDecryptRequest};
 use alloy::primitives::{Address, Bytes, FixedBytes, Uint, U256};
 use rusqlite::{Connection, Result};
 use serde::Serialize;
@@ -27,9 +26,10 @@ sol! {
     #[allow(missing_docs)]
     #[derive(Serialize)]
     #[derive(Debug)]
-    struct PublicDecryptionResult {
-        uint256[] handlesList;
+    struct PublicDecryptVerification {
+        bytes32[] ctHandles;
         bytes decryptedResult;
+        bytes extraData;
     }
 }
 
@@ -39,7 +39,7 @@ pub struct ComputeCalldata;
 impl ComputeCalldata {
     pub fn callback_req(
         req: &PublicDecryptFhevmRequestData,
-        public_decryption_response: PublicDecryptionResponse,
+        public_decryption_response: PublicDecryptResponse,
     ) -> Result<Bytes, EventProcessingError> {
         let mut calldata = Vec::new();
 
@@ -48,20 +48,32 @@ impl ComputeCalldata {
         let request_id_bytes = req.fhevm_request_id.to_be_bytes::<32>();
         calldata.extend_from_slice(&request_id_bytes);
 
-        calldata.extend_from_slice(&public_decryption_response.decryptedResult);
+        calldata.extend_from_slice(&public_decryption_response.decrypted_value);
 
-        let signatures_values = &public_decryption_response
-            .signatures
-            .iter()
-            .map(|sig| DynSolValue::Bytes(sig.to_vec()))
-            .collect::<Vec<_>>();
-        let array_value = DynSolValue::Array(signatures_values.to_vec());
-        let encoded_signatures = array_value.abi_encode();
-        calldata.extend_from_slice(&encoded_signatures[32..]); // Skip the first 32 bytes (offset part) of the encoded signatures
+        // Construct decryptionProof: numSigners (1 byte) + signatures (65 bytes each) + extraData
+        let mut decryption_proof = Vec::new();
+
+        // Add number of signers (1 byte)
+        let num_signers = public_decryption_response.signatures.len() as u8;
+        decryption_proof.push(num_signers);
+
+        // Add KMS signatures (65 bytes each)
+        for signature in &public_decryption_response.signatures {
+            decryption_proof.extend_from_slice(signature);
+        }
+
+        // Add extraData
+        decryption_proof.extend_from_slice(&public_decryption_response.extra_data);
+
+        // Encode decryptionProof as bytes parameter
+        let decryption_proof_value = DynSolValue::Bytes(decryption_proof);
+        let encoded_proof = decryption_proof_value.abi_encode();
+        calldata.extend_from_slice(&encoded_proof[32..]); // Skip the first 32 bytes (offset part)
 
         println!(
-            "public_decryption_response {:?}",
-            &public_decryption_response.signatures
+            "decryptionProof constructed with {} signers, extraData length: {}",
+            num_signers,
+            public_decryption_response.extra_data.len()
         );
 
         Ok(Bytes::from(calldata))
@@ -69,8 +81,10 @@ impl ComputeCalldata {
 
     pub fn public_decryption_req(
         handles: Vec<FixedBytes<32>>,
+        extra_data: Bytes,
     ) -> Result<Bytes, EventProcessingError> {
-        let calldata = Decryption::publicDecryptionRequestCall::new((handles,)).abi_encode();
+        let calldata =
+            Decryption::publicDecryptionRequestCall::new((handles, extra_data)).abi_encode();
 
         info!(
             "publicDecryptionRequest calldata: 0x{}",
@@ -92,6 +106,11 @@ impl ComputeCalldata {
             })
             .collect::<Vec<_>>();
 
+        let contracts_info = ContractsInfo {
+            addresses: user_decrypt_request.contract_addresses,
+            chainId: U256::from(user_decrypt_request.contracts_chain_id),
+        };
+
         let validity = RequestValidity {
             startTimestamp: user_decrypt_request.request_validity.start_timestamp,
             durationDays: user_decrypt_request.request_validity.duration_days,
@@ -101,11 +120,11 @@ impl ComputeCalldata {
         let call = Decryption::userDecryptionRequestCall::new((
             ct_handle_contract_pairs,
             validity,
-            U256::from(user_decrypt_request.contracts_chain_id),
-            user_decrypt_request.contract_addresses,
+            contracts_info,
             user_decrypt_request.user_address,
             user_decrypt_request.public_key,
             user_decrypt_request.signature,
+            user_decrypt_request.extra_data,
         ));
 
         // Encode the call to get the calldata
@@ -131,12 +150,14 @@ impl ComputeCalldata {
         contract_address: Address,
         user_address: Address,
         ciphertext_with_zkproof: Bytes,
+        extra_data: Bytes,
     ) -> Result<Bytes, EventProcessingError> {
         let request_call = InputVerification::verifyProofRequestCall {
             contractChainId: U256::from(contract_chain_id),
             contractAddress: contract_address,
             userAddress: user_address,
             ciphertextWithZKProof: ciphertext_with_zkproof,
+            extraData: extra_data,
         };
         let calldata = request_call.abi_encode();
         Ok(Bytes::from(calldata))
@@ -144,9 +165,11 @@ impl ComputeCalldata {
 
     pub fn reject_proof_response(
         input_verification_id: U256,
+        extra_data: Bytes,
     ) -> Result<Bytes, EventProcessingError> {
         let calldata =
-            InputVerification::rejectProofResponseCall::new((input_verification_id,)).abi_encode();
+            InputVerification::rejectProofResponseCall::new((input_verification_id, extra_data))
+                .abi_encode();
 
         debug!("Raw calldata: 0x{}", hex::encode(&calldata));
 
@@ -168,6 +191,7 @@ impl ComputeCalldata {
         input_verification_id: U256,
         handles: Vec<[u8; 32]>,
         signature: Vec<u8>,
+        extra_data: Bytes,
     ) -> Result<Bytes, EventProcessingError> {
         let calldata = InputVerification::verifyProofResponseCall::new((
             input_verification_id,
@@ -176,6 +200,7 @@ impl ComputeCalldata {
                 .map(alloy::primitives::FixedBytes::<32>::from)
                 .collect(),
             signature.into(),
+            extra_data,
         ))
         .abi_encode();
 
@@ -188,7 +213,7 @@ impl ComputeCalldata {
         req: UserDecryptionRequest,
     ) -> Result<Bytes, EventProcessingError> {
         // Extract user_decryption_id directly from the request
-        let user_decryption_id = req.userDecryptionId;
+        let user_decryption_id = req.decryptionId;
 
         // Create dummy values for the other parameters
         // In a real implementation, these would be generated from the actual decryption process
@@ -202,6 +227,7 @@ impl ComputeCalldata {
             user_decryption_id,
             dummy_reencrypted_share,
             dummy_signature,
+            req.extraData,
         ));
 
         // Encode the call to get the calldata
@@ -307,7 +333,7 @@ impl ComputeCalldata {
         })?;
 
         let domain = eip712_domain! {
-            name: "DecryptionManager",
+            name: "Decryption",
             version: "1",
             chain_id: 654321,
             verifying_contract: decryption_address,
@@ -315,18 +341,19 @@ impl ComputeCalldata {
 
         println!("{domain:?}");
 
-        let mut ct_handles: Vec<U256> = Vec::new();
+        let mut ct_handles: Vec<FixedBytes<32>> = Vec::new();
         for sns_ct_material in req.snsCtMaterials {
-            ct_handles.push(sns_ct_material.ctHandle.into());
+            ct_handles.push(sns_ct_material.ctHandle);
         }
-        let public_decryption_result = PublicDecryptionResult {
-            handlesList: ct_handles,
+        let public_decryption_verification = PublicDecryptVerification {
+            ctHandles: ct_handles,
             decryptedResult: decrypted_result.clone().into(),
+            extraData: req.extraData.clone(),
         };
 
-        println!("public_decryption_result {public_decryption_result:?}");
+        println!("public_decryption_verification {public_decryption_verification:?}");
 
-        let hash = public_decryption_result.eip712_signing_hash(&domain);
+        let hash = public_decryption_verification.eip712_signing_hash(&domain);
 
         // Replace unwrap with proper error handling
         let signature = signer
@@ -336,9 +363,10 @@ impl ComputeCalldata {
         info!("Signature: 0x{}", hex::encode(signature.as_bytes()));
 
         let res_data_gateway = publicDecryptionResponseCall::new((
-            req.publicDecryptionId,
+            req.decryptionId,
             decrypted_result.into(),
             signature.as_bytes().into(),
+            req.extraData,
         ));
 
         let calldata_bytes = publicDecryptionResponseCall::abi_encode(&res_data_gateway);

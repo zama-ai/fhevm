@@ -110,6 +110,7 @@ impl GatewayHandler {
                         input_proof_request.contract_address,
                         input_proof_request.user_address,
                         input_proof_request.ciphetext_with_zk_proof,
+                        input_proof_request.extra_data,
                     )
                     .await
                 {
@@ -259,6 +260,7 @@ impl GatewayHandler {
         contract_address: Address,
         user_address: Address,
         input_verification: Bytes,
+        extra_data: Bytes,
     ) -> Result<U256, EventProcessingError> {
         let processor = InputRequestProcessor {
             handler: Arc::new(self.clone()),
@@ -288,6 +290,7 @@ impl GatewayHandler {
                         contract_address,
                         user_address,
                         input_verification.clone(),
+                        extra_data.clone(),
                     )
                 },
                 &processor,
@@ -638,6 +641,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
         target_contract_address,
         user_address,
         ciphertext_with_zk_proof,
+        Bytes::from(vec![0x00]),
     )
     .expect("Failed to prepare calldata");
 

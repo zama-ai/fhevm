@@ -1,8 +1,5 @@
 use crate::{
-    blockchain::ethereum::{
-        bindings::{Decryption::PublicDecryptionResponse, DecryptionOracle},
-        ComputeCalldata,
-    },
+    blockchain::ethereum::{bindings::DecryptionOracle, ComputeCalldata},
     core::{
         errors::EventProcessingError,
         event::{
@@ -16,7 +13,7 @@ use crate::{
     },
     transaction::{helper::TransactionType, TransactionHelper, TransactionService, TxConfig},
 };
-use alloy::primitives::{Address, FixedBytes, Uint};
+use alloy::primitives::{Address, Bytes, FixedBytes, Uint};
 use alloy::rpc::types::Log;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -93,9 +90,14 @@ impl FhevmHandler {
                 for ct_handle in eth_decryption_request.cts {
                     ct_handles.push(ct_handle.into());
                 }
+                // TODO: Fetch extra_data from event log, after updating oracle contract abi. Now hardcode.
+                let extra_data = Bytes::from(vec![0x00]);
                 event.derive_next_event(RelayerEventData::PublicDecrypt(
                     PublicDecryptEventData::ReqRcvdFromFhevm {
-                        decrypt_request: PublicDecryptRequest { ct_handles },
+                        decrypt_request: PublicDecryptRequest {
+                            ct_handles,
+                            extra_data,
+                        },
                     },
                 ))
             }
@@ -230,16 +232,11 @@ impl FhevmHandler {
         req: &DecryptionRequestData,
         public_decryption_response: PublicDecryptResponse,
     ) -> Result<(), EventProcessingError> {
-        let public_decrypt_response: PublicDecryptionResponse = PublicDecryptionResponse {
-            publicDecryptionId: public_decryption_response.gateway_request_id,
-            decryptedResult: public_decryption_response.decrypted_value,
-            signatures: public_decryption_response.signatures,
-        };
         self.tx_helper
             .send_transaction_simple(
                 TransactionType::PublicDecryptCallback,
                 req.contract_caller,
-                || ComputeCalldata::callback_req(req, public_decrypt_response.clone()),
+                || ComputeCalldata::callback_req(req, public_decryption_response.clone()),
             )
             .await
     }

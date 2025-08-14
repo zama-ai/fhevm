@@ -542,7 +542,8 @@ mod tests {
             "contractChainId":"12345",
             "contractAddress":"0x14e15daeC3AAb3041279ceF25cfb730532f55B4b",
             "userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-            "ciphertextWithInputVerification":"..."
+            "ciphertextWithInputVerification":"...",
+            "extraData":"0x00"
         }});
 
         println!("trying to deserialize payload");

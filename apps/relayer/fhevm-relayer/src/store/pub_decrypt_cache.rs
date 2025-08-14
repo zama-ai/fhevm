@@ -186,6 +186,7 @@ mod tests {
             gateway_request_id,
             decrypted_value: Bytes::copy_from_slice(decrypted_value),
             signatures: vec![],
+            extra_data: Bytes::default(),
         }
     }
 
@@ -193,6 +194,7 @@ mod tests {
     fn dummy_request(handles: Vec<[u8; 32]>) -> PublicDecryptRequest {
         PublicDecryptRequest {
             ct_handles: handles,
+            extra_data: Bytes::default(),
         }
     }
 

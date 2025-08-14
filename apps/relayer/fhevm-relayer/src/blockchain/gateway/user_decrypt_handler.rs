@@ -272,7 +272,7 @@ impl GatewayHandler {
                 if *topic == Decryption::UserDecryptionResponse::SIGNATURE_HASH {
                     match Decryption::UserDecryptionResponse::decode_log_data(log.data()) {
                         Ok(user_decrypt_response) => {
-                            let user_decryption_id = user_decrypt_response.userDecryptionId;
+                            let user_decryption_id = user_decrypt_response.decryptionId;
                             info!(?user_decryption_id, "User decryption id from event");
 
                             // Store response even if we didn't emit the request
@@ -283,8 +283,9 @@ impl GatewayHandler {
                                     user_decryption_id,
                                     UserDecryptResponse {
                                         gateway_request_id: user_decryption_id,
-                                        reencrypted_shares: req.reencryptedShares,
+                                        reencrypted_shares: req.userDecryptedShares,
                                         signatures: req.signatures,
+                                        extra_data: req.extraData,
                                     },
                                 )
                                 .await
@@ -318,8 +319,9 @@ impl GatewayHandler {
                                         UserDecryptEventData::RespRcvdFromGw {
                                             decrypt_response: UserDecryptResponse {
                                                 gateway_request_id: user_decryption_id,
-                                                reencrypted_shares: req.reencryptedShares,
+                                                reencrypted_shares: req.userDecryptedShares,
                                                 signatures: req.signatures,
+                                                extra_data: req.extraData,
                                             },
                                         },
                                     );
@@ -390,10 +392,10 @@ impl GatewayHandler {
                         Ok(event) => {
                             info!(
                                 ?receipt.transaction_hash,
-                                ?event.userDecryptionId,
+                                ?event.decryptionId,
                                 "Found user decryption ID from event"
                             );
-                            Ok(event.userDecryptionId)
+                            Ok(event.decryptionId)
                         }
                         Err(e) => {
                             error!(?receipt.transaction_hash, ?e, "Failed to decode user decryption event data");
@@ -471,7 +473,11 @@ impl GatewayHandler {
 
             match decryption
                 .clone()
-                .checkUserDecryptionReady(user_decrypt_request.user_address, contract_pairs.clone())
+                .checkUserDecryptionReady(
+                    user_decrypt_request.user_address,
+                    contract_pairs.clone(),
+                    user_decrypt_request.extra_data.clone(),
+                )
                 .call()
                 .await
             {
@@ -552,6 +558,7 @@ impl GatewayHandler {
                                             reencrypted_shares: decryption_response
                                                 .reencrypted_shares,
                                             signatures: decryption_response.signatures,
+                                            extra_data: decrypt_request.extra_data.clone(),
                                         },
                                     },
                                 );
@@ -731,6 +738,8 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
     let public_key = Bytes::from(vec![1, 2, 3, 4, 5]);
     let signature = Bytes::from(vec![9, 8, 7, 6, 5]);
 
+    let extra_data = Bytes::from(vec![0x00]);
+
     let user_decrypt_request: UserDecryptRequest = UserDecryptRequest {
         ct_handle_contract_pairs,
         request_validity,
@@ -739,6 +748,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
         user_address,
         public_key,
         signature,
+        extra_data,
     };
 
     // Create and prepare calldata using your existing function

@@ -17,7 +17,7 @@ use crate::{
 };
 use std::str::FromStr;
 
-use alloy::primitives::{Address, FixedBytes, U256};
+use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::signers::{local::PrivateKeySigner, Signer};
 use alloy::sol_types::SolEvent;
 use alloy::{
@@ -95,8 +95,11 @@ impl GatewayProcessorsHandler {
                         .to_string()
                         .contains("aaaaaaaaaaa")
                     {
-                        self.send_input_proof_rejection_response(request_event.zkProofId)
-                            .await?;
+                        self.send_input_proof_rejection_response(
+                            request_event.zkProofId,
+                            request_event.extraData,
+                        )
+                        .await?;
                         return Ok(());
                     }
 
@@ -143,6 +146,7 @@ impl GatewayProcessorsHandler {
                         request_event.zkProofId,
                         handles,
                         signature.as_bytes().to_vec(),
+                        request_event.extraData,
                     )
                     .await?;
 
@@ -164,6 +168,7 @@ impl GatewayProcessorsHandler {
     async fn send_input_proof_rejection_response(
         &self,
         input_verification_id: U256,
+        extra_data: Bytes,
     ) -> Result<(), EventProcessingError> {
         info!(?input_verification_id, "Sending InputResponse transaction");
         let input_verification_address =
@@ -178,7 +183,12 @@ impl GatewayProcessorsHandler {
             .send_transaction_simple(
                 TransactionType::InputResponse,
                 input_verification_address,
-                || ComputeCalldata::reject_proof_response(input_verification_id),
+                || {
+                    ComputeCalldata::reject_proof_response(
+                        input_verification_id,
+                        extra_data.clone(),
+                    )
+                },
             )
             .await?;
 
@@ -191,6 +201,7 @@ impl GatewayProcessorsHandler {
         input_verification_id: U256,
         handles: Vec<[u8; 32]>,
         signature: Vec<u8>,
+        extra_data: Bytes,
     ) -> Result<(), EventProcessingError> {
         info!(?input_verification_id, "Sending InputResponse transaction");
         let input_verification_address =
@@ -210,6 +221,7 @@ impl GatewayProcessorsHandler {
                         input_verification_id,
                         handles.clone(),
                         signature.clone(),
+                        extra_data.clone(),
                     )
                 },
             )
@@ -298,7 +310,7 @@ impl GatewayProcessorsHandler {
         {
             match PublicDecryptionRequest::decode_log_data(log.data()) {
                 Ok(req) => {
-                    let public_decryption_id = req.publicDecryptionId;
+                    let public_decryption_id = req.decryptionId;
                     info!(?public_decryption_id);
 
                     let mut ciphertext_handles: Vec<U256> = Vec::new();
@@ -307,7 +319,7 @@ impl GatewayProcessorsHandler {
                     }
 
                     info!(
-                        public_decryption_id = ?req.publicDecryptionId,
+                        public_decryption_id = ?req.decryptionId,
                         handles = ?ciphertext_handles,
                         "Processing PublicDecryptRequest event"
                     );
@@ -357,11 +369,11 @@ impl GatewayProcessorsHandler {
         {
             match UserDecryptionRequest::decode_log_data(log.data()) {
                 Ok(req) => {
-                    let user_decryption_id = req.userDecryptionId;
+                    let user_decryption_id = req.decryptionId;
                     info!(?user_decryption_id);
 
                     info!(
-                        user_decryption_id = ?req.userDecryptionId,
+                        user_decryption_id = ?req.decryptionId,
                         "Processing UserDecryptRequest event"
                     );
 

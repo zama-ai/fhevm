@@ -20,6 +20,7 @@ pub struct InputProofRequestJson {
     pub contractAddress: String, // Hex encoded address with 0x prefix.
     pub userAddress: String,     // Hex encoded address with 0x prefix.
     pub ciphertextWithInputVerification: String, // List of hex encoded binary proof without 0x prefix.
+    pub extraData: String,                       // Hex encoded Bytes array with 0x prefix.
 }
 
 impl InputProofRequestJson {
@@ -212,7 +213,8 @@ mod tests {
                    "contractChainId": "123456",
                    "contractAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
                    "userAddress": "0x12B064FB845C1cc05e9493856a1D637a73e944bE",
-                   "ciphertextWithInputVerification": "abcdef"
+                   "ciphertextWithInputVerification": "abcdef",
+                   "extraData": "0x00"
         }
         "#;
 

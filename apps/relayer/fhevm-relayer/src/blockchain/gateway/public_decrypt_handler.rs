@@ -21,7 +21,7 @@ use std::{str::FromStr, time::Duration};
 
 use alloy::{
     network::{AnyReceiptEnvelope, AnyTransactionReceipt, ReceiptResponse},
-    primitives::{Address, FixedBytes, U256},
+    primitives::{Address, Bytes, FixedBytes, U256},
     providers::ProviderBuilder,
     rpc::types::{Log, TransactionReceipt},
 };
@@ -242,7 +242,10 @@ impl GatewayHandler {
 
             match decryption
                 .clone()
-                .checkPublicDecryptionReady(handles_fixed_bytes.clone())
+                .checkPublicDecryptionReady(
+                    handles_fixed_bytes.clone(),
+                    public_decryption_request.extra_data.clone(),
+                )
                 .call()
                 .await
             {
@@ -291,7 +294,10 @@ impl GatewayHandler {
         let self_clone = self.clone();
         task::spawn(async move {
             match self_clone
-                .process_decryption_request(handles_fixed_bytes)
+                .process_decryption_request(
+                    handles_fixed_bytes,
+                    public_decryption_request_clone.extra_data.clone(),
+                )
                 .await
             {
                 Ok(decryption_public_id) => {
@@ -423,13 +429,14 @@ impl GatewayHandler {
                 if *topic == Decryption::PublicDecryptionResponse::SIGNATURE_HASH {
                     match Decryption::PublicDecryptionResponse::decode_log_data(log.data()) {
                         Ok(req) => {
-                            let public_decryption_id = req.publicDecryptionId;
+                            let public_decryption_id = req.decryptionId;
                             info!(?public_decryption_id, "Public decryption id from event");
 
                             let decrypt_response = PublicDecryptResponse {
                                 gateway_request_id: public_decryption_id,
                                 decrypted_value: req.decryptedResult,
                                 signatures: req.signatures,
+                                extra_data: req.extraData,
                             };
 
                             // Store response in cache for future requests
@@ -541,10 +548,10 @@ impl GatewayHandler {
                         Ok(event) => {
                             info!(
                                 ?receipt.transaction_hash,
-                                ?event.publicDecryptionId,
+                                ?event.decryptionId,
                                 "Found decryption ID from event"
                             );
-                            Ok(event.publicDecryptionId)
+                            Ok(event.decryptionId)
                         }
                         Err(e) => {
                             error!(?receipt.transaction_hash, ?e, "Failed to decode event data");
@@ -576,6 +583,7 @@ impl GatewayHandler {
     async fn process_decryption_request(
         &self,
         handles: Vec<FixedBytes<32>>,
+        extra_data: Bytes,
     ) -> Result<U256, EventProcessingError> {
         let processor = PublicDecryptionRequestProcessor {
             handler: Arc::new(self.clone()),
@@ -593,7 +601,7 @@ impl GatewayHandler {
             .send_transaction(
                 TransactionType::PublicDecryptRequest,
                 decryption_address,
-                || ComputeCalldata::public_decryption_req(handles.clone()),
+                || ComputeCalldata::public_decryption_req(handles.clone(), extra_data.clone()),
                 &processor,
             )
             .await

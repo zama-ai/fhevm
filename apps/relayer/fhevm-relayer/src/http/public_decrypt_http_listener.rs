@@ -18,6 +18,7 @@ use tracing::{error, instrument, span, Level};
 #[allow(non_snake_case)]
 pub struct PublicDecryptRequestJson {
     pub ciphertextHandles: Vec<String>,
+    pub extraData: Bytes,
 }
 
 impl PublicDecryptRequestJson {
@@ -37,6 +38,7 @@ pub struct PublicDecryptResponseJson {
 pub struct PublicDecryptResponsePayloadJson {
     pub decrypted_value: Bytes,
     pub signatures: Vec<Bytes>,
+    pub extra_data: Bytes,
 }
 
 /// Represents the error response from the '/input-proof' endpoint.
@@ -232,6 +234,7 @@ mod tests {
                 Bytes::from(vec![5, 6, 7, 8]), // "05060708"
                 Bytes::from(vec![9, 10]),      // "090a"
             ],
+            extra_data: Bytes::from(vec![0x00]), // "00"
         };
 
         let response = PublicDecryptResponseJson {

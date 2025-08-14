@@ -109,6 +109,7 @@ impl UserDecryptRequestCacheStore {
             user_address: request.user_address,
             signature: Bytes::default(),
             public_key: request.public_key.clone(),
+            extra_data: request.extra_data.clone(),
         };
         modified_request.hash(&mut hasher);
         let hashed = hasher.finish();
@@ -217,6 +218,7 @@ mod tests {
             gateway_request_id,
             reencrypted_shares: vec![],
             signatures: vec![],
+            extra_data: Bytes::default(),
         }
     }
 
@@ -232,6 +234,7 @@ mod tests {
             user_address: Address::default(),
             signature: Bytes::default(),
             public_key: Bytes::default(),
+            extra_data: Bytes::default(),
         }
     }
 

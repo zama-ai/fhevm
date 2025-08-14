@@ -354,6 +354,7 @@ impl UserDecryptEventData {
 #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
 pub struct PublicDecryptRequest {
     pub ct_handles: Vec<[u8; 32]>,
+    pub extra_data: Bytes,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Hash)]
@@ -365,6 +366,7 @@ pub struct UserDecryptRequest {
     pub user_address: Address,
     pub signature: Bytes,
     pub public_key: Bytes,
+    pub extra_data: Bytes,
 }
 
 #[allow(non_snake_case)]
@@ -390,6 +392,7 @@ pub struct PublicDecryptResponse {
     pub gateway_request_id: U256,
     pub decrypted_value: Bytes,
     pub signatures: Vec<Bytes>,
+    pub extra_data: Bytes,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -397,6 +400,7 @@ pub struct UserDecryptResponse {
     pub gateway_request_id: U256,
     pub reencrypted_shares: Vec<Bytes>,
     pub signatures: Vec<Bytes>,
+    pub extra_data: Bytes,
 }
 
 impl Display for UserDecryptResponse {
@@ -466,6 +470,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             user_address: Address::from_str(&value.userAddress)?,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.publicKey)?,
+            extra_data: Bytes::from(vec![0x00]),
         })
     }
 }
@@ -482,6 +487,7 @@ impl From<UserDecryptResponse> for UserDecryptResponseJson {
             json_response.push(UserDecryptResponsePayloadJson {
                 payload: share.clone(),
                 signature: signature.clone(),
+                extra_data: response.extra_data.clone(),
             });
         }
 
@@ -512,7 +518,10 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
             ct_handles.push(ct_handle.to_be_bytes());
         }
 
-        Ok(PublicDecryptRequest { ct_handles })
+        Ok(PublicDecryptRequest {
+            ct_handles,
+            extra_data: value.extraData,
+        })
     }
 }
 
@@ -529,6 +538,7 @@ impl From<PublicDecryptResponse> for PublicDecryptResponsePayloadJson {
         PublicDecryptResponsePayloadJson {
             decrypted_value: response.decrypted_value,
             signatures: response.signatures,
+            extra_data: response.extra_data,
         }
     }
 }
@@ -573,6 +583,7 @@ pub struct InputProofRequest {
     pub contract_address: Address,
     pub user_address: Address,
     pub ciphetext_with_zk_proof: Bytes,
+    pub extra_data: Bytes,
 }
 
 impl InputProofRequest {
@@ -581,12 +592,14 @@ impl InputProofRequest {
         contract_address: Address,
         user_address: Address,
         ciphetext_with_zk_proof: Bytes,
+        extra_data: Bytes,
     ) -> InputProofRequest {
         InputProofRequest {
             contract_chain_id,
             contract_address,
             user_address,
             ciphetext_with_zk_proof,
+            extra_data,
         }
     }
 }
@@ -627,11 +640,14 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
         })?;
         let ciphetext_with_zk_proof = Bytes::from(proof_bytes);
 
+        let extra_data = Bytes::from_str(&json.extraData)
+            .map_err(|e| anyhow::anyhow!("Error parsing extraData: {:?}", e))?;
         Ok(InputProofRequest {
             contract_chain_id,
             contract_address,
             user_address,
             ciphetext_with_zk_proof,
+            extra_data,
         })
     }
 }
@@ -683,6 +699,7 @@ mod tests {
     const USER_ADDRESS: &str = "0x12B064FB845C1cc05e9493856a1D637a73e944bE";
     const CIPHERTEXT: &str =
         "12B06C1cc05e9493856a1D637a74FAb30999D17FAAB8c95B2eCD500cFeFc8f658f15dB8453e944bE";
+    const EXTRA_DATA: &str = "0x00";
 
     #[test]
     #[ignore]
@@ -692,6 +709,7 @@ mod tests {
             contractAddress: CONTRACT_ADDRESS.to_string(),
             userAddress: USER_ADDRESS.to_string(),
             ciphertextWithInputVerification: CIPHERTEXT.to_string(),
+            extraData: EXTRA_DATA.to_string(),
         };
 
         let request = InputProofRequest::try_from(json)?;
@@ -745,11 +763,13 @@ mod tests {
             Bytes::from(vec![9, 10, 11, 12]),
             Bytes::from(vec![13, 14, 15, 16]),
         ];
+        let extra_data = Bytes::from(vec![0x00]);
 
         let response = UserDecryptResponse {
             gateway_request_id: U256::from_str("5").unwrap(),
             reencrypted_shares,
             signatures,
+            extra_data,
         };
 
         // Convert UserDecryptResponse to UserDecryptResponseJson
