@@ -468,7 +468,8 @@ FOR UPDATE SKIP LOCKED            ",
                 let _ = query!(
                     "
                             UPDATE computations
-                            SET schedule_order = CURRENT_TIMESTAMP
+                            SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
+                                uncomputable_counter = uncomputable_counter * 2 
                             WHERE tenant_id = $1
                             AND output_handle = ANY($2::BYTEA[])
                         ",
