@@ -15,7 +15,10 @@ async fn healthcheck() -> impl actix_web::Responder {
 pub async fn run_metrics_server(
     args: crate::daemon_cli::Args,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!("metrics server listening at {}", args.metrics_addr);
+    info!(
+        metrics_server_address = args.metrics_addr,
+        "metrics server starting"
+    );
     actix_web::HttpServer::new(|| {
         actix_web::App::new()
             .route("/metrics", actix_web::web::to(metrics))

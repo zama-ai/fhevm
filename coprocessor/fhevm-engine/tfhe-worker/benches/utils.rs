@@ -231,12 +231,6 @@ pub async fn wait_until_all_allowed_handles_computed(
     Ok(())
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct DecryptionResult {
-    pub value: String,
-    pub output_type: i16,
-}
-
 pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
     let (sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
         (
@@ -349,8 +343,6 @@ use tfhe::core_crypto::prelude::*;
 
 pub mod shortint_utils {
     use super::*;
-    use itertools::iproduct;
-    use std::vec::IntoIter;
     use tfhe::shortint::parameters::compact_public_key_only::CompactPublicKeyEncryptionParameters;
     use tfhe::shortint::parameters::list_compression::CompressionParameters;
     use tfhe::shortint::parameters::ShortintKeySwitchingParameters;
@@ -358,39 +350,6 @@ pub mod shortint_utils {
         AtomicPatternParameters, CarryModulus, ClassicPBSParameters, MessageModulus,
         MultiBitPBSParameters, PBSParameters, ShortintParameterSet,
     };
-
-    /// An iterator that yields a succession of combinations
-    /// of parameters and a num_block to achieve a certain bit_size ciphertext
-    /// in radix decomposition
-    pub struct ParamsAndNumBlocksIter {
-        params_and_bit_sizes:
-            itertools::Product<IntoIter<tfhe::shortint::PBSParameters>, IntoIter<usize>>,
-    }
-
-    impl Default for ParamsAndNumBlocksIter {
-        fn default() -> Self {
-            let env_config = EnvConfig::new();
-
-            let params = vec![fhevm_engine_common::keys::TFHE_PARAMS.into()];
-
-            let params_and_bit_sizes = iproduct!(params, env_config.bit_sizes());
-            Self {
-                params_and_bit_sizes,
-            }
-        }
-    }
-
-    impl Iterator for ParamsAndNumBlocksIter {
-        type Item = (tfhe::shortint::PBSParameters, usize, usize);
-
-        fn next(&mut self) -> Option<Self::Item> {
-            let (param, bit_size) = self.params_and_bit_sizes.next()?;
-            let num_block =
-                (bit_size as f64 / (param.message_modulus().0 as f64).log(2.0)).ceil() as usize;
-
-            Some((param, num_block, bit_size))
-        }
-    }
 
     impl From<PBSParameters> for CryptoParametersRecord<u64> {
         fn from(params: PBSParameters) -> Self {

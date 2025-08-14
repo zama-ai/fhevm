@@ -2,7 +2,7 @@ use crate::{
     config::KmsWallet,
     conn::WalletGatewayProvider,
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
-    tests::setup::pick_free_port,
+    tests::setup::{ROOT_CARGO_TOML, pick_free_port},
 };
 use alloy::{
     primitives::{Address, ChainId, FixedBytes},
@@ -148,6 +148,7 @@ pub async fn setup_anvil_gateway(
     let anvil_internal_ip = endpoint_settings.ip_address.clone().unwrap();
 
     info!("Deploying Gateway mock contracts...");
+    let version = ROOT_CARGO_TOML.get_gateway_bindings_version();
     let _deploy_mock_container =
         GenericImage::new("ghcr.io/zama-ai/fhevm/gateway-contracts", "a405734")
             .with_wait_for(WaitFor::message_on_stdout("Mock contract deployment done!"))

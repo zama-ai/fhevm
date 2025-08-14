@@ -58,7 +58,7 @@ pub async fn async_main(
             .init();
     });
 
-    info!(target: "async_main", "Starting runtime with args: {:?}", args);
+    info!(target: "async_main", args = ?args, "Starting runtime with args");
 
     if let Err(err) = telemetry::setup_otlp(&args.service_name) {
         panic!("Error while initializing tracing: {:?}", err);
