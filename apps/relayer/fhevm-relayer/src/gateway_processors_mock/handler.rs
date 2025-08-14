@@ -124,7 +124,7 @@ impl GatewayProcessorsHandler {
                     let domain = eip712_domain! {
                         name: "InputVerification",
                         version: "1",
-                        chain_id: 654321,
+                        chain_id: self.tx_helper.chain_id,
                         verifying_contract: Address::from_str(&self.contracts.input_verification_address).unwrap(),
                     };
 
@@ -247,7 +247,7 @@ impl GatewayProcessorsHandler {
             .send_transaction_simple(
                 TransactionType::PublicDecryptResponse,
                 decryption_address,
-                || ComputeCalldata::decryption_response(req.clone(), decryption_address),
+                || ComputeCalldata::decryption_response(req.clone(), decryption_address, self.tx_helper.chain_id),
             )
             .await?;
 

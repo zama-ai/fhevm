@@ -245,6 +245,7 @@ impl ComputeCalldata {
     pub fn decryption_response(
         req: PublicDecryptionRequest,
         decryption_address: Address,
+        gateway_chain_id: u64,
     ) -> Result<Bytes, EventProcessingError> {
         // 1. Compute decryptedResult bytes array
         let mut results: Vec<DynSolValue> = Vec::new();
@@ -335,7 +336,7 @@ impl ComputeCalldata {
         let domain = eip712_domain! {
             name: "Decryption",
             version: "1",
-            chain_id: 654321,
+            chain_id: gateway_chain_id,
             verifying_contract: decryption_address,
         };
 
