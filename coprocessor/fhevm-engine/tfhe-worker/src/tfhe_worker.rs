@@ -1,5 +1,6 @@
 use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
+use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
@@ -362,9 +363,13 @@ FOR UPDATE SKIP LOCKED            ",
                     .expect("only valid fhe ops must have been put in db");
                 let mut input_ciphertexts: Vec<DFGTaskInput> =
                     Vec::with_capacity(w.dependencies.len());
+                let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
+                let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
                 for (idx, dh) in w.dependencies.iter().enumerate() {
                     let is_operand_scalar =
                         w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
+                    is_scalar_op_vec.push(is_operand_scalar);
+                    this_comp_inputs.push(dh.clone());
                     if is_operand_scalar {
                         input_ciphertexts.push(DFGTaskInput::Value(
                             SupportedFheCiphertexts::Scalar(dh.clone()),
@@ -383,6 +388,13 @@ FOR UPDATE SKIP LOCKED            ",
                         continue 'work_items;
                     }
                 }
+
+                check_fhe_operand_types(
+                    w.fhe_operation.into(),
+                    &this_comp_inputs,
+                    &is_scalar_op_vec,
+                )
+                .map_err(CoprocessorError::FhevmError)?;
 
                 let n = graph.add_node(
                     w.output_handle.clone(),
