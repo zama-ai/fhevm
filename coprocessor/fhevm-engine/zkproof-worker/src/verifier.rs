@@ -117,7 +117,7 @@ pub async fn execute_verify_proofs_loop(
     conf: Config,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
-    info!("Starting with config {:?}", conf);
+    info!(conf = ?conf, "Starting with config");
 
     // Tenants key cache is shared amongst all workers
     let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(
@@ -140,7 +140,7 @@ pub async fn execute_verify_proofs_loop(
         task_set.spawn(async move {
             if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache, last_active_at).await
             {
-                error!("executor failed with {}", err);
+                error!(error = %err, "executor failed with");
             }
         });
     }
@@ -150,7 +150,7 @@ pub async fn execute_verify_proofs_loop(
     // Wait for all tasks to complete
     while let Some(result) = task_set.join_next().await {
         if let Err(err) = result {
-            eprintln!("A worker failed: {:?}", err);
+            error!(error = %err, "A worker failed");
         }
     }
 
@@ -174,7 +174,7 @@ async fn execute_worker(
         }
 
         if let Err(e) = execute_verify_proof_routine(pool, tenant_key_cache, conf).await {
-            error!(target: "zkpok", "Execution err: {}", e);
+            error!(target: "zkpok", error = %e, "Execution error");
         } else {
             let count = get_remaining_tasks(pool).await?;
             if get_remaining_tasks(pool).await? > 0 {
@@ -192,7 +192,7 @@ async fn execute_worker(
                     },
                     Ok(_) => info!(target: "zkpok", "Received notification"),
                     Err(err) => {
-                        error!(target: "zkpok", "DB connection err {}", err);
+                        error!(target: "zkpok", error = %err, "DB connection error");
                         return Err(ExecutionError::LostDbConnection)
                     },
                 };
@@ -447,7 +447,7 @@ fn create_ciphertext(
         aux_data.acl_contract_address.clone(),
     );
 
-    info!("Create new handle: {:?}", encode(&handle));
+    info!(handle = ?encode(&handle), "Create new handle");
 
     Ok(Ciphertext {
         handle,
