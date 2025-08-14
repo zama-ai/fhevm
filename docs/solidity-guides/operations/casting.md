@@ -1,12 +1,11 @@
-# asEbool, asEuintXX, and asEaddress operations
+# Casting and trivial encryption
 
 This documentation covers the `asEbool`, `asEuintXX`, and `asEaddress` operations provided by the FHE library for working with encrypted data in the FHEVM. These operations are essential for converting between plaintext and encrypted types, as well as handling encrypted inputs.
 
-The operations can be categorized into three main use cases:
+The operations can be categorized into two main use cases:
 
 1. **Trivial encryption**: Converting plaintext values to encrypted types
 2. **Type casting**: Converting between different encrypted types
-3. **Input handling**: Processing encrypted inputs with proofs
 
 ## 1. Trivial encryption
 
@@ -65,30 +64,6 @@ Casting between encrypted types is efficient and often necessary when handling d
 euint32 value32 = FHE.asEuint32(value64); // Cast to euint32
 ebool valueBool = FHE.asEbool(value32);   // Cast to ebool
 ```
-
-## 3. Encrypted input
-
-### Overview
-
-Encrypted input casting is the process of interpreting a handle (ciphertext reference) and its proof as a specific encrypted type. This ensures the validity of the input before it is used in computations.
-
-Encrypted inputs is in depth explained in the following section: [encrypted inputs](../inputs.md)
-
-#### Example
-
-```solidity
-euint64 encryptedValue = FHE.asEuint64(einputHandle, inputProof); // einputHandle as of type externalEuint64
-```
-
-#### Details
-
-Encrypted input casting validates:
-
-1.  The input handle references a valid ciphertext.
-2.  The accompanying proof matches the expected type.
-
-For more information, see the [Encrypetd inputs documentation](../inputs.md)
-
 ## Overall operation summary
 
 | Casting Type             | Function               | Input Type                        | Output Type |
@@ -98,6 +73,3 @@ For more information, see the [Encrypetd inputs documentation](../inputs.md)
 |                          | `FHE.asEaddress(x)`    | `address`                         | `eaddress`  |
 | Conversion between types | `FHE.asEuintXX(x)`     | `euintXX`/`ebool`                 | `euintYY`   |
 |                          | `FHE.asEbool(x)`       | `euintXX`                         | `ebool`     |
-| Encrypted input          | `FHE.asEuintXX(x, y)`  | `externalEuintXX`, `bytes` proof  | `euintX`    |
-|                          | `FHE.asEbool(x, y)`    | `externalEbool`,`bytes` proof     | `ebool`     |
-|                          | `FHE.asEaddress(x, y)` | `externalEaddress`, `bytes` proof | `eaddress`  |

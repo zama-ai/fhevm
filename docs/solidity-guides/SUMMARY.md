@@ -18,7 +18,7 @@
   - [Contract addresses](contract_addresses.md)
 - [Supported types](types.md)
 - [Operations on encrypted types](operations/README.md)
-  - [AsEbool, asEuintXX, and asEaddress operations](operations/asEXXoperators.md)
+  - [Casting and trivial encryption](operations/casting.md)
   - [Generate random numbers](operations/random.md)
 - [Encrypted inputs](inputs.md)
 - [Access Control List](acl/README.md)
