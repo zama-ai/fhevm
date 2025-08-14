@@ -239,7 +239,7 @@ impl<'a> Scheduler<'a> {
                 // any dependences with it, so skip - all dependences
                 // on this will remain unsatisfied and result in
                 // further errors.
-                if node_result.is_ok() {
+                if let Ok(ref node_result) = node_result {
                     // Satisfy deps from the executed computation in the DFG
                     for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
                         let child_index = edge.target();
@@ -250,7 +250,7 @@ impl<'a> Scheduler<'a> {
                         if !child_node.inputs.is_empty() {
                             // Here cannot be an error
                             child_node.inputs[*edge.weight() as usize] =
-                                DFGTaskInput::Value(node_result.as_ref().unwrap().0.clone());
+                                DFGTaskInput::Value(node_result.0.clone());
                         }
                     }
                 }
@@ -493,7 +493,7 @@ impl<'a> Scheduler<'a> {
                 // any dependences with it, so skip - all dependences
                 // on this will remain unsatisfied and result in
                 // further errors.
-                if node_result.is_ok() {
+                if let Ok(ref node_result) = node_result {
                     // Satisfy deps from the executed computation in the DFG
                     for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
                         let child_index = edge.target();
@@ -505,7 +505,7 @@ impl<'a> Scheduler<'a> {
                             tfhe::set_server_key(keys[loc].clone());
                             // Here cannot be an error
                             child_node.inputs[*edge.weight() as usize] =
-                                DFGTaskInput::Value(node_result.as_ref().unwrap().0.clone());
+                                DFGTaskInput::Value(node_result.0.clone());
                         }
                     }
                 }
