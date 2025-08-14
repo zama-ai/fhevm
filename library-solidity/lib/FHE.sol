@@ -8931,14 +8931,68 @@ library FHE {
     /**
      * @dev Private low-level function used to extract the decryptedResult bytes array and verify the KMS signatures.
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
+     * @dev The callback function has the following signature:
+     * - requestID (static uint256)
+     * - cleartexts (dynamic bytes)
+     * - signatures (dynamic list of dynamic bytes)
+     *
+     * This means that the calldata is encoded in the following way:
+     * - 4 bytes: selector
+     * - 32 bytes: requestID
+     * - 32 bytes: offset of the cleartexts
+     * - 32 bytes: offset of the signatures
+     * - 32 bytes: length of the cleartexts (total number of bytes) (start position: 100)
+     * - n*32 bytes: the `n` cleartext values, with `n` the number of handles (start position: 132)
+     * - 32 bytes: length of the signatures (number of signatures)
+     * - ... the offsets, lengths and values for all signatures
      */
     function verifySignatures(bytes32[] memory handlesList, bytes memory decryptionProof) private returns (bool) {
-        uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
-        uint256 length = getSignedDataLength(handlesList);
-        bytes memory decryptedResult = new bytes(length);
+        // Verify the handle types
+        verifyHandleTypes(handlesList);
+
+        // Load values from the calldata using the positions explained in the function's comment above
+        uint256 cleartextsLength;
         assembly {
-            calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
+            // Load the total length of the cleartexts (abi encoding of all decrypted values) at position 100 (0x64)
+            cleartextsLength := calldataload(0x64)
         }
+
+        // Compute the length of the expected `decryptedResult` bytes array
+        // Currently, the `decryptedResult` is encoded (by the KMS) in the following format:
+        // - n*32 bytes: the `n` cleartext values, with `n` the number of handles
+        // - 32 bytes: offset of the signatures
+        // The signature offset will most likely be removed in the future,
+        // see https://github.com/zama-ai/fhevm-internal/issues/345
+        uint256 decryptedResultLength = cleartextsLength + 32;
+
+        // Compute the signature offset
+        // This offset is computed by considering the format encoded by the KMS, which is the following:
+        // - requestID: 32 bytes
+        // - all decrypted values: 32 bytes per value
+        // - offset of the signatures: 32 bytes
+        // - the rest of signature values (lengths, offsets, values)
+        // This means the expected offset to concatenate to the `decryptedResult` bytes array has
+        // the follow value: 32 + n*32 + 32
+        // The signature offset will most likely be removed in the future,
+        // see https://github.com/zama-ai/fhevm-internal/issues/345
+        uint256 signaturesOffset = 32 + decryptedResultLength;
+
+        // Copy the values from the calldata to build the expected `decryptedResult` bytes array in memory,
+        // using the positions explained in the function's comment above
+        bytes memory decryptedResult = new bytes(decryptedResultLength);
+        assembly {
+            let decryptedResultStart := add(decryptedResult, 0x20)
+            // Copy the cleartexts in memory:
+            // - from start calldata position 132
+            // - to start position 32 (0x20) from the `decryptedResult` memory address (the first 32 bytes are reserved for the the length)
+            // - for the length of the cleartexts bytes array
+            calldatacopy(decryptedResultStart, 132, cleartextsLength)
+
+            // Copy the signatures offset in memory from start position 32 (from the `decryptedResult` memory address)
+            // + the length of the cleartexts bytes array
+            mstore(add(decryptedResultStart, cleartextsLength), signaturesOffset)
+        }
+
         CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
@@ -8949,21 +9003,16 @@ library FHE {
     }
 
     /**
-     * @dev Private low-level function used to compute the length of the decryptedResult bytes array.
+     * @dev Private low-level function used to verify the handle types.
      */
-    function getSignedDataLength(bytes32[] memory handlesList) private pure returns (uint256) {
+    function verifyHandleTypes(bytes32[] memory handlesList) private pure {
         uint256 handlesListlen = handlesList.length;
-        uint256 signedDataLength;
         for (uint256 i = 0; i < handlesListlen; i++) {
             FheType typeCt = FheType(uint8(handlesList[i][30]));
-            if (uint8(typeCt) < 9) {
-                signedDataLength += 32;
-            } else {
+            if (uint8(typeCt) >= 9) {
                 revert UnsupportedHandleType();
             }
         }
-        signedDataLength += 32; // add offset of signatures
-        return signedDataLength;
     }
 
     /**
