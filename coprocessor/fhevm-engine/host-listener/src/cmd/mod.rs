@@ -140,6 +140,7 @@ struct InfiniteLogIter {
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
 }
+#[allow(clippy::large_enum_variant)]
 enum LogOrBlockTimeout {
     Log(Option<Log>),
     BlockTimeout,
