@@ -25,6 +25,7 @@ alloy = { version = "1.0.17", default-features = false, features = [
     "provider-ws",
     "signer-aws",
 ] }
+alloy-provider = "1.0.9"
 alloy-primitives = "1.2.0"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["trace"] }
@@ -47,13 +48,14 @@ prometheus = "0.14.0"
 prost = "0.13.5"
 rand = "0.9.1"
 rayon = "1.10.0"
+reqwest = "0.12.20"
+rustls = { version = "0.23", features = ["aws-lc-rs"] }
 semver = "1.0.26"
 serde = "1.0.219"
 serde_json = "1.0.140"
 serial_test = "3.2.0"
 sha3 = "0.10.8"
 strum = { version = "0.26.3", features = ["derive"] }
-rustls = { version = "0.23", features = ["aws-lc-rs"] }
 sqlx = { version = "0.8.6", default-features = false, features = [
     "macros",
     "migrate",

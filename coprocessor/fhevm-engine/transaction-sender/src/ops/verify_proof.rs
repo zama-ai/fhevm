@@ -1,4 +1,5 @@
 use super::TransactionOperation;
+use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
 use crate::overprovision_gas_limit::try_overprovision_gas_limit;
 use crate::AbstractSigner;
@@ -156,6 +157,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
                 } else {
+                    VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
                         transaction_request = ?overprovisioned_txn_req,
                         error = %e,
@@ -182,6 +184,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         {
             Ok(receipt) => receipt,
             Err(e) => {
+                VERIFY_PROOF_FAIL_COUNTER.inc();
                 error!(error = %e, "Getting receipt failed");
                 self.update_retry_count_by_proof_id(
                     txn_request.0,
@@ -199,7 +202,9 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                 "Transaction succeeded"
             );
             self.remove_proof_by_id(txn_request.0).await?;
+            VERIFY_PROOF_SUCCESS_COUNTER.inc();
         } else {
+            VERIFY_PROOF_FAIL_COUNTER.inc();
             error!(
                 transaction_hash = %receipt.transaction_hash,
                 status = receipt.status(),
