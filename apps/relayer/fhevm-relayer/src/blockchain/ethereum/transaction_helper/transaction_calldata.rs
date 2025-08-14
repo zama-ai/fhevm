@@ -11,7 +11,7 @@ use crate::core::event::{PublicDecryptResponse, UserDecryptRequest};
 use alloy::primitives::{Address, Bytes, FixedBytes, Uint, U256};
 use rusqlite::{Connection, Result};
 use serde::Serialize;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use alloy::signers::SignerSync;
 use alloy::{dyn_abi::DynSolValue, hex, signers::local::PrivateKeySigner};
@@ -70,7 +70,7 @@ impl ComputeCalldata {
         let encoded_proof = decryption_proof_value.abi_encode();
         calldata.extend_from_slice(&encoded_proof[32..]); // Skip the first 32 bytes (offset part)
 
-        println!(
+        debug!(
             "decryptionProof constructed with {} signers, extraData length: {}",
             num_signers,
             public_decryption_response.extra_data.len()
@@ -319,7 +319,7 @@ impl ComputeCalldata {
         let data = DynSolValue::Tuple(results).abi_encode_params();
         let decrypted_result = data[32..data.len() - 32].to_vec(); // remove placeholder corresponding to requestID and signatures
 
-        println!(
+        info!(
             "decryptedResult : 0x{}",
             hex::encode(decrypted_result.clone())
         );
@@ -339,7 +339,7 @@ impl ComputeCalldata {
             verifying_contract: decryption_address,
         };
 
-        println!("{domain:?}");
+        debug!("{domain:?}");
 
         let mut ct_handles: Vec<FixedBytes<32>> = Vec::new();
         for sns_ct_material in req.snsCtMaterials {
@@ -351,7 +351,7 @@ impl ComputeCalldata {
             extraData: req.extraData.clone(),
         };
 
-        println!("public_decryption_verification {public_decryption_verification:?}");
+        debug!("public_decryption_verification {public_decryption_verification:?}");
 
         let hash = public_decryption_verification.eip712_signing_hash(&domain);
 
@@ -385,11 +385,11 @@ fn get_clear_text(db_path: &str, handle: &[u8]) -> Result<Option<String>> {
     match result {
         Ok(text) => Ok(Some(text)),
         Err(rusqlite::Error::QueryReturnedNoRows) => {
-            println!("No rows found for this handle");
+            warn!("No rows found for this handle");
             Ok(None)
         }
         Err(e) => {
-            println!("Error occurred: {e}");
+            error!("Error occurred: {e}");
             Err(e)
         }
     }
