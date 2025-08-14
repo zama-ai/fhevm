@@ -94,7 +94,7 @@ The `asEbool` functions behave similarly to the `asEuint` functions, but for enc
 ### Configuration
 
 ```solidity
-function setFHEVM(FHEVMConfig.FHEVMConfigStruct memory fhevmConfig) internal
+function setCoprocessor(CoprocessorConfigStruct memory coprocessorConfig) internal
 ```
 
 Sets the FHEVM configuration for encrypted operations.

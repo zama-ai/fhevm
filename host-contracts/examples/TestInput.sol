@@ -3,8 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "../lib/FHE.sol";
-import "../addresses/DecryptionOracleAddress.sol";
-import "../lib/FHEVMConfig.sol";
+import "../lib/CoprocessorConfig.sol";
 
 contract TestInput {
     ebool xBool;
@@ -17,8 +16,7 @@ contract TestInput {
     address public yAddress;
 
     constructor() {
-        FHE.setCoprocessor(FHEVMConfig.defaultConfig());
-        FHE.setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
+        FHE.setCoprocessor(CoprocessorConfig.defaultConfig());
     }
 
     function requestUint64NonTrivial(externalEuint64 inputHandle, bytes calldata inputProof) public {

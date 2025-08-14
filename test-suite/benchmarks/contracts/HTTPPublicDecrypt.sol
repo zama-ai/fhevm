@@ -3,10 +3,10 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import { E2EFHEVMConfig } from "./E2EFHEVMConfig.sol";
+import { E2ECoprocessorConfig } from "./E2ECoprocessorConfig.sol";
 
 /// @notice Contract for testing asynchronous decryption using the Gateway
-contract HTTPPublicDecrypt is E2EFHEVMConfig {
+contract HTTPPublicDecrypt is E2ECoprocessorConfig {
     /// @dev Encrypted state variables
     ebool public xBool;
     euint32 public xUint32;

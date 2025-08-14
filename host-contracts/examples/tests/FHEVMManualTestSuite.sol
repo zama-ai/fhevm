@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../../lib/FHE.sol";
-import "../../lib/FHEVMConfig.sol";
+import "../../lib/CoprocessorConfig.sol";
 
 contract FHEVMManualTestSuite {
     ebool public resEbool;
@@ -15,7 +15,7 @@ contract FHEVMManualTestSuite {
     eaddress public resAdd;
 
     constructor() {
-        FHE.setCoprocessor(FHEVMConfig.defaultConfig()); // Set up the FHEVM configuration for this contract
+        FHE.setCoprocessor(CoprocessorConfig.defaultConfig()); // Set up the FHEVM configuration for this contract
     }
 
     function eqEbool(bool a, bool b) external {
