@@ -1,13 +1,13 @@
 services:
   relayer:
     container_name: fhevm-relayer
-    image: ghcr.io/zama-ai/fhevm-relayer:${RELAYER_VERSION}
+    image: ghcr.io/zama-ai/console/fhevm-relayer:${RELAYER_VERSION}
     env_file:
       - ../env/staging/.env.relayer.local
     command:
     - /bin/server
     - --config-file=/app/config/local.yaml
-    volumes: 
+    volumes:
       - ../config/relayer/local.yaml:/app/config/local.yaml
     ports:
       - "3000:3000"
