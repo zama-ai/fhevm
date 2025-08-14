@@ -150,7 +150,7 @@ pub async fn setup_anvil_gateway(
     info!("Deploying Gateway mock contracts...");
     let version = ROOT_CARGO_TOML.get_gateway_bindings_version();
     let _deploy_mock_container =
-        GenericImage::new("ghcr.io/zama-ai/fhevm/gateway-contracts", "a405734")
+        GenericImage::new("ghcr.io/zama-ai/fhevm/gateway-contracts", &version)
             .with_wait_for(WaitFor::message_on_stdout("Mock contract deployment done!"))
             .with_env_var("HARDHAT_NETWORK", "staging")
             .with_env_var(
