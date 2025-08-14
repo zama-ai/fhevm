@@ -462,6 +462,13 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             .map(|addr| Address::from_str(addr))
             .collect::<Result<Vec<_>, _>>()?;
 
+        // Validate and parse extraData
+        let extra_data = if value.extraData == "0x00" {
+            Bytes::from(vec![0x00])
+        } else {
+            return Err(anyhow::anyhow!("extraData must be 0x00, got: {}", value.extraData));
+        };
+
         Ok(UserDecryptRequest {
             ct_handle_contract_pairs,
             request_validity,
@@ -470,7 +477,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             user_address: Address::from_str(&value.userAddress)?,
             signature: Bytes::from_str(&value.signature)?,
             public_key: Bytes::from_str(&value.publicKey)?,
-            extra_data: Bytes::from(vec![0x00]),
+            extra_data,
         })
     }
 }
@@ -518,9 +525,16 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
             ct_handles.push(ct_handle.to_be_bytes());
         }
 
+        // Validate and parse extraData
+        let extra_data = if value.extraData == Bytes::from(vec![0x00]) {
+            value.extraData
+        } else {
+            return Err(anyhow::anyhow!("extraData must be 0x00, got: {:#x}", value.extraData));
+        };
+
         Ok(PublicDecryptRequest {
             ct_handles,
-            extra_data: value.extraData,
+            extra_data,
         })
     }
 }
@@ -640,8 +654,12 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
         })?;
         let ciphetext_with_zk_proof = Bytes::from(proof_bytes);
 
-        let extra_data = Bytes::from_str(&json.extraData)
-            .map_err(|e| anyhow::anyhow!("Error parsing extraData: {:?}", e))?;
+        // Validate and parse extraData
+        let extra_data = if json.extraData == "0x00" {
+            Bytes::from(vec![0x00])
+        } else {
+            return Err(anyhow::anyhow!("extraData must be 0x00, got: {}", json.extraData));
+        };
         Ok(InputProofRequest {
             contract_chain_id,
             contract_address,

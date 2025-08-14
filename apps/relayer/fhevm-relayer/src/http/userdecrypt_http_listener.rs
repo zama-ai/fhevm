@@ -27,6 +27,7 @@ pub struct UserDecryptRequestJson {
     pub userAddress: String,
     pub signature: String,
     pub publicKey: String,
+    pub extraData: String,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize, Hash)]
