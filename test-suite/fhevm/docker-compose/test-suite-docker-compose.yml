@@ -4,8 +4,8 @@ services:
     container_name: fhevm-test-suite-e2e-debug
     image: ghcr.io/zama-ai/fhevm/test-suite/e2e:${TEST_SUITE_VERSION}
     build:
-      context: ../..
-      dockerfile: e2e/Dockerfile
+      context: ../../.. # root directory of the repository
+      dockerfile: test-suite/e2e/Dockerfile
       cache_from:
         - type=gha
       cache_to:

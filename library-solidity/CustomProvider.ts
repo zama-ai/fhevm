@@ -27,7 +27,7 @@ class CustomProvider extends ProviderWrapper {
       this.lastBlockSnapshot = parseInt(blockNumberHex);
       this.lastBlockSnapshotForDecrypt = parseInt(blockNumberHex);
       const coprocAdd = dotenv.parse(
-        fs.readFileSync(require.resolve('./fhevmTemp/addresses/.env.exec')),
+        fs.readFileSync(require.resolve('./fhevmTemp/addresses/.env.host')),
       ).FHEVM_EXECUTOR_CONTRACT_ADDRESS;
       this.lastCounterRand = await this._wrappedProvider.request({
         method: 'eth_getStorageAt',

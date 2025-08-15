@@ -94,6 +94,7 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
             contract_address,
             user_address,
             (&[1u8; 2048]).into(),
+            Vec::<u8>::new().into(),
         )
         .into_transaction_request();
     let pending_txn = provider.send_transaction(txn_req).await?;
@@ -102,7 +103,7 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
 
     loop {
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, input
+            "SELECT zk_proof_id, chain_id, contract_address, user_address, input, extra_data
              FROM verify_proofs",
         )
         .fetch_all(&env.db_pool)
@@ -113,6 +114,7 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
             assert_eq!(row.contract_address, contract_address.to_string());
             assert_eq!(row.user_address, user_address.to_string());
             assert_eq!(row.input, Some([1u8; 2048].to_vec()));
+            assert!(row.extra_data.is_empty());
             break;
         }
         sleep(Duration::from_millis(500)).await;

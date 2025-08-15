@@ -9,7 +9,6 @@ use crate::{
 };
 use alloy::{
     network::Ethereum,
-    primitives::{Bytes, U256},
     providers::{PendingTransactionBuilder, Provider},
     rpc::types::TransactionRequest,
 };
@@ -17,7 +16,7 @@ use anyhow::anyhow;
 use connector_utils::{
     conn::{WalletGatewayProvider, connect_to_db, connect_to_gateway_with_wallet},
     tasks::spawn_with_limit,
-    types::KmsResponse,
+    types::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse},
 };
 use fhevm_gateway_rust_bindings::decryption::Decryption::{self, DecryptionInstance};
 use std::time::Duration;
@@ -165,21 +164,11 @@ impl<P: Provider> TransactionSenderInner<P> {
     async fn send_to_gateway(&self, response: KmsResponse) -> anyhow::Result<()> {
         info!("Sending response to the Gateway...");
         match response {
-            KmsResponse::PublicDecryption {
-                decryption_id: id,
-                decrypted_result,
-                signature,
-            } => {
-                self.send_public_decryption_response(id, decrypted_result.into(), signature)
-                    .await
+            KmsResponse::PublicDecryption(response) => {
+                self.send_public_decryption_response(response).await
             }
-            KmsResponse::UserDecryption {
-                decryption_id: id,
-                user_decrypted_shares,
-                signature,
-            } => {
-                self.send_user_decryption_response(id, user_decrypted_shares.into(), signature)
-                    .await
+            KmsResponse::UserDecryption(response) => {
+                self.send_user_decryption_response(response).await
             }
         }
         .inspect_err(|e| {
@@ -195,22 +184,23 @@ impl<P: Provider> TransactionSenderInner<P> {
     /// Sends a PublicDecryptionResponse to the Gateway.
     pub async fn send_public_decryption_response(
         &self,
-        id: U256,
-        result: Bytes,
-        signature: Vec<u8>,
+        response: PublicDecryptionResponse,
     ) -> anyhow::Result<()> {
-        if signature.len() != EIP712_SIGNATURE_LENGTH {
+        if response.signature.len() != EIP712_SIGNATURE_LENGTH {
             return Err(anyhow!(
                 "Invalid EIP-712 signature length: {}, expected 65 bytes",
-                signature.len()
+                response.signature.len()
             ));
         }
 
         // Create and send transaction
         info!("Sending public decryption response to the Gateway...");
-        let call_builder =
-            self.decryption_contract
-                .publicDecryptionResponse(id, result, signature.into());
+        let call_builder = self.decryption_contract.publicDecryptionResponse(
+            response.decryption_id,
+            response.decrypted_result.into(),
+            response.signature.into(),
+            response.extra_data.into(),
+        );
         debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();
@@ -226,22 +216,23 @@ impl<P: Provider> TransactionSenderInner<P> {
     /// Sends a UserDecryptionResponse to the Gateway.
     pub async fn send_user_decryption_response(
         &self,
-        id: U256,
-        result: Bytes,
-        signature: Vec<u8>,
+        response: UserDecryptionResponse,
     ) -> anyhow::Result<()> {
-        if signature.len() != EIP712_SIGNATURE_LENGTH {
+        if response.signature.len() != EIP712_SIGNATURE_LENGTH {
             return Err(anyhow!(
                 "Invalid EIP-712 signature length: {}, expected 65 bytes",
-                signature.len()
+                response.signature.len()
             ));
         }
 
         // Create and send transaction
         info!("Sending user decryption response to the Gateway...");
-        let call_builder =
-            self.decryption_contract
-                .userDecryptionResponse(id, result, signature.into());
+        let call_builder = self.decryption_contract.userDecryptionResponse(
+            response.decryption_id,
+            response.user_decrypted_shares.into(),
+            response.signature.into(),
+            response.extra_data.into(),
+        );
         debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();

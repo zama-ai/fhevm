@@ -94,9 +94,9 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     function callbackBoolInfinite(
         uint256 requestID,
         bool decryptedInput,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public returns (bool) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, decryptionProof);
         uint256 i = 0;
         while (true) {
             i++;
@@ -121,8 +121,8 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     }
 
     /// @notice Callback function for boolean decryption
-    function callbackBool(uint256 requestID, bool decryptedInput, bytes[] memory signatures) public returns (bool) {
-        FHE.checkSignatures(requestID, signatures);
+    function callbackBool(uint256 requestID, bool decryptedInput, bytes memory decryptionProof) public returns (bool) {
+        FHE.checkSignatures(requestID, decryptionProof);
         yBool = decryptedInput;
         return yBool;
     }
@@ -145,8 +145,12 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     /// @notice Callback function for 8-bit unsigned integer decryption
     /// @param decryptedInput The decrypted 8-bit unsigned integer
     /// @return The decrypted value
-    function callbackUint8(uint256 requestID, uint8 decryptedInput, bytes[] memory signatures) public returns (uint8) {
-        FHE.checkSignatures(requestID, signatures);
+    function callbackUint8(
+        uint256 requestID,
+        uint8 decryptedInput,
+        bytes memory decryptionProof
+    ) public returns (uint8) {
+        FHE.checkSignatures(requestID, decryptionProof);
         yUint8 = decryptedInput;
         return decryptedInput;
     }
@@ -172,9 +176,9 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     function callbackUint16(
         uint256 requestID,
         uint16 decryptedInput,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public returns (uint16) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, decryptionProof);
         yUint16 = decryptedInput;
         return decryptedInput;
     }
@@ -205,9 +209,9 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     function callbackUint32(
         uint256 requestID,
         uint32 decryptedInput,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public returns (uint32) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, decryptionProof);
         uint256[] memory params = getParamsUint256(requestID);
         unchecked {
             uint32 result = uint32(uint256(params[0])) + uint32(uint256(params[1])) + decryptedInput;
@@ -247,9 +251,9 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     function callbackUint64(
         uint256 requestID,
         uint64 decryptedInput,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public returns (uint64) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, decryptionProof);
         yUint64 = decryptedInput;
         return decryptedInput;
     }
@@ -270,9 +274,9 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     function callbackUint128(
         uint256 requestID,
         uint128 decryptedInput,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public returns (uint128) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, decryptionProof);
         yUint128 = decryptedInput;
         return decryptedInput;
     }
@@ -293,9 +297,9 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     function callbackUint256(
         uint256 requestID,
         uint256 decryptedInput,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public returns (uint256) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, decryptionProof);
         yUint256 = decryptedInput;
         return decryptedInput;
     }
@@ -323,9 +327,9 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         uint256 requestID,
         address decryptedInput1,
         address decryptedInput2,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public returns (address) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, decryptionProof);
         yAddress = decryptedInput1;
         yAddress2 = decryptedInput2;
         return decryptedInput1;
@@ -345,9 +349,9 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     function callbackAddress(
         uint256 requestID,
         address decryptedInput,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public returns (address) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, decryptionProof);
         yAddress = decryptedInput;
         return decryptedInput;
     }
@@ -372,16 +376,15 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     /// @param decAddress Decrypted address
     /// @param decEuint32 Decrypted 32-bit unsigned integer
     /// @param decEuint256 Decrypted 256-bit unsigned integer
-    /// @param signatures Signatures to verify the authenticity of the decryption
     function callbackMixed(
         uint256 requestID,
         bool decBool,
         address decAddress,
         uint32 decEuint32,
         uint256 decEuint256,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, decryptionProof);
         yBool = decBool;
         yAddress = decAddress;
         yUint32 = decEuint32;
@@ -406,8 +409,8 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         FHE.requestDecryption(cts, this.callbackUint32_2.selector);
     }
 
-    function callbackUint32_2(uint256 requestID, uint32 decryptedInput, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestID, signatures);
+    function callbackUint32_2(uint256 requestID, uint32 decryptedInput, bytes memory decryptionProof) public {
+        FHE.checkSignatures(requestID, decryptionProof);
         yUint32_2 = decryptedInput;
     }
 
@@ -418,8 +421,8 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         FHE.requestDecryption(cts, this.callbackUint32_3.selector);
     }
 
-    function callbackUint32_3(uint256 requestID, uint32 decryptedInput, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestID, signatures);
+    function callbackUint32_3(uint256 requestID, uint32 decryptedInput, bytes memory decryptionProof) public {
+        FHE.checkSignatures(requestID, decryptionProof);
         yUint32_3 = decryptedInput;
     }
 
@@ -432,13 +435,13 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         FHE.requestDecryption(cts_2, this.callbackUint128_3.selector);
     }
 
-    function callbackUint128_2(uint256 requestID, uint128 decryptedInput, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestID, signatures);
+    function callbackUint128_2(uint256 requestID, uint128 decryptedInput, bytes memory decryptionProof) public {
+        FHE.checkSignatures(requestID, decryptionProof);
         yUint128_2 = decryptedInput;
     }
 
-    function callbackUint128_3(uint256 requestID, uint128 decryptedInput, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestID, signatures);
+    function callbackUint128_3(uint256 requestID, uint128 decryptedInput, bytes memory decryptionProof) public {
+        FHE.checkSignatures(requestID, decryptionProof);
         yUint128_3 = decryptedInput;
     }
 }

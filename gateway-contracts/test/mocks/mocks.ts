@@ -69,6 +69,11 @@ describe("Mock contracts", function () {
     startTimestamp: DefaultUint256,
   };
 
+  const DefaultContractsInfo = {
+    chainId: DefaultUint256,
+    addresses: [DefaultAddress],
+  };
+
   const DefaultDelegationAccounts = {
     delegatorAddress: DefaultAddress,
     delegatedAddress: DefaultAddress,
@@ -128,15 +133,17 @@ describe("Mock contracts", function () {
     let decryptionCounterId = DefaultUint256;
     it("Should emit PublicDecryptionRequest event on public decryption request", async function () {
       decryptionCounterId++;
-      await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32]))
+      await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32], DefaultBytes))
         .to.emit(decryptionMock, "PublicDecryptionRequest")
-        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]));
+        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
     });
 
     it("Should emit PublicDecryptionResponse event on public decryption response", async function () {
-      await expect(decryptionMock.publicDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes))
+      await expect(
+        decryptionMock.publicDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
+      )
         .to.emit(decryptionMock, "PublicDecryptionResponse")
-        .withArgs(decryptionCounterId, DefaultBytes, [DefaultBytes]);
+        .withArgs(decryptionCounterId, DefaultBytes, [DefaultBytes], DefaultBytes);
     });
 
     it("Should emit UserDecryptionRequest event on user decryption request", async function () {
@@ -145,15 +152,21 @@ describe("Mock contracts", function () {
         decryptionMock.userDecryptionRequest(
           EmptyArray,
           DefaultRequestValidity,
-          DefaultUint256,
-          EmptyArray,
+          DefaultContractsInfo,
           DefaultAddress,
+          DefaultBytes,
           DefaultBytes,
           DefaultBytes,
         ),
       )
         .to.emit(decryptionMock, "UserDecryptionRequest")
-        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultAddress, DefaultBytes);
+        .withArgs(
+          decryptionCounterId,
+          toValues([DefaultSnsCiphertextMaterial]),
+          DefaultAddress,
+          DefaultBytes,
+          DefaultBytes,
+        );
     });
 
     it("Should emit UserDecryptionRequest event on delegated user decryption request", async function () {
@@ -163,20 +176,26 @@ describe("Mock contracts", function () {
           EmptyArray,
           DefaultRequestValidity,
           DefaultDelegationAccounts,
-          DefaultUint256,
-          EmptyArray,
+          DefaultContractsInfo,
+          DefaultBytes,
           DefaultBytes,
           DefaultBytes,
         ),
       )
         .to.emit(decryptionMock, "UserDecryptionRequest")
-        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultAddress, DefaultBytes);
+        .withArgs(
+          decryptionCounterId,
+          toValues([DefaultSnsCiphertextMaterial]),
+          DefaultAddress,
+          DefaultBytes,
+          DefaultBytes,
+        );
     });
 
     it("Should emit UserDecryptionResponse event on user decryption response", async function () {
-      await expect(decryptionMock.userDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes))
+      await expect(decryptionMock.userDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes))
         .to.emit(decryptionMock, "UserDecryptionResponse")
-        .withArgs(decryptionCounterId, [DefaultBytes], [DefaultBytes]);
+        .withArgs(decryptionCounterId, [DefaultBytes], [DefaultBytes], DefaultBytes);
     });
   });
 
@@ -247,20 +266,28 @@ describe("Mock contracts", function () {
     it("Should emit VerifyProofRequest event on verify proof request", async function () {
       zkProofCounterId++;
       await expect(
-        inputVerificationMock.verifyProofRequest(DefaultUint256, DefaultAddress, DefaultAddress, DefaultBytes),
+        inputVerificationMock.verifyProofRequest(
+          DefaultUint256,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultBytes,
+          DefaultBytes,
+        ),
       )
         .to.emit(inputVerificationMock, "VerifyProofRequest")
-        .withArgs(zkProofCounterId, DefaultUint256, DefaultAddress, DefaultAddress, DefaultBytes);
+        .withArgs(zkProofCounterId, DefaultUint256, DefaultAddress, DefaultAddress, DefaultBytes, DefaultBytes);
     });
 
     it("Should emit VerifyProofResponse event on verify proof response", async function () {
-      await expect(inputVerificationMock.verifyProofResponse(zkProofCounterId, [DefaultBytes32], DefaultBytes))
+      await expect(
+        inputVerificationMock.verifyProofResponse(zkProofCounterId, [DefaultBytes32], DefaultBytes, DefaultBytes),
+      )
         .to.emit(inputVerificationMock, "VerifyProofResponse")
         .withArgs(zkProofCounterId, [DefaultBytes32], [DefaultBytes]);
     });
 
     it("Should emit RejectProofResponse event on reject proof response", async function () {
-      await expect(inputVerificationMock.rejectProofResponse(zkProofCounterId))
+      await expect(inputVerificationMock.rejectProofResponse(zkProofCounterId, DefaultBytes))
         .to.emit(inputVerificationMock, "RejectProofResponse")
         .withArgs(zkProofCounterId);
     });
@@ -360,13 +387,13 @@ describe("Mock contracts", function () {
 
   describe("MultichainAclMock", async function () {
     it("Should emit AllowPublicDecrypt event on allow public decrypt call", async function () {
-      await expect(multichainAclMock.allowPublicDecrypt(DefaultBytes32))
+      await expect(multichainAclMock.allowPublicDecrypt(DefaultBytes32, DefaultBytes))
         .to.emit(multichainAclMock, "AllowPublicDecrypt")
         .withArgs(DefaultBytes32);
     });
 
     it("Should emit AllowAccount event on allow account call", async function () {
-      await expect(multichainAclMock.allowAccount(DefaultBytes32, DefaultAddress))
+      await expect(multichainAclMock.allowAccount(DefaultBytes32, DefaultAddress, DefaultBytes))
         .to.emit(multichainAclMock, "AllowAccount")
         .withArgs(DefaultBytes32, DefaultAddress);
     });

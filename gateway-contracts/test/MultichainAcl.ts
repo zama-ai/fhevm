@@ -36,6 +36,9 @@ describe("MultichainAcl", function () {
   const ctHandleFakeChainId = createCtHandle(fakeHostChainId);
   const fakeTxSender = createRandomWallet();
 
+  // Define extra data for version 0
+  const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
+
   let gatewayConfig: GatewayConfig;
   let multichainAcl: MultichainAcl;
   let coprocessorTxSenders: HardhatEthersSigner[];
@@ -79,21 +82,27 @@ describe("MultichainAcl", function () {
     beforeEach(async function () {
       // Allow the address to access the handle
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, accountAddress);
+        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, accountAddress, extraDataV0);
       }
     });
 
     it("Should revert because the hostChainId is not registered in the GatewayConfig contract", async function () {
       // Check that allowing an account to use a ciphertext on a fake chain ID reverts
-      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandleFakeChainId, newAccountAddress))
+      await expect(
+        multichainAcl
+          .connect(coprocessorTxSenders[0])
+          .allowAccount(ctHandleFakeChainId, newAccountAddress, extraDataV0),
+      )
         .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
     it("Should allow account with 2 valid responses", async function () {
       // Trigger 2 allow calls with different coprocessor transaction senders
-      await multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress);
-      const txResponse = multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress);
+      await multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
+      const txResponse = multichainAcl
+        .connect(coprocessorTxSenders[1])
+        .allowAccount(ctHandle, newAccountAddress, extraDataV0);
 
       // Consensus should be reached at the second response
       await expect(txResponse).to.emit(multichainAcl, "AllowAccount").withArgs(ctHandle, newAccountAddress);
@@ -103,11 +112,11 @@ describe("MultichainAcl", function () {
       // Trigger 3 allow account calls with different coprocessor transaction senders
       const txResponse1 = await multichainAcl
         .connect(coprocessorTxSenders[0])
-        .allowAccount(ctHandle, newAccountAddress);
-      await multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress);
+        .allowAccount(ctHandle, newAccountAddress, extraDataV0);
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
       const txResponse3 = await multichainAcl
         .connect(coprocessorTxSenders[2])
-        .allowAccount(ctHandle, newAccountAddress);
+        .allowAccount(ctHandle, newAccountAddress, extraDataV0);
 
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet
@@ -118,7 +127,7 @@ describe("MultichainAcl", function () {
 
     it("Should get all valid coprocessor transaction senders from allow account consensus", async function () {
       // Trigger an allow account calls using the first coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress);
+      await multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
 
       const expectedCoprocessorTxSenders1 = coprocessorTxSenders.slice(0, 1).map((s) => s.address);
 
@@ -132,7 +141,7 @@ describe("MultichainAcl", function () {
       expect(proofRejectionConsensusTxSenders1).to.deep.equal(expectedCoprocessorTxSenders1);
 
       // Trigger an allow account calls using the second coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress);
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
 
       const expectedCoprocessorTxSenders2 = coprocessorTxSenders.slice(0, 2).map((s) => s.address);
 
@@ -145,7 +154,7 @@ describe("MultichainAcl", function () {
       expect(proofRejectionConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
 
       // Trigger an allow account calls using the third coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[2]).allowAccount(ctHandle, newAccountAddress);
+      await multichainAcl.connect(coprocessorTxSenders[2]).allowAccount(ctHandle, newAccountAddress, extraDataV0);
 
       const expectedCoprocessorTxSenders3 = coprocessorTxSenders.map((s) => s.address);
 
@@ -159,13 +168,13 @@ describe("MultichainAcl", function () {
     });
 
     it("Should revert because coprocessor tries to allow account twice", async function () {
-      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, accountAddress))
+      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowAccount(ctHandle, accountAddress, extraDataV0))
         .revertedWithCustomError(multichainAcl, "CoprocessorAlreadyAllowedAccount")
         .withArgs(ctHandle, accountAddress, coprocessorTxSenders[0].address);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
-      await expect(multichainAcl.connect(fakeTxSender).allowAccount(ctHandle, newAccountAddress))
+      await expect(multichainAcl.connect(fakeTxSender).allowAccount(ctHandle, newAccountAddress, extraDataV0))
         .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
@@ -191,20 +200,20 @@ describe("MultichainAcl", function () {
     beforeEach(async function () {
       // Allow the handle to be publicly decrypted
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle);
+        await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle, extraDataV0);
       }
     });
 
     it("Should revert because the hostChainId is not registered in the GatewayConfig contract", async function () {
-      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandleFakeChainId))
+      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandleFakeChainId, extraDataV0))
         .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
     it("Should allow for public decryption with 2 valid responses", async function () {
       // Trigger 2 allow calls with different coprocessor transaction senders
-      await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle);
-      const txResponse = multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle);
+      await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle, extraDataV0);
+      const txResponse = multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle, extraDataV0);
 
       // Consensus should be reached at the second response
       await expect(txResponse).to.emit(multichainAcl, "AllowPublicDecrypt").withArgs(newCtHandle);
@@ -212,9 +221,13 @@ describe("MultichainAcl", function () {
 
     it("Should allow public decryption with 2 valid responses and ignore the other valid one", async function () {
       // Trigger 3 allow public decryption calls with different coprocessor transaction senders
-      const txResponse1 = await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle);
-      await multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle);
-      const txResponse3 = await multichainAcl.connect(coprocessorTxSenders[2]).allowPublicDecrypt(newCtHandle);
+      const txResponse1 = await multichainAcl
+        .connect(coprocessorTxSenders[0])
+        .allowPublicDecrypt(newCtHandle, extraDataV0);
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle, extraDataV0);
+      const txResponse3 = await multichainAcl
+        .connect(coprocessorTxSenders[2])
+        .allowPublicDecrypt(newCtHandle, extraDataV0);
 
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet
@@ -225,7 +238,7 @@ describe("MultichainAcl", function () {
 
     it("Should get all valid coprocessor transaction senders from allow public decryption consensus", async function () {
       // Trigger an allow public decryption calls using the first coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle);
+      await multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(newCtHandle, extraDataV0);
 
       const expectedCoprocessorTxSenders1 = coprocessorTxSenders.slice(0, 1).map((s) => s.address);
 
@@ -237,7 +250,7 @@ describe("MultichainAcl", function () {
       expect(proofRejectionConsensusTxSenders1).to.deep.equal(expectedCoprocessorTxSenders1);
 
       // Trigger an allow public decryption calls using the second coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle);
+      await multichainAcl.connect(coprocessorTxSenders[1]).allowPublicDecrypt(newCtHandle, extraDataV0);
 
       const expectedCoprocessorTxSenders2 = coprocessorTxSenders.slice(0, 2).map((s) => s.address);
 
@@ -248,7 +261,7 @@ describe("MultichainAcl", function () {
       expect(proofRejectionConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
 
       // Trigger an allow public decryption calls using the third coprocessor transaction sender
-      await multichainAcl.connect(coprocessorTxSenders[2]).allowPublicDecrypt(newCtHandle);
+      await multichainAcl.connect(coprocessorTxSenders[2]).allowPublicDecrypt(newCtHandle, extraDataV0);
 
       const expectedCoprocessorTxSenders3 = coprocessorTxSenders.map((s) => s.address);
 
@@ -260,13 +273,13 @@ describe("MultichainAcl", function () {
     });
 
     it("Should revert because coprocessor tries to allow public decryption twice", async function () {
-      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle))
+      await expect(multichainAcl.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandle, extraDataV0))
         .revertedWithCustomError(multichainAcl, "CoprocessorAlreadyAllowedPublicDecrypt")
         .withArgs(ctHandle, coprocessorTxSenders[0].address);
     });
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
-      await expect(multichainAcl.connect(fakeTxSender).allowPublicDecrypt(newCtHandle))
+      await expect(multichainAcl.connect(fakeTxSender).allowPublicDecrypt(newCtHandle, extraDataV0))
         .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });

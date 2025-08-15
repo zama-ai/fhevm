@@ -68,7 +68,12 @@ impl<P: Provider> DbEventProcessor<P> {
         match event {
             GatewayEvent::PublicDecryption(req) => {
                 self.decryption_processor
-                    .prepare_decryption_request(req.decryptionId, req.snsCtMaterials, None)
+                    .prepare_decryption_request(
+                        req.decryptionId,
+                        req.snsCtMaterials,
+                        req.extraData.into(),
+                        None,
+                    )
                     .await
             }
             GatewayEvent::UserDecryption(req) => {
@@ -76,6 +81,7 @@ impl<P: Provider> DbEventProcessor<P> {
                     .prepare_decryption_request(
                         req.decryptionId,
                         req.snsCtMaterials,
+                        req.extraData.into(),
                         Some(UserDecryptionExtraData::new(req.userAddress, req.publicKey)),
                     )
                     .await
