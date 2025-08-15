@@ -6,4 +6,4 @@ scrape_configs:
   - job_name: 'kms-connector'
 
     static_configs:
-      - targets: ['kms-connector-gw-listener:9100', 'kms-connector-kms-worker:9100', 'kms-connector-tx-sender:9100']
+      - targets: ['kms-connector-gw-listener:9100', 'kms-connector-kms-worker:9100', 'kms-connector-tx-sender:9100', 'transaction-sender:8080']

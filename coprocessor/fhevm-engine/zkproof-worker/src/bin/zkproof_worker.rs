@@ -79,7 +79,7 @@ async fn main() {
     };
 
     if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-        error!("Error while initializing tracing: {:?}", err);
+        error!(error = %err, "Error while initializing tracing");
         std::process::exit(1);
     }
 
@@ -97,7 +97,8 @@ async fn main() {
         if let Err(err) = http_server.start().await {
             error!(
                 task = "health_check",
-                "Error while running server: {:?}", err
+                error = %err,
+                "Error while running server"
             );
         }
         anyhow::Ok(())
@@ -106,7 +107,7 @@ async fn main() {
     let service_task = async {
         info!("Starting worker...");
         if let Err(err) = service.run().await {
-            error!("Worker failed: {:?}", err);
+            error!(error = %err, "Worker failed");
         }
         Ok::<_, anyhow::Error>(())
     };

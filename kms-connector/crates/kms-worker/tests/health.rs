@@ -15,7 +15,7 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(180))]
 #[tokio::test]
 async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::full().await?;

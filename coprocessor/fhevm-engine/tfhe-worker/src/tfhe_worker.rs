@@ -1,5 +1,6 @@
 use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
+use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
@@ -55,10 +56,11 @@ lazy_static! {
 
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
+    health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         // here we log the errors and make sure we retry
-        if let Err(cycle_error) = tfhe_worker_cycle(&args).await {
+        if let Err(cycle_error) = tfhe_worker_cycle(&args, health_check.clone()).await {
             WORKER_ERRORS_COUNTER.inc();
             error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
         }
@@ -68,6 +70,7 @@ pub async fn run_tfhe_worker(
 
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
+    health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tracer = opentelemetry::global::tracer("tfhe_worker");
 
@@ -213,7 +216,9 @@ FOR UPDATE SKIP LOCKED            ",
         .await?;
         s.set_attribute(KeyValue::new("count", the_work.len() as i64));
         s.end();
+        health_check.update_db_access();
         if the_work.is_empty() {
+            health_check.update_activity();
             continue;
         }
         WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
@@ -358,9 +363,13 @@ FOR UPDATE SKIP LOCKED            ",
                     .expect("only valid fhe ops must have been put in db");
                 let mut input_ciphertexts: Vec<DFGTaskInput> =
                     Vec::with_capacity(w.dependencies.len());
+                let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
+                let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
                 for (idx, dh) in w.dependencies.iter().enumerate() {
                     let is_operand_scalar =
                         w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
+                    is_scalar_op_vec.push(is_operand_scalar);
+                    this_comp_inputs.push(dh.clone());
                     if is_operand_scalar {
                         input_ciphertexts.push(DFGTaskInput::Value(
                             SupportedFheCiphertexts::Scalar(dh.clone()),
@@ -379,6 +388,13 @@ FOR UPDATE SKIP LOCKED            ",
                         continue 'work_items;
                     }
                 }
+
+                check_fhe_operand_types(
+                    w.fhe_operation.into(),
+                    &this_comp_inputs,
+                    &is_scalar_op_vec,
+                )
+                .map_err(CoprocessorError::FhevmError)?;
 
                 let n = graph.add_node(
                     w.output_handle.clone(),
@@ -444,6 +460,7 @@ FOR UPDATE SKIP LOCKED            ",
                     keys.sks.clone(),
                     #[cfg(feature = "gpu")]
                     keys.gpu_sks.clone(),
+                    health_check.activity_heartbeat.clone(),
                 );
                 sched.schedule().await?;
             }
@@ -463,7 +480,8 @@ FOR UPDATE SKIP LOCKED            ",
                 let _ = query!(
                     "
                             UPDATE computations
-                            SET schedule_order = CURRENT_TIMESTAMP
+                            SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
+                                uncomputable_counter = uncomputable_counter * 2 
                             WHERE tenant_id = $1
                             AND output_handle = ANY($2::BYTEA[])
                         ",

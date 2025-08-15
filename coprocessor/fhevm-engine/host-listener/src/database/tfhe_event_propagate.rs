@@ -4,13 +4,15 @@ use alloy_primitives::Uint;
 use anyhow::Result;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
-use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::{compact_hex, HeartBeat};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Uuid;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -32,6 +34,9 @@ const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
 
 const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
 const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
+
+// short wait in case the database had a short issue
+const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
 
 type DbErrorCode = std::borrow::Cow<'static, str>;
 const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLSTATE code for statement cancelled
@@ -62,10 +67,11 @@ pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
 // A pool of connection with some cached information and automatic reconnection
 pub struct Database {
     url: String,
-    pool: sqlx::Pool<Postgres>,
+    pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
     pub tenant_id: TenantId,
     pub chain_id: ChainId,
     bucket_cache: tokio::sync::RwLock<lru::LruCache<Handle, Handle>>,
+    pub tick: HeartBeat,
 }
 
 impl Database {
@@ -88,8 +94,9 @@ impl Database {
             url: url.into(),
             tenant_id,
             chain_id,
-            pool,
+            pool: Arc::new(RwLock::new(pool)),
             bucket_cache,
+            tick: HeartBeat::default(),
         })
     }
 
@@ -119,9 +126,14 @@ impl Database {
     }
 
     async fn reconnect(&mut self) {
-        self.pool.close().await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        self.pool = Self::new_pool(&self.url).await;
+        tokio::time::sleep(RECONNECTION_DELAY).await;
+        let old_pool = {
+            let new_pool = Self::new_pool(&self.url).await;
+            let mut pool = self.pool.write().await;
+            std::mem::replace(&mut *pool, new_pool)
+        };
+        // doing the close outside out of lock
+        old_pool.close().await;
     }
 
     async fn find_tenant_id(
@@ -258,7 +270,8 @@ impl Database {
             bucket.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec())
         );
-        query.execute(&self.pool).await.map(|_| ())
+        let pool = self.pool.read().await.clone();
+        query.execute(&pool).await.map(|_| ())
     }
 
     async fn sort_computation_into_bucket(
@@ -393,7 +406,10 @@ impl Database {
         loop {
             let result = self.insert_tfhe_event_no_retry(log).await;
             match result {
-                Ok(_) => return Ok(()),
+                Ok(_) => {
+                    self.tick.update();
+                    return Ok(())
+                }
                 Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
                     error!(
                         error = %err,
@@ -432,6 +448,7 @@ impl Database {
         let Some(block_hash) = prev_event.block_hash else {
             return Some(block_number); // but cannot write to db
         };
+        let pool = self.pool.read().await.clone();
         let _ = sqlx::query!(
             r#"
             INSERT INTO blocks_valid (chain_id, block_hash, block_number, listener_tfhe)
@@ -442,22 +459,20 @@ impl Database {
             block_hash.to_vec(),
             block_number as i64,
         )
-        .execute(&self.pool)
+        .execute(&pool)
         .await;
         Some(block_number)
     }
 
     pub async fn read_last_valid_block(&mut self) -> Option<i64> {
-        let query = || {
-            sqlx::query!(
-                r#"
+        let query = sqlx::query!(
+            r#"
             SELECT block_number FROM blocks_valid WHERE chain_id = $1 ORDER BY block_number DESC LIMIT 1;
             "#,
-                self.chain_id as i64,
-            )
-            .fetch_one(&self.pool)
-        };
-        match query().await {
+            self.chain_id as i64,
+        );
+        let pool = self.pool.read().await.clone();
+        match query.fetch_one(&pool).await {
             Ok(record) => Some(record.block_number),
             Err(_err) => None, // table could be empty
         }
@@ -560,7 +575,7 @@ impl Database {
                 );
             }
         }
-
+        self.tick.update();
         Ok(())
     }
 
@@ -582,7 +597,8 @@ impl Database {
             };
             let mut retry_count = 0;
             loop {
-                match query().execute(&self.pool).await {
+                let pool = self.pool.read().await.clone();
+                match query().execute(&pool).await {
                     Ok(_) => break,
                     Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
                         error!(error = %err, "Database I/O error, will retry");
@@ -620,7 +636,8 @@ impl Database {
         };
         let mut retry_count = 0;
         loop {
-            match query().execute(&self.pool).await {
+            let pool = self.pool.read().await.clone();
+            match query().execute(&pool).await {
                 Ok(_) => break,
                 Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
                     error!(error = %err, "Database I/O error, will retry");

@@ -68,7 +68,7 @@ export async function waitAllPromises(promises: Promise<any>[], ms: number): Pro
   }
 }
 
-export async function createInstance(network: Network) {
+export async function createInstance(network: Network, debugLogs: boolean = false) {
   // Default to Sepolia configuration
   const fhevmConfig: FhevmInstanceConfig = { ...SepoliaConfig, network: network.provider, chainId: network.config.chainId };
 
@@ -95,10 +95,11 @@ export async function createInstance(network: Network) {
     fhevmConfig.aclContractAddress = process.env.ACL_CONTRACT_ADDRESS;
   }
 
-  console.log(`Using configuration: ${JSON.stringify(fhevmConfig)}`);
-
+  
+  if (debugLogs) {
+    console.debug(`Using configuration: ${JSON.stringify(fhevmConfig)}`);
+  }
   const instance = await createFhevmInstance(fhevmConfig);
-  console.debug(JSON.stringify(fhevmConfig));
   return instance;
 }
 
@@ -106,4 +107,39 @@ export async function createInstance(network: Network) {
 export interface KeyPair {
   publicKey: string,
   privateKey: string,
+}
+
+/**
+ * Checks if a contract function reverts when called with the given inputs.
+ * @param contractAddress The address of the contract.
+ * @param functionSignature The function signature, e.g. "myFunction(uint256,address)".
+ * @param inputs The array of input values to encode and pass to the function.
+ * @param provider The ethers provider.
+ * @param ethers The ethers object.
+ * @returns true if the function call reverts, false otherwise.
+ */
+export async function hasFunctionReverted(
+  contractAddress: string,
+  functionSignature: string,
+  inputs: any[],
+  provider: any,
+  ethers: any
+): Promise<boolean> {
+  try {
+    // Get the ABI fragment for encoding
+    const functionInterface = [`function ${functionSignature}`];
+    const contractPartialInterface = new ethers.Interface(functionInterface);
+
+    // Encode the function data with inputs
+    const data = contractPartialInterface.encodeFunctionData(functionSignature.split('(')[0], inputs);
+
+    // Call the function and check if it reverts
+    await provider.call({
+      to: contractAddress,
+      data: data
+    });
+    return false;
+  } catch (error) {
+    return true;
+  }
 }

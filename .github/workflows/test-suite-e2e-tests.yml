@@ -103,20 +103,22 @@ jobs:
         if: github.event_name == 'release'
         run: |
           {
-            echo "CONNECTOR_DB_MIGRATION_VERSION"=${{ github.ref_name }}
-            echo "CONNECTOR_GW_LISTENER_VERSION=${{ github.ref_name }}"
-            echo "CONNECTOR_KMS_WORKER_VERSION=${{ github.ref_name }}"
-            echo "CONNECTOR_TX_SENDER_VERSION=${{ github.ref_name }}"
-            echo "DB_MIGRATION_VERSION=${{ github.ref_name }}"
-            echo "GATEWAY_VERSION=${{ github.ref_name }}"
-            echo "HOST_VERSION=${{ github.ref_name }}"
-            echo "HOST_LISTENER_VERSION=${{ github.ref_name }}"
-            echo "GW_LISTENER_VERSION=${{ github.ref_name }}"
-            echo "TX_SENDER_VERSION=${{ github.ref_name }}"
-            echo "TFHE_WORKER_VERSION=${{ github.ref_name }}"
-            echo "SNS_WORKER_VERSION=${{ github.ref_name }}"
-            echo "ZKPROOF_WORKER_VERSION=${{ github.ref_name }}"
+            echo "CONNECTOR_DB_MIGRATION_VERSION=${GH_REF_NAME}"
+            echo "CONNECTOR_GW_LISTENER_VERSION=${GH_REF_NAME}"
+            echo "CONNECTOR_KMS_WORKER_VERSION=${GH_REF_NAME}"
+            echo "CONNECTOR_TX_SENDER_VERSION=${GH_REF_NAME}"
+            echo "DB_MIGRATION_VERSION=${GH_REF_NAME}"
+            echo "GATEWAY_VERSION=${GH_REF_NAME}"
+            echo "HOST_VERSION=${GH_REF_NAME}"
+            echo "HOST_LISTENER_VERSION=${GH_REF_NAME}"
+            echo "GW_LISTENER_VERSION=${GH_REF_NAME}"
+            echo "TX_SENDER_VERSION=${GH_REF_NAME}"
+            echo "TFHE_WORKER_VERSION=${GH_REF_NAME}"
+            echo "SNS_WORKER_VERSION=${GH_REF_NAME}"
+            echo "ZKPROOF_WORKER_VERSION=${GH_REF_NAME}"
           } >> "$GITHUB_ENV"
+        env:
+          GH_REF_NAME: ${{ github.ref_name }}
 
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm

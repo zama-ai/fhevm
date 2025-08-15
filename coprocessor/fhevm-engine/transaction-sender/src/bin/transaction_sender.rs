@@ -107,9 +107,9 @@ struct Conf {
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     provider_retry_interval: Duration,
 
-    /// HTTP server port for health checks
-    #[arg(long, default_value_t = 8080)]
-    health_check_port: u16,
+    /// HTTP server port
+    #[arg(long, alias = "health-check-port", default_value_t = 8080)]
+    http_server_port: u16,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     health_check_timeout: Duration,
@@ -229,7 +229,7 @@ async fn main() -> anyhow::Result<()> {
         txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
         required_txn_confirmations: conf.required_txn_confirmations,
         review_after_unlimited_retries: conf.review_after_unlimited_retries,
-        health_check_port: conf.health_check_port,
+        http_server_port: conf.http_server_port,
         health_check_timeout: conf.health_check_timeout,
         gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
     };
@@ -250,16 +250,16 @@ async fn main() -> anyhow::Result<()> {
 
     let http_server = HttpServer::new(
         transaction_sender.clone(),
-        conf.health_check_port,
+        conf.http_server_port,
         cancel_token.clone(),
     );
 
     install_signal_handlers(cancel_token.clone())?;
 
     info!(
-        health_check_port = conf.health_check_port,
+        http_server_port = conf.http_server_port,
         conf = ?config,
-        "Transaction sender and HTTP health check server starting"
+        "Transaction sender and HTTP server starting"
     );
 
     // Run both services concurrently

@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # RUST_IMAGE_VERSION arg can be used to override the default version
-ARG RUST_IMAGE_VERSION=1.87.0
+ARG RUST_IMAGE_VERSION=1.89.0
 
 # Stage 1: Build tx-sender
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder

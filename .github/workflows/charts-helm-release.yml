@@ -6,9 +6,7 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: 'read'
-  packages: 'write'
+permissions: {}
 
 env:
   HELM_VERSION: v3.16.4
@@ -37,6 +35,9 @@ jobs:
     needs: check-changes
     name: charts-helm-release/release
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
+    permissions:
+      contents: 'read'
+      packages: 'write'
     runs-on: ubuntu-latest
     environment: main
     steps:

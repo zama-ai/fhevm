@@ -51,7 +51,9 @@ jobs:
       DOCKER_TAG_IMAGE: ${{ steps.set-tag.outputs.tag }}
     steps:
       - id: set-tag
-        run: echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+        run: echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ github.event.inputs.tag }}
   build:
     name: golden-container-images-docker-build-rust/build
     needs: [check-changes]

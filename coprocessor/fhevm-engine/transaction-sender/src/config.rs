@@ -30,8 +30,8 @@ pub struct ConfigSettings {
 
     pub review_after_unlimited_retries: u16,
 
-    // Health check related settings
-    pub health_check_port: u16,
+    pub http_server_port: u16,
+
     pub health_check_timeout: Duration,
 
     pub gas_limit_overprovision_percent: u32,
@@ -59,7 +59,7 @@ impl Default for ConfigSettings {
             txn_receipt_timeout_secs: 10,
             required_txn_confirmations: 0,
             review_after_unlimited_retries: 30,
-            health_check_port: 8080,
+            http_server_port: 8080,
             health_check_timeout: Duration::from_secs(4),
             gas_limit_overprovision_percent: 120,
         }

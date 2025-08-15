@@ -13,6 +13,7 @@ aws-config = { workspace = true }
 aws-sdk-kms = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true}
+reqwest = { workspace = true}
 serde_json = { workspace = true }
 sqlx = { workspace = true}
 testcontainers = { workspace = true }

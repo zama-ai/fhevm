@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use clap::{command, Parser};
 use humantime::parse_duration;
+use sns_worker::SchedulePolicy;
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -109,6 +110,10 @@ pub struct Args {
     /// Enable compression of big ciphertexts before uploading to S3
     #[arg(long, default_value_t = true)]
     pub enable_compression: bool,
+
+    /// Schedule policy for processing tasks
+    #[arg(long, default_value = "rayon_parallel", value_parser = clap::value_parser!(SchedulePolicy))]
+    pub schedule_policy: SchedulePolicy,
 }
 
 pub fn parse_args() -> Args {

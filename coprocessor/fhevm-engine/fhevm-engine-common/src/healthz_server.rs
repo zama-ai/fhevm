@@ -1,3 +1,4 @@
+use alloy_provider::Provider;
 use axum::{
     extract::State,
     http::StatusCode,
@@ -6,10 +7,12 @@ use axum::{
 };
 use serde::Serialize;
 use sqlx::PgPool;
-use std::{collections::HashMap, net::SocketAddr, sync::Arc};
-use tokio::net::TcpListener;
+use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use tokio::{net::TcpListener, time::timeout};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+
+use crate::types::BlockchainProvider;
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -22,10 +25,27 @@ struct HealthResponse {
 impl From<HealthStatus> for HealthResponse {
     fn from(status: HealthStatus) -> Self {
         let details = status.error_details();
+        let is_dependency = |key| {
+            status
+                .is_dependency_check
+                .get(key)
+                .copied()
+                .unwrap_or(false)
+        };
         let dependencies: HashMap<&'static str, &'static str> = status
             .checks
             .iter()
-            .map(|(&key, &value)| (key, if value { "ok" } else { "fail" }))
+            .filter_map(|(&key, &value)| {
+                if is_dependency(key) {
+                    if value {
+                        Some((key, "ok"))
+                    } else {
+                        Some((key, "fail"))
+                    }
+                } else {
+                    None
+                }
+            })
             .collect();
 
         Self {
@@ -52,6 +72,16 @@ pub trait HealthCheckService: Send + Sync {
     fn health_check(&self) -> impl std::future::Future<Output = HealthStatus> + Send;
     fn is_alive(&self) -> impl std::future::Future<Output = bool> + Send;
     fn get_version(&self) -> Version;
+}
+
+/// Default implementation for the version information.
+/// Rely on BUILD_ID environment variable at compile time
+pub fn default_get_version() -> Version {
+    Version {
+        name: env!("CARGO_PKG_NAME"),
+        version: env!("CARGO_PKG_VERSION"),
+        build: option_env!("BUILD_ID").unwrap_or("unknown"),
+    }
 }
 
 pub struct HttpServer<S: HealthCheckService + Send + Sync + 'static> {
@@ -136,7 +166,10 @@ impl<S: HealthCheckService + Send + Sync + 'static> HttpServer<S> {
 
 #[derive(Clone, Default)]
 pub struct HealthStatus {
+    // both dependencies and internal checks
     checks: HashMap<&'static str, bool>,
+    // indicates if the check is added in dependencies JSON "dependencies" field
+    is_dependency_check: HashMap<&'static str, bool>,
     error_details: Vec<String>,
 }
 
@@ -145,21 +178,46 @@ impl HealthStatus {
     ///
     /// query has its internal timeout
     pub async fn set_db_connected(&mut self, pool: &PgPool) {
-        let mut is_connected = false;
-        match sqlx::query("SELECT 1").execute(pool).await {
-            Ok(_) => {
-                is_connected = true;
+        let reach = sqlx::query("SELECT 1").execute(pool);
+        let reach_or_timeout = timeout(Duration::from_secs(5), reach).await;
+        let is_connected = match reach_or_timeout {
+            Ok(Ok(_)) => true,
+            Ok(Err(_)) => {
+                self.push_error_details("Database query error");
+                false
             }
-            Err(e) => {
-                self.error_details
-                    .push(format!("Database query error: {}", e));
+            Err(_) => {
+                self.push_error_details("Database timeout");
+                false
             }
-        }
+        };
         self.checks.insert("database", is_connected);
+        self.is_dependency_check.insert("database", true);
     }
 
-    pub fn set_custom_check(&mut self, check: &'static str, value: bool) {
+    /// Checks if the blockchain is connected by executing a simple query
+    pub async fn set_blockchain_connected(&mut self, provider: &BlockchainProvider) {
+        // With a timeout because the provider can block an unlimited amount of time
+        let reach = provider.get_block_number();
+        let reach_or_timeout = timeout(Duration::from_secs(5), reach).await;
+        let is_connected = match reach_or_timeout {
+            Ok(Ok(_)) => true,
+            Ok(Err(_)) => {
+                self.push_error_details("Blockchain error.");
+                false
+            }
+            Err(_) => {
+                self.push_error_details("Blockchain timeout");
+                false
+            }
+        };
+        self.checks.insert("blockchain", is_connected);
+        self.is_dependency_check.insert("blockchain", true);
+    }
+
+    pub fn set_custom_check(&mut self, check: &'static str, value: bool, is_dependency: bool) {
         self.checks.insert(check, value);
+        self.is_dependency_check.insert(check, is_dependency);
     }
 
     pub fn add_error_details(&mut self, details: String) {
@@ -168,6 +226,10 @@ impl HealthStatus {
 
     pub fn is_healthy(&self) -> bool {
         self.checks.iter().all(|(_, s)| *s)
+    }
+
+    fn push_error_details(&mut self, details: &str) {
+        self.error_details.push(details.to_string());
     }
 
     pub fn error_details(&self) -> String {

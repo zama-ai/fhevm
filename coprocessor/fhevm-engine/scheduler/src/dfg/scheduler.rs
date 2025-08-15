@@ -12,9 +12,11 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::{
-    common::FheOperation, tfhe_ops::perform_fhe_operation, types::SupportedFheCiphertexts,
-};
+use fhevm_engine_common::common::FheOperation;
+use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
+use fhevm_engine_common::types::SupportedFheCiphertexts;
+
+use fhevm_engine_common::utils::HeartBeat;
 use rayon::prelude::*;
 use std::{
     collections::HashMap,
@@ -54,6 +56,7 @@ pub struct Scheduler<'a> {
     sks: tfhe::ServerKey,
     #[cfg(feature = "gpu")]
     csks: Vec<tfhe::CudaServerKey>,
+    activity_heartbeat: HeartBeat,
 }
 
 impl<'a> Scheduler<'a> {
@@ -75,6 +78,7 @@ impl<'a> Scheduler<'a> {
         graph: &'a mut Dag<OpNode, OpEdge>,
         sks: tfhe::ServerKey,
         #[cfg(feature = "gpu")] csks: Vec<tfhe::CudaServerKey>,
+        activity_heartbeat: HeartBeat,
     ) -> Self {
         let edges = graph.map(|_, _| (), |_, edge| *edge);
         Self {
@@ -83,6 +87,7 @@ impl<'a> Scheduler<'a> {
             sks: sks.clone(),
             #[cfg(feature = "gpu")]
             csks: csks.clone(),
+            activity_heartbeat,
         }
     }
 
@@ -148,6 +153,7 @@ impl<'a> Scheduler<'a> {
         }
         // Get results from computations and update dependences of remaining computations
         while let Some(result) = set.join_next().await {
+            self.activity_heartbeat.update();
             let result = result?;
             let index = result.0;
             let node_index = NodeIndex::new(index);
@@ -231,6 +237,7 @@ impl<'a> Scheduler<'a> {
         }
         // Get results from computations and update dependences of remaining computations
         while let Some(result) = set.join_next().await {
+            self.activity_heartbeat.update();
             let mut result = result?;
             let task_index = result.1;
             while let Some((node_index, node_result)) = result.0.pop() {
@@ -239,7 +246,7 @@ impl<'a> Scheduler<'a> {
                 // any dependences with it, so skip - all dependences
                 // on this will remain unsatisfied and result in
                 // further errors.
-                if node_result.is_ok() {
+                if let Ok(ref node_result) = node_result {
                     // Satisfy deps from the executed computation in the DFG
                     for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
                         let child_index = edge.target();
@@ -250,7 +257,7 @@ impl<'a> Scheduler<'a> {
                         if !child_node.inputs.is_empty() {
                             // Here cannot be an error
                             child_node.inputs[*edge.weight() as usize] =
-                                DFGTaskInput::Value(node_result.as_ref().unwrap().0.clone());
+                                DFGTaskInput::Value(node_result.0.clone());
                         }
                     }
                 }
@@ -327,7 +334,11 @@ impl<'a> Scheduler<'a> {
             });
         })
         .await?;
-        let results: Vec<_> = dest.iter().collect();
+        let mut results = vec![];
+        for v in dest.iter() {
+            self.activity_heartbeat.update();
+            results.push(v);
+        }
         for mut result in results {
             while let Some(o) = result.0.pop() {
                 let index = o.0;
@@ -378,6 +389,7 @@ impl<'a> Scheduler<'a> {
         }
         // Get results from computations and update dependences of remaining computations
         while let Some(result) = set.join_next().await {
+            self.activity_heartbeat.update();
             let result = result?;
             let index = result.0;
             let node_index = NodeIndex::new(index);
@@ -480,6 +492,7 @@ impl<'a> Scheduler<'a> {
         }
         // Get results from computations and update dependences of remaining computations
         while let Some(result) = set.join_next().await {
+            self.activity_heartbeat.update();
             let mut result = result?;
             let task_index = result.1;
             while let Some((node_index, node_result)) = result.0.pop() {
@@ -493,7 +506,7 @@ impl<'a> Scheduler<'a> {
                 // any dependences with it, so skip - all dependences
                 // on this will remain unsatisfied and result in
                 // further errors.
-                if node_result.is_ok() {
+                if let Ok(ref node_result) = node_result {
                     // Satisfy deps from the executed computation in the DFG
                     for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
                         let child_index = edge.target();
@@ -505,7 +518,7 @@ impl<'a> Scheduler<'a> {
                             tfhe::set_server_key(keys[loc].clone());
                             // Here cannot be an error
                             child_node.inputs[*edge.weight() as usize] =
-                                DFGTaskInput::Value(node_result.as_ref().unwrap().0.clone());
+                                DFGTaskInput::Value(node_result.0.clone());
                         }
                     }
                 }
@@ -608,7 +621,11 @@ impl<'a> Scheduler<'a> {
                 });
         })
         .await?;
-        let results: Vec<_> = dest.iter().collect();
+        let mut results = vec![];
+        for v in dest.iter() {
+            self.activity_heartbeat.update();
+            results.push(v);
+        }
         for mut result in results {
             while let Some(o) = result.0.pop() {
                 let index = o.0;
