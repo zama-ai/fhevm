@@ -1104,9 +1104,9 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
      * @dev     otherwise fake decryption results could be submitted.
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
      */
-    function checkSignatures(uint256 requestID, bytes[] memory signatures) internal {
+    function checkSignatures(uint256 requestID, bytes memory cleartexts, bytes[] memory signatures) internal {
         bytes32[] memory handlesList = loadRequestedHandles(requestID);
-        bool isVerified = verifySignatures(handlesList, signatures);
+        bool isVerified = verifySignatures(handlesList, cleartexts, signatures);
         if (!isVerified) {
             revert InvalidKMSSignatures();
         }
