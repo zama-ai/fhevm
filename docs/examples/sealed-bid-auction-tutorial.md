@@ -232,7 +232,7 @@ function decryptWinningAddress() public onlyAfterEnd {
 }
 ```
 
-Here, we are requesting to decrypt a single parameter for the `winningAddress`. However, you can request multiple ones by increasing the `cts` array and adding other parameters.
+Here, we are requesting to decrypt a single parameter for the `winningAddress`, ABI encoded as a byte array (using `abi.encode`). You can request multiple ones by including more parameters in the ABI encoding.
 
 Notice also that when calling the `FHE.requestDecryption()`, we are passing a selector in the parameter. This selector will be the one called back by the oracle.
 
@@ -241,10 +241,11 @@ Notice also that we have restricted this function to be called only when the auc
 We can now write our `resolveAuctionCallback` callback function:
 
 ```solidity
-function resolveAuctionCallback(uint256 requestId, address resultWinnerAddress, bytes[] memory signatures) public {
+function resolveAuctionCallback(uint256 requestId, bytes memory cleartexts, bytes[] memory signatures) public {
   require(requestId == _latestRequestId, "Invalid requestId");
-  FHE.checkSignatures(requestId, signatures);
+  FHE.checkSignatures(requestId, cleartexts, signatures);
 
+  (address resultWinnerAddress) = abi.decode(cleartexts, (address));
   winnerAddress = resultWinnerAddress;
 }
 ```

@@ -64,8 +64,10 @@ contract DecryptSingleValueInSolidity is SepoliaConfig {
     );
   }
 
-  function callbackDecryptSingleUint32(uint256 requestID, uint32 decryptedInput, bytes[] memory signatures) external {
-    //
+  function callbackDecryptSingleUint32(uint256 requestID, bytes memory cleartexts, bytes[] memory signatures) external {
+    // The `cleartexts` argument is an ABI encoding of the decrypted values associated to the
+    // handles (using `abi.encode`). 
+    // 
     // ===============================
     //    ☠️🔒 SECURITY WARNING! 🔒☠️
     // ===============================
@@ -83,7 +85,9 @@ contract DecryptSingleValueInSolidity is SepoliaConfig {
     //
     // The responsibility for signature validation lies entirely with the contract author.
     //
-    FHE.checkSignatures(requestID, signatures);
+    FHE.checkSignatures(requestID, cleartexts, signatures);
+
+    (uint32 decryptedInput) = abi.decode(cleartexts, (uint32));
     _clearUint32 = decryptedInput;
   }
 

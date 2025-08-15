@@ -8908,9 +8908,9 @@ library FHE {
      * @dev     otherwise fake decryption results could be submitted.
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
      */
-    function checkSignatures(uint256 requestID, bytes memory decryptionProof) internal {
+    function checkSignatures(uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) internal {
         bytes32[] memory handlesList = loadRequestedHandles(requestID);
-        bool isVerified = verifySignatures(handlesList, decryptionProof);
+        bool isVerified = verifySignatures(handlesList, cleartexts, decryptionProof);
         if (!isVerified) {
             revert InvalidKMSSignatures();
         }
@@ -8946,52 +8946,39 @@ library FHE {
      * - 32 bytes: length of the signatures (number of signatures)
      * - ... the offsets, lengths and values for all signatures
      */
-    function verifySignatures(bytes32[] memory handlesList, bytes memory decryptionProof) private returns (bool) {
+    function verifySignatures(
+        bytes32[] memory handlesList,
+        bytes memory cleartexts,
+        bytes memory decryptionProof
+    ) private returns (bool) {
         // Verify the handle types
         verifyHandleTypes(handlesList);
 
-        // Load values from the calldata using the positions explained in the function's comment above
-        uint256 cleartextsLength;
-        assembly {
-            // Load the total length of the cleartexts (abi encoding of all decrypted values) at position 100 (0x64)
-            cleartextsLength := calldataload(0x64)
-        }
-
-        // Compute the length of the expected `decryptedResult` bytes array
-        // Currently, the `decryptedResult` is encoded (by the KMS) in the following format:
-        // - n*32 bytes: the `n` cleartext values, with `n` the number of handles
-        // - 32 bytes: offset of the signatures
-        // The signature offset will most likely be removed in the future,
-        // see https://github.com/zama-ai/fhevm-internal/issues/345
-        uint256 decryptedResultLength = cleartextsLength + 32;
-
         // Compute the signature offset
-        // This offset is computed by considering the format encoded by the KMS, which is the following:
+        // This offset is computed by considering the format encoded by the KMS when creating the
+        // `decryptedResult` bytes array (see comment below), which is the following:
         // - requestID: 32 bytes
-        // - all decrypted values: 32 bytes per value
+        // - all `n` decrypted values (which is `cleartexts` itself): n*32 bytes (`cleartexts.length` bytes)
         // - offset of the signatures: 32 bytes
         // - the rest of signature values (lengths, offsets, values)
         // This means the expected offset to concatenate to the `decryptedResult` bytes array has
-        // the follow value: 32 + n*32 + 32
+        // the following value: 32 + n*32 + 32
+        // See https://docs.soliditylang.org/en/latest/abi-spec.html#use-of-dynamic-types for more details.
         // The signature offset will most likely be removed in the future,
         // see https://github.com/zama-ai/fhevm-internal/issues/345
-        uint256 signaturesOffset = 32 + decryptedResultLength;
+        uint256 signaturesOffset = 32 + cleartexts.length + 32;
 
-        // Copy the values from the calldata to build the expected `decryptedResult` bytes array in memory,
-        // using the positions explained in the function's comment above
-        bytes memory decryptedResult = new bytes(decryptedResultLength);
-        assembly {
-            let decryptedResultStart := add(decryptedResult, 0x20)
-            // Copy the cleartexts in memory:
-            // - from start calldata position 132
-            // - to start position 32 (0x20) from the `decryptedResult` memory address (the first 32 bytes are reserved for the the length)
-            // - for the length of the cleartexts bytes array
-            calldatacopy(decryptedResultStart, 132, cleartextsLength)
-
-            // Copy the signatures offset in memory from start position 32 (from the `decryptedResult` memory address)
-            // + the length of the cleartexts bytes array
-            mstore(add(decryptedResultStart, cleartextsLength), signaturesOffset)
-        }
+        // Built the `decryptedResult` bytes array
+        // Currently, the `decryptedResult` is encoded (by the KMS) in the following format:
+        // - n*32 bytes: the `n` decrypted values, `cleartexts` itself
+        // - 32 bytes: offset of the signatures, as explained above
+        // This is equivalent to concatenating the cleartexts and the signatures offset, which can
+        // be done using abi.encoded in a gas efficient way.
+        // The signature offset will most likely be removed in the future,
+        // see https://github.com/zama-ai/fhevm-internal/issues/345
+        // Here we can use `encodePacked` instead of `abi.encode` to save gas, as the cleartexts
+        // and the signaturesOffset are already 32 bytes aligned (ie, no padding needed).
+        bytes memory decryptedResult = abi.encodePacked(cleartexts, signaturesOffset);
 
         CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
         return

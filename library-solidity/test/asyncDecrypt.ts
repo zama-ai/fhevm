@@ -165,7 +165,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
 
       // ABI encode the decryptedResult as done in the KMS, following the format:
       // - requestId (32 bytes)
-      // - all inputs
+      // - all `n` decrypted values as separate inputs
       // - list of signatures (list of bytes)
       // For this we use the following values for getting the correct abi encoding (in particular for
       // getting the right signatures offset right after):
@@ -174,10 +174,10 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       const encodedData = abiCoder.encode(['uint256', ...types, 'bytes[]'], [31, ...valuesFormatted4, []]);
 
       // To get the correct value, we pop:
-      // - the `0x` prefix (put back just after): first byte (2 hex characters)
+      // - the `0x` prefix (but put back afterward): first byte (2 hex characters)
       // - the dummy requestID: next 32 bytes (64 hex characters)
       // - the length of empty bytes[]: last 32 bytes (64 hex characters)
-      // We will most likely pop the last 64 bytes (which included the empty array's offset) instead
+      // We will most likely pop the last 64 bytes (to include the empty array's offset) instead
       // of 32 bytes in the future, see https://github.com/zama-ai/fhevm-internal/issues/345
       const decryptedResult = '0x' + encodedData.slice(66, -64);
 

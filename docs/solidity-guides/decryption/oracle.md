@@ -40,10 +40,12 @@ contract TestAsyncDecrypt is SepoliaConfig {
     isDecryptionPending = true;
   }
 
-  function myCustomCallback(uint256 requestId, bool decryptedInput, bytes[] memory signatures) public returns (bool) {
+  function myCustomCallback(uint256 requestId, bytes memory cleartexts, bytes[] memory signatures) public returns (bool) {
     /// @dev This check is used to verify that the request id is the expected one.
     require(requestId == latestRequestId, "Invalid requestId");
-    FHE.checkSignatures(requestId, signatures);
+    FHE.checkSignatures(requestId, cleartexts, signatures);
+
+    (bool decryptedInput) = abi.decode(cleartexts, (bool));
     yBool = decryptedInput;
     isDecryptionPending = false;
     return yBool;
@@ -112,11 +114,13 @@ Notice that the callback should always verify the signatures and implement a rep
 You can call the function `FHE.checkSignatures` as such:
 
 ```solidity
-function checkSignatures(uint256 requestId, bytes[] memory signatures);
+function checkSignatures(uint256 requestId, bytes memory cleartexts, bytes[] memory signatures);
 ```
 
 #### Function arguments
 
-The first argument, `requestID`, is the value that was returned in the `requestDecryption`function. The second argument, `signatures`, is an array of signatures from the KMS signers.
+- `requestID`, is the value that was returned in the `requestDecryption` function.
+- `cleartexts`, is an ABI encoding of the decrypted values associated to the handles (using `abi.encode`). This can contain one or multiple values, depending on the number of handles requested in the `requestDecryption` function. Each of these values' type must match the type of the corresponding handle.
+- `signatures`, is an array of signatures from the KMS signers.
 
 This function reverts if the signatures are invalid.

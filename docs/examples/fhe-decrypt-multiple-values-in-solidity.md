@@ -73,20 +73,24 @@ contract DecryptMultipleValuesInSolidity is SepoliaConfig {
     );
   }
 
-  // ⚠️ WARNING: Argument types must match exactly!
-  // Mismatched types—such as using `uint32 decryptedUint64` instead of the correct `uint64 decryptedUint64`—
-  // can cause subtle and hard-to-detect bugs, especially for developers new to the FHEVM stack.
+  // ⚠️ WARNING: The `cleartexts` argument is an ABI encoding of the decrypted values associated 
+  // to the handles (using `abi.encode`). 
+  // 
+  // These values' types must match exactly! Mismatched types—such as using `uint32 decryptedUint64` 
+  // instead of the correct `uint64 decryptedUint64` can cause subtle and hard-to-detect bugs, 
+  // especially for developers new to the FHEVM stack.
   // Always ensure that the parameter types align with the expected decrypted value types.
+  // 
   // !DOUBLE-CHECK!
   function callbackDecryptMultipleValues(
     uint256 requestID,
-    bool decryptedBool,
-    uint32 decryptedUint32,
-    uint64 decryptedUint64,
+    bytes memory cleartexts,
     bytes[] memory signatures
   ) external {
     // ⚠️ Don't forget the signature checks! (see `DecryptSingleValueInSolidity.sol` for detailed explanations)
-    FHE.checkSignatures(requestID, signatures);
+    FHE.checkSignatures(requestID, cleartexts, signatures);
+
+    (bool decryptedBool, uint32 decryptedUint32, uint64 decryptedUint64) = abi.decode(cleartexts, (bool, uint32, uint64));
     _clearBool = decryptedBool;
     _clearUint32 = decryptedUint32;
     _clearUint64 = decryptedUint64;
