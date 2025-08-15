@@ -96,7 +96,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         bytes memory cleartexts,
         bytes[] memory signatures
     ) public returns (bool) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         uint256 i = 0;
         while (true) {
             i++;
@@ -123,7 +123,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
 
     /// @notice Callback function for boolean decryption
     function callbackBool(uint256 requestID, bytes memory cleartexts, bytes[] memory signatures) public returns (bool) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (bool decryptedInput) = abi.decode(cleartexts, (bool));
         yBool = decryptedInput;
         return yBool;
@@ -148,7 +148,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     /// @param cleartexts The decrypted 8-bit unsigned integer ABI encoded in bytes
     /// @return The decrypted value
     function callbackUint8(uint256 requestID, bytes memory cleartexts, bytes[] memory signatures) public returns (uint8) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (uint8 decryptedInput) = abi.decode(cleartexts, (uint8));
         yUint8 = decryptedInput;
         return decryptedInput;
@@ -177,7 +177,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         bytes memory cleartexts,
         bytes[] memory signatures
     ) public returns (uint16) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (uint16 decryptedInput) = abi.decode(cleartexts, (uint16));
         yUint16 = decryptedInput;
         return decryptedInput;
@@ -211,7 +211,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         bytes memory cleartexts,
         bytes[] memory signatures
     ) public returns (uint32) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         uint256[] memory params = getParamsUint256(requestID);
         (uint32 decryptedInput) = abi.decode(cleartexts, (uint32));
         unchecked {
@@ -254,7 +254,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         bytes memory cleartexts,
         bytes[] memory signatures
     ) public returns (uint64) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (uint64 decryptedInput) = abi.decode(cleartexts, (uint64));
         yUint64 = decryptedInput;
         return decryptedInput;
@@ -278,7 +278,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         bytes memory cleartexts,
         bytes[] memory signatures
     ) public returns (uint128) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (uint128 decryptedInput) = abi.decode(cleartexts, (uint128));
         yUint128 = decryptedInput;
         return decryptedInput;
@@ -302,7 +302,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         bytes memory cleartexts,
         bytes[] memory signatures
     ) public returns (uint256) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (uint256 decryptedInput) = abi.decode(cleartexts, (uint256));
         yUint256 = decryptedInput;
         return decryptedInput;
@@ -331,7 +331,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         bytes memory cleartexts,
         bytes[] memory signatures
     ) public returns (address) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (address decryptedInput1, address decryptedInput2) = abi.decode(cleartexts, (address, address));
         yAddress = decryptedInput1;
         yAddress2 = decryptedInput2;
@@ -354,7 +354,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         bytes memory cleartexts,
         bytes[] memory signatures
     ) public returns (address) {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (address decryptedInput) = abi.decode(cleartexts, (address));
         yAddress = decryptedInput;
         return decryptedInput;
@@ -383,7 +383,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
         bytes memory cleartexts,
         bytes[] memory signatures
     ) public {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (bool decBool, address decAddress, uint32 decEuint32, uint256 decEuint256) = abi.decode(cleartexts, (bool, address, uint32, uint256));
         yBool = decBool;
         yAddress = decAddress;
@@ -410,7 +410,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     }
 
     function callbackUint32_2(uint256 requestID, bytes memory cleartexts, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (uint32 decryptedInput) = abi.decode(cleartexts, (uint32));
         yUint32_2 = decryptedInput;
     }
@@ -423,7 +423,7 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     }
 
     function callbackUint32_3(uint256 requestID, bytes memory cleartexts, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (uint32 decryptedInput) = abi.decode(cleartexts, (uint32));
         yUint32_3 = decryptedInput;
     }
@@ -438,13 +438,13 @@ contract TestAsyncDecrypt is E2EFHEVMConfig {
     }
 
     function callbackUint128_2(uint256 requestID, bytes memory cleartexts, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (uint128 decryptedInput) = abi.decode(cleartexts, (uint128));
         yUint128_2 = decryptedInput;
     }
 
     function callbackUint128_3(uint256 requestID, bytes memory cleartexts, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestID, signatures);
+        FHE.checkSignatures(requestID, cleartexts, signatures);
         (uint128 decryptedInput) = abi.decode(cleartexts, (uint128));
         yUint128_3 = decryptedInput;
     }
