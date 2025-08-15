@@ -122,7 +122,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         info!(zk_proof_id = txn_request.0, "Processing proof");
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request.1,
-            &*self.provider,
+            self.provider.inner(),
             self.conf.gas_limit_overprovision_percent,
         )
         .await;
