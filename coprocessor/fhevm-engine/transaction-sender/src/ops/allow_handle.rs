@@ -81,7 +81,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
 
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request,
-            &*self.provider,
+            self.provider.inner(),
             self.conf.gas_limit_overprovision_percent,
         )
         .await;
