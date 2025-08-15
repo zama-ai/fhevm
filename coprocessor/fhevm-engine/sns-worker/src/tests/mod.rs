@@ -1,9 +1,8 @@
 use crate::{
-    create_s3_client,
     executor::{garbage_collect, query_sns_tasks, Order},
     keyset::fetch_keys,
     squash_noise::safe_deserialize,
-    Config, DBConfig, UploadJob,
+    Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
 };
 use anyhow::Ok;
 use serde::{Deserialize, Serialize};
@@ -17,7 +16,7 @@ use test_harness::instance::{DBInstance, ImportMode};
 use tfhe::{
     prelude::FheDecrypt, ClientKey, CompressedSquashedNoiseCiphertextList, SquashedNoiseFheUint,
 };
-use tokio::{sync::mpsc, time::sleep};
+use tokio::time::sleep;
 use tracing::Level;
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
@@ -27,8 +26,7 @@ const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
 #[ignore = "requires valid SnS keys in CI"]
 async fn test_fhe_ciphertext128_with_compression() {
     const WITH_COMPRESSION: bool = true;
-    let (conn, client_key, _rx, _test_instance) =
-        setup(WITH_COMPRESSION).await.expect("valid setup");
+    let (conn, client_key, _test_instance) = setup(WITH_COMPRESSION).await.expect("valid setup");
     let tf: TestFile = read_test_file("ciphertext64.bin");
 
     test_decryptable(
@@ -41,7 +39,7 @@ async fn test_fhe_ciphertext128_with_compression() {
         WITH_COMPRESSION,
     )
     .await
-    .expect("test_decryptable, first_fhe_computation = true");
+    .expect("test_fhe_ciphertext128_with_compression, first_fhe_computation = true");
     test_decryptable(
         &conn,
         &client_key,
@@ -52,14 +50,41 @@ async fn test_fhe_ciphertext128_with_compression() {
         WITH_COMPRESSION,
     )
     .await
-    .expect("test_decryptable, first_fhe_computation = false");
+    .expect("test_fhe_ciphertext128_with_compression, first_fhe_computation = false");
+}
+
+#[tokio::test]
+#[ignore = "requires valid SnS keys in CI"]
+async fn test_batch_execution() {
+    const WITH_COMPRESSION: bool = true;
+    let (conn, client_key, _test_instance) = setup(WITH_COMPRESSION).await.expect("valid setup");
+    let tf: TestFile = read_test_file("ciphertext64.bin");
+
+    let batch_size = std::env::var("BATCH_SIZE")
+        .ok()
+        .and_then(|v| v.parse::<u16>().ok())
+        .unwrap_or(100);
+
+    println!("Batch size: {}", batch_size);
+
+    run_batch_computations(
+        &conn,
+        &client_key,
+        &tf.handle,
+        batch_size,
+        &tf.ciphertext64.clone(),
+        tf.decrypted,
+        WITH_COMPRESSION,
+    )
+    .await
+    .expect("run_batch_computations should succeed");
 }
 
 #[tokio::test]
 #[ignore = "requires valid SnS keys in CI"]
 async fn test_fhe_ciphertext128_no_compression() {
     const NO_COMPRESSION: bool = false;
-    let (conn, client_key, _rx, _test_instance) = setup(NO_COMPRESSION).await.expect("valid setup");
+    let (conn, client_key, _test_instance) = setup(NO_COMPRESSION).await.expect("valid setup");
     let tf: TestFile = read_test_file("ciphertext64.bin");
 
     test_decryptable(
@@ -98,34 +123,74 @@ async fn test_decryptable(
 
     let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
 
-    // wait until ciphertext.large_ct is not NULL
-    let data = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10).await?;
+    assert_ciphertext128(
+        pool,
+        client_key,
+        tenant_id,
+        with_compression,
+        handle,
+        expected_result,
+    )
+    .await
+}
 
-    println!("Ciphertext data len: {:?}", data.len());
+async fn run_batch_computations(
+    pool: &sqlx::PgPool,
+    client_key: &Option<ClientKey>,
+    base_handle: &[u8],
+    batch_size: u16,
+    ciphertext: &Vec<u8>,
+    expected_cleartext: i64,
+    with_compression: bool,
+) -> anyhow::Result<()> {
+    let mut handles = Vec::new();
+    let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
+    for i in 0..batch_size {
+        let mut handle = base_handle.to_owned();
 
-    let cleartext = if with_compression {
-        let list: CompressedSquashedNoiseCiphertextList = safe_deserialize(&data)?;
-        let v: SquashedNoiseFheUint = list
-            .get(0)?
-            .ok_or_else(|| anyhow::anyhow!("Failed to get the first element from the list"))?;
-        let r: u128 = v.decrypt(
-            client_key
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Client key is not available for decryption"))?,
-        );
-        r
-    } else {
-        let v: SquashedNoiseFheUint = safe_deserialize(&data)?;
-        let r: u128 = v.decrypt(client_key.as_ref().unwrap());
-        r
-    };
+        // Modify first two bytes of the handle to make it unique
+        // However the ciphertext64 will be the same
+        handle[0] = (i >> 8) as u8;
+        handle[1] = (i & 0xFF) as u8;
+        clean_up(pool, &handle).await?;
+        test_harness::db_utils::insert_ciphertext64(pool, tenant_id, &handle, ciphertext, &[])
+            .await?;
+        test_harness::db_utils::insert_into_pbs_computations(pool, tenant_id, &handle).await?;
+        handles.push(handle);
+    }
 
-    println!("Cleartext: {cleartext}");
+    // Send notification only after the batch was fully inserted
+    // NB. Use db transaction instead
+    sqlx::query("SELECT pg_notify($1, '')")
+        .bind(LISTEN_CHANNEL)
+        .execute(pool)
+        .await?;
 
-    assert!(
-        cleartext == expected_result as u128,
-        "Cleartext value does not match expected value",
-    );
+    let start = std::time::Instant::now();
+    let mut set = tokio::task::JoinSet::new();
+    for handle in handles.iter() {
+        let pool = pool.clone();
+        let client_key = client_key.clone();
+        let handle = handle.clone();
+        set.spawn(async move {
+            assert_ciphertext128(
+                &pool,
+                &client_key,
+                tenant_id,
+                with_compression,
+                &handle,
+                expected_cleartext,
+            )
+            .await
+        });
+    }
+
+    while let Some(res) = set.join_next().await {
+        res??;
+    }
+
+    let elapsed = start.elapsed();
+    println!("Batch execution took: {:?}, batch: {}", elapsed, batch_size);
 
     anyhow::Result::<()>::Ok(())
 }
@@ -298,26 +363,24 @@ async fn test_garbage_collect() {
     );
 }
 
-async fn setup(
-    enable_compression: bool,
-) -> anyhow::Result<(
-    sqlx::PgPool,
-    Option<ClientKey>,
-    tokio::sync::mpsc::Receiver<UploadJob>,
-    DBInstance,
-)> {
-    tracing_subscriber::fmt().json().with_level(true).init();
-    let test_instance = test_harness::instance::setup_test_db(ImportMode::WithAllKeys)
-        .await
-        .expect("valid db instance");
+fn build_test_config(db_url: String, enable_compression: bool) -> Config {
+    let batch_limit = std::env::var("BATCH_LIMIT")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(100);
 
-    let conf = Config {
+    let schedule_policy = std::env::var("SCHEDULE_POLICY")
+        .ok()
+        .map(SchedulePolicy::from)
+        .unwrap_or(SchedulePolicy::RayonParallel);
+
+    Config {
         tenant_api_key: TENANT_API_KEY.to_string(),
         db: DBConfig {
-            url: test_instance.db_url().to_owned(),
+            url: db_url,
             listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),
-            batch_limit: 10,
+            batch_limit,
             gc_batch_limit: 30,
             polling_interval: 60000,
             cleanup_interval: Duration::from_secs(10),
@@ -325,7 +388,18 @@ async fn setup(
             timeout: Duration::from_secs(5),
             lifo: false,
         },
-        s3: crate::S3Config::default(),
+        s3: S3Config {
+            bucket_ct128: "ct128".to_owned(),
+            bucket_ct64: "ct64".to_owned(),
+            max_concurrent_uploads: 1000,
+            retry_policy: S3RetryPolicy {
+                max_retries_per_upload: 100,
+                max_backoff: Duration::from_secs(10),
+                max_retries_timeout: Duration::from_secs(120),
+                recheck_duration: Duration::from_secs(2),
+                regular_recheck_duration: Duration::from_secs(120),
+            },
+        },
         service_name: "test-sns-worker".to_owned(),
         log_level: Level::INFO,
         health_checks: crate::HealthCheckConfig {
@@ -333,7 +407,18 @@ async fn setup(
             port: 8080,
         },
         enable_compression,
-    };
+        schedule_policy,
+    }
+}
+async fn setup(
+    enable_compression: bool,
+) -> anyhow::Result<(sqlx::PgPool, Option<ClientKey>, DBInstance)> {
+    tracing_subscriber::fmt().json().with_level(true).init();
+    let test_instance = test_harness::instance::setup_test_db(ImportMode::WithAllKeys)
+        .await
+        .expect("valid db instance");
+
+    let conf = build_test_config(test_instance.db_url().to_owned(), enable_compression);
 
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(conf.db.max_connections)
@@ -341,23 +426,17 @@ async fn setup(
         .connect(&conf.db.url)
         .await?;
 
-    let (upload_tx, upload_rx) = mpsc::channel::<UploadJob>(10);
-
     let token = test_instance.parent_token.child_token();
     let (client_key, _) = fetch_keys(&pool, &TENANT_API_KEY.to_owned()).await?;
-    let (client, _) = create_s3_client(&conf).await;
 
     tokio::spawn(async move {
-        crate::compute_128bit_ct(conf, upload_tx, token, client)
-            .await
-            .expect("valid worker");
-        Ok(())
+        crate::run_all(conf, token).await.expect("valid worker run");
     });
 
     // TODO: Replace this with notification from the worker when it's in ready-state
     sleep(Duration::from_secs(5)).await;
 
-    Ok((pool, client_key, upload_rx, test_instance))
+    Ok((pool, client_key, test_instance))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -451,6 +530,51 @@ async fn clean_up(pool: &sqlx::PgPool, handle: &Vec<u8>) -> anyhow::Result<()> {
         .bind(handle)
         .execute(pool)
         .await?;
+
+    sqlx::query("DELETE FROM ciphertext_digest WHERE handle = $1")
+        .bind(handle)
+        .execute(pool)
+        .await?;
+
+    Ok(())
+}
+
+/// Verifies that the ciphertext for the given handle in the database decrypts to the expected value
+async fn assert_ciphertext128(
+    pool: &sqlx::PgPool,
+    client_key: &Option<ClientKey>,
+    tenant_id: i32,
+    with_compression: bool,
+    handle: &Vec<u8>,
+    expected_cleartext: i64,
+) -> anyhow::Result<()> {
+    let data = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 1000).await?;
+
+    println!("Ciphertext data len: {:?}", data.len());
+
+    let cleartext = if with_compression {
+        let list: CompressedSquashedNoiseCiphertextList = safe_deserialize(&data)?;
+        let v: SquashedNoiseFheUint = list
+            .get(0)?
+            .ok_or_else(|| anyhow::anyhow!("Failed to get the first element from the list"))?;
+        let r: u128 = v.decrypt(
+            client_key
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Client key is not available for decryption"))?,
+        );
+        r
+    } else {
+        let v: SquashedNoiseFheUint = safe_deserialize(&data)?;
+        let r: u128 = v.decrypt(client_key.as_ref().unwrap());
+        r
+    };
+
+    println!("Cleartext: {cleartext}");
+
+    assert!(
+        cleartext == expected_cleartext as u128,
+        "Cleartext value does not match expected value",
+    );
 
     Ok(())
 }

@@ -1,5 +1,7 @@
 name: gateway-contracts-deployment-tests
 
+permissions: {}
+
 on:
   pull_request:
 
@@ -32,6 +34,10 @@ jobs:
     name: gateway-contracts-deployment-tests/sc-deploy (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
+    permissions:
+      contents: 'read'
+      checks: 'write'
+      packages: 'read'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -94,8 +100,3 @@ jobs:
         if: always()
         run: |
           make docker-compose-down
-
-permissions:
-  contents: 'read'
-  checks: 'write'
-  packages: 'read'

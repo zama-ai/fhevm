@@ -1,5 +1,5 @@
 # Stage 1: Build TFHE Worker
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.85.0 AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.89.0 AS builder
 
 USER root
 

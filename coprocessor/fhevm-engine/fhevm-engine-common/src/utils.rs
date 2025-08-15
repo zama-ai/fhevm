@@ -1,3 +1,7 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+
 use serde::{de::DeserializeOwned, Serialize};
 use tfhe::{named::Named, prelude::ParameterSetConformant, Unversionize, Versionize};
 
@@ -70,5 +74,39 @@ pub fn compact_hex(blob: &[u8]) -> String {
                 &hex_str[hex_str.len() - OFFSET..]
             )
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct HeartBeat {
+    timestamp_origin: std::time::Instant,
+    timestamp: Arc<AtomicU64>,
+}
+impl HeartBeat {
+    pub fn new() -> Self {
+        Self {
+            timestamp_origin: std::time::Instant::now(),
+            timestamp: Arc::new(AtomicU64::new(0)),
+        }
+    }
+
+    fn now_timestamp(&self) -> u64 {
+        self.timestamp_origin.elapsed().as_secs()
+    }
+
+    pub fn update(&self) {
+        let now = self.now_timestamp();
+        self.timestamp.store(now, Ordering::Relaxed);
+    }
+
+    pub fn is_recent(&self, freshness: &Duration) -> bool {
+        let elapsed = self.now_timestamp() - self.timestamp.load(Ordering::Relaxed);
+        elapsed <= freshness.as_secs()
+    }
+}
+
+impl Default for HeartBeat {
+    fn default() -> Self {
+        Self::new()
     }
 }

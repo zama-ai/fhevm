@@ -5,8 +5,11 @@ use std::{
 };
 
 use crate::{
-    nonce_managed_provider::NonceManagedProvider, ops::common::try_into_array,
-    overprovision_gas_limit::try_overprovision_gas_limit, REVIEW,
+    metrics::{ALLOW_HANDLE_FAIL_COUNTER, ALLOW_HANDLE_SUCCESS_COUNTER},
+    nonce_managed_provider::NonceManagedProvider,
+    ops::common::try_into_array,
+    overprovision_gas_limit::try_overprovision_gas_limit,
+    REVIEW,
 };
 
 use super::TransactionOperation;
@@ -103,6 +106,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                 if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
                     || matches!(&e, RpcError::LocalUsageError(_)) =>
             {
+                ALLOW_HANDLE_FAIL_COUNTER.inc();
                 warn!(
                     transaction_request = ?overprovisioned_txn_req,
                     error = %e,
@@ -121,6 +125,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                 );
             }
             Err(e) => {
+                ALLOW_HANDLE_FAIL_COUNTER.inc();
                 warn!(
                     transaction_request = ?overprovisioned_txn_req,
                     error = %e,
@@ -149,6 +154,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         {
             Ok(receipt) => receipt,
             Err(e) => {
+                ALLOW_HANDLE_FAIL_COUNTER.inc();
                 error!(error = %e, "Getting receipt failed");
                 self.increment_txn_limited_retries_count(
                     key,
@@ -173,7 +179,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                 key = %key,
                 "Allow txn succeeded"
             );
+            ALLOW_HANDLE_SUCCESS_COUNTER.inc();
         } else {
+            ALLOW_HANDLE_FAIL_COUNTER.inc();
             error!(
                 transaction_hash = %receipt.transaction_hash,
                 status = receipt.status(),
@@ -480,11 +488,5 @@ where
 
     fn provider(&self) -> &P {
         self.provider.inner()
-    }
-
-    async fn check_provider_connection(&self) -> anyhow::Result<()> {
-        // Simple check to verify the provider is connected
-        let _ = self.provider.get_block_number().await?;
-        Ok(())
     }
 }
