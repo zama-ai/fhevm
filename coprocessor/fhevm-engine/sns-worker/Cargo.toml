@@ -50,6 +50,7 @@ path = "src/bin/sns_worker.rs"
 
 [features]
 test_decrypt_128 = []
+test_s3_use_handle_as_key = []
 
 [dev-dependencies]
 test-harness = { path = "../test-harness" }
@@ -57,5 +58,5 @@ test-harness = { path = "../test-harness" }
 
 [dev-dependencies.sns-worker]
 path = "."
-features = ["test_decrypt_128"]
+features = ["test_decrypt_128", "test_s3_use_handle_as_key"]
 
