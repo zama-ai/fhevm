@@ -85,10 +85,11 @@ contract DecryptMultipleValuesInSolidity is SepoliaConfig {
   function callbackDecryptMultipleValues(
     uint256 requestID,
     bytes memory cleartexts,
-    bytes[] memory signatures
+    bytes memory decryptionProof
   ) external {
     // ⚠️ Don't forget the signature checks! (see `DecryptSingleValueInSolidity.sol` for detailed explanations)
-    FHE.checkSignatures(requestID, cleartexts, signatures);
+    // The signatures are included in the `decryptionProof` parameter.
+    FHE.checkSignatures(requestID, cleartexts, decryptionProof);
 
     (bool decryptedBool, uint32 decryptedUint32, uint64 decryptedUint64) = abi.decode(cleartexts, (bool, uint32, uint64));
     _clearBool = decryptedBool;

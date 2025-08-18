@@ -104,8 +104,8 @@ contract EncryptedSimpleVoting is SepoliaConfig {
         status = VotingStatus.DecryptionInProgress;
     }
 
-    function callbackDecryptVotes(uint256 requestId, bytes memory cleartexts, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestId, cleartexts, signatures);
+    function callbackDecryptVotes(uint256 requestId, bytes memory cleartexts, bytes memory decryptionProof) public {
+        FHE.checkSignatures(requestId, cleartexts, decryptionProof);
 
         (uint64 yesVotes, uint64 noVotes) = abi.decode(cleartexts, (uint64, uint64));
         decryptedYesVotes = yesVotes;

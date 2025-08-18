@@ -8934,17 +8934,17 @@ library FHE {
      * @dev The callback function has the following signature:
      * - requestID (static uint256)
      * - cleartexts (dynamic bytes)
-     * - signatures (dynamic list of dynamic bytes)
+     * - decryptionProof (dynamic bytes)
      *
      * This means that the calldata is encoded in the following way:
      * - 4 bytes: selector
      * - 32 bytes: requestID
      * - 32 bytes: offset of the cleartexts
-     * - 32 bytes: offset of the signatures
-     * - 32 bytes: length of the cleartexts (total number of bytes) (start position: 100)
-     * - n*32 bytes: the "n" cleartext values, with "n" the number of handles (start position: 132)
-     * - 32 bytes: length of the signatures (number of signatures)
-     * - ... the offsets, lengths and values for all signatures
+     * - 32 bytes: offset of the decryptionProof
+     * - 32 bytes: length of the cleartexts (total number of bytes)
+     * - n*32 bytes: the "n" cleartext values, with "n" the number of handles
+     * - 32 bytes: length of the decryptionProof (total number of bytes)
+     * - ... the data of the decryptionProof (signatures, extra data)
      */
     function verifySignatures(
         bytes32[] memory handlesList,
