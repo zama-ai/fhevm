@@ -31,7 +31,6 @@ interface IDecryption {
     error DecryptionNotDone(uint256 decryptionId);
     error DecryptionNotRequested(uint256 decryptionId);
     error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
-    error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCiphertextMaterial invalidSnsCtMaterial);
     error EmptyContractAddresses();
     error EmptyCtHandleContractPairs();
     error EmptyCtHandles();
@@ -700,66 +699,6 @@ interface IDecryption {
         "name": "contractAddresses",
         "type": "address[]",
         "internalType": "address[]"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "DifferentKeyIdsNotAllowed",
-    "inputs": [
-      {
-        "name": "firstSnsCtMaterial",
-        "type": "tuple",
-        "internalType": "struct SnsCiphertextMaterial",
-        "components": [
-          {
-            "name": "ctHandle",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "keyId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "snsCiphertextDigest",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "coprocessorTxSenderAddresses",
-            "type": "address[]",
-            "internalType": "address[]"
-          }
-        ]
-      },
-      {
-        "name": "invalidSnsCtMaterial",
-        "type": "tuple",
-        "internalType": "struct SnsCiphertextMaterial",
-        "components": [
-          {
-            "name": "ctHandle",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "keyId",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "snsCiphertextDigest",
-            "type": "bytes32",
-            "internalType": "bytes32"
-          },
-          {
-            "name": "coprocessorTxSenderAddresses",
-            "type": "address[]",
-            "internalType": "address[]"
-          }
-        ]
       }
     ]
   },
@@ -2568,99 +2507,6 @@ error DelegatorAddressInContractAddresses(address delegatorAddress, address[] co
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::Address,
                     > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[]),(bytes32,uint256,bytes32,address[]))` and selector `0xcfae921f`.
-```solidity
-error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCiphertextMaterial invalidSnsCtMaterial);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct DifferentKeyIdsNotAllowed {
-        #[allow(missing_docs)]
-        pub firstSnsCtMaterial: <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub invalidSnsCtMaterial: <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (SnsCiphertextMaterial, SnsCiphertextMaterial);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
-            <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<DifferentKeyIdsNotAllowed>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: DifferentKeyIdsNotAllowed) -> Self {
-                (value.firstSnsCtMaterial, value.invalidSnsCtMaterial)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for DifferentKeyIdsNotAllowed {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    firstSnsCtMaterial: tuple.0,
-                    invalidSnsCtMaterial: tuple.1,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for DifferentKeyIdsNotAllowed {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[]),(bytes32,uint256,bytes32,address[]))";
-            const SELECTOR: [u8; 4] = [207u8, 174u8, 146u8, 31u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <SnsCiphertextMaterial as alloy_sol_types::SolType>::tokenize(
-                        &self.firstSnsCtMaterial,
-                    ),
-                    <SnsCiphertextMaterial as alloy_sol_types::SolType>::tokenize(
-                        &self.invalidSnsCtMaterial,
-                    ),
                 )
             }
             #[inline]
@@ -6694,8 +6540,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         #[allow(missing_docs)]
         DelegatorAddressInContractAddresses(DelegatorAddressInContractAddresses),
         #[allow(missing_docs)]
-        DifferentKeyIdsNotAllowed(DifferentKeyIdsNotAllowed),
-        #[allow(missing_docs)]
         EmptyContractAddresses(EmptyContractAddresses),
         #[allow(missing_docs)]
         EmptyCtHandleContractPairs(EmptyCtHandleContractPairs),
@@ -6738,7 +6582,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [166u8, 166u8, 203u8, 33u8],
             [195u8, 68u8, 106u8, 199u8],
             [197u8, 171u8, 70u8, 126u8],
-            [207u8, 174u8, 146u8, 31u8],
             [212u8, 138u8, 249u8, 66u8],
             [220u8, 77u8, 120u8, 177u8],
             [222u8, 40u8, 89u8, 193u8],
@@ -6750,7 +6593,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     impl alloy_sol_types::SolInterface for IDecryptionErrors {
         const NAME: &'static str = "IDecryptionErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 17usize;
+        const COUNT: usize = 16usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -6768,9 +6611,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::DelegatorAddressInContractAddresses(_) => {
                     <DelegatorAddressInContractAddresses as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::DifferentKeyIdsNotAllowed(_) => {
-                    <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::EmptyContractAddresses(_) => {
                     <EmptyContractAddresses as alloy_sol_types::SolError>::SELECTOR
@@ -6944,17 +6784,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::ContractAddressesMaxLengthExceeded)
                     }
                     ContractAddressesMaxLengthExceeded
-                },
-                {
-                    fn DifferentKeyIdsNotAllowed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
-                        <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IDecryptionErrors::DifferentKeyIdsNotAllowed)
-                    }
-                    DifferentKeyIdsNotAllowed
                 },
                 {
                     fn DecryptionNotRequested(
@@ -7153,17 +6982,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     ContractAddressesMaxLengthExceeded
                 },
                 {
-                    fn DifferentKeyIdsNotAllowed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
-                        <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IDecryptionErrors::DifferentKeyIdsNotAllowed)
-                    }
-                    DifferentKeyIdsNotAllowed
-                },
-                {
                     fn DecryptionNotRequested(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -7257,11 +7075,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         inner,
                     )
                 }
-                Self::DifferentKeyIdsNotAllowed(inner) => {
-                    <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::EmptyContractAddresses(inner) => {
                     <EmptyContractAddresses as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -7348,12 +7161,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
                 Self::DelegatorAddressInContractAddresses(inner) => {
                     <DelegatorAddressInContractAddresses as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::DifferentKeyIdsNotAllowed(inner) => {
-                    <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

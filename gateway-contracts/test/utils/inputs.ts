@@ -49,3 +49,9 @@ export function createCtHandle(chainId: number = 0, fheType: number = 0): string
 export function createCtHandles(length: number, chainId: number = 0, fheType: number = 0): string[] {
   return Array.from({ length }, () => createCtHandle(chainId, fheType));
 }
+
+// Defined in IKmsManagement.sol
+export enum ParamsTypeEnum {
+  Default = 0,
+  Test = 1,
+}

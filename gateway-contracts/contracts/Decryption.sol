@@ -202,14 +202,14 @@ contract Decryption is
         /// @notice The user decrypted shares received from user decryption responses.
         mapping(uint256 decryptionId => bytes[] shares) userDecryptedShares;
         // ----------------------------------------------------------------------------------------------
-        // Transaction sender addresses from consensus state variables:
+        // Consensus state variables:
         // ----------------------------------------------------------------------------------------------
         // prettier-ignore
         /// @notice The KMS transaction senders involved in a consensus for a decryption response.
         mapping(uint256 decryptionId =>
             mapping(bytes32 digest => address[] kmsTxSenderAddresses))
                consensusTxSenderAddresses;
-        /// @notice The digest of the decryption response that reached consensus for a decryption request.
+        /// @notice The digest of the signed struct on which consensus was reached for a decryption request.
         mapping(uint256 decryptionId => bytes32 consensusDigest) decryptionConsensusDigest;
     }
 
@@ -259,11 +259,6 @@ contract Decryption is
         /// @dev a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
-        /// @dev Check that received snsCtMaterials have the same keyId.
-        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
-        _checkCtMaterialKeyIds(snsCtMaterials);
-
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Generate a new request ID
@@ -271,6 +266,7 @@ contract Decryption is
         // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
+        //TODO: add comment on bitmap
         $._decryptionRequestCounter++;
         uint256 decryptionId = $._decryptionRequestCounter;
 
@@ -393,11 +389,6 @@ contract Decryption is
         /// @dev a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
-        /// @dev Check that received snsCtMaterials have the same keyId.
-        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
-        _checkCtMaterialKeyIds(snsCtMaterials);
-
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Generate a new request ID
@@ -478,11 +469,6 @@ contract Decryption is
         /// @dev without being added to the contract first (and we currently have no ways of deleting
         /// @dev a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
-
-        /// @dev Check that received snsCtMaterials have the same keyId.
-        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
-        _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
         // Generate a new request ID
@@ -636,14 +622,15 @@ contract Decryption is
 
     /**
      * @dev See {IDecryption-getDecryptionConsensusTxSenders}.
-     * For public decryption, the list remains empty until the consensus is reached.
+     * For public decryption, the returned list remains empty until the consensus is reached.
      */
     function getDecryptionConsensusTxSenders(uint256 decryptionId) external view virtual returns (address[] memory) {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Get the unique digest associated to the decryption request in order to retrieve the list of
-        // KMS transaction sender address that were involved in the consensus
-        // For public decryption, this digest remains the default value (0x0) until the consensus is reached.
+        // KMS transaction sender addresses that were involved in the associated consensus
+        // For public decryption, this digest remains the default value (0x0) until the consensus is
+        // reached, meaning the returned list will be empty until then.
         bytes32 consensusDigest = $.decryptionConsensusDigest[decryptionId];
 
         return $.consensusTxSenderAddresses[decryptionId][consensusDigest];
@@ -959,19 +946,6 @@ contract Decryption is
             }
         }
         return false;
-    }
-
-    /// @notice Checks that all SNS ciphertext materials have the same keyId.
-    /// @param snsCtMaterials The list of SNS ciphertext materials to check
-    function _checkCtMaterialKeyIds(SnsCiphertextMaterial[] memory snsCtMaterials) internal pure virtual {
-        if (snsCtMaterials.length <= 1) return;
-
-        uint256 firstKeyId = snsCtMaterials[0].keyId;
-        for (uint256 i = 1; i < snsCtMaterials.length; i++) {
-            if (snsCtMaterials[i].keyId != firstKeyId) {
-                revert DifferentKeyIdsNotAllowed(snsCtMaterials[0], snsCtMaterials[i]);
-            }
-        }
     }
 
     /**

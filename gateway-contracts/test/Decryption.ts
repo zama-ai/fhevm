@@ -22,6 +22,7 @@ import {
 } from "../typechain-types/contracts/interfaces/IDecryption";
 import {
   EIP712,
+  ParamsTypeEnum,
   createBytes32,
   createBytes32s,
   createCtHandle,
@@ -40,6 +41,9 @@ import {
   loadHostChainIds,
   loadTestVariablesFixture,
   toValues,
+  getSignaturesPrepKeygen,
+  getSignaturesKeygen,
+  createEIP712ResponsePrepKeygen,
 } from "./utils";
 
 // Constants for the Decryption contract
@@ -51,78 +55,6 @@ const MAX_DECRYPTION_REQUEST_BITS = 2048;
 // See https://docs.soliditylang.org/en/develop/units-and-global-variables.html#time-units
 function getDateInSeconds(): number {
   return Math.floor(Date.now() / 1000);
-}
-
-// Create a new key, rotate it and activate it. It returns the new key ID.
-async function createAndRotateKey(
-  sourceKeyId: BigNumberish,
-  kmsManagement: KmsManagement,
-  owner: Wallet,
-  coprocessorTxSenders: HardhatEthersSigner[],
-  kmsTxSenders: HardhatEthersSigner[],
-  fheParamsName: string,
-): Promise<BigNumberish> {
-  const newKeyId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
-  // Trigger a preprocessing keygen request
-  let txRequest = await kmsManagement.connect(owner).preprocessKeygenRequest(fheParamsName);
-
-  // Get the preKeyRequestId from the event in the transaction receipt
-  let receipt = await txRequest.wait();
-  let event = receipt?.logs[0] as EventLog;
-  const preKeyRequestId = Number(event?.args[0]);
-
-  // Define a preKeyId for the preprocessing keygen response
-  const preKeyId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
-
-  // Trigger preprocessing keygen responses for all KMS nodes
-  for (let i = 0; i < kmsTxSenders.length; i++) {
-    await kmsManagement.connect(kmsTxSenders[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
-  }
-
-  // Trigger a keygen request
-  await kmsManagement.connect(owner).keygenRequest(preKeyId);
-
-  // Trigger keygen responses for all KMS nodes
-  for (let i = 0; i < kmsTxSenders.length; i++) {
-    await kmsManagement.connect(kmsTxSenders[i]).keygenResponse(preKeyId, newKeyId);
-  }
-
-  // Trigger a preprocessing kskgen request
-  txRequest = await kmsManagement.connect(owner).preprocessKskgenRequest(fheParamsName);
-
-  // Get the preKeyRequestId from the event in the transaction receipt
-  receipt = await txRequest.wait();
-  event = receipt?.logs[0] as EventLog;
-  const preKskRequestId = Number(event?.args[0]);
-
-  // Define a preKskId for the preprocessing kskgen response
-  const preKskId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
-
-  // Trigger preprocessing kskgen responses for all KMS nodes
-  for (let i = 0; i < kmsTxSenders.length; i++) {
-    await kmsManagement.connect(kmsTxSenders[i]).preprocessKskgenResponse(preKskRequestId, preKskId);
-  }
-
-  // Trigger a kskgen request
-  await kmsManagement.connect(owner).kskgenRequest(preKskId, sourceKeyId, newKeyId);
-
-  // Define a kskId for kskgen response
-  const kskId = hre.ethers.toBigInt(hre.ethers.randomBytes(32));
-
-  // Trigger kskgen responses for all KMS nodes
-  for (let i = 0; i < kmsTxSenders.length; i++) {
-    await kmsManagement.connect(kmsTxSenders[i]).kskgenResponse(preKskId, kskId);
-  }
-
-  // Request activation of the key
-  await kmsManagement.connect(owner).activateKeyRequest(newKeyId);
-
-  // Trigger activation responses for all coprocessors
-  for (let i = 0; i < coprocessorTxSenders.length; i++) {
-    await kmsManagement.connect(coprocessorTxSenders[i]).activateKeyResponse(newKeyId);
-  }
-
-  return newKeyId;
 }
 
 describe("Decryption", function () {
@@ -186,38 +118,50 @@ describe("Decryption", function () {
   let kmsSigners: HardhatEthersSigner[];
   let coprocessorTxSenders: HardhatEthersSigner[];
   let keyId1: BigNumberish;
-  let fheParamsName: string;
 
   // Trigger a key generation in KmsManagement contract and activate the key
   async function prepareAddCiphertextFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
-    const { kmsManagement, ciphertextCommits, owner, kmsTxSenders, coprocessorTxSenders, fheParamsName } = fixtureData;
+    const { kmsManagement, ciphertextCommits, owner, kmsTxSenders, kmsSigners, coprocessorTxSenders } = fixtureData;
 
-    // Trigger a preprocessing keygen request
-    const txRequest = await kmsManagement.connect(owner).preprocessKeygenRequest(fheParamsName);
+    // Start a keygen with test parameters
+    // This first triggers a preprocessing keygen request
+    const txRequestPrepKeygen = await kmsManagement.connect(owner).keygen(ParamsTypeEnum.Test);
 
-    // Get the preKeyRequestId from the event in the transaction receipt
-    const receipt = await txRequest.wait();
-    const event = receipt?.logs[0] as EventLog;
-    const preKeyRequestId = Number(event?.args[0]);
+    // Get the prepKeyId from the event in the transaction receipt
+    const receiptPrepKeygen = await txRequestPrepKeygen.wait();
+    const eventPrepKeygen = receiptPrepKeygen?.logs[0] as EventLog;
+    const prepKeyId = BigInt(eventPrepKeygen?.args[0]);
 
-    // Define a preKeyId for the preprocessing keygen response
-    const preKeyId = 1;
+    // Create an EIP712 message for the preprocessing keygen response
+    const kmsManagementAddress = await kmsManagement.getAddress();
+    const eip712Message = createEIP712ResponsePrepKeygen(
+      gatewayChainId,
+      kmsManagementAddress,
+      prepKeyId,
+    );
+
+    // Sign the preprocessing keygen EIP712 message with all KMS signers
+    const kmsSignaturesPrepKeygen = await getSignaturesPrepKeygen(eip712Message, kmsSigners);
 
     // Trigger preprocessing keygen responses for all KMS nodes
     for (let i = 0; i < kmsTxSenders.length; i++) {
-      await kmsManagement.connect(kmsTxSenders[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
+      await kmsManagement.connect(kmsTxSenders[i]).prepKeygenResponse(prepKeyId, kmsSignaturesPrepKeygen[i]);
     }
 
-    // Trigger a keygen request
-    await kmsManagement.connect(owner).keygenRequest(preKeyId);
-
-    // Define a keyId for keygen response
-    const keyId1 = 1;
+    // Get the keyId from the keygen request event
+    const filter = kmsManagement.filters.KeygenRequest;
+    const events = await kmsManagement.queryFilter(filter);
+    if (events.length > 0) {
+      const keyId = BigInt(events[0].args[1]);
+    } else {
+      throw new Error("No keygen event found");
+    }
+    
 
     // Trigger keygen responses for all KMS nodes
     for (let i = 0; i < kmsTxSenders.length; i++) {
-      await kmsManagement.connect(kmsTxSenders[i]).keygenResponse(preKeyId, keyId1);
+      await kmsManagement.connect(kmsTxSenders[i]).keygenResponse(prepKeyId, keyId1);
     }
 
     // Request activation of the key
@@ -325,7 +269,6 @@ describe("Decryption", function () {
       coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       eip712Message = fixtureData.eip712Message;
       keyId1 = fixtureData.keyId1;
-      fheParamsName = fixtureData.fheParamsName;
     });
 
     it("Should request a public decryption with multiple ctHandles", async function () {
@@ -455,44 +398,6 @@ describe("Decryption", function () {
       )
         .to.be.revertedWithCustomError(decryption, "KmsNodeAlreadySigned")
         .withArgs(decryptionId, kmsSigners[0].address);
-    });
-
-    it("Should revert because of ctMaterials tied to different key IDs", async function () {
-      const keyId2 = await createAndRotateKey(
-        keyId1,
-        kmsManagement,
-        owner,
-        coprocessorTxSenders,
-        kmsTxSenders,
-        fheParamsName,
-      );
-
-      // Store the handles and allow them for public decryption
-      for (const newCtHandle of newCtHandles) {
-        for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await ciphertextCommits
-            .connect(coprocessorTxSenders[i])
-            .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
-
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
-        }
-      }
-
-      // Request public decryption with ctMaterials tied to different key IDs
-      const requestTx = decryption.publicDecryptionRequest([...ctHandles, newCtHandle], extraDataV0);
-
-      // Check that different key IDs are not allowed for batched public decryption
-      await expect(requestTx)
-        .to.be.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
-        .withArgs(
-          toValues(snsCiphertextMaterials[0]),
-          toValues({
-            ctHandle: newCtHandle,
-            keyId: keyId2,
-            snsCiphertextDigest,
-            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
-          }),
-        );
     });
 
     it("Should public decrypt with 3 valid responses", async function () {
@@ -875,7 +780,6 @@ describe("Decryption", function () {
       eip712RequestMessage = fixtureData.eip712RequestMessage;
       eip712ResponseMessages = fixtureData.eip712ResponseMessages;
       keyId1 = fixtureData.keyId1;
-      fheParamsName = fixtureData.fheParamsName;
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
@@ -1332,50 +1236,6 @@ describe("Decryption", function () {
         .withArgs(contractAddress, fakeContractAddresses);
     });
 
-    it("Should revert because of ctMaterials tied to different key IDs", async function () {
-      const keyId2 = await createAndRotateKey(
-        keyId1,
-        kmsManagement,
-        owner,
-        coprocessorTxSenders,
-        kmsTxSenders,
-        fheParamsName,
-      );
-
-      // Store the handle and allow the user and contract accounts to use it
-      for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await ciphertextCommits
-          .connect(coprocessorTxSenders[i])
-          .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
-      }
-
-      // Request user decryption with ctMaterials tied to different key IDs
-      const requestTx = decryption.userDecryptionRequest(
-        [...ctHandleContractPairs, newCtHandleContractPair],
-        requestValidity,
-        contractsInfo,
-        user.address,
-        publicKey,
-        userSignature,
-        extraDataV0,
-      );
-
-      // Check that different key IDs are not allowed for batched user decryption
-      await expect(requestTx)
-        .to.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
-        .withArgs(
-          toValues(snsCiphertextMaterials[0]),
-          toValues({
-            ctHandle: newCtHandle,
-            keyId: keyId2,
-            snsCiphertextDigest,
-            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
-          }),
-        );
-    });
-
     it("Should revert because of two responses with same signature", async function () {
       // Request user decryption
       await decryption.userDecryptionRequest(
@@ -1743,7 +1603,6 @@ describe("Decryption", function () {
       eip712RequestMessage = fixtureData.eip712RequestMessage;
       userDecryptedShares = fixtureData.userDecryptedShares;
       keyId1 = fixtureData.keyId1;
-      fheParamsName = fixtureData.fheParamsName;
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
@@ -2181,51 +2040,6 @@ describe("Decryption", function () {
       )
         .to.be.revertedWithCustomError(decryption, "ContractNotInContractAddresses")
         .withArgs(contractAddress, fakeContractAddresses);
-    });
-
-    it("Should revert because of ctMaterials tied to different key IDs", async function () {
-      // Define a new key ID
-      const keyId2 = await createAndRotateKey(
-        keyId1,
-        kmsManagement,
-        owner,
-        coprocessorTxSenders,
-        kmsTxSenders,
-        fheParamsName,
-      );
-
-      // Store the handle and allow the user and contract accounts to use it
-      for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await ciphertextCommits
-          .connect(coprocessorTxSenders[i])
-          .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, delegatorAddress, extraDataV0);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
-      }
-
-      // Request user decryption with ctMaterials tied to different key IDs
-      const requestTx = decryption.delegatedUserDecryptionRequest(
-        [...ctHandleContractPairs, newCtHandleContractPair],
-        requestValidity,
-        delegationAccounts,
-        contractsInfo,
-        publicKey,
-        delegatedSignature,
-        extraDataV0,
-      );
-
-      // Check that different key IDs are not allowed for batched user decryption
-      await expect(requestTx)
-        .to.be.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
-        .withArgs(
-          toValues(snsCiphertextMaterials[0]),
-          toValues({
-            ctHandle: newCtHandle,
-            keyId: keyId2,
-            snsCiphertextDigest,
-            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
-          }),
-        );
     });
 
     it("Should delegate user decrypt with 3 valid responses", async function () {

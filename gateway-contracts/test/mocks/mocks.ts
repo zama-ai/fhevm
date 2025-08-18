@@ -42,6 +42,7 @@ describe("Mock contracts", function () {
     txSenderAddress: DefaultAddress,
     signerAddress: DefaultAddress,
     ipAddress: DefaultString,
+    s3BucketUrl: DefaultString,
   };
 
   const DefaultCoprocessor = {
@@ -200,6 +201,13 @@ describe("Mock contracts", function () {
   });
 
   describe("GatewayConfigMock", async function () {
+    const DefaultV3UpgradeInputs = [
+      {
+        txSenderAddress: DefaultAddress,
+        s3BucketUrl: DefaultString,
+      },
+    ];
+
     it("Should emit InitializeGatewayConfig event on initialization", async function () {
       await expect(
         gatewayConfigMock.initializeFromEmptyProxy(
@@ -225,9 +233,9 @@ describe("Mock contracts", function () {
     });
 
     it("Should emit Reinitialization event on reinitialization", async function () {
-      await expect(gatewayConfigMock.reinitializeV2([DefaultCustodian]))
-        .to.emit(gatewayConfigMock, "ReinitializeGatewayConfigV2")
-        .withArgs(toValues([DefaultCustodian]));
+      await expect(gatewayConfigMock.reinitializeV3(DefaultV3UpgradeInputs))
+        .to.emit(gatewayConfigMock, "ReinitializeGatewayConfigV3")
+        .withArgs(toValues(DefaultV3UpgradeInputs));
     });
 
     it("Should emit UpdatePauser event on update pauser call", async function () {

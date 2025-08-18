@@ -38,6 +38,7 @@ Several metadata are stored for each KMS node:
 - `txSenderAddress` : see [Sender and signer](#sender-and-signer) below. In the fhevm protocol, this account is also called the KMS connector.
 - `signerAddress` : see [Sender and signer](#sender-and-signer) below.
 - `ipAddress` : IP address of the KMS node.
+- `s3BucketUrl` : URL of the S3 bucket where the KMS public materials are stored. In the fhevm protocol, this URL is fetched by the coprocessors in order to download the KMS public materials needed for FHE computations.
 
 The fhevm Gateway has a single KMS, which must be constituted of at least 1 node.
 
