@@ -4,7 +4,8 @@ pragma solidity ^0.8.24;
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { UUPSUpgradeable } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "../shared/Pausable.sol";
+import { Pausable } from "../shared/Pausable.sol";
+import { ProtocolMetadata, KmsNodeV1, KmsNodeV2, Coprocessor, Custodian, HostChain } from "../shared/Structs.sol";
 
 contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pausable {
     /// @notice Name of the contract
@@ -30,7 +31,7 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
         mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner;
         mapping(uint256 chainId => bool isRegistered) _isHostChainRegistered;
         ProtocolMetadata protocolMetadata; // deprecated, use protocolMetadataV2 instead
-        mapping(address kmsTxSenderAddress => KmsNode kmsNode) kmsNodes;
+        mapping(address kmsTxSenderAddress => KmsNodeV1 kmsNode) kmsNodes;
         address[] kmsTxSenderAddresses;
         address[] kmsSignerAddresses;
         uint256 mpcThreshold;
@@ -45,6 +46,7 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
         address[] custodianSignerAddresses;
         mapping(address custodianTxSenderAddress => bool isCustodianTxSender) _isCustodianTxSender;
         mapping(address custodianSignerAddress => bool isCustodianSigner) _isCustodianSigner;
+        mapping(address kmsTxSenderAddress => KmsNodeV2 kmsNodeV2) kmsNodesV2;
         // New state variables added in the upgraded version
         ProtocolMetadataV2 protocolMetadataV2;
     }

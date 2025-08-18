@@ -3,372 +3,191 @@ pragma solidity ^0.8.24;
 
 /**
  * @title Interface for the KmsManagement contract.
- * @notice The KmsManagement contract is responsible for managing the public materials such as FHE keys,
- * CRS (Common Reference String) and KSKs (Key Switching Keys) used by the fhevm Gateway.
- * @dev The KmsManagement contract contains:
- * - the cryptographic parameters to consider when generating public materials (FHE keys, CRS, KSKs)
- * - the generated public materials (FHE keys, CRS, KSKs) IDs
- *
- * The KmsManagement contract has an owner. It can generate public material, activate FHE keys or update
- * cryptographic parameters.
- * Some functions are restricted to KMS connectors (contracts representing each KMS node) or coprocessors.
- * Some view functions are accessible to everyone (ex: getting the current activated FHE key ID).
+ * @notice The KmsManagement contract is responsible for managing the KMS public materials used
+ * within the fhevm protocol. These materials include FHE keys (logical, physical), KSKs (Key Switching Keys)
+ * and CRS (Common Reference String).
  */
 interface IKmsManagement {
     /**
-     * @notice Emitted to trigger a key generation preprocessing.
-     * @param preKeygenRequestId The ID of the preprocess key generation request.
-     * @param fheParamsDigest The digest of the FHE parameters to use.
+     * @notice The type of the parameters to use for the generation requests.
      */
-    event PreprocessKeygenRequest(uint256 preKeygenRequestId, bytes32 fheParamsDigest);
+    enum ParamsType {
+        Default, // 0
+        Test // 1
+    }
 
     /**
-     * @notice Emitted when the key generation preprocessing is completed.
-     * @param preKeygenRequestId The ID of the preprocessed key generation request.
-     * @param preKeyId The ID of the preprocessed key.
+     * @notice The type of the generated key.
      */
-    event PreprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId);
+    enum KeyType {
+        SERVER, // 0
+        PUBLIC // 1
+    }
 
     /**
-     * @notice Emitted to trigger a KSK generation preprocessing.
-     * @param preKskgenRequestId The ID of the preprocess KSK generation request.
-     * @param fheParamsDigest The digest of the FHE parameters to use.
+     * @notice The struct representing a generated key.
      */
-    event PreprocessKskgenRequest(uint256 preKskgenRequestId, bytes32 fheParamsDigest);
+    struct KeyDigest {
+        /// @notice The type of the generated key.
+        KeyType keyType;
+        /// @notice The digest of the generated key.
+        bytes digest;
+    }
 
     /**
-     * @notice Emitted when the KSK generation preprocessing is completed.
-     * @param preKskgenRequestId The ID of the preprocessed KSK generation request.
-     * @param preKskId The ID of the preprocessed KSK.
+     * @notice Emitted to trigger an FHE key generation preprocessing.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param epochId The ID of the resharing epoch.
+     * @param paramsType The type of the parameters to use.
      */
-    event PreprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId);
+    event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType);
 
     /**
-     * @notice Emitted to trigger a key generation.
-     * @param preKeyId The ID of the preprocessed key.
-     * @param fheParamsDigest The digest of the FHE parameters to use.
+     * @notice Emitted to trigger an FHE key generation.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param keyId The ID of the key to generate.
      */
-    event KeygenRequest(uint256 preKeyId, bytes32 fheParamsDigest);
+    event KeygenRequest(uint256 prepKeygenId, uint256 keyId);
 
     /**
-     * @notice Emitted when the key generation is completed.
-     * @param preKeyId The ID of the preprocessed key.
-     * @param keygenId The ID of the generated key.
-     * @param fheParamsDigest The digest of the FHE parameters used for the key generation.
+     * @notice Emitted when the key is activated.
+     * @param keyId The ID of the activated key.
+     * @param kmsNodeS3BucketUrls The KMS nodes' s3 bucket URL that participated in the consensus.
+     * @param keyDigests The digests of the generated keys.
      */
-    event KeygenResponse(uint256 preKeyId, uint256 keygenId, bytes32 fheParamsDigest);
+    event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, KeyDigest[] keyDigests);
 
     /**
      * @notice Emitted to trigger a CRS (Common Reference String) generation.
-     * @param crsgenRequestId The ID of the CRS generation request.
-     * @param fheParamsDigest The digest of the FHE parameters to use.
+     * @param crsId The ID of the CRS to generate.
+     * @param maxBitLength The max bit length for generating the CRS.
+     * @param paramsType The type of CRS parameters to use.
      */
-    event CrsgenRequest(uint256 crsgenRequestId, bytes32 fheParamsDigest);
+    event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType);
 
     /**
-     * @notice Emitted when the CRS generation is completed.
-     * @param crsgenRequestId The ID of the CRS generation request.
+     * @notice Emitted when the CRS is activated.
      * @param crsId The ID of the generated CRS.
-     * @param fheParamsDigest The digest of the FHE parameters used for the CRS generation.
+     * @param kmsNodeS3BucketUrls The KMS nodes' s3 bucket URL that participated in the consensus.
+     * @param crsDigest The digest of the generated CRS.
      */
-    event CrsgenResponse(uint256 crsgenRequestId, uint256 crsId, bytes32 fheParamsDigest);
+    event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
 
     /**
-     * @notice Emitted to trigger a KSK generation.
-     * @param preKskId The ID of the preprocessed KSK.
-     * @param sourceKeyId The ID of the key to switch from.
-     * @param destKeyId The ID of the key to switch to.
-     * @param fheParamsDigest The digest of the FHE parameters to use.
+     * @notice Error thrown when a KMS node has already signed for a preprocessing keygen response.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param kmsSigner The signer address of the KMS node.
      */
-    event KskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId, bytes32 fheParamsDigest);
+    error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
 
     /**
-     * @notice Emitted when the KSK generation is completed.
-     * @param preKskId The ID of the preprocessed KSK.
-     * @param kskId The ID of the generated KSK.
-     * @param fheParamsDigest The digest of the FHE parameters used for the KSK generation.
+     * @notice Error thrown when a KMS node has already signed for a keygen response.
+     * @param keyId The ID of the key.
+     * @param kmsSigner The signer address of the KMS node.
      */
-    event KskgenResponse(uint256 preKskId, uint256 kskId, bytes32 fheParamsDigest);
+    error KmsAlreadySignedForKeygen(uint256 keyId, address kmsSigner);
 
     /**
-     * @notice Emitted to activate the key in coprocessors.
-     * @param keyId The ID of the key requested for activation.
+     * @notice Error thrown when a KMS node has already signed for a CRS generation response.
+     * @param crsId The ID of the CRS.
+     * @param kmsSigner The signer address of the KMS node.
      */
-    event ActivateKeyRequest(uint256 keyId);
+    error KmsAlreadySignedForCrsgen(uint256 crsId, address kmsSigner);
 
     /**
-     * @notice Emitted when the key has been activated in all coprocessors.
-     * @param keyId The ID of the activated key.
+     * @notice Error thrown when an FHE key has not been generated.
+     * @param keyId The ID of the key.
      */
-    event ActivateKeyResponse(uint256 keyId);
+    error KeyNotGenerated(uint256 keyId);
 
     /**
-     * @notice Emitted when the FHE parameters have been set (happens only once).
-     * @param fheParamsName The semantic name of the FHE params.
-     * @param fheParamsDigest The digest of the FHE params.
+     * @notice Error thrown when a CRS has not been generated.
+     * @param crsId The ID of the CRS.
      */
-    event AddFheParams(string fheParamsName, bytes32 fheParamsDigest);
+    error CrsNotGenerated(uint256 crsId);
 
     /**
-     * @notice Emitted when the FHE parameters have been updated.
-     * @param fheParamsName The semantic name of the FHE params updated.
-     * @param fheParamsDigest The new digest of the FHE params.
+     * @notice Trigger an FHE key generation.
+     * @param paramsType The type of FHE parameters to use.
      */
-    event UpdateFheParams(string fheParamsName, bytes32 fheParamsDigest);
-
-    /// @notice Error thrown when the FHE params are not initialized.
-    error FheParamsNotInitialized();
+    function keygen(ParamsType paramsType) external;
 
     /**
-     * @notice Error thrown when a KMS node has already responded to a key generation preprocessing step.
-     * @param preKeyId The ID of the preprocessed key that has already been responded.
-     * @param kmsTxSender The transaction sender address of the KMS node that has already responded.
+     * @notice Handle the response of a preprocessing keygen request.
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param signature The signature of the KMS node that has responded.
      */
-    error PreprocessKeygenKmsNodeAlreadyResponded(uint256 preKeyId, address kmsTxSender);
+    function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external;
 
     /**
-     * @notice Error thrown when a KMS node has already responded to a KSK generation preprocessing step.
-     * @param preKskId The ID of the preprocessed KSK that has already been responded.
-     * @param kmsTxSender The transaction sender address of the KMS node that has already responded.
+     * @notice Handle the response of a keygen request.
+     * @param keyId The ID of the key.
+     * @param keyDigests The digests of the generated keys.
+     * @param signature The signature of the KMS node that has responded.
      */
-    error PreprocessKskgenKmsNodeAlreadyResponded(uint256 preKskId, address kmsTxSender);
-
-    /**
-     * @notice Error thrown when a key generation request has already been sent.
-     * @param preKeyId The ID of the preprocessed key that has already been sent for key generation.
-     */
-    error KeygenRequestAlreadySent(uint256 preKeyId);
-
-    /**
-     * @notice Error thrown when a key generation step requires preprocessing.
-     * @param preKeyId The ID of the preprocessed key that is required for the key generation step.
-     */
-    error KeygenPreprocessingRequired(uint256 preKeyId);
-
-    /**
-     * @notice Error thrown when a KMS node has already responded to a key generation step.
-     * @param keyId The ID of the key that has already been responded.
-     * @param kmsTxSender The transaction sender address of the KMS node that has already responded.
-     */
-    error KeygenKmsNodeAlreadyResponded(uint256 keyId, address kmsTxSender);
-
-    /**
-     * @notice Error thrown when a KMS node has already responded to a CRS generation step.
-     * @param crsId The ID of the CRS that has already been responded.
-     * @param kmsTxSender The transaction sender address of the KMS node that has already responded.
-     */
-    error CrsgenKmsNodeAlreadyResponded(uint256 crsId, address kmsTxSender);
-
-    /**
-     * @notice Error thrown when a KSK generation request has already been sent.
-     * @param preKskId The ID of the preprocessed KSK that has already been sent for KSK generation.
-     */
-    error KskgenRequestAlreadySent(uint256 preKskId);
-
-    /**
-     * @notice Error thrown when a KSK generation step requires preprocessing.
-     * @param preKskId The preprocessed KSK ID that is required for the KSK generation step.
-     */
-    error KskgenPreprocessingRequired(uint256 preKskId);
-
-    /**
-     * @notice Error thrown when a key ID is the same for the source and destination
-     * during a KSK generation.
-     * @param keyId The ID of the key that is the same for the source and destination keys.
-     */
-    error KskgenSameSrcAndDestKeyIds(uint256 keyId);
-
-    /**
-     * @notice Error thrown when a KSK generation source key ID is not generated.
-     * @param sourceKeyId The ID of the source key that is not generated.
-     */
-    error KskgenSourceKeyNotGenerated(uint256 sourceKeyId);
-
-    /**
-     * @notice Error thrown when a KSK generation destination key ID is not generated.
-     * @param destKeyId The ID of the destination key that is not generated.
-     */
-    error KskgenDestKeyNotGenerated(uint256 destKeyId);
-
-    /**
-     * @notice Error thrown when a KMS node has already responded to a KSK generation step.
-     * @param kskId The ID of the KSK that has already been responded.
-     * @param kmsTxSender The transaction sender address of the KMS node that has already responded.
-     */
-    error KskgenKmsNodeAlreadyResponded(uint256 kskId, address kmsTxSender);
-
-    /**
-     * @notice Error thrown when a key activation request has already been sent.
-     * @param keyId The ID of the key that has already been sent for activation.
-     */
-    error ActivateKeyRequestAlreadySent(uint256 keyId);
-
-    /**
-     * @notice Error thrown when a key activation step requires a key generation step.
-     * @param keyId The ID of the key that is required for the key generation step.
-     */
-    error ActivateKeyRequiresKeygen(uint256 keyId);
-
-    /**
-     * @notice Error thrown when a key activation step requires a KSK generation step from the
-     * current key to the given key.
-     * @param currentKeyId The current key ID that is required for the KSK generation step.
-     * @param keyId The ID of the key that is required for the KSK generation step.
-     */
-    error ActivateKeyRequiresKskgen(uint256 currentKeyId, uint256 keyId);
-
-    /**
-     * @notice Error thrown when a coprocessor has already responded to a key activation step.
-     * @param keyId The ID of the key that has already been responded.
-     * @param coprocessorTxSender The transaction sender address of the coprocessor that has already responded.
-     */
-    error ActivateKeyCoprocessorAlreadyResponded(uint256 keyId, address coprocessorTxSender);
-
-    /**
-     * @notice Error thrown when the FHE params are already initialized.
-     * @param fheParamsName The semantic name of the already initialized the FHE params.
-     */
-    error FheParamsAlreadyInitialized(string fheParamsName);
-
-    /**
-     * @notice Trigger a key generation preprocessing.
-     * @param fheParamsName The semantic name of the FHE params to use.
-     */
-    function preprocessKeygenRequest(string calldata fheParamsName) external;
-
-    /**
-     * @notice Handle the response of a key generation preprocessing.
-     * @dev This function can only be called by a KMS connector.
-     * @param preKeyRequestId The ID of the preprocessed key request.
-     * @param preKeyId The ID of the preprocessed key.
-     */
-    function preprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId) external;
-
-    /**
-     * @notice Trigger a KSK generation preprocessing.
-     * @param fheParamsName The semantic name of the FHE params to use.
-     */
-    function preprocessKskgenRequest(string calldata fheParamsName) external;
-
-    /**
-     * @notice Handle the response of a KSK generation preprocessing.
-     * @dev This function can only be called by a KMS connector.
-     * @param preKskRequestId The ID of the preprocessed KSK request.
-     * @param preKskId The ID of the preprocessed KSK.
-     */
-    function preprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId) external;
-
-    /**
-     * @notice Trigger a key generation.
-     * @param preKeyId The ID of the preprocessed key.
-     */
-    function keygenRequest(uint256 preKeyId) external;
-
-    /**
-     * @notice Handle the response of a key generation.
-     * @dev This function can only be called by a KMS connector.
-     * @param preKeyId The ID of the preprocessed key.
-     * @param keyId The ID of the generated key.
-     */
-    function keygenResponse(uint256 preKeyId, uint256 keyId) external;
+    function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external;
 
     /**
      * @notice Trigger a CRS generation.
-     * @param fheParamsName The semantic name of the FHE params to use.
+     * @param maxBitLength The max bit length for generating the CRS.
+     * @param paramsType The type of parameters to use.
      */
-    function crsgenRequest(string calldata fheParamsName) external;
+    function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external;
 
     /**
      * @notice Handle the response of a CRS generation.
-     * @dev This function can only be called by a KMS connector.
-     * @param crsgenRequestId The ID of the CRS generation request.
      * @param crsId The ID of the generated CRS.
+     * @param crsDigest The digest of the generated CRS.
+     * @param signature The signature of the KMS node that has responded.
      */
-    function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external;
+    function crsgenResponse(uint256 crsId, bytes calldata crsDigest, bytes calldata signature) external;
 
     /**
-     * @notice Trigger a KSK generation.
-     * @param preKskId The ID of the preprocessed KSK.
-     * @param sourceKeyId The ID of the key switch from.
-     * @param destKeyId The ID of the key to switch to.
+     * @notice Get the parameters type used for the key generation.
+     * @param keyId The ID of the key.
+     * @return The parameters type used for the key generation.
      */
-    function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId) external;
+    function getKeyParamsType(uint256 keyId) external view returns (ParamsType);
 
     /**
-     * @notice Handle the response of a KSK generation.
-     * @dev This function can only be called by a KMS connector.
-     * @param preKskId The ID of the preprocessed KSK.
-     * @param kskId The ID of the generated KSK.
+     * @notice Get the parameters type used for the CRS generation.
+     * @param crsId The ID of the CRS.
+     * @return The parameters type used for the CRS generation.
      */
-    function kskgenResponse(uint256 preKskId, uint256 kskId) external;
+    function getCrsParamsType(uint256 crsId) external view returns (ParamsType);
 
     /**
-     * @notice Activate the key in coprocessors.
-     * @dev A key can only be activated if a KSK from the current key to this key has
-     * already been generated.
-     * @param keyId The ID of the key to activate.
+     * @notice Get the ID of the current active key.
+     * @return The current ID of the active key.
      */
-    function activateKeyRequest(uint256 keyId) external;
+    function getActiveKeyId() external view returns (uint256);
 
     /**
-     * @notice Handle the response of a key activation.
-     * @dev This function can only be called by a coprocessor.
-     * @param keyId The ID of the activated key.
+     * @notice Get the ID of the current active CRS.
+     * @return The current ID of the active CRS.
      */
-    function activateKeyResponse(uint256 keyId) external;
+    function getActiveCrsId() external view returns (uint256);
 
     /**
-     * @notice Add a new FHE params name and its digest.
-     * @dev This function can only be called by the owner.
-     * @dev This function can only be called once per fheParamsName, during the overall initialization of the protocol.
-     * @param fheParamsName The semantic name of the FHE params.
-     * @param fheParamsDigest The digest of the FHE params.
+     * @notice Get the KMS transaction sender addresses that propagated valid signatures for a request.
+     * @param requestId The ID of the request.
+     * @return The KMS transaction sender addresses.
      */
-    function addFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external;
+    function getConsensusTxSenders(uint256 requestId) external view returns (address[] memory);
 
     /**
-     * @notice Update the digest of the given FHE params name.
-     * @dev This function can only be called by the owner.
-     * @param fheParamsName The semantic name of the FHE params to update.
-     * @param fheParamsDigest The new digest of the FHE params.
+     * @notice Get the key materials for a given key ID.
+     * @param keyId The ID of the key.
+     * @return The key materials (s3 bucket URLs, key digests).
      */
-    function updateFheParams(string calldata fheParamsName, bytes32 fheParamsDigest) external;
+    function getKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
 
     /**
-     * @notice Get the digest of the given FHE params name.
-     * @return The digest of the given FHE params name.
+     * @notice Get the CRS materials for a given CRS ID.
+     * @param crsId The ID of the CRS.
+     * @return The CRS materials (s3 bucket URLs, CRS digest).
      */
-    function fheParamsDigests(string calldata fheParamsName) external view returns (bytes32);
-
-    /**
-     * @notice Get the ID of the current activated key.
-     * @return The current ID of the activated key.
-     */
-    function getCurrentKeyId() external view returns (uint256);
-
-    /**
-     * @notice Get the ID of the activated key with the given index.
-     * @return The ID of the activated key with the given index.
-     */
-    function activatedKeyIds(uint256 index) external view returns (uint256);
-
-    /**
-     * @notice Get the generator FHE params digest associated with the key ID.
-     * @return The generator FHE params digest associated with the key ID.
-     */
-    function keyFheParamsDigests(uint256 keyId) external view returns (bytes32);
-
-    /**
-     * @notice Get the generator FHE params digest associated with the KSK ID.
-     * @return The generator FHE params digest associated with the KSK ID.
-     */
-    function kskFheParamsDigests(uint256 kskId) external view returns (bytes32);
-
-    /**
-     * @notice Get the generator FHE params digest associated with the CRS ID.
-     * @return The generator FHE params digest associated with the CRS ID.
-     */
-    function crsFheParamsDigests(uint256 crsId) external view returns (bytes32);
+    function getCrsMaterials(uint256 crsId) external view returns (string[] memory, bytes memory);
 
     /**
      * @notice Returns the versions of the KmsManagement contract in SemVer format.

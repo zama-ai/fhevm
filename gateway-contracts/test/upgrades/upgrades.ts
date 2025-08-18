@@ -104,7 +104,7 @@ describe("Upgrades", function () {
     });
     const decryption = await upgrades.upgradeProxy(emptyUUPS, decryptionFactoryV1);
     await decryption.waitForDeployment();
-    expect(await decryption.getVersion()).to.equal("Decryption v0.3.0");
+    expect(await decryption.getVersion()).to.equal("Decryption v0.4.0");
     const decryptionV2 = await upgrades.upgradeProxy(decryption, decryptionFactoryV2);
     await decryptionV2.waitForDeployment();
     expect(await decryptionV2.getVersion()).to.equal("Decryption v1000.0.0");
@@ -130,7 +130,7 @@ describe("Upgrades", function () {
     });
     const kmsManagement = await upgrades.upgradeProxy(emptyUUPS, kmsManagementFactoryV1);
     await kmsManagement.waitForDeployment();
-    expect(await kmsManagement.getVersion()).to.equal("KmsManagement v0.1.0");
+    expect(await kmsManagement.getVersion()).to.equal("KmsManagement v0.2.0");
     const kmsManagementV2 = await upgrades.upgradeProxy(kmsManagement, kmsManagementFactoryV2);
     await kmsManagementV2.waitForDeployment();
     expect(await kmsManagementV2.getVersion()).to.equal("KmsManagement v1000.0.0");

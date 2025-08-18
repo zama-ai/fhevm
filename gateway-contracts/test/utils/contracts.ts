@@ -62,6 +62,13 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     kmsNodeIps.push(kmsNodeIp);
   }
 
+  // Load the KMS node S3 bucket URLs
+  const kmsNodeS3BucketUrls = [];
+  for (let idx = 0; idx < nKmsNodes; idx++) {
+    const kmsNodeS3BucketUrl = getRequiredEnvVar(`KMS_NODE_S3_BUCKET_URL_${idx}`);
+    kmsNodeS3BucketUrls.push(kmsNodeS3BucketUrl);
+  }
+
   // Load the coprocessor transaction senders
   const coprocessorTxSenders = [];
   for (let idx = 0; idx < nCoprocessors; idx++) {
@@ -114,6 +121,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     kmsTxSenders,
     kmsSigners,
     kmsNodeIps,
+    kmsNodeS3BucketUrls,
     coprocessorTxSenders,
     coprocessorSigners,
     coprocessorS3Buckets,
@@ -163,10 +171,6 @@ export async function loadTestVariablesFixture() {
   // Load the Decryption contract
   const decryption = await hre.ethers.getContractAt("Decryption", getRequiredEnvVar("DECRYPTION_ADDRESS"));
 
-  // Load the FHE parameters
-  const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
-  const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
-
   return {
     ...fixtureData,
     gatewayConfig,
@@ -179,7 +183,5 @@ export async function loadTestVariablesFixture() {
     nKmsNodes,
     nCoprocessors,
     nCustodians,
-    fheParamsName,
-    fheParamsDigest,
   };
 }

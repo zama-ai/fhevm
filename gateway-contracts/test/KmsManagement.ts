@@ -1,11 +1,87 @@
-import { SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
+import { HardhatEthersSigner, SignerWithAddress } from "@nomicfoundation/hardhat-ethers/signers";
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import { EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
-import { KmsManagement, KmsManagement__factory } from "../typechain-types";
-import { createRandomWallet, loadTestVariablesFixture } from "./utils";
+import { IKmsManagement, KmsManagement, KmsManagement__factory } from "../typechain-types";
+import {
+  ParamsTypeEnum,
+  createByteInput,
+  createEIP712ResponseKeygen,
+  createEIP712ResponsePrepKeygen,
+  createRandomWallet,
+  getSignaturesKeygen,
+  getSignaturesPrepKeygen,
+  loadTestVariablesFixture,
+  toValues,
+} from "./utils";
+
+// Trigger a key generation in KmsManagement contract
+async function generateKey(
+  kmsManagement: KmsManagement,
+  owner: Wallet,
+  gatewayChainId: number,
+  kmsTxSenders: HardhatEthersSigner[],
+  kmsSigners: HardhatEthersSigner[],
+): Promise<bigint> {
+  // Start a keygen with test parameters
+  // This first triggers a preprocessing keygen request
+  const txRequestPrepKeygen = await kmsManagement.connect(owner).keygen(ParamsTypeEnum.Test);
+
+  // Get the prepKeygenId from the event in the transaction receipt
+  const receiptPrepKeygen = await txRequestPrepKeygen.wait();
+  const eventPrepKeygen = receiptPrepKeygen?.logs[0] as EventLog;
+  const prepKeygenId = BigInt(eventPrepKeygen?.args[0]);
+
+  const kmsManagementAddress = await kmsManagement.getAddress();
+
+  // Create an EIP712 message for the preprocessing keygen response
+  const eip712MessagePrepKeygen = createEIP712ResponsePrepKeygen(gatewayChainId, kmsManagementAddress, prepKeygenId);
+
+  // Sign the preprocessing keygen EIP712 message with all KMS signers
+  const kmsSignaturesPrepKeygen = await getSignaturesPrepKeygen(eip712MessagePrepKeygen, kmsSigners);
+
+  // Trigger preprocessing keygen responses for all KMS nodes
+  for (let i = 0; i < kmsTxSenders.length; i++) {
+    await kmsManagement.connect(kmsTxSenders[i]).prepKeygenResponse(prepKeygenId, kmsSignaturesPrepKeygen[i]);
+  }
+
+  // Get the keyId from the keygen request event
+  let keyId: bigint;
+  const filter = kmsManagement.filters.KeygenRequest;
+  const events = await kmsManagement.queryFilter(filter);
+  if (events.length > 0) {
+    keyId = BigInt(events[0].args[1]);
+  } else {
+    throw new Error("No KeygenRequest event found");
+  }
+
+  // Create the key digests
+  const serverKeyDigest: IKmsManagement.KeyDigestStruct = { keyType: 0, digest: createByteInput() };
+  const publicKeyDigest: IKmsManagement.KeyDigestStruct = { keyType: 1, digest: createByteInput() };
+
+  const keyDigests = [serverKeyDigest, publicKeyDigest];
+
+  // Create an EIP712 message for the preprocessing keygen response
+  const eip712MessageKeygen = createEIP712ResponseKeygen(
+    gatewayChainId,
+    kmsManagementAddress,
+    prepKeygenId,
+    keyId,
+    keyDigests,
+  );
+
+  // Sign the preprocessing keygen EIP712 message with all KMS signers
+  const kmsSignaturesKeygen = await getSignaturesKeygen(eip712MessageKeygen, kmsSigners);
+
+  // Trigger keygen responses for all KMS nodes
+  for (let i = 0; i < kmsTxSenders.length; i++) {
+    await kmsManagement.connect(kmsTxSenders[i]).keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[i]);
+  }
+
+  return keyId;
+}
 
 describe("KmsManagement", function () {
   const fakeFheParamsName = "FAKE_FHE_PARAMS_NAME";

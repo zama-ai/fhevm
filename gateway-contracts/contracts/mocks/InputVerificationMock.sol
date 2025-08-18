@@ -2,6 +2,20 @@
 pragma solidity ^0.8.24;
 
 contract InputVerificationMock {
+    struct CiphertextVerification {
+        bytes32[] ctHandles;
+        address userAddress;
+        address contractAddress;
+        uint256 contractChainId;
+        bytes extraData;
+    }
+
+    struct ZKProofInput {
+        uint256 contractChainId;
+        address contractAddress;
+        address userAddress;
+    }
+
     event VerifyProofRequest(
         uint256 indexed zkProofId,
         uint256 indexed contractChainId,
@@ -15,7 +29,7 @@ contract InputVerificationMock {
 
     event RejectProofResponse(uint256 indexed zkProofId);
 
-    uint256 zkProofIdCounter;
+    uint256 zkProofIdCounter = 0;
 
     function verifyProofRequest(
         uint256 contractChainId,

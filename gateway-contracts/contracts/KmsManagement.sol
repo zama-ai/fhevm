@@ -1,126 +1,237 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "./interfaces/IKmsManagement.sol";
-import "./interfaces/IGatewayConfig.sol";
+import { IKmsManagement } from "./interfaces/IKmsManagement.sol";
+import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
+import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./shared/UUPSUpgradeableEmptyProxy.sol";
-import "./shared/GatewayConfigChecks.sol";
-import "./shared/Pausable.sol";
+import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
+import { Pausable } from "./shared/Pausable.sol";
+import { PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE } from "./shared/KmsRequestCounters.sol";
 
-/// @title KMS Management contract
-/// @dev TODO: This contract is neither used nor up-to-date. It will be reworked in the future.
-/// @dev See https://github.com/zama-ai/fhevm-gateway/issues/108
-/// @dev See {IKmsManagement}.
+/**
+ * @title KMS Management contract
+ * @dev See {IKmsManagement}.
+ */
 contract KmsManagement is
     IKmsManagement,
+    EIP712Upgradeable,
     Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
     Pausable
 {
-    /// @notice The address of the GatewayConfig contract for protocol state calls.
+    // ----------------------------------------------------------------------------------------------
+    // EIP712 utility constants:
+    // ----------------------------------------------------------------------------------------------
+
+    /**
+     * @notice The PrepKeygenVerification typed definition.
+     * @dev prepKeygenId: The ID of the preprocessing keygen request.
+     */
+    string private constant EIP712_PREP_KEYGEN_TYPE = "PrepKeygenVerification(uint256 prepKeygenId)";
+
+    /**
+     * @notice The hash of the PrepKeygenVerification typed definition.
+     */
+    bytes32 private constant EIP712_PREP_KEYGEN_TYPE_HASH = keccak256(bytes(EIP712_PREP_KEYGEN_TYPE));
+
+    /**
+     * @notice The KeygenVerification typed definition.
+     * @dev prepKeygenId: The ID of the preprocessing keygen request.
+     * @dev keyId: The ID of the generated key.
+     * @dev keyDigests: The digests of the generated key.
+     */
+    string private constant EIP712_KEYGEN_TYPE =
+        "KeygenVerification(uint256 prepKeygenId,uint256 keyId,(uint8,bytes)[] keyDigests)";
+
+    /**
+     * @notice The hash of the KeygenVerification typed definition.
+     */
+    bytes32 private constant EIP712_KEYGEN_TYPE_HASH = keccak256(bytes(EIP712_KEYGEN_TYPE));
+
+    /**
+     * @notice The CrsgenVerification typed definition.
+     * @dev crsId: The ID of the generated CRS.
+     * @dev maxBitLength: The max bit length of the generated CRS.
+     * @dev crsDigest: The digest of the generated CRS.
+     */
+    string private constant EIP712_CRSGEN_TYPE =
+        "CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest)";
+
+    /**
+     * @notice The hash of the CrsgenVerification typed definition.
+     */
+    bytes32 private constant EIP712_CRSGEN_TYPE_HASH = keccak256(bytes(EIP712_CRSGEN_TYPE));
+
+    // ----------------------------------------------------------------------------------------------
+    // Other contract references:
+    // ----------------------------------------------------------------------------------------------
+
+    /**
+     * @notice The address of the GatewayConfig contract for protocol state calls.
+     */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @dev The following constants are used for versioning the contract. They are made private
-    /// @dev in order to force derived contracts to consider a different version. Note that
-    /// @dev they can still define their own private constants with the same name.
+    // ----------------------------------------------------------------------------------------------
+    // Contract information:
+    // ----------------------------------------------------------------------------------------------
+
+    /**
+     * @dev The following constants are used for versioning the contract. They are made private
+     * in order to force derived contracts to consider a different version. Note that
+     * they can still define their own private constants with the same name.
+     */
     string private constant CONTRACT_NAME = "KmsManagement";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// Constant used for making sure the version number using in the `reinitializer` modifier is
-    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    /**
+     * @dev Constant used for making sure the version number using in the `reinitializer` modifier
+     * is identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+     */
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
-    /// @notice The contract's variable storage struct (@dev see ERC-7201)
+    // ----------------------------------------------------------------------------------------------
+    // Contract storage:
+    // ----------------------------------------------------------------------------------------------
+
+    /**
+     * @notice The contract's variable storage struct (@dev see ERC-7201)
+     */
     /// @custom:storage-location erc7201:fhevm_gateway.storage.KmsManagement
     struct KmsManagementStorage {
-        /// @notice The FHE params digest tied to a given FHE params name
-        mapping(string fheParamsName => bytes32 paramsDigest) fheParamsDigests;
-        /// @notice The number of pre-keygen requests, used to generate the preKeygenRequestIds.
-        uint256 _preKeygenRequestCounter;
-        /// @notice The counter of received KMS responses to a pre-keygen request.
-        mapping(uint256 preKeygenRequestId => uint256 counter) _preKeygenResponseCounter;
-        /// @notice Whether a key generation preprocessing step is done (required for key generation)
-        mapping(uint256 preKeyId => bool isDone) _isPreKeygenDone;
-        /// @notice The KMS responses to a key generation preprocessing step
-        mapping(uint256 preKeyId => mapping(address kmsConnector => bool hasResponded)) _preKeygenResponses;
-        /// @notice Whether a key generation is ongoing
-        mapping(uint256 preKeyId => bool isOngoing) _isKeygenOngoing;
-        /// @notice The KMS responses to a key generation
-        mapping(uint256 keyId => mapping(address kmsConnector => bool hasResponded)) _keygenResponses;
-        /// @notice The KMS response counter for a key generation
-        mapping(uint256 keyId => uint256 responseCounter) _keygenResponseCounter;
-        /// @notice If a keyId has been generated
-        mapping(uint256 keyId => bool isGenerated) _isKeyGenerated;
-        /// @notice The number of pre-kskgen requests, used to generate the preKskgenRequestIds.
-        uint256 _preKskgenRequestCounter;
-        /// @notice The counter of received KMS responses to a pre-kskgen request.
-        mapping(uint256 preKskgenRequestId => uint256 counter) _preKskgenResponseCounter;
-        /// @notice Whether a KSK generation preprocessing step is done (required for KSK generation)
-        mapping(uint256 preKskId => bool isDone) _isPreKskgenDone;
-        /// @notice The KMS responses to a KSK generation preprocessing step
-        mapping(uint256 preKskId => mapping(address kmsConnector => bool hasResponded)) _preKskgenResponses;
-        /// @notice Whether a KSK generation is ongoing
-        mapping(uint256 preKskId => bool isOngoing) _isKskgenOngoing;
-        /// @notice The KSK generation source key ID for a KSK generation
-        mapping(uint256 preKskId => uint256 sourceKeyId) _kskgenSourceKeyIds;
-        /// @notice The KSK generation destination key ID for a KSK generation
-        mapping(uint256 preKskId => uint256 destKeyId) _kskgenDestKeyIds;
-        /// @notice The KMS responses to a KSK generation
-        mapping(uint256 kskId => mapping(address kmsConnector => bool hasResponded)) _kskgenResponses;
-        /// @notice The KMS response counter for a KSK generation
-        mapping(uint256 kskId => uint256 responseCounter) _kskgenResponseCounter;
-        /// @notice If a kskId has been generated
-        mapping(uint256 kskId => bool isGenerated) _isKskGenerated;
-        /// @notice The KSK generation IDs (source keyId => destination keyId => kskId)
-        mapping(uint256 sourceKeyId => mapping(uint256 destKeyId => uint256 kskId)) _kskgenIds;
-        /// @notice The number of crsgen requests, used to generate the crsgenRequestIds.
-        uint256 _crsgenRequestCounter;
-        /// @notice The counter of received KMS responses to a crsgen request.
-        mapping(uint256 crsgenRequestId => uint256 counter) _crsgenResponseCounter;
-        /// @notice The KMS responses to a CRS generation
-        mapping(uint256 crsId => mapping(address kmsConnector => bool hasResponded)) _crsgenResponses;
-        /// @notice If a crsId has been generated
-        mapping(uint256 crsId => bool isGenerated) _isCrsGenerated;
-        /// @notice Whether a key activation is ongoing
-        mapping(uint256 keyId => bool isOngoing) _activateKeyOngoing;
-        /// @notice The KMS responses to a key activation
-        mapping(uint256 keyId => mapping(address coprocessorConnector => bool hasResponded)) _activateKeyResponses;
-        /// @notice The KMS response counter for a key activation
-        mapping(uint256 keyId => uint256 responseCounter) _activateKeyResponseCounter;
-        /// @notice The current (activated) keyId, as there is only one activated key at a time
-        uint256 currentKeyId;
-        /// @notice The list of previous activated keyIds, for tracking purposes
-        /// @dev The last element should be the current activated keyId
-        uint256[] activatedKeyIds;
-        /// @notice The Key ID to its generator FHE params digest
-        mapping(uint256 keyId => bytes32 paramsDigest) keyFheParamsDigests;
-        /// @notice The KSK ID to its generator FHE params digest
-        mapping(uint256 kskId => bytes32 paramsDigest) kskFheParamsDigests;
-        /// @notice The CRS ID to its generator FHE params digest
-        mapping(uint256 crsId => bytes32 paramsDigest) crsFheParamsDigests;
-        /// @notice The preprocessing Key ID to FHE params digest used during keygen
-        mapping(uint256 preKeyId => bytes32 paramsDigest) _preKeyFheParamsDigests;
-        /// @notice The keygen request assigned ID to the FHE params digest used during keygen preprocessing
-        mapping(uint256 preKeygenRequestId => bytes32 paramsDigest) _preKeygenFheParamsDigests;
-        /// @notice The preprocessing KSK ID to FHE params digest used during kskgen
-        mapping(uint256 preKskId => bytes32 paramsDigest) _preKskFheParamsDigests;
-        /// @notice The kskgen request assigned ID to the FHE params digest used during kskgen preprocessing
-        mapping(uint256 preKskgenRequestId => bytes32 paramsDigest) _preKskgenFheParamsDigests;
-        /// @notice The crsgen request assigned ID to the FHE params digest used during crsgen
-        mapping(uint256 crsgenRequestId => bytes32 paramsDigest) _crsgenFheParamsDigests;
-        /// @notice The fheParamsName mapping for the FHE params initialization status
-        mapping(string fheParamsName => bool isInitialized) _fheParamsInitialized;
+        /// @notice DEPRECATED
+        mapping(string fheParamsName => bytes32 paramsDigest) fheParamsDigests; // DEPRECATED
+        /// @notice DEPRECATED: use prepKeygenCounter instead
+        uint256 _preKeygenRequestCounter; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKeygenRequestId => uint256 counter) _preKeygenResponseCounter; // DEPRECATED
+        /// @notice DEPRECATED: use isPrepKeygenDone instead
+        mapping(uint256 preKeyId => bool isDone) _isPreKeygenDone; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKeyId => mapping(address kmsConnector => bool hasResponded)) _preKeygenResponses; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKeyId => bool isOngoing) _isKeygenOngoing; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 keyId => mapping(address kmsConnector => bool hasResponded)) _keygenResponses; // DEPRECATED
+        /// @notice DEPRECATED: use keygenResponseCounter instead
+        mapping(uint256 keyId => uint256 responseCounter) _keygenResponseCounter; // DEPRECATED
+        /// @notice DEPRECATED: use isRequestDone instead
+        mapping(uint256 keyId => bool isGenerated) _isKeyGenerated; // DEPRECATED
+        /// @notice DEPRECATED
+        uint256 _preKskgenRequestCounter; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKskgenRequestId => uint256 counter) _preKskgenResponseCounter; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKskId => bool isDone) _isPreKskgenDone; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKskId => mapping(address kmsConnector => bool hasResponded)) _preKskgenResponses; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKskId => bool isOngoing) _isKskgenOngoing; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKskId => uint256 sourceKeyId) _kskgenSourceKeyIds; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKskId => uint256 destKeyId) _kskgenDestKeyIds; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 kskId => mapping(address kmsConnector => bool hasResponded)) _kskgenResponses; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 kskId => uint256 responseCounter) _kskgenResponseCounter; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 kskId => bool isGenerated) _isKskGenerated; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 sourceKeyId => mapping(uint256 destKeyId => uint256 kskId)) _kskgenIds; // DEPRECATED
+        /// @notice DEPRECATED: use crsCounter instead
+        uint256 _crsgenRequestCounter; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 crsgenRequestId => uint256 counter) _crsgenResponseCounter; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 crsId => mapping(address kmsConnector => bool hasResponded)) _crsgenResponses; // DEPRECATED
+        /// @notice DEPRECATED: use isRequestDone instead
+        mapping(uint256 crsId => bool isGenerated) _isCrsGenerated; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 keyId => bool isOngoing) _activateKeyOngoing; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 keyId => mapping(address coprocessorConnector => bool hasResponded)) _activateKeyResponses; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 keyId => uint256 responseCounter) _activateKeyResponseCounter; // DEPRECATED
+        /// @notice DEPRECATED: use activeKeyId instead
+        uint256 currentKeyId; // DEPRECATED
+        /// @notice DEPRECATED
+        uint256[] activatedKeyIds; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 keyId => bytes32 paramsDigest) keyFheParamsDigests; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 kskId => bytes32 paramsDigest) kskFheParamsDigests; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 crsId => bytes32 paramsDigest) crsFheParamsDigests; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKeyId => bytes32 paramsDigest) _preKeyFheParamsDigests; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKeygenRequestId => bytes32 paramsDigest) _preKeygenFheParamsDigests; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKskId => bytes32 paramsDigest) _preKskFheParamsDigests; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 preKskgenRequestId => bytes32 paramsDigest) _preKskgenFheParamsDigests; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(uint256 crsgenRequestId => bytes32 paramsDigest) _crsgenFheParamsDigests; // DEPRECATED
+        /// @notice DEPRECATED
+        mapping(string fheParamsName => bool isInitialized) _fheParamsInitialized; // DEPRECATED
+        // ----------------------------------------------------------------------------------------------
+        // Pre-processing keygen state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The number of preprocessing keygen, used to generate the prepKeygenIds.
+        uint256 prepKeygenCounter;
+        // ----------------------------------------------------------------------------------------------
+        // Keygen state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The number of keygen, used to generate the keyIds.
+        uint256 keyCounter;
+        /// @notice Bidirectional mapping between preprocessing request IDs and key IDs
+        mapping(uint256 id => uint256 pairedId) keygenIdPairs;
+        /// @notice The digests of the generated keys
+        mapping(uint256 keyId => KeyDigest[] keyDigests) keyDigests;
+        /// @notice The ID of the currently active key
+        uint256 activeKeyId;
+        // ----------------------------------------------------------------------------------------------
+        // Crsgen state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The number of crsgen, used to generate the crsIds.
+        uint256 crsCounter;
+        /// @notice The max bit length used for the CRS generation
+        mapping(uint256 crsId => uint256 maxBitLength) crsMaxBitLength;
+        /// @notice The digests of the generated CRS
+        mapping(uint256 crsId => bytes crsDigest) crsDigests;
+        /// @notice The ID of the currently active CRS
+        uint256 activeCrsId;
+        // ----------------------------------------------------------------------------------------------
+        // Common state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The parameters type used for the request
+        mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
+        /// @notice Whether a KMS node has signed for a response
+        mapping(uint256 requestId => mapping(address kmsSigner => bool hasSigned)) kmsHasSignedForResponse;
+        /// @notice Whether a request has reached consensus
+        mapping(uint256 requestId => bool hasConsensusAlreadyBeenReached) isRequestDone;
+        /// @notice The KMS transaction sender addresses that propagated valid signatures for a request
+        mapping(uint256 requestId => mapping(bytes32 digest => address[] kmsTxSenderAddresses)) consensusTxSenderAddresses;
+        /// @notice The KMS nodes' s3 bucket URL that propagated valid signatures for a request
+        mapping(uint256 requestId => mapping(bytes32 digest => string[] kmsNodeS3BucketUrls)) consensusS3BucketUrls;
+        /// @notice The digest of the signed struct on which consensus was reached for a request
+        mapping(uint256 requestId => bytes32 digest) consensusDigest;
     }
 
-    /// @dev Storage location has been computed using the following command:
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.KmsManagement")) - 1))
-    /// @dev & ~bytes32(uint256(0xff))
+    /**
+     * @dev Storage location has been computed using the following command:
+     * keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.KmsManagement")) - 1))
+     * & ~bytes32(uint256(0xff))
+     */
     bytes32 private constant KMS_MANAGEMENT_STORAGE_LOCATION =
         0xa48b77331ab977c487fc73c0afbe86f1a3a130c068453f497d376ab9fac7e000;
 
@@ -129,405 +240,334 @@ contract KmsManagement is
         _disableInitializers();
     }
 
-    /// @notice Initializes the contract.
-    /// @dev This function needs to be public in order to be called by the UUPS proxy.
+    /**
+     * @notice Initializes the contract.
+     * @dev This function needs to be public in order to be called by the UUPS proxy.
+     */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy(
-        string memory fheParamsName,
-        bytes32 fheParamsDigest
-    ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+        __EIP712_init(CONTRACT_NAME, "1");
         __Ownable_init(owner());
         __Pausable_init();
 
         KmsManagementStorage storage $ = _getKmsManagementStorage();
-        $.fheParamsDigests[fheParamsName] = fheParamsDigest;
-        $._fheParamsInitialized[fheParamsName] = true;
+
+        // Initialize the counters in order to generate globally unique requestIds per request type
+        $.prepKeygenCounter = PREP_KEYGEN_COUNTER_BASE;
+        $.keyCounter = KEY_COUNTER_BASE;
+        $.crsCounter = CRS_COUNTER_BASE;
     }
 
-    /// @dev Modifier to check if the given FHE params name is initialized
-    modifier fheParamsInitialized(string calldata fheParamsName) {
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
-        if (!$._fheParamsInitialized[fheParamsName]) {
-            revert FheParamsNotInitialized();
-        }
-        _;
+
+        // Initialize the counters in order to generate globally unique requestIds per request type
+        $.prepKeygenCounter = PREP_KEYGEN_COUNTER_BASE;
+        $.keyCounter = KEY_COUNTER_BASE;
+        $.crsCounter = CRS_COUNTER_BASE;
     }
 
-    /// @dev See {IKmsManagement-preprocessKeygenRequest}.
-    function preprocessKeygenRequest(
-        string calldata fheParamsName
-    ) external virtual onlyGatewayOwner fheParamsInitialized(fheParamsName) whenNotPaused {
+    /**
+     * @dev See {IKmsManagement-keygen}.
+     */
+    function keygen(ParamsType paramsType) external virtual onlyGatewayOwner {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
-        /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
-        /// @dev https://github.com/zama-ai/fhevm-gateway/issues/67
-        /// @dev Generate a new preKeygenRequestId. This is used to track the key generation preprocessing responses
-        /// @dev as well as linking FHE params between the preprocessing and the actual key generation
-        /// @dev This is different from the preKeyId generated by the KMS connector
-        $._preKeygenRequestCounter++;
-        uint256 preKeygenRequestId = $._preKeygenRequestCounter;
+        // Generate a globally unique prepKeygenId for the key generation preprocessing
+        // The counter is initialized at deployment such that prepKeygenId's first byte uniquely
+        // represents a preprocessing keygen request, with format: [0000 0011 | counter_1..31]
+        $.prepKeygenCounter++;
+        uint256 prepKeygenId = $.prepKeygenCounter;
 
-        /// @dev Store the FHE params used for the key generation preprocessing step as they will be used
-        /// @dev for the actual key generation as well
-        bytes32 fheParamsDigest = $.fheParamsDigests[fheParamsName];
-        $._preKeygenFheParamsDigests[preKeygenRequestId] = fheParamsDigest;
+        // Generate a globally unique keyId for the key generation
+        // The counter is initialized at deployment such that keyId's first byte uniquely
+        // represents a keygen request, with format: [0000 0100 | counter_1..31]
+        // We generate the keyId in the preprocessing step in order to anticipate the introduction
+        // of key lifecycle: the keyId will be set to `Generating` status here
+        // See https://github.com/zama-ai/fhevm-internal/issues/185
+        $.keyCounter++;
+        uint256 keyId = $.keyCounter;
 
-        emit PreprocessKeygenRequest(preKeygenRequestId, fheParamsDigest);
+        // Associate both the prepKeygenId and the keyId to each other in order to retrieve them later
+        // Since IDs are globally unique, the IDs can't overlap and the same mapping can be used
+        $.keygenIdPairs[prepKeygenId] = keyId;
+        $.keygenIdPairs[keyId] = prepKeygenId;
+
+        // TODO: Get the epochId once resharing is implemented.
+        // See https://github.com/zama-ai/fhevm-internal/issues/151
+        uint256 epochId = 0;
+
+        // Store the FHE params type, used for both the preprocessing and the key generation
+        // This value can later be read through the `getKeyParamsType` function, once the key
+        // has been generated
+        $.requestParamsType[prepKeygenId] = paramsType;
+
+        emit PrepKeygenRequest(prepKeygenId, epochId, paramsType);
     }
 
-    /// @dev See {IKmsManagement-preprocessKeygenResponse}.
-    function preprocessKeygenResponse(
-        uint256 preKeygenRequestId,
-        uint256 preKeyId
-    ) external virtual onlyKmsTxSender whenNotPaused {
+    /**
+     * @dev See {IKmsManagement-prepKeygenResponse}.
+     */
+    function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external virtual onlyKmsTxSender {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
-        /// @dev A KMS node can only respond once
-        if ($._preKeygenResponses[preKeyId][msg.sender]) {
-            revert PreprocessKeygenKmsNodeAlreadyResponded(preKeyId, msg.sender);
-        }
+        // Compute the digest of the PrepKeygenVerification struct.
+        bytes32 digest = _hashPrepKeygenVerification(prepKeygenId);
 
-        $._preKeygenResponses[preKeyId][msg.sender] = true;
-        $._preKeygenResponseCounter[preKeygenRequestId]++;
+        // Recover the signer address from the signature and check that it is a KMS node
+        address kmsSigner = _validateEIP712Signature(digest, signature);
 
-        /// @dev Send the event if and only if the consensus is reached in the current response call.
-        /// @dev This means a "late" response will not be reverted, just ignored
-        if (!$._isPreKeygenDone[preKeyId] && _isKmsConsensusReached($._preKeygenResponseCounter[preKeygenRequestId])) {
-            $._isPreKeygenDone[preKeyId] = true;
-
-            /// @dev Store the FHE params digest used for the keygen preprocessing
-            $._preKeyFheParamsDigests[preKeyId] = $._preKeygenFheParamsDigests[preKeygenRequestId];
-
-            emit PreprocessKeygenResponse(preKeygenRequestId, preKeyId);
-        }
-    }
-
-    /// @dev See {IKmsManagement-preprocessKskgenRequest}.
-    function preprocessKskgenRequest(
-        string calldata fheParamsName
-    ) external virtual onlyGatewayOwner fheParamsInitialized(fheParamsName) whenNotPaused {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-
-        /// @dev TODO: maybe generate a preKeyId here instead of on KMS connectors:
-        /// @dev https://github.com/zama-ai/fhevm-gateway/issues/67
-        /// @dev Generate a new preKskRequestId. This is used to track the KSK generation preprocessing responses
-        /// @dev as well as linking FHE params between the preprocessing and the actual KSK generation
-        /// @dev This is different from the preKeyId generated by the KMS connector
-        $._preKskgenRequestCounter++;
-        uint256 preKskgenRequestId = $._preKskgenRequestCounter;
-
-        /// @dev Store the FHE params used for the KSK generation preprocessing step as they will be used
-        /// @dev for the actual KSK generation as well
-        bytes32 fheParamsDigest = $.fheParamsDigests[fheParamsName];
-        $._preKskgenFheParamsDigests[preKskgenRequestId] = fheParamsDigest;
-
-        emit PreprocessKskgenRequest(preKskgenRequestId, fheParamsDigest);
-    }
-
-    /// @dev See {IKmsManagement-preprocessKskgenResponse}.
-    function preprocessKskgenResponse(
-        uint256 preKskgenRequestId,
-        uint256 preKskId
-    ) external virtual onlyKmsTxSender whenNotPaused {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-
-        /// @dev A KMS node can only respond once
-        if ($._preKskgenResponses[preKskId][msg.sender]) {
-            revert PreprocessKskgenKmsNodeAlreadyResponded(preKskId, msg.sender);
+        // Check that the signer has not already signed for this preprocessing keygen response
+        if ($.kmsHasSignedForResponse[prepKeygenId][kmsSigner]) {
+            revert KmsAlreadySignedForPrepKeygen(prepKeygenId, kmsSigner);
         }
 
-        $._preKskgenResponses[preKskId][msg.sender] = true;
-        $._preKskgenResponseCounter[preKskgenRequestId]++;
+        $.kmsHasSignedForResponse[prepKeygenId][kmsSigner] = true;
 
-        /// @dev Send the event if and only if the consensus is reached in the current response call.
-        /// @dev This means a "late" response will not be reverted, just ignored
-        if (!$._isPreKskgenDone[preKskId] && _isKmsConsensusReached($._preKskgenResponseCounter[preKskgenRequestId])) {
-            $._isPreKskgenDone[preKskId] = true;
+        // Store the KMS transaction sender address for the preprocessing keygen response
+        // It is important to consider the same mapping fields used for the consensus
+        // A "late" valid KMS transaction sender address will still be added in the list
+        address[] storage consensusTxSenders = $.consensusTxSenderAddresses[prepKeygenId][digest];
+        consensusTxSenders.push(msg.sender);
 
-            /// @dev Store the FHE params digest used for the kskgen preprocessing
-            $._preKskFheParamsDigests[preKskId] = $._preKskgenFheParamsDigests[preKskgenRequestId];
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
+        if (!$.isRequestDone[prepKeygenId] && _isKmsConsensusReached(consensusTxSenders.length)) {
+            $.isRequestDone[prepKeygenId] = true;
 
-            emit PreprocessKskgenResponse(preKskgenRequestId, preKskId);
+            // Store the digest on which consensus was reached for the preprocessing keygen request
+            $.consensusDigest[prepKeygenId] = digest;
+
+            // Get the keyId associated to the prepKeygenId
+            uint256 keyId = $.keygenIdPairs[prepKeygenId];
+
+            emit KeygenRequest(prepKeygenId, keyId);
         }
     }
 
-    /// @dev See {IKmsManagement-keygenRequest}.
-    function keygenRequest(uint256 preKeyId) external virtual onlyGatewayOwner whenNotPaused {
+    /**
+     * @dev See {IKmsManagement-keygenResponse}.
+     */
+    function keygenResponse(
+        uint256 keyId,
+        KeyDigest[] calldata keyDigests,
+        bytes calldata signature
+    ) external virtual onlyKmsTxSender {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
-        /// @dev A key generation request can only be sent once
-        if ($._isKeygenOngoing[preKeyId]) {
-            revert KeygenRequestAlreadySent(preKeyId);
+        // Get the prepKeygenId associated to the keyId
+        uint256 prepKeygenId = $.keygenIdPairs[keyId];
+
+        // Compute the digest of the KeygenVerification struct.
+        bytes32 digest = _hashKeygenVerification(prepKeygenId, keyId, keyDigests);
+
+        // Recover the signer address from the signature and check that it is a KMS node
+        address kmsSigner = _validateEIP712Signature(digest, signature);
+
+        // Check that the signer has not already signed for this key generation response
+        if ($.kmsHasSignedForResponse[keyId][kmsSigner]) {
+            revert KmsAlreadySignedForKeygen(keyId, kmsSigner);
         }
 
-        /// @dev A key generation requires a key preprocessing step to be completed
-        if (!$._isPreKeygenDone[preKeyId]) {
-            revert KeygenPreprocessingRequired(preKeyId);
-        }
+        $.kmsHasSignedForResponse[keyId][kmsSigner] = true;
 
-        $._isKeygenOngoing[preKeyId] = true;
+        // Store the KMS transaction sender address and the s3 bucket URL for the keygen response,
+        // event if the consensus has already been reached
+        string[] memory consensusUrls = _storeConsensusMaterials(keyId, digest);
 
-        /// @dev A key generation uses the same FHE params as the one used for the preprocessing step
-        emit KeygenRequest(preKeyId, $._preKeyFheParamsDigests[preKeyId]);
-    }
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
+        if (!$.isRequestDone[keyId] && _isKmsConsensusReached(consensusUrls.length)) {
+            $.isRequestDone[keyId] = true;
 
-    /// @dev See {IKmsManagement-keygenResponse}.
-    function keygenResponse(uint256 preKeyId, uint256 keyId) external virtual onlyKmsTxSender whenNotPaused {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-
-        /// @dev A KMS node can only respond once
-        if ($._keygenResponses[keyId][msg.sender]) {
-            revert KeygenKmsNodeAlreadyResponded(keyId, msg.sender);
-        }
-
-        $._keygenResponses[keyId][msg.sender] = true;
-        $._keygenResponseCounter[keyId]++;
-
-        /// @dev Send the event if and only if the consensus is reached in the current response call.
-        /// @dev This means a "late" response will not be reverted, just ignored
-        if (!$._isKeyGenerated[keyId] && _isKmsConsensusReached($._keygenResponseCounter[keyId])) {
-            $._isKeyGenerated[keyId] = true;
-
-            /// @dev Store the FHE params digest used during the keygen preprocessing and subsequent keygen
-            bytes32 fheParamsDigest = $._preKeyFheParamsDigests[preKeyId];
-            $.keyFheParamsDigests[keyId] = fheParamsDigest;
-
-            /// @dev Include the FHE params used for the key generation (and its preprocessing) in
-            /// @dev the event for better tracking
-            emit KeygenResponse(preKeyId, keyId, fheParamsDigest);
-        }
-    }
-
-    /// @dev See {IKmsManagement-crsgenRequest}.
-    function crsgenRequest(
-        string calldata fheParamsName
-    ) external virtual onlyGatewayOwner fheParamsInitialized(fheParamsName) whenNotPaused {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-
-        /// @dev Generate a new crsgenRequestId. This is used to link the FHE params sent in the request
-        /// @dev with the ones emitted in the response event
-        $._crsgenRequestCounter++;
-        uint256 crsgenRequestId = $._crsgenRequestCounter;
-
-        /// @dev Store the FHE params digest to use for the CRS generation
-        bytes32 fheParamsDigest = $.fheParamsDigests[fheParamsName];
-        $._crsgenFheParamsDigests[crsgenRequestId] = fheParamsDigest;
-
-        emit CrsgenRequest(crsgenRequestId, fheParamsDigest);
-    }
-
-    /// @dev See {IKmsManagement-crsgenResponse}.
-    function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external virtual onlyKmsTxSender whenNotPaused {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-
-        /// @dev A KMS node can only respond once
-        if ($._crsgenResponses[crsId][msg.sender]) {
-            revert CrsgenKmsNodeAlreadyResponded(crsId, msg.sender);
-        }
-
-        $._crsgenResponses[crsId][msg.sender] = true;
-        $._crsgenResponseCounter[crsgenRequestId]++;
-
-        /// @dev Send the event if and only if the consensus is reached in the current response call.
-        /// @dev This means a "late" response will not be reverted, just ignored
-        if (!$._isCrsGenerated[crsId] && _isKmsConsensusReached($._crsgenResponseCounter[crsgenRequestId])) {
-            $._isCrsGenerated[crsId] = true;
-
-            /// @dev Store the FHE params digest used for the CRS generation
-            bytes32 fheParamsDigest = $._crsgenFheParamsDigests[crsgenRequestId];
-            $.crsFheParamsDigests[crsId] = fheParamsDigest;
-
-            /// @dev Include the FHE params used for the CRS generation in the event for better tracking
-            emit CrsgenResponse(crsgenRequestId, crsId, fheParamsDigest);
-        }
-    }
-
-    /// @dev See {IKmsManagement-kskgenRequest}.
-    function kskgenRequest(
-        uint256 preKskId,
-        uint256 sourceKeyId,
-        uint256 destKeyId
-    ) external virtual onlyGatewayOwner whenNotPaused {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-
-        /// @dev A KSK generation request can only be sent once
-        if ($._isKskgenOngoing[preKskId]) {
-            revert KskgenRequestAlreadySent(preKskId);
-        }
-
-        /// @dev A KSK generation requires a KSK preprocessing step to be completed
-        if (!$._isPreKskgenDone[preKskId]) {
-            revert KskgenPreprocessingRequired(preKskId);
-        }
-
-        /// @dev The source key must be different from the destination key
-        if (sourceKeyId == destKeyId) {
-            revert KskgenSameSrcAndDestKeyIds(sourceKeyId);
-        }
-
-        /// @dev The source key must be generated
-        if (!$._isKeyGenerated[sourceKeyId]) {
-            revert KskgenSourceKeyNotGenerated(sourceKeyId);
-        }
-
-        /// @dev The destination key must be generated
-        if (!$._isKeyGenerated[destKeyId]) {
-            revert KskgenDestKeyNotGenerated(destKeyId);
-        }
-
-        $._kskgenSourceKeyIds[preKskId] = sourceKeyId;
-        $._kskgenDestKeyIds[preKskId] = destKeyId;
-        $._isKskgenOngoing[preKskId] = true;
-
-        /// @dev A KSK generation uses the same FHE params as the one used for the preprocessing step
-        emit KskgenRequest(preKskId, sourceKeyId, destKeyId, $._preKskFheParamsDigests[preKskId]);
-    }
-
-    /// @dev See {IKmsManagement-kskgenResponse}.
-    function kskgenResponse(uint256 preKskId, uint256 kskId) external virtual onlyKmsTxSender whenNotPaused {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-
-        /// @dev A KMS node can only respond once
-        if ($._kskgenResponses[kskId][msg.sender]) {
-            revert KskgenKmsNodeAlreadyResponded(kskId, msg.sender);
-        }
-
-        $._kskgenResponses[kskId][msg.sender] = true;
-        $._kskgenResponseCounter[kskId]++;
-
-        /// @dev Send the event if and only if the consensus is reached in the current response call.
-        /// @dev This means a "late" response will not be reverted, just ignored
-        if (!$._isKskGenerated[kskId] && _isKmsConsensusReached($._kskgenResponseCounter[kskId])) {
-            $._isKskGenerated[kskId] = true;
-
-            /// @dev Store the KSK generation ID as a mapping of the source to the destination key ID
-            $._kskgenIds[$._kskgenSourceKeyIds[preKskId]][$._kskgenDestKeyIds[preKskId]] = kskId;
-
-            /// @dev Store the FHE params digest used during the kskgen preprocessing and subsequent kskgen
-            bytes32 fheParamsDigest = $._preKskFheParamsDigests[preKskId];
-            $.kskFheParamsDigests[kskId] = fheParamsDigest;
-
-            emit KskgenResponse(preKskId, kskId, fheParamsDigest);
-        }
-    }
-
-    /// @dev See {IKmsManagement-activateKeyRequest}.
-    function activateKeyRequest(uint256 keyId) external virtual onlyGatewayOwner whenNotPaused {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-
-        /// @dev A key activation request can only be sent once
-        if ($._activateKeyOngoing[keyId]) {
-            revert ActivateKeyRequestAlreadySent(keyId);
-        }
-
-        /// @dev Only a generated key can be activated
-        if (!$._isKeyGenerated[keyId]) {
-            revert ActivateKeyRequiresKeygen(keyId);
-        }
-
-        /// @dev Activating a (pending) key requires a KSK from the current (activated) key to this (pending) key
-        /// @dev The only exception is for the first key (currentKeyId == 0)
-        if ($.currentKeyId != 0) {
-            if (!$._isKskGenerated[$._kskgenIds[$.currentKeyId][keyId]]) {
-                revert ActivateKeyRequiresKskgen($.currentKeyId, keyId);
+            // Store the digests of the generated keys in order to retrieve them later
+            // Copy each calldata struct to storage, as copying calldata array of structs to storage
+            // is not yet supported
+            // We do not need to clean `$.keyDigests[keyId]` first as this should only happen once
+            // per keyId
+            for (uint256 i = 0; i < keyDigests.length; i++) {
+                $.keyDigests[keyId].push(keyDigests[i]);
             }
-        }
 
-        $._activateKeyOngoing[keyId] = true;
+            // Store the digest on which consensus was reached for the keygen request
+            $.consensusDigest[keyId] = digest;
 
-        emit ActivateKeyRequest(keyId);
-    }
+            // Set the active keyId
+            $.activeKeyId = keyId;
 
-    /// @dev See {IKmsManagement-activateKeyResponse}.
-    function activateKeyResponse(uint256 keyId) external virtual onlyCoprocessorTxSender whenNotPaused {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-
-        /// @dev A coprocessor can only respond once
-        if ($._activateKeyResponses[keyId][msg.sender]) {
-            revert ActivateKeyCoprocessorAlreadyResponded(keyId, msg.sender);
-        }
-
-        $._activateKeyResponses[keyId][msg.sender] = true;
-        $._activateKeyResponseCounter[keyId]++;
-
-        /// @dev Only activate the key and send the event if consensus has not been reached in a
-        /// @dev previous call (i.e. the key is not the current key yet) and the consensus is
-        /// @dev reached in the current call.
-        /// @dev This means a "late" response will not be reverted, just ignored
-        if ($.currentKeyId != keyId && _isCoprocessorConsensusReached($._activateKeyResponseCounter[keyId])) {
-            $.activatedKeyIds.push(keyId);
-
-            /// @dev The current keyId is considered activated (it is unique)
-            $.currentKeyId = keyId;
-
-            emit ActivateKeyResponse(keyId);
+            emit ActivateKey(keyId, consensusUrls, keyDigests);
         }
     }
 
-    /// @dev See {IKmsManagement-setFheParams}.
-    function addFheParams(
-        string calldata fheParamsName,
-        bytes32 fheParamsDigest
-    ) external virtual onlyGatewayOwner whenNotPaused {
+    /**
+     * @dev See {IKmsManagement-crsgenRequest}.
+     */
+    function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external virtual onlyGatewayOwner {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
-        if ($._fheParamsInitialized[fheParamsName]) {
-            revert FheParamsAlreadyInitialized(fheParamsName);
+
+        // Generate a globally unique crsId for the CRS generation
+        // The counter is initialized at deployment such that crsId's first byte uniquely
+        // represents a crsgen request, with format: [0000 0101 | counter_1..31]
+        $.crsCounter++;
+        uint256 crsId = $.crsCounter;
+
+        // Store the max bit length used for signature verification
+        $.crsMaxBitLength[crsId] = maxBitLength;
+
+        // Store the CRS params type
+        // This value can later be read through the `getCrsParamsType` function, once the CRS has
+        // been generated
+        $.requestParamsType[crsId] = paramsType;
+
+        emit CrsgenRequest(crsId, maxBitLength, paramsType);
+    }
+
+    /**
+     * @dev See {IKmsManagement-crsgenResponse}.
+     */
+    function crsgenResponse(
+        uint256 crsId,
+        bytes calldata crsDigest,
+        bytes calldata signature
+    ) external virtual onlyKmsTxSender {
+        KmsManagementStorage storage $ = _getKmsManagementStorage();
+
+        uint256 maxBitLength = $.crsMaxBitLength[crsId];
+
+        // Compute the digest of the CrsgenVerification struct.
+        bytes32 digest = _hashCrsgenVerification(crsId, maxBitLength, crsDigest);
+
+        // Recover the signer address from the signature and check that it is a KMS node
+        address kmsSigner = _validateEIP712Signature(digest, signature);
+
+        // Check that the signer has not already signed for this CRS generation response
+        if ($.kmsHasSignedForResponse[crsId][kmsSigner]) {
+            revert KmsAlreadySignedForCrsgen(crsId, kmsSigner);
         }
 
-        $.fheParamsDigests[fheParamsName] = fheParamsDigest;
-        $._fheParamsInitialized[fheParamsName] = true;
+        $.kmsHasSignedForResponse[crsId][kmsSigner] = true;
 
-        emit AddFheParams(fheParamsName, fheParamsDigest);
+        // Store the KMS transaction sender address and the s3 bucket URL for the crsgen response,
+        // event if the consensus has already been reached
+        string[] memory consensusUrls = _storeConsensusMaterials(crsId, digest);
+
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
+        if (!$.isRequestDone[crsId] && _isKmsConsensusReached(consensusUrls.length)) {
+            $.isRequestDone[crsId] = true;
+
+            // Store the digest of the generated CRS in order to retrieve it later
+            $.crsDigests[crsId] = crsDigest;
+
+            // Store the digest on which consensus was reached for the crsgen request
+            $.consensusDigest[crsId] = digest;
+
+            // Set the active CRS ID
+            $.activeCrsId = crsId;
+
+            emit ActivateCrs(crsId, consensusUrls, crsDigest);
+        }
     }
 
-    /// @dev See {IKmsManagement-updateFheParams}.
-    function updateFheParams(
-        string calldata fheParamsName,
-        bytes32 fheParamsDigest
-    ) external virtual onlyGatewayOwner fheParamsInitialized(fheParamsName) whenNotPaused {
+    /**
+     * @dev See {IKmsManagement-getKeyParamsType}.
+     */
+    function getKeyParamsType(uint256 keyId) external view virtual returns (ParamsType) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
-        $.fheParamsDigests[fheParamsName] = fheParamsDigest;
 
-        emit UpdateFheParams(fheParamsName, fheParamsDigest);
+        if (!$._isKeyGenerated[keyId]) {
+            revert KeyNotGenerated(keyId);
+        }
+
+        return $.requestParamsType[keyId];
     }
 
-    /// @dev See {IKmsManagement-fheParamsDigests}.
-    function fheParamsDigests(string calldata fheParamsName) external view virtual returns (bytes32) {
+    /**
+     * @dev See {IKmsManagement-getCrsParamsType}.
+     */
+    function getCrsParamsType(uint256 crsId) external view virtual returns (ParamsType) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
-        return $.fheParamsDigests[fheParamsName];
+
+        if (!$._isCrsGenerated[crsId]) {
+            revert CrsNotGenerated(crsId);
+        }
+
+        return $.requestParamsType[crsId];
     }
 
-    /// @dev See {IKmsManagement-getCurrentKeyId}.
-    function getCurrentKeyId() external view virtual returns (uint256) {
+    /**
+     * @dev See {IKmsManagement-getActiveKeyId}.
+     */
+    function getActiveKeyId() external view virtual returns (uint256) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
-        return $.currentKeyId;
+        return $.activeKeyId;
     }
 
-    /// @dev See {IKmsManagement-activatedKeyIds}.
-    function activatedKeyIds(uint256 index) external view virtual returns (uint256) {
+    /**
+     * @dev See {IKmsManagement-getActiveCrsId}.
+     */
+    function getActiveCrsId() external view virtual returns (uint256) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
-        return $.activatedKeyIds[index];
+        return $.activeCrsId;
     }
 
-    /// @dev See {IKmsManagement-keyFheParamsDigests}.
-    function keyFheParamsDigests(uint256 keyId) external view virtual returns (bytes32) {
+    /**
+     * @dev See {IKmsManagement-getConsensusTxSenders}.
+     * The returned list remains empty until the consensus is reached.
+     */
+    function getConsensusTxSenders(uint256 requestId) external view virtual returns (address[] memory) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
-        return $.keyFheParamsDigests[keyId];
+
+        // Get the unique digest associated to the request in order to retrieve the list of
+        // KMS transaction sender addresses that were involved in the associated consensus
+        // This digest remains the default value (0x0) until the consensus is reached, meaning
+        // that the returned list remains empty until then.
+        // Each requestId is unique across all request types.
+        bytes32 digest = $.consensusDigest[requestId];
+
+        return $.consensusTxSenderAddresses[requestId][digest];
     }
 
-    /// @dev See {IKmsManagement-kskFheParamsDigests}.
-    function kskFheParamsDigests(uint256 kskId) external view virtual returns (bytes32) {
+    /**
+     * @dev See {IKmsManagement-getKeyMaterials}.
+     */
+    function getKeyMaterials(uint256 keyId) external view virtual returns (string[] memory, KeyDigest[] memory) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
-        return $.kskFheParamsDigests[kskId];
+
+        if (!$._isKeyGenerated[keyId]) {
+            revert KeyNotGenerated(keyId);
+        }
+
+        // Get the unique digest associated to the keygen request
+        bytes32 digest = $.consensusDigest[keyId];
+
+        return ($.consensusS3BucketUrls[keyId][digest], $.keyDigests[keyId]);
     }
 
-    /// @dev See {IKmsManagement-crsFheParamsDigests}.
-    function crsFheParamsDigests(uint256 crsId) external view virtual returns (bytes32) {
+    /**
+     * @dev See {IKmsManagement-getCrsMaterials}.
+     */
+    function getCrsMaterials(uint256 crsId) external view virtual returns (string[] memory, bytes memory) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
-        return $.crsFheParamsDigests[crsId];
+
+        if (!$._isCrsGenerated[crsId]) {
+            revert CrsNotGenerated(crsId);
+        }
+
+        // Get the unique digest associated to the crsgen request
+        bytes32 digest = $.consensusDigest[crsId];
+
+        return ($.consensusS3BucketUrls[crsId][digest], $.crsDigests[crsId]);
     }
 
-    /// @dev See {IKmsManagement-getVersion}.
+    /**
+     * @dev See {IKmsManagement-getVersion}.
+     */
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -544,25 +584,102 @@ contract KmsManagement is
     }
 
     /**
+     * @notice Validates the EIP712 signature.
+     * @param digest The hashed EIP712 struct.
+     * @param signature The signature to validate.
+     * @return The signer address.
+     */
+    function _validateEIP712Signature(bytes32 digest, bytes calldata signature) internal virtual returns (address) {
+        // Recover the signer address from the signature
+        address signer = ECDSA.recover(digest, signature);
+
+        // Check that the signer is a KMS signer
+        GATEWAY_CONFIG.checkIsKmsSigner(signer);
+
+        return signer;
+    }
+
+    /**
+     * @notice Stores the KMS transaction sender address and the s3 bucket URL for the keygen response
+     * @param requestId The ID of the request.
+     * @param digest The digest of the request.
+     * @return The list of s3 bucket URLs.
+     */
+    function _storeConsensusMaterials(uint256 requestId, bytes32 digest) internal virtual returns (string[] memory) {
+        KmsManagementStorage storage $ = _getKmsManagementStorage();
+
+        // Get the KMS node's s3 bucket URL
+        string memory kmsNodeS3BucketUrl = GATEWAY_CONFIG.getKmsNode(msg.sender).s3BucketUrl;
+
+        // Store the KMS transaction sender address and the s3 bucket URL for the keygen response
+        // It is important to consider the same mapping fields used for the consensus
+        // A "late" valid KMS transaction sender address or s3 bucket URL will still be added in the list
+        address[] storage consensusTxSenders = $.consensusTxSenderAddresses[requestId][digest];
+        consensusTxSenders.push(msg.sender);
+
+        string[] storage consensusUrls = $.consensusS3BucketUrls[requestId][digest];
+        consensusUrls.push(kmsNodeS3BucketUrl);
+
+        return consensusUrls;
+    }
+
+    /**
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
-    /// @notice Checks if the consensus is reached among the KMS nodes.
-    /// @param kmsCounter The number of KMS nodes that agreed
-    /// @return Whether the consensus is reached
+    /**
+     * @notice Checks if the consensus is reached among the KMS nodes.
+     * @param kmsCounter The number of KMS nodes that agreed
+     * @return Whether the consensus is reached
+     */
     function _isKmsConsensusReached(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
+        uint256 consensusThreshold = GATEWAY_CONFIG.getKmsStrongMajorityThreshold();
         return kmsCounter >= consensusThreshold;
     }
 
-    /// @notice Checks if the consensus is reached among the Coprocessors.
-    /// @param coprocessorCounter The number of coprocessors that agreed
-    /// @return Whether the consensus is reached
-    function _isCoprocessorConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
-        return coprocessorCounter >= consensusThreshold;
+    /**
+     * @notice Computes the hash of a PrepKeygenVerification struct
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @return The hash of the PrepKeygenVerification struct
+     */
+    function _hashPrepKeygenVerification(uint256 prepKeygenId) internal view virtual returns (bytes32) {
+        return _hashTypedDataV4(keccak256(abi.encode(EIP712_PREP_KEYGEN_TYPE_HASH, prepKeygenId)));
+    }
+
+    /**
+     * @notice Computes the hash of a KeygenVerification struct
+     * @param prepKeygenId The ID of the preprocessing keygen request.
+     * @param keyId The ID of the generated key.
+     * @param keyDigests The digests of the generated keys.
+     * @return The hash of the KeygenVerification struct
+     */
+    function _hashKeygenVerification(
+        uint256 prepKeygenId,
+        uint256 keyId,
+        KeyDigest[] calldata keyDigests
+    ) internal view virtual returns (bytes32) {
+        return
+            _hashTypedDataV4(
+                keccak256(abi.encode(EIP712_KEYGEN_TYPE_HASH, prepKeygenId, keyId, keccak256(abi.encode(keyDigests))))
+            );
+    }
+
+    /**
+     * @notice Computes the hash of a CrsgenVerification struct
+     * @param crsId The ID of the generated CRS.
+     * @param maxBitLength The max bit length used for generating the CRS.
+     * @param crsDigest The digest of the generated CRS.
+     * @return The hash of the CrsgenVerification struct
+     */
+    function _hashCrsgenVerification(
+        uint256 crsId,
+        uint256 maxBitLength,
+        bytes calldata crsDigest
+    ) internal view virtual returns (bytes32) {
+        return
+            _hashTypedDataV4(keccak256(abi.encode(EIP712_CRSGEN_TYPE_HASH, crsId, maxBitLength, keccak256(crsDigest))));
     }
 
     /**

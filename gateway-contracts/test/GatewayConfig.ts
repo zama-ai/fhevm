@@ -41,7 +41,7 @@ describe("GatewayConfig", function () {
   let owner: Wallet;
   let pauser: HardhatEthersSigner;
   let nKmsNodes: number;
-  let kmsNodes: KmsNodeStruct[];
+  let kmsNodes: KmsNodeV2Struct[];
   let kmsTxSenders: HardhatEthersSigner[];
   let kmsSigners: HardhatEthersSigner[];
   let coprocessors: CoprocessorStruct[];
@@ -57,6 +57,7 @@ describe("GatewayConfig", function () {
       kmsTxSenders,
       kmsSigners,
       kmsNodeIps,
+      kmsNodeS3BucketUrls,
       nKmsNodes,
       coprocessorTxSenders,
       coprocessorSigners,
@@ -75,6 +76,7 @@ describe("GatewayConfig", function () {
         txSenderAddress: kmsTxSenders[i].address,
         signerAddress: kmsSigners[i].address,
         ipAddress: kmsNodeIps[i],
+        s3BucketUrl: kmsNodeS3BucketUrls[i],
       });
     }
 
