@@ -38,10 +38,17 @@ describe("Mock contracts", function () {
 
   const DefaultProtocolMetadata = { name: DefaultString, website: DefaultString };
 
-  const DefaultKmsNode = {
+  const DefaultKmsNodeV1 = {
     txSenderAddress: DefaultAddress,
     signerAddress: DefaultAddress,
     ipAddress: DefaultString,
+  };
+
+  const DefaultKmsNodeV2 = {
+    txSenderAddress: DefaultAddress,
+    signerAddress: DefaultAddress,
+    ipAddress: DefaultString,
+    s3BucketUrl: DefaultString,
   };
 
   const DefaultCoprocessor = {
@@ -130,24 +137,27 @@ describe("Mock contracts", function () {
   });
 
   describe("DecryptionMock", async function () {
-    let decryptionCounterId = DefaultUint256;
+    // Define the decryption ID values. See `KmsRequestCounter.sol` for more details.
+    let publicDecryptionCounterId = BigInt(1) << BigInt(248);
+    let userDecryptionCounterId = BigInt(2) << BigInt(248);
+
     it("Should emit PublicDecryptionRequest event on public decryption request", async function () {
-      decryptionCounterId++;
+      publicDecryptionCounterId++;
       await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32], DefaultBytes))
         .to.emit(decryptionMock, "PublicDecryptionRequest")
-        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
+        .withArgs(publicDecryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
     });
 
     it("Should emit PublicDecryptionResponse event on public decryption response", async function () {
       await expect(
-        decryptionMock.publicDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
+        decryptionMock.publicDecryptionResponse(publicDecryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
       )
         .to.emit(decryptionMock, "PublicDecryptionResponse")
-        .withArgs(decryptionCounterId, DefaultBytes, [DefaultBytes], DefaultBytes);
+        .withArgs(publicDecryptionCounterId, DefaultBytes, [DefaultBytes], DefaultBytes);
     });
 
     it("Should emit UserDecryptionRequest event on user decryption request", async function () {
-      decryptionCounterId++;
+      userDecryptionCounterId++;
       await expect(
         decryptionMock.userDecryptionRequest(
           EmptyArray,
@@ -161,7 +171,7 @@ describe("Mock contracts", function () {
       )
         .to.emit(decryptionMock, "UserDecryptionRequest")
         .withArgs(
-          decryptionCounterId,
+          userDecryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
           DefaultAddress,
           DefaultBytes,
@@ -170,7 +180,7 @@ describe("Mock contracts", function () {
     });
 
     it("Should emit UserDecryptionRequest event on delegated user decryption request", async function () {
-      decryptionCounterId++;
+      userDecryptionCounterId++;
       await expect(
         decryptionMock.delegatedUserDecryptionRequest(
           EmptyArray,
@@ -184,7 +194,7 @@ describe("Mock contracts", function () {
       )
         .to.emit(decryptionMock, "UserDecryptionRequest")
         .withArgs(
-          decryptionCounterId,
+          userDecryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
           DefaultAddress,
           DefaultBytes,
@@ -193,13 +203,22 @@ describe("Mock contracts", function () {
     });
 
     it("Should emit UserDecryptionResponse event on user decryption response", async function () {
-      await expect(decryptionMock.userDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes))
+      await expect(
+        decryptionMock.userDecryptionResponse(userDecryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
+      )
         .to.emit(decryptionMock, "UserDecryptionResponse")
-        .withArgs(decryptionCounterId, [DefaultBytes], [DefaultBytes], DefaultBytes);
+        .withArgs(userDecryptionCounterId, [DefaultBytes], [DefaultBytes], DefaultBytes);
     });
   });
 
   describe("GatewayConfigMock", async function () {
+    const DefaultV3UpgradeInputs = [
+      {
+        txSenderAddress: DefaultAddress,
+        s3BucketUrl: DefaultString,
+      },
+    ];
+
     it("Should emit InitializeGatewayConfig event on initialization", async function () {
       await expect(
         gatewayConfigMock.initializeFromEmptyProxy(
@@ -208,7 +227,7 @@ describe("Mock contracts", function () {
           DefaultUint256,
           DefaultUint256,
           DefaultUint256,
-          [DefaultKmsNode],
+          [DefaultKmsNodeV2],
           [DefaultCoprocessor],
           [DefaultCustodian],
         ),
@@ -218,16 +237,16 @@ describe("Mock contracts", function () {
           DefaultAddress,
           toValues(DefaultProtocolMetadata),
           DefaultUint256,
-          toValues([DefaultKmsNode]),
+          toValues([DefaultKmsNodeV2]),
           toValues([DefaultCoprocessor]),
           toValues([DefaultCustodian]),
         );
     });
 
     it("Should emit Reinitialization event on reinitialization", async function () {
-      await expect(gatewayConfigMock.reinitializeV2([DefaultCustodian]))
-        .to.emit(gatewayConfigMock, "ReinitializeGatewayConfigV2")
-        .withArgs(toValues([DefaultCustodian]));
+      await expect(gatewayConfigMock.reinitializeV3(DefaultV3UpgradeInputs))
+        .to.emit(gatewayConfigMock, "ReinitializeGatewayConfigV3")
+        .withArgs(toValues([DefaultKmsNodeV1]), toValues([DefaultKmsNodeV2]));
     });
 
     it("Should emit UpdatePauser event on update pauser call", async function () {

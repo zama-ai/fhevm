@@ -88,6 +88,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
       txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
       signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
       ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
+      s3BucketUrl: getRequiredEnvVar(`KMS_NODE_S3_BUCKET_URL_${idx}`),
     });
   }
 
@@ -141,13 +142,7 @@ task("task:deployInputVerification").setAction(async function (_, hre) {
 
 // Deploy the KmsManagement contract
 task("task:deployKmsManagement").setAction(async function (_, hre) {
-  const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
-  const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
-
-  console.log("FHE params name:", fheParamsName);
-  console.log("FHE params digest:", fheParamsDigest);
-
-  await deployContractImplementation("KmsManagement", hre, [fheParamsName, fheParamsDigest]);
+  await deployContractImplementation("KmsManagement", hre);
 });
 
 // Deploy the CiphertextCommits contract

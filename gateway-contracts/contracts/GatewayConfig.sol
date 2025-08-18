@@ -7,8 +7,9 @@ import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { decryptionAddress, inputVerificationAddress } from "../addresses/GatewayAddresses.sol";
 import { Decryption } from "./Decryption.sol";
 import { InputVerification } from "./InputVerification.sol";
-import "./shared/UUPSUpgradeableEmptyProxy.sol";
-import "./shared/Pausable.sol";
+import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import { Pausable } from "./shared/Pausable.sol";
+import { ProtocolMetadata, KmsNodeV1, KmsNodeV2, Coprocessor, Custodian, HostChain } from "./shared/Structs.sol";
 
 /**
  * @title GatewayConfig contract
@@ -17,8 +18,36 @@ import "./shared/Pausable.sol";
  * @dev See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
 contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy, Pausable {
+    // ----------------------------------------------------------------------------------------------
+    // Upgrade compatibility (V2 -> V3):
+    // ----------------------------------------------------------------------------------------------
+
+    /// @notice Input data used to upgrade the contract from V2 to V3.
+    struct V3UpgradeInput {
+        /// @notice Address of the KMS node's transaction sender registered in V2
+        address txSenderAddress;
+        /// @notice URL address of the KMS node' S3 bucket
+        string s3BucketUrl;
+    }
+
+    // ----------------------------------------------------------------------------------------------
+    // Utility constants:
+    // ----------------------------------------------------------------------------------------------
+
     /// @notice The maximum chain ID.
     uint256 internal constant MAX_CHAIN_ID = type(uint64).max;
+
+    // ----------------------------------------------------------------------------------------------
+    // Other contract references:
+    // ----------------------------------------------------------------------------------------------
+
+    /// @notice The address of the all gateway contracts
+    Decryption private constant DECRYPTION = Decryption(decryptionAddress);
+    InputVerification private constant INPUT_VERIFICATION = InputVerification(inputVerificationAddress);
+
+    // ----------------------------------------------------------------------------------------------
+    // Contract information:
+    // ----------------------------------------------------------------------------------------------
 
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that
@@ -30,11 +59,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
-    /// @notice The address of the all gateway contracts
-    Decryption private constant DECRYPTION = Decryption(decryptionAddress);
-    InputVerification private constant INPUT_VERIFICATION = InputVerification(inputVerificationAddress);
+    // ----------------------------------------------------------------------------------------------
+    // Contract storage:
+    // ----------------------------------------------------------------------------------------------
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.GatewayConfig
@@ -53,8 +82,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(uint256 chainId => bool isRegistered) _isHostChainRegistered;
         /// @notice The protocol's metadata
         ProtocolMetadata protocolMetadata;
-        /// @notice The KMS nodes' metadata
-        mapping(address kmsTxSenderAddress => KmsNode kmsNode) kmsNodes;
+        /// @notice DEPRECATED: Use kmsNodesV2 instead.
+        mapping(address kmsTxSenderAddress => KmsNodeV1 kmsNode) kmsNodes; // DEPRECATED
         /// @notice The KMS nodes' transaction sender address list
         address[] kmsTxSenderAddresses;
         /// @notice The KMS nodes' signer address list
@@ -83,6 +112,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address custodianTxSenderAddress => bool isCustodianTxSender) _isCustodianTxSender;
         /// @notice The custodians' signer addresses
         mapping(address custodianSignerAddress => bool isCustodianSigner) _isCustodianSigner;
+        /// @notice The KMS nodes' metadata (V2)
+        mapping(address kmsTxSenderAddress => KmsNodeV2 kmsNodeV2) kmsNodesV2;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -113,7 +144,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
-        KmsNode[] memory initialKmsNodes,
+        KmsNodeV2[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
@@ -145,7 +176,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @dev Register the KMS nodes
         for (uint256 i = 0; i < initialKmsNodes.length; i++) {
             $._isKmsTxSender[initialKmsNodes[i].txSenderAddress] = true;
-            $.kmsNodes[initialKmsNodes[i].txSenderAddress] = initialKmsNodes[i];
+            $.kmsNodesV2[initialKmsNodes[i].txSenderAddress] = initialKmsNodes[i];
             $.kmsTxSenderAddresses.push(initialKmsNodes[i].txSenderAddress);
             $._isKmsSigner[initialKmsNodes[i].signerAddress] = true;
             $.kmsSignerAddresses.push(initialKmsNodes[i].signerAddress);
@@ -185,26 +216,48 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         );
     }
 
-    /// @notice Reinitializes the contract with custodians.
+    /**
+     * @notice Re-initializes the contract from V2.
+     */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(Custodian[] memory custodians) public virtual reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV3(
+        V3UpgradeInput[] memory v3UpgradeInputs
+    ) public virtual reinitializer(REINITIALIZER_VERSION) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
-        if (custodians.length == 0) {
-            revert EmptyCustodians();
+        if (v3UpgradeInputs.length != $.kmsTxSenderAddresses.length) {
+            revert InvalidV3UpgradeInputLength(v3UpgradeInputs.length, $.kmsTxSenderAddresses.length);
         }
 
-        /// @dev Register the custodians
-        for (uint256 i = 0; i < custodians.length; i++) {
-            $.custodians[custodians[i].txSenderAddress] = custodians[i];
-            $.custodianTxSenderAddresses.push(custodians[i].txSenderAddress);
-            $._isCustodianTxSender[custodians[i].txSenderAddress] = true;
-            $.custodianSignerAddresses.push(custodians[i].signerAddress);
-            $._isCustodianSigner[custodians[i].signerAddress] = true;
+        KmsNodeV1[] memory kmsNodesV1 = new KmsNodeV1[](v3UpgradeInputs.length);
+        KmsNodeV2[] memory kmsNodesV2 = new KmsNodeV2[](v3UpgradeInputs.length);
+        for (uint256 i = 0; i < v3UpgradeInputs.length; i++) {
+            address kmsTxSenderAddress = v3UpgradeInputs[i].txSenderAddress;
+
+            // The KMS nodes' transaction sender addresses expected for V3 must exactly match
+            // the ones registered in V2.
+            if (!$._isKmsTxSender[kmsTxSenderAddress]) {
+                revert NotKmsTxSender(kmsTxSenderAddress);
+            }
+
+            // Get the KMS node's metadata from V2.
+            KmsNodeV1 memory kmsNodeV1 = $.kmsNodes[kmsTxSenderAddress];
+
+            // Store the KMS node's metadata for V3.
+            KmsNodeV2 memory kmsNodeV2 = KmsNodeV2(
+                kmsTxSenderAddress,
+                kmsNodeV1.signerAddress,
+                kmsNodeV1.ipAddress,
+                v3UpgradeInputs[i].s3BucketUrl
+            );
+
+            $.kmsNodesV2[kmsTxSenderAddress] = kmsNodeV2;
+            kmsNodesV1[i] = kmsNodeV1;
+            kmsNodesV2[i] = kmsNodeV2;
         }
 
-        emit ReinitializeGatewayConfigV2(custodians);
+        emit ReinitializeGatewayConfigV3(kmsNodesV1, kmsNodesV2);
     }
 
     /// @dev See {IGatewayConfig-updatePauser}.
@@ -361,6 +414,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         return $.userDecryptionThreshold;
     }
 
+    /// @dev See {IGatewayConfig-getKmsStrongMajorityThreshold}.
+    function getKmsStrongMajorityThreshold() external view virtual returns (uint256) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return ($.kmsSignerAddresses.length * 2) / 3 + 1;
+    }
+
     /// @dev See {IGatewayConfig-getCoprocessorMajorityThreshold}.
     function getCoprocessorMajorityThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
@@ -368,9 +427,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IGatewayConfig-getKmsNode}.
-    function getKmsNode(address kmsTxSenderAddress) external view virtual returns (KmsNode memory) {
+    function getKmsNode(address kmsTxSenderAddress) external view virtual returns (KmsNodeV2 memory) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.kmsNodes[kmsTxSenderAddress];
+        return $.kmsNodesV2[kmsTxSenderAddress];
     }
 
     /// @dev See {IGatewayConfig-getKmsTxSenders}.
