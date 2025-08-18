@@ -483,14 +483,13 @@ struct RequestValidity { uint256 startTimestamp; uint256 durationDays; }
 See the [wrapper's documentation](`IDecryptionInstance`) for more details.*/
     #[inline]
     pub const fn new<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
         provider: P,
-    ) -> IDecryptionInstance<T, P, N> {
-        IDecryptionInstance::<T, P, N>::new(address, provider)
+    ) -> IDecryptionInstance<P, N> {
+        IDecryptionInstance::<P, N>::new(address, provider)
     }
     /**A [`IDecryption`](self) instance.
 
@@ -504,13 +503,13 @@ be used to deploy a new instance of the contract.
 
 See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
-    pub struct IDecryptionInstance<T, P, N = alloy_contract::private::Ethereum> {
+    pub struct IDecryptionInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
         provider: P,
-        _network_transport: ::core::marker::PhantomData<(N, T)>,
+        _network: ::core::marker::PhantomData<N>,
     }
     #[automatically_derived]
-    impl<T, P, N> ::core::fmt::Debug for IDecryptionInstance<T, P, N> {
+    impl<P, N> ::core::fmt::Debug for IDecryptionInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             f.debug_tuple("IDecryptionInstance").field(&self.address).finish()
@@ -519,10 +518,9 @@ See the [module-level documentation](self) for all the available methods.*/
     /// Instantiation and getters/setters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > IDecryptionInstance<T, P, N> {
+    > IDecryptionInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`IDecryption`](self) contract instance.
 
 See the [wrapper's documentation](`IDecryptionInstance`) for more details.*/
@@ -534,7 +532,7 @@ See the [wrapper's documentation](`IDecryptionInstance`) for more details.*/
             Self {
                 address,
                 provider,
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
         /// Returns a reference to the address.
@@ -558,24 +556,23 @@ See the [wrapper's documentation](`IDecryptionInstance`) for more details.*/
             &self.provider
         }
     }
-    impl<T, P: ::core::clone::Clone, N> IDecryptionInstance<T, &P, N> {
+    impl<P: ::core::clone::Clone, N> IDecryptionInstance<&P, N> {
         /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
-        pub fn with_cloned_provider(self) -> IDecryptionInstance<T, P, N> {
+        pub fn with_cloned_provider(self) -> IDecryptionInstance<P, N> {
             IDecryptionInstance {
                 address: self.address,
                 provider: ::core::clone::Clone::clone(&self.provider),
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
     }
     /// Function calls.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > IDecryptionInstance<T, P, N> {
+    > IDecryptionInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -583,24 +580,23 @@ See the [wrapper's documentation](`IDecryptionInstance`) for more details.*/
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
-        ) -> alloy_contract::SolCallBuilder<T, &P, C, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
     }
     /// Event filters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > IDecryptionInstance<T, P, N> {
+    > IDecryptionInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
         /// Prefer using the other methods for building type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
-        ) -> alloy_contract::Event<T, &P, E, N> {
+        ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
     }
@@ -2108,12 +2104,12 @@ pub mod Decryption {
             pub const NAME: &'static str = stringify!(@ name);
             /// Convert from the underlying value type.
             #[inline]
-            pub const fn from(value: u8) -> Self {
+            pub const fn from_underlying(value: u8) -> Self {
                 Self(value)
             }
             /// Return the underlying value.
             #[inline]
-            pub const fn into(self) -> u8 {
+            pub const fn into_underlying(self) -> u8 {
                 self.0
             }
             /// Return the single encoding of this value, delegating to the
@@ -2127,6 +2123,18 @@ pub mod Decryption {
             #[inline]
             pub fn abi_encode_packed(&self) -> alloy_sol_types::private::Vec<u8> {
                 <Self as alloy_sol_types::SolType>::abi_encode_packed(&self.0)
+            }
+        }
+        #[automatically_derived]
+        impl From<u8> for FheType {
+            fn from(value: u8) -> Self {
+                Self::from_underlying(value)
+            }
+        }
+        #[automatically_derived]
+        impl From<FheType> for u8 {
+            fn from(value: FheType) -> Self {
+                value.into_underlying()
             }
         }
         #[automatically_derived]
@@ -2986,6 +2994,13 @@ error AddressEmptyCode(address target);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3074,6 +3089,13 @@ error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.actualLength),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3166,6 +3188,13 @@ error ContractNotInContractAddresses(address contractAddress, address[] contract
                     > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3241,6 +3270,13 @@ error DecryptionNotDone(uint256 decryptionId);
                     > as alloy_sol_types::SolType>::tokenize(&self.decryptionId),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3315,6 +3351,13 @@ error DecryptionNotRequested(uint256 decryptionId);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.decryptionId),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3407,6 +3450,13 @@ error DelegatorAddressInContractAddresses(address delegatorAddress, address[] co
                     > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3493,6 +3543,13 @@ error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCip
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3503,7 +3560,7 @@ error ECDSAInvalidSignature();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct ECDSAInvalidSignature {}
+    pub struct ECDSAInvalidSignature;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3538,7 +3595,7 @@ error ECDSAInvalidSignature();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for ECDSAInvalidSignature {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -3558,6 +3615,13 @@ error ECDSAInvalidSignature();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3636,6 +3700,13 @@ error ECDSAInvalidSignatureLength(uint256 length);
                     > as alloy_sol_types::SolType>::tokenize(&self.length),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3708,6 +3779,13 @@ error ECDSAInvalidSignatureS(bytes32 s);
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.s),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3784,6 +3862,13 @@ error ERC1967InvalidImplementation(address implementation);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3794,7 +3879,7 @@ error ERC1967NonPayable();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct ERC1967NonPayable {}
+    pub struct ERC1967NonPayable;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3829,7 +3914,7 @@ error ERC1967NonPayable();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for ERC1967NonPayable {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -3850,6 +3935,13 @@ error ERC1967NonPayable();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3860,7 +3952,7 @@ error EmptyContractAddresses();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct EmptyContractAddresses {}
+    pub struct EmptyContractAddresses;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3895,7 +3987,7 @@ error EmptyContractAddresses();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyContractAddresses {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -3916,6 +4008,13 @@ error EmptyContractAddresses();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3926,7 +4025,7 @@ error EmptyCtHandleContractPairs();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct EmptyCtHandleContractPairs {}
+    pub struct EmptyCtHandleContractPairs;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3963,7 +4062,7 @@ error EmptyCtHandleContractPairs();
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
         for EmptyCtHandleContractPairs {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -3984,6 +4083,13 @@ error EmptyCtHandleContractPairs();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3994,7 +4100,7 @@ error EmptyCtHandles();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct EmptyCtHandles {}
+    pub struct EmptyCtHandles;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4029,7 +4135,7 @@ error EmptyCtHandles();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyCtHandles {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -4050,6 +4156,13 @@ error EmptyCtHandles();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -4060,7 +4173,7 @@ error EnforcedPause();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct EnforcedPause {}
+    pub struct EnforcedPause;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4095,7 +4208,7 @@ error EnforcedPause();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for EnforcedPause {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -4116,6 +4229,13 @@ error EnforcedPause();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -4126,7 +4246,7 @@ error ExpectedPause();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct ExpectedPause {}
+    pub struct ExpectedPause;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4161,7 +4281,7 @@ error ExpectedPause();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for ExpectedPause {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -4182,6 +4302,13 @@ error ExpectedPause();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -4192,7 +4319,7 @@ error FailedCall();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct FailedCall {}
+    pub struct FailedCall;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4227,7 +4354,7 @@ error FailedCall();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for FailedCall {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -4247,6 +4374,13 @@ error FailedCall();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -4321,6 +4455,13 @@ error InvalidFHEType(uint8 fheTypeUint8);
                     > as alloy_sol_types::SolType>::tokenize(&self.fheTypeUint8),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -4331,7 +4472,7 @@ error InvalidInitialization();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct InvalidInitialization {}
+    pub struct InvalidInitialization;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4366,7 +4507,7 @@ error InvalidInitialization();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidInitialization {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -4387,6 +4528,13 @@ error InvalidInitialization();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -4397,7 +4545,7 @@ error InvalidNullDurationDays();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct InvalidNullDurationDays {}
+    pub struct InvalidNullDurationDays;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4432,7 +4580,7 @@ error InvalidNullDurationDays();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidNullDurationDays {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -4452,6 +4600,13 @@ error InvalidNullDurationDays();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -4525,6 +4680,13 @@ error InvalidUserSignature(bytes signature);
                         &self.signature,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -4612,6 +4774,13 @@ error KmsNodeAlreadySigned(uint256 decryptionId, address signer);
                         &self.signer,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -4702,6 +4871,13 @@ error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSi
                     > as alloy_sol_types::SolType>::tokenize(&self.totalBitSize),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -4789,6 +4965,13 @@ error MaxDurationDaysExceeded(uint256 maxValue, uint256 actualValue);
                     > as alloy_sol_types::SolType>::tokenize(&self.actualValue),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -4862,6 +5045,13 @@ error NotGatewayOwner(address sender);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -4872,7 +5062,7 @@ error NotInitializing();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct NotInitializing {}
+    pub struct NotInitializing;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4907,7 +5097,7 @@ error NotInitializing();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotInitializing {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -4928,6 +5118,13 @@ error NotInitializing();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -4938,7 +5135,7 @@ error NotInitializingFromEmptyProxy();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct NotInitializingFromEmptyProxy {}
+    pub struct NotInitializingFromEmptyProxy;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4975,7 +5172,7 @@ error NotInitializingFromEmptyProxy();
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
         for NotInitializingFromEmptyProxy {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -4995,6 +5192,13 @@ error NotInitializingFromEmptyProxy();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -5071,6 +5275,13 @@ error NotOwnerOrGatewayConfig(address notOwnerOrGatewayConfig);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -5143,6 +5354,13 @@ error NotPauser(address notPauser);
                         &self.notPauser,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -5221,6 +5439,13 @@ error NotPauserOrGatewayConfig(address notPauserOrGatewayConfig);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -5293,6 +5518,13 @@ error OwnableInvalidOwner(address owner);
                         &self.owner,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -5368,6 +5600,13 @@ error OwnableUnauthorizedAccount(address account);
                         &self.account,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -5456,6 +5695,13 @@ error StartTimestampInFuture(uint256 currentTimestamp, uint256 startTimestamp);
                     > as alloy_sol_types::SolType>::tokenize(&self.startTimestamp),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -5466,7 +5712,7 @@ error UUPSUnauthorizedCallContext();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct UUPSUnauthorizedCallContext {}
+    pub struct UUPSUnauthorizedCallContext;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -5503,7 +5749,7 @@ error UUPSUnauthorizedCallContext();
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
         for UUPSUnauthorizedCallContext {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -5523,6 +5769,13 @@ error UUPSUnauthorizedCallContext();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -5599,6 +5852,13 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
                     > as alloy_sol_types::SolType>::tokenize(&self.slot),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -5669,6 +5929,13 @@ error UnsupportedFHEType(FheType fheType);
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 (<FheType as alloy_sol_types::SolType>::tokenize(&self.fheType),)
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -5761,6 +6028,13 @@ error UserAddressInContractAddresses(address userAddress, address[] contractAddr
                     > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -5850,6 +6124,13 @@ error UserDecryptionRequestExpired(uint256 currentTimestamp, IDecryption.Request
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -5865,7 +6146,7 @@ event EIP712DomainChanged();
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct EIP712DomainChanged {}
+    pub struct EIP712DomainChanged;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -7218,7 +7499,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct UPGRADE_INTERFACE_VERSIONCall {}
+    pub struct UPGRADE_INTERFACE_VERSIONCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`UPGRADE_INTERFACE_VERSION()`](UPGRADE_INTERFACE_VERSIONCall) function.
@@ -7265,7 +7546,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for UPGRADE_INTERFACE_VERSIONCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -7308,7 +7589,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = UPGRADE_INTERFACE_VERSIONReturn;
+            type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -7326,14 +7607,34 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -7345,7 +7646,7 @@ function acceptOwnership() external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct acceptOwnershipCall {}
+    pub struct acceptOwnershipCall;
     ///Container type for the return parameters of the [`acceptOwnership()`](acceptOwnershipCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -7385,7 +7686,7 @@ function acceptOwnership() external;
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for acceptOwnershipCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -7422,6 +7723,13 @@ function acceptOwnership() external;
                 }
             }
         }
+        impl acceptOwnershipReturn {
+            fn _tokenize(
+                &self,
+            ) -> <acceptOwnershipCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for acceptOwnershipCall {
             type Parameters<'a> = ();
@@ -7446,13 +7754,23 @@ function acceptOwnership() external;
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                acceptOwnershipReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -7549,6 +7867,13 @@ function checkDecryptionDone(uint256 decryptionId) external view;
                 }
             }
         }
+        impl checkDecryptionDoneReturn {
+            fn _tokenize(
+                &self,
+            ) -> <checkDecryptionDoneCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for checkDecryptionDoneCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
@@ -7577,13 +7902,23 @@ function checkDecryptionDone(uint256 decryptionId) external view;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                checkDecryptionDoneReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -7716,6 +8051,15 @@ function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationA
                 }
             }
         }
+        impl checkDelegatedUserDecryptionReadyReturn {
+            fn _tokenize(
+                &self,
+            ) -> <checkDelegatedUserDecryptionReadyCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for checkDelegatedUserDecryptionReadyCall {
             type Parameters<'a> = (
@@ -7764,13 +8108,23 @@ function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationA
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                checkDelegatedUserDecryptionReadyReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -7882,6 +8236,15 @@ function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory) ex
                 }
             }
         }
+        impl checkPublicDecryptionReadyReturn {
+            fn _tokenize(
+                &self,
+            ) -> <checkPublicDecryptionReadyCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for checkPublicDecryptionReadyCall {
             type Parameters<'a> = (
@@ -7918,13 +8281,23 @@ function checkPublicDecryptionReady(bytes32[] memory ctHandles, bytes memory) ex
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                checkPublicDecryptionReadyReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -8039,6 +8412,15 @@ function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] me
                 }
             }
         }
+        impl checkUserDecryptionReadyReturn {
+            fn _tokenize(
+                &self,
+            ) -> <checkUserDecryptionReadyCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for checkUserDecryptionReadyCall {
             type Parameters<'a> = (
@@ -8079,13 +8461,23 @@ function checkUserDecryptionReady(address userAddress, CtHandleContractPair[] me
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                checkUserDecryptionReadyReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -8228,6 +8620,15 @@ function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleCo
                 }
             }
         }
+        impl delegatedUserDecryptionRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <delegatedUserDecryptionRequestCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for delegatedUserDecryptionRequestCall {
             type Parameters<'a> = (
@@ -8284,13 +8685,23 @@ function delegatedUserDecryptionRequest(CtHandleContractPair[] memory ctHandleCo
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                delegatedUserDecryptionRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -8303,7 +8714,7 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct eip712DomainCall {}
+    pub struct eip712DomainCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`eip712Domain()`](eip712DomainCall) function.
@@ -8362,7 +8773,7 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for eip712DomainCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -8431,6 +8842,35 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
                 }
             }
         }
+        impl eip712DomainReturn {
+            fn _tokenize(
+                &self,
+            ) -> <eip712DomainCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        1,
+                    > as alloy_sol_types::SolType>::tokenize(&self.fields),
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.name,
+                    ),
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        &self.version,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.verifyingContract,
+                    ),
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.salt),
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Uint<256>,
+                    > as alloy_sol_types::SolType>::tokenize(&self.extensions),
+                )
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for eip712DomainCall {
             type Parameters<'a> = ();
@@ -8463,13 +8903,23 @@ function eip712Domain() external view returns (bytes1 fields, string memory name
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                eip712DomainReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -8581,7 +9031,9 @@ function getDecryptionConsensusTxSenders(uint256 decryptionId) external view ret
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getDecryptionConsensusTxSendersReturn;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -8605,14 +9057,34 @@ function getDecryptionConsensusTxSenders(uint256 decryptionId) external view ret
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getDecryptionConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getDecryptionConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -8624,7 +9096,7 @@ function getVersion() external pure returns (string memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getVersionCall {}
+    pub struct getVersionCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
@@ -8669,7 +9141,7 @@ function getVersion() external pure returns (string memory);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -8710,7 +9182,7 @@ function getVersion() external pure returns (string memory);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getVersionReturn;
+            type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -8728,14 +9200,34 @@ function getVersion() external pure returns (string memory);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getVersionReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getVersionReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -8747,7 +9239,7 @@ function initializeFromEmptyProxy() external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct initializeFromEmptyProxyCall {}
+    pub struct initializeFromEmptyProxyCall;
     ///Container type for the return parameters of the [`initializeFromEmptyProxy()`](initializeFromEmptyProxyCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -8789,7 +9281,7 @@ function initializeFromEmptyProxy() external;
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for initializeFromEmptyProxyCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -8826,6 +9318,15 @@ function initializeFromEmptyProxy() external;
                 }
             }
         }
+        impl initializeFromEmptyProxyReturn {
+            fn _tokenize(
+                &self,
+            ) -> <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for initializeFromEmptyProxyCall {
             type Parameters<'a> = ();
@@ -8850,13 +9351,23 @@ function initializeFromEmptyProxy() external;
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                initializeFromEmptyProxyReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -8869,7 +9380,7 @@ function owner() external view returns (address);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct ownerCall {}
+    pub struct ownerCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`owner()`](ownerCall) function.
@@ -8914,7 +9425,7 @@ function owner() external view returns (address);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for ownerCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -8955,7 +9466,7 @@ function owner() external view returns (address);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = ownerReturn;
+            type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -8973,14 +9484,34 @@ function owner() external view returns (address);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: ownerReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: ownerReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -8992,7 +9523,7 @@ function pause() external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct pauseCall {}
+    pub struct pauseCall;
     ///Container type for the return parameters of the [`pause()`](pauseCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9032,7 +9563,7 @@ function pause() external;
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for pauseCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -9067,6 +9598,13 @@ function pause() external;
                 }
             }
         }
+        impl pauseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <pauseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for pauseCall {
             type Parameters<'a> = ();
@@ -9091,13 +9629,23 @@ function pause() external;
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                pauseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -9110,7 +9658,7 @@ function paused() external view returns (bool);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct pausedCall {}
+    pub struct pausedCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`paused()`](pausedCall) function.
@@ -9155,7 +9703,7 @@ function paused() external view returns (bool);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for pausedCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -9196,7 +9744,7 @@ function paused() external view returns (bool);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = pausedReturn;
+            type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -9214,14 +9762,34 @@ function paused() external view returns (bool);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: pausedReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: pausedReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -9233,7 +9801,7 @@ function pendingOwner() external view returns (address);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct pendingOwnerCall {}
+    pub struct pendingOwnerCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`pendingOwner()`](pendingOwnerCall) function.
@@ -9278,7 +9846,7 @@ function pendingOwner() external view returns (address);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for pendingOwnerCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -9319,7 +9887,7 @@ function pendingOwner() external view returns (address);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = pendingOwnerReturn;
+            type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -9337,14 +9905,34 @@ function pendingOwner() external view returns (address);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: pendingOwnerReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: pendingOwnerReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -9356,7 +9944,7 @@ function proxiableUUID() external view returns (bytes32);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct proxiableUUIDCall {}
+    pub struct proxiableUUIDCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`proxiableUUID()`](proxiableUUIDCall) function.
@@ -9401,7 +9989,7 @@ function proxiableUUID() external view returns (bytes32);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for proxiableUUIDCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -9442,7 +10030,7 @@ function proxiableUUID() external view returns (bytes32);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = proxiableUUIDReturn;
+            type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -9460,14 +10048,34 @@ function proxiableUUID() external view returns (bytes32);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: proxiableUUIDReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: proxiableUUIDReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -9578,6 +10186,15 @@ function publicDecryptionRequest(bytes32[] memory ctHandles, bytes memory extraD
                 }
             }
         }
+        impl publicDecryptionRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <publicDecryptionRequestCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for publicDecryptionRequestCall {
             type Parameters<'a> = (
@@ -9614,13 +10231,23 @@ function publicDecryptionRequest(bytes32[] memory ctHandles, bytes memory extraD
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                publicDecryptionRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -9741,6 +10368,15 @@ function publicDecryptionResponse(uint256 decryptionId, bytes memory decryptedRe
                 }
             }
         }
+        impl publicDecryptionResponseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <publicDecryptionResponseCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for publicDecryptionResponseCall {
             type Parameters<'a> = (
@@ -9783,13 +10419,23 @@ function publicDecryptionResponse(uint256 decryptionId, bytes memory decryptedRe
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                publicDecryptionResponseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -9802,7 +10448,7 @@ function reinitializeV3() external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct reinitializeV3Call {}
+    pub struct reinitializeV3Call;
     ///Container type for the return parameters of the [`reinitializeV3()`](reinitializeV3Call) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9842,7 +10488,7 @@ function reinitializeV3() external;
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for reinitializeV3Call {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -9879,6 +10525,13 @@ function reinitializeV3() external;
                 }
             }
         }
+        impl reinitializeV3Return {
+            fn _tokenize(
+                &self,
+            ) -> <reinitializeV3Call as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for reinitializeV3Call {
             type Parameters<'a> = ();
@@ -9903,13 +10556,23 @@ function reinitializeV3() external;
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                reinitializeV3Return::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -9922,7 +10585,7 @@ function renounceOwnership() external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct renounceOwnershipCall {}
+    pub struct renounceOwnershipCall;
     ///Container type for the return parameters of the [`renounceOwnership()`](renounceOwnershipCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9964,7 +10627,7 @@ function renounceOwnership() external;
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for renounceOwnershipCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -10001,6 +10664,13 @@ function renounceOwnership() external;
                 }
             }
         }
+        impl renounceOwnershipReturn {
+            fn _tokenize(
+                &self,
+            ) -> <renounceOwnershipCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for renounceOwnershipCall {
             type Parameters<'a> = ();
@@ -10025,13 +10695,23 @@ function renounceOwnership() external;
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                renounceOwnershipReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -10126,6 +10806,13 @@ function transferOwnership(address newOwner) external;
                 }
             }
         }
+        impl transferOwnershipReturn {
+            fn _tokenize(
+                &self,
+            ) -> <transferOwnershipCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for transferOwnershipCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
@@ -10154,13 +10841,23 @@ function transferOwnership(address newOwner) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                transferOwnershipReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -10173,7 +10870,7 @@ function unpause() external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct unpauseCall {}
+    pub struct unpauseCall;
     ///Container type for the return parameters of the [`unpause()`](unpauseCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10213,7 +10910,7 @@ function unpause() external;
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for unpauseCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -10248,6 +10945,13 @@ function unpause() external;
                 }
             }
         }
+        impl unpauseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <unpauseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for unpauseCall {
             type Parameters<'a> = ();
@@ -10272,13 +10976,23 @@ function unpause() external;
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                unpauseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -10384,6 +11098,13 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
             }
         }
+        impl upgradeToAndCallReturn {
+            fn _tokenize(
+                &self,
+            ) -> <upgradeToAndCallCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for upgradeToAndCallCall {
             type Parameters<'a> = (
@@ -10418,13 +11139,23 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                upgradeToAndCallReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -10567,6 +11298,15 @@ function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPai
                 }
             }
         }
+        impl userDecryptionRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <userDecryptionRequestCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for userDecryptionRequestCall {
             type Parameters<'a> = (
@@ -10623,13 +11363,23 @@ function userDecryptionRequest(CtHandleContractPair[] memory ctHandleContractPai
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                userDecryptionRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -10750,6 +11500,15 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 }
             }
         }
+        impl userDecryptionResponseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <userDecryptionResponseCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for userDecryptionResponseCall {
             type Parameters<'a> = (
@@ -10792,13 +11551,23 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                userDecryptionResponseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -10984,20 +11753,16 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         fn abi_decode_raw(
             selector: [u8; 4],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-                bool,
             ) -> alloy_sol_types::Result<DecryptionCalls>] = &[
                 {
                     fn userDecryptionResponse(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <userDecryptionResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::userDecryptionResponse)
                     }
@@ -11006,11 +11771,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn getDecryptionConsensusTxSenders(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <getDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::getDecryptionConsensusTxSenders)
                     }
@@ -11019,11 +11782,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn getVersion(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::getVersion)
                     }
@@ -11032,25 +11793,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn initializeFromEmptyProxy(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::initializeFromEmptyProxy)
                     }
                     initializeFromEmptyProxy
                 },
                 {
-                    fn unpause(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<DecryptionCalls> {
-                        <unpauseCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                    fn unpause(data: &[u8]) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <unpauseCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(DecryptionCalls::unpause)
                     }
                     unpause
@@ -11058,11 +11811,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn upgradeToAndCall(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::upgradeToAndCall)
                     }
@@ -11071,25 +11822,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn proxiableUUID(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::proxiableUUID)
                     }
                     proxiableUUID
                 },
                 {
-                    fn paused(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<DecryptionCalls> {
-                        <pausedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                    fn paused(data: &[u8]) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <pausedCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(DecryptionCalls::paused)
                     }
                     paused
@@ -11097,11 +11840,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn publicDecryptionResponse(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <publicDecryptionResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::publicDecryptionResponse)
                     }
@@ -11110,11 +11851,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn renounceOwnership(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::renounceOwnership)
                     }
@@ -11123,25 +11862,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn acceptOwnership(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <acceptOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::acceptOwnership)
                     }
                     acceptOwnership
                 },
                 {
-                    fn pause(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<DecryptionCalls> {
-                        <pauseCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                    fn pause(data: &[u8]) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <pauseCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(DecryptionCalls::pause)
                     }
                     pause
@@ -11149,25 +11880,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn eip712Domain(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <eip712DomainCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::eip712Domain)
                     }
                     eip712Domain
                 },
                 {
-                    fn owner(
-                        data: &[u8],
-                        validate: bool,
-                    ) -> alloy_sol_types::Result<DecryptionCalls> {
-                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                    fn owner(data: &[u8]) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(DecryptionCalls::owner)
                     }
                     owner
@@ -11175,11 +11898,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn checkDelegatedUserDecryptionReady(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <checkDelegatedUserDecryptionReadyCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::checkDelegatedUserDecryptionReady)
                     }
@@ -11188,11 +11909,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn delegatedUserDecryptionRequest(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <delegatedUserDecryptionRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::delegatedUserDecryptionRequest)
                     }
@@ -11201,11 +11920,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn checkDecryptionDone(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <checkDecryptionDoneCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::checkDecryptionDone)
                     }
@@ -11214,11 +11931,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn UPGRADE_INTERFACE_VERSION(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::UPGRADE_INTERFACE_VERSION)
                     }
@@ -11227,11 +11942,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn reinitializeV3(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <reinitializeV3Call as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::reinitializeV3)
                     }
@@ -11240,11 +11953,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn publicDecryptionRequest(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <publicDecryptionRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::publicDecryptionRequest)
                     }
@@ -11253,11 +11964,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn pendingOwner(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <pendingOwnerCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::pendingOwner)
                     }
@@ -11266,11 +11975,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn checkPublicDecryptionReady(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <checkPublicDecryptionReadyCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::checkPublicDecryptionReady)
                     }
@@ -11279,11 +11986,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn userDecryptionRequest(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <userDecryptionRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::userDecryptionRequest)
                     }
@@ -11292,11 +11997,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn transferOwnership(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::transferOwnership)
                     }
@@ -11305,11 +12008,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn checkUserDecryptionReady(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionCalls> {
                         <checkUserDecryptionReadyCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionCalls::checkUserDecryptionReady)
                     }
@@ -11324,7 +12025,294 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data, validate)
+            DECODE_SHIMS[idx](data)
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_validate(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_VALIDATE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<DecryptionCalls>] = &[
+                {
+                    fn userDecryptionResponse(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <userDecryptionResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::userDecryptionResponse)
+                    }
+                    userDecryptionResponse
+                },
+                {
+                    fn getDecryptionConsensusTxSenders(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <getDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::getDecryptionConsensusTxSenders)
+                    }
+                    getDecryptionConsensusTxSenders
+                },
+                {
+                    fn getVersion(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::getVersion)
+                    }
+                    getVersion
+                },
+                {
+                    fn initializeFromEmptyProxy(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::initializeFromEmptyProxy)
+                    }
+                    initializeFromEmptyProxy
+                },
+                {
+                    fn unpause(data: &[u8]) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <unpauseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::unpause)
+                    }
+                    unpause
+                },
+                {
+                    fn upgradeToAndCall(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::upgradeToAndCall)
+                    }
+                    upgradeToAndCall
+                },
+                {
+                    fn proxiableUUID(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::proxiableUUID)
+                    }
+                    proxiableUUID
+                },
+                {
+                    fn paused(data: &[u8]) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <pausedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::paused)
+                    }
+                    paused
+                },
+                {
+                    fn publicDecryptionResponse(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <publicDecryptionResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::publicDecryptionResponse)
+                    }
+                    publicDecryptionResponse
+                },
+                {
+                    fn renounceOwnership(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::renounceOwnership)
+                    }
+                    renounceOwnership
+                },
+                {
+                    fn acceptOwnership(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <acceptOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::acceptOwnership)
+                    }
+                    acceptOwnership
+                },
+                {
+                    fn pause(data: &[u8]) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <pauseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::pause)
+                    }
+                    pause
+                },
+                {
+                    fn eip712Domain(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <eip712DomainCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::eip712Domain)
+                    }
+                    eip712Domain
+                },
+                {
+                    fn owner(data: &[u8]) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::owner)
+                    }
+                    owner
+                },
+                {
+                    fn checkDelegatedUserDecryptionReady(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <checkDelegatedUserDecryptionReadyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::checkDelegatedUserDecryptionReady)
+                    }
+                    checkDelegatedUserDecryptionReady
+                },
+                {
+                    fn delegatedUserDecryptionRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <delegatedUserDecryptionRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::delegatedUserDecryptionRequest)
+                    }
+                    delegatedUserDecryptionRequest
+                },
+                {
+                    fn checkDecryptionDone(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <checkDecryptionDoneCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::checkDecryptionDone)
+                    }
+                    checkDecryptionDone
+                },
+                {
+                    fn UPGRADE_INTERFACE_VERSION(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::UPGRADE_INTERFACE_VERSION)
+                    }
+                    UPGRADE_INTERFACE_VERSION
+                },
+                {
+                    fn reinitializeV3(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <reinitializeV3Call as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::reinitializeV3)
+                    }
+                    reinitializeV3
+                },
+                {
+                    fn publicDecryptionRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <publicDecryptionRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::publicDecryptionRequest)
+                    }
+                    publicDecryptionRequest
+                },
+                {
+                    fn pendingOwner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <pendingOwnerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::pendingOwner)
+                    }
+                    pendingOwner
+                },
+                {
+                    fn checkPublicDecryptionReady(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <checkPublicDecryptionReadyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::checkPublicDecryptionReady)
+                    }
+                    checkPublicDecryptionReady
+                },
+                {
+                    fn userDecryptionRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <userDecryptionRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::userDecryptionRequest)
+                    }
+                    userDecryptionRequest
+                },
+                {
+                    fn transferOwnership(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::transferOwnership)
+                    }
+                    transferOwnership
+                },
+                {
+                    fn checkUserDecryptionReady(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionCalls> {
+                        <checkUserDecryptionReadyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionCalls::checkUserDecryptionReady)
+                    }
+                    checkUserDecryptionReady
+                },
+            ];
+            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
+            };
+            DECODE_VALIDATE_SHIMS[idx](data)
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -11861,20 +12849,16 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         fn abi_decode_raw(
             selector: [u8; 4],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-                bool,
             ) -> alloy_sol_types::Result<DecryptionErrors>] = &[
                 {
                     fn DecryptionNotDone(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <DecryptionNotDone as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::DecryptionNotDone)
                     }
@@ -11883,11 +12867,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn NotGatewayOwner(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <NotGatewayOwner as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::NotGatewayOwner)
                     }
@@ -11896,11 +12878,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn OwnableUnauthorizedAccount(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::OwnableUnauthorizedAccount)
                     }
@@ -11909,11 +12889,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn OwnableInvalidOwner(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::OwnableInvalidOwner)
                     }
@@ -11922,12 +12900,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn NotPauser(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
-                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(DecryptionErrors::NotPauser)
                     }
                     NotPauser
@@ -11935,11 +12909,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn InvalidUserSignature(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <InvalidUserSignature as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::InvalidUserSignature)
                     }
@@ -11948,11 +12920,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn EmptyCtHandles(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <EmptyCtHandles as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::EmptyCtHandles)
                     }
@@ -11961,11 +12931,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn UserDecryptionRequestExpired(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <UserDecryptionRequestExpired as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::UserDecryptionRequestExpired)
                     }
@@ -11974,11 +12942,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn MaxDurationDaysExceeded(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <MaxDurationDaysExceeded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::MaxDurationDaysExceeded)
                     }
@@ -11987,11 +12953,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn NotPauserOrGatewayConfig(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <NotPauserOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::NotPauserOrGatewayConfig)
                     }
@@ -12000,11 +12964,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn ERC1967InvalidImplementation(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::ERC1967InvalidImplementation)
                     }
@@ -12013,11 +12975,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn EmptyContractAddresses(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <EmptyContractAddresses as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::EmptyContractAddresses)
                     }
@@ -12026,11 +12986,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn InvalidFHEType(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <InvalidFHEType as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::InvalidFHEType)
                     }
@@ -12039,11 +12997,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn NotInitializingFromEmptyProxy(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::NotInitializingFromEmptyProxy)
                     }
@@ -12052,11 +13008,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn ExpectedPause(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <ExpectedPause as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::ExpectedPause)
                     }
@@ -12065,11 +13019,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn AddressEmptyCode(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::AddressEmptyCode)
                     }
@@ -12078,11 +13030,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn KmsNodeAlreadySigned(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <KmsNodeAlreadySigned as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::KmsNodeAlreadySigned)
                     }
@@ -12091,11 +13041,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn ContractNotInContractAddresses(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <ContractNotInContractAddresses as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::ContractNotInContractAddresses)
                     }
@@ -12104,11 +13052,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn EmptyCtHandleContractPairs(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <EmptyCtHandleContractPairs as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::EmptyCtHandleContractPairs)
                     }
@@ -12117,11 +13063,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn UUPSUnsupportedProxiableUUID(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::UUPSUnsupportedProxiableUUID)
                     }
@@ -12130,11 +13074,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn ERC1967NonPayable(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::ERC1967NonPayable)
                     }
@@ -12143,11 +13085,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn UnsupportedFHEType(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <UnsupportedFHEType as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::UnsupportedFHEType)
                     }
@@ -12156,11 +13096,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn DelegatorAddressInContractAddresses(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <DelegatorAddressInContractAddresses as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::DelegatorAddressInContractAddresses)
                     }
@@ -12169,11 +13107,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn ContractAddressesMaxLengthExceeded(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <ContractAddressesMaxLengthExceeded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::ContractAddressesMaxLengthExceeded)
                     }
@@ -12182,11 +13118,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn DifferentKeyIdsNotAllowed(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::DifferentKeyIdsNotAllowed)
                     }
@@ -12195,11 +13129,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn DecryptionNotRequested(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <DecryptionNotRequested as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::DecryptionNotRequested)
                     }
@@ -12208,12 +13140,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn FailedCall(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
-                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(DecryptionErrors::FailedCall)
                     }
                     FailedCall
@@ -12221,11 +13149,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn ECDSAInvalidSignatureS(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <ECDSAInvalidSignatureS as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::ECDSAInvalidSignatureS)
                     }
@@ -12234,11 +13160,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn NotInitializing(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::NotInitializing)
                     }
@@ -12247,11 +13171,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn EnforcedPause(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <EnforcedPause as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::EnforcedPause)
                     }
@@ -12260,11 +13182,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn UserAddressInContractAddresses(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <UserAddressInContractAddresses as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::UserAddressInContractAddresses)
                     }
@@ -12273,11 +13193,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn InvalidNullDurationDays(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <InvalidNullDurationDays as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::InvalidNullDurationDays)
                     }
@@ -12286,11 +13204,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn UUPSUnauthorizedCallContext(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::UUPSUnauthorizedCallContext)
                     }
@@ -12299,11 +13215,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn NotOwnerOrGatewayConfig(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <NotOwnerOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::NotOwnerOrGatewayConfig)
                     }
@@ -12312,11 +13226,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn MaxDecryptionRequestBitSizeExceeded(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <MaxDecryptionRequestBitSizeExceeded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::MaxDecryptionRequestBitSizeExceeded)
                     }
@@ -12325,11 +13237,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn StartTimestampInFuture(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <StartTimestampInFuture as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::StartTimestampInFuture)
                     }
@@ -12338,11 +13248,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn ECDSAInvalidSignature(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <ECDSAInvalidSignature as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::ECDSAInvalidSignature)
                     }
@@ -12351,11 +13259,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn InvalidInitialization(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::InvalidInitialization)
                     }
@@ -12364,11 +13270,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 {
                     fn ECDSAInvalidSignatureLength(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<DecryptionErrors> {
                         <ECDSAInvalidSignatureLength as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(DecryptionErrors::ECDSAInvalidSignatureLength)
                     }
@@ -12383,7 +13287,456 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data, validate)
+            DECODE_SHIMS[idx](data)
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_validate(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_VALIDATE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<DecryptionErrors>] = &[
+                {
+                    fn DecryptionNotDone(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <DecryptionNotDone as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::DecryptionNotDone)
+                    }
+                    DecryptionNotDone
+                },
+                {
+                    fn NotGatewayOwner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <NotGatewayOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::NotGatewayOwner)
+                    }
+                    NotGatewayOwner
+                },
+                {
+                    fn OwnableUnauthorizedAccount(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::OwnableUnauthorizedAccount)
+                    }
+                    OwnableUnauthorizedAccount
+                },
+                {
+                    fn OwnableInvalidOwner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::OwnableInvalidOwner)
+                    }
+                    OwnableInvalidOwner
+                },
+                {
+                    fn NotPauser(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::NotPauser)
+                    }
+                    NotPauser
+                },
+                {
+                    fn InvalidUserSignature(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <InvalidUserSignature as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::InvalidUserSignature)
+                    }
+                    InvalidUserSignature
+                },
+                {
+                    fn EmptyCtHandles(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <EmptyCtHandles as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::EmptyCtHandles)
+                    }
+                    EmptyCtHandles
+                },
+                {
+                    fn UserDecryptionRequestExpired(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <UserDecryptionRequestExpired as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::UserDecryptionRequestExpired)
+                    }
+                    UserDecryptionRequestExpired
+                },
+                {
+                    fn MaxDurationDaysExceeded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <MaxDurationDaysExceeded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::MaxDurationDaysExceeded)
+                    }
+                    MaxDurationDaysExceeded
+                },
+                {
+                    fn NotPauserOrGatewayConfig(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <NotPauserOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::NotPauserOrGatewayConfig)
+                    }
+                    NotPauserOrGatewayConfig
+                },
+                {
+                    fn ERC1967InvalidImplementation(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::ERC1967InvalidImplementation)
+                    }
+                    ERC1967InvalidImplementation
+                },
+                {
+                    fn EmptyContractAddresses(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <EmptyContractAddresses as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::EmptyContractAddresses)
+                    }
+                    EmptyContractAddresses
+                },
+                {
+                    fn InvalidFHEType(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <InvalidFHEType as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::InvalidFHEType)
+                    }
+                    InvalidFHEType
+                },
+                {
+                    fn NotInitializingFromEmptyProxy(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::NotInitializingFromEmptyProxy)
+                    }
+                    NotInitializingFromEmptyProxy
+                },
+                {
+                    fn ExpectedPause(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <ExpectedPause as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::ExpectedPause)
+                    }
+                    ExpectedPause
+                },
+                {
+                    fn AddressEmptyCode(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::AddressEmptyCode)
+                    }
+                    AddressEmptyCode
+                },
+                {
+                    fn KmsNodeAlreadySigned(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <KmsNodeAlreadySigned as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::KmsNodeAlreadySigned)
+                    }
+                    KmsNodeAlreadySigned
+                },
+                {
+                    fn ContractNotInContractAddresses(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <ContractNotInContractAddresses as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::ContractNotInContractAddresses)
+                    }
+                    ContractNotInContractAddresses
+                },
+                {
+                    fn EmptyCtHandleContractPairs(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <EmptyCtHandleContractPairs as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::EmptyCtHandleContractPairs)
+                    }
+                    EmptyCtHandleContractPairs
+                },
+                {
+                    fn UUPSUnsupportedProxiableUUID(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::UUPSUnsupportedProxiableUUID)
+                    }
+                    UUPSUnsupportedProxiableUUID
+                },
+                {
+                    fn ERC1967NonPayable(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::ERC1967NonPayable)
+                    }
+                    ERC1967NonPayable
+                },
+                {
+                    fn UnsupportedFHEType(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <UnsupportedFHEType as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::UnsupportedFHEType)
+                    }
+                    UnsupportedFHEType
+                },
+                {
+                    fn DelegatorAddressInContractAddresses(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <DelegatorAddressInContractAddresses as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::DelegatorAddressInContractAddresses)
+                    }
+                    DelegatorAddressInContractAddresses
+                },
+                {
+                    fn ContractAddressesMaxLengthExceeded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <ContractAddressesMaxLengthExceeded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::ContractAddressesMaxLengthExceeded)
+                    }
+                    ContractAddressesMaxLengthExceeded
+                },
+                {
+                    fn DifferentKeyIdsNotAllowed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <DifferentKeyIdsNotAllowed as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::DifferentKeyIdsNotAllowed)
+                    }
+                    DifferentKeyIdsNotAllowed
+                },
+                {
+                    fn DecryptionNotRequested(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <DecryptionNotRequested as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::DecryptionNotRequested)
+                    }
+                    DecryptionNotRequested
+                },
+                {
+                    fn FailedCall(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::FailedCall)
+                    }
+                    FailedCall
+                },
+                {
+                    fn ECDSAInvalidSignatureS(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <ECDSAInvalidSignatureS as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::ECDSAInvalidSignatureS)
+                    }
+                    ECDSAInvalidSignatureS
+                },
+                {
+                    fn NotInitializing(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::NotInitializing)
+                    }
+                    NotInitializing
+                },
+                {
+                    fn EnforcedPause(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <EnforcedPause as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::EnforcedPause)
+                    }
+                    EnforcedPause
+                },
+                {
+                    fn UserAddressInContractAddresses(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <UserAddressInContractAddresses as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::UserAddressInContractAddresses)
+                    }
+                    UserAddressInContractAddresses
+                },
+                {
+                    fn InvalidNullDurationDays(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <InvalidNullDurationDays as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::InvalidNullDurationDays)
+                    }
+                    InvalidNullDurationDays
+                },
+                {
+                    fn UUPSUnauthorizedCallContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::UUPSUnauthorizedCallContext)
+                    }
+                    UUPSUnauthorizedCallContext
+                },
+                {
+                    fn NotOwnerOrGatewayConfig(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <NotOwnerOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::NotOwnerOrGatewayConfig)
+                    }
+                    NotOwnerOrGatewayConfig
+                },
+                {
+                    fn MaxDecryptionRequestBitSizeExceeded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <MaxDecryptionRequestBitSizeExceeded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::MaxDecryptionRequestBitSizeExceeded)
+                    }
+                    MaxDecryptionRequestBitSizeExceeded
+                },
+                {
+                    fn StartTimestampInFuture(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <StartTimestampInFuture as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::StartTimestampInFuture)
+                    }
+                    StartTimestampInFuture
+                },
+                {
+                    fn ECDSAInvalidSignature(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <ECDSAInvalidSignature as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::ECDSAInvalidSignature)
+                    }
+                    ECDSAInvalidSignature
+                },
+                {
+                    fn InvalidInitialization(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::InvalidInitialization)
+                    }
+                    InvalidInitialization
+                },
+                {
+                    fn ECDSAInvalidSignatureLength(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<DecryptionErrors> {
+                        <ECDSAInvalidSignatureLength as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(DecryptionErrors::ECDSAInvalidSignatureLength)
+                    }
+                    ECDSAInvalidSignatureLength
+                },
+            ];
+            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
+            };
+            DECODE_VALIDATE_SHIMS[idx](data)
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -12911,7 +14264,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(
@@ -12920,7 +14272,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     <EIP712DomainChanged as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::EIP712DomainChanged)
                 }
@@ -12928,7 +14279,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     <Initialized as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::Initialized)
                 }
@@ -12938,7 +14288,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     <OwnershipTransferStarted as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::OwnershipTransferStarted)
                 }
@@ -12948,16 +14297,11 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     <OwnershipTransferred as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::OwnershipTransferred)
                 }
                 Some(<Paused as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Paused as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                            validate,
-                        )
+                    <Paused as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Paused)
                 }
                 Some(
@@ -12966,7 +14310,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     <PublicDecryptionRequest as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::PublicDecryptionRequest)
                 }
@@ -12976,24 +14319,15 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     <PublicDecryptionResponse as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::PublicDecryptionResponse)
                 }
                 Some(<Unpaused as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Unpaused as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                            validate,
-                        )
+                    <Unpaused as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Unpaused)
                 }
                 Some(<Upgraded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Upgraded as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                            validate,
-                        )
+                    <Upgraded as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Upgraded)
                 }
                 Some(
@@ -13002,7 +14336,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     <UserDecryptionRequest as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::UserDecryptionRequest)
                 }
@@ -13012,7 +14345,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     <UserDecryptionResponse as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::UserDecryptionResponse)
                 }
@@ -13113,14 +14445,13 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
 See the [wrapper's documentation](`DecryptionInstance`) for more details.*/
     #[inline]
     pub const fn new<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
         provider: P,
-    ) -> DecryptionInstance<T, P, N> {
-        DecryptionInstance::<T, P, N>::new(address, provider)
+    ) -> DecryptionInstance<P, N> {
+        DecryptionInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -13129,15 +14460,14 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
     pub fn deploy<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
     ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<DecryptionInstance<T, P, N>>,
+        Output = alloy_contract::Result<DecryptionInstance<P, N>>,
     > {
-        DecryptionInstance::<T, P, N>::deploy(provider)
+        DecryptionInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -13146,11 +14476,10 @@ This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<T, P, N> {
-        DecryptionInstance::<T, P, N>::deploy_builder(provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        DecryptionInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`Decryption`](self) instance.
 
@@ -13164,13 +14493,13 @@ be used to deploy a new instance of the contract.
 
 See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
-    pub struct DecryptionInstance<T, P, N = alloy_contract::private::Ethereum> {
+    pub struct DecryptionInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
         provider: P,
-        _network_transport: ::core::marker::PhantomData<(N, T)>,
+        _network: ::core::marker::PhantomData<N>,
     }
     #[automatically_derived]
-    impl<T, P, N> ::core::fmt::Debug for DecryptionInstance<T, P, N> {
+    impl<P, N> ::core::fmt::Debug for DecryptionInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             f.debug_tuple("DecryptionInstance").field(&self.address).finish()
@@ -13179,10 +14508,9 @@ See the [module-level documentation](self) for all the available methods.*/
     /// Instantiation and getters/setters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > DecryptionInstance<T, P, N> {
+    > DecryptionInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`Decryption`](self) contract instance.
 
 See the [wrapper's documentation](`DecryptionInstance`) for more details.*/
@@ -13194,7 +14522,7 @@ See the [wrapper's documentation](`DecryptionInstance`) for more details.*/
             Self {
                 address,
                 provider,
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
@@ -13205,7 +14533,7 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         #[inline]
         pub async fn deploy(
             provider: P,
-        ) -> alloy_contract::Result<DecryptionInstance<T, P, N>> {
+        ) -> alloy_contract::Result<DecryptionInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
@@ -13216,7 +14544,7 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<T, P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
                 provider,
                 ::core::clone::Clone::clone(&BYTECODE),
@@ -13243,24 +14571,23 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self.provider
         }
     }
-    impl<T, P: ::core::clone::Clone, N> DecryptionInstance<T, &P, N> {
+    impl<P: ::core::clone::Clone, N> DecryptionInstance<&P, N> {
         /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
-        pub fn with_cloned_provider(self) -> DecryptionInstance<T, P, N> {
+        pub fn with_cloned_provider(self) -> DecryptionInstance<P, N> {
             DecryptionInstance {
                 address: self.address,
                 provider: ::core::clone::Clone::clone(&self.provider),
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
     }
     /// Function calls.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > DecryptionInstance<T, P, N> {
+    > DecryptionInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -13268,26 +14595,26 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
-        ) -> alloy_contract::SolCallBuilder<T, &P, C, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
         ///Creates a new call builder for the [`UPGRADE_INTERFACE_VERSION`] function.
         pub fn UPGRADE_INTERFACE_VERSION(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, UPGRADE_INTERFACE_VERSIONCall, N> {
-            self.call_builder(&UPGRADE_INTERFACE_VERSIONCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, UPGRADE_INTERFACE_VERSIONCall, N> {
+            self.call_builder(&UPGRADE_INTERFACE_VERSIONCall)
         }
         ///Creates a new call builder for the [`acceptOwnership`] function.
         pub fn acceptOwnership(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, acceptOwnershipCall, N> {
-            self.call_builder(&acceptOwnershipCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, acceptOwnershipCall, N> {
+            self.call_builder(&acceptOwnershipCall)
         }
         ///Creates a new call builder for the [`checkDecryptionDone`] function.
         pub fn checkDecryptionDone(
             &self,
             decryptionId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkDecryptionDoneCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, checkDecryptionDoneCall, N> {
             self.call_builder(
                 &checkDecryptionDoneCall {
                     decryptionId,
@@ -13307,7 +14634,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             >,
             _4: alloy::sol_types::private::Bytes,
         ) -> alloy_contract::SolCallBuilder<
-            T,
             &P,
             checkDelegatedUserDecryptionReadyCall,
             N,
@@ -13329,7 +14655,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 alloy::sol_types::private::FixedBytes<32>,
             >,
             _1: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkPublicDecryptionReadyCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, checkPublicDecryptionReadyCall, N> {
             self.call_builder(
                 &checkPublicDecryptionReadyCall {
                     ctHandles,
@@ -13345,7 +14671,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 <CtHandleContractPair as alloy::sol_types::SolType>::RustType,
             >,
             _2: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkUserDecryptionReadyCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, checkUserDecryptionReadyCall, N> {
             self.call_builder(
                 &checkUserDecryptionReadyCall {
                     userAddress,
@@ -13366,12 +14692,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             publicKey: alloy::sol_types::private::Bytes,
             signature: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<
-            T,
-            &P,
-            delegatedUserDecryptionRequestCall,
-            N,
-        > {
+        ) -> alloy_contract::SolCallBuilder<&P, delegatedUserDecryptionRequestCall, N> {
             self.call_builder(
                 &delegatedUserDecryptionRequestCall {
                     ctHandleContractPairs,
@@ -13387,19 +14708,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`eip712Domain`] function.
         pub fn eip712Domain(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, eip712DomainCall, N> {
-            self.call_builder(&eip712DomainCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, eip712DomainCall, N> {
+            self.call_builder(&eip712DomainCall)
         }
         ///Creates a new call builder for the [`getDecryptionConsensusTxSenders`] function.
         pub fn getDecryptionConsensusTxSenders(
             &self,
             decryptionId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<
-            T,
-            &P,
-            getDecryptionConsensusTxSendersCall,
-            N,
-        > {
+        ) -> alloy_contract::SolCallBuilder<&P, getDecryptionConsensusTxSendersCall, N> {
             self.call_builder(
                 &getDecryptionConsensusTxSendersCall {
                     decryptionId,
@@ -13409,38 +14725,38 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`getVersion`] function.
         pub fn getVersion(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, getVersionCall, N> {
-            self.call_builder(&getVersionCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
+            self.call_builder(&getVersionCall)
         }
         ///Creates a new call builder for the [`initializeFromEmptyProxy`] function.
         pub fn initializeFromEmptyProxy(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, initializeFromEmptyProxyCall, N> {
-            self.call_builder(&initializeFromEmptyProxyCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, initializeFromEmptyProxyCall, N> {
+            self.call_builder(&initializeFromEmptyProxyCall)
         }
         ///Creates a new call builder for the [`owner`] function.
-        pub fn owner(&self) -> alloy_contract::SolCallBuilder<T, &P, ownerCall, N> {
-            self.call_builder(&ownerCall {})
+        pub fn owner(&self) -> alloy_contract::SolCallBuilder<&P, ownerCall, N> {
+            self.call_builder(&ownerCall)
         }
         ///Creates a new call builder for the [`pause`] function.
-        pub fn pause(&self) -> alloy_contract::SolCallBuilder<T, &P, pauseCall, N> {
-            self.call_builder(&pauseCall {})
+        pub fn pause(&self) -> alloy_contract::SolCallBuilder<&P, pauseCall, N> {
+            self.call_builder(&pauseCall)
         }
         ///Creates a new call builder for the [`paused`] function.
-        pub fn paused(&self) -> alloy_contract::SolCallBuilder<T, &P, pausedCall, N> {
-            self.call_builder(&pausedCall {})
+        pub fn paused(&self) -> alloy_contract::SolCallBuilder<&P, pausedCall, N> {
+            self.call_builder(&pausedCall)
         }
         ///Creates a new call builder for the [`pendingOwner`] function.
         pub fn pendingOwner(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, pendingOwnerCall, N> {
-            self.call_builder(&pendingOwnerCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, pendingOwnerCall, N> {
+            self.call_builder(&pendingOwnerCall)
         }
         ///Creates a new call builder for the [`proxiableUUID`] function.
         pub fn proxiableUUID(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, proxiableUUIDCall, N> {
-            self.call_builder(&proxiableUUIDCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, proxiableUUIDCall, N> {
+            self.call_builder(&proxiableUUIDCall)
         }
         ///Creates a new call builder for the [`publicDecryptionRequest`] function.
         pub fn publicDecryptionRequest(
@@ -13449,7 +14765,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 alloy::sol_types::private::FixedBytes<32>,
             >,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, publicDecryptionRequestCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, publicDecryptionRequestCall, N> {
             self.call_builder(
                 &publicDecryptionRequestCall {
                     ctHandles,
@@ -13464,7 +14780,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             decryptedResult: alloy::sol_types::private::Bytes,
             signature: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, publicDecryptionResponseCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, publicDecryptionResponseCall, N> {
             self.call_builder(
                 &publicDecryptionResponseCall {
                     decryptionId,
@@ -13477,32 +14793,32 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`reinitializeV3`] function.
         pub fn reinitializeV3(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, reinitializeV3Call, N> {
-            self.call_builder(&reinitializeV3Call {})
+        ) -> alloy_contract::SolCallBuilder<&P, reinitializeV3Call, N> {
+            self.call_builder(&reinitializeV3Call)
         }
         ///Creates a new call builder for the [`renounceOwnership`] function.
         pub fn renounceOwnership(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, renounceOwnershipCall, N> {
-            self.call_builder(&renounceOwnershipCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, renounceOwnershipCall, N> {
+            self.call_builder(&renounceOwnershipCall)
         }
         ///Creates a new call builder for the [`transferOwnership`] function.
         pub fn transferOwnership(
             &self,
             newOwner: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<T, &P, transferOwnershipCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, transferOwnershipCall, N> {
             self.call_builder(&transferOwnershipCall { newOwner })
         }
         ///Creates a new call builder for the [`unpause`] function.
-        pub fn unpause(&self) -> alloy_contract::SolCallBuilder<T, &P, unpauseCall, N> {
-            self.call_builder(&unpauseCall {})
+        pub fn unpause(&self) -> alloy_contract::SolCallBuilder<&P, unpauseCall, N> {
+            self.call_builder(&unpauseCall)
         }
         ///Creates a new call builder for the [`upgradeToAndCall`] function.
         pub fn upgradeToAndCall(
             &self,
             newImplementation: alloy::sol_types::private::Address,
             data: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, upgradeToAndCallCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, upgradeToAndCallCall, N> {
             self.call_builder(
                 &upgradeToAndCallCall {
                     newImplementation,
@@ -13522,7 +14838,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             publicKey: alloy::sol_types::private::Bytes,
             signature: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, userDecryptionRequestCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, userDecryptionRequestCall, N> {
             self.call_builder(
                 &userDecryptionRequestCall {
                     ctHandleContractPairs,
@@ -13542,7 +14858,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             userDecryptedShare: alloy::sol_types::private::Bytes,
             signature: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, userDecryptionResponseCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, userDecryptionResponseCall, N> {
             self.call_builder(
                 &userDecryptionResponseCall {
                     decryptionId,
@@ -13556,77 +14872,74 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     /// Event filters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > DecryptionInstance<T, P, N> {
+    > DecryptionInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
         /// Prefer using the other methods for building type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
-        ) -> alloy_contract::Event<T, &P, E, N> {
+        ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
         ///Creates a new event filter for the [`EIP712DomainChanged`] event.
         pub fn EIP712DomainChanged_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, EIP712DomainChanged, N> {
+        ) -> alloy_contract::Event<&P, EIP712DomainChanged, N> {
             self.event_filter::<EIP712DomainChanged>()
         }
         ///Creates a new event filter for the [`Initialized`] event.
-        pub fn Initialized_filter(
-            &self,
-        ) -> alloy_contract::Event<T, &P, Initialized, N> {
+        pub fn Initialized_filter(&self) -> alloy_contract::Event<&P, Initialized, N> {
             self.event_filter::<Initialized>()
         }
         ///Creates a new event filter for the [`OwnershipTransferStarted`] event.
         pub fn OwnershipTransferStarted_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, OwnershipTransferStarted, N> {
+        ) -> alloy_contract::Event<&P, OwnershipTransferStarted, N> {
             self.event_filter::<OwnershipTransferStarted>()
         }
         ///Creates a new event filter for the [`OwnershipTransferred`] event.
         pub fn OwnershipTransferred_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, OwnershipTransferred, N> {
+        ) -> alloy_contract::Event<&P, OwnershipTransferred, N> {
             self.event_filter::<OwnershipTransferred>()
         }
         ///Creates a new event filter for the [`Paused`] event.
-        pub fn Paused_filter(&self) -> alloy_contract::Event<T, &P, Paused, N> {
+        pub fn Paused_filter(&self) -> alloy_contract::Event<&P, Paused, N> {
             self.event_filter::<Paused>()
         }
         ///Creates a new event filter for the [`PublicDecryptionRequest`] event.
         pub fn PublicDecryptionRequest_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, PublicDecryptionRequest, N> {
+        ) -> alloy_contract::Event<&P, PublicDecryptionRequest, N> {
             self.event_filter::<PublicDecryptionRequest>()
         }
         ///Creates a new event filter for the [`PublicDecryptionResponse`] event.
         pub fn PublicDecryptionResponse_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, PublicDecryptionResponse, N> {
+        ) -> alloy_contract::Event<&P, PublicDecryptionResponse, N> {
             self.event_filter::<PublicDecryptionResponse>()
         }
         ///Creates a new event filter for the [`Unpaused`] event.
-        pub fn Unpaused_filter(&self) -> alloy_contract::Event<T, &P, Unpaused, N> {
+        pub fn Unpaused_filter(&self) -> alloy_contract::Event<&P, Unpaused, N> {
             self.event_filter::<Unpaused>()
         }
         ///Creates a new event filter for the [`Upgraded`] event.
-        pub fn Upgraded_filter(&self) -> alloy_contract::Event<T, &P, Upgraded, N> {
+        pub fn Upgraded_filter(&self) -> alloy_contract::Event<&P, Upgraded, N> {
             self.event_filter::<Upgraded>()
         }
         ///Creates a new event filter for the [`UserDecryptionRequest`] event.
         pub fn UserDecryptionRequest_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, UserDecryptionRequest, N> {
+        ) -> alloy_contract::Event<&P, UserDecryptionRequest, N> {
             self.event_filter::<UserDecryptionRequest>()
         }
         ///Creates a new event filter for the [`UserDecryptionResponse`] event.
         pub fn UserDecryptionResponse_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, UserDecryptionResponse, N> {
+        ) -> alloy_contract::Event<&P, UserDecryptionResponse, N> {
             self.event_filter::<UserDecryptionResponse>()
         }
     }

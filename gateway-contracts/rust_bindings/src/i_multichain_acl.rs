@@ -840,6 +840,13 @@ error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress)
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -935,6 +942,13 @@ error AccountNotDelegated(uint256 chainId, DelegationAccounts delegationAccounts
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -1023,6 +1037,13 @@ error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.actualLength),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -1121,6 +1142,13 @@ error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, addres
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -1209,6 +1237,13 @@ error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender)
                         &self.txSender,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -1322,6 +1357,13 @@ error CoprocessorAlreadyDelegated(uint256 chainId, DelegationAccounts delegation
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -1332,7 +1374,7 @@ error EmptyContractAddresses();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct EmptyContractAddresses {}
+    pub struct EmptyContractAddresses;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1367,7 +1409,7 @@ error EmptyContractAddresses();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for EmptyContractAddresses {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -1387,6 +1429,13 @@ error EmptyContractAddresses();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -1460,6 +1509,13 @@ error PublicDecryptNotAllowed(bytes32 ctHandle);
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -1915,6 +1971,13 @@ function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory ext
                 }
             }
         }
+        impl allowAccountReturn {
+            fn _tokenize(
+                &self,
+            ) -> <allowAccountCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for allowAccountCall {
             type Parameters<'a> = (
@@ -1953,13 +2016,23 @@ function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory ext
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                allowAccountReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -2065,6 +2138,13 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
                 }
             }
         }
+        impl allowPublicDecryptReturn {
+            fn _tokenize(
+                &self,
+            ) -> <allowPublicDecryptCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for allowPublicDecryptCall {
             type Parameters<'a> = (
@@ -2099,13 +2179,23 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                allowPublicDecryptReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -2211,6 +2301,13 @@ function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external 
                 }
             }
         }
+        impl checkAccountAllowedReturn {
+            fn _tokenize(
+                &self,
+            ) -> <checkAccountAllowedCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for checkAccountAllowedCall {
             type Parameters<'a> = (
@@ -2245,13 +2342,23 @@ function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external 
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                checkAccountAllowedReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -2364,6 +2471,15 @@ function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delega
                 }
             }
         }
+        impl checkAccountDelegatedReturn {
+            fn _tokenize(
+                &self,
+            ) -> <checkAccountDelegatedCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for checkAccountDelegatedCall {
             type Parameters<'a> = (
@@ -2402,13 +2518,23 @@ function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delega
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                checkAccountDelegatedReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -2503,6 +2629,15 @@ function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
                 }
             }
         }
+        impl checkPublicDecryptAllowedReturn {
+            fn _tokenize(
+                &self,
+            ) -> <checkPublicDecryptAllowedCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for checkPublicDecryptAllowedCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
@@ -2531,13 +2666,23 @@ function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                checkPublicDecryptAllowedReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -2648,6 +2793,13 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                 }
             }
         }
+        impl delegateAccountReturn {
+            fn _tokenize(
+                &self,
+            ) -> <delegateAccountCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for delegateAccountCall {
             type Parameters<'a> = (
@@ -2686,13 +2838,23 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                delegateAccountReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -2816,7 +2978,9 @@ function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddr
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getAllowAccountConsensusTxSendersReturn;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -2843,14 +3007,34 @@ function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddr
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getAllowAccountConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getAllowAccountConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -2959,7 +3143,9 @@ function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getAllowPublicDecryptConsensusTxSendersReturn;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -2983,14 +3169,34 @@ function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getAllowPublicDecryptConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getAllowPublicDecryptConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -3121,7 +3327,9 @@ function getDelegateAccountConsensusTxSenders(uint256 chainId, DelegationAccount
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getDelegateAccountConsensusTxSendersReturn;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -3151,14 +3359,34 @@ function getDelegateAccountConsensusTxSenders(uint256 chainId, DelegationAccount
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getDelegateAccountConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getDelegateAccountConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -3170,7 +3398,7 @@ function getVersion() external pure returns (string memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getVersionCall {}
+    pub struct getVersionCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
@@ -3215,7 +3443,7 @@ function getVersion() external pure returns (string memory);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -3256,7 +3484,7 @@ function getVersion() external pure returns (string memory);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getVersionReturn;
+            type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -3274,14 +3502,34 @@ function getVersion() external pure returns (string memory);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getVersionReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getVersionReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -3386,20 +3634,16 @@ function getVersion() external pure returns (string memory);
         fn abi_decode_raw(
             selector: [u8; 4],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-                bool,
             ) -> alloy_sol_types::Result<IMultichainAclCalls>] = &[
                 {
                     fn getVersion(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
                         <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclCalls::getVersion)
                     }
@@ -3408,11 +3652,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn checkPublicDecryptAllowed(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
                         <checkPublicDecryptAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclCalls::checkPublicDecryptAllowed)
                     }
@@ -3421,11 +3663,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn allowAccount(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
                         <allowAccountCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclCalls::allowAccount)
                     }
@@ -3434,11 +3674,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn checkAccountAllowed(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
                         <checkAccountAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclCalls::checkAccountAllowed)
                     }
@@ -3447,11 +3685,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn checkAccountDelegated(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
                         <checkAccountDelegatedCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclCalls::checkAccountDelegated)
                     }
@@ -3460,11 +3696,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn getAllowPublicDecryptConsensusTxSenders(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
                         <getAllowPublicDecryptConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(
                                 IMultichainAclCalls::getAllowPublicDecryptConsensusTxSenders,
@@ -3475,11 +3709,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn getDelegateAccountConsensusTxSenders(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
                         <getDelegateAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(
                                 IMultichainAclCalls::getDelegateAccountConsensusTxSenders,
@@ -3490,11 +3722,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn getAllowAccountConsensusTxSenders(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
                         <getAllowAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclCalls::getAllowAccountConsensusTxSenders)
                     }
@@ -3503,11 +3733,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn allowPublicDecrypt(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
                         <allowPublicDecryptCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclCalls::allowPublicDecrypt)
                     }
@@ -3516,11 +3744,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn delegateAccount(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclCalls> {
                         <delegateAccountCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclCalls::delegateAccount)
                     }
@@ -3535,7 +3761,141 @@ function getVersion() external pure returns (string memory);
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data, validate)
+            DECODE_SHIMS[idx](data)
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_validate(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_VALIDATE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<IMultichainAclCalls>] = &[
+                {
+                    fn getVersion(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclCalls::getVersion)
+                    }
+                    getVersion
+                },
+                {
+                    fn checkPublicDecryptAllowed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <checkPublicDecryptAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclCalls::checkPublicDecryptAllowed)
+                    }
+                    checkPublicDecryptAllowed
+                },
+                {
+                    fn allowAccount(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <allowAccountCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclCalls::allowAccount)
+                    }
+                    allowAccount
+                },
+                {
+                    fn checkAccountAllowed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <checkAccountAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclCalls::checkAccountAllowed)
+                    }
+                    checkAccountAllowed
+                },
+                {
+                    fn checkAccountDelegated(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <checkAccountDelegatedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclCalls::checkAccountDelegated)
+                    }
+                    checkAccountDelegated
+                },
+                {
+                    fn getAllowPublicDecryptConsensusTxSenders(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <getAllowPublicDecryptConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IMultichainAclCalls::getAllowPublicDecryptConsensusTxSenders,
+                            )
+                    }
+                    getAllowPublicDecryptConsensusTxSenders
+                },
+                {
+                    fn getDelegateAccountConsensusTxSenders(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <getDelegateAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IMultichainAclCalls::getDelegateAccountConsensusTxSenders,
+                            )
+                    }
+                    getDelegateAccountConsensusTxSenders
+                },
+                {
+                    fn getAllowAccountConsensusTxSenders(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <getAllowAccountConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclCalls::getAllowAccountConsensusTxSenders)
+                    }
+                    getAllowAccountConsensusTxSenders
+                },
+                {
+                    fn allowPublicDecrypt(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <allowPublicDecryptCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclCalls::allowPublicDecrypt)
+                    }
+                    allowPublicDecrypt
+                },
+                {
+                    fn delegateAccount(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclCalls> {
+                        <delegateAccountCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclCalls::delegateAccount)
+                    }
+                    delegateAccount
+                },
+            ];
+            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
+            };
+            DECODE_VALIDATE_SHIMS[idx](data)
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -3743,20 +4103,16 @@ function getVersion() external pure returns (string memory);
         fn abi_decode_raw(
             selector: [u8; 4],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-                bool,
             ) -> alloy_sol_types::Result<IMultichainAclErrors>] = &[
                 {
                     fn CoprocessorAlreadyDelegated(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclErrors> {
                         <CoprocessorAlreadyDelegated as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclErrors::CoprocessorAlreadyDelegated)
                     }
@@ -3765,11 +4121,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn ContractsMaxLengthExceeded(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclErrors> {
                         <ContractsMaxLengthExceeded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclErrors::ContractsMaxLengthExceeded)
                     }
@@ -3778,11 +4132,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn AccountNotAllowedToUseCiphertext(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclErrors> {
                         <AccountNotAllowedToUseCiphertext as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclErrors::AccountNotAllowedToUseCiphertext)
                     }
@@ -3791,11 +4143,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn PublicDecryptNotAllowed(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclErrors> {
                         <PublicDecryptNotAllowed as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclErrors::PublicDecryptNotAllowed)
                     }
@@ -3804,11 +4154,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn EmptyContractAddresses(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclErrors> {
                         <EmptyContractAddresses as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclErrors::EmptyContractAddresses)
                     }
@@ -3817,11 +4165,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn CoprocessorAlreadyAllowedAccount(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclErrors> {
                         <CoprocessorAlreadyAllowedAccount as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclErrors::CoprocessorAlreadyAllowedAccount)
                     }
@@ -3830,11 +4176,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn CoprocessorAlreadyAllowedPublicDecrypt(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclErrors> {
                         <CoprocessorAlreadyAllowedPublicDecrypt as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(
                                 IMultichainAclErrors::CoprocessorAlreadyAllowedPublicDecrypt,
@@ -3845,11 +4189,9 @@ function getVersion() external pure returns (string memory);
                 {
                     fn AccountNotDelegated(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IMultichainAclErrors> {
                         <AccountNotDelegated as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IMultichainAclErrors::AccountNotDelegated)
                     }
@@ -3864,7 +4206,117 @@ function getVersion() external pure returns (string memory);
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data, validate)
+            DECODE_SHIMS[idx](data)
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_validate(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_VALIDATE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<IMultichainAclErrors>] = &[
+                {
+                    fn CoprocessorAlreadyDelegated(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <CoprocessorAlreadyDelegated as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclErrors::CoprocessorAlreadyDelegated)
+                    }
+                    CoprocessorAlreadyDelegated
+                },
+                {
+                    fn ContractsMaxLengthExceeded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <ContractsMaxLengthExceeded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclErrors::ContractsMaxLengthExceeded)
+                    }
+                    ContractsMaxLengthExceeded
+                },
+                {
+                    fn AccountNotAllowedToUseCiphertext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <AccountNotAllowedToUseCiphertext as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclErrors::AccountNotAllowedToUseCiphertext)
+                    }
+                    AccountNotAllowedToUseCiphertext
+                },
+                {
+                    fn PublicDecryptNotAllowed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <PublicDecryptNotAllowed as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclErrors::PublicDecryptNotAllowed)
+                    }
+                    PublicDecryptNotAllowed
+                },
+                {
+                    fn EmptyContractAddresses(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <EmptyContractAddresses as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclErrors::EmptyContractAddresses)
+                    }
+                    EmptyContractAddresses
+                },
+                {
+                    fn CoprocessorAlreadyAllowedAccount(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <CoprocessorAlreadyAllowedAccount as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclErrors::CoprocessorAlreadyAllowedAccount)
+                    }
+                    CoprocessorAlreadyAllowedAccount
+                },
+                {
+                    fn CoprocessorAlreadyAllowedPublicDecrypt(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <CoprocessorAlreadyAllowedPublicDecrypt as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IMultichainAclErrors::CoprocessorAlreadyAllowedPublicDecrypt,
+                            )
+                    }
+                    CoprocessorAlreadyAllowedPublicDecrypt
+                },
+                {
+                    fn AccountNotDelegated(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainAclErrors> {
+                        <AccountNotDelegated as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainAclErrors::AccountNotDelegated)
+                    }
+                    AccountNotDelegated
+                },
+            ];
+            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
+            };
+            DECODE_VALIDATE_SHIMS[idx](data)
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -4009,14 +4461,12 @@ function getVersion() external pure returns (string memory);
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(<AllowAccount as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <AllowAccount as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::AllowAccount)
                 }
@@ -4026,7 +4476,6 @@ function getVersion() external pure returns (string memory);
                     <AllowPublicDecrypt as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::AllowPublicDecrypt)
                 }
@@ -4034,7 +4483,6 @@ function getVersion() external pure returns (string memory);
                     <DelegateAccount as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::DelegateAccount)
                 }
@@ -4087,14 +4535,13 @@ function getVersion() external pure returns (string memory);
 See the [wrapper's documentation](`IMultichainAclInstance`) for more details.*/
     #[inline]
     pub const fn new<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
         provider: P,
-    ) -> IMultichainAclInstance<T, P, N> {
-        IMultichainAclInstance::<T, P, N>::new(address, provider)
+    ) -> IMultichainAclInstance<P, N> {
+        IMultichainAclInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -4103,15 +4550,14 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
     pub fn deploy<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
     ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IMultichainAclInstance<T, P, N>>,
+        Output = alloy_contract::Result<IMultichainAclInstance<P, N>>,
     > {
-        IMultichainAclInstance::<T, P, N>::deploy(provider)
+        IMultichainAclInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -4120,11 +4566,10 @@ This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<T, P, N> {
-        IMultichainAclInstance::<T, P, N>::deploy_builder(provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        IMultichainAclInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IMultichainAcl`](self) instance.
 
@@ -4138,13 +4583,13 @@ be used to deploy a new instance of the contract.
 
 See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
-    pub struct IMultichainAclInstance<T, P, N = alloy_contract::private::Ethereum> {
+    pub struct IMultichainAclInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
         provider: P,
-        _network_transport: ::core::marker::PhantomData<(N, T)>,
+        _network: ::core::marker::PhantomData<N>,
     }
     #[automatically_derived]
-    impl<T, P, N> ::core::fmt::Debug for IMultichainAclInstance<T, P, N> {
+    impl<P, N> ::core::fmt::Debug for IMultichainAclInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             f.debug_tuple("IMultichainAclInstance").field(&self.address).finish()
@@ -4153,10 +4598,9 @@ See the [module-level documentation](self) for all the available methods.*/
     /// Instantiation and getters/setters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > IMultichainAclInstance<T, P, N> {
+    > IMultichainAclInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`IMultichainAcl`](self) contract instance.
 
 See the [wrapper's documentation](`IMultichainAclInstance`) for more details.*/
@@ -4168,7 +4612,7 @@ See the [wrapper's documentation](`IMultichainAclInstance`) for more details.*/
             Self {
                 address,
                 provider,
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
@@ -4179,7 +4623,7 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         #[inline]
         pub async fn deploy(
             provider: P,
-        ) -> alloy_contract::Result<IMultichainAclInstance<T, P, N>> {
+        ) -> alloy_contract::Result<IMultichainAclInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
@@ -4190,7 +4634,7 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<T, P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
                 provider,
                 ::core::clone::Clone::clone(&BYTECODE),
@@ -4217,24 +4661,23 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self.provider
         }
     }
-    impl<T, P: ::core::clone::Clone, N> IMultichainAclInstance<T, &P, N> {
+    impl<P: ::core::clone::Clone, N> IMultichainAclInstance<&P, N> {
         /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
-        pub fn with_cloned_provider(self) -> IMultichainAclInstance<T, P, N> {
+        pub fn with_cloned_provider(self) -> IMultichainAclInstance<P, N> {
             IMultichainAclInstance {
                 address: self.address,
                 provider: ::core::clone::Clone::clone(&self.provider),
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
     }
     /// Function calls.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > IMultichainAclInstance<T, P, N> {
+    > IMultichainAclInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -4242,7 +4685,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
-        ) -> alloy_contract::SolCallBuilder<T, &P, C, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
         ///Creates a new call builder for the [`allowAccount`] function.
@@ -4251,7 +4694,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
             accountAddress: alloy::sol_types::private::Address,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, allowAccountCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, allowAccountCall, N> {
             self.call_builder(
                 &allowAccountCall {
                     ctHandle,
@@ -4265,7 +4708,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, allowPublicDecryptCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, allowPublicDecryptCall, N> {
             self.call_builder(
                 &allowPublicDecryptCall {
                     ctHandle,
@@ -4278,7 +4721,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
             accountAddress: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkAccountAllowedCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, checkAccountAllowedCall, N> {
             self.call_builder(
                 &checkAccountAllowedCall {
                     ctHandle,
@@ -4294,7 +4737,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             contractAddresses: alloy::sol_types::private::Vec<
                 alloy::sol_types::private::Address,
             >,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkAccountDelegatedCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, checkAccountDelegatedCall, N> {
             self.call_builder(
                 &checkAccountDelegatedCall {
                     chainId,
@@ -4307,7 +4750,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn checkPublicDecryptAllowed(
             &self,
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkPublicDecryptAllowedCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, checkPublicDecryptAllowedCall, N> {
             self.call_builder(
                 &checkPublicDecryptAllowedCall {
                     ctHandle,
@@ -4322,7 +4765,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             contractAddresses: alloy::sol_types::private::Vec<
                 alloy::sol_types::private::Address,
             >,
-        ) -> alloy_contract::SolCallBuilder<T, &P, delegateAccountCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, delegateAccountCall, N> {
             self.call_builder(
                 &delegateAccountCall {
                     chainId,
@@ -4337,7 +4780,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
             accountAddress: alloy::sol_types::private::Address,
         ) -> alloy_contract::SolCallBuilder<
-            T,
             &P,
             getAllowAccountConsensusTxSendersCall,
             N,
@@ -4354,7 +4796,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             ctHandle: alloy::sol_types::private::FixedBytes<32>,
         ) -> alloy_contract::SolCallBuilder<
-            T,
             &P,
             getAllowPublicDecryptConsensusTxSendersCall,
             N,
@@ -4374,7 +4815,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 alloy::sol_types::private::Address,
             >,
         ) -> alloy_contract::SolCallBuilder<
-            T,
             &P,
             getDelegateAccountConsensusTxSendersCall,
             N,
@@ -4390,42 +4830,39 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`getVersion`] function.
         pub fn getVersion(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, getVersionCall, N> {
-            self.call_builder(&getVersionCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
+            self.call_builder(&getVersionCall)
         }
     }
     /// Event filters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > IMultichainAclInstance<T, P, N> {
+    > IMultichainAclInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
         /// Prefer using the other methods for building type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
-        ) -> alloy_contract::Event<T, &P, E, N> {
+        ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
         ///Creates a new event filter for the [`AllowAccount`] event.
-        pub fn AllowAccount_filter(
-            &self,
-        ) -> alloy_contract::Event<T, &P, AllowAccount, N> {
+        pub fn AllowAccount_filter(&self) -> alloy_contract::Event<&P, AllowAccount, N> {
             self.event_filter::<AllowAccount>()
         }
         ///Creates a new event filter for the [`AllowPublicDecrypt`] event.
         pub fn AllowPublicDecrypt_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, AllowPublicDecrypt, N> {
+        ) -> alloy_contract::Event<&P, AllowPublicDecrypt, N> {
             self.event_filter::<AllowPublicDecrypt>()
         }
         ///Creates a new event filter for the [`DelegateAccount`] event.
         pub fn DelegateAccount_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, DelegateAccount, N> {
+        ) -> alloy_contract::Event<&P, DelegateAccount, N> {
             self.event_filter::<DelegateAccount>()
         }
     }

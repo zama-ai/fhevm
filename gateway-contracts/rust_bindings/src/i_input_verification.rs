@@ -466,6 +466,13 @@ error CoprocessorAlreadyRejected(uint256 zkProofId, address txSender, address si
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -563,6 +570,13 @@ error CoprocessorAlreadyVerified(uint256 zkProofId, address txSender, address si
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -637,6 +651,13 @@ error ProofNotRejected(uint256 zkProofId);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -713,6 +734,13 @@ error ProofNotVerified(uint256 zkProofId);
                     > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -787,6 +815,13 @@ error VerifyProofNotRequested(uint256 zkProofId);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.zkProofId),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -1268,6 +1303,13 @@ function checkProofRejected(uint256 zkProofId) external view;
                 }
             }
         }
+        impl checkProofRejectedReturn {
+            fn _tokenize(
+                &self,
+            ) -> <checkProofRejectedCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for checkProofRejectedCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
@@ -1296,13 +1338,23 @@ function checkProofRejected(uint256 zkProofId) external view;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                checkProofRejectedReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -1399,6 +1451,13 @@ function checkProofVerified(uint256 zkProofId) external view;
                 }
             }
         }
+        impl checkProofVerifiedReturn {
+            fn _tokenize(
+                &self,
+            ) -> <checkProofVerifiedCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for checkProofVerifiedCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
@@ -1427,13 +1486,23 @@ function checkProofVerified(uint256 zkProofId) external view;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                checkProofVerifiedReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -1545,7 +1614,9 @@ function getRejectProofConsensusTxSenders(uint256 zkProofId) external view retur
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getRejectProofConsensusTxSendersReturn;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -1569,14 +1640,34 @@ function getRejectProofConsensusTxSenders(uint256 zkProofId) external view retur
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getRejectProofConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getRejectProofConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -1687,7 +1778,9 @@ function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view retur
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getVerifyProofConsensusTxSendersReturn;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
             type ReturnTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -1711,14 +1804,34 @@ function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view retur
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getVerifyProofConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getVerifyProofConsensusTxSendersReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -1730,7 +1843,7 @@ function getVersion() external pure returns (string memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getVersionCall {}
+    pub struct getVersionCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
@@ -1775,7 +1888,7 @@ function getVersion() external pure returns (string memory);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -1816,7 +1929,7 @@ function getVersion() external pure returns (string memory);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getVersionReturn;
+            type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -1834,14 +1947,34 @@ function getVersion() external pure returns (string memory);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getVersionReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getVersionReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -1946,6 +2079,13 @@ function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external
                 }
             }
         }
+        impl rejectProofResponseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <rejectProofResponseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for rejectProofResponseCall {
             type Parameters<'a> = (
@@ -1980,13 +2120,23 @@ function rejectProofResponse(uint256 zkProofId, bytes memory extraData) external
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                rejectProofResponseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -2113,6 +2263,13 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
                 }
             }
         }
+        impl verifyProofRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <verifyProofRequestCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for verifyProofRequestCall {
             type Parameters<'a> = (
@@ -2159,13 +2316,23 @@ function verifyProofRequest(uint256 contractChainId, address contractAddress, ad
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                verifyProofRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -2287,6 +2454,13 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 }
             }
         }
+        impl verifyProofResponseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <verifyProofResponseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for verifyProofResponseCall {
             type Parameters<'a> = (
@@ -2331,13 +2505,23 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                verifyProofResponseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -2429,20 +2613,16 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         fn abi_decode_raw(
             selector: [u8; 4],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-                bool,
             ) -> alloy_sol_types::Result<IInputVerificationCalls>] = &[
                 {
                     fn getVersion(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationCalls::getVersion)
                     }
@@ -2451,11 +2631,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn checkProofRejected(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <checkProofRejectedCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationCalls::checkProofRejected)
                     }
@@ -2464,11 +2642,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn getRejectProofConsensusTxSenders(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <getRejectProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(
                                 IInputVerificationCalls::getRejectProofConsensusTxSenders,
@@ -2479,11 +2655,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn verifyProofResponse(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <verifyProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationCalls::verifyProofResponse)
                     }
@@ -2492,11 +2666,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn rejectProofResponse(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <rejectProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationCalls::rejectProofResponse)
                     }
@@ -2505,11 +2677,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn checkProofVerified(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <checkProofVerifiedCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationCalls::checkProofVerified)
                     }
@@ -2518,11 +2688,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn verifyProofRequest(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <verifyProofRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationCalls::verifyProofRequest)
                     }
@@ -2531,11 +2699,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn getVerifyProofConsensusTxSenders(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationCalls> {
                         <getVerifyProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(
                                 IInputVerificationCalls::getVerifyProofConsensusTxSenders,
@@ -2552,7 +2718,119 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data, validate)
+            DECODE_SHIMS[idx](data)
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_validate(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_VALIDATE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<IInputVerificationCalls>] = &[
+                {
+                    fn getVersion(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationCalls::getVersion)
+                    }
+                    getVersion
+                },
+                {
+                    fn checkProofRejected(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <checkProofRejectedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationCalls::checkProofRejected)
+                    }
+                    checkProofRejected
+                },
+                {
+                    fn getRejectProofConsensusTxSenders(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <getRejectProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IInputVerificationCalls::getRejectProofConsensusTxSenders,
+                            )
+                    }
+                    getRejectProofConsensusTxSenders
+                },
+                {
+                    fn verifyProofResponse(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <verifyProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationCalls::verifyProofResponse)
+                    }
+                    verifyProofResponse
+                },
+                {
+                    fn rejectProofResponse(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <rejectProofResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationCalls::rejectProofResponse)
+                    }
+                    rejectProofResponse
+                },
+                {
+                    fn checkProofVerified(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <checkProofVerifiedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationCalls::checkProofVerified)
+                    }
+                    checkProofVerified
+                },
+                {
+                    fn verifyProofRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <verifyProofRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationCalls::verifyProofRequest)
+                    }
+                    verifyProofRequest
+                },
+                {
+                    fn getVerifyProofConsensusTxSenders(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationCalls> {
+                        <getVerifyProofConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IInputVerificationCalls::getVerifyProofConsensusTxSenders,
+                            )
+                    }
+                    getVerifyProofConsensusTxSenders
+                },
+            ];
+            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
+            };
+            DECODE_VALIDATE_SHIMS[idx](data)
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -2720,20 +2998,16 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         fn abi_decode_raw(
             selector: [u8; 4],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-                bool,
             ) -> alloy_sol_types::Result<IInputVerificationErrors>] = &[
                 {
                     fn CoprocessorAlreadyRejected(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationErrors> {
                         <CoprocessorAlreadyRejected as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationErrors::CoprocessorAlreadyRejected)
                     }
@@ -2742,11 +3016,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn ProofNotRejected(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationErrors> {
                         <ProofNotRejected as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationErrors::ProofNotRejected)
                     }
@@ -2755,11 +3027,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn VerifyProofNotRequested(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationErrors> {
                         <VerifyProofNotRequested as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationErrors::VerifyProofNotRequested)
                     }
@@ -2768,11 +3038,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn ProofNotVerified(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationErrors> {
                         <ProofNotVerified as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationErrors::ProofNotVerified)
                     }
@@ -2781,11 +3049,9 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 {
                     fn CoprocessorAlreadyVerified(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<IInputVerificationErrors> {
                         <CoprocessorAlreadyVerified as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(IInputVerificationErrors::CoprocessorAlreadyVerified)
                     }
@@ -2800,7 +3066,82 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data, validate)
+            DECODE_SHIMS[idx](data)
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_validate(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_VALIDATE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<IInputVerificationErrors>] = &[
+                {
+                    fn CoprocessorAlreadyRejected(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationErrors> {
+                        <CoprocessorAlreadyRejected as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationErrors::CoprocessorAlreadyRejected)
+                    }
+                    CoprocessorAlreadyRejected
+                },
+                {
+                    fn ProofNotRejected(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationErrors> {
+                        <ProofNotRejected as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationErrors::ProofNotRejected)
+                    }
+                    ProofNotRejected
+                },
+                {
+                    fn VerifyProofNotRequested(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationErrors> {
+                        <VerifyProofNotRequested as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationErrors::VerifyProofNotRequested)
+                    }
+                    VerifyProofNotRequested
+                },
+                {
+                    fn ProofNotVerified(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationErrors> {
+                        <ProofNotVerified as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationErrors::ProofNotVerified)
+                    }
+                    ProofNotVerified
+                },
+                {
+                    fn CoprocessorAlreadyVerified(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IInputVerificationErrors> {
+                        <CoprocessorAlreadyVerified as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IInputVerificationErrors::CoprocessorAlreadyVerified)
+                    }
+                    CoprocessorAlreadyVerified
+                },
+            ];
+            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
+            };
+            DECODE_VALIDATE_SHIMS[idx](data)
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -2912,7 +3253,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(
@@ -2921,7 +3261,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     <RejectProofResponse as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::RejectProofResponse)
                 }
@@ -2931,7 +3270,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     <VerifyProofRequest as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::VerifyProofRequest)
                 }
@@ -2941,7 +3279,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                     <VerifyProofResponse as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::VerifyProofResponse)
                 }
@@ -2994,14 +3331,13 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
 See the [wrapper's documentation](`IInputVerificationInstance`) for more details.*/
     #[inline]
     pub const fn new<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
         provider: P,
-    ) -> IInputVerificationInstance<T, P, N> {
-        IInputVerificationInstance::<T, P, N>::new(address, provider)
+    ) -> IInputVerificationInstance<P, N> {
+        IInputVerificationInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -3010,15 +3346,14 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
     pub fn deploy<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
     ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<IInputVerificationInstance<T, P, N>>,
+        Output = alloy_contract::Result<IInputVerificationInstance<P, N>>,
     > {
-        IInputVerificationInstance::<T, P, N>::deploy(provider)
+        IInputVerificationInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -3027,11 +3362,10 @@ This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<T, P, N> {
-        IInputVerificationInstance::<T, P, N>::deploy_builder(provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        IInputVerificationInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`IInputVerification`](self) instance.
 
@@ -3045,13 +3379,13 @@ be used to deploy a new instance of the contract.
 
 See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
-    pub struct IInputVerificationInstance<T, P, N = alloy_contract::private::Ethereum> {
+    pub struct IInputVerificationInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
         provider: P,
-        _network_transport: ::core::marker::PhantomData<(N, T)>,
+        _network: ::core::marker::PhantomData<N>,
     }
     #[automatically_derived]
-    impl<T, P, N> ::core::fmt::Debug for IInputVerificationInstance<T, P, N> {
+    impl<P, N> ::core::fmt::Debug for IInputVerificationInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             f.debug_tuple("IInputVerificationInstance").field(&self.address).finish()
@@ -3060,10 +3394,9 @@ See the [module-level documentation](self) for all the available methods.*/
     /// Instantiation and getters/setters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > IInputVerificationInstance<T, P, N> {
+    > IInputVerificationInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`IInputVerification`](self) contract instance.
 
 See the [wrapper's documentation](`IInputVerificationInstance`) for more details.*/
@@ -3075,7 +3408,7 @@ See the [wrapper's documentation](`IInputVerificationInstance`) for more details
             Self {
                 address,
                 provider,
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
@@ -3086,7 +3419,7 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         #[inline]
         pub async fn deploy(
             provider: P,
-        ) -> alloy_contract::Result<IInputVerificationInstance<T, P, N>> {
+        ) -> alloy_contract::Result<IInputVerificationInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
@@ -3097,7 +3430,7 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<T, P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
                 provider,
                 ::core::clone::Clone::clone(&BYTECODE),
@@ -3124,24 +3457,23 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self.provider
         }
     }
-    impl<T, P: ::core::clone::Clone, N> IInputVerificationInstance<T, &P, N> {
+    impl<P: ::core::clone::Clone, N> IInputVerificationInstance<&P, N> {
         /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
-        pub fn with_cloned_provider(self) -> IInputVerificationInstance<T, P, N> {
+        pub fn with_cloned_provider(self) -> IInputVerificationInstance<P, N> {
             IInputVerificationInstance {
                 address: self.address,
                 provider: ::core::clone::Clone::clone(&self.provider),
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
     }
     /// Function calls.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > IInputVerificationInstance<T, P, N> {
+    > IInputVerificationInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -3149,14 +3481,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
-        ) -> alloy_contract::SolCallBuilder<T, &P, C, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
         ///Creates a new call builder for the [`checkProofRejected`] function.
         pub fn checkProofRejected(
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkProofRejectedCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, checkProofRejectedCall, N> {
             self.call_builder(
                 &checkProofRejectedCall {
                     zkProofId,
@@ -3167,7 +3499,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn checkProofVerified(
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, checkProofVerifiedCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, checkProofVerifiedCall, N> {
             self.call_builder(
                 &checkProofVerifiedCall {
                     zkProofId,
@@ -3179,7 +3511,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<
-            T,
             &P,
             getRejectProofConsensusTxSendersCall,
             N,
@@ -3195,7 +3526,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
         ) -> alloy_contract::SolCallBuilder<
-            T,
             &P,
             getVerifyProofConsensusTxSendersCall,
             N,
@@ -3209,15 +3539,15 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`getVersion`] function.
         pub fn getVersion(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, getVersionCall, N> {
-            self.call_builder(&getVersionCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
+            self.call_builder(&getVersionCall)
         }
         ///Creates a new call builder for the [`rejectProofResponse`] function.
         pub fn rejectProofResponse(
             &self,
             zkProofId: alloy::sol_types::private::primitives::aliases::U256,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, rejectProofResponseCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, rejectProofResponseCall, N> {
             self.call_builder(
                 &rejectProofResponseCall {
                     zkProofId,
@@ -3233,7 +3563,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             userAddress: alloy::sol_types::private::Address,
             ciphertextWithZKProof: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, verifyProofRequestCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, verifyProofRequestCall, N> {
             self.call_builder(
                 &verifyProofRequestCall {
                     contractChainId,
@@ -3253,7 +3583,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             >,
             signature: alloy::sol_types::private::Bytes,
             extraData: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, verifyProofResponseCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, verifyProofResponseCall, N> {
             self.call_builder(
                 &verifyProofResponseCall {
                     zkProofId,
@@ -3267,35 +3597,34 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     /// Event filters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > IInputVerificationInstance<T, P, N> {
+    > IInputVerificationInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
         /// Prefer using the other methods for building type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
-        ) -> alloy_contract::Event<T, &P, E, N> {
+        ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
         ///Creates a new event filter for the [`RejectProofResponse`] event.
         pub fn RejectProofResponse_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, RejectProofResponse, N> {
+        ) -> alloy_contract::Event<&P, RejectProofResponse, N> {
             self.event_filter::<RejectProofResponse>()
         }
         ///Creates a new event filter for the [`VerifyProofRequest`] event.
         pub fn VerifyProofRequest_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, VerifyProofRequest, N> {
+        ) -> alloy_contract::Event<&P, VerifyProofRequest, N> {
             self.event_filter::<VerifyProofRequest>()
         }
         ///Creates a new event filter for the [`VerifyProofResponse`] event.
         pub fn VerifyProofResponse_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, VerifyProofResponse, N> {
+        ) -> alloy_contract::Event<&P, VerifyProofResponse, N> {
             self.event_filter::<VerifyProofResponse>()
         }
     }
