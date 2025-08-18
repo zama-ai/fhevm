@@ -17,7 +17,7 @@ GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
 GW_MOCKS_DIR = GW_CONTRACTS_DIR.joinpath("mocks")
 
 # To update forge to the latest version locally, run `foundryup` 
-ALLOWED_FORGE_VERSIONS = ["1.2.3-v1.2.3", "1.2.3-stable"]
+ALLOWED_FORGE_VERSIONS = ["1.3.1-v1.3.1", "1.3.1-stable"]
 
 
 def init_cli() -> ArgumentParser:

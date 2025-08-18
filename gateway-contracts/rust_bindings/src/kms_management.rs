@@ -1455,6 +1455,13 @@ error ActivateKeyCoprocessorAlreadyResponded(uint256 keyId, address coprocessorT
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -1532,6 +1539,13 @@ error ActivateKeyRequestAlreadySent(uint256 keyId);
                     > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -1608,6 +1622,13 @@ error ActivateKeyRequiresKeygen(uint256 keyId);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -1698,6 +1719,13 @@ error ActivateKeyRequiresKskgen(uint256 currentKeyId, uint256 keyId);
                     > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -1770,6 +1798,13 @@ error AddressEmptyCode(address target);
                         &self.target,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -1860,6 +1895,13 @@ error CrsgenKmsNodeAlreadyResponded(uint256 crsId, address kmsTxSender);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -1935,6 +1977,13 @@ error ERC1967InvalidImplementation(address implementation);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -1945,7 +1994,7 @@ error ERC1967NonPayable();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct ERC1967NonPayable {}
+    pub struct ERC1967NonPayable;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -1980,7 +2029,7 @@ error ERC1967NonPayable();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for ERC1967NonPayable {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -2001,6 +2050,13 @@ error ERC1967NonPayable();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -2011,7 +2067,7 @@ error EnforcedPause();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct EnforcedPause {}
+    pub struct EnforcedPause;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2046,7 +2102,7 @@ error EnforcedPause();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for EnforcedPause {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -2067,6 +2123,13 @@ error EnforcedPause();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -2077,7 +2140,7 @@ error ExpectedPause();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct ExpectedPause {}
+    pub struct ExpectedPause;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2112,7 +2175,7 @@ error ExpectedPause();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for ExpectedPause {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -2133,6 +2196,13 @@ error ExpectedPause();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -2143,7 +2213,7 @@ error FailedCall();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct FailedCall {}
+    pub struct FailedCall;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2178,7 +2248,7 @@ error FailedCall();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for FailedCall {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -2198,6 +2268,13 @@ error FailedCall();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -2274,6 +2351,13 @@ error FheParamsAlreadyInitialized(string fheParamsName);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -2284,7 +2368,7 @@ error FheParamsNotInitialized();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct FheParamsNotInitialized {}
+    pub struct FheParamsNotInitialized;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2319,7 +2403,7 @@ error FheParamsNotInitialized();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for FheParamsNotInitialized {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -2340,6 +2424,13 @@ error FheParamsNotInitialized();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -2350,7 +2441,7 @@ error InvalidInitialization();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct InvalidInitialization {}
+    pub struct InvalidInitialization;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -2385,7 +2476,7 @@ error InvalidInitialization();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidInitialization {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -2405,6 +2496,13 @@ error InvalidInitialization();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -2495,6 +2593,13 @@ error KeygenKmsNodeAlreadyResponded(uint256 keyId, address kmsTxSender);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -2571,6 +2676,13 @@ error KeygenPreprocessingRequired(uint256 preKeyId);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.preKeyId),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -2649,6 +2761,13 @@ error KeygenRequestAlreadySent(uint256 preKeyId);
                     > as alloy_sol_types::SolType>::tokenize(&self.preKeyId),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -2725,6 +2844,13 @@ error KskgenDestKeyNotGenerated(uint256 destKeyId);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.destKeyId),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -2815,6 +2941,13 @@ error KskgenKmsNodeAlreadyResponded(uint256 kskId, address kmsTxSender);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -2891,6 +3024,13 @@ error KskgenPreprocessingRequired(uint256 preKskId);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.preKskId),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -2969,6 +3109,13 @@ error KskgenRequestAlreadySent(uint256 preKskId);
                     > as alloy_sol_types::SolType>::tokenize(&self.preKskId),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3045,6 +3192,13 @@ error KskgenSameSrcAndDestKeyIds(uint256 keyId);
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3123,6 +3277,13 @@ error KskgenSourceKeyNotGenerated(uint256 sourceKeyId);
                     > as alloy_sol_types::SolType>::tokenize(&self.sourceKeyId),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3196,6 +3357,13 @@ error NotGatewayOwner(address sender);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3206,7 +3374,7 @@ error NotInitializing();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct NotInitializing {}
+    pub struct NotInitializing;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3241,7 +3409,7 @@ error NotInitializing();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotInitializing {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -3262,6 +3430,13 @@ error NotInitializing();
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3272,7 +3447,7 @@ error NotInitializingFromEmptyProxy();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct NotInitializingFromEmptyProxy {}
+    pub struct NotInitializingFromEmptyProxy;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3309,7 +3484,7 @@ error NotInitializingFromEmptyProxy();
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
         for NotInitializingFromEmptyProxy {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -3329,6 +3504,13 @@ error NotInitializingFromEmptyProxy();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3405,6 +3587,13 @@ error NotOwnerOrGatewayConfig(address notOwnerOrGatewayConfig);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3477,6 +3666,13 @@ error NotPauser(address notPauser);
                         &self.notPauser,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3555,6 +3751,13 @@ error NotPauserOrGatewayConfig(address notPauserOrGatewayConfig);
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3627,6 +3830,13 @@ error OwnableInvalidOwner(address owner);
                         &self.owner,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3702,6 +3912,13 @@ error OwnableUnauthorizedAccount(address account);
                         &self.account,
                     ),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -3792,6 +4009,13 @@ error PreprocessKeygenKmsNodeAlreadyResponded(uint256 preKeyId, address kmsTxSen
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3881,6 +4105,13 @@ error PreprocessKskgenKmsNodeAlreadyResponded(uint256 preKskId, address kmsTxSen
                     ),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -3891,7 +4122,7 @@ error UUPSUnauthorizedCallContext();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct UUPSUnauthorizedCallContext {}
+    pub struct UUPSUnauthorizedCallContext;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3928,7 +4159,7 @@ error UUPSUnauthorizedCallContext();
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
         for UUPSUnauthorizedCallContext {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -3948,6 +4179,13 @@ error UUPSUnauthorizedCallContext();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -4023,6 +4261,13 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.slot),
                 )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -6401,7 +6646,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct UPGRADE_INTERFACE_VERSIONCall {}
+    pub struct UPGRADE_INTERFACE_VERSIONCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`UPGRADE_INTERFACE_VERSION()`](UPGRADE_INTERFACE_VERSIONCall) function.
@@ -6448,7 +6693,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for UPGRADE_INTERFACE_VERSIONCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -6491,7 +6736,7 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = UPGRADE_INTERFACE_VERSIONReturn;
+            type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -6509,14 +6754,34 @@ function UPGRADE_INTERFACE_VERSION() external view returns (string memory);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: UPGRADE_INTERFACE_VERSIONReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -6528,7 +6793,7 @@ function acceptOwnership() external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct acceptOwnershipCall {}
+    pub struct acceptOwnershipCall;
     ///Container type for the return parameters of the [`acceptOwnership()`](acceptOwnershipCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -6568,7 +6833,7 @@ function acceptOwnership() external;
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for acceptOwnershipCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -6605,6 +6870,13 @@ function acceptOwnership() external;
                 }
             }
         }
+        impl acceptOwnershipReturn {
+            fn _tokenize(
+                &self,
+            ) -> <acceptOwnershipCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for acceptOwnershipCall {
             type Parameters<'a> = ();
@@ -6629,13 +6901,23 @@ function acceptOwnership() external;
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                acceptOwnershipReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -6732,6 +7014,13 @@ function activateKeyRequest(uint256 keyId) external;
                 }
             }
         }
+        impl activateKeyRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <activateKeyRequestCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for activateKeyRequestCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
@@ -6760,13 +7049,23 @@ function activateKeyRequest(uint256 keyId) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                activateKeyRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -6863,6 +7162,13 @@ function activateKeyResponse(uint256 keyId) external;
                 }
             }
         }
+        impl activateKeyResponseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <activateKeyResponseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for activateKeyResponseCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
@@ -6891,13 +7197,23 @@ function activateKeyResponse(uint256 keyId) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                activateKeyResponseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -7005,7 +7321,7 @@ function activatedKeyIds(uint256 index) external view returns (uint256);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = activatedKeyIdsReturn;
+            type Return = alloy::sol_types::private::primitives::aliases::U256;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -7027,14 +7343,34 @@ function activatedKeyIds(uint256 index) external view returns (uint256);
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: activatedKeyIdsReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: activatedKeyIdsReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -7135,6 +7471,13 @@ function addFheParams(string memory fheParamsName, bytes32 fheParamsDigest) exte
                 }
             }
         }
+        impl addFheParamsReturn {
+            fn _tokenize(
+                &self,
+            ) -> <addFheParamsCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for addFheParamsCall {
             type Parameters<'a> = (
@@ -7169,13 +7512,23 @@ function addFheParams(string memory fheParamsName, bytes32 fheParamsDigest) exte
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                addFheParamsReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -7283,7 +7636,7 @@ function crsFheParamsDigests(uint256 crsId) external view returns (bytes32);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = crsFheParamsDigestsReturn;
+            type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -7305,14 +7658,34 @@ function crsFheParamsDigests(uint256 crsId) external view returns (bytes32);
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: crsFheParamsDigestsReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: crsFheParamsDigestsReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -7402,6 +7775,13 @@ function crsgenRequest(string memory fheParamsName) external;
                 }
             }
         }
+        impl crsgenRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <crsgenRequestCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for crsgenRequestCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::String,);
@@ -7430,13 +7810,23 @@ function crsgenRequest(string memory fheParamsName) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                crsgenRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -7540,6 +7930,13 @@ function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external;
                 }
             }
         }
+        impl crsgenResponseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <crsgenResponseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for crsgenResponseCall {
             type Parameters<'a> = (
@@ -7574,13 +7971,23 @@ function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                crsgenResponseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -7686,7 +8093,7 @@ function fheParamsDigests(string memory fheParamsName) external view returns (by
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = fheParamsDigestsReturn;
+            type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -7708,14 +8115,34 @@ function fheParamsDigests(string memory fheParamsName) external view returns (by
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: fheParamsDigestsReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: fheParamsDigestsReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -7727,7 +8154,7 @@ function getCurrentKeyId() external view returns (uint256);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getCurrentKeyIdCall {}
+    pub struct getCurrentKeyIdCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getCurrentKeyId()`](getCurrentKeyIdCall) function.
@@ -7772,7 +8199,7 @@ function getCurrentKeyId() external view returns (uint256);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for getCurrentKeyIdCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -7817,7 +8244,7 @@ function getCurrentKeyId() external view returns (uint256);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getCurrentKeyIdReturn;
+            type Return = alloy::sol_types::private::primitives::aliases::U256;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -7835,14 +8262,34 @@ function getCurrentKeyId() external view returns (uint256);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getCurrentKeyIdReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getCurrentKeyIdReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -7854,7 +8301,7 @@ function getVersion() external pure returns (string memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getVersionCall {}
+    pub struct getVersionCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
@@ -7899,7 +8346,7 @@ function getVersion() external pure returns (string memory);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for getVersionCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -7940,7 +8387,7 @@ function getVersion() external pure returns (string memory);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = getVersionReturn;
+            type Return = alloy::sol_types::private::String;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::String,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -7958,14 +8405,34 @@ function getVersion() external pure returns (string memory);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getVersionReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getVersionReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -8070,6 +8537,15 @@ function initializeFromEmptyProxy(string memory fheParamsName, bytes32 fheParams
                 }
             }
         }
+        impl initializeFromEmptyProxyReturn {
+            fn _tokenize(
+                &self,
+            ) -> <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for initializeFromEmptyProxyCall {
             type Parameters<'a> = (
@@ -8104,13 +8580,23 @@ function initializeFromEmptyProxy(string memory fheParamsName, bytes32 fheParams
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                initializeFromEmptyProxyReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -8218,7 +8704,7 @@ function keyFheParamsDigests(uint256 keyId) external view returns (bytes32);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = keyFheParamsDigestsReturn;
+            type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -8240,14 +8726,34 @@ function keyFheParamsDigests(uint256 keyId) external view returns (bytes32);
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: keyFheParamsDigestsReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: keyFheParamsDigestsReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -8339,6 +8845,13 @@ function keygenRequest(uint256 preKeyId) external;
                 }
             }
         }
+        impl keygenRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <keygenRequestCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for keygenRequestCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
@@ -8367,13 +8880,23 @@ function keygenRequest(uint256 preKeyId) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                keygenRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -8477,6 +9000,13 @@ function keygenResponse(uint256 preKeyId, uint256 keyId) external;
                 }
             }
         }
+        impl keygenResponseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <keygenResponseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for keygenResponseCall {
             type Parameters<'a> = (
@@ -8511,13 +9041,23 @@ function keygenResponse(uint256 preKeyId, uint256 keyId) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                keygenResponseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -8625,7 +9165,7 @@ function kskFheParamsDigests(uint256 kskId) external view returns (bytes32);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = kskFheParamsDigestsReturn;
+            type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -8647,14 +9187,34 @@ function kskFheParamsDigests(uint256 kskId) external view returns (bytes32);
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: kskFheParamsDigestsReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: kskFheParamsDigestsReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -8760,6 +9320,13 @@ function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId)
                 }
             }
         }
+        impl kskgenRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <kskgenRequestCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for kskgenRequestCall {
             type Parameters<'a> = (
@@ -8798,13 +9365,23 @@ function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId)
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                kskgenRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -8908,6 +9485,13 @@ function kskgenResponse(uint256 preKskId, uint256 kskId) external;
                 }
             }
         }
+        impl kskgenResponseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <kskgenResponseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for kskgenResponseCall {
             type Parameters<'a> = (
@@ -8942,13 +9526,23 @@ function kskgenResponse(uint256 preKskId, uint256 kskId) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                kskgenResponseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -8961,7 +9555,7 @@ function owner() external view returns (address);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct ownerCall {}
+    pub struct ownerCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`owner()`](ownerCall) function.
@@ -9006,7 +9600,7 @@ function owner() external view returns (address);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for ownerCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -9047,7 +9641,7 @@ function owner() external view returns (address);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = ownerReturn;
+            type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -9065,14 +9659,34 @@ function owner() external view returns (address);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: ownerReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: ownerReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -9084,7 +9698,7 @@ function pause() external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct pauseCall {}
+    pub struct pauseCall;
     ///Container type for the return parameters of the [`pause()`](pauseCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -9124,7 +9738,7 @@ function pause() external;
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for pauseCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -9159,6 +9773,13 @@ function pause() external;
                 }
             }
         }
+        impl pauseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <pauseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for pauseCall {
             type Parameters<'a> = ();
@@ -9183,13 +9804,23 @@ function pause() external;
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                pauseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -9202,7 +9833,7 @@ function paused() external view returns (bool);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct pausedCall {}
+    pub struct pausedCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`paused()`](pausedCall) function.
@@ -9247,7 +9878,7 @@ function paused() external view returns (bool);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for pausedCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -9288,7 +9919,7 @@ function paused() external view returns (bool);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = pausedReturn;
+            type Return = bool;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -9306,14 +9937,34 @@ function paused() external view returns (bool);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: pausedReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: pausedReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -9325,7 +9976,7 @@ function pendingOwner() external view returns (address);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct pendingOwnerCall {}
+    pub struct pendingOwnerCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`pendingOwner()`](pendingOwnerCall) function.
@@ -9370,7 +10021,7 @@ function pendingOwner() external view returns (address);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for pendingOwnerCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -9411,7 +10062,7 @@ function pendingOwner() external view returns (address);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = pendingOwnerReturn;
+            type Return = alloy::sol_types::private::Address;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -9429,14 +10080,34 @@ function pendingOwner() external view returns (address);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: pendingOwnerReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: pendingOwnerReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -9530,6 +10201,15 @@ function preprocessKeygenRequest(string memory fheParamsName) external;
                 }
             }
         }
+        impl preprocessKeygenRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <preprocessKeygenRequestCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for preprocessKeygenRequestCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::String,);
@@ -9558,13 +10238,23 @@ function preprocessKeygenRequest(string memory fheParamsName) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                preprocessKeygenRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -9670,6 +10360,15 @@ function preprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId) 
                 }
             }
         }
+        impl preprocessKeygenResponseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <preprocessKeygenResponseCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for preprocessKeygenResponseCall {
             type Parameters<'a> = (
@@ -9704,13 +10403,23 @@ function preprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId) 
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                preprocessKeygenResponseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -9805,6 +10514,15 @@ function preprocessKskgenRequest(string memory fheParamsName) external;
                 }
             }
         }
+        impl preprocessKskgenRequestReturn {
+            fn _tokenize(
+                &self,
+            ) -> <preprocessKskgenRequestCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for preprocessKskgenRequestCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::String,);
@@ -9833,13 +10551,23 @@ function preprocessKskgenRequest(string memory fheParamsName) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                preprocessKskgenRequestReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -9945,6 +10673,15 @@ function preprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId) 
                 }
             }
         }
+        impl preprocessKskgenResponseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <preprocessKskgenResponseCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for preprocessKskgenResponseCall {
             type Parameters<'a> = (
@@ -9979,13 +10716,23 @@ function preprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId) 
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                preprocessKskgenResponseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -9998,7 +10745,7 @@ function proxiableUUID() external view returns (bytes32);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct proxiableUUIDCall {}
+    pub struct proxiableUUIDCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`proxiableUUID()`](proxiableUUIDCall) function.
@@ -10043,7 +10790,7 @@ function proxiableUUID() external view returns (bytes32);
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for proxiableUUIDCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -10084,7 +10831,7 @@ function proxiableUUID() external view returns (bytes32);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = proxiableUUIDReturn;
+            type Return = alloy::sol_types::private::FixedBytes<32>;
             type ReturnTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
@@ -10102,14 +10849,34 @@ function proxiableUUID() external view returns (bytes32);
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: proxiableUUIDReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
-                    .map(Into::into)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: proxiableUUIDReturn = r.into();
+                        r._0
+                    })
             }
         }
     };
@@ -10121,7 +10888,7 @@ function renounceOwnership() external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct renounceOwnershipCall {}
+    pub struct renounceOwnershipCall;
     ///Container type for the return parameters of the [`renounceOwnership()`](renounceOwnershipCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10163,7 +10930,7 @@ function renounceOwnership() external;
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
             for renounceOwnershipCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -10200,6 +10967,13 @@ function renounceOwnership() external;
                 }
             }
         }
+        impl renounceOwnershipReturn {
+            fn _tokenize(
+                &self,
+            ) -> <renounceOwnershipCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for renounceOwnershipCall {
             type Parameters<'a> = ();
@@ -10224,13 +10998,23 @@ function renounceOwnership() external;
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                renounceOwnershipReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -10325,6 +11109,13 @@ function transferOwnership(address newOwner) external;
                 }
             }
         }
+        impl transferOwnershipReturn {
+            fn _tokenize(
+                &self,
+            ) -> <transferOwnershipCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for transferOwnershipCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
@@ -10353,13 +11144,23 @@ function transferOwnership(address newOwner) external;
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                transferOwnershipReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -10372,7 +11173,7 @@ function unpause() external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct unpauseCall {}
+    pub struct unpauseCall;
     ///Container type for the return parameters of the [`unpause()`](unpauseCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -10412,7 +11213,7 @@ function unpause() external;
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>> for unpauseCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
+                    Self
                 }
             }
         }
@@ -10447,6 +11248,13 @@ function unpause() external;
                 }
             }
         }
+        impl unpauseReturn {
+            fn _tokenize(
+                &self,
+            ) -> <unpauseCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for unpauseCall {
             type Parameters<'a> = ();
@@ -10471,13 +11279,23 @@ function unpause() external;
                 ()
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                unpauseReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -10581,6 +11399,13 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
                 }
             }
         }
+        impl updateFheParamsReturn {
+            fn _tokenize(
+                &self,
+            ) -> <updateFheParamsCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for updateFheParamsCall {
             type Parameters<'a> = (
@@ -10615,13 +11440,23 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                updateFheParamsReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -10727,6 +11562,13 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
             }
         }
+        impl upgradeToAndCallReturn {
+            fn _tokenize(
+                &self,
+            ) -> <upgradeToAndCallCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+                ()
+            }
+        }
         #[automatically_derived]
         impl alloy_sol_types::SolCall for upgradeToAndCallCall {
             type Parameters<'a> = (
@@ -10761,13 +11603,23 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 )
             }
             #[inline]
-            fn abi_decode_returns(
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                upgradeToAndCallReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
                 data: &[u8],
-                validate: bool,
             ) -> alloy_sol_types::Result<Self::Return> {
                 <Self::ReturnTuple<
                     '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data, validate)
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(Into::into)
             }
         }
@@ -11001,20 +11853,16 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         fn abi_decode_raw(
             selector: [u8; 4],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-                bool,
             ) -> alloy_sol_types::Result<KmsManagementCalls>] = &[
                 {
                     fn getVersion(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::getVersion)
                     }
@@ -11023,11 +11871,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn initializeFromEmptyProxy(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::initializeFromEmptyProxy)
                     }
@@ -11036,11 +11882,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn preprocessKeygenRequest(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <preprocessKeygenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::preprocessKeygenRequest)
                     }
@@ -11049,11 +11893,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn updateFheParams(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <updateFheParamsCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::updateFheParams)
                     }
@@ -11062,11 +11904,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn kskgenRequest(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <kskgenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::kskgenRequest)
                     }
@@ -11075,11 +11915,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn activateKeyResponse(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <activateKeyResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::activateKeyResponse)
                     }
@@ -11088,12 +11926,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn unpause(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
-                        <unpauseCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                        <unpauseCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(KmsManagementCalls::unpause)
                     }
                     unpause
@@ -11101,11 +11935,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn crsgenResponse(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <crsgenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::crsgenResponse)
                     }
@@ -11114,11 +11946,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn preprocessKskgenRequest(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <preprocessKskgenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::preprocessKskgenRequest)
                     }
@@ -11127,11 +11957,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn fheParamsDigests(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <fheParamsDigestsCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::fheParamsDigests)
                     }
@@ -11140,11 +11968,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn upgradeToAndCall(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::upgradeToAndCall)
                     }
@@ -11153,11 +11979,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn proxiableUUID(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::proxiableUUID)
                     }
@@ -11166,12 +11990,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn paused(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
-                        <pausedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                        <pausedCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(KmsManagementCalls::paused)
                     }
                     paused
@@ -11179,11 +11999,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn activatedKeyIds(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <activatedKeyIdsCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::activatedKeyIds)
                     }
@@ -11192,11 +12010,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn crsgenRequest(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <crsgenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::crsgenRequest)
                     }
@@ -11205,11 +12021,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn keygenResponse(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <keygenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::keygenResponse)
                     }
@@ -11218,11 +12032,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn renounceOwnership(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::renounceOwnership)
                     }
@@ -11231,11 +12043,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn acceptOwnership(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <acceptOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::acceptOwnership)
                     }
@@ -11244,12 +12054,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn pause(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
-                        <pauseCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                        <pauseCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(KmsManagementCalls::pause)
                     }
                     pause
@@ -11257,11 +12063,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn keyFheParamsDigests(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <keyFheParamsDigestsCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::keyFheParamsDigests)
                     }
@@ -11270,12 +12074,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn owner(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
-                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
                             .map(KmsManagementCalls::owner)
                     }
                     owner
@@ -11283,11 +12083,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn preprocessKskgenResponse(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <preprocessKskgenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::preprocessKskgenResponse)
                     }
@@ -11296,11 +12094,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn kskgenResponse(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <kskgenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::kskgenResponse)
                     }
@@ -11309,11 +12105,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn activateKeyRequest(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <activateKeyRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::activateKeyRequest)
                     }
@@ -11322,11 +12116,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn addFheParams(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <addFheParamsCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::addFheParams)
                     }
@@ -11335,11 +12127,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn UPGRADE_INTERFACE_VERSION(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::UPGRADE_INTERFACE_VERSION)
                     }
@@ -11348,11 +12138,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn getCurrentKeyId(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <getCurrentKeyIdCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::getCurrentKeyId)
                     }
@@ -11361,11 +12149,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn keygenRequest(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <keygenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::keygenRequest)
                     }
@@ -11374,11 +12160,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn pendingOwner(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <pendingOwnerCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::pendingOwner)
                     }
@@ -11387,11 +12171,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn crsFheParamsDigests(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <crsFheParamsDigestsCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::crsFheParamsDigests)
                     }
@@ -11400,11 +12182,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn kskFheParamsDigests(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <kskFheParamsDigestsCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::kskFheParamsDigests)
                     }
@@ -11413,11 +12193,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn transferOwnership(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::transferOwnership)
                     }
@@ -11426,11 +12204,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn preprocessKeygenResponse(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementCalls> {
                         <preprocessKeygenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementCalls::preprocessKeygenResponse)
                     }
@@ -11445,7 +12221,390 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data, validate)
+            DECODE_SHIMS[idx](data)
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_validate(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_VALIDATE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<KmsManagementCalls>] = &[
+                {
+                    fn getVersion(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <getVersionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::getVersion)
+                    }
+                    getVersion
+                },
+                {
+                    fn initializeFromEmptyProxy(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <initializeFromEmptyProxyCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::initializeFromEmptyProxy)
+                    }
+                    initializeFromEmptyProxy
+                },
+                {
+                    fn preprocessKeygenRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <preprocessKeygenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::preprocessKeygenRequest)
+                    }
+                    preprocessKeygenRequest
+                },
+                {
+                    fn updateFheParams(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <updateFheParamsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::updateFheParams)
+                    }
+                    updateFheParams
+                },
+                {
+                    fn kskgenRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <kskgenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::kskgenRequest)
+                    }
+                    kskgenRequest
+                },
+                {
+                    fn activateKeyResponse(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <activateKeyResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::activateKeyResponse)
+                    }
+                    activateKeyResponse
+                },
+                {
+                    fn unpause(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <unpauseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::unpause)
+                    }
+                    unpause
+                },
+                {
+                    fn crsgenResponse(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <crsgenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::crsgenResponse)
+                    }
+                    crsgenResponse
+                },
+                {
+                    fn preprocessKskgenRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <preprocessKskgenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::preprocessKskgenRequest)
+                    }
+                    preprocessKskgenRequest
+                },
+                {
+                    fn fheParamsDigests(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <fheParamsDigestsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::fheParamsDigests)
+                    }
+                    fheParamsDigests
+                },
+                {
+                    fn upgradeToAndCall(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <upgradeToAndCallCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::upgradeToAndCall)
+                    }
+                    upgradeToAndCall
+                },
+                {
+                    fn proxiableUUID(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <proxiableUUIDCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::proxiableUUID)
+                    }
+                    proxiableUUID
+                },
+                {
+                    fn paused(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <pausedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::paused)
+                    }
+                    paused
+                },
+                {
+                    fn activatedKeyIds(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <activatedKeyIdsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::activatedKeyIds)
+                    }
+                    activatedKeyIds
+                },
+                {
+                    fn crsgenRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <crsgenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::crsgenRequest)
+                    }
+                    crsgenRequest
+                },
+                {
+                    fn keygenResponse(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <keygenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::keygenResponse)
+                    }
+                    keygenResponse
+                },
+                {
+                    fn renounceOwnership(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <renounceOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::renounceOwnership)
+                    }
+                    renounceOwnership
+                },
+                {
+                    fn acceptOwnership(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <acceptOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::acceptOwnership)
+                    }
+                    acceptOwnership
+                },
+                {
+                    fn pause(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <pauseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::pause)
+                    }
+                    pause
+                },
+                {
+                    fn keyFheParamsDigests(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <keyFheParamsDigestsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::keyFheParamsDigests)
+                    }
+                    keyFheParamsDigests
+                },
+                {
+                    fn owner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <ownerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::owner)
+                    }
+                    owner
+                },
+                {
+                    fn preprocessKskgenResponse(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <preprocessKskgenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::preprocessKskgenResponse)
+                    }
+                    preprocessKskgenResponse
+                },
+                {
+                    fn kskgenResponse(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <kskgenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::kskgenResponse)
+                    }
+                    kskgenResponse
+                },
+                {
+                    fn activateKeyRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <activateKeyRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::activateKeyRequest)
+                    }
+                    activateKeyRequest
+                },
+                {
+                    fn addFheParams(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <addFheParamsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::addFheParams)
+                    }
+                    addFheParams
+                },
+                {
+                    fn UPGRADE_INTERFACE_VERSION(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <UPGRADE_INTERFACE_VERSIONCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::UPGRADE_INTERFACE_VERSION)
+                    }
+                    UPGRADE_INTERFACE_VERSION
+                },
+                {
+                    fn getCurrentKeyId(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <getCurrentKeyIdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::getCurrentKeyId)
+                    }
+                    getCurrentKeyId
+                },
+                {
+                    fn keygenRequest(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <keygenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::keygenRequest)
+                    }
+                    keygenRequest
+                },
+                {
+                    fn pendingOwner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <pendingOwnerCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::pendingOwner)
+                    }
+                    pendingOwner
+                },
+                {
+                    fn crsFheParamsDigests(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <crsFheParamsDigestsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::crsFheParamsDigests)
+                    }
+                    crsFheParamsDigests
+                },
+                {
+                    fn kskFheParamsDigests(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <kskFheParamsDigestsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::kskFheParamsDigests)
+                    }
+                    kskFheParamsDigests
+                },
+                {
+                    fn transferOwnership(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <transferOwnershipCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::transferOwnership)
+                    }
+                    transferOwnership
+                },
+                {
+                    fn preprocessKeygenResponse(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementCalls> {
+                        <preprocessKeygenResponseCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementCalls::preprocessKeygenResponse)
+                    }
+                    preprocessKeygenResponse
+                },
+            ];
+            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
+            };
+            DECODE_VALIDATE_SHIMS[idx](data)
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -12046,20 +13205,16 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         fn abi_decode_raw(
             selector: [u8; 4],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_SHIMS: &[fn(
                 &[u8],
-                bool,
             ) -> alloy_sol_types::Result<KmsManagementErrors>] = &[
                 {
                     fn KskgenSourceKeyNotGenerated(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <KskgenSourceKeyNotGenerated as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::KskgenSourceKeyNotGenerated)
                     }
@@ -12068,11 +13223,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn NotGatewayOwner(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <NotGatewayOwner as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::NotGatewayOwner)
                     }
@@ -12081,11 +13234,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn KskgenKmsNodeAlreadyResponded(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <KskgenKmsNodeAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::KskgenKmsNodeAlreadyResponded)
                     }
@@ -12094,11 +13245,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn OwnableUnauthorizedAccount(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::OwnableUnauthorizedAccount)
                     }
@@ -12107,11 +13256,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn KeygenKmsNodeAlreadyResponded(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <KeygenKmsNodeAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::KeygenKmsNodeAlreadyResponded)
                     }
@@ -12120,11 +13267,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn OwnableInvalidOwner(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::OwnableInvalidOwner)
                     }
@@ -12133,12 +13278,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn NotPauser(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
-                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(KmsManagementErrors::NotPauser)
                     }
                     NotPauser
@@ -12146,11 +13287,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn ActivateKeyRequestAlreadySent(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <ActivateKeyRequestAlreadySent as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::ActivateKeyRequestAlreadySent)
                     }
@@ -12159,11 +13298,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn KskgenDestKeyNotGenerated(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <KskgenDestKeyNotGenerated as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::KskgenDestKeyNotGenerated)
                     }
@@ -12172,11 +13309,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn NotPauserOrGatewayConfig(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <NotPauserOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::NotPauserOrGatewayConfig)
                     }
@@ -12185,11 +13320,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn PreprocessKeygenKmsNodeAlreadyResponded(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <PreprocessKeygenKmsNodeAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(
                                 KmsManagementErrors::PreprocessKeygenKmsNodeAlreadyResponded,
@@ -12200,11 +13333,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn ActivateKeyCoprocessorAlreadyResponded(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <ActivateKeyCoprocessorAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(
                                 KmsManagementErrors::ActivateKeyCoprocessorAlreadyResponded,
@@ -12215,11 +13346,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn KskgenRequestAlreadySent(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <KskgenRequestAlreadySent as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::KskgenRequestAlreadySent)
                     }
@@ -12228,11 +13357,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn ERC1967InvalidImplementation(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::ERC1967InvalidImplementation)
                     }
@@ -12241,11 +13368,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn KeygenRequestAlreadySent(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <KeygenRequestAlreadySent as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::KeygenRequestAlreadySent)
                     }
@@ -12254,11 +13379,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn NotInitializingFromEmptyProxy(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::NotInitializingFromEmptyProxy)
                     }
@@ -12267,11 +13390,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn PreprocessKskgenKmsNodeAlreadyResponded(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <PreprocessKskgenKmsNodeAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(
                                 KmsManagementErrors::PreprocessKskgenKmsNodeAlreadyResponded,
@@ -12282,11 +13403,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn FheParamsNotInitialized(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <FheParamsNotInitialized as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::FheParamsNotInitialized)
                     }
@@ -12295,11 +13414,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn ExpectedPause(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <ExpectedPause as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::ExpectedPause)
                     }
@@ -12308,11 +13425,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn AddressEmptyCode(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::AddressEmptyCode)
                     }
@@ -12321,11 +13436,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn UUPSUnsupportedProxiableUUID(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::UUPSUnsupportedProxiableUUID)
                     }
@@ -12334,11 +13447,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn ERC1967NonPayable(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::ERC1967NonPayable)
                     }
@@ -12347,11 +13458,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn FheParamsAlreadyInitialized(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <FheParamsAlreadyInitialized as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::FheParamsAlreadyInitialized)
                     }
@@ -12360,11 +13469,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn KskgenPreprocessingRequired(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <KskgenPreprocessingRequired as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::KskgenPreprocessingRequired)
                     }
@@ -12373,11 +13480,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn KeygenPreprocessingRequired(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <KeygenPreprocessingRequired as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::KeygenPreprocessingRequired)
                     }
@@ -12386,12 +13491,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn FailedCall(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
-                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                                validate,
-                            )
+                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw(data)
                             .map(KmsManagementErrors::FailedCall)
                     }
                     FailedCall
@@ -12399,11 +13500,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn KskgenSameSrcAndDestKeyIds(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <KskgenSameSrcAndDestKeyIds as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::KskgenSameSrcAndDestKeyIds)
                     }
@@ -12412,11 +13511,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn NotInitializing(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::NotInitializing)
                     }
@@ -12425,11 +13522,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn EnforcedPause(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <EnforcedPause as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::EnforcedPause)
                     }
@@ -12438,11 +13533,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn UUPSUnauthorizedCallContext(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::UUPSUnauthorizedCallContext)
                     }
@@ -12451,11 +13544,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn NotOwnerOrGatewayConfig(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <NotOwnerOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::NotOwnerOrGatewayConfig)
                     }
@@ -12464,11 +13555,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn ActivateKeyRequiresKeygen(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <ActivateKeyRequiresKeygen as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::ActivateKeyRequiresKeygen)
                     }
@@ -12477,11 +13566,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn ActivateKeyRequiresKskgen(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <ActivateKeyRequiresKskgen as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::ActivateKeyRequiresKskgen)
                     }
@@ -12490,11 +13577,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn CrsgenKmsNodeAlreadyResponded(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <CrsgenKmsNodeAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::CrsgenKmsNodeAlreadyResponded)
                     }
@@ -12503,11 +13588,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 {
                     fn InvalidInitialization(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<KmsManagementErrors> {
                         <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(KmsManagementErrors::InvalidInitialization)
                     }
@@ -12522,7 +13605,418 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data, validate)
+            DECODE_SHIMS[idx](data)
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_validate(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_VALIDATE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<KmsManagementErrors>] = &[
+                {
+                    fn KskgenSourceKeyNotGenerated(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <KskgenSourceKeyNotGenerated as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::KskgenSourceKeyNotGenerated)
+                    }
+                    KskgenSourceKeyNotGenerated
+                },
+                {
+                    fn NotGatewayOwner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <NotGatewayOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::NotGatewayOwner)
+                    }
+                    NotGatewayOwner
+                },
+                {
+                    fn KskgenKmsNodeAlreadyResponded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <KskgenKmsNodeAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::KskgenKmsNodeAlreadyResponded)
+                    }
+                    KskgenKmsNodeAlreadyResponded
+                },
+                {
+                    fn OwnableUnauthorizedAccount(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <OwnableUnauthorizedAccount as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::OwnableUnauthorizedAccount)
+                    }
+                    OwnableUnauthorizedAccount
+                },
+                {
+                    fn KeygenKmsNodeAlreadyResponded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <KeygenKmsNodeAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::KeygenKmsNodeAlreadyResponded)
+                    }
+                    KeygenKmsNodeAlreadyResponded
+                },
+                {
+                    fn OwnableInvalidOwner(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <OwnableInvalidOwner as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::OwnableInvalidOwner)
+                    }
+                    OwnableInvalidOwner
+                },
+                {
+                    fn NotPauser(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::NotPauser)
+                    }
+                    NotPauser
+                },
+                {
+                    fn ActivateKeyRequestAlreadySent(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <ActivateKeyRequestAlreadySent as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::ActivateKeyRequestAlreadySent)
+                    }
+                    ActivateKeyRequestAlreadySent
+                },
+                {
+                    fn KskgenDestKeyNotGenerated(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <KskgenDestKeyNotGenerated as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::KskgenDestKeyNotGenerated)
+                    }
+                    KskgenDestKeyNotGenerated
+                },
+                {
+                    fn NotPauserOrGatewayConfig(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <NotPauserOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::NotPauserOrGatewayConfig)
+                    }
+                    NotPauserOrGatewayConfig
+                },
+                {
+                    fn PreprocessKeygenKmsNodeAlreadyResponded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <PreprocessKeygenKmsNodeAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                KmsManagementErrors::PreprocessKeygenKmsNodeAlreadyResponded,
+                            )
+                    }
+                    PreprocessKeygenKmsNodeAlreadyResponded
+                },
+                {
+                    fn ActivateKeyCoprocessorAlreadyResponded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <ActivateKeyCoprocessorAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                KmsManagementErrors::ActivateKeyCoprocessorAlreadyResponded,
+                            )
+                    }
+                    ActivateKeyCoprocessorAlreadyResponded
+                },
+                {
+                    fn KskgenRequestAlreadySent(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <KskgenRequestAlreadySent as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::KskgenRequestAlreadySent)
+                    }
+                    KskgenRequestAlreadySent
+                },
+                {
+                    fn ERC1967InvalidImplementation(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::ERC1967InvalidImplementation)
+                    }
+                    ERC1967InvalidImplementation
+                },
+                {
+                    fn KeygenRequestAlreadySent(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <KeygenRequestAlreadySent as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::KeygenRequestAlreadySent)
+                    }
+                    KeygenRequestAlreadySent
+                },
+                {
+                    fn NotInitializingFromEmptyProxy(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <NotInitializingFromEmptyProxy as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::NotInitializingFromEmptyProxy)
+                    }
+                    NotInitializingFromEmptyProxy
+                },
+                {
+                    fn PreprocessKskgenKmsNodeAlreadyResponded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <PreprocessKskgenKmsNodeAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                KmsManagementErrors::PreprocessKskgenKmsNodeAlreadyResponded,
+                            )
+                    }
+                    PreprocessKskgenKmsNodeAlreadyResponded
+                },
+                {
+                    fn FheParamsNotInitialized(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <FheParamsNotInitialized as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::FheParamsNotInitialized)
+                    }
+                    FheParamsNotInitialized
+                },
+                {
+                    fn ExpectedPause(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <ExpectedPause as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::ExpectedPause)
+                    }
+                    ExpectedPause
+                },
+                {
+                    fn AddressEmptyCode(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <AddressEmptyCode as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::AddressEmptyCode)
+                    }
+                    AddressEmptyCode
+                },
+                {
+                    fn UUPSUnsupportedProxiableUUID(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <UUPSUnsupportedProxiableUUID as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::UUPSUnsupportedProxiableUUID)
+                    }
+                    UUPSUnsupportedProxiableUUID
+                },
+                {
+                    fn ERC1967NonPayable(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <ERC1967NonPayable as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::ERC1967NonPayable)
+                    }
+                    ERC1967NonPayable
+                },
+                {
+                    fn FheParamsAlreadyInitialized(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <FheParamsAlreadyInitialized as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::FheParamsAlreadyInitialized)
+                    }
+                    FheParamsAlreadyInitialized
+                },
+                {
+                    fn KskgenPreprocessingRequired(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <KskgenPreprocessingRequired as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::KskgenPreprocessingRequired)
+                    }
+                    KskgenPreprocessingRequired
+                },
+                {
+                    fn KeygenPreprocessingRequired(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <KeygenPreprocessingRequired as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::KeygenPreprocessingRequired)
+                    }
+                    KeygenPreprocessingRequired
+                },
+                {
+                    fn FailedCall(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <FailedCall as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::FailedCall)
+                    }
+                    FailedCall
+                },
+                {
+                    fn KskgenSameSrcAndDestKeyIds(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <KskgenSameSrcAndDestKeyIds as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::KskgenSameSrcAndDestKeyIds)
+                    }
+                    KskgenSameSrcAndDestKeyIds
+                },
+                {
+                    fn NotInitializing(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <NotInitializing as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::NotInitializing)
+                    }
+                    NotInitializing
+                },
+                {
+                    fn EnforcedPause(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <EnforcedPause as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::EnforcedPause)
+                    }
+                    EnforcedPause
+                },
+                {
+                    fn UUPSUnauthorizedCallContext(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <UUPSUnauthorizedCallContext as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::UUPSUnauthorizedCallContext)
+                    }
+                    UUPSUnauthorizedCallContext
+                },
+                {
+                    fn NotOwnerOrGatewayConfig(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <NotOwnerOrGatewayConfig as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::NotOwnerOrGatewayConfig)
+                    }
+                    NotOwnerOrGatewayConfig
+                },
+                {
+                    fn ActivateKeyRequiresKeygen(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <ActivateKeyRequiresKeygen as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::ActivateKeyRequiresKeygen)
+                    }
+                    ActivateKeyRequiresKeygen
+                },
+                {
+                    fn ActivateKeyRequiresKskgen(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <ActivateKeyRequiresKskgen as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::ActivateKeyRequiresKskgen)
+                    }
+                    ActivateKeyRequiresKskgen
+                },
+                {
+                    fn CrsgenKmsNodeAlreadyResponded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <CrsgenKmsNodeAlreadyResponded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::CrsgenKmsNodeAlreadyResponded)
+                    }
+                    CrsgenKmsNodeAlreadyResponded
+                },
+                {
+                    fn InvalidInitialization(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<KmsManagementErrors> {
+                        <InvalidInitialization as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(KmsManagementErrors::InvalidInitialization)
+                    }
+                    InvalidInitialization
+                },
+            ];
+            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
+            };
+            DECODE_VALIDATE_SHIMS[idx](data)
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -13069,7 +14563,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
             match topics.first().copied() {
                 Some(
@@ -13078,7 +14571,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <ActivateKeyRequest as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::ActivateKeyRequest)
                 }
@@ -13088,7 +14580,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <ActivateKeyResponse as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::ActivateKeyResponse)
                 }
@@ -13096,7 +14587,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <AddFheParams as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::AddFheParams)
                 }
@@ -13104,7 +14594,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <CrsgenRequest as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::CrsgenRequest)
                 }
@@ -13112,7 +14601,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <CrsgenResponse as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::CrsgenResponse)
                 }
@@ -13120,7 +14608,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <Initialized as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::Initialized)
                 }
@@ -13128,7 +14615,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <KeygenRequest as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::KeygenRequest)
                 }
@@ -13136,7 +14622,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <KeygenResponse as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::KeygenResponse)
                 }
@@ -13144,7 +14629,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <KskgenRequest as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::KskgenRequest)
                 }
@@ -13152,7 +14636,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <KskgenResponse as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::KskgenResponse)
                 }
@@ -13162,7 +14645,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <OwnershipTransferStarted as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::OwnershipTransferStarted)
                 }
@@ -13172,16 +14654,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <OwnershipTransferred as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::OwnershipTransferred)
                 }
                 Some(<Paused as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Paused as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                            validate,
-                        )
+                    <Paused as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Paused)
                 }
                 Some(
@@ -13190,7 +14667,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <PreprocessKeygenRequest as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::PreprocessKeygenRequest)
                 }
@@ -13200,7 +14676,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <PreprocessKeygenResponse as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::PreprocessKeygenResponse)
                 }
@@ -13210,7 +14685,6 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <PreprocessKskgenRequest as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::PreprocessKskgenRequest)
                 }
@@ -13220,32 +14694,22 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     <PreprocessKskgenResponse as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::PreprocessKskgenResponse)
                 }
                 Some(<Unpaused as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Unpaused as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                            validate,
-                        )
+                    <Unpaused as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Unpaused)
                 }
                 Some(<UpdateFheParams as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
                     <UpdateFheParams as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
-                            validate,
                         )
                         .map(Self::UpdateFheParams)
                 }
                 Some(<Upgraded as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <Upgraded as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                            validate,
-                        )
+                    <Upgraded as alloy_sol_types::SolEvent>::decode_raw_log(topics, data)
                         .map(Self::Upgraded)
                 }
                 _ => {
@@ -13399,14 +14863,13 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
 See the [wrapper's documentation](`KmsManagementInstance`) for more details.*/
     #[inline]
     pub const fn new<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
         provider: P,
-    ) -> KmsManagementInstance<T, P, N> {
-        KmsManagementInstance::<T, P, N>::new(address, provider)
+    ) -> KmsManagementInstance<P, N> {
+        KmsManagementInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -13415,15 +14878,14 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
     pub fn deploy<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
     ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<KmsManagementInstance<T, P, N>>,
+        Output = alloy_contract::Result<KmsManagementInstance<P, N>>,
     > {
-        KmsManagementInstance::<T, P, N>::deploy(provider)
+        KmsManagementInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -13432,11 +14894,10 @@ This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<T, P, N> {
-        KmsManagementInstance::<T, P, N>::deploy_builder(provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        KmsManagementInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`KmsManagement`](self) instance.
 
@@ -13450,13 +14911,13 @@ be used to deploy a new instance of the contract.
 
 See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
-    pub struct KmsManagementInstance<T, P, N = alloy_contract::private::Ethereum> {
+    pub struct KmsManagementInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
         provider: P,
-        _network_transport: ::core::marker::PhantomData<(N, T)>,
+        _network: ::core::marker::PhantomData<N>,
     }
     #[automatically_derived]
-    impl<T, P, N> ::core::fmt::Debug for KmsManagementInstance<T, P, N> {
+    impl<P, N> ::core::fmt::Debug for KmsManagementInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             f.debug_tuple("KmsManagementInstance").field(&self.address).finish()
@@ -13465,10 +14926,9 @@ See the [module-level documentation](self) for all the available methods.*/
     /// Instantiation and getters/setters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > KmsManagementInstance<T, P, N> {
+    > KmsManagementInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`KmsManagement`](self) contract instance.
 
 See the [wrapper's documentation](`KmsManagementInstance`) for more details.*/
@@ -13480,7 +14940,7 @@ See the [wrapper's documentation](`KmsManagementInstance`) for more details.*/
             Self {
                 address,
                 provider,
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
@@ -13491,7 +14951,7 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         #[inline]
         pub async fn deploy(
             provider: P,
-        ) -> alloy_contract::Result<KmsManagementInstance<T, P, N>> {
+        ) -> alloy_contract::Result<KmsManagementInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
@@ -13502,7 +14962,7 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<T, P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
                 provider,
                 ::core::clone::Clone::clone(&BYTECODE),
@@ -13529,24 +14989,23 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self.provider
         }
     }
-    impl<T, P: ::core::clone::Clone, N> KmsManagementInstance<T, &P, N> {
+    impl<P: ::core::clone::Clone, N> KmsManagementInstance<&P, N> {
         /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
-        pub fn with_cloned_provider(self) -> KmsManagementInstance<T, P, N> {
+        pub fn with_cloned_provider(self) -> KmsManagementInstance<P, N> {
             KmsManagementInstance {
                 address: self.address,
                 provider: ::core::clone::Clone::clone(&self.provider),
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
     }
     /// Function calls.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > KmsManagementInstance<T, P, N> {
+    > KmsManagementInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -13554,40 +15013,40 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
-        ) -> alloy_contract::SolCallBuilder<T, &P, C, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
         ///Creates a new call builder for the [`UPGRADE_INTERFACE_VERSION`] function.
         pub fn UPGRADE_INTERFACE_VERSION(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, UPGRADE_INTERFACE_VERSIONCall, N> {
-            self.call_builder(&UPGRADE_INTERFACE_VERSIONCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, UPGRADE_INTERFACE_VERSIONCall, N> {
+            self.call_builder(&UPGRADE_INTERFACE_VERSIONCall)
         }
         ///Creates a new call builder for the [`acceptOwnership`] function.
         pub fn acceptOwnership(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, acceptOwnershipCall, N> {
-            self.call_builder(&acceptOwnershipCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, acceptOwnershipCall, N> {
+            self.call_builder(&acceptOwnershipCall)
         }
         ///Creates a new call builder for the [`activateKeyRequest`] function.
         pub fn activateKeyRequest(
             &self,
             keyId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, activateKeyRequestCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, activateKeyRequestCall, N> {
             self.call_builder(&activateKeyRequestCall { keyId })
         }
         ///Creates a new call builder for the [`activateKeyResponse`] function.
         pub fn activateKeyResponse(
             &self,
             keyId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, activateKeyResponseCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, activateKeyResponseCall, N> {
             self.call_builder(&activateKeyResponseCall { keyId })
         }
         ///Creates a new call builder for the [`activatedKeyIds`] function.
         pub fn activatedKeyIds(
             &self,
             index: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, activatedKeyIdsCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, activatedKeyIdsCall, N> {
             self.call_builder(&activatedKeyIdsCall { index })
         }
         ///Creates a new call builder for the [`addFheParams`] function.
@@ -13595,7 +15054,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             fheParamsName: alloy::sol_types::private::String,
             fheParamsDigest: alloy::sol_types::private::FixedBytes<32>,
-        ) -> alloy_contract::SolCallBuilder<T, &P, addFheParamsCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, addFheParamsCall, N> {
             self.call_builder(
                 &addFheParamsCall {
                     fheParamsName,
@@ -13607,14 +15066,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn crsFheParamsDigests(
             &self,
             crsId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, crsFheParamsDigestsCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, crsFheParamsDigestsCall, N> {
             self.call_builder(&crsFheParamsDigestsCall { crsId })
         }
         ///Creates a new call builder for the [`crsgenRequest`] function.
         pub fn crsgenRequest(
             &self,
             fheParamsName: alloy::sol_types::private::String,
-        ) -> alloy_contract::SolCallBuilder<T, &P, crsgenRequestCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, crsgenRequestCall, N> {
             self.call_builder(&crsgenRequestCall { fheParamsName })
         }
         ///Creates a new call builder for the [`crsgenResponse`] function.
@@ -13622,7 +15081,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             crsgenRequestId: alloy::sol_types::private::primitives::aliases::U256,
             crsId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, crsgenResponseCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, crsgenResponseCall, N> {
             self.call_builder(
                 &crsgenResponseCall {
                     crsgenRequestId,
@@ -13634,7 +15093,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn fheParamsDigests(
             &self,
             fheParamsName: alloy::sol_types::private::String,
-        ) -> alloy_contract::SolCallBuilder<T, &P, fheParamsDigestsCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, fheParamsDigestsCall, N> {
             self.call_builder(
                 &fheParamsDigestsCall {
                     fheParamsName,
@@ -13644,21 +15103,21 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`getCurrentKeyId`] function.
         pub fn getCurrentKeyId(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, getCurrentKeyIdCall, N> {
-            self.call_builder(&getCurrentKeyIdCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, getCurrentKeyIdCall, N> {
+            self.call_builder(&getCurrentKeyIdCall)
         }
         ///Creates a new call builder for the [`getVersion`] function.
         pub fn getVersion(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, getVersionCall, N> {
-            self.call_builder(&getVersionCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
+            self.call_builder(&getVersionCall)
         }
         ///Creates a new call builder for the [`initializeFromEmptyProxy`] function.
         pub fn initializeFromEmptyProxy(
             &self,
             fheParamsName: alloy::sol_types::private::String,
             fheParamsDigest: alloy::sol_types::private::FixedBytes<32>,
-        ) -> alloy_contract::SolCallBuilder<T, &P, initializeFromEmptyProxyCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, initializeFromEmptyProxyCall, N> {
             self.call_builder(
                 &initializeFromEmptyProxyCall {
                     fheParamsName,
@@ -13670,14 +15129,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn keyFheParamsDigests(
             &self,
             keyId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, keyFheParamsDigestsCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, keyFheParamsDigestsCall, N> {
             self.call_builder(&keyFheParamsDigestsCall { keyId })
         }
         ///Creates a new call builder for the [`keygenRequest`] function.
         pub fn keygenRequest(
             &self,
             preKeyId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, keygenRequestCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, keygenRequestCall, N> {
             self.call_builder(&keygenRequestCall { preKeyId })
         }
         ///Creates a new call builder for the [`keygenResponse`] function.
@@ -13685,7 +15144,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             preKeyId: alloy::sol_types::private::primitives::aliases::U256,
             keyId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, keygenResponseCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, keygenResponseCall, N> {
             self.call_builder(
                 &keygenResponseCall {
                     preKeyId,
@@ -13697,7 +15156,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn kskFheParamsDigests(
             &self,
             kskId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, kskFheParamsDigestsCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, kskFheParamsDigestsCall, N> {
             self.call_builder(&kskFheParamsDigestsCall { kskId })
         }
         ///Creates a new call builder for the [`kskgenRequest`] function.
@@ -13706,7 +15165,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             preKskId: alloy::sol_types::private::primitives::aliases::U256,
             sourceKeyId: alloy::sol_types::private::primitives::aliases::U256,
             destKeyId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, kskgenRequestCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, kskgenRequestCall, N> {
             self.call_builder(
                 &kskgenRequestCall {
                     preKskId,
@@ -13720,7 +15179,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             preKskId: alloy::sol_types::private::primitives::aliases::U256,
             kskId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, kskgenResponseCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, kskgenResponseCall, N> {
             self.call_builder(
                 &kskgenResponseCall {
                     preKskId,
@@ -13729,28 +15188,28 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             )
         }
         ///Creates a new call builder for the [`owner`] function.
-        pub fn owner(&self) -> alloy_contract::SolCallBuilder<T, &P, ownerCall, N> {
-            self.call_builder(&ownerCall {})
+        pub fn owner(&self) -> alloy_contract::SolCallBuilder<&P, ownerCall, N> {
+            self.call_builder(&ownerCall)
         }
         ///Creates a new call builder for the [`pause`] function.
-        pub fn pause(&self) -> alloy_contract::SolCallBuilder<T, &P, pauseCall, N> {
-            self.call_builder(&pauseCall {})
+        pub fn pause(&self) -> alloy_contract::SolCallBuilder<&P, pauseCall, N> {
+            self.call_builder(&pauseCall)
         }
         ///Creates a new call builder for the [`paused`] function.
-        pub fn paused(&self) -> alloy_contract::SolCallBuilder<T, &P, pausedCall, N> {
-            self.call_builder(&pausedCall {})
+        pub fn paused(&self) -> alloy_contract::SolCallBuilder<&P, pausedCall, N> {
+            self.call_builder(&pausedCall)
         }
         ///Creates a new call builder for the [`pendingOwner`] function.
         pub fn pendingOwner(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, pendingOwnerCall, N> {
-            self.call_builder(&pendingOwnerCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, pendingOwnerCall, N> {
+            self.call_builder(&pendingOwnerCall)
         }
         ///Creates a new call builder for the [`preprocessKeygenRequest`] function.
         pub fn preprocessKeygenRequest(
             &self,
             fheParamsName: alloy::sol_types::private::String,
-        ) -> alloy_contract::SolCallBuilder<T, &P, preprocessKeygenRequestCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, preprocessKeygenRequestCall, N> {
             self.call_builder(
                 &preprocessKeygenRequestCall {
                     fheParamsName,
@@ -13762,7 +15221,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             preKeygenRequestId: alloy::sol_types::private::primitives::aliases::U256,
             preKeyId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, preprocessKeygenResponseCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, preprocessKeygenResponseCall, N> {
             self.call_builder(
                 &preprocessKeygenResponseCall {
                     preKeygenRequestId,
@@ -13774,7 +15233,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn preprocessKskgenRequest(
             &self,
             fheParamsName: alloy::sol_types::private::String,
-        ) -> alloy_contract::SolCallBuilder<T, &P, preprocessKskgenRequestCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, preprocessKskgenRequestCall, N> {
             self.call_builder(
                 &preprocessKskgenRequestCall {
                     fheParamsName,
@@ -13786,7 +15245,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             preKskgenRequestId: alloy::sol_types::private::primitives::aliases::U256,
             preKskId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<T, &P, preprocessKskgenResponseCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, preprocessKskgenResponseCall, N> {
             self.call_builder(
                 &preprocessKskgenResponseCall {
                     preKskgenRequestId,
@@ -13797,32 +15256,32 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new call builder for the [`proxiableUUID`] function.
         pub fn proxiableUUID(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, proxiableUUIDCall, N> {
-            self.call_builder(&proxiableUUIDCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, proxiableUUIDCall, N> {
+            self.call_builder(&proxiableUUIDCall)
         }
         ///Creates a new call builder for the [`renounceOwnership`] function.
         pub fn renounceOwnership(
             &self,
-        ) -> alloy_contract::SolCallBuilder<T, &P, renounceOwnershipCall, N> {
-            self.call_builder(&renounceOwnershipCall {})
+        ) -> alloy_contract::SolCallBuilder<&P, renounceOwnershipCall, N> {
+            self.call_builder(&renounceOwnershipCall)
         }
         ///Creates a new call builder for the [`transferOwnership`] function.
         pub fn transferOwnership(
             &self,
             newOwner: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<T, &P, transferOwnershipCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, transferOwnershipCall, N> {
             self.call_builder(&transferOwnershipCall { newOwner })
         }
         ///Creates a new call builder for the [`unpause`] function.
-        pub fn unpause(&self) -> alloy_contract::SolCallBuilder<T, &P, unpauseCall, N> {
-            self.call_builder(&unpauseCall {})
+        pub fn unpause(&self) -> alloy_contract::SolCallBuilder<&P, unpauseCall, N> {
+            self.call_builder(&unpauseCall)
         }
         ///Creates a new call builder for the [`updateFheParams`] function.
         pub fn updateFheParams(
             &self,
             fheParamsName: alloy::sol_types::private::String,
             fheParamsDigest: alloy::sol_types::private::FixedBytes<32>,
-        ) -> alloy_contract::SolCallBuilder<T, &P, updateFheParamsCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, updateFheParamsCall, N> {
             self.call_builder(
                 &updateFheParamsCall {
                     fheParamsName,
@@ -13835,7 +15294,7 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
             newImplementation: alloy::sol_types::private::Address,
             data: alloy::sol_types::private::Bytes,
-        ) -> alloy_contract::SolCallBuilder<T, &P, upgradeToAndCallCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, upgradeToAndCallCall, N> {
             self.call_builder(
                 &upgradeToAndCallCall {
                     newImplementation,
@@ -13847,131 +15306,126 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     /// Event filters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > KmsManagementInstance<T, P, N> {
+    > KmsManagementInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
         /// Prefer using the other methods for building type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
-        ) -> alloy_contract::Event<T, &P, E, N> {
+        ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
         ///Creates a new event filter for the [`ActivateKeyRequest`] event.
         pub fn ActivateKeyRequest_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, ActivateKeyRequest, N> {
+        ) -> alloy_contract::Event<&P, ActivateKeyRequest, N> {
             self.event_filter::<ActivateKeyRequest>()
         }
         ///Creates a new event filter for the [`ActivateKeyResponse`] event.
         pub fn ActivateKeyResponse_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, ActivateKeyResponse, N> {
+        ) -> alloy_contract::Event<&P, ActivateKeyResponse, N> {
             self.event_filter::<ActivateKeyResponse>()
         }
         ///Creates a new event filter for the [`AddFheParams`] event.
-        pub fn AddFheParams_filter(
-            &self,
-        ) -> alloy_contract::Event<T, &P, AddFheParams, N> {
+        pub fn AddFheParams_filter(&self) -> alloy_contract::Event<&P, AddFheParams, N> {
             self.event_filter::<AddFheParams>()
         }
         ///Creates a new event filter for the [`CrsgenRequest`] event.
         pub fn CrsgenRequest_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, CrsgenRequest, N> {
+        ) -> alloy_contract::Event<&P, CrsgenRequest, N> {
             self.event_filter::<CrsgenRequest>()
         }
         ///Creates a new event filter for the [`CrsgenResponse`] event.
         pub fn CrsgenResponse_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, CrsgenResponse, N> {
+        ) -> alloy_contract::Event<&P, CrsgenResponse, N> {
             self.event_filter::<CrsgenResponse>()
         }
         ///Creates a new event filter for the [`Initialized`] event.
-        pub fn Initialized_filter(
-            &self,
-        ) -> alloy_contract::Event<T, &P, Initialized, N> {
+        pub fn Initialized_filter(&self) -> alloy_contract::Event<&P, Initialized, N> {
             self.event_filter::<Initialized>()
         }
         ///Creates a new event filter for the [`KeygenRequest`] event.
         pub fn KeygenRequest_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, KeygenRequest, N> {
+        ) -> alloy_contract::Event<&P, KeygenRequest, N> {
             self.event_filter::<KeygenRequest>()
         }
         ///Creates a new event filter for the [`KeygenResponse`] event.
         pub fn KeygenResponse_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, KeygenResponse, N> {
+        ) -> alloy_contract::Event<&P, KeygenResponse, N> {
             self.event_filter::<KeygenResponse>()
         }
         ///Creates a new event filter for the [`KskgenRequest`] event.
         pub fn KskgenRequest_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, KskgenRequest, N> {
+        ) -> alloy_contract::Event<&P, KskgenRequest, N> {
             self.event_filter::<KskgenRequest>()
         }
         ///Creates a new event filter for the [`KskgenResponse`] event.
         pub fn KskgenResponse_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, KskgenResponse, N> {
+        ) -> alloy_contract::Event<&P, KskgenResponse, N> {
             self.event_filter::<KskgenResponse>()
         }
         ///Creates a new event filter for the [`OwnershipTransferStarted`] event.
         pub fn OwnershipTransferStarted_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, OwnershipTransferStarted, N> {
+        ) -> alloy_contract::Event<&P, OwnershipTransferStarted, N> {
             self.event_filter::<OwnershipTransferStarted>()
         }
         ///Creates a new event filter for the [`OwnershipTransferred`] event.
         pub fn OwnershipTransferred_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, OwnershipTransferred, N> {
+        ) -> alloy_contract::Event<&P, OwnershipTransferred, N> {
             self.event_filter::<OwnershipTransferred>()
         }
         ///Creates a new event filter for the [`Paused`] event.
-        pub fn Paused_filter(&self) -> alloy_contract::Event<T, &P, Paused, N> {
+        pub fn Paused_filter(&self) -> alloy_contract::Event<&P, Paused, N> {
             self.event_filter::<Paused>()
         }
         ///Creates a new event filter for the [`PreprocessKeygenRequest`] event.
         pub fn PreprocessKeygenRequest_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, PreprocessKeygenRequest, N> {
+        ) -> alloy_contract::Event<&P, PreprocessKeygenRequest, N> {
             self.event_filter::<PreprocessKeygenRequest>()
         }
         ///Creates a new event filter for the [`PreprocessKeygenResponse`] event.
         pub fn PreprocessKeygenResponse_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, PreprocessKeygenResponse, N> {
+        ) -> alloy_contract::Event<&P, PreprocessKeygenResponse, N> {
             self.event_filter::<PreprocessKeygenResponse>()
         }
         ///Creates a new event filter for the [`PreprocessKskgenRequest`] event.
         pub fn PreprocessKskgenRequest_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, PreprocessKskgenRequest, N> {
+        ) -> alloy_contract::Event<&P, PreprocessKskgenRequest, N> {
             self.event_filter::<PreprocessKskgenRequest>()
         }
         ///Creates a new event filter for the [`PreprocessKskgenResponse`] event.
         pub fn PreprocessKskgenResponse_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, PreprocessKskgenResponse, N> {
+        ) -> alloy_contract::Event<&P, PreprocessKskgenResponse, N> {
             self.event_filter::<PreprocessKskgenResponse>()
         }
         ///Creates a new event filter for the [`Unpaused`] event.
-        pub fn Unpaused_filter(&self) -> alloy_contract::Event<T, &P, Unpaused, N> {
+        pub fn Unpaused_filter(&self) -> alloy_contract::Event<&P, Unpaused, N> {
             self.event_filter::<Unpaused>()
         }
         ///Creates a new event filter for the [`UpdateFheParams`] event.
         pub fn UpdateFheParams_filter(
             &self,
-        ) -> alloy_contract::Event<T, &P, UpdateFheParams, N> {
+        ) -> alloy_contract::Event<&P, UpdateFheParams, N> {
             self.event_filter::<UpdateFheParams>()
         }
         ///Creates a new event filter for the [`Upgraded`] event.
-        pub fn Upgraded_filter(&self) -> alloy_contract::Event<T, &P, Upgraded, N> {
+        pub fn Upgraded_filter(&self) -> alloy_contract::Event<&P, Upgraded, N> {
             self.event_filter::<Upgraded>()
         }
     }

@@ -79,7 +79,7 @@ error ECDSAInvalidSignature();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct ECDSAInvalidSignature {}
+    pub struct ECDSAInvalidSignature;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -114,7 +114,7 @@ error ECDSAInvalidSignature();
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>> for ECDSAInvalidSignature {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {}
+                Self
             }
         }
         #[automatically_derived]
@@ -134,6 +134,13 @@ error ECDSAInvalidSignature();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
             }
         }
     };
@@ -212,6 +219,13 @@ error ECDSAInvalidSignatureLength(uint256 length);
                     > as alloy_sol_types::SolType>::tokenize(&self.length),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -285,6 +299,13 @@ error ECDSAInvalidSignatureS(bytes32 s);
                     > as alloy_sol_types::SolType>::tokenize(&self.s),
                 )
             }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
         }
     };
     ///Container for all the [`ECDSA`](self) custom errors.
@@ -344,20 +365,14 @@ error ECDSAInvalidSignatureS(bytes32 s);
         fn abi_decode_raw(
             selector: [u8; 4],
             data: &[u8],
-            validate: bool,
         ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-                bool,
-            ) -> alloy_sol_types::Result<ECDSAErrors>] = &[
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<ECDSAErrors>] = &[
                 {
                     fn ECDSAInvalidSignatureS(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<ECDSAErrors> {
                         <ECDSAInvalidSignatureS as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(ECDSAErrors::ECDSAInvalidSignatureS)
                     }
@@ -366,11 +381,9 @@ error ECDSAInvalidSignatureS(bytes32 s);
                 {
                     fn ECDSAInvalidSignature(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<ECDSAErrors> {
                         <ECDSAInvalidSignature as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(ECDSAErrors::ECDSAInvalidSignature)
                     }
@@ -379,11 +392,9 @@ error ECDSAInvalidSignatureS(bytes32 s);
                 {
                     fn ECDSAInvalidSignatureLength(
                         data: &[u8],
-                        validate: bool,
                     ) -> alloy_sol_types::Result<ECDSAErrors> {
                         <ECDSAInvalidSignatureLength as alloy_sol_types::SolError>::abi_decode_raw(
                                 data,
-                                validate,
                             )
                             .map(ECDSAErrors::ECDSAInvalidSignatureLength)
                     }
@@ -398,7 +409,60 @@ error ECDSAInvalidSignatureS(bytes32 s);
                     ),
                 );
             };
-            DECODE_SHIMS[idx](data, validate)
+            DECODE_SHIMS[idx](data)
+        }
+        #[inline]
+        #[allow(non_snake_case)]
+        fn abi_decode_raw_validate(
+            selector: [u8; 4],
+            data: &[u8],
+        ) -> alloy_sol_types::Result<Self> {
+            static DECODE_VALIDATE_SHIMS: &[fn(
+                &[u8],
+            ) -> alloy_sol_types::Result<ECDSAErrors>] = &[
+                {
+                    fn ECDSAInvalidSignatureS(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ECDSAErrors> {
+                        <ECDSAInvalidSignatureS as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(ECDSAErrors::ECDSAInvalidSignatureS)
+                    }
+                    ECDSAInvalidSignatureS
+                },
+                {
+                    fn ECDSAInvalidSignature(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ECDSAErrors> {
+                        <ECDSAInvalidSignature as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(ECDSAErrors::ECDSAInvalidSignature)
+                    }
+                    ECDSAInvalidSignature
+                },
+                {
+                    fn ECDSAInvalidSignatureLength(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ECDSAErrors> {
+                        <ECDSAInvalidSignatureLength as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(ECDSAErrors::ECDSAInvalidSignatureLength)
+                    }
+                    ECDSAInvalidSignatureLength
+                },
+            ];
+            let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
+                return Err(
+                    alloy_sol_types::Error::unknown_selector(
+                        <Self as alloy_sol_types::SolInterface>::NAME,
+                        selector,
+                    ),
+                );
+            };
+            DECODE_VALIDATE_SHIMS[idx](data)
         }
         #[inline]
         fn abi_encoded_size(&self) -> usize {
@@ -450,14 +514,10 @@ error ECDSAInvalidSignatureS(bytes32 s);
 See the [wrapper's documentation](`ECDSAInstance`) for more details.*/
     #[inline]
     pub const fn new<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(
-        address: alloy_sol_types::private::Address,
-        provider: P,
-    ) -> ECDSAInstance<T, P, N> {
-        ECDSAInstance::<T, P, N>::new(address, provider)
+    >(address: alloy_sol_types::private::Address, provider: P) -> ECDSAInstance<P, N> {
+        ECDSAInstance::<P, N>::new(address, provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -466,15 +526,14 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
     pub fn deploy<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
         provider: P,
     ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<ECDSAInstance<T, P, N>>,
+        Output = alloy_contract::Result<ECDSAInstance<P, N>>,
     > {
-        ECDSAInstance::<T, P, N>::deploy(provider)
+        ECDSAInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -483,11 +542,10 @@ This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<T, P, N> {
-        ECDSAInstance::<T, P, N>::deploy_builder(provider)
+    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        ECDSAInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`ECDSA`](self) instance.
 
@@ -501,13 +559,13 @@ be used to deploy a new instance of the contract.
 
 See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
-    pub struct ECDSAInstance<T, P, N = alloy_contract::private::Ethereum> {
+    pub struct ECDSAInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
         provider: P,
-        _network_transport: ::core::marker::PhantomData<(N, T)>,
+        _network: ::core::marker::PhantomData<N>,
     }
     #[automatically_derived]
-    impl<T, P, N> ::core::fmt::Debug for ECDSAInstance<T, P, N> {
+    impl<P, N> ::core::fmt::Debug for ECDSAInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
             f.debug_tuple("ECDSAInstance").field(&self.address).finish()
@@ -516,10 +574,9 @@ See the [module-level documentation](self) for all the available methods.*/
     /// Instantiation and getters/setters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > ECDSAInstance<T, P, N> {
+    > ECDSAInstance<P, N> {
         /**Creates a new wrapper around an on-chain [`ECDSA`](self) contract instance.
 
 See the [wrapper's documentation](`ECDSAInstance`) for more details.*/
@@ -531,7 +588,7 @@ See the [wrapper's documentation](`ECDSAInstance`) for more details.*/
             Self {
                 address,
                 provider,
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
@@ -540,9 +597,7 @@ Returns a new instance of the contract, if the deployment was successful.
 
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(
-            provider: P,
-        ) -> alloy_contract::Result<ECDSAInstance<T, P, N>> {
+        pub async fn deploy(provider: P) -> alloy_contract::Result<ECDSAInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
@@ -553,7 +608,7 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<T, P, N> {
+        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
                 provider,
                 ::core::clone::Clone::clone(&BYTECODE),
@@ -580,24 +635,23 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self.provider
         }
     }
-    impl<T, P: ::core::clone::Clone, N> ECDSAInstance<T, &P, N> {
+    impl<P: ::core::clone::Clone, N> ECDSAInstance<&P, N> {
         /// Clones the provider and returns a new instance with the cloned provider.
         #[inline]
-        pub fn with_cloned_provider(self) -> ECDSAInstance<T, P, N> {
+        pub fn with_cloned_provider(self) -> ECDSAInstance<P, N> {
             ECDSAInstance {
                 address: self.address,
                 provider: ::core::clone::Clone::clone(&self.provider),
-                _network_transport: ::core::marker::PhantomData,
+                _network: ::core::marker::PhantomData,
             }
         }
     }
     /// Function calls.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > ECDSAInstance<T, P, N> {
+    > ECDSAInstance<P, N> {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -605,24 +659,23 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         pub fn call_builder<C: alloy_sol_types::SolCall>(
             &self,
             call: &C,
-        ) -> alloy_contract::SolCallBuilder<T, &P, C, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, C, N> {
             alloy_contract::SolCallBuilder::new_sol(&self.provider, &self.address, call)
         }
     }
     /// Event filters.
     #[automatically_derived]
     impl<
-        T: alloy_contract::private::Transport + ::core::clone::Clone,
-        P: alloy_contract::private::Provider<T, N>,
+        P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    > ECDSAInstance<T, P, N> {
+    > ECDSAInstance<P, N> {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
         /// Prefer using the other methods for building type-safe event filters.
         pub fn event_filter<E: alloy_sol_types::SolEvent>(
             &self,
-        ) -> alloy_contract::Event<T, &P, E, N> {
+        ) -> alloy_contract::Event<&P, E, N> {
             alloy_contract::Event::new_sol(&self.provider, &self.address)
         }
     }
