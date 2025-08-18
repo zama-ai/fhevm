@@ -1,5 +1,5 @@
 {
-  "name": "hardhat-project",
+  "name": "@fhevm/e2e-benchmarks",
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
@@ -13,10 +13,11 @@
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
   },
   "dependencies": {
-    "@fhevm/solidity": "^0.7.0-5",
+    "@fhevm/solidity": "*",
     "@openzeppelin/contracts": "^5.3.0",
     "@zama-fhe/relayer-sdk": "^0.1.0-7",
     "bigint-buffer": "^1.1.5",
-    "dotenv": "^16.0.3"
+    "dotenv": "^16.0.3",
+    "encrypted-types": "^0.0.4"
   }
 }

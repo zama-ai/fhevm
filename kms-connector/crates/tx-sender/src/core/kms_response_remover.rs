@@ -29,12 +29,10 @@ impl KmsResponseRemover for DbKmsResponseRemover {
         info!("Removing response from DB...");
 
         let query_result = match response {
-            KmsResponse::PublicDecryption { decryption_id, .. } => {
-                self.remove_public_decryption(*decryption_id).await?
+            KmsResponse::PublicDecryption(r) => {
+                self.remove_public_decryption(r.decryption_id).await?
             }
-            KmsResponse::UserDecryption { decryption_id, .. } => {
-                self.remove_user_decryption(*decryption_id).await?
-            }
+            KmsResponse::UserDecryption(r) => self.remove_user_decryption(r.decryption_id).await?,
         };
 
         if query_result.rows_affected() == 1 {
@@ -49,11 +47,12 @@ impl KmsResponseRemover for DbKmsResponseRemover {
     #[tracing::instrument(skip_all)]
     async fn mark_response_as_pending(&self, response: KmsResponse) {
         match response {
-            KmsResponse::PublicDecryption { decryption_id, .. } => {
-                self.mark_public_decryption_as_pending(decryption_id).await
+            KmsResponse::PublicDecryption(r) => {
+                self.mark_public_decryption_as_pending(r.decryption_id)
+                    .await
             }
-            KmsResponse::UserDecryption { decryption_id, .. } => {
-                self.mark_user_decryption_as_pending(decryption_id).await
+            KmsResponse::UserDecryption(r) => {
+                self.mark_user_decryption_as_pending(r.decryption_id).await
             }
         };
     }

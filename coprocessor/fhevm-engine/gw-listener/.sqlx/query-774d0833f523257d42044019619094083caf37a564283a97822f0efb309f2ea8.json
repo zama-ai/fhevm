@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, input\n             FROM verify_proofs",
+  "query": "SELECT zk_proof_id, chain_id, contract_address, user_address, input, extra_data\n             FROM verify_proofs",
   "describe": {
     "columns": [
       {
@@ -27,6 +27,11 @@
         "ordinal": 4,
         "name": "input",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 5,
+        "name": "extra_data",
+        "type_info": "Bytea"
       }
     ],
     "parameters": {
@@ -37,8 +42,9 @@
       false,
       false,
       false,
-      true
+      true,
+      false
     ]
   },
-  "hash": "0d390882dbdd916d77eacede9469de25e573be481429f04c81beef17f3cf6802"
+  "hash": "774d0833f523257d42044019619094083caf37a564283a97822f0efb309f2ea8"
 }

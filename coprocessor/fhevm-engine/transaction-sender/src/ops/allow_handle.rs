@@ -15,7 +15,7 @@ use crate::{
 use super::TransactionOperation;
 use alloy::{
     network::{Ethereum, TransactionBuilder},
-    primitives::{Address, FixedBytes},
+    primitives::{Address, Bytes, FixedBytes},
     providers::Provider,
     rpc::types::TransactionRequest,
     sol,
@@ -419,17 +419,18 @@ where
             );
 
             let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle)?);
+            let extra_data = Bytes::new();
 
             let txn_request = match event_type {
                 AllowEvents::AllowedForDecryption => {
                     // Call allowPublicDecrypt when account_address is null
                     match &self.gas {
                         Some(gas_limit) => multichain_acl
-                            .allowPublicDecrypt(handle_bytes32)
+                            .allowPublicDecrypt(handle_bytes32, extra_data)
                             .into_transaction_request()
                             .with_gas_limit(*gas_limit),
                         None => multichain_acl
-                            .allowPublicDecrypt(handle_bytes32)
+                            .allowPublicDecrypt(handle_bytes32, extra_data)
                             .into_transaction_request(),
                     }
                 }
@@ -447,11 +448,11 @@ where
 
                     match &self.gas {
                         Some(gas_limit) => multichain_acl
-                            .allowAccount(handle_bytes32, address)
+                            .allowAccount(handle_bytes32, address, extra_data)
                             .into_transaction_request()
                             .with_gas_limit(*gas_limit),
                         None => multichain_acl
-                            .allowAccount(handle_bytes32, address)
+                            .allowAccount(handle_bytes32, address, extra_data)
                             .into_transaction_request(),
                     }
                 }

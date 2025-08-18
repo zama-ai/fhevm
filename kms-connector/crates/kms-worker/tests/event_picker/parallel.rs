@@ -26,9 +26,10 @@ async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
 
     println!("Inserting only one PublicDecryptionRequest for two event picker...");
     sqlx::query!(
-        "INSERT INTO public_decryption_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         id0.as_le_slice(),
         sns_ciphertexts_db.clone() as Vec<SnsCiphertextMaterialDbItem>,
+        vec![],
     )
     .execute(test_instance.db())
     .await?;
@@ -47,6 +48,7 @@ async fn test_parallel_event_picker_one_events() -> anyhow::Result<()> {
         vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: id0,
             snsCtMaterials: sns_ct.clone(),
+            extraData: vec![].into()
         })]
     );
     println!("Data OK!");
@@ -74,16 +76,18 @@ async fn test_parallel_event_picker_two_events() -> anyhow::Result<()> {
 
     println!("Inserting two PublicDecryptionRequest for two event picker...");
     sqlx::query!(
-        "INSERT INTO public_decryption_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         id0.as_le_slice(),
         sns_ciphertexts_db.clone() as Vec<SnsCiphertextMaterialDbItem>,
+        vec![],
     )
     .execute(test_instance.db())
     .await?;
     sqlx::query!(
-        "INSERT INTO public_decryption_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         id1.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        vec![],
     )
     .execute(test_instance.db())
     .await?;
@@ -98,6 +102,7 @@ async fn test_parallel_event_picker_two_events() -> anyhow::Result<()> {
         vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: id0,
             snsCtMaterials: sns_ct.clone(),
+            extraData: vec![].into(),
         })]
     );
     assert_eq!(
@@ -105,6 +110,7 @@ async fn test_parallel_event_picker_two_events() -> anyhow::Result<()> {
         vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: id1,
             snsCtMaterials: sns_ct,
+            extraData: vec![].into(),
         })]
     );
     println!("Data OK!");

@@ -37,6 +37,8 @@ log:
   show_timestamp: true
   # Optional: Set specific log levels for different modules
 
+db_path_rocksdb: "./.database"
+
 # Development-specific settings
 development:
   # Enable for detailed error messages
