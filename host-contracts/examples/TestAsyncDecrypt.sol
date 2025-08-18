@@ -208,7 +208,7 @@ contract TestAsyncDecrypt {
     function callbackUint32(
         uint256 requestID,
         bytes memory cleartexts,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public returns (uint32) {
         FHE.checkSignatures(requestID, cleartexts, decryptionProof);
         uint256[] memory params = getParamsUint256(requestID);
@@ -246,8 +246,9 @@ contract TestAsyncDecrypt {
     }
 
     /// @notice Callback function for 64-bit unsigned integer decryption
-    /// @param decryptedInput The decrypted 64-bit unsigned integer
+    /// @param requestID The ID of the decryption request
     /// @param cleartexts The decrypted 64-bit unsigned integer ABI encoded in bytes
+    /// @param decryptionProof The decryption proof containing KMS signatures and extra data
     /// @return The decrypted value
     function callbackUint64(
         uint256 requestID,
