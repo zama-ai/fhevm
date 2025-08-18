@@ -438,8 +438,10 @@ pub async fn run_all(
     let (uploads_tx, uploads_rx) =
         mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
 
-    if let Err(err) = telemetry::setup_otlp(&config.service_name) {
-        panic!("Error while initializing tracing: {:?}", err);
+    if !config.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&config.service_name) {
+            panic!("Error while initializing tracing: {:?}", err);
+        }
     }
 
     let conf = config.clone();
