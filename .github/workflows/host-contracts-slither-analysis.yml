@@ -5,6 +5,9 @@ on:
   pull_request:
     branches:
       - main
+
+permissions: {}
+
 jobs:
   check-changes:
     name: host-contracts-slither-analysis/check-changes

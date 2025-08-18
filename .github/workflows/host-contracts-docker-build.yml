@@ -9,6 +9,8 @@ on:
     types:
       - published
 
+permissions: {}
+
 concurrency:
   group: docker-fhevm-contracts-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}

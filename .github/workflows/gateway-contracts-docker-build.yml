@@ -9,6 +9,8 @@ on:
     types:
       - published
 
+permissions: {}
+
 concurrency:
   group: gateway-contracts-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -61,6 +63,9 @@ jobs:
   docker-hardhat-test:
     needs: build
     name: gateway-contracts-docker-build/docker-hardhat-test (bpr)
+    permissions:
+      contents: 'read'
+      packages: 'read'
     uses: ./.github/workflows/gateway-contracts-hardhat-tests-docker.yml
     with:
       image-name: ${{ needs.build.outputs.image }}

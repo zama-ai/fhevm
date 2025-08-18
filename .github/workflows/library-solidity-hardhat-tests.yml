@@ -3,6 +3,8 @@ name: library-solidity-hardhat-tests
 on:
   pull_request:
 
+permissions: {}
+
 jobs:
   check-changes:
     name: library-solidity-hardhat-tests/check-changes

@@ -3,6 +3,8 @@ name: coprocessor/cargo-fmt
 on:
   pull_request:
 
+permissions: {}
+
 jobs:
   check-changes:
     name: trigger

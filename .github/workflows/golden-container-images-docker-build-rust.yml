@@ -15,6 +15,8 @@ on:
         type: string
   pull_request:
 
+permissions: {}
+
 concurrency:
   group: golden-rust-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -42,6 +44,7 @@ jobs:
               - 'golden-container-images/rust-glibc/**'
               - toolchain.txt
   determine-tag:
+    name: golden-container-images-docker-build-rust/determine-tag
     permissions:
       actions: 'read'
       contents: 'read'
@@ -55,12 +58,15 @@ jobs:
         with:
           persist-credentials: 'false'
       - id: set-tag
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          WORKSPACE: ${{ github.workspace }}
         run: |
           if [[ -n "${TAG}" ]]; then
             echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           else
-            if [[ -f "${{ github.workspace }}/toolchain.txt" ]]; then
-              echo "tag=$(cat ${{ github.workspace }}/toolchain.txt)" >> "$GITHUB_OUTPUT"
+            if [[ -f "${WORKSPACE}/toolchain.txt" ]]; then
+              echo "tag=$(cat "${WORKSPACE}"/toolchain.txt)" >> "$GITHUB_OUTPUT"
             fi
           fi
   build:
