@@ -448,7 +448,6 @@ impl InfiniteLogIter {
             if self.block_history.is_known(&parent_block_hash) {
                 break;
             }
-            missing_blocks.push(current_block);
             if parent_block_hash == BlockHash::ZERO {
                 // can happen in tests
                 break;
@@ -462,6 +461,7 @@ impl InfiniteLogIter {
                 break;
             };
             current_block = parent_block.into();
+            missing_blocks.push(current_block);
             if i == self.reorg_maximum_duration_in_blocks {
                 error!(
                     history_size = self.block_history.size(),
