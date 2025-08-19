@@ -3,7 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "../lib/FHE.sol";
-import "../lib/FHEVMConfig.sol";
+import {CoprocessorSetup} from "../lib/CoprocessorSetup.sol";
 
 /// @title HCULimitTest
 /// @notice A contract to demonstrate HCU limits in different scenarios
@@ -11,7 +11,7 @@ contract HCULimitTest {
     /// @notice Constructor that sets up FHE configuration and deposits initial value
     /// @dev Payable to allow initial deposit
     constructor() {
-        FHE.setCoprocessor(FHEVMConfig.defaultConfig());
+        FHE.setCoprocessor(CoprocessorSetup.defaultConfig());
     }
 
     /// @notice Performs a small number of FHE operations

@@ -1,7 +1,7 @@
 services:
   gateway-node:
     container_name: fhevm-gateway-node
-    image: ghcr.io/foundry-rs/foundry:stable
+    image: ghcr.io/foundry-rs/foundry:v1.2.3
     env_file:
       - ../env/staging/.env.gateway.local
     entrypoint:

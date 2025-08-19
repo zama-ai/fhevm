@@ -134,13 +134,13 @@ describe('FHEVM operations 13', function () {
     this.instances = instances;
   });
 
-  it('test operator "not" overload (euint256) => euint256 test 1 (115792089237316195423570985008687907853269984665640564039457582040700905112947)', async function () {
+  it('test operator "not" overload (euint256) => euint256 test 1 (115792089237316195423570985008687907853269984665640564039457582369478281879429)', async function () {
     const input = this.instances.alice.createEncryptedInput(this.contract7Address, this.signers.alice.address);
-    input.add256(115792089237316195423570985008687907853269984665640564039457582040700905112947n);
+    input.add256(115792089237316195423570985008687907853269984665640564039457582369478281879429n);
     const encryptedAmount = await input.encrypt();
     const tx = await this.contract7.not_euint256(encryptedAmount.handles[0], encryptedAmount.inputProof);
     await tx.wait();
     const res = await decrypt256(await this.contract7.resEuint256());
-    expect(res).to.equal(1967212224526988n);
+    expect(res).to.equal(1638434847760506n);
   });
 });

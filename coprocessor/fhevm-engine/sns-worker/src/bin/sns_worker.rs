@@ -98,7 +98,7 @@ async fn main() {
 
     spawn(async move {
         if let Err(err) = process_s3_uploads(&conf, uploads_rx, tx, token, s3, is_ready).await {
-            error!("Failed to run the upload-worker : {:?}", err);
+            error!(error = %err, "Failed to run the upload-worker");
         }
     });
 
@@ -107,6 +107,6 @@ async fn main() {
     let conf = config.clone();
     let token = parent.child_token();
     if let Err(err) = compute_128bit_ct(conf, uploads_tx, token, client).await {
-        error!("SnS worker failed: {:?}", err);
+        error!(error = %err, "SnS worker failed");
     }
 }

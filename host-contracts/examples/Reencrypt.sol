@@ -3,7 +3,7 @@
 pragma solidity ^0.8.24;
 
 import "../lib/FHE.sol";
-import "../lib/FHEVMConfig.sol";
+import {CoprocessorSetup} from "../lib/CoprocessorSetup.sol";
 
 /// @notice Contract for demonstrating reencryption of various FHE data types
 contract Reencrypt {
@@ -24,7 +24,7 @@ contract Reencrypt {
     /// @notice Constructor to initialize encrypted values and set permissions
     constructor() {
         // Set default FHE configuration
-        FHE.setCoprocessor(FHEVMConfig.defaultConfig());
+        FHE.setCoprocessor(CoprocessorSetup.defaultConfig());
 
         // Initialize and set permissions for xBool
         xBool = FHE.asEbool(true);
