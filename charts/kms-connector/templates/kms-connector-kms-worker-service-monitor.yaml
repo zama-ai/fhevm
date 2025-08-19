@@ -1,0 +1,16 @@
+{{- if .Values.kmsConnectorKmsWorker.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: kms-connector-kms-worker
+    app.kubernetes.io/name: {{ include "kmsConnectorKmsWorkerName" . }}
+  name: {{ include "kmsConnectorKmsWorkerName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: kms-connector-kms-worker
+      app.kubernetes.io/name: {{ include "kmsConnectorKmsWorkerName" . }}
+  endpoints:
+  - port: monitoring
+{{- end -}}
