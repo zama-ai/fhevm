@@ -41,39 +41,35 @@ impl ComputeCalldata {
         req: &PublicDecryptFhevmRequestData,
         public_decryption_response: PublicDecryptResponse,
     ) -> Result<Bytes, EventProcessingError> {
-        let mut calldata = Vec::new();
-
-        calldata.extend_from_slice(&req.callback_selector.0);
-
-        let request_id_bytes = req.fhevm_request_id.to_be_bytes::<32>();
-        calldata.extend_from_slice(&request_id_bytes);
-
-        calldata.extend_from_slice(&public_decryption_response.decrypted_value);
+        // Remove tghe last 32 bytes from decrypted_value (its padding adding by KMS)
+        let len = public_decryption_response.decrypted_value.len();
+        let cleartexts = &public_decryption_response.decrypted_value[..len - 32].to_vec();
 
         // Construct decryptionProof: numSigners (1 byte) + signatures (65 bytes each) + extraData
         let mut decryption_proof = Vec::new();
-
-        // Add number of signers (1 byte)
         let num_signers = public_decryption_response.signatures.len() as u8;
         decryption_proof.push(num_signers);
-
-        // Add KMS signatures (65 bytes each)
         for signature in &public_decryption_response.signatures {
             decryption_proof.extend_from_slice(signature);
         }
-
-        // Add extraData
         decryption_proof.extend_from_slice(&public_decryption_response.extra_data);
 
-        // Encode decryptionProof as bytes parameter
-        let decryption_proof_value = DynSolValue::Bytes(decryption_proof);
-        let encoded_proof = decryption_proof_value.abi_encode();
-        calldata.extend_from_slice(&encoded_proof[32..]); // Skip the first 32 bytes (offset part)
+        let params: Vec<DynSolValue> = vec![
+            DynSolValue::Uint(req.fhevm_request_id, 256),
+            DynSolValue::Bytes(cleartexts.clone()),
+            DynSolValue::Bytes(decryption_proof),
+        ];
+        let encoded_params = DynSolValue::Tuple(params).abi_encode_params();
+
+        let mut calldata = Vec::new();
+        calldata.extend_from_slice(&req.callback_selector.0);
+        calldata.extend_from_slice(&encoded_params);
 
         debug!(
-            "decryptionProof constructed with {} signers, extraData length: {}",
+            "Callback calldata constructed with {} signers, extraData length: {}, cleartexts length: {}",
             num_signers,
-            public_decryption_response.extra_data.len()
+            public_decryption_response.extra_data.len(),
+            cleartexts.len()
         );
 
         Ok(Bytes::from(calldata))
