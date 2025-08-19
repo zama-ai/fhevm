@@ -9,7 +9,7 @@ import {
   decrypt64,
   decrypt128,
   decrypt256,
-  decryptBool
+  decryptBool,
 } from '../instance';
 import { getSigners, initSigners } from '../signers';
 import { deployRandFixture } from './Rand.fixture';
