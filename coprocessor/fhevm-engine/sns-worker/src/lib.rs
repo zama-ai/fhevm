@@ -348,7 +348,7 @@ impl UploadJob {
 }
 
 /// Runs the SnS worker loop
-pub async fn compute_128bit_ct(
+pub async fn run_computation_loop(
     conf: Config,
     tx: Sender<UploadJob>,
     token: CancellationToken,
@@ -379,7 +379,7 @@ pub async fn compute_128bit_ct(
 }
 
 /// Runs the uploader loop
-pub async fn process_s3_uploads(
+pub async fn run_uploader_loop(
     conf: &Config,
     rx: mpsc::Receiver<UploadJob>,
     tx: Sender<UploadJob>,
@@ -452,16 +452,19 @@ pub async fn run_all(
     let is_ready = Arc::new(AtomicBool::new(is_ready));
     let s3 = client.clone();
 
+    // Spawns a task to handle S3 uploads
     spawn(async move {
-        if let Err(err) = process_s3_uploads(&conf, uploads_rx, tx, token, s3, is_ready).await {
+        if let Err(err) = run_uploader_loop(&conf, uploads_rx, tx, token, s3, is_ready).await {
             error!(error = %err, "Failed to run the upload-worker");
         }
     });
 
-    // Start the SnS worker
+    // Run the main computation loop
+    // This will handle the PBS computations
     let conf = config.clone();
     let token = parent_token.child_token();
-    if let Err(err) = compute_128bit_ct(conf, uploads_tx, token, client).await {
+
+    if let Err(err) = run_computation_loop(conf, uploads_tx, token, client).await {
         error!(error = %err, "SnS worker failed");
     }
 
