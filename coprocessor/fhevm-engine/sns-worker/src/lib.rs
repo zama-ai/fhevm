@@ -365,7 +365,8 @@ pub async fn compute_128bit_ct(
         if let Err(err) = http_server.start().await {
             error!(
                 task = "health_check",
-                "Error while running server: {:?}", err
+                error = %err,
+                "Error while running server"
             );
         }
         anyhow::Ok(())
@@ -386,7 +387,7 @@ pub async fn process_s3_uploads(
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!(target: "sns", "Uploader started with {:?}", conf.s3);
+    info!(target: "sns", conf = ?conf.s3, "Uploader started");
 
     aws_upload::process_s3_uploads(conf, rx, tx, token, client, is_ready).await?;
 
@@ -420,7 +421,7 @@ pub async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) 
     let client = Arc::new(Client::from_conf(config));
     let (is_ready, is_connected) = check_is_ready(&client, conf).await;
     if is_connected {
-        info!("Connected to S3, is_ready: {}", is_ready);
+        info!(is_ready = is_ready, "Connected to S3");
     }
 
     (client, is_ready)
@@ -451,7 +452,7 @@ pub async fn run_all(
 
     spawn(async move {
         if let Err(err) = process_s3_uploads(&conf, uploads_rx, tx, token, s3, is_ready).await {
-            error!("Failed to run the upload-worker : {:?}", err);
+            error!(error = %err, "Failed to run the upload-worker");
         }
     });
 
@@ -459,7 +460,7 @@ pub async fn run_all(
     let conf = config.clone();
     let token = parent_token.child_token();
     if let Err(err) = compute_128bit_ct(conf, uploads_tx, token, client).await {
-        error!("SnS worker failed: {:?}", err);
+        error!(error = %err, "SnS worker failed");
     }
 
     Ok(())
