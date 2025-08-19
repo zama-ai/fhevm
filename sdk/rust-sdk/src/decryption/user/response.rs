@@ -1,16 +1,18 @@
 use super::deserializer::UserDecryptionDeserializer;
 use super::types::ResponseConfig;
-use crate::blockchain::bindings::Decryption::CtHandleContractPair;
 use crate::utils::{parse_hex_string, validate_address_from_str};
 use crate::{FhevmError, Result};
 use alloy::primitives::Address;
 use alloy::signers::Signature;
+use fhevm_gateway_rust_bindings::decryption::Decryption::CtHandleContractPair;
 use kms_grpc::kms::v1::{Eip712DomainMsg, TypedPlaintext};
 use kms_grpc::rpc_types::protobuf_to_alloy_domain;
-use kms_lib::client::js_api::{
-    new_client, new_server_id_addr, u8vec_to_ml_kem_pke_pk, u8vec_to_ml_kem_pke_sk,
-};
+use kms_lib::client::js_api::{new_client, new_server_id_addr};
 use kms_lib::client::{CiphertextHandle, ParsedUserDecryptionRequest};
+use kms_lib::consts::SAFE_SER_SIZE_LIMIT;
+use kms_lib::cryptography::internal_crypto_types::{
+    PrivateEncKey, UnifiedPrivateEncKey, UnifiedPublicEncKey,
+};
 use tracing::{debug, info};
 
 /// Builder for processing user decryption responses
@@ -219,11 +221,16 @@ impl ResponseProcessor {
         let responses = UserDecryptionDeserializer::json_to_responses(&json_response)?;
 
         // Convert keys for ML-KEM
-        let ml_kem_pub_key = u8vec_to_ml_kem_pke_pk(&public_key_bytes)
-            .map_err(|e| FhevmError::DecryptionError(format!("Invalid public key: {e:?}")))?;
+        let ml_kem_pub_key = tfhe::safe_serialization::safe_deserialize::<UnifiedPublicEncKey>(
+            std::io::Cursor::new(public_key_bytes),
+            SAFE_SER_SIZE_LIMIT,
+        )
+        .map_err(|e| FhevmError::DecryptionError(format!("Invalid public key: {e:?}")))?;
 
-        let ml_kem_priv_key = u8vec_to_ml_kem_pke_sk(&private_key_bytes)
-            .map_err(|e| FhevmError::DecryptionError(format!("Invalid private key: {e:?}")))?;
+        let ml_kem_priv_key =
+            bc2wrap::deserialize::<PrivateEncKey<ml_kem::MlKem512>>(&private_key_bytes)
+                .map(|k| UnifiedPrivateEncKey::MlKem512(k))
+                .map_err(|e| FhevmError::DecryptionError(format!("Invalid private key: {e:?}")))?;
 
         let eip712_domain = protobuf_to_alloy_domain(&eip712_domain).unwrap();
 

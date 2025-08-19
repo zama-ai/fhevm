@@ -8,10 +8,8 @@
 //! ```
 
 use alloy::primitives::{U256, address};
-use gateway_sdk::{
-    FhevmSdkBuilder, Result, blockchain::bindings::Decryption::CtHandleContractPair,
-    utils::validate_address_from_str,
-};
+use fhevm_gateway_rust_bindings::decryption::Decryption::CtHandleContractPair;
+use gateway_sdk::{FhevmSdkBuilder, Result, utils::validate_address_from_str};
 use std::str::FromStr;
 fn main() -> Result<()> {
     println!("🔓 Processing user decryption...");
