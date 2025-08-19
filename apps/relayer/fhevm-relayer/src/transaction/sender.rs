@@ -11,15 +11,17 @@ use alloy::{
     rpc::types::TransactionRequest,
     serde::WithOtherFields,
     signers::{Signature, Signer},
-    transports::RpcError,
+    transports::{RpcError, TransportErrorKind},
 };
 
 use eyre::Result;
 use futures::StreamExt;
 use reqwest::Url;
-use std::fmt;
+use std::future::Future;
+use std::{fmt, future::IntoFuture};
 use std::{sync::Arc, time::Duration};
 use thiserror::Error;
+use tokio::sync::RwLock;
 use tokio::time::{timeout, Instant};
 use tracing::{debug, error, info, instrument, warn};
 
@@ -153,9 +155,10 @@ impl Default for TxConfig {
 }
 
 pub struct TransactionManager {
-    pub provider: Arc<dyn Provider<AnyNetwork> + Send + Sync>,
+    pub provider: Arc<RwLock<Box<dyn Provider<AnyNetwork> + Send + Sync>>>,
     pub signer: Arc<dyn SignerCombined>,
     pub nonce_manager: Arc<CachedNonceManagerWithRefresh>,
+    rpc_url: Url,
 }
 
 impl fmt::Debug for TransactionManager {
@@ -177,21 +180,30 @@ impl TransactionManager {
 
         let ws_rpc_url = Url::parse(ws_rpc_url)
             .map_err(|e| TransactionError::InvalidAddress(format!("Invalid URL: {e}")))?;
-        let ws = WsConnect::new(ws_rpc_url);
+
+        // NOTE: The only way I found to reconnect the internal Provider backend is to re-create
+        // the provider entirely as I didn't find a way to access the [`PubSubConnect.try_reconnect`] method from the provider itself
+        // But that implies mutability, or the use of either a Mutex or RwLock.
+        // Another option would be to set a virtually infinite retry (u32::MAX * 3 seconds ~= 408 years) should be enough.
+        // But we would miss error logs about the connexion dropping, unless parsing alloy logs
+        // specifically.
+        let ws = WsConnect::new(ws_rpc_url.clone());
 
         // NOTE: nonce-manager that allows for nonce-resync
         let nonce_manager = CachedNonceManagerWithRefresh::default();
-        let provider = ProviderBuilder::new()
-            .network::<AnyNetwork>()
-            .filler(NonceFiller::new(nonce_manager.clone()))
-            .filler(GasFiller)
-            .filler(ChainIdFiller::new(signer.chain_id()))
-            .filler(WalletFiller::new(wallet))
-            .connect_ws(ws)
-            .await
-            .map_err(TransactionError::TransportError)?;
+        let provider: Arc<RwLock<Box<dyn Provider<AnyNetwork> + Send + Sync>>> = {
+            let concrete_provider = ProviderBuilder::new()
+                .network::<AnyNetwork>()
+                .filler(NonceFiller::new(nonce_manager.clone()))
+                .filler(GasFiller)
+                .filler(ChainIdFiller::new(signer.chain_id()))
+                .filler(WalletFiller::new(wallet))
+                .connect_ws(ws)
+                .await
+                .map_err(TransactionError::TransportError)?;
 
-        let provider = Arc::new(provider);
+            Arc::new(RwLock::new(Box::new(concrete_provider)))
+        };
 
         info!(
             address = ?signer.address(),
@@ -203,15 +215,59 @@ impl TransactionManager {
             provider,
             nonce_manager: Arc::new(nonce_manager),
             signer,
+            rpc_url: ws_rpc_url,
         })
     }
 
-    pub fn provider(&self) -> &Arc<dyn Provider<AnyNetwork> + Send + Sync> {
+    pub fn provider(&self) -> &Arc<RwLock<Box<dyn Provider<AnyNetwork> + Send + Sync>>> {
         &self.provider
     }
 
     pub fn sender_address(&self) -> Address {
         self.signer.address()
+    }
+
+    pub async fn reset_provider(&self) -> anyhow::Result<()> {
+        let wallet = EthereumWallet::from(self.signer.clone());
+        let ws = WsConnect::new(self.rpc_url.clone());
+        let provider = ProviderBuilder::new()
+            .network::<AnyNetwork>()
+            .filler(NonceFiller::new((*self.nonce_manager).clone()))
+            .filler(GasFiller)
+            .filler(ChainIdFiller::new(self.signer.chain_id()))
+            .filler(WalletFiller::new(wallet))
+            .connect_ws(ws)
+            .await?;
+        let mut provider_write_guard = self.provider.write().await;
+        *provider_write_guard = Box::new(provider);
+        Ok(())
+    }
+
+    async fn call_provider<F, Fut, T>(
+        &self,
+        operation: F,
+    ) -> Result<T, RpcError<TransportErrorKind>>
+    where
+        F: for<'a> FnOnce(&'a dyn Provider<AnyNetwork>) -> Fut,
+        Fut: Future<Output = Result<T, RpcError<TransportErrorKind>>>,
+    {
+        let provider = self.provider.read().await;
+        match operation(&**provider).await {
+            Ok(value) => Ok(value),
+            Err(error) => {
+                if let RpcError::Transport(alloy::transports::TransportErrorKind::BackendGone) =
+                    &error
+                {
+                    drop(provider); // Release the read lock before reset
+                    if let Err(reset_error) = self.reset_provider().await {
+                        warn!("Failure to reset provider: {reset_error}");
+                    } else {
+                        debug!("Successfully reset provider");
+                    }
+                }
+                Err(error)
+            }
+        }
     }
 
     // TODO: actually use this method
@@ -231,10 +287,9 @@ impl TransactionManager {
         let request = WithOtherFields::new(request);
 
         let gas = self
-            .provider
-            .estimate_gas(request)
+            .call_provider(|p| p.estimate_gas(request).into_future())
             .await
-            .map_err(|e| TransactionServiceError::GasEstimation(e.to_string()))?;
+            .map_err(|error| TransactionServiceError::GasEstimation(error.to_string()))?;
 
         // NOTE: shouldn't this be exposed as tx-manager configuration?
         // Add 20% buffer to estimated gas
@@ -251,10 +306,13 @@ impl TransactionManager {
         let request = WithOtherFields::new(request);
 
         let result = self
-            .provider
-            .call(request)
+            .call_provider(|p| p.call(request).into_future())
             .await
-            .map_err(|e| TransactionError::RpcError(e.to_string()))?;
+            .map_err(
+                |e: alloy::transports::RpcError<alloy::transports::TransportErrorKind>| {
+                    TransactionError::RpcError(e.to_string())
+                },
+            )?;
 
         Ok(result)
     }
@@ -306,7 +364,7 @@ impl TransactionManager {
 
         // NOTE: this one executes the transaction without publishing it
         // https://www.alchemy.com/docs/node/ethereum/ethereum-api-endpoints/eth-call
-        match self.provider.call(request).await {
+        match self.call_provider(|p| p.call(request).into_future()).await {
             Ok(_) => {
                 debug!("\n✅ Call simulation succeeded");
                 Ok(())
@@ -335,9 +393,11 @@ impl TransactionManager {
 
         // Calculate new gas price (e.g., 15% higher)
         // TODO: double check gas estimation here and what's provided in request
-        let base_fee = self.provider.get_gas_price().await?;
-        let max_priority_fee = self.provider.get_max_priority_fee_per_gas().await?;
 
+        let base_fee = self.call_provider(|p| p.get_gas_price()).await?;
+        let max_priority_fee = self
+            .call_provider(|p| p.get_max_priority_fee_per_gas())
+            .await?;
         // Build cancellation transaction (send 0 ETH to self)
         let request = TransactionRequest::default()
             .with_from(address)
@@ -393,7 +453,13 @@ impl TransactionManager {
         // TODO: check if it makes sense to keep both [`TransactionManager`] and
         // [`TransactionService`]
         loop {
-            match self.provider.send_transaction(request.clone()).await {
+            match self
+                .provider
+                .read()
+                .await
+                .send_transaction(request.clone())
+                .await
+            {
                 Ok(value) => {
                     pending_tx = value;
                     break;
@@ -413,9 +479,10 @@ impl TransactionManager {
                             if response_error_string.contains("nonce too low")
                                 | response_error_string.contains("nonce too high")
                             {
+                                let provider_guard = self.provider.read().await;
                                 let _ = self
                                     .nonce_manager
-                                    .sync_nonce(&self.provider, self.signer.address())
+                                    .sync_nonce(&**provider_guard, self.signer.address())
                                     .await;
                             } else {
                                 return Err(TransactionError::TransactionFailed(err_msg));
@@ -442,9 +509,15 @@ impl TransactionManager {
 
         // Check if contract exists
         info!("Checking contract code at {:#x}", target);
-        let code = self.provider.get_code_at(target).await.map_err(|e| {
-            TransactionError::TransactionFailed(format!("Failed to check contract code: {e}"))
-        })?;
+        let code = self
+            .provider
+            .read()
+            .await
+            .get_code_at(target)
+            .await
+            .map_err(|e| {
+                TransactionError::TransactionFailed(format!("Failed to check contract code: {e}"))
+            })?;
 
         if code.is_empty() {
             error!("No code at target address: {:?} !", target);
@@ -488,7 +561,12 @@ impl TransactionManager {
         // Send and watch for the transaction
         let result = timeout(
             timeout_duration,
-            self.provider.send_transaction(request).await?.watch(),
+            self.provider
+                .read()
+                .await
+                .send_transaction(request)
+                .await?
+                .watch(),
         )
         .await;
 
@@ -562,9 +640,15 @@ impl TransactionManager {
         let start = Instant::now();
         let reconnect_delay = Duration::from_millis(1000);
 
-        let block_subscription = self.provider.subscribe_blocks().await.map_err(|e| {
-            TransactionError::NetworkError(format!("Failed to subscribe for new blocks: {e}"))
-        })?;
+        let block_subscription = self
+            .provider
+            .read()
+            .await
+            .subscribe_blocks()
+            .await
+            .map_err(|e| {
+                TransactionError::NetworkError(format!("Failed to subscribe for new blocks: {e}"))
+            })?;
         let mut block_subscription_stream = block_subscription.into_stream();
 
         loop {
@@ -579,7 +663,13 @@ impl TransactionManager {
                 }
 
                 // Try to get receipt
-                match self.provider.get_transaction_receipt(tx_hash).await {
+                match self
+                    .provider
+                    .read()
+                    .await
+                    .get_transaction_receipt(tx_hash)
+                    .await
+                {
                     Ok(Some(receipt)) => {
                         // If confirmation checks required
                         if let Some(required_confirmations) = config.confirmations {
@@ -588,7 +678,9 @@ impl TransactionManager {
                             }
 
                             // Check block confirmations
-                            if let Ok(current_block) = self.provider.get_block_number().await {
+                            if let Ok(current_block) =
+                                self.call_provider(|p| p.get_block_number()).await
+                            {
                                 if let Some(receipt_block) = receipt.block_number {
                                     let confirmations =
                                         current_block.saturating_sub(receipt_block) + 1;
@@ -639,7 +731,7 @@ impl TransactionManager {
             } else {
                 // tokio sleep
                 tokio::time::sleep(reconnect_delay).await;
-                match self.provider.subscribe_blocks().await {
+                match self.provider.read().await.subscribe_blocks().await {
                     Ok(block_subscription) => {
                         block_subscription_stream = block_subscription.into_stream();
                     }
@@ -671,7 +763,9 @@ impl TransactionManager {
     }
 
     pub async fn verify_contract_code(&self, address: Address) -> Result<Bytes> {
-        let code = self.provider.get_code_at(address).await?;
+        let code = self
+            .call_provider(|p| p.get_code_at(address).into_future())
+            .await?;
         debug!("Deployed bytecode: 0x{}", hex::encode(&code));
         Ok(code)
     }
@@ -745,7 +839,7 @@ mod tests {
 
         let current_nonce = DebugNonceManager::current_nonce(
             manager.nonce_manager.as_ref(),
-            manager.provider(),
+            &**manager.provider.read().await,
             manager.sender_address(),
         )
         .await
@@ -761,6 +855,8 @@ mod tests {
 
         let receipt = manager
             .provider
+            .read()
+            .await
             .get_transaction_receipt(tx_hash)
             .await
             .expect("Failed to get receipt")
@@ -768,7 +864,7 @@ mod tests {
 
         let current_nonce = DebugNonceManager::current_nonce(
             manager.nonce_manager.as_ref(),
-            manager.provider(),
+            &**manager.provider().read().await,
             manager.sender_address(),
         )
         .await
@@ -788,6 +884,8 @@ mod tests {
         tokio::time::sleep(Duration::from_secs(2)).await; // Give node time to process
         let code = manager
             .provider
+            .read()
+            .await
             .get_code_at(contract_address)
             .await
             .expect("Failed to get code");
@@ -797,7 +895,7 @@ mod tests {
 
         let nonce_after_deploy = DebugNonceManager::current_nonce(
             manager.nonce_manager.as_ref(),
-            manager.provider(),
+            &**manager.provider.read().await,
             manager.sender_address(),
         )
         .await
@@ -812,7 +910,7 @@ mod tests {
         // RPC node in case of a Nonce-error
         DebugNonceManager::decrease_nonce(
             manager.nonce_manager.as_ref(),
-            manager.provider(),
+            &**manager.provider.read().await,
             manager.sender_address(),
         )
         .await
@@ -821,7 +919,7 @@ mod tests {
             "Nonce after decrease: {}",
             DebugNonceManager::current_nonce(
                 manager.nonce_manager.as_ref(),
-                manager.provider(),
+                &**manager.provider.read().await,
                 manager.sender_address(),
             )
             .await
@@ -840,7 +938,7 @@ mod tests {
             "Nonce after view: {}",
             DebugNonceManager::current_nonce(
                 manager.nonce_manager.as_ref(),
-                manager.provider(),
+                &**manager.provider.read().await,
                 manager.sender_address(),
             )
             .await
@@ -880,7 +978,7 @@ mod tests {
 
         let nonce_after_increment = DebugNonceManager::current_nonce(
             manager.nonce_manager.as_ref(),
-            manager.provider(),
+            &**manager.provider.read().await,
             manager.sender_address(),
         )
         .await
@@ -894,6 +992,8 @@ mod tests {
         // Wait for confirmation and check receipt
         let receipt = manager
             .provider
+            .read()
+            .await
             .get_transaction_receipt(tx_hash)
             .await
             .expect("Failed to get receipt")

@@ -1,4 +1,3 @@
-use alloy::network::AnyNetwork;
 use alloy::network::Network;
 use alloy::primitives::Address;
 use alloy::providers::fillers::NonceManager;
@@ -25,12 +24,13 @@ pub struct CachedNonceManagerWithRefresh {
 
 // TODO: make sure this is consistent!
 impl CachedNonceManagerWithRefresh {
-    pub async fn sync_nonce<P, N: Network>(
+    pub async fn sync_nonce<P, N>(
         &self,
-        provider: &Arc<P>, //  + Send + Sync
+        provider: &P, //  + Send + Sync
         address: Address,
     ) -> TransportResult<u64>
     where
+        N: Network,
         P: Provider<N> + ?Sized,
     {
         // Nonce is a u64 but it's incremented whenever `get_next_nonce` is called
@@ -57,33 +57,30 @@ impl CachedNonceManagerWithRefresh {
 /// Hack to be able to call this method with `dyn`s instead of generics.
 pub trait DebugNonceManager {
     #![allow(async_fn_in_trait)]
-    async fn increase_nonce(
-        &self,
-        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-        address: Address,
-    ) -> TransportResult<()>;
+    async fn increase_nonce<P, N>(&self, provider: &P, address: Address) -> TransportResult<()>
+    where
+        N: Network,
+        P: Provider<N> + ?Sized;
 
-    async fn decrease_nonce(
-        &self,
-        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-        address: Address,
-    ) -> TransportResult<()>;
+    async fn decrease_nonce<P, N>(&self, provider: &P, address: Address) -> TransportResult<()>
+    where
+        N: Network,
+        P: Provider<N> + ?Sized;
 
-    async fn current_nonce(
-        &self,
-        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-        address: Address,
-    ) -> TransportResult<u64>;
+    async fn current_nonce<P, N>(&self, provider: &P, address: Address) -> TransportResult<u64>
+    where
+        N: Network,
+        P: Provider<N> + ?Sized;
 }
 
 // TODO: define behavior when nonce isn't set
 // TODO: add tests for it
 impl DebugNonceManager for CachedNonceManagerWithRefresh {
-    async fn current_nonce(
-        &self,
-        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-        address: Address,
-    ) -> TransportResult<u64> {
+    async fn current_nonce<P, N>(&self, provider: &P, address: Address) -> TransportResult<u64>
+    where
+        N: Network,
+        P: Provider<N> + ?Sized,
+    {
         // Use `u64::MAX` as a sentinel value to indicate that the nonce has not been fetched yet.
         const NONE: u64 = u64::MAX;
 
@@ -109,11 +106,11 @@ impl DebugNonceManager for CachedNonceManagerWithRefresh {
         Ok(current_nonce)
     }
 
-    async fn increase_nonce(
-        &self,
-        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-        address: Address,
-    ) -> TransportResult<()> {
+    async fn increase_nonce<P, N>(&self, provider: &P, address: Address) -> TransportResult<()>
+    where
+        N: Network,
+        P: Provider<N> + ?Sized,
+    {
         // Use `u64::MAX` as a sentinel value to indicate that the nonce has not been fetched yet.
         const NONE: u64 = u64::MAX;
 
@@ -140,11 +137,11 @@ impl DebugNonceManager for CachedNonceManagerWithRefresh {
         Ok(())
     }
 
-    async fn decrease_nonce(
-        &self,
-        provider: &Arc<dyn Provider<AnyNetwork> + Send + Sync>,
-        address: Address,
-    ) -> TransportResult<()> {
+    async fn decrease_nonce<P, N>(&self, provider: &P, address: Address) -> TransportResult<()>
+    where
+        N: Network,
+        P: Provider<N> + ?Sized,
+    {
         // Use `u64::MAX` as a sentinel value to indicate that the nonce has not been fetched yet.
         const NONE: u64 = u64::MAX;
 
@@ -217,7 +214,6 @@ impl NonceManager for CachedNonceManagerWithRefresh {
 mod tests {
     use crate::transaction::nonce::CachedNonceManagerWithRefresh;
     use alloy::consensus::Transaction;
-    use alloy::network::Ethereum;
     use alloy::primitives::address;
     use alloy::primitives::Address;
     use alloy::primitives::U256;
@@ -228,7 +224,6 @@ mod tests {
     use alloy::providers::WalletProvider;
     use alloy::rpc::types::TransactionRequest;
     use reqwest::Url;
-    use std::sync::Arc;
 
     #[test]
     fn test() {
@@ -289,8 +284,7 @@ mod tests {
         assert_eq!(cnm1.get_next_nonce(&provider, address).await.unwrap(), 2);
         assert_eq!(cnm2.get_next_nonce(&provider, address).await.unwrap(), 3);
 
-        let arc_provider: Arc<dyn Provider<Ethereum>> = Arc::new(Box::new(provider.clone()));
-        let _ = cnm1.sync_nonce(&arc_provider, address).await;
+        let _ = cnm1.sync_nonce(&provider, address).await;
 
         assert_eq!(cnm1.get_next_nonce(&provider, address).await.unwrap(), 0);
         assert_eq!(cnm2.get_next_nonce(&provider, address).await.unwrap(), 1);

@@ -839,7 +839,12 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
     println!("Function selector : 0x{}", hex::encode(func_selector));
 
     // STEP 2: Check contract code size
-    let code = manager.provider.get_code_at(decryption_address).await?;
+    let code = manager
+        .provider
+        .read()
+        .await
+        .get_code_at(decryption_address)
+        .await?;
     println!("Contract code size: {} bytes", code.len());
 
     // Search for our function selector in the bytecode
