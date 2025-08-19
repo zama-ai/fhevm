@@ -135,7 +135,6 @@ struct InfiniteLogIter {
     prev_event: Option<Log>,
     current_event: Option<Log>,
     last_block_event_count: u64,
-    last_block_recheck_planned: Option<BlockHash>,
     pub tick_timeout: HeartBeat,
     pub tick_block: HeartBeat,
     reorg_maximum_duration_in_blocks: u64, // in blocks
@@ -175,7 +174,6 @@ impl InfiniteLogIter {
             prev_event: None,
             current_event: None,
             last_block_event_count: 0,
-            last_block_recheck_planned: None,
             tick_timeout: HeartBeat::default(),
             tick_block: HeartBeat::default(),
             reorg_maximum_duration_in_blocks: args
@@ -314,18 +312,19 @@ impl InfiniteLogIter {
         let Some(block) = block else {
             return false;
         };
-        let last_block_event_count = self.last_block_event_count;
-        self.last_block_event_count = 0;
-        if self.last_block_recheck_planned == Some(block.hash) {
-            // no need to replan anything
-            return false;
-        }
-        let Ok(logs) = self.get_logs_at_hash(block.hash).await else {
-            return false;
+        let logs = match self.get_logs_at_hash(block.hash).await {
+            Ok(logs) => logs,
+            Err(err) => {
+                error!(
+                    error = ?err,
+                    block = ?block.number,
+                    block_hash = ?block.hash,
+                    "Error, Replaying Block"
+                );
+                return false;
+            }
         };
-        if logs.is_empty() {
-            return false;
-        }
+        let last_block_event_count = self.last_block_event_count;
         info!(
             block = ?block.number,
             block_hash = ?block.hash,
@@ -333,11 +332,14 @@ impl InfiniteLogIter {
             last_block_event_count = last_block_event_count,
             "Replaying Block"
         );
+        if logs.is_empty() {
+            return false;
+        }
+        self.last_block_event_count = 0;
         self.catchup_logs.extend(logs);
         if let Some(event) = self.current_event.take() {
             self.catchup_logs.push_back(event);
         }
-        self.last_block_recheck_planned = Some(block.hash);
         true
     }
 
