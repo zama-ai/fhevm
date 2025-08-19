@@ -45,7 +45,7 @@ Otherwise:
 
 🟨 Go to [**FHE on Blockchain**](architecture/overview.md) to learn the architecture in depth and understand how encrypted computation flows through both on-chain and off-chain components.
 
-🟨 Go to [**Examples**](https://docs.zama.ai/protocol/examples) to find reference and inspiration from smart contract examples and and dApp examples.
+🟨 Go to [**Examples**](https://docs.zama.ai/protocol/examples) to find reference and inspiration from smart contract examples and dApp examples.
 
 {% hint style="warning" %}
 

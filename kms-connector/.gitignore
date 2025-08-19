@@ -1,7 +1,7 @@
 /target*
-.DS_Store
-kms-connector.sublime-project
-kms-connector.sublime-workspace
+
+.cargo/advisory-db
+.cargo/advisory-db..lock
 
 .crates.toml
 .crates2.json

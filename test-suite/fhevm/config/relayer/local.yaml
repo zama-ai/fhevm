@@ -26,8 +26,7 @@ http_metrics:
 
 
 log:
-  # Set log level for development
-  level: "info"
+  # Log level should be set using RUST_LOG environment variable
   # Choose format: compact, pretty, or json
   format: "pretty"
   # Show source code location for debugging
@@ -37,6 +36,8 @@ log:
   # Include timestamps in logs
   show_timestamp: true
   # Optional: Set specific log levels for different modules
+
+db_path_rocksdb: "./.database"
 
 # Development-specific settings
 development:

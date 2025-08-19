@@ -18,16 +18,19 @@ RUN addgroup -g 10001 fhevm && \
     mkdir -p /app /home/fhevm
 
 # Copy only necessary files
-COPY e2e/package.json e2e/package-lock.json ./
+COPY package.json package-lock.json ./
+COPY library-solidity/package.json ./library-solidity/
+COPY test-suite/e2e/package.json ./test-suite/e2e/
 
 # Install dependencies
 RUN npm ci && \
     npm prune
 
 # Copy the application files
-COPY e2e/*.sh e2e/*.ts e2e/tsconfig.json ./
-COPY e2e/contracts ./contracts/
-COPY e2e/test ./test/
+COPY library-solidity ./library-solidity
+COPY test-suite/e2e ./test-suite/e2e
+
+WORKDIR /app/test-suite/e2e
 
 RUN npx hardhat compile && \
     npx hardhat compile:specific --contract decryptionOracle
@@ -46,7 +49,7 @@ COPY --from=builder --chown=fhevm:fhevm /app /app
 
 USER fhevm:fhevm
 
-WORKDIR /app
+WORKDIR /app/test-suite/e2e
 
 ENTRYPOINT ["/bin/bash", "-c"]
 

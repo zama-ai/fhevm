@@ -1,5 +1,5 @@
 # Stage 1: Build DB Migration
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.85.0 AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.89.0 AS builder
 
 USER root
 
@@ -21,7 +21,7 @@ WORKDIR /app/coprocessor/fhevm-engine
 # Later on, it will be extended to replace initialize_db.sh completely
 RUN mkdir /fhevm-keys && \
     cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p coprocessor --bin utils
+    SQLX_OFFLINE=true cargo build --release -p tfhe-worker --bin utils
 
 # Stage 2: Runtime image
 FROM cgr.dev/chainguard/postgres:latest AS prod

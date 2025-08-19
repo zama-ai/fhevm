@@ -1,6 +1,6 @@
 use crate::{
     core::{Config, event_processor::eip712::verify_user_decryption_eip712},
-    metrics::{
+    monitoring::metrics::{
         CORE_REQUEST_SENT_COUNTER, CORE_REQUEST_SENT_ERRORS, CORE_RESPONSE_COUNTER,
         CORE_RESPONSE_ERRORS,
     },

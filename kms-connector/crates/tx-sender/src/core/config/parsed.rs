@@ -3,11 +3,12 @@
 //! The `raw` module is first used to deserialize the configuration.
 
 use super::raw::RawConfig;
-use connector_utils::config::{
-    AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result,
+use connector_utils::{
+    config::{AwsKmsConfig, ContractConfig, DeserializeRawConfig, Error, KmsWallet, Result},
+    monitoring::otlp::default_dispatcher,
 };
-use std::{net::SocketAddr, path::Path};
-use tracing::info;
+use std::{net::SocketAddr, path::Path, time::Duration};
+use tracing::{error, info};
 
 /// Configuration of the `TransactionSender`.
 #[derive(Clone, Debug)]
@@ -16,8 +17,8 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
-    /// The endpoint used to collect metrics of the `TransactionSender`.
-    pub metrics_endpoint: SocketAddr,
+    /// The timeout for polling the database for responses.
+    pub database_polling_timeout: Duration,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The Chain ID of the Gateway.
@@ -30,6 +31,20 @@ pub struct Config {
     pub service_name: String,
     /// The wallet used to sign the decryption responses from the kms-core.
     pub wallet: KmsWallet,
+    /// The number of retries for transaction sending.
+    pub tx_retries: u8,
+    /// The interval between transaction retries.
+    pub tx_retry_interval: Duration,
+    /// The batch size for KMS Core response processing.
+    pub responses_batch_size: u8,
+    /// The gas multiplier percentage after each transaction attempt.
+    pub gas_multiplier_percent: usize,
+    /// The maximum number of tasks that can be executed concurrently.
+    pub task_limit: usize,
+    /// The monitoring server endpoint of the `TransactionSender`.
+    pub monitoring_endpoint: SocketAddr,
+    /// The timeout to perform each external service connection healthcheck.
+    pub healthcheck_timeout: Duration,
 }
 
 impl Config {
@@ -38,21 +53,23 @@ impl Config {
     /// Environment variables take precedence over file configuration.
     /// Environment variables are prefixed with KMS_CONNECTOR_.
     pub async fn from_env_and_file<P: AsRef<Path>>(path: Option<P>) -> Result<Self> {
+        let _dispatcher_guard = tracing::dispatcher::set_default(&default_dispatcher());
         if let Some(config_path) = &path {
             info!("Loading config from: {}", config_path.as_ref().display());
         } else {
             info!("Loading config using environment variables only");
         }
 
-        let raw_config = RawConfig::from_env_and_file(path)?;
-        Self::parse(raw_config).await
+        let raw_config = RawConfig::from_env_and_file(path).inspect_err(|e| error!("{e}"))?;
+        Self::parse(raw_config).await.inspect_err(|e| error!("{e}"))
     }
 
     async fn parse(raw_config: RawConfig) -> Result<Self> {
-        let metrics_endpoint = raw_config
-            .metrics_endpoint
+        let monitoring_endpoint = raw_config
+            .monitoring_endpoint
             .parse::<SocketAddr>()
             .map_err(|e| Error::InvalidConfig(e.to_string()))?;
+
         let wallet = Self::parse_kms_wallet(
             raw_config.chain_id,
             raw_config.private_key,
@@ -70,16 +87,34 @@ impl Config {
             return Err(Error::EmptyField("Gateway URL".to_string()));
         }
 
+        if raw_config.gas_multiplier_percent < 100 {
+            return Err(Error::InvalidConfig(
+                "gas_multiplier_percent should be greater than or equal to 100%".to_string(),
+            ));
+        }
+
+        let database_polling_timeout =
+            Duration::from_secs(raw_config.database_polling_timeout_secs);
+        let tx_retry_interval = Duration::from_millis(raw_config.tx_retry_interval_ms);
+        let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
+
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
-            metrics_endpoint,
+            database_polling_timeout,
             gateway_url: raw_config.gateway_url,
             chain_id: raw_config.chain_id,
             decryption_contract,
             kms_management_contract,
             service_name: raw_config.service_name,
             wallet,
+            tx_retries: raw_config.tx_retries,
+            tx_retry_interval,
+            responses_batch_size: raw_config.responses_batch_size,
+            gas_multiplier_percent: raw_config.gas_multiplier_percent,
+            task_limit: raw_config.task_limit,
+            monitoring_endpoint,
+            healthcheck_timeout,
         })
     }
 
@@ -114,7 +149,7 @@ mod tests {
     use alloy::primitives::Address;
     use connector_utils::config::RawContractConfig;
     use serial_test::serial;
-    use std::{env, fs, str::FromStr};
+    use std::{env, fs, path::Path, str::FromStr};
     use tempfile::NamedTempFile;
 
     fn cleanup_env_vars() {
@@ -126,6 +161,10 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
+            env::remove_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE");
+            env::remove_var("KMS_CONNECTOR_TX_RETRIES");
+            env::remove_var("KMS_CONNECTOR_TX_RETRY_INTERVAL_MS");
+            env::remove_var("KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT");
         }
     }
 
@@ -169,6 +208,16 @@ mod tests {
             raw_config.kms_management_contract.domain_version.unwrap(),
             config.kms_management_contract.domain_version,
         );
+        assert_eq!(raw_config.responses_batch_size, config.responses_batch_size);
+        assert_eq!(raw_config.tx_retries, config.tx_retries);
+        assert_eq!(
+            raw_config.tx_retry_interval_ms as u128,
+            config.tx_retry_interval.as_millis()
+        );
+        assert_eq!(
+            raw_config.gas_multiplier_percent,
+            config.gas_multiplier_percent
+        );
     }
 
     #[tokio::test]
@@ -197,6 +246,10 @@ mod tests {
                 "0x0000000000000000000000000000000000000002",
             );
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
+            env::set_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE", "20");
+            env::set_var("KMS_CONNECTOR_TX_RETRIES", "5");
+            env::set_var("KMS_CONNECTOR_TX_RETRY_INTERVAL_MS", "200");
+            env::set_var("KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT", "180");
         }
 
         // Load config from environment
@@ -214,6 +267,10 @@ mod tests {
             Address::from_str("0x0000000000000000000000000000000000000002").unwrap()
         );
         assert_eq!(config.service_name, "kms-connector-test");
+        assert_eq!(config.responses_batch_size, 20);
+        assert_eq!(config.tx_retries, 5);
+        assert_eq!(config.tx_retry_interval, Duration::from_millis(200));
+        assert_eq!(config.gas_multiplier_percent, 180);
 
         cleanup_env_vars();
     }

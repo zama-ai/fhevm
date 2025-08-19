@@ -10,21 +10,21 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-permissions:
-  actions: 'read'
-  contents: 'read'
-  packages: 'read'
-  pull-requests: 'read'
+permissions: {}
 
 jobs:
   # Initial job that determines which components have changed
   # Used by subsequent jobs to decide whether they need to run
   check-changes:
     name: sdk-rust-sdk-tests/check-changes
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       # Each output indicates if files in a specific component were modified
-      changes-connector: ${{ steps.filter.outputs.connector }}
+      changes-rust-sdk: ${{ steps.filter.outputs.rust-sdk }}
     steps:
     - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
@@ -35,15 +35,21 @@ jobs:
         # Define paths that trigger specific component workflows
         # Changes to conf-trace affect multiple components
         filters: |
-          connector:
+          rust-sdk:
             - '.github/workflows/sdk-rust-sdk-*'
-            - 'sdk-rust-sdk/src/**'
-            - 'sdk-rust-sdk/Cargo.toml'
+            - 'sdk/rust-sdk/src/**'
+            - 'sdk/rust-sdk/examples/**'
+            - 'sdk/rust-sdk/Cargo.toml'
 
   start-runner:
     name: sdk-rust-sdk-tests/start-runner
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-connector == 'true' }}
+    if: ${{ needs.check-changes.outputs.changes-rust-sdk == 'true' }}
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      packages: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
@@ -63,6 +69,11 @@ jobs:
     name: sdk-rust-sdk-tests/test-rust-sdk (bpr)
     needs: start-runner
     timeout-minutes: 50
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      packages: 'read'
+      pull-requests: 'read'
     runs-on: ${{ needs.start-runner.outputs.label }}
     defaults:
       run:
@@ -127,11 +138,22 @@ jobs:
         run: |
           RUST_BACKTRACE=full cargo test
 
+      - name: Run Examples
+        env:
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+        run: |
+          bash scripts/run-examples.sh
+
   stop-runner:
     name: sdk-rust-sdk-tests/stop-runner
     needs:
       - start-runner
       - test-rust-sdk
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      packages: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     if: ${{ always() && needs.start-runner.result != 'skipped' }} # required to stop the runner even if the error happened in the previous jobs, but only if start-runner was not skipped
     steps:

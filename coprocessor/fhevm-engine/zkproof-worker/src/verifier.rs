@@ -5,7 +5,8 @@ use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 
-use fhevm_engine_common::utils::{compact_hex, safe_deserialize_conformant};
+use fhevm_engine_common::utils::safe_deserialize_conformant;
+use hex::encode;
 use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
@@ -18,7 +19,7 @@ use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformancePara
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 
-use crate::{auxiliary, Config, ExecutionError};
+use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX};
 use anyhow::Result;
 
 use std::sync::Arc;
@@ -116,7 +117,7 @@ pub async fn execute_verify_proofs_loop(
     conf: Config,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
-    info!("Starting with config {:?}", conf);
+    info!(conf = ?conf, "Starting with config");
 
     // Tenants key cache is shared amongst all workers
     let tenant_key_cache = Arc::new(RwLock::new(LruCache::new(
@@ -139,7 +140,7 @@ pub async fn execute_verify_proofs_loop(
         task_set.spawn(async move {
             if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache, last_active_at).await
             {
-                error!("executor failed with {}", err);
+                error!(error = %err, "executor failed with");
             }
         });
     }
@@ -149,7 +150,7 @@ pub async fn execute_verify_proofs_loop(
     // Wait for all tasks to complete
     while let Some(result) = task_set.join_next().await {
         if let Err(err) = result {
-            eprintln!("A worker failed: {:?}", err);
+            error!(error = %err, "A worker failed");
         }
     }
 
@@ -159,7 +160,7 @@ pub async fn execute_verify_proofs_loop(
 async fn execute_worker(
     conf: &Config,
     pool: &sqlx::Pool<sqlx::Postgres>,
-    tenant_key_cache: &Arc<RwLock<LruCache<i32, TfheTenantKeys>>>,
+    tenant_key_cache: &Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
     let mut listener = PgListener::connect_with(pool).await?;
@@ -173,7 +174,7 @@ async fn execute_worker(
         }
 
         if let Err(e) = execute_verify_proof_routine(pool, tenant_key_cache, conf).await {
-            error!(target: "zkpok", "Execution err: {}", e);
+            error!(target: "zkpok", error = %e, "Execution error");
         } else {
             let count = get_remaining_tasks(pool).await?;
             if get_remaining_tasks(pool).await? > 0 {
@@ -191,7 +192,7 @@ async fn execute_worker(
                     },
                     Ok(_) => info!(target: "zkpok", "Received notification"),
                     Err(err) => {
-                        error!(target: "zkpok", "DB connection err {}", err);
+                        error!(target: "zkpok", error = %err, "DB connection error");
                         return Err(ExecutionError::LostDbConnection)
                     },
                 };
@@ -206,7 +207,7 @@ async fn execute_worker(
 /// Fetch, verify a single proof and then compute signature
 async fn execute_verify_proof_routine(
     pool: &PgPool,
-    tenant_key_cache: &Arc<RwLock<LruCache<i32, TfheTenantKeys>>>,
+    tenant_key_cache: &Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
     conf: &Config,
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
@@ -222,7 +223,7 @@ async fn execute_verify_proof_routine(
     {
         let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
-        let chain_id: i32 = row.get("chain_id");
+        let chain_id: i64 = row.get("chain_id");
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
 
@@ -352,7 +353,7 @@ pub(crate) fn verify_proof(
         .iter()
         .enumerate()
         .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
-        .collect();
+        .collect::<Result<Vec<Ciphertext>, ExecutionError>>()?;
 
     Ok((cts, blob_hash))
 }
@@ -372,6 +373,22 @@ fn try_verify_and_expand_ciphertext_list(
             keys.pks.parameters(), &keys.public_params,
         ))?;
 
+    info!(
+        message = "Input list deserialized",
+        len = format!("{}", the_list.len()),
+        request_id,
+    );
+
+    // TODO: Make sure we don't try to verify and expand an empty list as it would panic with the current version of tfhe-rs.
+    // Could be removed in the future if tfhe-rs is updated to handle empty lists gracefully.
+    if the_list.is_empty() {
+        return Ok(vec![]);
+    }
+
+    if the_list.len() > (MAX_INPUT_INDEX + 1) as usize {
+        return Err(ExecutionError::TooManyInputs(the_list.len()));
+    }
+
     let expanded: tfhe::CompactCiphertextListExpander = the_list
         .verify_and_expand(&keys.public_params, &keys.pks, &aux_data_bytes)
         .map_err(|err| ExecutionError::InvalidProof(request_id, err.to_string()))?;
@@ -386,7 +403,7 @@ fn create_ciphertext(
     ct_idx: usize,
     the_ct: &SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
-) -> Ciphertext {
+) -> Result<Ciphertext, ExecutionError> {
     let (serialized_type, compressed) = the_ct.compress();
     let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(aux_data.chain_id)
         .to_owned()
@@ -404,6 +421,10 @@ fn create_ciphertext(
     let mut handle = handle_hash.finalize().to_vec();
 
     assert_eq!(handle.len(), 32);
+
+    if ct_idx > MAX_INPUT_INDEX as usize {
+        return Err(ExecutionError::TooManyInputs(ct_idx));
+    }
     // idx cast to u8 must succeed because we don't allow
     // more handles than u8 size
     handle[21] = ct_idx as u8;
@@ -426,14 +447,14 @@ fn create_ciphertext(
         aux_data.acl_contract_address.clone(),
     );
 
-    info!("Create new handle: {:?}", compact_hex(&handle));
+    info!(handle = ?encode(&handle), "Create new handle");
 
-    Ciphertext {
+    Ok(Ciphertext {
         handle,
         compressed,
         ct_type: serialized_type,
         ct_version: current_ciphertext_version(),
-    }
+    })
 }
 
 /// Returns the number of remaining tasks in the database.

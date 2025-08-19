@@ -1,5 +1,7 @@
 name: gateway-contracts-upgrade-tests
 
+permissions: {}
+
 on:
   pull_request:
 
@@ -32,6 +34,10 @@ jobs:
     name: gateway-contracts-upgrade-tests/sc-upgrade (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
+    permissions:
+      contents: 'read'
+      checks: 'write'
+      packages: 'read'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout previous release code
@@ -107,12 +113,15 @@ jobs:
 
       # Executing task:deployEmptyUUPSProxies is required to generate the proxy contract addresses, which are then used
       # for compiling the current and new implementations during the upgrade task.
+      # The docker cp command is required until previous-contracts uses separated .env and addresses files,
+      # see https://github.com/zama-ai/fhevm-internal/issues/217.
       - name: Prepare and copy previous contract into current directory
         working-directory: current-fhevm/gateway-contracts
         run: |
           cp .env.example .env
           cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
           npx hardhat task:deployEmptyUUPSProxies
+          docker cp deploy-gateway-contracts:/app/addresses ./
 
       - name: Upgrade GatewayConfig contract
         working-directory: current-fhevm/gateway-contracts
@@ -161,8 +170,3 @@ jobs:
         if: always()
         run: |
           make docker-compose-down
-
-permissions:
-  contents: 'read'
-  checks: 'write'
-  packages: 'read'

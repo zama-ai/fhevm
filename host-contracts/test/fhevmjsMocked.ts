@@ -353,6 +353,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
 
       const encryptedArray = new Uint8Array(encrypted);
       const hash = new Keccak(256).update(Buffer.from(encryptedArray)).digest();
+      const extraDataV0 = ethers.solidityPacked(['uint8'], [0]);
 
       const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
       if (chainId === undefined) {
@@ -388,9 +389,17 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
       listHandlesStr.map((handle) => (inputProof += handle));
       const listHandles = listHandlesStr.map((i) => BigInt('0x' + i));
-      const signaturesCoproc = await computeInputSignaturesCopro(listHandles, userAddress, contractAddress);
+      const signaturesCoproc = await computeInputSignaturesCopro(
+        listHandles,
+        userAddress,
+        contractAddress,
+        extraDataV0,
+      );
       signaturesCoproc.map((sigCopro) => (inputProof += sigCopro.slice(2)));
       listHandlesStr.map((handle, i) => insertSQL('0x' + handle, values[i]));
+
+      // Append the extra data to the input proof
+      inputProof = ethers.concat([inputProof, extraDataV0]);
 
       return {
         handles,
@@ -444,6 +453,7 @@ async function computeInputSignaturesCopro(
   handlesList: string[],
   userAddress: string,
   contractAddress: string,
+  extraData: string,
 ): Promise<string[]> {
   const signatures: string[] = [];
   const numSigners = +process.env.NUM_COPROCESSORS!;
@@ -451,7 +461,7 @@ async function computeInputSignaturesCopro(
 
   for (let idx = 0; idx < numSigners; idx++) {
     const coprocSigner = signers[idx];
-    const signature = await coprocSign(handlesList, userAddress, contractAddress, coprocSigner);
+    const signature = await coprocSign(handlesList, userAddress, contractAddress, extraData, coprocSigner);
     signatures.push(signature);
   }
   return signatures;
@@ -461,6 +471,7 @@ async function coprocSign(
   handlesList: string[],
   userAddress: string,
   contractAddress: string,
+  extraData: string,
   signer: Wallet,
 ): Promise<string> {
   const inputVerificationAdd = process.env.INPUT_VERIFICATION_ADDRESS;
@@ -492,6 +503,10 @@ async function coprocSign(
         name: 'contractChainId',
         type: 'uint256',
       },
+      {
+        name: 'extraData',
+        type: 'bytes',
+      },
     ],
   };
 
@@ -500,6 +515,7 @@ async function coprocSign(
     userAddress: userAddress,
     contractAddress: contractAddress,
     contractChainId: hostChainId,
+    extraData,
   };
 
   const signature = await signer.signTypedData(domain, types, message);

@@ -1,5 +1,5 @@
-use crate::tests::setup::{MINIO_ACCESS_KEY, MINIO_SECRET_KEY};
-use std::{path::PathBuf, str::FromStr};
+use crate::tests::setup::{MINIO_ACCESS_KEY, MINIO_SECRET_KEY, ROOT_CARGO_TOML};
+use std::{path::PathBuf, str::FromStr, time::Duration};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
     core::{ContainerPort, Host, WaitFor, wait::ExitWaitStrategy},
@@ -9,12 +9,12 @@ use tracing::info;
 
 pub struct KmsInstance {
     /// Use to keep the KMS container running during the tests.
-    _container: ContainerAsync<GenericImage>,
+    pub container: ContainerAsync<GenericImage>,
     pub url: String,
 }
 
-const KMS_PUBLIC_VAULT_URL: &str = "s3://kms-public";
-const KMS_PRIVATE_VAULT_URL: &str = "file://./keys";
+const KMS_PUBLIC_VAULT_URL: &str = "kms-public";
+const KMS_PRIVATE_VAULT_URL: &str = "./keys";
 
 impl KmsInstance {
     pub async fn setup(s3_url: &str) -> anyhow::Result<Self> {
@@ -26,10 +26,13 @@ impl KmsInstance {
         let s3_port: u16 = s3_url.split(":").nth(2).unwrap().parse()?;
         let s3_internal_url = format!("http://host.docker.internal:{s3_port}");
         let cmd = format!(
-            "kms-gen-keys --pub-url '{KMS_PUBLIC_VAULT_URL}' --aws-s3-endpoint '{s3_internal_url}' --priv-url '{KMS_PRIVATE_VAULT_URL}' --cmd signing-keys centralized &&
+            "kms-gen-keys --public-storage s3 --public-s3-bucket '{KMS_PUBLIC_VAULT_URL}' \\
+            --aws-s3-endpoint '{s3_internal_url}' --private-storage file --private-file-path \\
+            '{KMS_PRIVATE_VAULT_URL}' --cmd signing-keys centralized &&
             kms-server --config-file config/config.toml"
         );
-        let container = GenericImage::new("ghcr.io/zama-ai/kms-service", "v0.11.0-rc17")
+        let version = ROOT_CARGO_TOML.get_kms_grpc_version();
+        let container = GenericImage::new("ghcr.io/zama-ai/kms/core-service", &version)
             .with_exposed_port(ContainerPort::Tcp(50051))
             .with_wait_for(WaitFor::message_on_stdout(
                 "Starting KMS core on socket 0.0.0.0:50051",
@@ -38,8 +41,14 @@ impl KmsInstance {
             .with_host("host.docker.internal", Host::HostGateway)
             .with_env_var("AWS_ACCESS_KEY_ID", MINIO_ACCESS_KEY)
             .with_env_var("AWS_SECRET_ACCESS_KEY", MINIO_SECRET_KEY)
-            .with_env_var("KMS_CORE__PUBLIC_VAULT__STORAGE", KMS_PUBLIC_VAULT_URL)
-            .with_env_var("KMS_CORE__PRIVATE_VAULT__STORAGE", KMS_PRIVATE_VAULT_URL)
+            .with_env_var(
+                "KMS_CORE__PUBLIC_VAULT__STORAGE__S3__BUCKET",
+                KMS_PUBLIC_VAULT_URL,
+            )
+            .with_env_var(
+                "KMS_CORE__PRIVATE_VAULT__STORAGE__FILE__PATH",
+                KMS_PRIVATE_VAULT_URL,
+            )
             .with_env_var("KMS_CORE__AWS__S3_ENDPOINT", &s3_internal_url)
             .with_copy_to(
                 "/app/kms/core/service/config/config.toml".to_string(),
@@ -50,6 +59,7 @@ impl KmsInstance {
                 .unwrap(),
             )
             .with_cmd(["-c", &cmd])
+            .with_startup_timeout(Duration::from_secs(180))
             .start()
             .await?;
         info!("KMS Core container ready!");
@@ -58,7 +68,7 @@ impl KmsInstance {
         let kms_port = container.get_host_port_ipv4(50051).await?;
         let kms_url = format!("http://{kms_host}:{kms_port}");
         let kms_instance = KmsInstance {
-            _container: container,
+            container,
             url: kms_url,
         };
 
@@ -81,7 +91,8 @@ impl KmsInstance {
             bin/kms-core-client -f config.toml insecure-crs-gen --max-num-bits 2048"
         );
 
-        GenericImage::new("ghcr.io/zama-ai/kms-core-client", "v0.11.0-rc17")
+        let version = ROOT_CARGO_TOML.get_kms_grpc_version();
+        GenericImage::new("ghcr.io/zama-ai/kms/core-client", &version)
             .with_wait_for(WaitFor::Exit(ExitWaitStrategy::new().with_exit_code(0)))
             .with_entrypoint("/bin/sh")
             .with_network("host")
@@ -94,6 +105,7 @@ impl KmsInstance {
                 .unwrap(),
             )
             .with_cmd(["-c", &cmd])
+            .with_startup_timeout(Duration::from_secs(180))
             .start()
             .await?;
         Ok(())

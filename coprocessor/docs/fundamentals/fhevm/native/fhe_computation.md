@@ -1,6 +1,6 @@
 # FHE Computation
 
-Block execution in fhEVM-native is split into two parts:
+Block execution in FHEVM-native is split into two parts:
 
 - Symbolic Execution
 - FHE Computation

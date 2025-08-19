@@ -193,7 +193,7 @@ jobs:
 
       - name: Init database
         run: make init_db
-        working-directory: coprocessor/fhevm-engine/coprocessor
+        working-directory: coprocessor/fhevm-engine/tfhe-worker
 
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
@@ -210,22 +210,38 @@ jobs:
 
       - name: Run benchmarks on GPU
         run: |
-          BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" FHEVM_DF_SCHEDULE="${{ inputs.scheduling_policy }}" BENCHMARK_TYPE="${{ inputs.benchmark_type }}" OPTIMIZATION_TARGET="${{ inputs.optimization_target }}" make -e "benchmark_${{ inputs.benchmarks }}_gpu"
-        working-directory: coprocessor/fhevm-engine/coprocessor
+          BENCHMARK_BATCH_SIZE="${BATCH_SIZE}" FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" BENCHMARK_TYPE="${BENCHMARK_TYPE}" OPTIMIZATION_TARGET="${OPTIMIZATION_TARGET}" make -e "benchmark_${BENCHMARKS}_gpu"
+        working-directory: coprocessor/fhevm-engine/tfhe-worker
+        env:
+          BATCH_SIZE: ${{ inputs.batch_size }}
+          SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
+          BENCHMARKS: ${{ inputs.benchmarks }}
+          BENCHMARK_TYPE: ${{ inputs.benchmark_type }}
+          OPTIMIZATION_TARGET: ${{ inputs.optimization_target }}
 
       - name: Parse results
         run: |
-          python3 ./ci/benchmark_parser.py coprocessor/fhevm-engine/target/criterion ${{ env.RESULTS_FILENAME }} \
+          python3 ./ci/benchmark_parser.py coprocessor/fhevm-engine/target/criterion "${RESULTS_FILENAME}" \
           --database coprocessor \
-          --hardware "${{ needs.parse-inputs.outputs.hardware_name }}" \
+          --hardware "${HW_NAME}" \
           --backend gpu \
-          --project-version "${{ env.COMMIT_HASH }}" \
-          --branch ${{ github.ref_name }} \
-          --commit-date "${{ env.COMMIT_DATE }}" \
-          --bench-date "${{ env.BENCH_DATE }}" \
+          --project-version "${COMMIT_HASH}" \
+          --branch "${GH_REF_NAME}" \
+          --commit-date "${COMMIT_DATE}" \
+          --bench-date "${BENCH_DATE}" \
           --walk-subdirs \
-          --crate "coprocessor/fhevm-engine/coprocessor" \
-          --name-suffix "operation_batch_size_${{ inputs.batch_size }}-schedule_${{ inputs.scheduling_policy }}-optimization_target_${{ inputs.optimization_target }}"
+          --crate "coprocessor/fhevm-engine/tfhe-worker" \
+          --name-suffix "operation_batch_size_${BATCH_SIZE}-schedule_${SCHEDULING_POLICY}-optimization_target_${OPTIMIZATION_TARGET}"
+        env:
+          RESULTS_FILENAME: ${{ env.results_filename }}
+          HW_NAME: ${{ needs.parse-inputs.outputs.hardware_name }}
+          COMMIT_HASH: ${{ env.COMMIT_HASH }}
+          GH_REF_NAME: ${{ github.ref_name }}
+          COMMIT_DATE: ${{ env.COMMIT_DATE }}
+          BENCH_DATE: ${{ env.BENCH_DATE }}
+          BATCH_SIZE: ${{ inputs.batch_size }}
+          SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
+          OPTIMIZATION_TARGET: ${{ inputs.optimization_target }}
 
       - name: Upload parsed results artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -244,8 +260,10 @@ jobs:
       - name: Send data to Slab
         shell: bash
         run: |
-          python3 slab/scripts/data_sender.py ${{ env.RESULTS_FILENAME }} "${{ secrets.JOB_SECRET }}" \
+          python3 slab/scripts/data_sender.py "${RESULTS_FILENAME}" "${{ secrets.JOB_SECRET }}" \
           --slab-url "${{ secrets.SLAB_URL }}"
+        env:
+          RESULTS_FILENAME: ${{ env.results_filename }}
 
   teardown-instance:
     name: coprocessor-benchmark-gpu/teardown

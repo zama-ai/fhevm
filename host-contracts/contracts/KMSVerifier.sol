@@ -21,6 +21,12 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
     /// @param invalidSigner Address of the invalid signer.
     error KMSInvalidSigner(address invalidSigner);
 
+    /// @notice Returned if the deserializing of the decryption proof fails.
+    error DeserializingDecryptionProofFail();
+
+    /// @notice Returned if the decryption proof is empty.
+    error EmptyDecryptionProof();
+
     /// @notice Returned if the KMS signer to add is the null address.
     error KMSSignerNull();
 
@@ -53,11 +59,13 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
         bytes32[] ctHandles;
         /// @notice The decrypted result of the public decryption.
         bytes decryptedResult;
+        /// @notice Generic bytes metadata for versioned payloads.
+        bytes extraData;
     }
 
     /// @notice Decryption result type.
     string public constant EIP712_PUBLIC_DECRYPT_TYPE =
-        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult)";
+        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
 
     /// @notice Decryption result typehash.
     bytes32 public constant DECRYPTION_RESULT_TYPEHASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
@@ -169,18 +177,51 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
      * @dev                     Calls verifySignaturesDigest internally.
      * @param handlesList       The list of handles, which where requested to be decrypted.
      * @param decryptedResult   A bytes array representing the abi-encoding of all requested decrypted values.
-     * @param signatures        An array of signatures to verify.
+     * @param decryptionProof   Decryption proof containing KMS signatures and extra data.
      * @return isVerified       true if enough provided signatures are valid, false otherwise.
      */
     function verifyDecryptionEIP712KMSSignatures(
         bytes32[] memory handlesList,
         bytes memory decryptedResult,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public virtual returns (bool) {
-        PublicDecryptVerification memory decRes;
-        decRes.ctHandles = handlesList;
-        decRes.decryptedResult = decryptedResult;
-        bytes32 digest = _hashDecryptionResult(decRes);
+        if (decryptionProof.length == 0) {
+            revert EmptyDecryptionProof();
+        }
+
+        /// @dev The decryptionProof is the numSigners + kmsSignatures + extraData (1 + 65*numSigners + extraData bytes)
+        uint256 numSigners = uint256(uint8(decryptionProof[0]));
+
+        /// @dev The extraData is the rest of the decryptionProof bytes after the numSigners + signatures.
+        uint256 extraDataOffset = 1 + 65 * numSigners;
+
+        /// @dev Check that the decryptionProof is long enough to contain at least the numSigners + kmsSignatures.
+        if (decryptionProof.length < extraDataOffset) {
+            revert DeserializingDecryptionProofFail();
+        }
+
+        bytes[] memory signatures = new bytes[](numSigners);
+        for (uint256 j = 0; j < numSigners; j++) {
+            signatures[j] = new bytes(65);
+            for (uint256 i = 0; i < 65; i++) {
+                signatures[j][i] = decryptionProof[1 + 65 * j + i];
+            }
+        }
+
+        /// @dev Extract the extraData from the decryptionProof.
+        uint256 extraDataSize = decryptionProof.length - extraDataOffset;
+        bytes memory extraData = new bytes(extraDataSize);
+        for (uint i = 0; i < extraDataSize; i++) {
+            extraData[i] = decryptionProof[extraDataOffset + i];
+        }
+
+        PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
+            handlesList,
+            decryptedResult,
+            extraData
+        );
+        bytes32 digest = _hashDecryptionResult(publicDecryptVerification);
+
         return _verifySignaturesDigest(digest, signatures);
     }
 
@@ -330,7 +371,8 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
                     abi.encode(
                         DECRYPTION_RESULT_TYPEHASH,
                         keccak256(abi.encodePacked(decRes.ctHandles)),
-                        keccak256(decRes.decryptedResult)
+                        keccak256(decRes.decryptedResult),
+                        keccak256(abi.encodePacked(decRes.extraData))
                     )
                 )
             );

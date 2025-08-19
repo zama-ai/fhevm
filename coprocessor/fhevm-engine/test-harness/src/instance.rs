@@ -1,6 +1,7 @@
 use crate::db_utils::setup_test_user;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 
 pub struct DBInstance {
     _container: Option<testcontainers::ContainerAsync<testcontainers::GenericImage>>,
@@ -11,6 +12,14 @@ pub struct DBInstance {
 impl DBInstance {
     pub fn db_url(&self) -> &str {
         self.db_url.as_str()
+    }
+}
+
+impl Drop for DBInstance {
+    fn drop(&mut self) {
+        warn!("Dropping DBInstance, terminating the database container");
+        drop(self.parent_token.clone());
+        drop(self._container.take());
     }
 }
 
@@ -34,7 +43,7 @@ impl DBInstance {
 ///     Ok(())
 /// }
 /// ```
-pub async fn setup_test_db(with_keys: bool) -> Result<DBInstance, Box<dyn std::error::Error>> {
+pub async fn setup_test_db(mode: ImportMode) -> Result<DBInstance, Box<dyn std::error::Error>> {
     let is_localhost = std::env::var("COPROCESSOR_TEST_LOCALHOST").is_ok();
 
     // Drop and recreate the database in localhost mode
@@ -42,24 +51,22 @@ pub async fn setup_test_db(with_keys: bool) -> Result<DBInstance, Box<dyn std::e
     let is_localhost_with_reset = std::env::var("COPROCESSOR_TEST_LOCALHOST_RESET").is_ok();
 
     if is_localhost || is_localhost_with_reset {
-        setup_test_app_existing_localhost(is_localhost_with_reset, with_keys).await
+        setup_test_app_existing_localhost(is_localhost_with_reset, mode).await
     } else {
-        setup_test_app_custom_docker(with_keys).await
+        setup_test_app_custom_docker(mode).await
     }
 }
 
 async fn setup_test_app_existing_localhost(
     with_reset: bool,
-    with_keys: bool,
+    mode: ImportMode,
 ) -> Result<DBInstance, Box<dyn std::error::Error>> {
-    const LOCALHOST: &str = "127.0.0.1";
-    const LOCAL_PORT: i32 = 5432;
-    let db_url = format!("postgresql://postgres:postgres@{LOCALHOST}:{LOCAL_PORT}/coprocessor");
+    let db_url = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
+    let db_url = std::env::var("DATABASE_URL").unwrap_or(db_url.to_string());
 
     if with_reset {
-        let admin_db_url =
-            format!("postgresql://postgres:postgres@{LOCALHOST}:{LOCAL_PORT}/postgres");
-        create_database(&admin_db_url, &db_url, with_keys).await?;
+        let admin_db_url = db_url.replace("coprocessor", "postgres");
+        create_database(&admin_db_url, &db_url, mode).await?;
     }
 
     Ok(DBInstance {
@@ -70,7 +77,7 @@ async fn setup_test_app_existing_localhost(
 }
 
 async fn setup_test_app_custom_docker(
-    with_keys: bool,
+    mode: ImportMode,
 ) -> Result<DBInstance, Box<dyn std::error::Error>> {
     let container = GenericImage::new("postgres", "15.7")
         .with_wait_for(WaitFor::message_on_stderr(
@@ -89,7 +96,7 @@ async fn setup_test_app_custom_docker(
 
     let admin_db_url = format!("postgresql://postgres:postgres@{cont_host}:{cont_port}/postgres");
     let db_url = format!("postgresql://postgres:postgres@{cont_host}:{cont_port}/coprocessor");
-    create_database(&admin_db_url, &db_url, with_keys).await?;
+    create_database(&admin_db_url, &db_url, mode).await?;
 
     Ok(DBInstance {
         _container: Some(container),
@@ -98,10 +105,16 @@ async fn setup_test_app_custom_docker(
     })
 }
 
+pub enum ImportMode {
+    None,
+    WithKeysNoSns,
+    WithAllKeys,
+}
+
 async fn create_database(
     admin_db_url: &str,
     db_url: &str,
-    with_keys: bool,
+    mode: ImportMode,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("Creating coprocessor db...");
     let admin_pool = sqlx::postgres::PgPoolOptions::new()
@@ -126,9 +139,18 @@ async fn create_database(
     println!("Running migrations...");
     sqlx::migrate!("./migrations").run(&pool).await?;
 
-    if with_keys {
-        println!("Creating test user with all keys...");
-        setup_test_user(&pool).await?;
+    match mode {
+        ImportMode::None => {
+            println!("No keys imported");
+        }
+        ImportMode::WithKeysNoSns => {
+            println!("Creating test user with keys, without SnS key...");
+            setup_test_user(&pool, false).await?;
+        }
+        ImportMode::WithAllKeys => {
+            println!("Creating test user with all keys...");
+            setup_test_user(&pool, true).await?;
+        }
     }
 
     println!("DB prepared");
