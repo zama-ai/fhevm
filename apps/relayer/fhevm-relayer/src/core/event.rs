@@ -466,7 +466,10 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         let extra_data = if value.extraData == "0x00" {
             Bytes::from(vec![0x00])
         } else {
-            return Err(anyhow::anyhow!("extraData must be 0x00, got: {}", value.extraData));
+            return Err(anyhow::anyhow!(
+                "extraData must be 0x00, got: {}",
+                value.extraData
+            ));
         };
 
         Ok(UserDecryptRequest {
@@ -526,10 +529,13 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
         }
 
         // Validate and parse extraData
-        let extra_data = if value.extraData == Bytes::from(vec![0x00]) {
+        let extra_data = if value.extraData == Bytes::from(&[0x00]) {
             value.extraData
         } else {
-            return Err(anyhow::anyhow!("extraData must be 0x00, got: {:#x}", value.extraData));
+            return Err(anyhow::anyhow!(
+                "extraData must be 0x00, got: {:#x}",
+                value.extraData
+            ));
         };
 
         Ok(PublicDecryptRequest {
@@ -658,7 +664,10 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
         let extra_data = if json.extraData == "0x00" {
             Bytes::from(vec![0x00])
         } else {
-            return Err(anyhow::anyhow!("extraData must be 0x00, got: {}", json.extraData));
+            return Err(anyhow::anyhow!(
+                "extraData must be 0x00, got: {}",
+                json.extraData
+            ));
         };
         Ok(InputProofRequest {
             contract_chain_id,

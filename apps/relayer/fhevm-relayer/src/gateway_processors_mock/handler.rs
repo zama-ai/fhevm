@@ -247,7 +247,13 @@ impl GatewayProcessorsHandler {
             .send_transaction_simple(
                 TransactionType::PublicDecryptResponse,
                 decryption_address,
-                || ComputeCalldata::decryption_response(req.clone(), decryption_address, self.tx_helper.chain_id),
+                || {
+                    ComputeCalldata::decryption_response(
+                        req.clone(),
+                        decryption_address,
+                        self.tx_helper.chain_id,
+                    )
+                },
             )
             .await?;
 
