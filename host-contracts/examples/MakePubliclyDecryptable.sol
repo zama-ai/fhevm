@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 
 import "../lib/FHE.sol";
 
-import "../lib/CoprocessorConfig.sol";
+import {CoprocessorSetup} from "../lib/CoprocessorSetup.sol";
 
 /// @notice Contract for testing makePubliclyDecryptable and isPubliclyDecryptable functions
 contract MakePubliclyDecryptable {
@@ -14,7 +14,7 @@ contract MakePubliclyDecryptable {
 
     /// @notice Constructor to set FHE configuration
     constructor() {
-        FHE.setCoprocessor(CoprocessorConfig.defaultConfig());
+        FHE.setCoprocessor(CoprocessorSetup.defaultConfig());
     }
 
     /// @notice make an ebool publicly decryptable

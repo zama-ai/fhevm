@@ -55,7 +55,7 @@ library FHE {
      * @notice                  Sets the coprocessor addresses.
      * @param coprocessorConfig Coprocessor config struct that contains contract addresses.
      */
-    function setCoprocessor(CoprocessorConfigStruct memory coprocessorConfig) internal {
+    function setCoprocessor(CoprocessorConfig memory coprocessorConfig) internal {
         Impl.setCoprocessor(coprocessorConfig);
     }
 
@@ -8863,7 +8863,7 @@ library FHE {
      * @dev Recovers the stored array of handles corresponding to requestID.
      */
     function loadRequestedHandles(uint256 requestID) internal view returns (bytes32[] memory) {
-        DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
+        DecryptionRequests storage $ = Impl.getDecryptionRequests();
         if ($.requestedHandles[requestID].length == 0) {
             revert NoHandleFoundForRequestID();
         }
@@ -8890,9 +8890,9 @@ library FHE {
         bytes4 callbackSelector,
         uint256 msgValue
     ) internal returns (uint256 requestID) {
-        DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
+        DecryptionRequests storage $ = Impl.getDecryptionRequests();
         requestID = $.counterRequest;
-        CoprocessorConfigStruct storage $$ = Impl.getCoprocessorConfig();
+        CoprocessorConfig storage $$ = Impl.getCoprocessorConfig();
         IACL($$.ACLAddress).allowForDecryption(ctsHandles);
         IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption{value: msgValue}(
             requestID,
@@ -8921,7 +8921,7 @@ library FHE {
      * @dev Private low-level function used to link in storage an array of handles to its associated requestID.
      */
     function saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
-        DecryptionRequestsStruct storage $ = Impl.getDecryptionRequests();
+        DecryptionRequests storage $ = Impl.getDecryptionRequests();
         if ($.requestedHandles[requestID].length != 0) {
             revert HandlesAlreadySavedForRequestID();
         }
@@ -8939,7 +8939,7 @@ library FHE {
         assembly {
             calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
         }
-        CoprocessorConfigStruct storage $ = Impl.getCoprocessorConfig();
+        CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 handlesList,

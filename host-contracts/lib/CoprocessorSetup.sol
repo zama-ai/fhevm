@@ -4,24 +4,24 @@ pragma solidity ^0.8.24;
 import "../addresses/FHEVMHostAddresses.sol";
 import "../addresses/DecryptionOracleAddress.sol";
 
-import {CoprocessorConfigStruct} from "./Impl.sol";
+import {CoprocessorConfig} from "./Impl.sol";
 
 /**
- * @title   CoprocessorConfig
+ * @title   Coprocessor
  * @notice  This library returns all addresses for the ACL, FHEVMExecutor, DecryptionOracle,
  *          and KMSVerifier contracts.
  */
-library CoprocessorConfig {
+library CoprocessorSetup {
     /**
      * @notice This function returns a struct containing all contract addresses.
      * @dev    It returns an immutable struct.
      */
-    function defaultConfig() internal pure returns (CoprocessorConfigStruct memory) {
+    function defaultConfig() internal pure returns (CoprocessorConfig memory) {
         return
-            CoprocessorConfigStruct({
+            CoprocessorConfig({
                 ACLAddress: aclAdd,
                 CoprocessorAddress: fhevmExecutorAdd,
-                DecryptionOracleAddress: DECRYPTION_ORACLE_ADDRESS,
+                DecryptionOracleAddress: decryptionOracleAdd,
                 KMSVerifierAddress: kmsVerifierAdd
             });
     }

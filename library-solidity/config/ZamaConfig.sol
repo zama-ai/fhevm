@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {SepoliaZamaOracleAddress} from "@zama-fhe/oracle-solidity/address/ZamaOracleAddress.sol";
 import {FHE} from "../lib/FHE.sol";
-import {CoprocessorConfigStruct} from "../lib/Impl.sol";
+import {CoprocessorConfig} from "../lib/Impl.sol";
 
 /**
  * @title   ZamaConfig.
@@ -12,14 +12,14 @@ import {CoprocessorConfigStruct} from "../lib/Impl.sol";
  *          which are deployed & maintained by Zama. It also returns the address of the decryption oracle.
  */
 library ZamaConfig {
-    function getProtocolId() internal pure returns (uint256) {
-        /// @note '1' is Zama's ERC7995 protocol id
-        return 1;
+    function getSepoliaProtocolId() internal pure returns (uint256) {
+        /// @note Zama Ethereum Sepolia protocol id is '10000 + Zama Ethereum protocol id'
+        return 10001;
     }
 
-    function getSepoliaConfig() internal pure returns (CoprocessorConfigStruct memory) {
+    function getSepoliaConfig() internal pure returns (CoprocessorConfig memory) {
         return
-            CoprocessorConfigStruct({
+            CoprocessorConfig({
                 ACLAddress: 0x687820221192C5B662b25367F70076A37bc79b6c,
                 CoprocessorAddress: 0x848B0066793BcC60346Da1F49049357399B8D595,
                 DecryptionOracleAddress: SepoliaZamaOracleAddress,
@@ -27,21 +27,21 @@ library ZamaConfig {
             });
     }
 
-    function getEthereumConfig() internal pure returns (CoprocessorConfigStruct memory) {
+    function getEthereumProtocolId() internal pure returns (uint256) {
+        /// @note Zama Ethereum protocol id is '1'
+        return 1;
+    }
+
+    function getEthereumConfig() internal pure returns (CoprocessorConfig memory) {
         /// @note The addresses below are placeholders and should be replaced with actual addresses
         /// once deployed on the Ethereum mainnet.
         return
-            CoprocessorConfigStruct({
+            CoprocessorConfig({
                 ACLAddress: address(0),
                 CoprocessorAddress: address(0),
                 DecryptionOracleAddress: address(0),
                 KMSVerifierAddress: address(0)
             });
-    }
-
-    function getEthereumOracleAddress() internal pure returns (address) {
-        /// @note Placeholder, should be replaced with actual address once deployed.
-        return address(0);
     }
 }
 
@@ -58,7 +58,7 @@ contract SepoliaConfig {
     }
 
     function protocolId() public pure returns (uint256) {
-        return ZamaConfig.getProtocolId();
+        return ZamaConfig.getSepoliaProtocolId();
     }
 }
 
@@ -72,5 +72,9 @@ contract SepoliaConfig {
 contract EthereumConfig {
     constructor() {
         FHE.setCoprocessor(ZamaConfig.getEthereumConfig());
+    }
+
+    function protocolId() public pure returns (uint256) {
+        return ZamaConfig.getEthereumProtocolId();
     }
 }

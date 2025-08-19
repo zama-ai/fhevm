@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 
 import "../lib/FHE.sol";
 import "../fhevmTemp/addresses/DecryptionOracleAddress.sol";
-import "./CoprocessorConfig.sol";
+import {CoprocessorSetup} from "./CoprocessorSetup.sol";
 
 /// @notice Contract for testing asynchronous decryption using the Gateway
 contract TestAsyncDecrypt {
@@ -42,7 +42,7 @@ contract TestAsyncDecrypt {
 
     /// @notice Constructor to initialize the contract and set up encrypted values
     constructor() {
-        FHE.setCoprocessor(CoprocessorConfig.defaultConfig());
+        FHE.setCoprocessor(CoprocessorSetup.defaultConfig());
 
         /// @dev Initialize encrypted variables with sample values
         xBool = FHE.asEbool(true);

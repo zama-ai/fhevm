@@ -365,7 +365,7 @@ task('task:setDecryptionOracleAddress')
 
 pragma solidity ^0.8.24;
 
-address constant DECRYPTION_ORACLE_ADDRESS = ${taskArguments.address};
+address constant decryptionOracleAdd = ${taskArguments.address};
 `;
 
     try {

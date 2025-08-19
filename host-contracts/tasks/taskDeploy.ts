@@ -249,7 +249,7 @@ task('task:setDecryptionOracleAddress')
     const content = `DECRYPTION_ORACLE_ADDRESS=${taskArguments.address}`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.log('decryptionOracleAddress written to addresses/.env.decryptionoracle successfully!');
+      console.log('DecryptionOracle address written to addresses/.env.decryptionoracle successfully!');
     } catch (err) {
       console.error('Failed to write to addresses/.env.decryptionoracle:', err);
     }
@@ -258,7 +258,7 @@ task('task:setDecryptionOracleAddress')
 
 pragma solidity ^0.8.24;
 
-address constant DECRYPTION_ORACLE_ADDRESS = ${taskArguments.address};
+address constant decryptionOracleAdd = ${taskArguments.address};
 `;
 
     try {

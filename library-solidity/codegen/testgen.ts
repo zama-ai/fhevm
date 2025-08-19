@@ -433,7 +433,7 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
         pragma solidity ^0.8.24;
 
         import "../../lib/FHE.sol";
-        import "../CoprocessorConfig.sol";
+        import {CoprocessorSetup} from "../CoprocessorSetup.sol";
 
         contract FHEVMTestSuite${os.shardNumber} {
           ebool public resEbool;
@@ -445,7 +445,7 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
           euint256 public resEuint256;
 
           constructor() {
-            FHE.setCoprocessor(CoprocessorConfig.defaultConfig());
+            FHE.setCoprocessor(CoprocessorSetup.defaultConfig());
           }
 
     `);
