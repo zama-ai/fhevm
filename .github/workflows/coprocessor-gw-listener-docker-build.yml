@@ -40,7 +40,7 @@ jobs:
     name: coprocessor-gw-listener-docker-build/build
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-coprocessor-gw-listener == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@eb3c4b3e230849f5132b51ca33be36bf52ff123d
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@e666182756172bc747d2be6e4eb9b4ed80a00a0e
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
