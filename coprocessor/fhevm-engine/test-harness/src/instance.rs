@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 
 #[derive(Clone)]
 pub struct DBInstance {
-    _container: Arc<Option<testcontainers::ContainerAsync<testcontainers::GenericImage>>>,
+    _container: Option<Arc<testcontainers::ContainerAsync<testcontainers::GenericImage>>>,
     db_url: String,
     pub parent_token: CancellationToken,
 }
@@ -64,7 +64,7 @@ async fn setup_test_app_existing_localhost(
     }
 
     Ok(DBInstance {
-        _container: Arc::new(None),
+        _container: None,
         db_url: db_url.to_string(),
         parent_token: CancellationToken::new(),
     })
@@ -93,7 +93,7 @@ async fn setup_test_app_custom_docker(
     create_database(&admin_db_url, &db_url, mode).await?;
 
     Ok(DBInstance {
-        _container: Arc::new(Some(container)),
+        _container: Some(Arc::new(container)),
         db_url,
         parent_token: CancellationToken::new(),
     })
