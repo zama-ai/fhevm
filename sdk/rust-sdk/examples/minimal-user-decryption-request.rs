@@ -12,7 +12,7 @@ use gateway_sdk::{
     FhevmSdkBuilder, Result, blockchain::bindings::Decryption::CtHandleContractPair,
     utils::validate_address_from_str,
 };
-use std::{path, str::FromStr};
+use std::str::FromStr;
 fn main() -> Result<()> {
     println!("🔓 Processing user decryption...");
 
@@ -25,7 +25,6 @@ fn main() -> Result<()> {
     };
 
     let sdk = FhevmSdkBuilder::new()
-        .with_keys_directory(path::PathBuf::from("./keys"))
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111) // Example: Ethereum Sepolia
         .with_decryption_contract("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
@@ -48,11 +47,11 @@ fn main() -> Result<()> {
 
     match sdk
         .create_user_decrypt_request_builder()
-        .add_handles_from_bytes(&handle_vecs, &contract_addresses)?
-        .user_address_from_str(&user_address.to_string())?
-        .signature_from_hex(signature)?
-        .public_key_from_hex(&public_key)?
-        .validity(start_timestamp, duration_days)?
+        .with_handles_from_bytes(&handle_vecs, &contract_addresses)?
+        .with_user_address_from_str(&user_address.to_string())?
+        .with_signature_from_hex(signature)?
+        .with_public_key_from_hex(public_key)?
+        .with_validity(start_timestamp, duration_days)?
         .build_and_generate_calldata()
     {
         Ok(calldata) => {
@@ -62,7 +61,7 @@ fn main() -> Result<()> {
                 hex::encode(&calldata[..32.min(calldata.len())])
             );
         }
-        Err(e) => eprintln!("❌ Calldata generation error: {}", e),
+        Err(e) => eprintln!("❌ Calldata generation error: {e}"),
     }
 
     Ok(())

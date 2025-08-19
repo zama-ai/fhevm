@@ -1,7 +1,7 @@
 # Setup
 
 The use of `@zama-fhe/relayer-sdk` requires a setup phase.
-This consists in the instantiation of the `FhevmInstance`.
+This consists of the instantiation of the `FhevmInstance`.
 This object holds all the configuration and methods needed to interact with an FHEVM using a Relayer.
 It can be created using the following code snippet:
 

@@ -1,8 +1,12 @@
-use connector_tests::{
-    rand::{rand_address, rand_digest, rand_public_key, rand_sns_ct, rand_u256},
-    setup::test_instance_with_db_only,
+use std::time::Duration;
+
+use connector_utils::{
+    tests::{
+        rand::{rand_address, rand_digest, rand_public_key, rand_sns_ct, rand_u256},
+        setup::TestInstanceBuilder,
+    },
+    types::{GatewayEvent, db::SnsCiphertextMaterialDbItem},
 };
-use connector_utils::types::{GatewayEvent, db::SnsCiphertextMaterialDbItem};
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
     kmsmanagement::KmsManagement::{
@@ -10,13 +14,14 @@ use fhevm_gateway_rust_bindings::{
         PreprocessKskgenRequest,
     },
 };
-use kms_worker::core::{DbEventPicker, EventPicker};
+use kms_worker::core::{Config, DbEventPicker, EventPicker};
 
 #[tokio::test]
 async fn test_pick_public_decryption() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_only().await?;
+    let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
+    let mut event_picker =
+        DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let decryption_id = rand_u256();
     let sns_ct = vec![rand_sns_ct()];
@@ -27,11 +32,12 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
 
     println!("Triggering Postgres notification with PublicDecryptionRequest insertion...");
     sqlx::query!(
-        "INSERT INTO public_decryption_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        vec![],
     )
-    .execute(&test_instance.db)
+    .execute(test_instance.db())
     .await?;
 
     println!("Picking PublicDecryptionRequest...");
@@ -43,6 +49,7 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
         vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: decryption_id,
             snsCtMaterials: sns_ct,
+            extraData: vec![].into(),
         })]
     );
     println!("Data OK!");
@@ -51,9 +58,10 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_pick_user_decryption() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_only().await?;
+    let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
+    let mut event_picker =
+        DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let decryption_id = rand_u256();
     let sns_ct = vec![rand_sns_ct()];
@@ -66,13 +74,14 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
 
     println!("Triggering Postgres notification with UserDecryptionRequest insertion...");
     sqlx::query!(
-        "INSERT INTO user_decryption_requests VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+        "INSERT INTO user_decryption_requests VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
         sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
         user_address.as_slice(),
         &public_key,
+        vec![],
     )
-    .execute(&test_instance.db)
+    .execute(test_instance.db())
     .await?;
 
     println!("Picking UserDecryptionRequest...");
@@ -86,6 +95,7 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
             snsCtMaterials: sns_ct,
             userAddress: user_address,
             publicKey: public_key.into(),
+            extraData: vec![].into(),
         })]
     );
     println!("Data OK!");
@@ -94,9 +104,10 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_pick_preprocess_keygen() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_only().await?;
+    let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
+    let mut event_picker =
+        DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let pre_keygen_request_id = rand_u256();
     let fhe_params_digest = rand_digest();
@@ -107,7 +118,7 @@ async fn test_pick_preprocess_keygen() -> anyhow::Result<()> {
         pre_keygen_request_id.as_le_slice(),
         fhe_params_digest.as_slice(),
     )
-    .execute(&test_instance.db)
+    .execute(test_instance.db())
     .await?;
 
     println!("Picking PreprocessKeygenRequest...");
@@ -127,9 +138,10 @@ async fn test_pick_preprocess_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_pick_preprocess_kskgen() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_only().await?;
+    let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
+    let mut event_picker =
+        DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let pre_kskgen_request_id = rand_u256();
     let fhe_params_digest = rand_digest();
@@ -140,7 +152,7 @@ async fn test_pick_preprocess_kskgen() -> anyhow::Result<()> {
         pre_kskgen_request_id.as_le_slice(),
         fhe_params_digest.as_slice(),
     )
-    .execute(&test_instance.db)
+    .execute(test_instance.db())
     .await?;
 
     println!("Picking PreprocessKskgenRequest...");
@@ -160,9 +172,10 @@ async fn test_pick_preprocess_kskgen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_pick_keygen() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_only().await?;
+    let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
+    let mut event_picker =
+        DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let pre_key_id = rand_u256();
     let fhe_params_digest = rand_digest();
@@ -173,7 +186,7 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
         pre_key_id.as_le_slice(),
         fhe_params_digest.as_slice(),
     )
-    .execute(&test_instance.db)
+    .execute(test_instance.db())
     .await?;
 
     println!("Picking KeygenRequest...");
@@ -193,9 +206,10 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_pick_kskgen() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_only().await?;
+    let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
+    let mut event_picker =
+        DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let pre_ksk_id = rand_u256();
     let source_key_id = rand_u256();
@@ -210,7 +224,7 @@ async fn test_pick_kskgen() -> anyhow::Result<()> {
         dest_key_id.as_le_slice(),
         fhe_params_digest.as_slice(),
     )
-    .execute(&test_instance.db)
+    .execute(test_instance.db())
     .await?;
 
     println!("Picking KskgenRequest...");
@@ -232,9 +246,10 @@ async fn test_pick_kskgen() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_pick_crsgen() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_only().await?;
+    let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let mut event_picker = DbEventPicker::connect(test_instance.db.clone(), 10).await?;
+    let mut event_picker =
+        DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let crsgen_request_id = rand_u256();
     let fhe_params_digest = rand_digest();
@@ -245,7 +260,7 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
         crsgen_request_id.as_le_slice(),
         fhe_params_digest.as_slice(),
     )
-    .execute(&test_instance.db)
+    .execute(test_instance.db())
     .await?;
 
     println!("Picking CrsgenRequest...");
@@ -257,6 +272,48 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
         vec![GatewayEvent::Crsgen(CrsgenRequest {
             crsgenRequestId: crsgen_request_id,
             fheParamsDigest: fhe_params_digest,
+        })]
+    );
+    println!("Data OK!");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_polling_backup() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+
+    let decryption_id = rand_u256();
+    let sns_ct = vec![rand_sns_ct()];
+    let sns_ciphertexts_db = sns_ct
+        .iter()
+        .map(SnsCiphertextMaterialDbItem::from)
+        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    println!("Inserting PublicDecryptionRequest before starting the event picker...");
+    sqlx::query!(
+        "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        decryption_id.as_le_slice(),
+        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        vec![],
+    )
+    .execute(test_instance.db())
+    .await?;
+
+    let config = Config {
+        database_polling_timeout: Duration::from_millis(500),
+        ..Default::default()
+    };
+    let mut event_picker = DbEventPicker::connect(test_instance.db().clone(), &config).await?;
+
+    println!("Picking PublicDecryptionRequest...");
+    let events = event_picker.pick_events().await?;
+
+    println!("Checking PublicDecryptionRequest data...");
+    assert_eq!(
+        events,
+        vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
+            decryptionId: decryption_id,
+            snsCtMaterials: sns_ct,
+            extraData: vec![].into(),
         })]
     );
     println!("Data OK!");

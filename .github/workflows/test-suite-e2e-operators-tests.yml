@@ -1,18 +1,13 @@
 name: test-suite-e2e-operators-tests
 
+# Github does not support more than 10 inputs for workflow_dispatch:
+# https://docs.github.com/en/actions/reference/events-that-trigger-workflows#providing-inputs
+# Core, relayer and test-suite will use the default versions defined in the `fhevm-cli` script
 on:
   workflow_dispatch:
     inputs:
-      core_version:
-        description: "KMS Core Version"
-        default: ""
-        type: string
       connector_version:
         description: "Connector Version"
-        default: ""
-        type: string
-      coprocessor_version:
-        description: "Coprocessor Image Version"
         default: ""
         type: string
       db_migration_version:
@@ -28,12 +23,28 @@ on:
         required: false
         default: ""
         type: string
-      relayer_version:
-        description: "Relayer Image Version"
+      host_listener_version:
+        description: "Host Listener Image Version"
         default: ""
         type: string
-      test_suite_version:
-        description: "Test Suite E2E Image Version"
+      gateway_listener_version:
+        description: "Gateway Listener Image Version"
+        default: ""
+        type: string
+      tx_sender_version:
+        description: "Transaction Sender Image Version"
+        default: ""
+        type: string
+      tfhe_worker_version:
+        description: "TFHE Worker Image Version"
+        default: ""
+        type: string
+      sns_worker_version:
+        description: "SNS Worker Image Version"
+        default: ""
+        type: string
+      zkproof_worker_version:
+        description: "ZKProof Worker Image Version"
         default: ""
         type: string
 
@@ -90,14 +101,19 @@ jobs:
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         env:
-          CORE_VERSION: ${{ inputs.core_version }}
-          CONNECTOR_VERSION: ${{ inputs.connector_version }}
-          COPROCESSOR_VERSION: ${{ inputs.coprocessor_version }}
+          CONNECTOR_DB_MIGRATION_VERSION: ${{ inputs.connector_version }}
+          CONNECTOR_GW_LISTENER_VERSION: ${{ inputs.connector_version }}
+          CONNECTOR_KMS_WORKER_VERSION: ${{ inputs.connector_version }}
+          CONNECTOR_TX_SENDER_VERSION: ${{ inputs.connector_version }}
           DB_MIGRATION_VERSION: ${{ inputs.db_migration_version }}
           HOST_VERSION: ${{ inputs.host_version }}
           GATEWAY_VERSION: ${{ inputs.gateway_version }}
-          RELAYER_VERSION: ${{ inputs.relayer_version }}
-          TEST_SUITE_VERSION: ${{ inputs.test_suite_version }}
+          HOST_LISTENER_VERSION: ${{ inputs.host_listener_version }}
+          GW_LISTENER_VERSION: ${{ inputs.gateway_listener_version }}
+          TX_SENDER_VERSION: ${{ inputs.tx_sender_version }}
+          TFHE_WORKER_VERSION: ${{ inputs.tfhe_worker_version }}
+          SNS_WORKER_VERSION: ${{ inputs.sns_worker_version }}
+          ZKPROOF_WORKER_VERSION: ${{ inputs.zkproof_worker_version }}
         run: |
           ./fhevm-cli deploy
 

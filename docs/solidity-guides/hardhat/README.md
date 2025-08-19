@@ -11,6 +11,7 @@ It extends Hardhat’s functionality with a complete FHEVM API that allows you:
 - Encrypt data
 - Decrypt data
 - Run tests using various FHEVM execution modes
+- Write FHEVM-enabled Hardhat Tasks
 
 ## Where to go next
 
@@ -19,3 +20,5 @@ It extends Hardhat’s functionality with a complete FHEVM API that allows you:
 🟨 Go to [**Write FHEVM Tests in Hardhat**](write_test.md) for details on writing tests of FHEVM smart contracts using Hardhat.
 
 🟨 Go to [**Run FHEVM Tests in Hardhat**](run_test.md) to learn how to execute those tests in different FHEVM environments.
+
+🟨 Go to [**Write FHEVM Hardhat Task**](write_task.md) to learn how to write your own custom FHEVM Hardhat task.

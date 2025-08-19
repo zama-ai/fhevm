@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: {{ include "hostListenerName" . }}
   name: {{ include "hostListenerName" . }}
 spec:
-  replicas: {{ .Values.hostListener.replicas | default 1 }}
+  replicas: {{ .Values.hostListener.replicas }}
   selector:
     matchLabels:
       app: coprocessor-host-listener
@@ -45,7 +45,7 @@ spec:
       containers:
         - name: coprocessor-host-listener
           image: {{ .Values.hostListener.image.name }}:{{ .Values.hostListener.image.tag }}
-          command: ["fhevm_listener"]
+          command: ["host_listener"]
           args:
 {{ toYaml .Values.hostListener.args | nindent 12 }}
           env:

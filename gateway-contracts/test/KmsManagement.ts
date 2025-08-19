@@ -156,7 +156,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a preprocessing keygen request
       await expect(kmsManagement.connect(fakeOwner).preprocessKeygenRequest(fheParamsName))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than a KMS transaction sender cannot trigger a preprocessing
@@ -167,7 +167,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a keygen request
       await expect(kmsManagement.connect(fakeOwner).keygenRequest(0))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a keygen response
@@ -291,13 +291,29 @@ describe("KmsManagement", function () {
       await expect(txResponse4).to.not.emit(kmsManagement, "KeygenResponse");
     });
 
+    it("Should get the fheParams digest associated to the key ID", async function () {
+      const { kmsManagement, owner, kmsTxSenders, preKeyId, fheParamsDigest } = await loadFixture(
+        prepareKmsManagementPreKeygenFixture,
+      );
+
+      // Complete a key generation
+      const keyId = 1;
+      await kmsManagement.connect(owner).keygenRequest(preKeyId);
+      for (const kmsTxSender of kmsTxSenders) {
+        await kmsManagement.connect(kmsTxSender).keygenResponse(preKeyId, keyId);
+      }
+
+      // Check that the initialized FHE params digest is correctly associated to the KSK ID
+      expect(await kmsManagement.keyFheParamsDigests(keyId)).to.equal(fheParamsDigest);
+    });
+
     it("Should revert because the contract is paused", async function () {
-      const { kmsManagement, owner, kmsTxSenders, preKeyId, fheParamsName } = await loadFixture(
+      const { kmsManagement, owner, kmsTxSenders, preKeyId, fheParamsName, pauser } = await loadFixture(
         prepareKmsManagementPreKeygenFixture,
       );
 
       // Pause the contract
-      await kmsManagement.connect(owner).pause();
+      await kmsManagement.connect(pauser).pause();
 
       // Try calling paused preprocessing keygen request
       await expect(kmsManagement.connect(owner).preprocessKeygenRequest(fheParamsName)).to.be.revertedWithCustomError(
@@ -340,7 +356,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a CRS generation request
       await expect(kmsManagement.connect(fakeOwner).crsgenRequest(fheParamsName))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a CRS generation response
@@ -402,11 +418,27 @@ describe("KmsManagement", function () {
         .withArgs(expectedPreCrsId + 1, fheParamsDigest);
     });
 
+    it("Should get the fheParams digest associated to the CRS ID", async function () {
+      const { kmsManagement, owner, kmsTxSenders, fheParamsName, fheParamsDigest } =
+        await loadFixture(loadTestVariablesFixture);
+
+      // Complete a CRS generation
+      const crsgenRequestId = 1;
+      const crsId = 1;
+      await kmsManagement.connect(owner).crsgenRequest(fheParamsName);
+      for (const kmsTxSender of kmsTxSenders) {
+        await kmsManagement.connect(kmsTxSender).crsgenResponse(crsgenRequestId, crsId);
+      }
+
+      // Check that the initialized FHE params digest is correctly associated to the KSK ID
+      expect(await kmsManagement.crsFheParamsDigests(crsId)).to.equal(fheParamsDigest);
+    });
+
     it("Should revert because the contract is paused", async function () {
-      const { kmsManagement, owner, kmsTxSenders, fheParamsName } = await loadFixture(loadTestVariablesFixture);
+      const { kmsManagement, owner, kmsTxSenders, fheParamsName, pauser } = await loadFixture(loadTestVariablesFixture);
 
       // Pause the contract
-      await kmsManagement.connect(owner).pause();
+      await kmsManagement.connect(pauser).pause();
 
       // Try calling paused crsgen request
       await expect(kmsManagement.connect(owner).crsgenRequest(fheParamsName)).to.be.revertedWithCustomError(
@@ -437,7 +469,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a preprocessing KSK generation request
       await expect(kmsManagement.connect(fakeOwner).preprocessKskgenRequest(fheParamsName))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a preprocessing KSK generation response
@@ -447,7 +479,7 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a KSK generation request
       await expect(kmsManagement.connect(fakeOwner).kskgenRequest(0, 0, 0))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than the KMS transaction sender cannot trigger a KSK generation response
@@ -591,13 +623,29 @@ describe("KmsManagement", function () {
       await expect(txResponse4).to.not.emit(kmsManagement, "KskgenResponse");
     });
 
+    it("Should get the fheParams digest associated to the KSK ID", async function () {
+      const { kmsManagement, owner, kmsTxSenders, keyId1, keyId2, preKskId, fheParamsDigest } = await loadFixture(
+        prepareKmsManagementPreKskgenFixture,
+      );
+
+      // Complete a KSK generation
+      const kskId = 1;
+      await kmsManagement.connect(owner).kskgenRequest(preKskId, keyId1, keyId2);
+      for (const kmsTxSender of kmsTxSenders) {
+        await kmsManagement.connect(kmsTxSender).kskgenResponse(preKskId, kskId);
+      }
+
+      // Check that the initialized FHE params digest is correctly associated to the KSK ID
+      expect(await kmsManagement.kskFheParamsDigests(kskId)).to.equal(fheParamsDigest);
+    });
+
     it("Should revert because the contract is paused", async function () {
-      const { kmsManagement, owner, kmsTxSenders, keyId1, keyId2, preKskId, fheParamsName } = await loadFixture(
+      const { kmsManagement, owner, kmsTxSenders, keyId1, keyId2, preKskId, fheParamsName, pauser } = await loadFixture(
         prepareKmsManagementPreKskgenFixture,
       );
 
       // Pause the contract
-      await kmsManagement.connect(owner).pause();
+      await kmsManagement.connect(pauser).pause();
 
       // Try calling paused preprocessing kskgen request
       await expect(kmsManagement.connect(owner).preprocessKskgenRequest(fheParamsName)).to.be.revertedWithCustomError(
@@ -630,13 +678,28 @@ describe("KmsManagement", function () {
 
       // Check that someone else than the owner cannot trigger a key activation request
       await expect(kmsManagement.connect(fakeOwner).activateKeyRequest(0))
-        .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that someone else than a coprocessor transaction sender cannot trigger a key activation response
       await expect(kmsManagement.connect(fakeOwner).activateKeyResponse(0))
         .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
         .withArgs(fakeOwner.address);
+    });
+
+    it("Should get the ID of the current activated key", async function () {
+      const { kmsManagement, owner, coprocessorTxSenders, keyId1, keyId2 } = await loadFixture(
+        prepareKmsManagementKeygenFixture,
+      );
+
+      // Complete a key activation
+      await kmsManagement.connect(owner).activateKeyRequest(keyId1);
+      for (const coprocessorTxSender of coprocessorTxSenders) {
+        await kmsManagement.connect(coprocessorTxSender).activateKeyResponse(keyId1);
+      }
+
+      // Check that the current activated key ID is the activated one
+      expect(await kmsManagement.getCurrentKeyId()).to.equal(keyId1);
     });
 
     it("Should handle a first key activation (no KSK generation)", async function () {
@@ -709,12 +772,12 @@ describe("KmsManagement", function () {
     });
 
     it("Should revert because the contract is paused", async function () {
-      const { kmsManagement, owner, kmsTxSenders, coprocessorTxSenders, keyId1 } = await loadFixture(
+      const { kmsManagement, owner, kmsTxSenders, coprocessorTxSenders, keyId1, pauser } = await loadFixture(
         prepareKmsManagementActivateFixture,
       );
 
       // Pause the contract
-      await kmsManagement.connect(owner).pause();
+      await kmsManagement.connect(pauser).pause();
 
       // Try calling paused activate key request
       await expect(kmsManagement.connect(owner).activateKeyRequest(keyId1)).to.be.revertedWithCustomError(
@@ -730,8 +793,14 @@ describe("KmsManagement", function () {
   });
 
   describe("FHE parameters", async function () {
+    it("Should get the fheParams digest associated to the fheParams name", async function () {
+      const { kmsManagement, fheParamsName, fheParamsDigest } = await loadFixture(loadTestVariablesFixture);
+
+      expect(await kmsManagement.fheParamsDigests(fheParamsName)).to.equal(fheParamsDigest);
+    });
+
     it("Should revert because of access controls", async function () {
-      const { kmsManagement } = await loadFixture(loadTestVariablesFixture);
+      const { kmsManagement, gatewayConfig } = await loadFixture(loadTestVariablesFixture);
 
       // Get dummy FHE params
       const fheParamsName = "TEST";
@@ -739,12 +808,12 @@ describe("KmsManagement", function () {
 
       // Check that only the owner can set the FHE params
       await expect(kmsManagement.connect(fakeOwner).addFheParams(fheParamsName, fheParamsDigest))
-        .to.be.revertedWithCustomError(kmsManagement, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
       // Check that only the owner can update the FHE params
       await expect(kmsManagement.connect(fakeOwner).updateFheParams(fheParamsName, fheParamsDigest))
-        .to.be.revertedWithCustomError(kmsManagement, "OwnableUnauthorizedAccount")
+        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
     });
 
@@ -804,11 +873,11 @@ describe("KmsManagement", function () {
     });
 
     it("Should revert because the contract is paused", async function () {
-      const { kmsManagement, owner, kmsTxSenders, fheParamsName, fheParamsDigest } =
+      const { kmsManagement, owner, kmsTxSenders, fheParamsName, fheParamsDigest, pauser } =
         await loadFixture(loadTestVariablesFixture);
 
       // Pause the contract
-      await kmsManagement.connect(owner).pause();
+      await kmsManagement.connect(pauser).pause();
 
       // Try calling paused add FHE params
       await expect(
@@ -834,12 +903,12 @@ describe("KmsManagement", function () {
       pauser = fixtureData.pauser;
     });
 
-    it("Should pause and unpause contract with owner address", async function () {
+    it("Should pause the contract with the pauser and unpause with the owner", async function () {
       // Check that the contract is not paused
       expect(await kmsManagement.paused()).to.be.false;
 
-      // Pause the contract with the owner address
-      await expect(kmsManagement.connect(owner).pause()).to.emit(kmsManagement, "Paused").withArgs(owner);
+      // Pause the contract with the pauser address
+      await expect(kmsManagement.connect(pauser).pause()).to.emit(kmsManagement, "Paused").withArgs(pauser);
       expect(await kmsManagement.paused()).to.be.true;
 
       // Unpause the contract with the owner address
@@ -847,20 +916,23 @@ describe("KmsManagement", function () {
       expect(await kmsManagement.paused()).to.be.false;
     });
 
-    it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
-      expect(await kmsManagement.paused()).to.be.false;
+    it("Should revert on pause because sender is not the pauser", async function () {
+      const fakePauser = createRandomWallet();
 
-      // Pause the contract with the pauser address
-      await expect(kmsManagement.connect(pauser).pause()).to.emit(kmsManagement, "Paused").withArgs(pauser);
-      expect(await kmsManagement.paused()).to.be.true;
+      await expect(kmsManagement.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(kmsManagement, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
     });
 
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
-      await expect(kmsManagement.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(kmsManagement, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await kmsManagement.connect(pauser).pause();
+
+      const fakeOwner = createRandomWallet();
+
+      await expect(kmsManagement.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(kmsManagement, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
     });
   });
 });

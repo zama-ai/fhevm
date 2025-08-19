@@ -177,7 +177,7 @@ For example the following:
 
 #### Description
 
-This endpoint returns a JSON object containing all the signatures on the proven ciphertexts from the TKMS servers. Furthermore the response contains some meta-information distinguishing if the response is for the co-processor setting or fhEVM native setting. In case of the co-processor setting, then the ciphertext storage handles and a signature from the co-processor attesting correct storage is also included.
+This endpoint returns a JSON object containing all the signatures on the proven ciphertexts from the TKMS servers. Furthermore the response contains some meta-information distinguishing if the response is for the co-processor setting or FHEVM native setting. In case of the co-processor setting, then the ciphertext storage handles and a signature from the co-processor attesting correct storage is also included.
 
 The signatures from the TKMS should be considered as a multi-sig. This means that instead of needing all the signatures to validate the content, only a subset, specifically >1/3 of the total signatures, is required to verify that the content is legitimate. 
 
@@ -212,8 +212,8 @@ The request is successful, and the response will include a JSON object with a `s
 
 - `handles`: A vector of handles to each of the ciphertexts which have been proven knowledge of. A handle is a 32 byte (lower-case) hex encoded handle/ID identifying the ciphertext.
 - `kms_signatures`: A list of signatures (one for each of the TKMS servers that respond to the query). Each signature is a hex (lower-case) encoded EIP712 signature on the `safe_serialization` of `ProvenCompactCiphertextList`.
-- `listener_type`: An enum expressing whether the result is for an fhEVM native (`FHEVM_NATIVE`) or co-processor respectively (`COPROCESSOR`).
-- `proof_of_storage`: An optional signature from the co-processor. More specifically if fhEVM native is used it will be an empty string, otherwise it will be a hex (lower-case) encoded EIP712 signature on the request. 
+- `listener_type`: An enum expressing whether the result is for an FHEVM native (`FHEVM_NATIVE`) or co-processor respectively (`COPROCESSOR`).
+- `proof_of_storage`: An optional signature from the co-processor. More specifically if FHEVM native is used it will be an empty string, otherwise it will be a hex (lower-case) encoded EIP712 signature on the request. 
 
 For example the following:
 ```json

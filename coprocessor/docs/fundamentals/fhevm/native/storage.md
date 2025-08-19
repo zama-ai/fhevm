@@ -1,6 +1,6 @@
 # Storage
 
-Ciphertexts in fhEVM-native are stored onchain in the storage of a predefined contract that has no code and is used just for ciphertexts. At the time of writing, its address is **0x5e**.
+Ciphertexts in FHEVM-native are stored onchain in the storage of a predefined contract that has no code and is used just for ciphertexts. At the time of writing, its address is **0x5e**.
 
 Contract storage in the EVM is a key-value store. For ciphertexts, we use the handle as a key and the value is the actual ciphertext.
 

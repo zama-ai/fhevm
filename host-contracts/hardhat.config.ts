@@ -3,14 +3,14 @@ import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
-import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
+import { type HardhatUserConfig, extendProvider } from 'hardhat/config';
 import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
 import CustomProvider from './CustomProvider';
 import './tasks/accounts';
-import './tasks/etherscanVerify';
+import './tasks/blockExplorerVerify';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';
@@ -155,6 +155,7 @@ const config: HardhatUserConfig = {
     '*': {
       'transient-storage': false,
     },
+    'examples/TracingSubCalls.sol': { default: 'off' },
   },
   typechain: {
     outDir: 'types',

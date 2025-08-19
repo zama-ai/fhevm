@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/name: {{ include "tfheWorkerName" . }}
   name: {{ include "tfheWorkerName" . }}
 spec:
-  replicas: {{ .Values.tfheWorker.replicas | default 0 }}
+  replicas: {{ .Values.tfheWorker.replicas }}
   selector:
     matchLabels:
       app: coprocessor-tfhe-worker
@@ -45,7 +45,7 @@ spec:
       containers:
         - name: coprocessor-tfhe-worker
           image: {{ .Values.tfheWorker.image.name }}:{{ .Values.tfheWorker.image.tag }}
-          command: ["coprocessor"]
+          command: ["tfhe_worker"]
           args:
 {{ toYaml .Values.tfheWorker.args | nindent 12 }}
           env:

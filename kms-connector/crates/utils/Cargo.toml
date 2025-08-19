@@ -11,22 +11,47 @@ fhevm_gateway_rust_bindings.workspace = true
 kms-grpc.workspace = true
 tfhe.workspace = true
 
+actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
+async-trait.workspace = true
 aws-config.workspace = true
 aws-sdk-kms.workspace = true
 bincode.workspace = true
 clap.workspace = true
 config.workspace = true
+futures.workspace = true
+git-version.workspace = true
+opentelemetry.workspace = true
+opentelemetry-otlp.workspace = true
+opentelemetry_sdk.workspace = true
+prometheus.workspace = true
+rustls.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 sqlx.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
 tonic.workspace = true
 tracing.workspace = true
+tracing-opentelemetry.workspace = true
+tracing-subscriber.workspace = true
+
+rand = { workspace = true, optional = true }
+testcontainers = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
 
 [dev-dependencies]
 serial_test.workspace = true
 tempfile.workspace = true
 toml.workspace = true
+
+[features]
+tests = [
+    "alloy/node-bindings",
+    "dep:rand",
+    "dep:testcontainers",
+    "dep:toml",
+    "sqlx/migrate",
+]

@@ -55,6 +55,7 @@ jobs:
 
     - name: Install cargo dependencies
       run: |
+        sudo apt-get update
         sudo apt-get install -y protobuf-compiler && \
         cargo install sqlx-cli
 
@@ -80,7 +81,7 @@ jobs:
 
     - name: Init database
       run: make init_db
-      working-directory: coprocessor/fhevm-engine/coprocessor
+      working-directory: coprocessor/fhevm-engine/tfhe-worker
 
     - name: Use Node.js
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2

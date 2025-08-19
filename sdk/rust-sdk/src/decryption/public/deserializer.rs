@@ -79,7 +79,7 @@ fn extract_type_from_handle(handle: &str) -> Result<u8> {
     // Get the type discriminant from the handle (3rd and 4th last hex chars)
     let hex_pair = &handle[handle.len() - 4..handle.len() - 2];
     u8::from_str_radix(hex_pair, 16).map_err(|e| {
-        FhevmError::DecryptionError(format!("Invalid handle type hex '{}': {}", hex_pair, e))
+        FhevmError::DecryptionError(format!("Invalid handle type hex '{hex_pair}': {e}"))
     })
 }
 
@@ -159,8 +159,7 @@ fn decode_value_by_type(type_disc: u8, value_bytes: &[u8]) -> Result<serde_json:
         }
         TYPE_ADDRESS => decode_address(value_bytes),
         _ => Err(FhevmError::DecryptionError(format!(
-            "Unknown type discriminant: {}",
-            type_disc
+            "Unknown type discriminant: {type_disc}"
         ))),
     }
 }
@@ -269,8 +268,8 @@ mod tests {
     fn test_decode_address() {
         let mut value_bytes = [0u8; 32];
         // Set address bytes (last 20 bytes)
-        for i in 12..32 {
-            value_bytes[i] = 0xab;
+        for item in value_bytes.iter_mut().skip(12) {
+            *item = 0xab;
         }
 
         let result = decode_address(&value_bytes).unwrap();
@@ -341,16 +340,14 @@ mod tests {
         let result = deserialize_decrypted_result(&handles, &decrypted_result);
         assert!(
             result.is_err(),
-            "Expected error for insufficient data, but got: {:?}",
-            result
+            "Expected error for insufficient data, but got: {result:?}"
         );
 
         if let Err(e) = result {
             let error_msg = e.to_string();
             assert!(
                 error_msg.contains("Insufficient decrypted data"),
-                "Error should mention insufficient data, got: {}",
-                error_msg
+                "Error should mention insufficient data, got: {error_msg}"
             );
             // Verify it mentions the specific byte counts
             assert!(error_msg.contains("32 bytes") && error_msg.contains("31"));
@@ -371,8 +368,7 @@ mod tests {
             // Empty "0x" results in 0 bytes, so we get insufficient data error
             assert!(
                 error_msg.contains("Insufficient decrypted data") && error_msg.contains("0"),
-                "Error should mention 0 bytes, got: {}",
-                error_msg
+                "Error should mention 0 bytes, got: {error_msg}"
             );
         }
     }
@@ -390,8 +386,7 @@ mod tests {
             let error_msg = e.to_string();
             assert!(
                 error_msg.contains("Invalid hex"),
-                "Error should mention invalid hex, got: {}",
-                error_msg
+                "Error should mention invalid hex, got: {error_msg}"
             );
         }
     }
@@ -415,8 +410,7 @@ mod tests {
             let error_msg = e.to_string();
             assert!(
                 error_msg.contains("Insufficient decrypted data"),
-                "Error should mention insufficient data, got: {}",
-                error_msg
+                "Error should mention insufficient data, got: {error_msg}"
             );
             // Verify it mentions needing 96 bytes but got 64
             assert!(error_msg.contains("96 bytes") && error_msg.contains("64"));

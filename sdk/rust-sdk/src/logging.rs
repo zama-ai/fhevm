@@ -126,7 +126,7 @@ pub fn init_from_env(default_level: Level) {
 pub fn init_with_config(config: LogConfig) {
     INIT.call_once(|| {
         if let Err(e) = init_tracing(&config) {
-            eprintln!("Failed to initialize tracing: {}", e);
+            eprintln!("Failed to initialize tracing: {e}");
         }
     });
 }

@@ -1,3 +1,4 @@
+use crate::monitoring::metrics::EVENT_STORED_COUNTER;
 use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, db::SnsCiphertextMaterialDbItem};
 use fhevm_gateway_rust_bindings::{
@@ -12,10 +13,7 @@ use tracing::info;
 
 /// Interface used to publish Gateway's events in some storage.
 pub trait EventPublisher: Clone + Send + Sync {
-    fn publish(
-        &self,
-        event: impl Into<GatewayEvent> + Send,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    fn publish(&self, event: GatewayEvent) -> impl Future<Output = anyhow::Result<()>> + Send;
 }
 
 /// Struct that stores Gateway's events in a `Postgres` database.
@@ -31,27 +29,24 @@ impl DbEventPublisher {
 }
 
 impl EventPublisher for DbEventPublisher {
-    async fn publish(&self, event: impl Into<GatewayEvent>) -> anyhow::Result<()> {
-        let gw_event = event.into();
-        info!("Storing {:?} in DB...", gw_event);
+    #[tracing::instrument(skip(self), fields(event = %event))]
+    async fn publish(&self, event: GatewayEvent) -> anyhow::Result<()> {
+        info!("Storing {:?} in DB...", event);
 
-        let query_result = match gw_event.clone() {
-            GatewayEvent::PublicDecryption(req) => self.publish_public_decryption(req).await,
-            GatewayEvent::UserDecryption(req) => self.publish_user_decryption(req).await,
-            GatewayEvent::PreprocessKeygen(req) => {
-                self.publish_preprocess_keygen_request(req).await
-            }
-            GatewayEvent::PreprocessKskgen(req) => {
-                self.publish_preprocess_kskgen_request(req).await
-            }
-            GatewayEvent::Keygen(req) => self.publish_keygen_request(req).await,
-            GatewayEvent::Kskgen(req) => self.publish_kskgen_request(req).await,
-            GatewayEvent::Crsgen(req) => self.publish_crsgen_request(req).await,
+        let query_result = match event.clone() {
+            GatewayEvent::PublicDecryption(e) => self.publish_public_decryption(e).await,
+            GatewayEvent::UserDecryption(e) => self.publish_user_decryption(e).await,
+            GatewayEvent::PreprocessKeygen(e) => self.publish_preprocess_keygen_request(e).await,
+            GatewayEvent::PreprocessKskgen(e) => self.publish_preprocess_kskgen_request(e).await,
+            GatewayEvent::Keygen(e) => self.publish_keygen_request(e).await,
+            GatewayEvent::Kskgen(e) => self.publish_kskgen_request(e).await,
+            GatewayEvent::Crsgen(e) => self.publish_crsgen_request(e).await,
         }
-        .map_err(|e| anyhow!("Failed to publish {:?}: {}", gw_event, e))?;
+        .map_err(|err| anyhow!("Failed to publish event: {err}"))?;
 
         if query_result.rows_affected() > 0 {
-            info!("Successfully stored {:?} in DB!", gw_event);
+            info!("Event successfully stored in DB!");
+            EVENT_STORED_COUNTER.inc();
         }
         Ok(())
     }
@@ -69,9 +64,10 @@ impl DbEventPublisher {
             .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
         sqlx::query!(
-            "INSERT INTO public_decryption_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             request.decryptionId.as_le_slice(),
             sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+            request.extraData.as_ref(),
         )
         .execute(&self.db_pool)
         .await
@@ -88,11 +84,12 @@ impl DbEventPublisher {
             .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
         sqlx::query!(
-            "INSERT INTO user_decryption_requests VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            "INSERT INTO user_decryption_requests VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             request.decryptionId.as_le_slice(),
             sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
             request.userAddress.as_slice(),
             request.publicKey.as_ref(),
+            request.extraData.as_ref(),
         )
         .execute(&self.db_pool)
         .await

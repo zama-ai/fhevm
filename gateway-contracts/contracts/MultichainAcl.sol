@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
+import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IMultichainAcl.sol";
@@ -36,11 +36,14 @@ contract MultichainAcl is
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.MultichainAcl
     struct MultichainAclStorage {
+        // ----------------------------------------------------------------------------------------------
+        // Allow account state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice Accounts allowed to use the ciphertext handle.
         mapping(bytes32 ctHandle => mapping(address accountAddress => bool isAllowed)) allowedAccounts;
         /// @notice The counter used for the allowAccount consensus.
@@ -50,6 +53,9 @@ contract MultichainAcl is
         mapping(bytes32 ctHandle => mapping(address accountAddress =>
             mapping(address coprocessorTxSenderAddress => bool hasAllowed)))
                 _allowAccountCoprocessors;
+        // ----------------------------------------------------------------------------------------------
+        // Allow public decryption state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice Allowed public decryptions.
         mapping(bytes32 ctHandle => bool isAllowed) allowedPublicDecrypts;
         /// @notice The counter used for the public decryption consensus.
@@ -58,6 +64,9 @@ contract MultichainAcl is
         /// @notice Coprocessors that have already allowed a public decryption.
         mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) 
             _allowPublicDecryptCoprocessors;
+        // ----------------------------------------------------------------------------------------------
+        // Delegate account state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @dev Tracks the computed delegateAccountHash that has already been delegated.
         mapping(bytes32 delegateAccountHash => bool isDelegated) _delegatedAccountHashes;
         /// @dev Tracks the number of times a delegateAccountHash has received confirmations.
@@ -72,6 +81,18 @@ contract MultichainAcl is
         mapping(address delegator => mapping(address delegated =>
             mapping(uint256 chainId => mapping(address contractAddress => bool isDelegated))))
                 _delegatedContracts;
+        // ----------------------------------------------------------------------------------------------
+        // Transaction sender addresses from consensus state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The coprocessor transaction senders involved in a consensus for allowing a public decryption.
+        mapping(bytes32 ctHandle => address[] coprocessorTxSenderAddresses) allowPublicDecryptConsensusTxSenders;
+        // prettier-ignore
+        /// @notice The coprocessor transaction senders involved in a consensus for allowing an account.
+        mapping(bytes32 ctHandle => mapping(address accountAddress =>
+            address[] coprocessorTxSenderAddresses))
+               allowAccountConsensusTxSenders;
+        // @notice The coprocessor transaction senders involved in a consensus for delegating an account.
+        mapping(bytes32 delegateAccountHash => address[] coprocessorTxSenderAddresses) delegateAccountConsensusTxSenders;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -93,10 +114,16 @@ contract MultichainAcl is
         __Pausable_init();
     }
 
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
     /// @dev See {IMultichainAcl-allowPublicDecrypt}.
     function allowPublicDecrypt(
-        bytes32 ctHandle
-    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused {
+        bytes32 ctHandle,
+        bytes calldata /* extraData */
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /**
@@ -110,9 +137,13 @@ contract MultichainAcl is
         $._allowPublicDecryptCounters[ctHandle]++;
         $._allowPublicDecryptCoprocessors[ctHandle][msg.sender] = true;
 
-        /// @dev Only send the event if consensus has not been reached in a previous call
-        /// @dev and the consensus is reached in the current call.
-        /// @dev This means a "late" allow will not be reverted, just ignored
+        // Store the coprocessor transaction sender address for the public decryption response
+        // It is important to consider the same mapping fields used for the consensus
+        // A "late" valid coprocessor transaction sender address will still be added in the list.
+        $.allowPublicDecryptConsensusTxSenders[ctHandle].push(msg.sender);
+
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.allowedPublicDecrypts[ctHandle] && _isConsensusReached($._allowPublicDecryptCounters[ctHandle])) {
             $.allowedPublicDecrypts[ctHandle] = true;
             emit AllowPublicDecrypt(ctHandle);
@@ -122,8 +153,9 @@ contract MultichainAcl is
     /// @dev See {IMultichainAcl-allowAccount}.
     function allowAccount(
         bytes32 ctHandle,
-        address accountAddress
-    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) whenNotPaused {
+        address accountAddress,
+        bytes calldata /* extraData */
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         /**
@@ -137,9 +169,13 @@ contract MultichainAcl is
         $._allowAccountCounters[ctHandle][accountAddress]++;
         $._allowAccountCoprocessors[ctHandle][accountAddress][msg.sender] = true;
 
-        /// @dev Only send the event if consensus has not been reached in a previous call
-        /// @dev and the consensus is reached in the current call.
-        /// @dev This means a "late" allow will not be reverted, just ignored
+        // Store the coprocessor transaction sender address for the allow account response
+        // It is important to consider the same mapping fields used for the consensus
+        // A "late" valid coprocessor transaction sender address will still be added in the list.
+        $.allowAccountConsensusTxSenders[ctHandle][accountAddress].push(msg.sender);
+
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (
             !$.allowedAccounts[ctHandle][accountAddress] &&
             _isConsensusReached($._allowAccountCounters[ctHandle][accountAddress])
@@ -154,7 +190,7 @@ contract MultichainAcl is
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
-    ) external virtual onlyCoprocessorTxSender whenNotPaused {
+    ) external virtual onlyCoprocessorTxSender {
         if (contractAddresses.length == 0) {
             revert EmptyContractAddresses();
         }
@@ -167,7 +203,7 @@ contract MultichainAcl is
         /// @dev The delegateAccountHash is the hash of all input arguments.
         /// @dev This hash is used to track the delegation consensus over the whole contractAddresses list,
         /// @dev and assumes that the Coprocessors will delegate the same list of contracts and keep the same order.
-        bytes32 delegateAccountHash = keccak256(abi.encode(chainId, delegationAccounts, contractAddresses));
+        bytes32 delegateAccountHash = _getDelegateAccountHash(chainId, delegationAccounts, contractAddresses);
 
         mapping(address => bool) storage alreadyDelegatedCoprocessors = $._alreadyDelegatedCoprocessors[
             delegateAccountHash
@@ -181,8 +217,13 @@ contract MultichainAcl is
         $._delegateAccountHashCounters[delegateAccountHash]++;
         alreadyDelegatedCoprocessors[msg.sender] = true;
 
-        /// @dev Send the event if and only if the consensus is reached in the current response call.
-        /// @dev This means a "late" response will not be reverted, just ignored
+        // Store the coprocessor transaction sender address for the delegate account response
+        // It is important to consider the same mapping fields used for the consensus
+        // A "late" valid coprocessor transaction sender address will still be added in the list.
+        $.delegateAccountConsensusTxSenders[delegateAccountHash].push(msg.sender);
+
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (
             !$._delegatedAccountHashes[delegateAccountHash] &&
             _isConsensusReached($._delegateAccountHashCounters[delegateAccountHash])
@@ -239,6 +280,43 @@ contract MultichainAcl is
         }
     }
 
+    /// @dev See {IMultichainAcl-getAllowPublicDecryptConsensusTxSenders}.
+    function getAllowPublicDecryptConsensusTxSenders(
+        bytes32 ctHandle
+    ) external view virtual returns (address[] memory) {
+        MultichainAclStorage storage $ = _getMultichainAclStorage();
+
+        return $.allowPublicDecryptConsensusTxSenders[ctHandle];
+    }
+
+    /// @dev See {IMultichainAcl-getAllowAccountConsensusTxSenders}.
+    function getAllowAccountConsensusTxSenders(
+        bytes32 ctHandle,
+        address accountAddress
+    ) external view virtual returns (address[] memory) {
+        MultichainAclStorage storage $ = _getMultichainAclStorage();
+
+        return $.allowAccountConsensusTxSenders[ctHandle][accountAddress];
+    }
+
+    /**
+     * @dev See {IMultichainAcl-getDelegateAccountConsensusTxSenders}.
+     * The contract address list needs to be provided in the same order as when the consensus was reached
+     * in order to be able to retrieve the coprocessor transaction senders associated to it.
+     */
+    function getDelegateAccountConsensusTxSenders(
+        uint256 chainId,
+        DelegationAccounts calldata delegationAccounts,
+        address[] calldata contractAddresses
+    ) external view virtual returns (address[] memory) {
+        MultichainAclStorage storage $ = _getMultichainAclStorage();
+
+        // Get the hash of the delegate account's inputs used to track the consensus.
+        bytes32 delegateAccountHash = _getDelegateAccountHash(chainId, delegationAccounts, contractAddresses);
+
+        return $.delegateAccountConsensusTxSenders[delegateAccountHash];
+    }
+
     /// @dev See {IMultichainAcl-getVersion}.
     function getVersion() external pure virtual returns (string memory) {
         return
@@ -259,7 +337,7 @@ contract MultichainAcl is
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
     // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
     /// @notice Checks if the consensus is reached among the Coprocessors.
     /// @param coprocessorCounter The number of coprocessors that agreed
@@ -267,6 +345,15 @@ contract MultichainAcl is
     function _isConsensusReached(uint8 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
+    }
+
+    /// @dev Returns the hash of a delegate account's inputs.
+    function _getDelegateAccountHash(
+        uint256 chainId,
+        DelegationAccounts calldata delegationAccounts,
+        address[] calldata contractAddresses
+    ) internal pure virtual returns (bytes32) {
+        return keccak256(abi.encode(chainId, delegationAccounts, contractAddresses));
     }
 
     /**

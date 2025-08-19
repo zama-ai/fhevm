@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        WITH to_update AS (\n            SELECT c.ctid\n            FROM ciphertexts c\n            JOIN ciphertext_digest d\n            ON d.tenant_id = c.tenant_id\n            AND d.handle = c.handle\n            WHERE c.ciphertext128 IS NOT NULL\n            AND d.ciphertext128 IS NOT NULL\n            ORDER BY c.created_at\n            FOR UPDATE SKIP LOCKED\n            LIMIT $1::INT\n        )\n\n        UPDATE ciphertexts\n            SET ciphertext128 = NULL\n            WHERE ctid IN (SELECT ctid FROM to_update);\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f98efcce29dccefb4382a21faf1172f4734092cd15b6cb0c5396179fa24d5119"
+}

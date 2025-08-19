@@ -1,25 +1,60 @@
 services:
-
-  kms-connector:
-    container_name: kms-connector
-    image: ghcr.io/zama-ai/fhevm/kms-connector:${CONNECTOR_VERSION}
+  kms-connector-db-migration:
+    container_name: kms-connector-db-migration
+    image: ghcr.io/zama-ai/fhevm/kms-connector/db-migration:${CONNECTOR_DB_MIGRATION_VERSION}
     build:
       context: ../../..
-      dockerfile: kms-connector/Dockerfile
+      dockerfile: kms-connector/connector-db/Dockerfile
+    env_file:
+      - ../env/staging/.env.connector.local
+
+  kms-connector-gw-listener:
+    container_name: kms-connector-gw-listener
+    image: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener:${CONNECTOR_GW_LISTENER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: kms-connector/crates/gw-listener/Dockerfile
       cache_from:
         - type=gha
       cache_to:
         - type=gha,mode=max
     env_file:
       - ../env/staging/.env.connector.local
-    volumes:
-      - ../config/connector/config.toml:/var/lib/kms-connector/config.toml
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        set -e
-        echo '=================VALIDATING KMS CONFIG================='
-        kms-connector validate -c /var/lib/kms-connector/config.toml
-        echo '=================STARTING KMS CONNECTOR================='
-        kms-connector start -c /var/lib/kms-connector/config.toml
+    depends_on:
+      kms-connector-db-migration:
+        condition: service_completed_successfully
+
+  kms-connector-kms-worker:
+    container_name: kms-connector-kms-worker
+    image: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker:${CONNECTOR_KMS_WORKER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: kms-connector/crates/kms-worker/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
+    env_file:
+      - ../env/staging/.env.connector.local
+    depends_on:
+      kms-connector-db-migration:
+        condition: service_completed_successfully
+
+  kms-connector-tx-sender:
+    container_name: kms-connector-tx-sender
+    image: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}
+    build:
+      context: ../../..
+      dockerfile: kms-connector/crates/tx-sender/Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
+    env_file:
+      - ../env/staging/.env.connector.local
+    depends_on:
+      kms-connector-db-migration:
+        condition: service_completed_successfully
+
+volumes:
+  kms-connector-db:

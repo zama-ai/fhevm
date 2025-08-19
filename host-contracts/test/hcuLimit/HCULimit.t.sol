@@ -8,7 +8,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {HCULimit} from "../../contracts/HCULimit.sol";
 import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
-import {fhevmExecutorAdd} from "../../addresses/FHEVMExecutorAddress.sol";
+import {fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {SupportedTypesConstants} from "../fhevmExecutor/fhevmExecutor.t.sol";
 
 contract MockHCULimit is HCULimit {

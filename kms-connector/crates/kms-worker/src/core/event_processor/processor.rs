@@ -33,10 +33,14 @@ pub struct DbEventProcessor<P: Provider> {
 impl<P: Provider> EventProcessor for DbEventProcessor<P> {
     type Event = GatewayEvent;
 
+    #[tracing::instrument(skip_all)]
     async fn process(&mut self, event: &Self::Event) -> anyhow::Result<KmsResponse> {
-        info!("Starting to process {event}...");
+        info!("Starting to process {:?}...", event);
         match self.inner_process(event).await {
-            Ok(response) => Ok(response),
+            Ok(response) => {
+                info!("Event successfully processed!");
+                Ok(response)
+            }
             Err(e) => {
                 event.mark_as_pending(&self.db_pool).await;
                 Err(e)
@@ -59,11 +63,17 @@ impl<P: Provider> DbEventProcessor<P> {
     }
 
     /// Prepares the GRPC request associated to the received `event`.
+    #[tracing::instrument(skip_all)]
     async fn prepare_request(&self, event: GatewayEvent) -> anyhow::Result<KmsGrpcRequest> {
         match event {
             GatewayEvent::PublicDecryption(req) => {
                 self.decryption_processor
-                    .prepare_decryption_request(req.decryptionId, req.snsCtMaterials, None)
+                    .prepare_decryption_request(
+                        req.decryptionId,
+                        req.snsCtMaterials,
+                        req.extraData.into(),
+                        None,
+                    )
                     .await
             }
             GatewayEvent::UserDecryption(req) => {
@@ -71,6 +81,7 @@ impl<P: Provider> DbEventProcessor<P> {
                     .prepare_decryption_request(
                         req.decryptionId,
                         req.snsCtMaterials,
+                        req.extraData.into(),
                         Some(UserDecryptionExtraData::new(req.userAddress, req.publicKey)),
                     )
                     .await

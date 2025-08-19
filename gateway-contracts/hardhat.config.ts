@@ -4,22 +4,27 @@ import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
 import "@typechain/hardhat";
 import dotenv from "dotenv";
+import "hardhat-dependency-compiler";
 import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task, types } from "hardhat/config";
 import { resolve } from "path";
+import "solidity-coverage";
 
 import "./tasks/accounts";
 import "./tasks/addHostChains";
+import "./tasks/blockExplorerVerify";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
 import "./tasks/getters";
+import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 export const NUM_ACCOUNTS = 30;
+export const ADDRESSES_DIR = resolve(__dirname, "addresses");
 
 const chainIds = {
   hardhat: 31337,
@@ -155,6 +160,13 @@ const config: HardhatUserConfig = {
       evmVersion: "cancun",
       viaIR: false,
     },
+  },
+  // This is necessary to have the SafeProxyFactory and Safe artifacts available during tasks execution.
+  dependencyCompiler: {
+    paths: [
+      "@safe-global/safe-contracts/contracts/proxies/SafeProxyFactory.sol",
+      "@safe-global/safe-contracts/contracts/Safe.sol",
+    ],
   },
   warnings: {
     // Turn off all warnings for mocked contracts

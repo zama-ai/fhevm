@@ -24,6 +24,10 @@ contract GatewayConfigMock {
 
     event AddHostChain(HostChain hostChain);
 
+    event PauseAllGatewayContracts();
+
+    event UnpauseAllGatewayContracts();
+
     function initializeFromEmptyProxy(
         address initialPauser,
         ProtocolMetadata memory initialMetadata,
@@ -44,7 +48,7 @@ contract GatewayConfigMock {
         emit InitializeGatewayConfig(pauser, metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
     }
 
-    function reinitializeV2(Custodian[] memory custodians) external {
+    function reinitializeV2(Custodian[] memory custodians) public {
         emit ReinitializeGatewayConfigV2(custodians);
     }
 
@@ -66,5 +70,13 @@ contract GatewayConfigMock {
 
     function addHostChain(HostChain calldata hostChain) external {
         emit AddHostChain(hostChain);
+    }
+
+    function pauseAllGatewayContracts() external {
+        emit PauseAllGatewayContracts();
+    }
+
+    function unpauseAllGatewayContracts() external {
+        emit UnpauseAllGatewayContracts();
     }
 }

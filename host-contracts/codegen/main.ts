@@ -36,7 +36,7 @@ function generateAllFiles() {
   validateOperators(ALL_OPERATORS);
 
   /// Generate core Solidity contract files.
-  writeFileSync('contracts/FheType.sol', generateSolidityFheType(ALL_FHE_TYPES));
+  writeFileSync('contracts/shared/FheType.sol', generateSolidityFheType(ALL_FHE_TYPES));
   writeFileSync('lib/Impl.sol', generateSolidityImplLib(ALL_OPERATORS));
   writeFileSync('lib/FHE.sol', generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPES));
   writeFileSync('contracts/HCULimit.sol', generateSolidityHCULimit(operatorsPrices));

@@ -3,7 +3,10 @@ pragma solidity ^0.8.24;
 
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./interfaces/IGatewayConfig.sol";
+import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
+import { decryptionAddress, inputVerificationAddress } from "../addresses/GatewayAddresses.sol";
+import { Decryption } from "./Decryption.sol";
+import { InputVerification } from "./InputVerification.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/Pausable.sol";
 
@@ -28,6 +31,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
     uint64 private constant REINITIALIZER_VERSION = 3;
+
+    /// @notice The address of the all gateway contracts
+    Decryption private constant DECRYPTION = Decryption(decryptionAddress);
+    InputVerification private constant INPUT_VERIFICATION = InputVerification(inputVerificationAddress);
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.GatewayConfig
@@ -179,7 +186,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @notice Reinitializes the contract with custodians.
-    function reinitializeV2(Custodian[] memory custodians) external reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV2(Custodian[] memory custodians) public virtual reinitializer(REINITIALIZER_VERSION) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
         if (custodians.length == 0) {
@@ -199,7 +206,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IGatewayConfig-updatePauser}.
-    function updatePauser(address newPauser) external virtual onlyOwner whenNotPaused {
+    function updatePauser(address newPauser) external virtual onlyOwner {
         if (newPauser == address(0)) {
             revert InvalidNullPauser();
         }
@@ -209,29 +216,25 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @dev See {IGatewayConfig-updateMpcThreshold}.
-    function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner whenNotPaused {
+    function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner {
         _setMpcThreshold(newMpcThreshold);
         emit UpdateMpcThreshold(newMpcThreshold);
     }
 
     /// @dev See {IGatewayConfig-updatePublicDecryptionThreshold}.
-    function updatePublicDecryptionThreshold(
-        uint256 newPublicDecryptionThreshold
-    ) external virtual onlyOwner whenNotPaused {
+    function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external virtual onlyOwner {
         _setPublicDecryptionThreshold(newPublicDecryptionThreshold);
         emit UpdatePublicDecryptionThreshold(newPublicDecryptionThreshold);
     }
 
     /// @dev See {IGatewayConfig-updateUserDecryptionThreshold}.
-    function updateUserDecryptionThreshold(
-        uint256 newUserDecryptionThreshold
-    ) external virtual onlyOwner whenNotPaused {
+    function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external virtual onlyOwner {
         _setUserDecryptionThreshold(newUserDecryptionThreshold);
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
     /// @dev See {IGatewayConfig-addHostChain}.
-    function addHostChain(HostChain calldata hostChain) external virtual onlyOwner whenNotPaused {
+    function addHostChain(HostChain calldata hostChain) external virtual onlyOwner {
         if (hostChain.chainId == 0) {
             revert InvalidNullChainId();
         }
@@ -249,12 +252,25 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         emit AddHostChain(hostChain);
     }
 
-    /// @dev See {IGatewayConfig-checkIsPauser}.
-    function checkIsPauser(address pauserAddress) external view virtual {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if ($.pauser != pauserAddress) {
-            revert NotPauser(pauserAddress);
-        }
+    /**
+     * @dev See {IGatewayConfig-pauseAllGatewayContracts}.
+     * Contracts that are technically pausable but do not provide any pausable functions are not
+     * paused. If at least one of the contracts is already paused, the function will revert.
+     */
+    function pauseAllGatewayContracts() external virtual onlyPauser {
+        DECRYPTION.pause();
+        INPUT_VERIFICATION.pause();
+        emit PauseAllGatewayContracts();
+    }
+
+    /**
+     * @dev See {IGatewayConfig-unpauseAllGatewayContracts}.
+     * If at least one of the contracts is not paused, the function will revert.
+     */
+    function unpauseAllGatewayContracts() external virtual onlyOwner {
+        DECRYPTION.unpause();
+        INPUT_VERIFICATION.unpause();
+        emit UnpauseAllGatewayContracts();
     }
 
     /// @dev See {IGatewayConfig-checkIsKmsTxSender}.
@@ -293,7 +309,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function checkIsCustodianTxSender(address txSenderAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         if (!$._isCustodianTxSender[txSenderAddress]) {
-            revert NotCoprocessorTxSender(txSenderAddress);
+            revert NotCustodianTxSender(txSenderAddress);
         }
     }
 
@@ -301,7 +317,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function checkIsCustodianSigner(address signerAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         if (!$._isCustodianSigner[signerAddress]) {
-            revert NotCoprocessorSigner(signerAddress);
+            revert NotCustodianSigner(signerAddress);
         }
     }
 

@@ -3,6 +3,10 @@ pub mod types;
 
 use crate::dfg::types::*;
 use anyhow::Result;
+use daggy::petgraph::{
+    visit::{EdgeRef, IntoEdges, IntoEdgesDirected},
+    Direction,
+};
 use daggy::{petgraph::graph::node_index, Dag, NodeIndex};
 use fhevm_engine_common::types::Handle;
 
@@ -13,8 +17,17 @@ pub struct OpNode {
     inputs: Vec<DFGTaskInput>,
     #[cfg(feature = "gpu")]
     locality: i32,
+    is_allowed: bool,
+    is_needed: bool,
+    work_index: usize,
 }
 pub type OpEdge = u8;
+
+pub struct DFGResult {
+    pub handle: Handle,
+    pub result: Result<Option<(i16, Vec<u8>)>>,
+    pub work_index: usize,
+}
 
 impl std::fmt::Debug for OpNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -39,6 +52,8 @@ impl DFGraph {
         rh: Handle,
         opcode: i32,
         inputs: Vec<DFGTaskInput>,
+        is_allowed: bool,
+        work_index: usize,
     ) -> Result<NodeIndex> {
         Ok(self.graph.add_node(OpNode {
             opcode,
@@ -47,6 +62,9 @@ impl DFGraph {
             inputs,
             #[cfg(feature = "gpu")]
             locality: -1,
+            is_allowed,
+            is_needed: is_allowed,
+            work_index,
         }))
     }
     pub fn add_dependence(
@@ -68,24 +86,94 @@ impl DFGraph {
         Ok(())
     }
 
-    #[expect(clippy::type_complexity)]
-    pub fn get_results(&mut self) -> Vec<(Handle, Result<(i16, Vec<u8>)>)> {
+    pub fn get_results(&mut self) -> Vec<DFGResult> {
         let mut res = Vec::with_capacity(self.graph.node_count());
         for index in 0..self.graph.node_count() {
             let node = self.graph.node_weight_mut(NodeIndex::new(index)).unwrap();
             if let Some(ct) = std::mem::take(&mut node.result) {
                 if let Ok(ct) = ct {
-                    res.push((node.result_handle.clone(), Ok((ct.1, ct.2))));
+                    if node.is_allowed {
+                        res.push(DFGResult {
+                            handle: node.result_handle.clone(),
+                            result: Ok(ct.1),
+                            work_index: node.work_index,
+                        });
+                    } else {
+                        res.push(DFGResult {
+                            handle: node.result_handle.clone(),
+                            result: Ok(None),
+                            work_index: node.work_index,
+                        });
+                    }
                 } else {
-                    res.push((node.result_handle.clone(), Err(ct.err().unwrap())));
+                    res.push(DFGResult {
+                        handle: node.result_handle.clone(),
+                        result: Err(ct.err().unwrap()),
+                        work_index: node.work_index,
+                    });
                 }
             } else {
-                res.push((
-                    node.result_handle.clone(),
-                    Err(SchedulerError::DataflowGraphError.into()),
-                ));
+                res.push(DFGResult {
+                    handle: node.result_handle.clone(),
+                    result: Err(SchedulerError::DataflowGraphError.into()),
+                    work_index: node.work_index,
+                });
             }
         }
         res
+    }
+
+    fn is_needed(&self, index: usize) -> bool {
+        let node_index = NodeIndex::new(index);
+        let node = self.graph.node_weight(node_index).unwrap();
+        if node.is_allowed || node.is_needed {
+            true
+        } else {
+            for edge in self.graph.edges_directed(node_index, Direction::Outgoing) {
+                // If any outgoing dependence is needed, so is this node
+                if self.is_needed(edge.target().index()) {
+                    return true;
+                }
+            }
+            false
+        }
+    }
+
+    pub fn finalize(&mut self) {
+        // Traverse in reverse order and mark nodes as needed as the
+        // graph order is roughly computable, so allowed nodes should
+        // generally be later in the graph.
+        for index in (0..self.graph.node_count()).rev() {
+            if self.is_needed(index) {
+                let node = self.graph.node_weight_mut(NodeIndex::new(index)).unwrap();
+                node.is_needed = true;
+            }
+        }
+        // Prune graph of all unneeded nodes and edges
+        let edges = self.graph.map(|_, _| (), |_, edge| *edge);
+        let mut unneeded_nodes = Vec::new();
+        for index in 0..self.graph.node_count() {
+            let node_index = NodeIndex::new(index);
+            let Some(node) = self.graph.node_weight(node_index) else {
+                continue;
+            };
+            if !node.is_needed {
+                unneeded_nodes.push(index);
+            }
+        }
+        unneeded_nodes.sort();
+        // Remove unneeded nodes and their edges
+        for index in unneeded_nodes.iter().rev() {
+            let node_index = NodeIndex::new(*index);
+            let Some(node) = self.graph.node_weight(node_index) else {
+                continue;
+            };
+            if !node.is_needed {
+                for edge in edges.edges(node_index) {
+                    self.graph.remove_edge(edge.id());
+                }
+                self.graph.remove_node(node_index);
+            }
+        }
     }
 }

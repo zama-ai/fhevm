@@ -1,9 +1,11 @@
 use alloy::primitives::U256;
-use connector_tests::{
-    rand::{rand_signature, rand_u256},
-    setup::test_instance_with_db_only,
+use connector_utils::{
+    tests::{
+        rand::{rand_signature, rand_u256},
+        setup::TestInstanceBuilder,
+    },
+    types::{KmsGrpcResponse, KmsResponse},
 };
-use connector_utils::types::{KmsGrpcResponse, KmsResponse};
 use kms_grpc::kms::v1::{
     PublicDecryptionResponse, PublicDecryptionResponsePayload, UserDecryptionResponse,
     UserDecryptionResponsePayload,
@@ -13,9 +15,9 @@ use sqlx::Row;
 
 #[tokio::test]
 async fn test_publish_public_decryption_response() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_only().await?;
+    let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let publisher = DbKmsResponsePublisher::new(test_instance.db.clone());
+    let publisher = DbKmsResponsePublisher::new(test_instance.db().clone());
 
     println!("Mocking PublicDecryptionResponse from KMS Core...");
     let rand_decryption_id = rand_u256();
@@ -24,10 +26,9 @@ async fn test_publish_public_decryption_response() -> anyhow::Result<()> {
         decryption_id: rand_decryption_id,
         grpc_response: PublicDecryptionResponse {
             signature: rand_signature.clone(),
-            payload: Some(PublicDecryptionResponsePayload {
-                external_signature: Some(rand_signature.clone()),
-                ..Default::default()
-            }),
+            external_signature: Some(rand_signature.clone()),
+            payload: Some(PublicDecryptionResponsePayload::default()),
+            extra_data: vec![],
         },
     };
     let response = KmsResponse::process(grpc_response)?;
@@ -39,7 +40,7 @@ async fn test_publish_public_decryption_response() -> anyhow::Result<()> {
     let row = sqlx::query(
         "SELECT decryption_id, decrypted_result, signature FROM public_decryption_responses",
     )
-    .fetch_one(&test_instance.db)
+    .fetch_one(test_instance.db())
     .await?;
 
     let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
@@ -52,9 +53,9 @@ async fn test_publish_public_decryption_response() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_publish_user_decryption_response() -> anyhow::Result<()> {
-    let test_instance = test_instance_with_db_only().await?;
+    let test_instance = TestInstanceBuilder::db_setup().await?;
 
-    let publisher = DbKmsResponsePublisher::new(test_instance.db.clone());
+    let publisher = DbKmsResponsePublisher::new(test_instance.db().clone());
 
     println!("Mocking UserDecryptionResponse from KMS Core...");
     let rand_decryption_id = rand_u256();
@@ -65,6 +66,7 @@ async fn test_publish_user_decryption_response() -> anyhow::Result<()> {
             signature: rand_signature.clone(),
             external_signature: rand_signature.clone(),
             payload: Some(UserDecryptionResponsePayload::default()),
+            extra_data: vec![],
         },
     };
     let response = KmsResponse::process(grpc_response)?;
@@ -76,7 +78,7 @@ async fn test_publish_user_decryption_response() -> anyhow::Result<()> {
     let row = sqlx::query(
         "SELECT decryption_id, user_decrypted_shares, signature FROM user_decryption_responses",
     )
-    .fetch_one(&test_instance.db)
+    .fetch_one(test_instance.db())
     .await?;
 
     let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);

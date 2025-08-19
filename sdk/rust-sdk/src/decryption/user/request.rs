@@ -26,11 +26,11 @@ use tracing::debug;
 /// # let timestamp = 1640995200u64;
 /// #
 /// let calldata = UserDecryptRequestBuilder::new()
-///     .add_handles_from_bytes(&handles, &contracts)?
-///     .user_address_from_str("0x742d35Cc6634C0...")?
-///     .signature_from_hex("0x1234567890abc...")?
-///     .public_key_from_hex("0x200000000000...")?
-///     .validity(timestamp, 30)?
+///     .with_handles_from_bytes(&handles, &contracts)?
+///     .with_user_address_from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B3")?
+///     .with_signature_from_hex("0x1234567890abc5678...")?
+///     .with_public_key_from_hex("0x200000000000...bc6f331")?
+///     .with_validity(timestamp, 30)?
 ///     .build_and_generate_calldata()?;
 ///
 /// println!("Generated calldata: {} bytes", calldata.len());
@@ -75,7 +75,7 @@ impl UserDecryptRequestBuilder {
     /// * If no contract addresses provided
     /// * If more than 10 contracts (protocol limit)
     /// * If handle is not 32 bytes
-    pub fn add_handles_from_bytes(
+    pub fn with_handles_from_bytes(
         mut self,
         handles: &[Vec<u8>],
         contract_addresses: &[Address],
@@ -107,7 +107,7 @@ impl UserDecryptRequestBuilder {
     }
 
     /// Set the user address who can decrypt
-    pub fn user_address_from_str(mut self, address: &str) -> Result<Self> {
+    pub fn with_user_address_from_str(mut self, address: &str) -> Result<Self> {
         if address.trim().is_empty() {
             return Err(FhevmError::InvalidParams(
                 "User address cannot be empty".to_string(),
@@ -127,7 +127,7 @@ impl UserDecryptRequestBuilder {
     }
 
     /// Set the EIP-712 signature
-    pub fn signature_from_hex(mut self, signature: &str) -> Result<Self> {
+    pub fn with_signature_from_hex(mut self, signature: &str) -> Result<Self> {
         let signature_bytes = parse_hex_string(signature, "signature")?;
 
         // Validate signature length (should be 65 bytes for ECDSA)
@@ -143,7 +143,7 @@ impl UserDecryptRequestBuilder {
     }
 
     /// Set the user's public key for decryption
-    pub fn public_key_from_hex(mut self, public_key: &str) -> Result<Self> {
+    pub fn with_public_key_from_hex(mut self, public_key: &str) -> Result<Self> {
         let public_key_bytes = parse_hex_string(public_key, "public key")?;
 
         if public_key_bytes.is_empty() {
@@ -157,7 +157,7 @@ impl UserDecryptRequestBuilder {
     }
 
     /// Set the validity period for the decryption permission
-    pub fn validity(mut self, start_timestamp: u64, duration_days: u64) -> Result<Self> {
+    pub fn with_validity(mut self, start_timestamp: u64, duration_days: u64) -> Result<Self> {
         validate_validity_params(start_timestamp, duration_days)?;
 
         self.start_timestamp = Some(start_timestamp);
@@ -166,7 +166,7 @@ impl UserDecryptRequestBuilder {
     }
 
     /// Set the chain ID where contracts are deployed
-    pub fn contracts_chain_id(mut self, chain_id: u64) -> Self {
+    pub fn with_contracts_chain_id(mut self, chain_id: u64) -> Self {
         self.contracts_chain_id = Some(chain_id);
         self
     }
@@ -182,13 +182,75 @@ impl UserDecryptRequestBuilder {
 
     /// Build just the request object
     pub fn build(self) -> Result<UserDecryptRequest> {
-        // Validate all required fields with helpful messages
-        let validation_result = validate_builder_state(&self);
-        if let Err(e) = validation_result {
-            return Err(e);
+        self.validate()?;
+        self.construct()
+    }
+
+    fn validate(&self) -> Result<()> {
+        if self.ct_handle_contract_pairs.is_empty() {
+            return Err(FhevmError::InvalidParams(
+                "Missing handles: Call `with_handles_from_bytes()` first.".to_string(),
+            ));
         }
 
-        // Extract values (safe after validation)
+        if self.user_address.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "Missing user address: Call `with_user_address_from_str()` first.".to_string(),
+            ));
+        }
+
+        if self.signature.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "Missing signature: Call `with_signature_from_hex()` first.".to_string(),
+            ));
+        }
+
+        if self.public_key.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "Missing public key: Call `with_public_key_from_hex()` first.".to_string(),
+            ));
+        }
+
+        if self.start_timestamp.is_none() || self.duration_days.is_none() {
+            return Err(FhevmError::InvalidParams(
+                "Missing validity: Call `with_validity()` first.".to_string(),
+            ));
+        }
+
+        // Validate handle sizes
+        for (i, pair) in self.ct_handle_contract_pairs.iter().enumerate() {
+            let handle_bytes = pair.ctHandle.as_slice();
+            if handle_bytes.len() != 32 {
+                return Err(FhevmError::InvalidParams(format!(
+                    "Handle {} must be exactly 32 bytes, got {}",
+                    i,
+                    handle_bytes.len()
+                )));
+            }
+        }
+
+        // Validate duration
+        let duration_days = self.duration_days.unwrap();
+        if duration_days == 0 || duration_days > 365 {
+            return Err(FhevmError::InvalidParams(
+                "Duration must be between 1 and 365 days".to_string(),
+            ));
+        }
+
+        // Validate signature length
+        if let Some(ref sig) = self.signature {
+            if sig.len() != 65 {
+                return Err(FhevmError::InvalidParams(format!(
+                    "Invalid signature length: expected 65 bytes, got {}",
+                    sig.len()
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn construct(self) -> Result<UserDecryptRequest> {
         let user_address = self.user_address.unwrap();
         let signature = self.signature.unwrap();
         let public_key = self.public_key.unwrap();
@@ -196,8 +258,13 @@ impl UserDecryptRequestBuilder {
         let duration_days = self.duration_days.unwrap();
         let contracts_chain_id = self.contracts_chain_id.unwrap_or(1);
 
-        // Create the request
-        let request = UserDecryptRequest {
+        debug!("✅ UserDecryptRequest built successfully");
+        debug!("   📊 Handles: {}", self.ct_handle_contract_pairs.len());
+        debug!("   👤 User: {}", user_address);
+        debug!("   🏢 Contracts: {}", self.contract_addresses.len());
+        debug!("   ⏰ Duration: {} days", duration_days);
+
+        Ok(UserDecryptRequest {
             ct_handle_contract_pairs: self.ct_handle_contract_pairs,
             request_validity: RequestValidity {
                 startTimestamp: U256::from(start_timestamp),
@@ -208,18 +275,7 @@ impl UserDecryptRequestBuilder {
             user_address,
             signature,
             public_key,
-        };
-
-        debug!("✅ UserDecryptRequest built successfully");
-        debug!("   📊 Handles: {}", request.ct_handle_contract_pairs.len());
-        debug!("   👤 User: {}", request.user_address);
-        debug!("   🏢 Contracts: {}", request.contract_addresses.len());
-        debug!(
-            "   ⏰ Duration: {} days",
-            request.request_validity.durationDays
-        );
-
-        Ok(request)
+        })
     }
 }
 
@@ -249,8 +305,7 @@ fn validate_handles_input(handles: &[Vec<u8>], contract_addresses: &[Address]) -
 
     if contract_addresses.len() > MAX_CONTRACT_ADDRESSES {
         return Err(FhevmError::InvalidParams(format!(
-            "Maximum {} contract addresses allowed",
-            MAX_CONTRACT_ADDRESSES
+            "Maximum {MAX_CONTRACT_ADDRESSES} contract addresses allowed"
         )));
     }
 
@@ -278,61 +333,8 @@ fn validate_validity_params(_start_timestamp: u64, duration_days: u64) -> Result
 
     if duration_days > MAX_DURATION_DAYS {
         return Err(FhevmError::InvalidParams(format!(
-            "Duration days cannot exceed {}",
-            MAX_DURATION_DAYS
+            "Duration days cannot exceed {MAX_DURATION_DAYS}"
         )));
-    }
-
-    Ok(())
-}
-
-fn validate_builder_state(builder: &UserDecryptRequestBuilder) -> Result<()> {
-    if builder.ct_handle_contract_pairs.is_empty() {
-        return Err(FhevmError::InvalidParams(
-            "❌ Missing handles: Call `add_handles_from_bytes()` first.\n\
-             💡 Tip: You need at least one encrypted handle to decrypt."
-                .to_string(),
-        ));
-    }
-
-    if builder.user_address.is_none() {
-        return Err(FhevmError::InvalidParams(
-            "❌ Missing user address: Call `user_address_from_str()` first.\n\
-             💡 Tip: Specify who can decrypt the data with their Ethereum address."
-                .to_string(),
-        ));
-    }
-
-    if builder.signature.is_none() {
-        return Err(FhevmError::InvalidParams(
-            "❌ Missing signature: Call `signature_from_hex()` first.\n\
-             💡 Tip: Add the EIP-712 signature that proves authorization."
-                .to_string(),
-        ));
-    }
-
-    if builder.public_key.is_none() {
-        return Err(FhevmError::InvalidParams(
-            "❌ Missing public key: Call `public_key_from_hex()` first.\n\
-             💡 Tip: Add the user's public key for decryption."
-                .to_string(),
-        ));
-    }
-
-    if builder.start_timestamp.is_none() || builder.duration_days.is_none() {
-        return Err(FhevmError::InvalidParams(
-            "❌ Missing validity: Call `validity()` first.\n\
-             💡 Tip: Set when and for how long the decryption permission is valid."
-                .to_string(),
-        ));
-    }
-
-    if builder.contract_addresses.is_empty() {
-        return Err(FhevmError::InvalidParams(
-            "❌ No contract addresses found.\n\
-             💡 Tip: Make sure you added handles with valid contract addresses."
-                .to_string(),
-        ));
     }
 
     Ok(())
@@ -352,15 +354,15 @@ mod tests {
         ];
 
         let result = UserDecryptRequestBuilder::new()
-            .add_handles_from_bytes(&handles, &contracts)
+            .with_handles_from_bytes(&handles, &contracts)
             .unwrap()
-            .user_address_from_str("0x963d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B3")
+            .with_user_address_from_str("0x963d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B3")
             .unwrap()
-            .signature_from_hex(&("0x".to_owned() + &"12".repeat(65)))
+            .with_signature_from_hex(&("0x".to_owned() + &"12".repeat(65)))
             .unwrap()
-            .public_key_from_hex("0x1234567890abcdef")
+            .with_public_key_from_hex("0x1234567890abcdef")
             .unwrap()
-            .validity(1640995200, 30)
+            .with_validity(1640995200, 30)
             .unwrap()
             .build();
 
@@ -383,7 +385,7 @@ mod tests {
         let contracts =
             vec![Address::from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1").unwrap()];
 
-        let result = UserDecryptRequestBuilder::new().add_handles_from_bytes(&handles, &contracts);
+        let result = UserDecryptRequestBuilder::new().with_handles_from_bytes(&handles, &contracts);
 
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("32 bytes"));

@@ -12,13 +12,10 @@ use alloy::{
     sol_types::Eip712Domain,
 };
 use anyhow::anyhow;
-use connector_utils::types::{
-    KmsGrpcRequest,
-    fhe::{extract_fhe_type_from_handle, fhe_type_to_string},
-};
+use connector_utils::types::KmsGrpcRequest;
 use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use kms_grpc::kms::v1::{
-    CiphertextFormat, PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
+    PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
 use std::borrow::Cow;
 use tracing::info;
@@ -56,31 +53,21 @@ where
         &self,
         decryption_id: U256,
         sns_materials: Vec<SnsCiphertextMaterial>,
+        extra_data: Vec<u8>,
         user_decrypt_data: Option<UserDecryptionExtraData>,
     ) -> anyhow::Result<KmsGrpcRequest> {
-        let decryption_type = if user_decrypt_data.is_some() {
-            "UserDecryptionRequest"
-        } else {
-            "PublicDecryptionRequest"
-        };
-
-        info!("Processing {decryption_type}: {decryption_id}");
-
         // Extract keyId from the first SNS ciphertext material if available
         let key_id = sns_materials
             .first()
             .map(|m| hex::encode(m.keyId.to_be_bytes::<32>()))
-            .ok_or_else(|| anyhow!(
-                "No snsCtMaterials found for {decryption_type} {decryption_id}, cannot proceed without a valid key_id"
-            ))?;
-        info!(
-            "Extracted key_id {key_id} from snsCtMaterials[0] for {decryption_type} {decryption_id}"
-        );
+            .ok_or_else(|| {
+                anyhow!("No snsCtMaterials found, cannot proceed without a valid key_id")
+            })?;
+        info!("Extracted key_id {key_id} from snsCtMaterials[0]");
 
         let ciphertexts = self
             .prepare_ciphertexts(decryption_id, &key_id, sns_materials)
-            .await
-            .map_err(|e| anyhow!("{decryption_type} {decryption_id}: {e}"))?;
+            .await?;
 
         // Convert alloy domain to protobuf domain
         let domain_msg = alloy_to_protobuf_domain(&self.domain)?;
@@ -109,6 +96,7 @@ where
                 domain: Some(domain_msg),
                 enc_key,
                 typed_ciphertexts: ciphertexts,
+                extra_data,
             };
 
             verify_user_decryption_eip712(&user_decryption_request)?;
@@ -119,6 +107,7 @@ where
                 ciphertexts,
                 key_id: Some(RequestId { request_id: key_id }),
                 domain: Some(domain_msg),
+                extra_data,
             };
             Ok(public_decryption_request.into())
         }
@@ -142,43 +131,20 @@ where
         }
 
         // Extract and log FHE types for all ciphertexts
-        let fhe_types: Vec<String> = sns_ciphertext_materials
+        let fhe_types: Vec<_> = sns_ciphertext_materials
             .iter()
-            .map(|(handle, _)| {
-                let fhe_type = extract_fhe_type_from_handle(handle);
-                fhe_type_to_string(fhe_type).to_string()
-            })
+            .map(|ct| ct.fhe_type)
             .collect();
 
         info!(
-            "Processing {} with {} ciphertexts, key_id: {}, FHE types: [{}]",
+            "Processing {} with {} ciphertexts, key_id: {}, FHE types: {:?}",
             decryption_id,
             sns_ciphertext_materials.len(),
             key_id,
-            fhe_types.join(", ")
+            fhe_types,
         );
 
-        // Prepare typed ciphertexts for the user decryption request
-        let typed_ciphertexts = sns_ciphertext_materials
-            .into_iter()
-            .map(|(handle, ciphertext)| {
-                let fhe_type = extract_fhe_type_from_handle(&handle);
-                info!(
-                    "Handle: {}\nRetrieved S3 ciphertext of length: {}, FHE Type: {}",
-                    hex::encode(&handle),
-                    ciphertext.len(),
-                    fhe_type
-                );
-                TypedCiphertext {
-                    ciphertext,
-                    external_handle: handle,
-                    fhe_type,
-                    ciphertext_format: CiphertextFormat::BigExpanded.into(),
-                }
-            })
-            .collect();
-
-        Ok(typed_ciphertexts)
+        Ok(sns_ciphertext_materials)
     }
 }
 

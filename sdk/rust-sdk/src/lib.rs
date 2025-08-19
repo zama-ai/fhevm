@@ -29,8 +29,8 @@ pub struct HostContracts {
 /// Configuration for the FHEVM SDK.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FhevmConfig {
-    /// Path to the directory containing key files
-    pub keys_directory: PathBuf,
+    /// Path to the directory containing key files. Required to create inputs with the SDK.
+    pub keys_directory: Option<PathBuf>,
     /// Gateway chain ID
     pub gateway_chain_id: u64,
     /// Host chain ID
@@ -133,8 +133,8 @@ impl FhevmSdk {
         ));
         status.push_str(&format!("  Host Chain ID: {}\n", self.config.host_chain_id));
         status.push_str(&format!(
-            "  Keys Directory: {}\n",
-            self.config.keys_directory.display()
+            "  Keys Directory: {:?}\n",
+            self.config.keys_directory
         ));
 
         status.push_str("\nGateway Contracts:\n");
@@ -176,10 +176,15 @@ impl FhevmSdk {
     /// Ensure keys are loaded from the configured path
     fn ensure_keys_loaded(&mut self) -> Result<()> {
         if self.public_key.is_none() || self.crs.is_none() {
-            debug!("Loading keys from {}", self.config.keys_directory.display());
+            let keys_directory = self
+                .config
+                .keys_directory
+                .as_ref()
+                .expect("Keys directory must be configured");
 
+            debug!("Loading keys from {}", keys_directory.display());
             let (public_key, _client_key, _server_key, crs) =
-                utils::load_fhe_keyset(&self.config.keys_directory)?;
+                utils::load_fhe_keyset(keys_directory)?;
 
             info!("Keys loaded successfully");
             self.public_key = Some(Arc::new(public_key));
@@ -215,18 +220,18 @@ impl FhevmSdk {
     /// # fn example(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     /// // Just generate hash
     /// let hash = sdk.eip712_builder()
-    ///     .public_key("0x2000...")
-    ///     .add_contract("0x742d...")?
-    ///     .validity_period(1748252823, 10)
+    ///     .with_public_key("0x2000...")
+    ///     .with_contract("0x742d...")?
+    ///     .with_validity_period(1748252823, 10)
     ///     .generate_hash()?;
     ///
     /// // Sign and verify (consistent with your actual usage)
     /// let result = sdk.eip712_builder()
-    ///     .public_key("0x2000...")
-    ///     .add_contract("0x742d...")?
-    ///     .validity_period(1748252823, 10)
-    ///     .sign_with("0x7136...")
-    ///     .verify(true)
+    ///     .with_public_key("0x2000...")
+    ///     .with_contract("0x742d...")?
+    ///     .with_validity_period(1748252823, 10)
+    ///     .with_private_key("0x7136...")
+    ///     .with_verification(true)
     ///     .build()?;
     ///
     /// println!("Signed: {}, Verified: {}", result.is_signed(), result.is_verified());
@@ -234,14 +239,10 @@ impl FhevmSdk {
     /// # }
     /// ```
     pub fn create_eip712_signature_builder(&self) -> signature::eip712::Eip712SignatureBuilder {
-        let verifying_contract = self
-            .config
-            .gateway_contracts
-            .input_verification
-            .unwrap_or_else(|| {
-                warn!("Input verification contract not set, using zero address");
-                Address::ZERO
-            });
+        let verifying_contract = self.config.gateway_contracts.decryption.unwrap_or_else(|| {
+            warn!("Decryption contract not set, using zero address");
+            Address::ZERO
+        });
 
         let config = signature::eip712::Eip712Config {
             gateway_chain_id: self.config.gateway_chain_id,
@@ -321,7 +322,7 @@ impl FhevmSdk {
         // Use the existing builder pattern
         let calldata = self
             .create_public_decrypt_request_builder()
-            .add_handles_from_bytes(ct_handles)?
+            .with_handles_from_bytes(ct_handles)?
             .build_and_generate_calldata()?;
 
         info!(
@@ -386,8 +387,8 @@ impl FhevmSdk {
         Ok(calldata.to_vec())
     }
 
-    /// Get an input builder factory for creating encrypted inputs
-    pub fn get_input_factory(&mut self) -> Result<&InputBuilderFactory> {
+    /// Create an input builder factory for creating encrypted inputs
+    pub fn create_input_factory(&mut self) -> Result<()> {
         if self.input_factory.is_none() {
             // Load public key and CRS from config
 
@@ -418,13 +419,19 @@ impl FhevmSdk {
                 crs,
             ));
         }
+
+        Ok(())
+    }
+
+    /// Get an input builder factory for creating encrypted inputs
+    pub fn get_input_factory(&self) -> Result<&InputBuilderFactory> {
         self.input_factory
             .as_ref()
             .ok_or_else(|| FhevmError::InvalidParams("Failed to create input factory".to_string()))
     }
 
     /// Create a new encrypted input builder
-    pub fn create_input_builder(&mut self) -> Result<EncryptedInputBuilder> {
+    pub fn create_input_builder(&self) -> Result<EncryptedInputBuilder> {
         debug!("Creating encrypted input builder");
         let factory = self.get_input_factory()?;
         Ok(factory.create_builder())
@@ -464,11 +471,11 @@ impl FhevmSdk {
     /// # let timestamp = 1640995200u64;
     /// #
     /// let calldata = sdk.create_user_decrypt_request_builder()
-    ///     .add_handles_from_bytes(&handles, &contracts)?
-    ///     .user_address_from_str("0x742d35Cc6634C0...")?
-    ///     .signature_from_hex("0x1234567890abc5678...")?
-    ///     .public_key_from_hex("0x200000000000...bc6f331")?
-    ///     .validity(timestamp, 30)?
+    ///     .with_handles_from_bytes(&handles, &contracts)?
+    ///     .with_user_address_from_str("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B3")?
+    ///     .with_signature_from_hex("0x1234567890abc5678...")?
+    ///     .with_public_key_from_hex("0x200000000000...bc6f331")?
+    ///     .with_validity(timestamp, 30)?
     ///     .build_and_generate_calldata()?;
     ///
     /// println!("Generated calldata: {} bytes", calldata.len());
@@ -478,14 +485,14 @@ impl FhevmSdk {
     ///
     /// # Quick Start Steps
     ///
-    /// 1. **Add handles**: `.add_handles_from_bytes()` - The encrypted data  
-    /// 2. **Set user**: `.user_address_from_str()` - Who can decrypt
-    /// 3. **Add signature**: `.signature_from_hex()` - EIP-712 signature
-    /// 4. **Add public key**: `.public_key_from_hex()` - User's decryption key
-    /// 5. **Set validity**: `.validity()` - Time period for permission
+    /// 1. **Add handles**: `.with_handles_from_bytes()` - The encrypted data
+    /// 2. **Set user**: `.with_user_address_from_str()` - Who can decrypt
+    /// 3. **Add signature**: `.with_signature_from_hex()` - EIP-712 signature
+    /// 4. **Add public key**: `.with_public_key_from_hex()` - User's decryption key
+    /// 5. **Set validity**: `.with_validity()` - Time period for permission
     /// 6. **Build**: `.build_and_generate_calldata()` - Generate final calldata
     pub fn create_user_decrypt_request_builder(&self) -> UserDecryptRequestBuilder {
-        UserDecryptRequestBuilder::new().contracts_chain_id(self.config.host_chain_id)
+        UserDecryptRequestBuilder::new().with_contracts_chain_id(self.config.host_chain_id)
     }
 
     /// Alternative shorter name for discoverability
@@ -494,7 +501,7 @@ impl FhevmSdk {
     }
 
     pub fn create_user_decrypt_response_builder(&self) -> UserDecryptionResponseBuilder {
-        UserDecryptionResponseBuilder::new().gateway_chain_id(self.config.gateway_chain_id)
+        UserDecryptionResponseBuilder::new().with_gateway_chain_id(self.config.gateway_chain_id)
     }
 
     /// Alternative shorter name for discoverability
@@ -528,7 +535,7 @@ impl FhevmSdk {
     /// # let handles = vec![vec![1u8; 32], vec![2u8; 32]]; // Your encrypted handles
     /// #
     /// let calldata = sdk.create_public_decrypt_request_builder()
-    ///     .add_handles_from_bytes(&handles)?
+    ///     .with_handles_from_bytes(&handles)?
     ///     .build_and_generate_calldata()?;
     ///
     /// println!("Generated calldata: {} bytes", calldata.len());
@@ -553,10 +560,10 @@ impl FhevmSdk {
         &self,
     ) -> decryption::public::PublicDecryptionResponseBuilder {
         decryption::public::PublicDecryptionResponseBuilder::new()
-            .gateway_chain_id(self.config.gateway_chain_id)
+            .with_gateway_chain_id(self.config.gateway_chain_id)
     }
 
-    /// Alternative shorter name for discoverability  
+    /// Alternative shorter name for discoverability
     pub fn public_decrypt_response_builder(
         &self,
     ) -> decryption::public::PublicDecryptionResponseBuilder {
@@ -651,10 +658,7 @@ impl FhevmSdkBuilder {
 
     pub fn with_gateway_contract(mut self, name: &str, address: &str) -> Self {
         let addr = Address::from_str(address).unwrap_or_else(|_| {
-            panic!(
-                "Invalid address provided for gateway contract '{}': {}",
-                name, address
-            )
+            panic!("Invalid address provided for gateway contract '{name}': {address}")
         });
 
         match name.to_lowercase().as_str() {
@@ -677,20 +681,14 @@ impl FhevmSdkBuilder {
     pub fn with_input_verification_contract(mut self, address: &str) -> Self {
         self.gateway_contracts.input_verification =
             Some(Address::from_str(address).unwrap_or_else(|_| {
-                panic!(
-                    "Invalid address provided for input verification contract: {}",
-                    address
-                )
+                panic!("Invalid address provided for input verification contract: {address}")
             }));
         self
     }
 
     pub fn with_decryption_contract(mut self, address: &str) -> Self {
         self.gateway_contracts.decryption = Some(Address::from_str(address).unwrap_or_else(|_| {
-            panic!(
-                "Invalid address provided for decryption contract: {}",
-                address
-            )
+            panic!("Invalid address provided for decryption contract: {address}")
         }));
         self
     }
@@ -698,17 +696,14 @@ impl FhevmSdkBuilder {
     pub fn with_acl_contract(mut self, address: &str) -> Self {
         self.host_contracts.acl =
             Some(Address::from_str(address).unwrap_or_else(|_| {
-                panic!("Invalid address provided for ACL contract: {}", address)
+                panic!("Invalid address provided for ACL contract: {address}")
             }));
         self
     }
 
     pub fn with_host_contract(mut self, name: &str, address: &str) -> Self {
         let addr = Address::from_str(address).unwrap_or_else(|_| {
-            panic!(
-                "Invalid address provided for host contract '{}': {}",
-                name, address
-            )
+            panic!("Invalid address provided for host contract '{name}': {address}")
         });
 
         match name.to_lowercase().as_str() {
@@ -746,10 +741,7 @@ impl FhevmSdkBuilder {
     /// Convert the builder to a config
     fn to_config(&self) -> Result<FhevmConfig> {
         // Validate required fields
-        let keys_directory = self
-            .keys_directory
-            .clone()
-            .ok_or_else(|| FhevmError::InvalidParams("Keys directory is required".to_string()))?;
+        let keys_directory = self.keys_directory.clone();
 
         let gateway_chain_id = self
             .gateway_chain_id
@@ -787,9 +779,18 @@ impl FhevmSdkBuilder {
         // Convert to config and create the SDK
         debug!("Building FhevmSdk from builder");
         let config = self.to_config()?;
+        let is_keys_directory_set = config.keys_directory.is_some();
 
         info!("SDK configuration validated successfully");
+
+        let mut fhevm = FhevmSdk::new(config);
+
+        if is_keys_directory_set {
+            fhevm.ensure_keys_loaded()?;
+            fhevm.create_input_factory()?;
+        }
+
         // Create and return the SDK
-        Ok(FhevmSdk::new(config))
+        Ok(fhevm)
     }
 }

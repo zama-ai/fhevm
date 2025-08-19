@@ -12,14 +12,14 @@ async function loadGatewayConfigContract(
   const gatewayConfigFactory = await ethers.getContractFactory("./contracts/GatewayConfig.sol:GatewayConfig");
   const gatewayConfigAddress = customGatewayConfigAddress
     ? customGatewayConfigAddress
-    : dotenv.parse(fs.readFileSync("addresses/.env.gateway_config")).GATEWAY_CONFIG_ADDRESS;
+    : dotenv.parse(fs.readFileSync("addresses/.env.gateway")).GATEWAY_CONFIG_ADDRESS;
   return gatewayConfigFactory.attach(gatewayConfigAddress).connect(ethers.provider) as GatewayConfig;
 }
 
 task("task:getKmsSigners")
   .addOptionalParam(
     "customGatewayConfigAddress",
-    "Use a custom address for the GatewayConfig contract instead of the default one - ie stored inside .env.gateway_config",
+    "Use a custom address for the GatewayConfig contract instead of the default one - ie stored inside .env.gateway",
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const gatewayConfig = await loadGatewayConfigContract(taskArguments.customGatewayConfigAddress, ethers);
@@ -30,7 +30,7 @@ task("task:getKmsSigners")
 task("task:getCoprocessorSigners")
   .addOptionalParam(
     "customGatewayConfigAddress",
-    "Use a custom address for the GatewayConfig contract instead of the default one - ie stored inside .env.gateway_config",
+    "Use a custom address for the GatewayConfig contract instead of the default one - ie stored inside .env.gateway",
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const gatewayConfig = await loadGatewayConfigContract(taskArguments.customGatewayConfigAddress, ethers);
@@ -44,7 +44,7 @@ task("task:getCoprocessorSigners")
 task("task:getHostChains")
   .addOptionalParam(
     "customGatewayConfigAddress",
-    "Use a custom address for the GatewayConfig contract instead of the default one - ie stored inside .env.gateway_config",
+    "Use a custom address for the GatewayConfig contract instead of the default one - ie stored inside .env.gateway",
   )
   .setAction(async function (taskArguments: TaskArguments, { ethers }) {
     const gatewayConfig = await loadGatewayConfigContract(taskArguments.customGatewayConfigAddress, ethers);
