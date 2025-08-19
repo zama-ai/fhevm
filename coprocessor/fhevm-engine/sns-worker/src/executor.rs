@@ -172,7 +172,7 @@ pub(crate) async fn run_loop(
     telemetry::end_span(s);
     t.end();
 
-    info!(target: "worker", "Fetched keyset for tenant {}", tenant_api_key);
+    info!(target: "worker", tenant_api_key = tenant_api_key, "Fetched keyset");
 
     let mut gc_ticker = interval(conf.db.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
@@ -201,7 +201,7 @@ pub(crate) async fn run_loop(
                             gc_ticker.reset();
                             gc_timestamp = SystemTime::now();
                             if let Err(err) = garbage_collect(pool, conf.db.gc_batch_limit).await {
-                                error!(target: "worker", "Failed to garbage collect: {}", err);
+                                error!(target: "worker", error = %err, "Failed to garbage collect");
                             }
                         }
                     }
@@ -211,21 +211,21 @@ pub(crate) async fn run_loop(
             }
             Err(ExecutionError::DbError(err)) => match err {
                 sqlx::Error::PoolTimedOut | sqlx::Error::Io(_) | sqlx::Error::Tls(_) => {
-                    error!(target: "worker", "Transient DB error occurred: {err}");
+                    error!(target: "worker", error = %err, "Transient DB error occurred");
                 }
                 _ => {
                     tokio::time::sleep(RETRY_DB_CONN_INTERVAL).await;
                 }
             },
             Err(err) => {
-                error!(target: "worker", "Failed to process SnS tasks: {err}");
+                error!(target: "worker", error = %err, "Failed to process SnS tasks");
             }
         }
 
         select! {
             _ = token.cancelled() => return Ok(()),
             n = listener.try_recv() => {
-                info!(target: "worker", "Received notification {:?}", n);
+                info!(target: "worker", notification = ?n, "Received notification");
             },
             _ = polling_ticker.tick() => {
                 debug!(target: "worker", "Polling timeout, rechecking for tasks");
@@ -235,7 +235,7 @@ pub(crate) async fn run_loop(
                 info!(target: "worker", "gc tick, on_idle");
                 gc_timestamp = SystemTime::now();
                 if let Err(err) = garbage_collect(pool, conf.db.gc_batch_limit).await {
-                    error!(target: "worker", "Failed to garbage collect: {}", err);
+                    error!(target: "worker", error = %err, "Failed to garbage collect");
                 }
             }
         }
@@ -274,7 +274,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
     if rows_affected > 0 {
         let _s = telemetry::tracer_with_start_time("cleanup_ct128", start);
-        info!(target: "worker", "Cleaning up old ciphertexts128, rows_affected: {}", rows_affected);
+        info!(target: "worker", rows_affected = rows_affected, "Cleaning up old ciphertexts128");
     }
 
     Ok(())
@@ -291,7 +291,7 @@ async fn fetch_and_execute_sns_tasks(
     let mut db_txn = match pool.begin().await {
         Ok(txn) => txn,
         Err(err) => {
-            error!(target: "worker", "Failed to begin transaction: {err}");
+            error!(target: "worker", error = %err, "Failed to begin transaction");
             return Err(err.into());
         }
     };
@@ -490,7 +490,7 @@ fn compute_task(
     match ct.squash_noise_and_serialize(enable_compression) {
         Ok(bytes) => {
             telemetry::end_span(span);
-            info!(target: "sns", { handle }, "Ciphertext converted, length: {}, compressed: {}", bytes.len(), enable_compression);
+            info!(target: "sns", handle = handle, length = bytes.len(), compressed = enable_compression, "Ciphertext converted");
 
             #[cfg(feature = "test_decrypt_128")]
             decrypt_big_ct(_client_key, &bytes, &ct, &task.handle, enable_compression);
@@ -521,13 +521,13 @@ fn compute_task(
                 // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
                 // 3. The PostgresDB (size: unlimited)
 
-                error!({target = "worker", action = "review"},  "Failed to send task to upload worker: {err}");
+                error!({target = "worker", action = "review", error = %err},  "Failed to send task to upload worker");
                 telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
             }
         }
         Err(err) => {
             telemetry::end_span_with_err(span, err.to_string());
-            error!(target: "sns", { handle }, "Failed to convert ct: {err}");
+            error!(target: "sns", handle = handle, error = %err, "Failed to convert ct");
         }
     };
 }
@@ -570,7 +570,7 @@ async fn update_ciphertext128(
                     telemetry::end_span(s);
                 }
                 Err(err) => {
-                    error!(target: "worker", handle = ?task.handle, "Failed to insert ct128 in DB: {err}");
+                    error!(target: "worker", handle = ?task.handle, error = %err, "Failed to insert ct128 in DB");
                     telemetry::end_span_with_err(s, err.to_string());
                 }
             }
@@ -640,14 +640,14 @@ fn decrypt_big_ct(
 ) {
     {
         if let Some(client_key) = &client_key {
-            let ct = if is_compressed {
+            let pt = if is_compressed {
                 ct.decrypt_squash_noise_compressed(client_key, bytes)
             } else {
                 ct.decrypt_squash_noise(client_key, bytes)
             }
             .expect("Failed to decrypt");
 
-            info!(target: "sns", "Decrypted plaintext: {:?}, handle: {}", ct, compact_hex(handle));
+            info!(target: "sns", plaintext = pt, handle = compact_hex(handle), "Decrypted");
         }
     }
 }
