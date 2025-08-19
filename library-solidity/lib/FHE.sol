@@ -45,9 +45,6 @@ library FHE {
     /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
 
-    /// @notice Returned if the requested handle to be decrypted is not of a supported type.
-    error UnsupportedHandleType();
-
     /// @notice This event is emitted when requested decryption has been fulfilled.
     event DecryptionFulfilled(uint256 indexed requestID);
 
@@ -8951,9 +8948,6 @@ library FHE {
         bytes memory cleartexts,
         bytes memory decryptionProof
     ) private returns (bool) {
-        // Verify the handle types
-        verifyHandleTypes(handlesList);
-
         // Compute the signature offset
         // This offset is computed by considering the format encoded by the KMS when creating the
         // "decryptedResult" bytes array (see comment below), which is the following:
@@ -8987,19 +8981,6 @@ library FHE {
                 decryptedResult,
                 decryptionProof
             );
-    }
-
-    /**
-     * @dev Private low-level function used to verify the handle types.
-     */
-    function verifyHandleTypes(bytes32[] memory handlesList) private pure {
-        uint256 handlesListlen = handlesList.length;
-        for (uint256 i = 0; i < handlesListlen; i++) {
-            FheType typeCt = FheType(uint8(handlesList[i][30]));
-            if (uint8(typeCt) >= 9) {
-                revert UnsupportedHandleType();
-            }
-        }
     }
 
     /**

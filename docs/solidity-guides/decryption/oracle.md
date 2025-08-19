@@ -88,7 +88,7 @@ The first argument, `ctsHandles`, should be an array of ciphertexts handles whic
 function [callbackName](uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) external;
 ```
 
-Notice that `XXX` should be the decrypted type, which is a native Solidity type corresponding to the original ciphertext type, following this table of conventions:
+`cleartexts` is the bytes array corresponding to the ABI encoding of all requested decrypted values. Each of these decrypted values' type should be a native Solidity type corresponding to the original ciphertext type, following this table of conventions:
 
 | Ciphertext type | Decrypted type |
 | --------------- | -------------- |

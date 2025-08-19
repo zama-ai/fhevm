@@ -232,7 +232,7 @@ function decryptWinningAddress() public onlyAfterEnd {
 }
 ```
 
-Here, we are requesting to decrypt a single parameter for the `winningAddress`, ABI encoded as a byte array (using `abi.encode`). You can request multiple ones by including more parameters in the ABI encoding.
+Here, we are requesting to decrypt a single parameter for the `winningAddress`. However, you can request multiple ones by increasing the `cts` array and adding other parameters.
 
 Notice also that when calling the `FHE.requestDecryption()`, we are passing a selector in the parameter. This selector will be the one called back by the oracle.
 
@@ -249,6 +249,8 @@ function resolveAuctionCallback(uint256 requestId, bytes memory cleartexts, byte
   winnerAddress = resultWinnerAddress;
 }
 ```
+
+`cleartexts` is the bytes array corresponding to the ABI encoding of all requested decrypted values, in this case `abi.encode(winningAddress)`.
 
 To ensure that it is the expected data we are waiting for, we need to verify the `requestId` parameter and the signatures (included in the `decryptionProof` parameter), which verify the computation logic done. Once verified, we can update the winner’s address.
 
