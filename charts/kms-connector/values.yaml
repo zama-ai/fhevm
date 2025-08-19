@@ -1,5 +1,6 @@
+# Commented env variables means they are optional. Their default value is the commented one.
+
 commonConfig:
-  enabled: true
   env:
     - name: KMS_CONNECTOR_DATABASE_URL
       value: "postgresql://postgres:postgres@fhevm-db:5432/kms-connector"
@@ -9,10 +10,22 @@ commonConfig:
       value: "54321"
     - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
       value: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
+    # - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_NAME
+    #   value: Decryption
+    # - name: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
+    #   value: "1"
     - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
       value: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
+    # - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_NAME
+    #   value: GatewayConfig
+    # - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_VERSION
+    #   value: "1"
     - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS
       value: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+    # - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_NAME
+    #   value: KmsManagement
+    # - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_VERSION
+    #   value: "1"
 
 monitoringConfig:
   env:
@@ -57,6 +70,19 @@ kmsConnectorGwListener:
   env:
     - name: KMS_CONNECTOR_SERVICE_NAME
       value: kms-connector-gw-listener
+    # - name: KMS_CONNECTOR_MONITORING_ENDPOINT
+    #   value: "0.0.0.0:9100"
+    # - name: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT_SECS
+    #   value: "3"
+    # - name: KMS_CONNECTOR_TASK_LIMIT
+    #   value: "1000"
+    # - name: KMS_CONNECTOR_DECRYPTION_POLLING_MS
+    #   value: "1000"
+    # - name: KMS_CONNECTOR_KMS_MANAGEMENT_POLLING_MS
+    #   value: "30000"
+    # - name: KMS_CONNECTOR_FROM_BLOCK_NUMBER
+    #   value: "1234"
+
   tracing:
     enabled: true
   ports:
@@ -109,6 +135,34 @@ kmsConnectorKmsWorker:
       value: kms-connector-kms-worker
     - name: KMS_CONNECTOR_KMS_CORE_ENDPOINT
       value: http://kms-core:50051
+    # - name: KMS_CONNECTOR_MONITORING_ENDPOINT
+    #   value: "0.0.0.0:9100"
+    # - name: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT_SECS
+    #   value: "3"
+    # - name: KMS_CONNECTOR_EVENTS_BATCH_SIZE
+    #   value: "10"
+    # - name: KMS_CONNECTOR_GRPC_REQUEST_RETRIES
+    #   value: "3"
+    # - name: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
+    #   value: "300"
+    # - name: KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS
+    #   value: "300"
+    # - name: KMS_CONNECTOR_GRPC_POLL_INTERVAL_SECS
+    #   value: "5"
+    # - name: KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES
+    #   value: "3"
+    # - name: KMS_CONNECTOR_S3_CONNECT_TIMEOUT
+    #   value: "2"
+    # - name: KMS_CONNECTOR_VERIFY_COPROCESSORS
+    #   value: "true"
+    # - name: KMS_CONNECTOR_S3_CONFIG__REGION
+    #   value: "us-east-1"
+    # - name: KMS_CONNECTOR_S3_CONFIG__BUCKET
+    #   value: "my-ciphertext-bucket"
+    # - name: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
+    #   value: "http://localhost:9876"
+    # - name: KMS_CONNECTOR_TASK_LIMIT
+    #   value: "1000"
   tracing:
     enabled: true
   ports:
@@ -171,6 +225,24 @@ kmsConnectorTxSender:
     #     secretKeyRef:
     #       name: kms-connector-tx-sender.aws-kms-wallet
     #       key: kms-connector-tx-sender.aws-kms-wallet
+    # - name: KMS_CONNECTOR_AWS_KMS_CONFIG__REGION
+    #   value: null
+    # - name: KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT
+    #   value: null
+    # - name: KMS_CONNECTOR_MONITORING_ENDPOINT
+    #   value: "0.0.0.0:9100"
+    # - name: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT_SECS
+    #   value: "3"
+    # - name: KMS_CONNECTOR_RESPONSES_BATCH_SIZE
+    #   value: "10"
+    # - name: KMS_CONNECTOR_TX_RETRIES
+    #   value: "3"
+    # - name: KMS_CONNECTOR_TX_RETRY_INTERVAL_MS
+    #   value: "100"
+    # - name: KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT
+    #   value: "130"
+    # - name: KMS_CONNECTOR_TASK_LIMIT
+    #   value: "1000"
   tracing:
     enabled: true
   ports:
