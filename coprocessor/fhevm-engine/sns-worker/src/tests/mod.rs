@@ -18,6 +18,7 @@ use test_harness::{
     db_utils::truncate_tables,
     instance::{DBInstance, ImportMode},
     localstack::LocalstackContainer,
+    s3_utils,
 };
 use tfhe::{
     prelude::FheDecrypt, ClientKey, CompressedSquashedNoiseCiphertextList, SquashedNoiseFheUint,
@@ -377,54 +378,6 @@ async fn test_garbage_collect() {
     );
 }
 
-fn build_test_config(db_url: String, enable_compression: bool) -> Config {
-    let batch_limit = std::env::var("BATCH_LIMIT")
-        .ok()
-        .and_then(|v| v.parse::<u32>().ok())
-        .unwrap_or(100);
-
-    let schedule_policy = std::env::var("SCHEDULE_POLICY")
-        .ok()
-        .map(SchedulePolicy::from)
-        .unwrap_or(SchedulePolicy::RayonParallel);
-
-    Config {
-        tenant_api_key: TENANT_API_KEY.to_string(),
-        db: DBConfig {
-            url: db_url,
-            listen_channels: vec![LISTEN_CHANNEL.to_string()],
-            notify_channel: "fhevm".to_string(),
-            batch_limit,
-            gc_batch_limit: 30,
-            polling_interval: 60000,
-            cleanup_interval: Duration::from_secs(10),
-            max_connections: 5,
-            timeout: Duration::from_secs(5),
-            lifo: false,
-        },
-        s3: S3Config {
-            bucket_ct128: "ct128".to_owned(),
-            bucket_ct64: "ct64".to_owned(),
-            max_concurrent_uploads: 2000,
-            retry_policy: S3RetryPolicy {
-                max_retries_per_upload: 100,
-                max_backoff: Duration::from_secs(10),
-                max_retries_timeout: Duration::from_secs(120),
-                recheck_duration: Duration::from_secs(2),
-                regular_recheck_duration: Duration::from_secs(120),
-            },
-        },
-        service_name: "".to_owned(),
-        log_level: Level::INFO,
-        health_checks: crate::HealthCheckConfig {
-            liveness_threshold: Duration::from_secs(10),
-            port: 8080,
-        },
-        enable_compression,
-        schedule_policy,
-    }
-}
-
 #[allow(dead_code)]
 #[derive(Clone)]
 struct TestEnvironment {
@@ -475,6 +428,10 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
     })
 }
 
+/// Deploys a LocalStack instance and creates S3 buckets for ciphertext128 and ciphertext64
+///
+/// # Returns
+/// A tuple containing the LocalStack instance and the S3 client
 async fn setup_localstack(
     conf: &Config,
 ) -> anyhow::Result<(Arc<LocalstackContainer>, aws_sdk_s3::Client)> {
@@ -602,6 +559,11 @@ async fn clean_up(pool: &sqlx::PgPool) -> anyhow::Result<()> {
 }
 
 /// Verifies that the ciphertext for the given handle in the database decrypts to the expected value
+///
+/// It waits for the ciphertext to be available in the database, decrypts it using the client key,
+/// and asserts that the decrypted value matches the expected cleartext value.
+///
+/// It also checks that the ciphertext is uploaded to S3 if the feature is enabled.
 async fn assert_ciphertext128(
     test_env: &TestEnvironment,
     tenant_id: i32,
@@ -646,34 +608,29 @@ async fn assert_ciphertext128(
 
     #[cfg(feature = "test_s3_use_handle_as_key")]
     {
-        assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct128, handle).await;
-        assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle).await;
+        assert_ciphertext_uploaded(
+            test_env,
+            &test_env.conf.s3.bucket_ct128,
+            handle,
+            Some(ct.len() as i64),
+        )
+        .await;
+        assert_ciphertext_uploaded(test_env, &test_env.conf.s3.bucket_ct64, handle, None).await;
     }
 
     Ok(())
 }
 
 /// Asserts that ciphertext exists in S3
-async fn assert_ciphertext_uploaded(test_env: &TestEnvironment, bucket: &String, handle: &Vec<u8>) {
+async fn assert_ciphertext_uploaded(
+    test_env: &TestEnvironment,
+    bucket: &String,
+    handle: &Vec<u8>,
+    expected_ct_len: Option<i64>,
+) {
     if let Some(client) = test_env.s3_instance.as_ref().map(|(_, c)| c.clone()) {
-        let mut found = false;
-        let retries = 1000;
-        for _i in 0..retries {
-            if client
-                .head_object()
-                .bucket(bucket)
-                .key(hex::encode(handle))
-                .send()
-                .await
-                .is_ok()
-            {
-                found = true;
-                break;
-            }
-            sleep(Duration::from_millis(100)).await;
-        }
-
-        assert!(found, "Failed to find ct in S3 bucket: {}", bucket);
+        s3_utils::assert_key_exists(client, bucket, &hex::encode(handle), expected_ct_len, 1000)
+            .await;
     }
 }
 
@@ -684,26 +641,54 @@ async fn assert_ciphertext_s3_object_count(
     expected_count: i64,
 ) {
     if let Some(client) = test_env.s3_instance.as_ref().map(|(_, c)| c.clone()) {
-        let result = client
-            .list_objects()
-            .set_max_keys(Some((expected_count + 1) as i32))
-            .bucket(bucket)
-            .send()
-            .await
-            .expect("Failed to list objects in S3 bucket");
+        s3_utils::assert_object_count(client, bucket, expected_count as i32).await;
+    }
+}
 
-        tracing::info!(
-            "Found {} ct objects in S3 bucket: {}",
-            result.contents().len(),
-            bucket
-        );
+fn build_test_config(db_url: String, enable_compression: bool) -> Config {
+    let batch_limit = std::env::var("BATCH_LIMIT")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .unwrap_or(100);
 
-        assert_eq!(
-            result.contents().len(),
-            expected_count as usize,
-            "Expected {} ct objects in S3 bucket, found {}",
-            expected_count,
-            result.contents().len()
-        );
+    let schedule_policy = std::env::var("SCHEDULE_POLICY")
+        .ok()
+        .map(SchedulePolicy::from)
+        .unwrap_or(SchedulePolicy::RayonParallel);
+
+    Config {
+        tenant_api_key: TENANT_API_KEY.to_string(),
+        db: DBConfig {
+            url: db_url,
+            listen_channels: vec![LISTEN_CHANNEL.to_string()],
+            notify_channel: "fhevm".to_string(),
+            batch_limit,
+            gc_batch_limit: 30,
+            polling_interval: 60000,
+            cleanup_interval: Duration::from_secs(10),
+            max_connections: 5,
+            timeout: Duration::from_secs(5),
+            lifo: false,
+        },
+        s3: S3Config {
+            bucket_ct128: "ct128".to_owned(),
+            bucket_ct64: "ct64".to_owned(),
+            max_concurrent_uploads: 2000,
+            retry_policy: S3RetryPolicy {
+                max_retries_per_upload: 100,
+                max_backoff: Duration::from_secs(10),
+                max_retries_timeout: Duration::from_secs(120),
+                recheck_duration: Duration::from_secs(2),
+                regular_recheck_duration: Duration::from_secs(120),
+            },
+        },
+        service_name: "".to_owned(),
+        log_level: Level::INFO,
+        health_checks: crate::HealthCheckConfig {
+            liveness_threshold: Duration::from_secs(10),
+            port: 8080,
+        },
+        enable_compression,
+        schedule_policy,
     }
 }
