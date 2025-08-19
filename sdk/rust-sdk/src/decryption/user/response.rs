@@ -23,8 +23,8 @@ use tracing::{debug, info};
 /// # Example
 ///
 /// ```no_run
+/// # use fhevm_gateway_rust_bindings::decryption::Decryption::CtHandleContractPair;
 /// # use gateway_sdk::decryption::user::process_user_decryption_response;
-/// # use gateway_sdk::blockchain::bindings::Decryption::CtHandleContractPair;
 /// # use gateway_sdk::FhevmError;
 /// # use alloy::primitives::{Address, U256};
 /// # use std::str::FromStr;
@@ -539,17 +539,17 @@ mod tests {
     }
 
     #[test]
-    fn test_process_with_complete_data_rc17() {
-        let builder = build_test_from_json("rc17_complete_test");
+    fn test_process_with_complete_data_kms_rc26() {
+        let builder = build_test_from_json("rc26_complete_test");
         let result = builder.process();
 
         // Load expected output from test data
         let test_data = load_test_data();
         let expected =
-            &test_data["user_decryption_test_data"]["rc17_complete_test"]["expected_output"];
+            &test_data["user_decryption_test_data"]["rc26_complete_test"]["expected_output"];
 
         if expected["success"].as_bool().unwrap_or(false) {
-            assert!(result.is_ok(), "RC17 test should succeed");
+            assert!(result.is_ok(), "KMS RC26 test should succeed");
 
             let plaintexts = result.unwrap();
             let expected_values = expected["decrypted_values"].as_array().unwrap();
@@ -566,8 +566,8 @@ mod tests {
                 );
 
                 // Check decrypted value
-                if let Some(expected_u8) = expected_value["as_u8"].as_u64() {
-                    assert_eq!(plaintext.as_u8(), expected_u8 as u8);
+                if let Some(expected_u64) = expected_value["as_u64"].as_u64() {
+                    assert_eq!(plaintext.as_u64(), expected_u64);
                 }
             }
         } else {
@@ -585,10 +585,10 @@ mod tests {
 
         // Verify structure of test data
         assert!(test_data["user_decryption_test_data"].is_object());
-        assert!(test_data["user_decryption_test_data"]["rc17_complete_test"].is_object());
+        assert!(test_data["user_decryption_test_data"]["rc26_complete_test"].is_object());
 
         // Verify required fields exist
-        let rc17_test = &test_data["user_decryption_test_data"]["rc17_complete_test"];
+        let rc17_test = &test_data["user_decryption_test_data"]["rc26_complete_test"];
         assert!(rc17_test["input"].is_object());
         assert!(rc17_test["json_response"].is_object());
         assert!(rc17_test["expected_output"].is_object());
