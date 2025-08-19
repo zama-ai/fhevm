@@ -238,14 +238,13 @@ impl UserDecryptRequestBuilder {
         }
 
         // Validate signature length
-        if let Some(ref sig) = self.signature {
-            if sig.len() != 65 {
+        if let Some(ref sig) = self.signature
+            && sig.len() != 65 {
                 return Err(FhevmError::InvalidParams(format!(
                     "Invalid signature length: expected 65 bytes, got {}",
                     sig.len()
                 )));
             }
-        }
 
         Ok(())
     }

@@ -229,7 +229,7 @@ impl ResponseProcessor {
 
         let ml_kem_priv_key =
             bc2wrap::deserialize::<PrivateEncKey<ml_kem::MlKem512>>(&private_key_bytes)
-                .map(|k| UnifiedPrivateEncKey::MlKem512(k))
+                .map(UnifiedPrivateEncKey::MlKem512)
                 .map_err(|e| FhevmError::DecryptionError(format!("Invalid private key: {e:?}")))?;
 
         let eip712_domain = protobuf_to_alloy_domain(&eip712_domain).unwrap();
