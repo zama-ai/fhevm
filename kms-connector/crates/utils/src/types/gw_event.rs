@@ -4,7 +4,7 @@ use fhevm_gateway_rust_bindings::{
     decryption::Decryption::{
         PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
     },
-    kmsmanagement::KmsManagement::{
+    kms_management::KmsManagement::{
         CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
         PreprocessKskgenRequest,
     },

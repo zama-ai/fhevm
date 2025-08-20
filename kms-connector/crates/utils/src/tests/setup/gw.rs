@@ -11,8 +11,8 @@ use alloy::{
 };
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
-    gatewayconfig::GatewayConfig::{self, GatewayConfigInstance},
-    kmsmanagement::KmsManagement::{self, KmsManagementInstance},
+    gateway_config::GatewayConfig::{self, GatewayConfigInstance},
+    kms_management::KmsManagement::{self, KmsManagementInstance},
 };
 use std::{sync::LazyLock, time::Duration};
 use testcontainers::{
@@ -44,9 +44,9 @@ const ANVIL_PORT: u16 = 8545;
 
 pub struct GatewayInstance {
     pub provider: WalletGatewayProvider,
-    pub decryption_contract: DecryptionInstance<(), WalletGatewayProvider>,
-    pub gateway_config_contract: GatewayConfigInstance<(), WalletGatewayProvider>,
-    pub kms_management_contract: KmsManagementInstance<(), WalletGatewayProvider>,
+    pub decryption_contract: DecryptionInstance<WalletGatewayProvider>,
+    pub gateway_config_contract: GatewayConfigInstance<WalletGatewayProvider>,
+    pub kms_management_contract: KmsManagementInstance<WalletGatewayProvider>,
     pub anvil: ContainerAsync<GenericImage>,
     pub anvil_host_port: u16,
     pub block_time: u64,
@@ -91,7 +91,7 @@ impl GatewayInstance {
             .disable_recommended_fillers()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet)
-            .on_ws(WsConnect::new(Self::anvil_ws_endpoint_impl(
+            .connect_ws(WsConnect::new(Self::anvil_ws_endpoint_impl(
                 anvil_host_port,
             )))
             .await?;

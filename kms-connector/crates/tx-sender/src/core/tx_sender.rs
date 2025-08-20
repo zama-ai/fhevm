@@ -130,7 +130,7 @@ pub struct TransactionSenderInner<P: Provider> {
     provider: P,
 
     /// The `Decryption` contract instance of the Gateway.
-    decryption_contract: DecryptionInstance<(), P>,
+    decryption_contract: DecryptionInstance<P>,
 
     /// The number of retries to send a transaction to the Gateway.
     tx_retries: u8,
@@ -145,7 +145,7 @@ pub struct TransactionSenderInner<P: Provider> {
 impl<P: Provider> TransactionSenderInner<P> {
     pub fn new(
         provider: P,
-        decryption_contract: DecryptionInstance<(), P>,
+        decryption_contract: DecryptionInstance<P>,
         tx_retries: u8,
         tx_retry_interval: Duration,
         gas_multiplier_percent: usize,
