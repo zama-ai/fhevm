@@ -28,7 +28,7 @@ Ask technical questions and discuss with the community. Our team of experts usua
 days.
 
 - [Community forum](https://community.zama.ai/c/fhevm/15)
-- [Discord channel](https://discord.com/invite/fhe-org)
+- [Discord channel](https://discord.com/invite/zama)
 - [Telegram](https://t.me/+Ojt5y-I7oR42MTkx)
 
 ### Developers
@@ -42,7 +42,4 @@ Collaborate with us to advance the FHE spaces and drive innovation together.
 - [Report a bug](https://github.com/zama-ai/fhevm-gateway/issues/new/choose)
 <!-- markdown-link-check-enable -->
 
----
 
-We value your feedback! [Take a 5-question developer survey](http://zama.ai/developer-survey) to improve the fhevm
-Gateway and the documentation and help other developers use FHE.
