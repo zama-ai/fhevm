@@ -84,15 +84,17 @@ alloy::sol! {
         uint256 contractsChainId;
         uint256 startTimestamp;
         uint256 durationDays;
+        bytes extraData;
     }
 
     #[derive(Debug, Serialize, Deserialize)]
     struct DelegatedUserDecryptRequestVerification {
         bytes publicKey;
         address[] contractAddresses;
+        address delegatorAddress;
         uint256 contractsChainId;
         uint256 startTimestamp;
         uint256 durationDays;
-        address delegatedAccount;
+        bytes extraData;
     }
 }
