@@ -94,7 +94,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant KMSVerifierStorageLocation =
@@ -123,6 +123,11 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
         defineNewContext(initialSigners, initialThreshold);
     }
+
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice          Sets a new context (i.e. new set of unique signers and new threshold).
