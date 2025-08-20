@@ -6,30 +6,26 @@ use crate::{
     config::Config,
     decryption::{
         init_public_decryption_response_listener, public_decryption_burst,
-        user::{DURATION_DAYS, EXTRA_DATA, RAND_PUBLIC_KEY, generate_eip712},
+        user::{init_user_decryption_response_listener, user_decryption_burst},
     },
 };
 use alloy::{
-    hex,
     network::EthereumWallet,
-    primitives::{Address, U256},
+    primitives::Address,
     providers::{
         Identity, ProviderBuilder, RootProvider, WsConnect,
         fillers::{FillProvider, JoinFill, WalletFiller},
     },
 };
-use fhevm_gateway_rust_bindings::decryption::{
-    Decryption::{self, CtHandleContractPair, DecryptionInstance},
-    IDecryption::{ContractsInfo, RequestValidity},
-};
+use fhevm_gateway_rust_bindings::decryption::Decryption::{self, DecryptionInstance};
 use gateway_sdk::{FhevmSdk, FhevmSdkBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::{sync::Arc, time::SystemTime};
+use std::sync::Arc;
 use tokio::{
     task::JoinSet,
     time::{Instant, interval},
 };
-use tracing::{debug, info};
+use tracing::info;
 
 /// The provider used to interact with the Gateway.
 type AppProvider = NonceManagedProvider<
@@ -131,43 +127,47 @@ impl App {
     }
 
     /// Performs the user decryption stress test.
-    pub async fn user(&self) -> anyhow::Result<()> {
-        let user_addr = self.wallet.address();
-        let timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)?
-            .as_secs();
+    pub async fn user_decryption_stress_test(&self) -> anyhow::Result<()> {
+        let session_start = Instant::now();
+        let mut interval = interval(self.config.tests_interval);
 
-        let sdk = Arc::clone(&self.sdk);
-        let eip712 = generate_eip712(sdk, &self.config, timestamp)?;
+        let mut burst_tasks = JoinSet::new();
+        let mut burst_index = 1;
+        let progress_tracker = MultiProgress::new();
+        let response_listener =
+            init_user_decryption_response_listener(self.decryption_contract.clone()).await?;
 
-        for handle in &self.config.ct_handles {
-            let decryption_call = self
-                .decryption_contract
-                .userDecryptionRequest(
-                    vec![CtHandleContractPair {
-                        ctHandle: *handle,
-                        contractAddress: self.config.allowed_contract,
-                    }],
-                    RequestValidity {
-                        startTimestamp: U256::from(timestamp),
-                        durationDays: U256::from(DURATION_DAYS),
-                    },
-                    ContractsInfo {
-                        chainId: U256::from(self.config.host_chain_id),
-                        addresses: vec![self.config.allowed_contract],
-                    },
-                    user_addr,
-                    hex::decode(RAND_PUBLIC_KEY)?.into(),
-                    eip712.signature.clone().unwrap(),
-                    EXTRA_DATA.into(),
-                )
-                .send()
-                .await?;
+        loop {
+            interval.tick().await;
 
-            let receipt = decryption_call.get_receipt().await?;
-            debug!("{receipt:?}")
+            if session_start.elapsed() > self.config.tests_duration {
+                break;
+            }
+
+            let (requests_pb, responses_pb) =
+                self.init_progress_bars(&progress_tracker, burst_index)?;
+
+            burst_tasks.spawn(user_decryption_burst(
+                burst_index,
+                self.config.clone(),
+                self.decryption_contract.clone(),
+                Arc::clone(&self.sdk),
+                self.wallet.address(),
+                response_listener.clone(),
+                requests_pb,
+                responses_pb,
+            ));
+
+            burst_index += 1;
         }
 
+        burst_tasks.join_all().await;
+        let elapsed = session_start.elapsed().as_secs_f64();
+        info!(
+            "Handled all burst in {:.2}s. Throughput: {:.2} tps",
+            elapsed,
+            (self.config.parallel_requests * (burst_index - 1) as u32) as f64 / elapsed
+        );
         Ok(())
     }
 

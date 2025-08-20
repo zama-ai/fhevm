@@ -2840,7 +2840,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_rust_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-2#64c846d424d5517480034b2e59e73d3556f1d0cb"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-3#6c9c11388198ec4da7d3fac6f3d4a1930cff41f6"
 dependencies = [
  "alloy",
  "serde",
@@ -3095,7 +3095,7 @@ dependencies = [
  "aws-sdk-s3",
  "clap",
  "config",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-2)",
+ "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-3)",
  "futures",
  "gateway-sdk",
  "humantime",
