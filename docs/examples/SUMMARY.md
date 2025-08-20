@@ -18,3 +18,4 @@
 
 - [Sealed-bid auction](sealed-bid-auction.md)
   - [Tutorial](sealed-bid-auction-tutorial.md)
+- [Confidential ERC20](https://docs.openzeppelin.com/confidential-contracts/0.1.0/token)
