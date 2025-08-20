@@ -45,9 +45,6 @@ library FHE {
     /// @notice Returned if the returned KMS signatures are not valid.
     error InvalidKMSSignatures();
 
-    /// @notice Returned if the requested handle to be decrypted is not of a supported type.
-    error UnsupportedHandleType();
-
     /// @notice This event is emitted when requested decryption has been fulfilled.
     event DecryptionFulfilled(uint256 indexed requestID);
 
@@ -8908,9 +8905,9 @@ library FHE {
      * @dev     otherwise fake decryption results could be submitted.
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
      */
-    function checkSignatures(uint256 requestID, bytes memory decryptionProof) internal {
+    function checkSignatures(uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) internal {
         bytes32[] memory handlesList = loadRequestedHandles(requestID);
-        bool isVerified = verifySignatures(handlesList, decryptionProof);
+        bool isVerified = verifySignatures(handlesList, cleartexts, decryptionProof);
         if (!isVerified) {
             revert InvalidKMSSignatures();
         }
@@ -8931,14 +8928,52 @@ library FHE {
     /**
      * @dev Private low-level function used to extract the decryptedResult bytes array and verify the KMS signatures.
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
+     * @dev The callback function has the following signature:
+     * - requestID (static uint256)
+     * - cleartexts (dynamic bytes)
+     * - decryptionProof (dynamic bytes)
+     *
+     * This means that the calldata is encoded in the following way:
+     * - 4 bytes: selector
+     * - 32 bytes: requestID
+     * - 32 bytes: offset of the cleartexts
+     * - 32 bytes: offset of the decryptionProof
+     * - 32 bytes: length of the cleartexts (total number of bytes)
+     * - n*32 bytes: the "n" cleartext values, with "n" the number of handles
+     * - 32 bytes: length of the decryptionProof (total number of bytes)
+     * - ... the data of the decryptionProof (signatures, extra data)
      */
-    function verifySignatures(bytes32[] memory handlesList, bytes memory decryptionProof) private returns (bool) {
-        uint256 start = 4 + 32; // start position after skipping the selector (4 bytes) and the first argument (index, 32 bytes)
-        uint256 length = getSignedDataLength(handlesList);
-        bytes memory decryptedResult = new bytes(length);
-        assembly {
-            calldatacopy(add(decryptedResult, 0x20), start, length) // Copy the relevant part of calldata to decryptedResult memory
-        }
+    function verifySignatures(
+        bytes32[] memory handlesList,
+        bytes memory cleartexts,
+        bytes memory decryptionProof
+    ) private returns (bool) {
+        // Compute the signature offset
+        // This offset is computed by considering the format encoded by the KMS when creating the
+        // "decryptedResult" bytes array (see comment below), which is the following:
+        // - requestID: 32 bytes
+        // - all "n" decrypted values (which is "cleartexts" itself): n*32 bytes ("cleartexts.length" bytes)
+        // - offset of the signatures: 32 bytes
+        // - the rest of signature values (lengths, offsets, values)
+        // This means the expected offset to concatenate to the "decryptedResult" bytes array has
+        // the following value: 32 + n*32 + 32
+        // See https://docs.soliditylang.org/en/latest/abi-spec.html#use-of-dynamic-types for more details.
+        // The signature offset will most likely be removed in the future,
+        // see https://github.com/zama-ai/fhevm-internal/issues/345
+        uint256 signaturesOffset = 32 + cleartexts.length + 32;
+
+        // Built the "decryptedResult" bytes array
+        // Currently, the "decryptedResult" is encoded (by the KMS) in the following format:
+        // - n*32 bytes: the "n" decrypted values, "cleartexts" itself
+        // - 32 bytes: offset of the signatures, as explained above
+        // This is equivalent to concatenating the cleartexts and the signatures offset, which can
+        // be done using abi.encoded in a gas efficient way.
+        // The signature offset will most likely be removed in the future,
+        // see https://github.com/zama-ai/fhevm-internal/issues/345
+        // Here we can use "encodePacked" instead of "abi.encode" to save gas, as the cleartexts
+        // and the signaturesOffset are already 32 bytes aligned (ie, no padding needed).
+        bytes memory decryptedResult = abi.encodePacked(cleartexts, signaturesOffset);
+
         CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
@@ -8946,24 +8981,6 @@ library FHE {
                 decryptedResult,
                 decryptionProof
             );
-    }
-
-    /**
-     * @dev Private low-level function used to compute the length of the decryptedResult bytes array.
-     */
-    function getSignedDataLength(bytes32[] memory handlesList) private pure returns (uint256) {
-        uint256 handlesListlen = handlesList.length;
-        uint256 signedDataLength;
-        for (uint256 i = 0; i < handlesListlen; i++) {
-            FheType typeCt = FheType(uint8(handlesList[i][30]));
-            if (uint8(typeCt) < 9) {
-                signedDataLength += 32;
-            } else {
-                revert UnsupportedHandleType();
-            }
-        }
-        signedDataLength += 32; // add offset of signatures
-        return signedDataLength;
     }
 
     /**

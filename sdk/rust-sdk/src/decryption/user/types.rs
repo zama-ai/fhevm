@@ -1,6 +1,7 @@
-use crate::blockchain::bindings::Decryption::CtHandleContractPair;
-use crate::blockchain::bindings::IDecryption::RequestValidity;
 use alloy::primitives::{Address, Bytes};
+use fhevm_gateway_rust_bindings::decryption::{
+    Decryption::CtHandleContractPair, IDecryption::RequestValidity,
+};
 use kms_grpc::kms::v1::TypedPlaintext;
 use serde::{Deserialize, Serialize};
 

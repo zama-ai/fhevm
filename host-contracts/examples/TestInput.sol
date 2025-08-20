@@ -27,8 +27,9 @@ contract TestInput {
         FHE.requestDecryption(cts, this.callbackUint64.selector);
     }
 
-    function callbackUint64(uint256 requestID, uint64 decryptedInput, bytes memory decryptionProof) public {
-        FHE.checkSignatures(requestID, decryptionProof);
+    function callbackUint64(uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) public {
+        FHE.checkSignatures(requestID, cleartexts, decryptionProof);
+        uint64 decryptedInput = abi.decode(cleartexts, (uint64));
         yUint64 = decryptedInput;
     }
 
@@ -48,14 +49,12 @@ contract TestInput {
         FHE.requestDecryption(cts, this.callbackMixed.selector);
     }
 
-    function callbackMixed(
-        uint256 requestID,
-        bool decryptedBool,
-        uint8 decryptedUint8,
-        address decryptedAddress,
-        bytes memory decryptionProof
-    ) public {
-        FHE.checkSignatures(requestID, decryptionProof);
+    function callbackMixed(uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) public {
+        FHE.checkSignatures(requestID, cleartexts, decryptionProof);
+        (bool decryptedBool, uint8 decryptedUint8, address decryptedAddress) = abi.decode(
+            cleartexts,
+            (bool, uint8, address)
+        );
         yBool = decryptedBool;
         yUint8 = decryptedUint8;
         yAddress = decryptedAddress;

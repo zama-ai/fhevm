@@ -1,16 +1,18 @@
 use super::deserializer::UserDecryptionDeserializer;
 use super::types::ResponseConfig;
-use crate::blockchain::bindings::Decryption::CtHandleContractPair;
 use crate::utils::{parse_hex_string, validate_address_from_str};
 use crate::{FhevmError, Result};
 use alloy::primitives::Address;
 use alloy::signers::Signature;
+use fhevm_gateway_rust_bindings::decryption::Decryption::CtHandleContractPair;
 use kms_grpc::kms::v1::{Eip712DomainMsg, TypedPlaintext};
 use kms_grpc::rpc_types::protobuf_to_alloy_domain;
-use kms_lib::client::js_api::{
-    new_client, new_server_id_addr, u8vec_to_ml_kem_pke_pk, u8vec_to_ml_kem_pke_sk,
-};
+use kms_lib::client::js_api::{new_client, new_server_id_addr};
 use kms_lib::client::{CiphertextHandle, ParsedUserDecryptionRequest};
+use kms_lib::consts::SAFE_SER_SIZE_LIMIT;
+use kms_lib::cryptography::internal_crypto_types::{
+    PrivateEncKey, UnifiedPrivateEncKey, UnifiedPublicEncKey,
+};
 use tracing::{debug, info};
 
 /// Builder for processing user decryption responses
@@ -21,8 +23,8 @@ use tracing::{debug, info};
 /// # Example
 ///
 /// ```no_run
+/// # use fhevm_gateway_rust_bindings::decryption::Decryption::CtHandleContractPair;
 /// # use gateway_sdk::decryption::user::process_user_decryption_response;
-/// # use gateway_sdk::blockchain::bindings::Decryption::CtHandleContractPair;
 /// # use gateway_sdk::FhevmError;
 /// # use alloy::primitives::{Address, U256};
 /// # use std::str::FromStr;
@@ -219,11 +221,16 @@ impl ResponseProcessor {
         let responses = UserDecryptionDeserializer::json_to_responses(&json_response)?;
 
         // Convert keys for ML-KEM
-        let ml_kem_pub_key = u8vec_to_ml_kem_pke_pk(&public_key_bytes)
-            .map_err(|e| FhevmError::DecryptionError(format!("Invalid public key: {e:?}")))?;
+        let ml_kem_pub_key = tfhe::safe_serialization::safe_deserialize::<UnifiedPublicEncKey>(
+            std::io::Cursor::new(public_key_bytes),
+            SAFE_SER_SIZE_LIMIT,
+        )
+        .map_err(|e| FhevmError::DecryptionError(format!("Invalid public key: {e:?}")))?;
 
-        let ml_kem_priv_key = u8vec_to_ml_kem_pke_sk(&private_key_bytes)
-            .map_err(|e| FhevmError::DecryptionError(format!("Invalid private key: {e:?}")))?;
+        let ml_kem_priv_key =
+            bc2wrap::deserialize::<PrivateEncKey<ml_kem::MlKem512>>(&private_key_bytes)
+                .map(UnifiedPrivateEncKey::MlKem512)
+                .map_err(|e| FhevmError::DecryptionError(format!("Invalid private key: {e:?}")))?;
 
         let eip712_domain = protobuf_to_alloy_domain(&eip712_domain).unwrap();
 
@@ -532,17 +539,17 @@ mod tests {
     }
 
     #[test]
-    fn test_process_with_complete_data_rc17() {
-        let builder = build_test_from_json("rc17_complete_test");
+    fn test_process_with_complete_data_kms_rc26() {
+        let builder = build_test_from_json("rc26_complete_test");
         let result = builder.process();
 
         // Load expected output from test data
         let test_data = load_test_data();
         let expected =
-            &test_data["user_decryption_test_data"]["rc17_complete_test"]["expected_output"];
+            &test_data["user_decryption_test_data"]["rc26_complete_test"]["expected_output"];
 
         if expected["success"].as_bool().unwrap_or(false) {
-            assert!(result.is_ok(), "RC17 test should succeed");
+            assert!(result.is_ok(), "KMS RC26 test should succeed");
 
             let plaintexts = result.unwrap();
             let expected_values = expected["decrypted_values"].as_array().unwrap();
@@ -559,8 +566,8 @@ mod tests {
                 );
 
                 // Check decrypted value
-                if let Some(expected_u8) = expected_value["as_u8"].as_u64() {
-                    assert_eq!(plaintext.as_u8(), expected_u8 as u8);
+                if let Some(expected_u64) = expected_value["as_u64"].as_u64() {
+                    assert_eq!(plaintext.as_u64(), expected_u64);
                 }
             }
         } else {
@@ -578,10 +585,10 @@ mod tests {
 
         // Verify structure of test data
         assert!(test_data["user_decryption_test_data"].is_object());
-        assert!(test_data["user_decryption_test_data"]["rc17_complete_test"].is_object());
+        assert!(test_data["user_decryption_test_data"]["rc26_complete_test"].is_object());
 
         // Verify required fields exist
-        let rc17_test = &test_data["user_decryption_test_data"]["rc17_complete_test"];
+        let rc17_test = &test_data["user_decryption_test_data"]["rc26_complete_test"];
         assert!(rc17_test["input"].is_object());
         assert!(rc17_test["json_response"].is_object());
         assert!(rc17_test["expected_output"].is_object());

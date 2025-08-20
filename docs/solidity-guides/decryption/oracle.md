@@ -40,10 +40,12 @@ contract TestAsyncDecrypt is SepoliaConfig {
     isDecryptionPending = true;
   }
 
-  function myCustomCallback(uint256 requestId, bool decryptedInput, bytes[] memory signatures) public returns (bool) {
+  function myCustomCallback(uint256 requestId, bytes memory cleartexts, bytes memory decryptionProof) public returns (bool) {
     /// @dev This check is used to verify that the request id is the expected one.
     require(requestId == latestRequestId, "Invalid requestId");
-    FHE.checkSignatures(requestId, signatures);
+    FHE.checkSignatures(requestId, cleartexts, decryptionProof);
+
+    (bool decryptedInput) = abi.decode(cleartexts, (bool));
     yBool = decryptedInput;
     isDecryptionPending = false;
     return yBool;
@@ -83,10 +85,10 @@ The first argument, `ctsHandles`, should be an array of ciphertexts handles whic
 `callbackSelector` is the function selector of the callback function, which will be called once the relayer fulfils the decryption request.
 
 ```solidity
-function [callbackName](uint256 requestID, XXX x_0, XXX x_1, ..., XXX x_N-1, bytes[] memory signatures) external;
+function [callbackName](uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) external;
 ```
 
-Notice that `XXX` should be the decrypted type, which is a native Solidity type corresponding to the original ciphertext type, following this table of conventions:
+`cleartexts` is the bytes array corresponding to the ABI encoding of all requested decrypted values. Each of these decrypted values' type should be a native Solidity type corresponding to the original ciphertext type, following this table of conventions:
 
 | Ciphertext type | Decrypted type |
 | --------------- | -------------- |
@@ -99,7 +101,7 @@ Notice that `XXX` should be the decrypted type, which is a native Solidity type 
 | euint256        | uint256        |
 | eaddress        | address        |
 
-Here `callbackName` is a custom name given by the developer to the callback function, `requestID` will be the request id of the decryption (could be commented if not needed in the logic, but must be present) and `x_0`, `x_1`, ... `x_N-1` are the results of the decryption of the `ct` array values, i.e their number should be the size of the `ct` array.
+Here `callbackName` is a custom name given by the developer to the callback function, `requestID` will be the request id of the decryption (could be commented if not needed in the logic, but must be present) and `cleartexts` is an ABI encoded byte array of the results of the decryption of the `ct` array values, i.e their number should be the size of the `ct` array. `decryptionProof` is a byte array containing the KMS signatures and extra data.
 
 `msgValue` is the value in native tokens to be sent to the calling contract during fulfillment, i.e when the callback will be called with the results of decryption.
 
@@ -112,11 +114,13 @@ Notice that the callback should always verify the signatures and implement a rep
 You can call the function `FHE.checkSignatures` as such:
 
 ```solidity
-function checkSignatures(uint256 requestId, bytes[] memory signatures);
+function checkSignatures(uint256 requestId, bytes memory cleartexts, bytes[] memory signatures);
 ```
 
 #### Function arguments
 
-The first argument, `requestID`, is the value that was returned in the `requestDecryption`function. The second argument, `signatures`, is an array of signatures from the KMS signers.
+- `requestID`, is the value that was returned in the `requestDecryption` function.
+- `cleartexts`, is an ABI encoding of the decrypted values associated to the handles (using `abi.encode`). This can contain one or multiple values, depending on the number of handles requested in the `requestDecryption` function. Each of these values' type must match the type of the corresponding handle.
+- `decryptionProof`, is a byte array containing the KMS signatures and extra data.
 
 This function reverts if the signatures are invalid.

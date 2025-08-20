@@ -119,7 +119,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant InputVerifierStorageLocation =
@@ -152,6 +152,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
             addSigner(initialSigners[i]);
         }
     }
+
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @dev This function removes the transient allowances, which could be useful for

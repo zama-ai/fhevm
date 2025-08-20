@@ -1,10 +1,10 @@
 use super::types::UserDecryptRequest;
-use crate::blockchain::bindings::Decryption::CtHandleContractPair;
-use crate::blockchain::bindings::IDecryption::RequestValidity;
 use crate::blockchain::calldata::user_decryption_req;
 use crate::utils::{parse_hex_string, validate_address_from_str};
 use crate::{FhevmError, Result};
 use alloy::primitives::{Address, Bytes, U256};
+use fhevm_gateway_rust_bindings::decryption::Decryption::CtHandleContractPair;
+use fhevm_gateway_rust_bindings::decryption::IDecryption::RequestValidity;
 use tracing::debug;
 
 /// Builder pattern for creating UserDecryptRequest instances
@@ -238,13 +238,13 @@ impl UserDecryptRequestBuilder {
         }
 
         // Validate signature length
-        if let Some(ref sig) = self.signature {
-            if sig.len() != 65 {
-                return Err(FhevmError::InvalidParams(format!(
-                    "Invalid signature length: expected 65 bytes, got {}",
-                    sig.len()
-                )));
-            }
+        if let Some(ref sig) = self.signature
+            && sig.len() != 65
+        {
+            return Err(FhevmError::InvalidParams(format!(
+                "Invalid signature length: expected 65 bytes, got {}",
+                sig.len()
+            )));
         }
 
         Ok(())

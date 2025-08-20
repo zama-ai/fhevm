@@ -219,12 +219,13 @@ contract BlindAuction is SepoliaConfig, ReentrancyGuard {
   /// @notice Callback function to set the decrypted winning address
   /// @dev Can only be called by the Gateway
   /// @param requestId Request Id created by the Oracle.
-  /// @param resultWinnerAddress The decrypted winning address.
-  /// @param signatures Signature to verify the decryption data.
-  function resolveAuctionCallback(uint256 requestId, address resultWinnerAddress, bytes[] memory signatures) public {
+  /// @param cleartexts The decrypted winning address, ABI encoded in a byte array.
+  /// @param decryptionProof The decryption proof containing KMS signatures and extra data
+  function resolveAuctionCallback(uint256 requestId, bytes memory cleartexts, bytes memory decryptionProof) public {
     require(requestId == _decryptionRequestId, "Invalid requestId");
-    FHE.checkSignatures(requestId, signatures);
+    FHE.checkSignatures(requestId, cleartexts, decryptionProof);
 
+    (address resultWinnerAddress) = abi.decode(cleartexts, (address));
     winnerAddress = resultWinnerAddress;
   }
 }

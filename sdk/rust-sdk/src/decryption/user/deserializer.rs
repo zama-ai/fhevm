@@ -76,6 +76,7 @@ impl UserDecryptionDeserializer {
                 signature: vec![], // No ECDSA signature in wasm use case
                 external_signature,
                 payload,
+                extra_data: vec![], // Extra data not used for now
             });
         }
 

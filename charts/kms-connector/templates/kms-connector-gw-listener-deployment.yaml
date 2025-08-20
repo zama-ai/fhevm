@@ -1,0 +1,75 @@
+{{- if .Values.kmsConnectorGwListener.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: kms-connector-gw-listener
+    app.kubernetes.io/name: {{ include "kmsConnectorGwListenerName" . }}
+  name: {{ include "kmsConnectorGwListenerName" . }}
+spec:
+  replicas: {{ .Values.kmsConnectorGwListener.replicas }}
+  selector:
+    matchLabels:
+      app: kms-connector-gw-listener
+  {{- if .Values.kmsConnectorGwListener.updateStrategy }}
+  strategy:
+    {{- toYaml .Values.kmsConnectorGwListener.updateStrategy | nindent 4 }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        app: kms-connector-gw-listener
+        app.kubernetes.io/name: {{ include "kmsConnectorGwListenerName" . }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Always
+      {{- if and .Values.kmsConnectorGwListener.affinity .Values.kmsConnectorGwListener.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.kmsConnectorGwListener.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.kmsConnectorGwListener.tolerations .Values.kmsConnectorGwListener.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.kmsConnectorGwListener.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.kmsConnectorGwListener.serviceAccountName }}
+      serviceAccountName: {{ .Values.kmsConnectorGwListener.serviceAccountName }}
+      {{- end }}
+      containers:
+        - name: kms-connector-gw-listener
+          image: {{ .Values.kmsConnectorGwListener.image.name }}:{{ .Values.kmsConnectorGwListener.image.tag }}
+          env:
+          {{- if .Values.kmsConnectorGwListener.tracing.enabled }}
+{{ toYaml .Values.monitoringConfig.env | nindent 12 }}
+          {{- end }}
+{{ toYaml .Values.commonConfig.env | nindent 12 }}
+{{ toYaml .Values.kmsConnectorGwListener.env | nindent 12 }}
+          ports:
+            {{- range $portName, $portValue := .Values.kmsConnectorGwListener.ports }}
+            - name: {{ $portName }}
+              containerPort: {{ $portValue }}
+              protocol: TCP
+            {{- end }}
+          resources:
+            requests:
+              cpu: {{ .Values.kmsConnectorGwListener.resources.requests.cpu | default "100m" }}
+              memory: {{ .Values.kmsConnectorGwListener.resources.requests.memory | default "256Mi" }}
+            limits:
+              cpu: {{ .Values.kmsConnectorGwListener.resources.limits.cpu | default "500m" }}
+              memory: {{ .Values.kmsConnectorGwListener.resources.limits.memory | default "512Mi" }}
+          {{- if and .Values.kmsConnectorGwListener.probes .Values.kmsConnectorGwListener.probes.liveness.enabled }}
+          livenessProbe:
+{{ toYaml (omit .Values.kmsConnectorGwListener.probes.liveness "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if and .Values.kmsConnectorGwListener.probes .Values.kmsConnectorGwListener.probes.readiness.enabled }}
+          readinessProbe:
+{{ toYaml (omit .Values.kmsConnectorGwListener.probes.readiness "enabled") | nindent 12 }}
+          {{- end }}
+{{- end -}}
