@@ -37,7 +37,7 @@
   },
   "homepage": "https://github.com/zama-ai/fhevm-solidity#readme",
   "devDependencies": {
-    "@fhevm/core-contracts": "^0.7.0-12",
+    "@fhevm/core-contracts": "*",
     "@fhevm/sdk": "^0.7.0-21",
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.4",

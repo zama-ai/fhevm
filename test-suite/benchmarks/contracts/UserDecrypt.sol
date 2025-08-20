@@ -3,10 +3,10 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import { E2EFHEVMConfig } from "./E2EFHEVMConfig.sol";
+import { E2ECoprocessorConfig } from "./E2ECoprocessorConfig.sol";
 
 /// @notice Contract for demonstrating user decryption of various FHE data types
-contract UserDecrypt is E2EFHEVMConfig {
+contract UserDecrypt is E2ECoprocessorConfig {
     /// @dev Encrypted boolean
     ebool public xBool;
     /// @dev Encrypted 8-bit unsigned integer

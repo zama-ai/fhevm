@@ -21,13 +21,13 @@ import { FHE, ebool, euint32, euint64 } from "@fhevm/solidity/lib/FHE.sol";
 import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
 contract DecryptMultipleValuesInSolidity is SepoliaConfig {
-  ebool private _encryptedBool; // = 0 (uninitizalized)
-  euint32 private _encryptedUint32; // = 0 (uninitizalized)
-  euint64 private _encryptedUint64; // = 0 (uninitizalized)
+  ebool private _encryptedBool; // = 0 (uninitialized)
+  euint32 private _encryptedUint32; // = 0 (uninitialized)
+  euint64 private _encryptedUint64; // = 0 (uninitialized)
 
-  bool private _clearBool; // = 0 (uninitizalized)
-  uint32 private _clearUint32; // = 0 (uninitizalized)
-  uint64 private _clearUint64; // = 0 (uninitizalized)
+  bool private _clearBool; // = 0 (uninitialized)
+  uint32 private _clearUint32; // = 0 (uninitialized)
+  uint64 private _clearUint64; // = 0 (uninitialized)
 
   // solhint-disable-next-line no-empty-blocks
   constructor() {}
@@ -73,20 +73,25 @@ contract DecryptMultipleValuesInSolidity is SepoliaConfig {
     );
   }
 
-  // ⚠️ WARNING: Argument types must match exactly!
-  // Mismatched types—such as using `uint32 decryptedUint64` instead of the correct `uint64 decryptedUint64`—
-  // can cause subtle and hard-to-detect bugs, especially for developers new to the FHEVM stack.
+  // ⚠️ WARNING: The `cleartexts` argument is an ABI encoding of the decrypted values associated 
+  // to the handles (using `abi.encode`). 
+  // 
+  // These values' types must match exactly! Mismatched types—such as using `uint32 decryptedUint64` 
+  // instead of the correct `uint64 decryptedUint64` can cause subtle and hard-to-detect bugs, 
+  // especially for developers new to the FHEVM stack.
   // Always ensure that the parameter types align with the expected decrypted value types.
+  // 
   // !DOUBLE-CHECK!
   function callbackDecryptMultipleValues(
     uint256 requestID,
-    bool decryptedBool,
-    uint32 decryptedUint32,
-    uint64 decryptedUint64,
-    bytes[] memory signatures
+    bytes memory cleartexts,
+    bytes memory decryptionProof
   ) external {
     // ⚠️ Don't forget the signature checks! (see `DecryptSingleValueInSolidity.sol` for detailed explanations)
-    FHE.checkSignatures(requestID, signatures);
+    // The signatures are included in the `decryptionProof` parameter.
+    FHE.checkSignatures(requestID, cleartexts, decryptionProof);
+
+    (bool decryptedBool, uint32 decryptedUint32, uint64 decryptedUint64) = abi.decode(cleartexts, (bool, uint32, uint64));
     _clearBool = decryptedBool;
     _clearUint32 = decryptedUint32;
     _clearUint64 = decryptedUint64;
@@ -156,7 +161,7 @@ describe("DecryptMultipleValuesInSolidity", function () {
 
   // ✅ Test should succeed
   it("decryption should succeed", async function () {
-    // For simplicity, we create 3 trivialy encrypted values on-chain.
+    // For simplicity, we create 3 trivially encrypted values on-chain.
     let tx = await contract.connect(signers.alice).initialize(true, 123456, 78901234567);
     await tx.wait();
 

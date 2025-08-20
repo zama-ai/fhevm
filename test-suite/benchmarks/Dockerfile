@@ -18,16 +18,19 @@ RUN addgroup -g 10001 fhevm && \
     mkdir -p /app /home/fhevm
 
 # Copy only necessary files
-COPY benchmarks/package.json benchmarks/package-lock.json ./
+COPY package.json package-lock.json ./
+COPY library-solidity/package.json ./library-solidity/
+COPY test-suite/benchmarks/package.json ./test-suite/benchmarks/
 
 # Install dependencies
 RUN npm ci && \
     npm prune
 
 # Copy the application files
-COPY benchmarks/*.sh benchmarks/*.ts benchmarks/tsconfig.json ./
-COPY benchmarks/contracts ./contracts/
-COPY benchmarks/tasks ./tasks/
+COPY library-solidity ./library-solidity
+COPY test-suite/benchmarks ./test-suite/benchmarks
+
+WORKDIR /app/test-suite/benchmarks
 
 RUN npx hardhat compile && \
     npx hardhat compile:specific --contract decryptionOracle
@@ -46,7 +49,7 @@ COPY --from=builder --chown=fhevm:fhevm /app /app
 
 USER fhevm:fhevm
 
-WORKDIR /app
+WORKDIR /app/test-suite/benchmarks
 
 ENTRYPOINT ["/bin/bash", "-c"]
 

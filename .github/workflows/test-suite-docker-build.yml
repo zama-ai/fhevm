@@ -55,8 +55,8 @@ jobs:
       packages: 'write'
       id-token: 'write'
     with:
-      working-directory: "test-suite"
-      docker-context: "test-suite"
+      working-directory: "."
+      docker-context: "."
       push_image: true
       image-name: "fhevm/test-suite/e2e"
       docker-file: "./test-suite/e2e/Dockerfile"
@@ -78,8 +78,8 @@ jobs:
       packages: 'write'
       id-token: 'write'
     with:
-      working-directory: "test-suite"
-      docker-context: "test-suite"
+      working-directory: "."
+      docker-context: "."
       push_image: true
       image-name: "fhevm/test-suite/benchmarks"
       docker-file: "./test-suite/benchmarks/Dockerfile"

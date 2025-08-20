@@ -2,9 +2,9 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import { E2EFHEVMConfig } from "../E2EFHEVMConfig.sol";
+import { E2ECoprocessorConfig } from "../E2ECoprocessorConfig.sol";
 
-contract FHEVMTestSuite2 is E2EFHEVMConfig {
+contract FHEVMTestSuite2 is E2ECoprocessorConfig {
     ebool public resEbool;
     euint8 public resEuint8;
     euint16 public resEuint16;

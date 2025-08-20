@@ -241,15 +241,18 @@ Notice also that we have restricted this function to be called only when the auc
 We can now write our `resolveAuctionCallback` callback function:
 
 ```solidity
-function resolveAuctionCallback(uint256 requestId, address resultWinnerAddress, bytes[] memory signatures) public {
+function resolveAuctionCallback(uint256 requestId, bytes memory cleartexts, bytes memory decryptionProof) public {
   require(requestId == _latestRequestId, "Invalid requestId");
-  FHE.checkSignatures(requestId, signatures);
+  FHE.checkSignatures(requestId, cleartexts, decryptionProof);
 
+  (address resultWinnerAddress) = abi.decode(cleartexts, (address));
   winnerAddress = resultWinnerAddress;
 }
 ```
 
-To ensure that it is the expected data we are waiting for, we need to verify the `requestId` parameter and the signatures, which verify the computation logic done. Once verified, we can update the winner’s address.
+`cleartexts` is the bytes array corresponding to the ABI encoding of all requested decrypted values, in this case `abi.encode(winningAddress)`.
+
+To ensure that it is the expected data we are waiting for, we need to verify the `requestId` parameter and the signatures (included in the `decryptionProof` parameter), which verify the computation logic done. Once verified, we can update the winner’s address.
 
 ## Claiming rewards & refunds
 
