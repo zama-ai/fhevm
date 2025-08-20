@@ -46,4 +46,4 @@ The Zama Protocol Testnet is not audited and is not intended for production use.
 Ask technical questions and discuss with the community.
 
 - [Community forum](https://community.zama.ai/c/fhevm/15)
-- [Discord channel](https://discord.com/invite/fhe-org)
+- [Discord channel](https://discord.com/invite/zama)
