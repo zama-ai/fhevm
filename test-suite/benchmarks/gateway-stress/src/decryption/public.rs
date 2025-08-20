@@ -30,7 +30,7 @@ use tracing::{debug, error, trace};
 pub async fn public_decryption_burst<P, S>(
     burst_index: usize,
     config: Config,
-    decryption_contract: DecryptionInstance<(), P>,
+    decryption_contract: DecryptionInstance<P>,
     response_listener: Arc<Mutex<S>>,
     requests_pb: ProgressBar,
     responses_pb: ProgressBar,
@@ -73,7 +73,7 @@ pub async fn public_decryption_burst<P, S>(
 #[tracing::instrument(skip(decryption_contract, handles, id_sender))]
 async fn send_public_decryption<P: Provider>(
     index: u32,
-    decryption_contract: DecryptionInstance<(), P>,
+    decryption_contract: DecryptionInstance<P>,
     handles: Vec<FixedBytes<32>>,
     id_sender: UnboundedSender<U256>,
 ) {
@@ -83,12 +83,12 @@ async fn send_public_decryption<P: Provider>(
 }
 
 async fn send_public_decryption_inner<P: Provider>(
-    decryption_contract: DecryptionInstance<(), P>,
+    decryption_contract: DecryptionInstance<P>,
     handles: Vec<FixedBytes<32>>,
     id_sender: UnboundedSender<U256>,
 ) -> anyhow::Result<()> {
     let decryption_call = decryption_contract
-        .publicDecryptionRequest(handles)
+        .publicDecryptionRequest(handles, vec![].into())
         .send()
         .await
         .map_err(|e| anyhow!("Failed to send transaction: {e}"))?;
@@ -109,7 +109,7 @@ fn extract_public_decryption_id_from_receipt(receipt: &TransactionReceipt) -> an
         receipt,
         Decryption::PublicDecryptionRequest::SIGNATURE_HASH,
         |log| {
-            Decryption::PublicDecryptionRequest::decode_log_data(log, true)
+            Decryption::PublicDecryptionRequest::decode_log_data(log)
                 .map(|event| event.decryptionId)
                 .map_err(|e| anyhow!("Failed to decode event data {e}"))
         },
@@ -118,7 +118,7 @@ fn extract_public_decryption_id_from_receipt(receipt: &TransactionReceipt) -> an
 
 /// Creates the PublicDecryptionResponse listener.
 pub async fn init_public_decryption_response_listener<P: Provider>(
-    decryption_contract: DecryptionInstance<(), P>,
+    decryption_contract: DecryptionInstance<P>,
 ) -> anyhow::Result<
     Arc<
         Mutex<

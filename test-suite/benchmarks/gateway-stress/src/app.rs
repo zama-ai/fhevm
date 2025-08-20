@@ -4,12 +4,15 @@ use crate::{
         wallet::Wallet,
     },
     config::Config,
-    decryption::{init_public_decryption_response_listener, public_decryption_burst},
+    decryption::{
+        init_public_decryption_response_listener, public_decryption_burst,
+        user::{DURATION_DAYS, EXTRA_DATA, RAND_PUBLIC_KEY, generate_eip712},
+    },
 };
 use alloy::{
     hex,
     network::EthereumWallet,
-    primitives::U256,
+    primitives::{Address, U256},
     providers::{
         Identity, ProviderBuilder, RootProvider, WsConnect,
         fillers::{FillProvider, JoinFill, WalletFiller},
@@ -17,10 +20,11 @@ use alloy::{
 };
 use fhevm_gateway_rust_bindings::decryption::{
     Decryption::{self, CtHandleContractPair, DecryptionInstance},
-    IDecryption::RequestValidity,
+    IDecryption::{ContractsInfo, RequestValidity},
 };
+use gateway_sdk::{FhevmSdk, FhevmSdkBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::time::SystemTime;
+use std::{sync::Arc, time::SystemTime};
 use tokio::{
     task::JoinSet,
     time::{Instant, interval},
@@ -38,13 +42,16 @@ type AppProvider = NonceManagedProvider<
 /// A struct used to perform the load/stress testing of the Gateway.
 pub struct App {
     /// The decryption contract instance.
-    decryption_contract: DecryptionInstance<(), AppProvider>,
+    decryption_contract: DecryptionInstance<AppProvider>,
 
     /// The configuration of the test session.
     config: Config,
 
     /// The wallet used to send the requests to the Gateway.
     wallet: Wallet,
+
+    /// The fhevm rust sdk used to compute the EIP712 for UserDecryptions.
+    sdk: Arc<FhevmSdk>,
 }
 
 impl App {
@@ -56,16 +63,27 @@ impl App {
                 .disable_recommended_fillers()
                 .filler(FillersWithoutNonceManagement::default())
                 .wallet(wallet.clone())
-                .on_ws(WsConnect::new(&config.gateway_url))
+                .connect_ws(WsConnect::new(&config.gateway_url))
                 .await?,
             wallet.address(),
         );
         let decryption_contract = Decryption::new(config.decryption_address, provider);
 
+        let sdk = Arc::new(
+            FhevmSdkBuilder::new()
+                .with_gateway_chain_id(config.host_chain_id)
+                .with_decryption_contract(&config.decryption_address.to_string())
+                .with_acl_contract(&Address::ZERO.to_string())
+                .with_input_verification_contract(&Address::ZERO.to_string())
+                .with_host_chain_id(config.host_chain_id)
+                .build()?,
+        );
+
         Ok(Self {
             decryption_contract,
             config,
             wallet,
+            sdk,
         })
     }
 
@@ -114,13 +132,14 @@ impl App {
 
     /// Performs the user decryption stress test.
     pub async fn user(&self) -> anyhow::Result<()> {
-        let public_key =
-            "2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331";
         let user_addr = self.wallet.address();
-        let signature = "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef12";
         let timestamp = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)?
             .as_secs();
+
+        let sdk = Arc::clone(&self.sdk);
+        let eip712 = generate_eip712(sdk, &self.config, timestamp)?;
+
         for handle in &self.config.ct_handles {
             let decryption_call = self
                 .decryption_contract
@@ -131,13 +150,16 @@ impl App {
                     }],
                     RequestValidity {
                         startTimestamp: U256::from(timestamp),
-                        durationDays: U256::ONE,
+                        durationDays: U256::from(DURATION_DAYS),
                     },
-                    U256::ZERO, // host chainId
-                    vec![self.config.allowed_contract],
+                    ContractsInfo {
+                        chainId: U256::from(self.config.host_chain_id),
+                        addresses: vec![self.config.allowed_contract],
+                    },
                     user_addr,
-                    hex::decode(public_key)?.into(),
-                    hex::decode(signature)?.into(),
+                    hex::decode(RAND_PUBLIC_KEY)?.into(),
+                    eip712.signature.clone().unwrap(),
+                    EXTRA_DATA.into(),
                 )
                 .send()
                 .await?;
@@ -145,6 +167,7 @@ impl App {
             let receipt = decryption_call.get_receipt().await?;
             debug!("{receipt:?}")
         }
+
         Ok(())
     }
 

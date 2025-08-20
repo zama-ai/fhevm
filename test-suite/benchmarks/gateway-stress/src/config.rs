@@ -6,6 +6,7 @@ use std::{path::Path, str::FromStr, time::Duration};
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
     pub gateway_url: String,
+    pub host_chain_id: u64,
     pub gateway_chain_id: u64,
     pub decryption_address: Address,
     pub private_key: Option<String>,
