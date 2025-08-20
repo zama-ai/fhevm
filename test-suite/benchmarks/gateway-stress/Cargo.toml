@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-# gateway-sdk.path = "../../../sdk/rust-sdk"
-fhevm_gateway_rust_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.8.0-1", default-features = false }
-# fhevm_gateway_rust_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.7.12", default-features = false }
+fhevm_gateway_rust_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.8.0-2", default-features = false }
+gateway-sdk = { git = "https://github.com/zama-ai/fhevm.git", rev = "3ea0d6759267a6ab217c24d2b1b8934c3d37098c", default-features = false }
+# gateway-sdk.path = "../../../../fhevm/sdk/rust-sdk"
 
-alloy = { version = "0.13", default-features = false, features = [
+alloy = { version = "1.0", default-features = false, features = [
     "essentials",
     "reqwest-rustls-tls",
     "std",

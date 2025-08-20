@@ -1,6 +1,9 @@
 # Gateway WebSocket RPC URL endpoint (required)
 gateway_url = "ws://localhost:8546"
 
+# Chain ID for the Host network (required)
+host_chain_id = 12345
+
 # Chain ID for the Gateway network (required)
 gateway_chain_id = 54321
 
@@ -21,11 +24,12 @@ parallel_requests = 1
 # The handles used for decryptions
 ct_handles = [
     # "0xf2eac20e8f2385a14094f424c3adb8ee0a713bfcbbff00000000000030390200",
-    "0x89573fcf0c936f2474b99cfc35c38d6c4e923f6454ff00000000000030390200",
+    "0x024c6146b649ba7e7c95f24fd6b6dd83cfd1e693b2ff00000000000030390000",
 ]
 
 # The contract allowed for user decrytion on ct_handles
-allowed_contract = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
+allowed_contract = "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08"
+# allowed_contract = "0x14e15daeC3AAb3041279ceF25cfb730532f55B4b"
 
 # Private key as a hex string (optional if `aws_kms_config` is configured)
 private_key = "e746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
