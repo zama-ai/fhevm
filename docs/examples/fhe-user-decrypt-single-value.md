@@ -1,6 +1,6 @@
 This example demonstrates the FHE user decryption mechanism with a single value.
 
-User decryption is a mechanism that allows specific users to decrypt encrypted values while keeping them hidden from others. Unlike public decryption where decrypted values become visible to everyone, user decryption maintains privacy by only allowing authorized users with the proper permissions to view the data. While permissions are granted on-chain through smart contracts, the actual **decryption call occurs off-chain in the frontend application**.
+User decryption is a mechanism that allows specific users to decrypt encrypted values while keeping them hidden from others. Unlike public decryption where decrypted values become visible to everyone, user decryption maintains privacy by only allowing authorized users with the proper permissions to view the data. While permissions are granted onchain through smart contracts, the actual **decryption call occurs off-chain in the frontend application**.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:

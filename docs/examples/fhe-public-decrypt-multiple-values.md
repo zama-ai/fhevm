@@ -1,6 +1,6 @@
 This example demonstrates the FHE public decryption mechanism with multiple value.
 
-Public decryption is a mechanism that makes encrypted values visible to everyone once decrypted. Unlike user decryption where values remain private to authorized users, public decryption makes the data permanently visible to all participants. The public decryption call occurs on-chain through smart contracts, making the decrypted value part of the blockchain's public state.
+Public decryption is a mechanism that makes encrypted values visible to everyone once decrypted. Unlike user decryption where values remain private to authorized users, public decryption makes the data permanently visible to all participants. The public decryption call occurs onchain through smart contracts, making the decrypted value part of the blockchain's public state.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -163,14 +163,14 @@ describe("PublicDecryptMultipleValues", function () {
 
   // ✅ Test should succeed
   it("public decryption should succeed", async function () {
-    // For simplicity, we create 3 trivialy encrypted values on-chain.
+    // For simplicity, we create 3 trivialy encrypted values onchain.
     let tx = await contract.connect(signers.alice).initialize(true, 123456, 78901234567);
     await tx.wait();
 
     tx = await contract.requestDecryptMultipleValues();
     await tx.wait();
 
-    // We use the FHEVM Hardhat plugin to simulate the asynchronous on-chain
+    // We use the FHEVM Hardhat plugin to simulate the asynchronous onchain
     // public decryption
     const fhevm: HardhatFhevmRuntimeEnvironment = hre.fhevm;
 

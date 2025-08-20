@@ -7,10 +7,9 @@
 - Encryption
   - [Encrypt single value](fhe-encrypt-single-value.md)
   - [Encrypt multiple values](fhe-encrypt-multiple-values.md)
-- User Decryption
+- Decryption
   - [User decrypt single value](fhe-user-decrypt-single-value.md)
   - [User decrypt multiple values](fhe-user-decrypt-multiple-values.md)
-- Public Decryption
   - [Public Decrypt single value](fhe-public-decrypt-single-value.md)
   - [Public Decrypt multiple values](fhe-public-decrypt-multiple-values.md)
 
