@@ -19,21 +19,23 @@ tests_duration = "500ms"
 tests_interval = "1s"
 
 # The number of parallel requests to send to the Gateway, at each interval
-parallel_requests = 1
+parallel_requests = 100
 
-# The handles used for decryptions
-ct_handles = [
-    # "0xf2eac20e8f2385a14094f424c3adb8ee0a713bfcbbff00000000000030390200",
-    "0x024c6146b649ba7e7c95f24fd6b6dd83cfd1e693b2ff00000000000030390000",
+# The handles used for user decryptions
+user_ct_handles = [
+    "0xb8a4ccb09ce90ac6428e06b61356daceacd9ef429dff00000000000030390500",
+]
+
+# The handles used for public decryptions
+public_ct_handles = [
+    "0xac93cf611f96e111b336902d1aced14d5704d65604ff00000000000030390500",
 ]
 
 # The contract allowed for user decrytion on ct_handles
 allowed_contract = "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08"
-# allowed_contract = "0x14e15daeC3AAb3041279ceF25cfb730532f55B4b"
 
 # Private key as a hex string (optional if `aws_kms_config` is configured)
-private_key = "e746bc71f6bee141a954e6a49bc9384d334e393a7ea1e70b50241cb2e78e9e4c"
-# private_key = "8355bb293b8714a06b972bfe692d1bd9f24235c1f4007ae0be285d398b0bba2f"
+private_key = "3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
 
 # AWS KMS configuration (optional if `private_key` is configured)
 # [aws_kms_config]

@@ -27,6 +27,13 @@ use tokio::{
 use tracing::{debug, error, trace};
 
 /// Sends a burst of PublicDecryptionRequest.
+#[tracing::instrument(skip(
+    config,
+    decryption_contract,
+    response_listener,
+    requests_pb,
+    responses_pb
+))]
 pub async fn public_decryption_burst<P, S>(
     burst_index: usize,
     config: Config,
@@ -52,7 +59,7 @@ pub async fn public_decryption_burst<P, S>(
         requests_tasks.spawn(send_public_decryption(
             index,
             decryption_contract.clone(),
-            config.ct_handles.clone(),
+            config.public_ct_handles.clone(),
             id_sender.clone(),
         ));
     }

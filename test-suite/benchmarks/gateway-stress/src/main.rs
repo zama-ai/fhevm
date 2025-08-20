@@ -32,7 +32,7 @@ async fn run() -> anyhow::Result<()> {
     let app = App::connect(config.clone()).await?;
     match cli.subcommand {
         Subcommands::Public => app.public_decryption_stress_test().await?,
-        Subcommands::User => app.user().await?,
+        Subcommands::User => app.user_decryption_stress_test().await?,
         _ => todo!(),
     }
 
@@ -42,6 +42,10 @@ async fn run() -> anyhow::Result<()> {
 fn init_tracing() {
     tracing_subscriber::registry()
         .with(fmt::layer())
-        .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
+        .with(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+                EnvFilter::new(format!("none,{}=info", env!("CARGO_CRATE_NAME")))
+            }),
+        )
         .init();
 }

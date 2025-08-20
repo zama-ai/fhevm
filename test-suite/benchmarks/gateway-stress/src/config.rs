@@ -15,7 +15,9 @@ pub struct Config {
     pub mnemonic_index: usize,
     pub aws_kms_config: Option<AwsKmsConfig>,
     #[serde(deserialize_with = "parse_ct_handles")]
-    pub ct_handles: Vec<FixedBytes<32>>,
+    pub user_ct_handles: Vec<FixedBytes<32>>,
+    #[serde(deserialize_with = "parse_ct_handles")]
+    pub public_ct_handles: Vec<FixedBytes<32>>,
     pub allowed_contract: Address,
     #[serde(default = "default_parallel_requests")]
     pub parallel_requests: u32,
