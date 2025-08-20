@@ -1,11 +1,160 @@
 use crate::{config::Config, decryption::extract_id_from_receipt};
-use alloy::{primitives::U256, rpc::types::TransactionReceipt, sol_types::SolEvent};
+use alloy::{
+    hex,
+    primitives::{Address, U256},
+    providers::Provider,
+    rpc::types::{Log, TransactionReceipt},
+    sol_types::{self, SolEvent},
+};
 use anyhow::anyhow;
-use fhevm_gateway_rust_bindings::decryption::Decryption;
+use fhevm_gateway_rust_bindings::decryption::{
+    Decryption::{self, CtHandleContractPair, DecryptionInstance, UserDecryptionResponse},
+    IDecryption::{ContractsInfo, RequestValidity},
+};
+use futures::{Stream, StreamExt};
 use gateway_sdk::{FhevmSdk, signature::Eip712Result};
-use std::sync::Arc;
+use indicatif::ProgressBar;
+use std::{
+    collections::HashSet,
+    sync::{Arc, LazyLock},
+    time::{Duration, SystemTime},
+};
+use tokio::{
+    sync::{
+        Mutex,
+        mpsc::{self, UnboundedReceiver, UnboundedSender},
+    },
+    task::JoinSet,
+    time::Instant,
+};
+use tracing::{debug, error, trace};
 
-#[allow(dead_code)]
+/// Sends a burst of UserDecryptionRequest.
+#[allow(clippy::too_many_arguments)]
+#[tracing::instrument(skip(
+    config,
+    decryption_contract,
+    sdk,
+    user_addr,
+    response_listener,
+    requests_pb,
+    responses_pb
+))]
+pub async fn user_decryption_burst<P, S>(
+    burst_index: usize,
+    config: Config,
+    decryption_contract: DecryptionInstance<P>,
+    sdk: Arc<FhevmSdk>,
+    user_addr: Address,
+    response_listener: Arc<Mutex<S>>,
+    requests_pb: ProgressBar,
+    responses_pb: ProgressBar,
+) where
+    P: Provider + Clone + 'static,
+    S: Stream<Item = sol_types::Result<(UserDecryptionResponse, Log)>> + Unpin + Send + 'static,
+{
+    let (id_sender, id_receiver) = mpsc::unbounded_channel();
+    let wait_response_task = tokio::spawn(wait_for_burst_responses(
+        burst_index,
+        response_listener,
+        id_receiver,
+        config.clone(),
+        responses_pb,
+    ));
+
+    let mut requests_tasks = JoinSet::new();
+    for index in 0..config.parallel_requests {
+        requests_tasks.spawn(send_user_decryption(
+            index,
+            decryption_contract.clone(),
+            user_addr,
+            Arc::clone(&sdk),
+            config.clone(),
+            id_sender.clone(),
+        ));
+    }
+
+    for _ in 0..config.parallel_requests {
+        requests_tasks.join_next().await;
+        requests_pb.inc(1);
+    }
+    requests_pb.finish_with_message("All requests were sent!");
+
+    drop(id_sender); // Dropping last sender so `wait_for_responses` can exit properly
+    if let Err(e) = wait_response_task.await {
+        error!("{e}");
+    }
+}
+
+/// Sends a UserDecryptionRequest transaction to the Gateway.
+#[tracing::instrument(skip(decryption_contract, user_addr, sdk, config, id_sender))]
+async fn send_user_decryption<P: Provider>(
+    index: u32,
+    decryption_contract: DecryptionInstance<P>,
+    user_addr: Address,
+    sdk: Arc<FhevmSdk>,
+    config: Config,
+    id_sender: UnboundedSender<U256>,
+) {
+    if let Err(e) =
+        send_user_decryption_inner(decryption_contract, user_addr, sdk, config, id_sender).await
+    {
+        error!("{e}");
+    }
+}
+
+async fn send_user_decryption_inner<P: Provider>(
+    decryption_contract: DecryptionInstance<P>,
+    user_addr: Address,
+    sdk: Arc<FhevmSdk>,
+    config: Config,
+    id_sender: UnboundedSender<U256>,
+) -> anyhow::Result<()> {
+    let timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)?
+        .as_secs();
+    let eip712 = generate_eip712(sdk, &config, timestamp)?;
+
+    let decryption_call = decryption_contract
+        .userDecryptionRequest(
+            config
+                .user_ct_handles
+                .iter()
+                .map(|h| CtHandleContractPair {
+                    ctHandle: *h,
+                    contractAddress: config.allowed_contract,
+                })
+                .collect(),
+            RequestValidity {
+                startTimestamp: U256::from(timestamp),
+                durationDays: U256::from(DURATION_DAYS),
+            },
+            ContractsInfo {
+                chainId: U256::from(config.host_chain_id),
+                addresses: vec![config.allowed_contract],
+            },
+            user_addr,
+            hex::decode(RAND_PUBLIC_KEY)?.into(),
+            eip712.signature.clone().unwrap(),
+            EXTRA_DATA.into(),
+        )
+        .send()
+        .await
+        .map_err(|e| anyhow!("Failed to send transaction: {e}"))?;
+
+    let receipt = decryption_call
+        .get_receipt()
+        .await
+        .map_err(|e| anyhow!("Failed to get receipt: {e}"))?;
+
+    debug!("UserDecryptionRequest successfully sent!");
+
+    let id = extract_user_decryption_id_from_receipt(&receipt)?;
+    id_sender.send(id)?;
+
+    Ok(())
+}
+
 fn extract_user_decryption_id_from_receipt(receipt: &TransactionReceipt) -> anyhow::Result<U256> {
     extract_id_from_receipt(
         receipt,
@@ -18,31 +167,133 @@ fn extract_user_decryption_id_from_receipt(receipt: &TransactionReceipt) -> anyh
     )
 }
 
+/// Creates the UserDecryptionResponse listener.
+pub async fn init_user_decryption_response_listener<P: Provider>(
+    decryption_contract: DecryptionInstance<P>,
+) -> anyhow::Result<
+    Arc<
+        Mutex<
+            impl Stream<Item = alloy::sol_types::Result<(UserDecryptionResponse, Log)>> + Unpin + Send,
+        >,
+    >,
+> {
+    debug!("Subcribing to UserDecryptionResponse events...");
+    let mut response_filter = decryption_contract
+        .UserDecryptionResponse_filter()
+        .watch()
+        .await
+        .map_err(|e| anyhow!("Failed to subscribe to UserDecryptionResponse {e}"))?;
+    debug!(
+        "Subcribed to UserDecryptionResponse events! Can start sending UserDecryptionRequests..."
+    );
+
+    response_filter.poller = response_filter
+        .poller
+        .with_poll_interval(Duration::from_millis(500));
+
+    Ok(Arc::new(Mutex::new(response_filter.into_stream())))
+}
+
 pub fn generate_eip712(
     sdk: Arc<FhevmSdk>,
     config: &Config,
     timestamp: u64,
 ) -> anyhow::Result<Eip712Result> {
-    let allowed_contract = config.allowed_contract.clone();
+    let allowed_contract = config.allowed_contract;
     let private_key = config.private_key.clone().unwrap();
 
     // Spawn in new thread otherwise panic because it blocks the async runtime
     std::thread::spawn(move || {
         sdk.create_eip712_signature_builder()
             .with_public_key(RAND_PUBLIC_KEY)
-            .with_contract(&allowed_contract)
+            .with_contract(allowed_contract)
             .unwrap()
             .with_verification(true)
             .with_validity_period(timestamp, DURATION_DAYS)
             .with_private_key(&private_key)
             .with_extra_data(EXTRA_DATA.to_vec())
             .generate_and_sign()
-            .inspect(|r| println!("{r:?}"))
-            .unwrap()
     })
     .join()
-    .map_err(|e| anyhow!("{e:?}"))
+    .map_err(|e| anyhow!("{e:?}"))?
+    .map_err(|e| anyhow!("{e}"))
 }
+
+/// Waits for all the responses of a requests burst.
+async fn wait_for_burst_responses<S>(
+    burst_index: usize,
+    response_listener: Arc<Mutex<S>>,
+    id_receiver: UnboundedReceiver<U256>,
+    config: Config,
+    progress_bar: ProgressBar,
+) where
+    S: Stream<Item = sol_types::Result<(UserDecryptionResponse, Log)>> + Unpin,
+{
+    if let Err(e) = wait_for_burst_responses_inner(
+        burst_index,
+        response_listener,
+        id_receiver,
+        config,
+        progress_bar,
+    )
+    .await
+    {
+        error!("{e}");
+    }
+}
+
+async fn wait_for_burst_responses_inner<S>(
+    burst_index: usize,
+    response_listener: Arc<Mutex<S>>,
+    mut id_receiver: UnboundedReceiver<U256>,
+    config: Config,
+    progress_bar: ProgressBar,
+) -> anyhow::Result<()>
+where
+    S: Stream<Item = sol_types::Result<(UserDecryptionResponse, Log)>> + Unpin,
+{
+    let burst_start = Instant::now();
+
+    let mut received_id_guard = RECEIVED_RESPONSES_IDS.lock().await;
+    let mut listener_guard = response_listener.lock().await;
+    for _ in 0..config.parallel_requests {
+        let Some(id) = id_receiver.recv().await else {
+            return Err(anyhow!("Request id channel was closed unexpectedly"));
+        };
+
+        debug!("UserDecryptionRequest #{id} was sent. Waiting for UserDecryptionResponse #{id}...");
+
+        while !received_id_guard.remove(&id) {
+            match listener_guard.next().await {
+                Some(Ok((response, _))) => {
+                    let response_id = response.decryptionId;
+                    trace!("Received UserDecryptionResponse #{response_id}");
+                    received_id_guard.insert(response_id);
+                    progress_bar.inc(1);
+                }
+                Some(Err(e)) => return Err(anyhow!("Failed to retrieve next event: {e}")),
+                None => return Err(anyhow!("No more events to receive!")),
+            }
+        }
+        debug!("UserDecryptionResponse #{id} was successfully received!");
+    }
+    drop(received_id_guard);
+    drop(listener_guard);
+
+    let elapsed = burst_start.elapsed().as_secs_f64();
+    progress_bar.finish_with_message(format!(
+        "Handled burst #{} of {} in {:.2}s. Throughput: {:.2} tps",
+        burst_index,
+        config.parallel_requests,
+        elapsed,
+        config.parallel_requests as f64 / elapsed
+    ));
+
+    Ok(())
+}
+
+static RECEIVED_RESPONSES_IDS: LazyLock<Arc<Mutex<HashSet<U256>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(HashSet::new())));
 
 pub const DURATION_DAYS: u64 = 10;
 pub const EXTRA_DATA: [u8; 1] = [0];
