@@ -1,5 +1,5 @@
 mod public;
-mod user;
+pub mod user;
 
 pub use public::{init_public_decryption_response_listener, public_decryption_burst};
 
