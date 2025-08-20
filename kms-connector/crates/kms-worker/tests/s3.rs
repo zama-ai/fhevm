@@ -14,7 +14,7 @@ async fn test_get_ciphertext_from_s3() -> anyhow::Result<()> {
         .with_s3(S3Instance::setup().await?)
         .build();
     let config = Config::default();
-    let mock_provider = ProviderBuilder::new().on_mocked_client(Asserter::new());
+    let mock_provider = ProviderBuilder::new().connect_mocked_client(Asserter::new());
 
     let handle = rand_u256().to_be_bytes_vec(); // dummy handle
     let bucket_url = format!("{}/ct128", test_instance.s3_url());
@@ -42,7 +42,7 @@ async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
         .with_s3(S3Instance::setup().await?)
         .build();
     let config = Config::default();
-    let mock_provider = ProviderBuilder::new().on_mocked_client(Asserter::new());
+    let mock_provider = ProviderBuilder::new().connect_mocked_client(Asserter::new());
 
     let handle = rand_u256().to_be_bytes_vec(); // dummy handle
     let bucket_url = format!("{}/ct128", test_instance.s3_url());

@@ -9,7 +9,7 @@ use connector_utils::{
 };
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kmsmanagement::KmsManagement::{
+    kms_management::KmsManagement::{
         CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
         PreprocessKskgenRequest,
     },

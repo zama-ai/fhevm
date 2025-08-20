@@ -3,7 +3,7 @@ use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, db::SnsCiphertextMaterialDbItem};
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kmsmanagement::KmsManagement::{
+    kms_management::KmsManagement::{
         CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
         PreprocessKskgenRequest,
     },

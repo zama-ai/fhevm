@@ -8,7 +8,7 @@ use connector_utils::types::fhe::extract_fhe_type_from_handle;
 use dashmap::DashMap;
 use fhevm_gateway_rust_bindings::{
     decryption::Decryption::SnsCiphertextMaterial,
-    gatewayconfig::GatewayConfig::{self, GatewayConfigInstance},
+    gateway_config::GatewayConfig::{self, GatewayConfigInstance},
 };
 use kms_grpc::kms::v1::{CiphertextFormat, TypedCiphertext};
 use sha3::{Digest, Keccak256};
@@ -25,7 +25,7 @@ const CT_FORMAT_HEADER: &str = "x-amz-meta-Ct-Format";
 #[derive(Clone)]
 pub struct S3Service<P: Provider> {
     /// The instance of the `GatewayConfig` contract.
-    gateway_config_contract: GatewayConfigInstance<(), P>,
+    gateway_config_contract: GatewayConfigInstance<P>,
 
     /// An optional S3 bucket fallback configuration.
     fallback_config: Option<S3Config>,
@@ -83,7 +83,7 @@ where
             .call()
             .await
         {
-            Ok(coprocessor) => coprocessor._0.s3BucketUrl.to_string(),
+            Ok(coprocessor) => coprocessor.s3BucketUrl.to_string(),
             Err(e) => {
                 warn!(
                     "GatewayConfig contract call failed for coprocessor {:?}: {}",
