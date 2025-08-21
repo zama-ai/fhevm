@@ -50,7 +50,7 @@ There are 3 types of events related to:
 ### Database Events
 
 > Status: proposal
-> Database events are used to hint the scheduler to dispath workload and to notice workload completion.
+> Database events are used to hint the scheduler to dispatch workload and to notice workload completion.
 
 > https://stackoverflow.com/questions/56747634/how-do-i-use-the-postgres-crate-to-receive-table-modification-events-from-postgr
 
