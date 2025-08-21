@@ -5,8 +5,7 @@ edition = "2024"
 
 [dependencies]
 fhevm_gateway_rust_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.8.0-3", default-features = false }
-gateway-sdk = { git = "https://github.com/zama-ai/fhevm.git", rev = "3ea0d6759267a6ab217c24d2b1b8934c3d37098c", default-features = false }
-# gateway-sdk.path = "../../../../fhevm/sdk/rust-sdk"
+gateway-sdk = { git = "https://github.com/zama-ai/fhevm.git", rev = "ea79a8acf40b5a52892608a88b550adac52b9ea8", default-features = false }
 
 alloy = { version = "1.0", default-features = false, features = [
     "essentials",
