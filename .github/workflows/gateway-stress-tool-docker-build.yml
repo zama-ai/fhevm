@@ -31,6 +31,6 @@ jobs:
       working-directory: "."
       docker-context: "."
       push_image: true
-      image-name: "fhevm/kms-connector/gw-listener"
-      docker-file: "./kms-connector/crates/gw-listener/Dockerfile"
+      image-name: "fhevm/test-suite/gateway-stress-tool"
+      docker-file: "./test-suite/gateway-stress/Dockerfile"
       app-cache-dir: "fhevm-gateway-stress-tool"
