@@ -12,14 +12,14 @@ decryption_address = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
 
 # The time during which the tool will send requests burst to the Gateway
 # Format documentation: https://docs.rs/humantime/latest/humantime/
-tests_duration = "30s"
+tests_duration = "500ms"
 
 # The interval between two requests burst
 # Format documentation: https://docs.rs/humantime/latest/humantime/
-tests_interval = "3s"
+tests_interval = "1s"
 
 # The number of parallel requests to send to the Gateway, at each interval
-parallel_requests = 20
+parallel_requests = 1
 
 # The handles used for user decryptions
 user_ct_handles = [

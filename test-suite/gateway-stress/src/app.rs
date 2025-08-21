@@ -67,7 +67,7 @@ impl App {
 
         let sdk = Arc::new(
             FhevmSdkBuilder::new()
-                .with_gateway_chain_id(config.host_chain_id)
+                .with_gateway_chain_id(config.gateway_chain_id)
                 .with_decryption_contract(&config.decryption_address.to_string())
                 .with_acl_contract(&Address::ZERO.to_string())
                 .with_input_verification_contract(&Address::ZERO.to_string())
