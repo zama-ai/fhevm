@@ -4,9 +4,9 @@ This document explains the service interface of the Zama Protocol - Relayer & Or
 
 ## What is the Oracle?
 
-The Oracle is an off-chain service that acts on behalf of smart contracts to retrieve decrypted values from the FHEVM protocol.
+The Oracle is an off-chain service that acts on behalf of smart contracts to retrieve decrypted values from the FHEVM Protocol.
 
-While the FHEVM protocol’s core components handle encryption, computation, and key management, Oracles and Relayers provide the necessary connectivity between users, smart contracts, and the off-chain infrastructure. They act as lightweight services that interface with the Gateway, enabling smooth interaction with encrypted values—without requiring users or contracts to handle complex integration logic.
+While the FHEVM Protocol's core components handle encryption, computation, and key management, Oracles and Relayers provide the necessary connectivity between users, smart contracts, and the off-chain infrastructure. They act as lightweight services that interface with the Gateway, enabling smooth interaction with encrypted values—without requiring users or contracts to handle complex integration logic.
 
 These components are not part of the trusted base of the protocol; their actions are fully verifiable, and their misbehavior does not compromise confidentiality or correctness.
 

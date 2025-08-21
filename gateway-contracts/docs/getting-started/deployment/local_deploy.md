@@ -4,7 +4,7 @@ Here is an example of how to deploy contracts on a local network using hardhat.
 
 ## Prerequisites
 
-First, git clone `FHEVM-gateway` repo and install dependencies with
+First, git clone `fhevm-gateway` repo and install dependencies with
 
 ```bash
 npm install

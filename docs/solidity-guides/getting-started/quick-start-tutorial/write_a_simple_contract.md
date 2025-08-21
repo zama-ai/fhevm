@@ -4,7 +4,7 @@ In this tutorial, you'll write and test a simple regular Solidity smart contract
 
 In the [next tutorial](turn_it_into_fhevm.md), you'll learn how to convert this contract into an FHEVM contract.
 
-## Prerequisite
+## Prerequisites
 
 - [Set up your Hardhat environment](setup.md).
 - Make sure that your Hardhat project is clean and ready to start. See the instructions [here](setup.md#rest-set-the-hardhat-envrionment).
@@ -121,7 +121,7 @@ Cool! The test basic skeleton is running!
   1 passing (1ms)
 ```
 
-Great! Your Hardhat test environment is properly setup.
+Great! Your Hardhat test environment is properly set up.
 
 {% endstep %}
 
@@ -353,7 +353,7 @@ it("increment the counter by 1", async function () {
 
 - `increment()` is a transactional function that modifies the blockchain state.
 - It must be signed by a user — here we use `alice`.
-- `await wait()` to wait for the transaction to mined.
+- `await wait()` to wait for the transaction to be mined.
 - The test compares the counter before and after the transaction to ensure it incremented as expected.
 
 #### Run the test

@@ -4,7 +4,7 @@ This document explains one of the key components of the Zama Protocol - Host con
 
 ## What are host contracts?
 
-Host contracts are smart contracts deployed on any supported blockchain (EVM or non-EVM) that act as trusted bridges between onchain applications and the FHEVM protocol. They serve as the minimal and foundational interface that confidential smart contracts use to:
+Host contracts are smart contracts deployed on any supported blockchain (EVM or non-EVM) that act as trusted bridges between onchain applications and the FHEVM Protocol. They serve as the minimal and foundational interface that confidential smart contracts use to:
 
 - Interact with encrypted data (handles)
 - Perform access control operations

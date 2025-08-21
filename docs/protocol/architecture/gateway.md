@@ -1,6 +1,6 @@
 # Gateway
 
-This document explains one of the key components of the Zama Protocol - Gateway, the central orchestrator within Zama’s FHEVM protocol, coordinates interactions between users, host chains, coprocessors, and the Key Management Service (KMS), ensuring that encrypted data flows securely and correctly through the system.
+This document explains one of the key components of the Zama Protocol - Gateway, the central orchestrator within Zama's FHEVM Protocol, coordinates interactions between users, host chains, coprocessors, and the Key Management Service (KMS), ensuring that encrypted data flows securely and correctly through the system.
 
 ## What is the Gateway?
 

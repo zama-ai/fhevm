@@ -30,7 +30,7 @@ contract BlindAuction is SepoliaConfig, ReentrancyGuard {
   /// @notice The recipient of the highest bid once the auction ends
   address public beneficiary;
 
-  /// @notice Confidenctial Payment Token
+  /// @notice Confidential Payment Token
   ConfidentialERC20 public confidentialERC20;
 
   /// @notice Token for the auction
@@ -306,12 +306,12 @@ describe("ConfidentialERC20", function () {
     this.USDCc.mockMint(aliceAddress, 1_000_000);
 
     // Bid amount
-    const bidAmout = 10_000;
+    const bidAmount = 10_000;
+    
+    await this.approve(aliceSigner, bidAmount);
+    await this.bid(aliceSigner, bidAmount);
 
-    await this.approve(aliceSigner, bidAmout);
-    await this.bid(aliceSigner, bidAmout);
-
-    // Check payement transfer
+    // Check payment transfer
     const aliceEncryptedBalance = await this.USDCc.balanceOf(this.signers.alice);
     const aliceClearBalance = await hre.fhevm.userDecryptEuint(
       FhevmType.euint64,
@@ -319,7 +319,7 @@ describe("ConfidentialERC20", function () {
       this.USDCcAddress,
       this.signers.alice,
     );
-    expect(aliceClearBalance).to.equal(1_000_000 - bidAmout);
+    expect(aliceClearBalance).to.equal(1_000_000 - bidAmount);
 
     // Check bid value
     const aliceEncryptedBid = await this.blindAuction.getEncryptedBid(aliceAddress);
@@ -329,7 +329,7 @@ describe("ConfidentialERC20", function () {
       this.blindAuctionAddress,
       aliceSigner,
     );
-    expect(aliceClearBid).to.equal(bidAmout);
+    expect(aliceClearBid).to.equal(bidAmount);
   });
 
   it("bob should win auction", async function () {

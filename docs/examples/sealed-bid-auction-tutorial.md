@@ -50,7 +50,7 @@ contract BlindAuction is SepoliaConfig {
   /// @notice The recipient of the highest bid once the auction ends
   address public beneficiary;
 
-  /// @notice Confidenctial Payment Token
+  /// @notice Confidential Payment Token
   ConfidentialERC20 public confidentialERC20;
 
   /// @notice Token for the auction

@@ -1,6 +1,6 @@
 ---
 description: >-
-  The fhevm Gateway.
+  The FHEVM Gateway.
 
 layout:
   title:
@@ -15,11 +15,11 @@ layout:
     visible: false
 ---
 
-# Welcome to fhevm Gateway
+# Welcome to FHEVM Gateway
 
 ## Get started
 
-Learn the basics of fhevm Gateway, set it up, and make it run with ease.
+Learn the basics of FHEVM Gateway, set it up, and make it run with ease.
 
 ### References
 
