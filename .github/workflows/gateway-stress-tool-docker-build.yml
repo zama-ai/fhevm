@@ -1,0 +1,36 @@
+name: gateway-stress-tool-docker-build
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: fhevm-gateway-stress-tool-${{ github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    name: gateway-stress-tool-docker-build/build
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@e666182756172bc747d2be6e4eb9b4ed80a00a0e
+    secrets:
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+      attestations: write
+      packages: 'write'
+      id-token: 'write'
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      docker-context: "."
+      push_image: true
+      image-name: "fhevm/kms-connector/gw-listener"
+      docker-file: "./kms-connector/crates/gw-listener/Dockerfile"
+      app-cache-dir: "fhevm-gateway-stress-tool"
