@@ -125,7 +125,7 @@ pub async fn wait_for_ciphertext(
         println!("wait for ciphertext, retry: {}", retry);
 
         // Wait before retrying
-        sleep(Duration::from_millis(500)).await;
+        sleep(Duration::from_millis(300)).await;
     }
 
     Err(sqlx::Error::RowNotFound.into())
@@ -244,4 +244,12 @@ pub async fn insert_random_tenant(pool: &PgPool) -> Result<i32, sqlx::Error> {
     .await?;
 
     Ok(row.tenant_id)
+}
+
+pub async fn truncate_tables(db_pool: &sqlx::PgPool, tables: Vec<&str>) -> Result<(), sqlx::Error> {
+    for table in tables {
+        let query = format!("TRUNCATE {}", table);
+        sqlx::query(&query).execute(db_pool).await?;
+    }
+    Ok(())
 }

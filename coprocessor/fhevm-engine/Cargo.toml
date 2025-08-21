@@ -30,8 +30,9 @@ alloy-primitives = "1.2.0"
 axum = "0.7"
 tower-http = { version = "0.5", features = ["trace"] }
 anyhow = "1.0.98"
-aws-config = "1.6.3"
+aws-config = "1.8.5"
 aws-sdk-kms = { version = "1.68.0", default-features = false }
+aws-sdk-s3 = "1.103.0"
 bigdecimal = "0.4.8"
 bincode = "1.3.3"
 clap = { version = "4.5.38", features = ["derive"] }

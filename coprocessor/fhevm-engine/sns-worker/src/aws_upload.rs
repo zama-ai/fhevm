@@ -219,7 +219,13 @@ async fn upload_ciphertexts(
 
         let format_as_str = task.ct128.format().to_string();
 
-        let key = hex::encode(&ct128_digest);
+        let key = if cfg!(feature = "test_s3_use_handle_as_key") {
+            hex::encode(&task.handle)
+        } else {
+            // Use the digest as the key for the ct128 object
+            // This is the production behavior
+            hex::encode(&ct128_digest)
+        };
 
         let mut s = task.otel.child_span("ct128_check_s3");
         let exists = check_object_exists(client, &conf.bucket_ct128, &key).await?;
@@ -265,7 +271,13 @@ async fn upload_ciphertexts(
 
         let ct64_digest = compute_digest(ct64_compressed);
 
-        let key = hex::encode(&ct64_digest);
+        let key = if cfg!(feature = "test_s3_use_handle_as_key") {
+            hex::encode(&task.handle)
+        } else {
+            // Use the digest as the key for the ct64 object
+            // This is the production behavior
+            hex::encode(&ct64_digest)
+        };
 
         let mut s = task.otel.child_span("ct64_check_s3");
         let exists = check_object_exists(client, &conf.bucket_ct64, &key).await?;
@@ -352,7 +364,7 @@ async fn upload_ciphertexts(
     transient_error.map_or(Ok(()), Err)
 }
 
-fn compute_digest(ct: &[u8]) -> Vec<u8> {
+pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
     let mut hasher = Keccak256::new();
     hasher.update(ct);
     hasher.finalize().to_vec()
