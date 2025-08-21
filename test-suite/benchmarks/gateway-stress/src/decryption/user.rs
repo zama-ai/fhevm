@@ -1,4 +1,7 @@
-use crate::{config::Config, decryption::extract_id_from_receipt};
+use crate::{
+    config::Config,
+    decryption::{extract_id_from_receipt, send_tx_with_retries},
+};
 use alloy::{
     hex,
     primitives::{Address, U256},
@@ -113,8 +116,8 @@ async fn send_user_decryption_inner<P: Provider>(
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)?
         .as_secs();
-    let eip712 = generate_eip712(sdk, &config, timestamp)?;
 
+    let eip712 = generate_eip712(sdk, &config, timestamp)?;
     let decryption_call = decryption_contract
         .userDecryptionRequest(
             config
@@ -138,21 +141,15 @@ async fn send_user_decryption_inner<P: Provider>(
             eip712.signature.clone().unwrap(),
             EXTRA_DATA.into(),
         )
-        .send()
-        .await
-        .map_err(|e| anyhow!("Failed to send transaction: {e}"))?;
+        .into_transaction_request();
 
-    let receipt = decryption_call
-        .get_receipt()
-        .await
-        .map_err(|e| anyhow!("Failed to get receipt: {e}"))?;
-
-    debug!("UserDecryptionRequest successfully sent!");
-
-    let id = extract_user_decryption_id_from_receipt(&receipt)?;
-    id_sender.send(id)?;
-
-    Ok(())
+    send_tx_with_retries(
+        decryption_contract.provider(),
+        decryption_call,
+        id_sender,
+        extract_user_decryption_id_from_receipt,
+    )
+    .await
 }
 
 fn extract_user_decryption_id_from_receipt(receipt: &TransactionReceipt) -> anyhow::Result<U256> {
@@ -258,7 +255,9 @@ where
     let mut listener_guard = response_listener.lock().await;
     for _ in 0..config.parallel_requests {
         let Some(id) = id_receiver.recv().await else {
-            return Err(anyhow!("Request id channel was closed unexpectedly"));
+            return Err(anyhow!(
+                "Request id channel #{burst_index} was closed unexpectedly"
+            ));
         };
 
         debug!("UserDecryptionRequest #{id} was sent. Waiting for UserDecryptionResponse #{id}...");
