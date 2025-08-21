@@ -41,6 +41,12 @@ kmsConnectorDbMigration:
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration
     tag: v0.8.0-1
+  command:
+    - "sqlx"
+    - "migrate"
+    - "run"
+    - "--source"
+    - "/migrations"
   env:
     - name: DATABASE_URL
       value: "postgresql://postgres:postgres@fhevm-db:5432/kms-connector"
