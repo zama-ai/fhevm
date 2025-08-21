@@ -108,4 +108,4 @@ init().then((instance) => {
 });
 ```
 
-You can now use your instance to [encrypt parameters](./input.md), perform [user decryptions](./user-decryption.md) or [public decryptions](./public-decryption.md).
+You can now use your instance to [encrypt parameters](./input.md), perform [user decryption](./user-decryption.md) or [public decryption](./public-decryption.md).

@@ -39,7 +39,7 @@ Each encrypted type supports operations similar to its plaintext counterpart:
 - Comparison: `lt`, `gt`, `le`, `ge`, `eq`, `ne`, `min`, `max`
 - Bit manipulation: `shl`, `shr`, `rotl`, `rotr`
 
-These operations are symbolically executed on-chain by generating new handles and emitting events for coprocessors to process the actual FHE computation off-chain.
+These operations are symbolically executed onchain by generating new handles and emitting events for coprocessors to process the actual FHE computation off-chain.
 
 Example:
 

@@ -22,7 +22,7 @@ The Gateway ensures that encrypted values provided by users are well-formed and 
 
 - Accepting encrypted inputs along with Zero-Knowledge Proofs of Knowledge (ZKPoKs).
 - Emitting verification events for coprocessors to validate.
-- Aggregating signatures from a majority of coprocessors to generate attestations, which can then be used on-chain as\
+- Aggregating signatures from a majority of coprocessors to generate attestations, which can then be used onchain as\
   trusted external values.
 
 ### Access Control coordination

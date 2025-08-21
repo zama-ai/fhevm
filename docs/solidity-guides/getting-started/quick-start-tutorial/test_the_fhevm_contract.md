@@ -92,7 +92,7 @@ describe("FHECounter", function () {
 
 – For clarity, the `Counter` unit tests are included as comments, allowing you to better understand how each part is adapted during the migration to FHEVM.
 
-- While the test logic remains the same, this version is now set up to support encrypted computations via the FHEVM library — enabling tests that manipulate confidential values directly on-chain.
+- While the test logic remains the same, this version is now set up to support encrypted computations via the FHEVM library — enabling tests that manipulate confidential values directly onchain.
 
 {% endstep %}
 
@@ -226,7 +226,7 @@ it("increment the counter by 1", async function () {
 
 The `increment()` function takes a single argument: the value by which the counter should be incremented. In the initial version of `Counter.sol`, this value is a clear `uint32`.
 
-We’ll switch to passing an encrypted value instead, using FHEVM `externalEuint32` primitive type. This allows us to securely increment the counter without revealing the input value on-chain.
+We’ll switch to passing an encrypted value instead, using FHEVM `externalEuint32` primitive type. This allows us to securely increment the counter without revealing the input value onchain.
 
 {% hint style="info" %}
 We are using an `externalEuint32` instead of a regular `euint32`. This tells the FHEVM that the encrypted `uint32` was provided externally (e.g., by a user) and must be verified for integrity and authenticity before it can be used within the contract.
@@ -349,7 +349,7 @@ The `userDecryptEuint` function takes four parameters:
 4. **User signer**: The signer (e.g., signers.alice) who has permission to access the handle.
 
 {% hint style="info" %}
-Note: Permissions to access the FHEVM handle are set on-chain using the `FHE.allow()` Solidity function (see FHECounter.sol).
+Note: Permissions to access the FHEVM handle are set onchain using the `FHE.allow()` Solidity function (see FHECounter.sol).
 {% endhint %}
 
 Replace :

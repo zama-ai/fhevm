@@ -24,7 +24,7 @@ resolve: {
 
 **Cause:** This error occurs when the Node.js `Buffer` object is used in a browser environment where it is not natively available.
 
-**Possible solutions:** To resolve this issue, you need to provide browser-compatible fallbacks for Node.js core modules. Install the necessary browserified npm packages and configure Webpack to use these fallbacks.
+**Possible solutions:** To resolve this issue, you need to provide browser-compatible fallback for Node.js core modules. Install the necessary browser npm packages and configure Webpack to use these fallbacks.
 
 ```javascript
 resolve: {
@@ -54,7 +54,7 @@ resolve: {
 
 **Cause:** The library may not bundle correctly with certain frameworks, leading to errors during the build or runtime process.
 
-**Possible solutions:** Use the [prebundled version available](./webapp.md) with `@zama-fhe/relayer-sdk/bundle`. Embed the library with a `<script>` tag and initialize it as shown below:
+**Possible solutions:** Use the [pre bundled version available](./webapp.md) with `@zama-fhe/relayer-sdk/bundle`. Embed the library with a `<script>` tag and initialize it as shown below:
 
 ```javascript
 const start = async () => {

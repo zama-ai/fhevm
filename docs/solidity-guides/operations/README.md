@@ -12,7 +12,7 @@ The following arithmetic operations are supported for encrypted integers (`euint
 | Subtract                     | `FHE.sub`     | `-`    | Binary |
 | Multiply                     | `FHE.mul`     | `*`    | Binary |
 | Divide (plaintext divisor)   | `FHE.div`     |        | Binary |
-| Reminder (plaintext divisor) | `FHE.rem`     |        | Binary |
+| Remainder (plaintext divisor)| `FHE.rem`     |        | Binary |
 | Negation                     | `FHE.neg`     | `-`    | Unary  |
 | Min                          | `FHE.min`     |        | Binary |
 | Max                          | `FHE.max`     |        | Binary |
@@ -36,7 +36,7 @@ The FHE library also supports bitwise operations, including shifts and rotations
 | Rotate Right | `FHE.rotr`    |        | Binary |
 | Rotate Left  | `FHE.rotl`    |        | Binary |
 
-The shift operators `FHE.shr` and `FHE.shl` can take any encrypted type `euintX` as a first operand and either a `uint8`or a `euint8` as a second operand, however the second operand will always be computed modulo the number of bits of the first operand. For example, `FHE.shr(euint64 x, 70)` is equivalent to `FHE.shr(euint64 x, 6)` because `70 % 64 = 6`. This differs from the classical shift operators in Solidity, where there is no intermediate modulo operation, so for instance any `uint64` shifted right via `>>` would give a null result.
+The shift operators `FHE.shr` and `FHE.shl` can take any encrypted type `euintX` as a first operand and either a `uint8` or an `euint8` as a second operand, however the second operand will always be computed modulo the number of bits of the first operand. For example, `FHE.shr(euint64 x, 70)` is equivalent to `FHE.shr(euint64 x, 6)` because `70 % 64 = 6`. This differs from the classical shift operators in Solidity, where there is no intermediate modulo operation, so for instance any `uint64` shifted right via `>>` would give a null result.
 
 ## Comparison operations
 
@@ -61,7 +61,7 @@ The `FHE.select` function is a ternary operation that selects one of two encrypt
 
 ## Random operations
 
-You can generate cryptographically secure random numbers fully on-chain:
+You can generate cryptographically secure random numbers fully onchain:
 
 <table data-header-hidden><thead><tr><th></th><th width="206"></th><th></th><th></th></tr></thead><tbody><tr><td><strong>Name</strong></td><td><strong>Function Name</strong></td><td><strong>Symbol</strong></td><td><strong>Type</strong></td></tr><tr><td>Random Unsigned Integer</td><td><code>FHE.randEuintX()</code></td><td></td><td>Random</td></tr></tbody></table>
 
@@ -93,9 +93,9 @@ euint8 percentage = FHE.asEuint8(75);  // percentage fits in 8 bits
 
 ### Use scalar operands when possible to save gas
 
-Some FHE operators exist in two versions: one where all operands are ciphertexts handles, and another where one of the operands is an unencrypted scalar. Whenever possible, use the scalar operand version, as this will save a lot of gas.
+Some FHE operators exist in two versions: one where all operands are ciphertext handles, and another where one of the operands is an unencrypted scalar. Whenever possible, use the scalar operand version, as this will save a lot of gas.
 
-❌ For example, this snippet cost way more in gas:
+❌ For example, this snippet costs way more gas:
 
 ```solidity
 euint32 x;
@@ -103,7 +103,7 @@ euint32 x;
 x = FHE.add(x,FHE.asEuint(42));
 ```
 
-✅ Than this one:
+✅ than this one:
 
 ```solidity
 euint32 x;

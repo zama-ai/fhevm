@@ -6,8 +6,8 @@ In the [next tutorial](turn_it_into_fhevm.md), you'll learn how to convert this 
 
 ## Prerequisite
 
-- [Set up your Hardhat envrionment](setup.md).
-- Make sure that you Hardhat project is clean and ready to start. See the instructions [here](setup.md#rest-set-the-hardhat-envrionment).
+- [Set up your Hardhat environment](setup.md).
+- Make sure that your Hardhat project is clean and ready to start. See the instructions [here](setup.md#rest-set-the-hardhat-envrionment).
 
 ## What you'll learn
 

@@ -12,7 +12,7 @@ These components are not part of the trusted base of the protocol; their actions
 
 ## Responsibilities of the Oracle
 
-- Listen for on-chain decryption requests from contracts.
+- Listen for onchain decryption requests from contracts.
 - Forward decryption requests to the Gateway on behalf of the contract.
 - Wait for the KMS to produce signed plaintexts via the Gateway.
 - Call back the contract on the host chain, passing the decrypted result.
@@ -23,7 +23,7 @@ to trust the oracle itself.
 ## Security model of the Oracle
 
 - Oracles are **untrusted**: they can only delay a request, not falsify it.
-- All results are signed and verifiable on-chain.
+- All results are signed and verifiable onchain.
 
 If one oracle fails to respond, another can take over.
 

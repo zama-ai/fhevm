@@ -27,7 +27,7 @@ Encryption is the starting point for any interaction with the FHEVM system, ensu
 - **How It Works**:
   1. The frontend or client application uses the public key to encrypt user-provided plaintext inputs and generates a proof of knowledge of the underlying plaintexts.
   2. The resulting ciphertext and proof are submitted to the Gateway for verification.
-  3. Coprocessors validate the proof and store the ciphertext off-chain, returning handles and signature that can be used as on-chain parameters.
+  3. Coprocessors validate the proof and store the ciphertext off-chain, returning handles and signature that can be used as onchain parameters.
 - **Data Flow**:
   - **Source**: Frontend.
   - **Destination**: Coprocessor (for processing).
@@ -43,7 +43,7 @@ Encrypted computations are performed using the **evaluation key** on the coproce
 - **How it works**:
   1. The smart contract emits FHE operation events as symbolic instructions.
   2. These events are picked up by the coprocessor, which evaluates each operation individually using the evaluation key, without ever decrypting the data.
-  3. The resulting ciphertext is persisted in the coprocessor database, while only a handle is returned on-chain.
+  3. The resulting ciphertext is persisted in the coprocessor database, while only a handle is returned onchain.
 - **Data flow**:
   - **Source**: Blockchain smart contracts (via symbolic execution).
   - **Processing**: Coprocessor (using the evaluation key).
@@ -55,7 +55,7 @@ Encrypted computations are performed using the **evaluation key** on the coproce
 
 There are two kinds of decryption supported in the FHEVM system:
 
-1. Public Decryption used when plaintext is needed on-chain.
+1. Public Decryption used when plaintext is needed onchain.
    1. The contract emits a decryption request.
    2. The Gateway validates it and forwards it to the KMS.
    3. The plaintext is returned via a callback to the smart contract.
@@ -73,7 +73,7 @@ You can read about the implementation details in [our decryption guide](solidity
 
 #### What is “User Decryption”?
 
-User Decryption is the mechanism that allows users or applications to request private access to decrypted data — without exposing the plaintext on-chain. Instead of simply decrypting, the KMS securely decrypts the result with the user’s public key, allowing the user to decrypt it client-side only.
+User Decryption is the mechanism that allows users or applications to request private access to decrypted data — without exposing the plaintext onchain. Instead of simply decrypting, the KMS securely decrypts the result with the user’s public key, allowing the user to decrypt it client-side only.
 
 This guarantees:
 
@@ -89,8 +89,8 @@ User decryption is initiated on the client side using the [`@zama-ai/relayer-sdk
 
 1. **Retrieve the ciphertext**:
    - The dApp calls a view function (e.g., `balanceOf`) on the smart contract to get the handle of the ciphertext to be decrypted.
-2. **Generate and sign a keypair**:
-   - The dApp generates a keypair for the user.
+2. **Generate and sign a key pair**:
+   - The dApp generates a key pair for the user.
    - The user signs the public key to ensure authenticity.
 3. **Submit user encryption request**:
    - The dApp emits a transaction to the Gateway, providing the following information:
@@ -114,7 +114,7 @@ The flow of information across the FHEVM components during these operations high
 | ------------------- | ----------------------- | --------------------------------------------------------------------------------------------------- |
 | **Encryption**      | Public Key              | Frontend encrypts data → ciphertext sent to blockchain or coprocessor                               |
 | **Computation**     | Evaluation Key          | Coprocessor executes operations from smart contract events → updated ciphertexts                    |
-| **Decryption**      | Private Key             | Smart contract requests plaintext → Gateway forwards to KMS → result returned on-chain              |
+| **Decryption**      | Private Key             | Smart contract requests plaintext → Gateway forwards to KMS → result returned onchain              |
 | **User decryption** | Private and Target Keys | User requests result → KMS decrypts and encrypts with user’s public key → frontend decrypts locally |
 
 This architecture ensures that sensitive data remains encrypted throughout its lifecycle, with decryption only occurring in controlled, secure environments. By separating key roles and processing responsibilities, FHEVM provides a scalable and robust framework for private smart contracts.

@@ -70,7 +70,7 @@ The `asEuint` functions serve three purposes:
 
 The first case is used to process encrypted inputs, e.g. user-provided ciphertexts. Those are generally included in a transaction payload.
 
-The second case is self-explanatory. When `X > Y`, the most significant bits are dropped. When `X < Y`, the ciphertext is padded to the left with trivial encryptions of `0`.
+The second case is self-explanatory. When `X > Y`, the most significant bits are dropped. When `X < Y`, the ciphertext is padded to the left with trivial encryption of `0`.
 
 The third case is used to "encrypt" a public value so that it can be used as a ciphertext. Note that what we call a trivial encryption is **not** secure in any sense. When trivially encrypting a plaintext value, this value is still visible in the ciphertext bytes. More information about trivial encryption can be found [here](https://www.zama.ai/post/tfhe-deep-dive-part-1).
 
@@ -279,9 +279,9 @@ function select(ebool b, euint8 val1, euint8 val2) internal view returns (euint8
 
 ### Generating random encrypted integers
 
-Random encrypted integers can be generated fully on-chain.
+Random encrypted integers can be generated fully onchain.
 
-That can only be done during transactions and not on an `eth_call` RPC method, because PRNG state needs to be mutated on-chain during generation.
+That can only be done during transactions and not on an `eth_call` RPC method, because PRNG state needs to be mutated onchain during generation.
 
 #### Example
 

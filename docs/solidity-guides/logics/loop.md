@@ -15,7 +15,7 @@ while(FHE.lt(x, maxValue)){
 }
 ```
 
-If your code logic requires looping on an encrypted boolean condition, we highly suggest to try to replace it by a finite loop with an appropriate constant maximum number of steps and use `FHE.select` inside the loop.
+If your code logic requires looping on an encrypted boolean condition, we highly suggest you to try to replace it by a finite loop with an appropriate constant maximum number of steps and use `FHE.select` inside the loop.
 
 ## Suggested approach
 
@@ -37,7 +37,7 @@ In this snippet, we perform 10 iterations, adding 4 to `x` in each iteration as 
 
 ### Obfuscate branching
 
-The previous paragraph emphasized that branch logic should rely as much as possible on `FHE.select` instead of decryptions. It hides effectively which branch has been executed.
+The previous paragraph emphasized that branch logic should rely as much as possible on `FHE.select` instead of decryption. It hides effectively which branch has been executed.
 
 However, this is sometimes not enough. Enhancing the privacy of smart contracts often requires revisiting your application's logic.
 

@@ -4,7 +4,7 @@ This document describes the Access Control List (ACL) system in FHEVM, a core fe
 
 ## What is the ACL?
 
-The ACL is a permission management system designed to control who can access, compute on, or decrypt encrypted values in fhevm. By defining and enforcing these permissions, the ACL ensures that encrypted data remains secure while still being usable within authorized contexts.
+The ACL is a permission management system designed to control who can access, compute on, or decrypt encrypted values in FHEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains secure while still being usable within authorized contexts.
 
 ## Why is the ACL important?
 

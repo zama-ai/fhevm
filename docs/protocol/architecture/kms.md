@@ -7,7 +7,7 @@ This document explains one of the key components of the Zama Protocol - The Key 
 The KMS is a decentralized network of several nodes (also called "parties") that run an MPC (Multi-Party Computation) protocol:
 
 - Securely generate global FHE keys
-- Decrypt ciphertexts securely for public and user-targeted decryptions
+- Decrypt ciphertexts securely for public and user-targeted decryption
 - Support zero-knowledge proof infrastructure
 - Manage key lifecycles with NIST compliance
 
@@ -32,7 +32,7 @@ The KMS performs decryption using a threshold decryption protocol — at least a
   - Public decryption (e.g., for smart contracts)
   - User decryption (privately returned, re-encrypted only for the user to access)
 
-All decryption operation outputs are signed by each node and the output can be verified on-chain for full auditability.
+All decryption operation outputs are signed by each node and the output can be verified onchain for full auditability.
 
 ### ZK Proof support
 
@@ -85,7 +85,7 @@ In addition to robustness through MPC, the KMS also offers a custodial backup sy
 - Each MPC node splits its key share into encrypted fragments, distributing them to independent custodians.
 - If a share is lost, a quorum of custodians can collaboratively restore it, ensuring recovery even if several MPC nodes are offline.
 - This approach guarantees business continuity and resilience against outages.
-- All recovery operations require a quorum of operators and are fully auditable on-chain.
+- All recovery operations require a quorum of operators and are fully auditable onchain.
 
 ### Workflow example: Public decryption
 
@@ -93,4 +93,4 @@ In addition to robustness through MPC, the KMS also offers a custodial backup sy
 2. The Gateway verifies permissions (i.e. that the contract is allowed to decrypt the ciphertext) and emits an event.
 3. KMS parties retrieve the ciphertext, verify it, and run the MPC decryption protocol to jointly compute the plaintext and sign their result.
 4. Once a quorum agrees on the plaintext result, it is published (with signatures).
-5. The oracle posts the plaintext back on-chain and contracts can verify the authenticity using the KMS signatures.
+5. The oracle posts the plaintext back onchain and contracts can verify the authenticity using the KMS signatures.
