@@ -86,9 +86,9 @@ data:
     for envfile in /app/addresses/.env.*; do
       echo "---"
       echo "Updating configmap: ${CONFIGMAP_NAME} for the following contract addresses:"
-      cat ${envfile}
 
-      while IFS= read -r line; do
+      # Parse envfile adding a newline at the end if missing
+      while IFS= read -r line || [[ -n "$line" ]]; do
         # Use `cut` to split the line at the first `=`
         # The first part is the key (CONTRACT_NAME) and the second is the value (CONTRACT_ADDRESS)
         CONTRACT_NAME=$(echo "$line" | cut -d'=' -f1)
