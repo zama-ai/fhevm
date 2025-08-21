@@ -17,13 +17,6 @@ WORKDIR /app
 # Copy sources
 COPY test-suite/benchmarks/gateway-stress test-suite/benchmarks/gateway-stress
 
-# Install build dependencies
-# RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
-#     --mount=type=cache,target=/var/lib/apk,sharing=locked \
-#     apk add --no-cache \
-#     gcc \
-#     protoc
-
 # Build with improved caching
 WORKDIR /app/test-suite/benchmarks/gateway-stress
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
