@@ -11,24 +11,24 @@ gateway_chain_id = 54321
 decryption_address = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
 
 # The time during which the tool will send requests burst to the Gateway
-# Format: https://docs.rs/humantime/latest/humantime/
-tests_duration = "500ms"
+# Format documentation: https://docs.rs/humantime/latest/humantime/
+tests_duration = "30s"
 
 # The interval between two requests burst
-# Format: https://docs.rs/humantime/latest/humantime/
-tests_interval = "1s"
+# Format documentation: https://docs.rs/humantime/latest/humantime/
+tests_interval = "3s"
 
 # The number of parallel requests to send to the Gateway, at each interval
-parallel_requests = 100
+parallel_requests = 20
 
 # The handles used for user decryptions
 user_ct_handles = [
-    "0xb8a4ccb09ce90ac6428e06b61356daceacd9ef429dff00000000000030390500",
+    "0xd57af7d842a7ba7afc68243cfb29aa17e76f1046a4ff00000000000030390600",
 ]
 
 # The handles used for public decryptions
 public_ct_handles = [
-    "0xac93cf611f96e111b336902d1aced14d5704d65604ff00000000000030390500",
+    "0x9ae546b6ffd616935c06eabc94142a2498672f67a8ff00000000000030390600",
 ]
 
 # The contract allowed for user decrytion on ct_handles

@@ -5,8 +5,8 @@ use crate::{
     },
     config::Config,
     decryption::{
-        init_public_decryption_response_listener, public_decryption_burst,
-        user::{init_user_decryption_response_listener, user_decryption_burst},
+        init_public_decryption_response_listener, init_user_decryption_response_listener,
+        public_decryption_burst, user_decryption_burst,
     },
 };
 use alloy::{
