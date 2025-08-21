@@ -1,4 +1,5 @@
 name: kms-connector-db-migration-docker-build
+
 on:
   pull_request:
   push:
@@ -7,6 +8,8 @@ on:
   release:
     types:
       - published
+
+permissions: {}
 
 concurrency:
   group: kms-connector-db-migration-${{ github.ref_name }}

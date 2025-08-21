@@ -11,6 +11,7 @@ permissions: {}
 
 jobs:
   check-changes:
+    name: gateway-contracts-mock-deployment/check-changes
     runs-on: ubuntu-latest
     permissions:
       contents: 'read'

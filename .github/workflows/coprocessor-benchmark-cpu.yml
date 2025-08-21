@@ -1,6 +1,8 @@
 # Run fhevm coprocessor benchmarks on a CPU instance and return parsed results to Slab.
 name: coprocessor-benchmarks-cpu
 
+permissions: {}
+
 on:
   workflow_dispatch:
     inputs:
@@ -98,7 +100,7 @@ jobs:
         run: |
           {
             echo "BENCH_DATE=$(date --iso-8601=seconds)";
-            echo "COMMIT_DATE=$(git --no-pager show -s --format=%cd --date=iso8601-strict ${{ github.sha }})";
+            echo "COMMIT_DATE=$(git --no-pager show -s --format=%cd --date=iso8601-strict "${GITHUB_SHA}")";
             echo "COMMIT_HASH=$(git describe --tags --dirty)";
           } >> "${GITHUB_ENV}"
 
@@ -201,10 +203,12 @@ jobs:
       - name: Send data to Slab
         shell: bash
         run: |
-          python3 slab/scripts/data_sender.py "${RESULTS_FILENAME}" "${{ secrets.JOB_SECRET }}" \
-          --slab-url "${{ secrets.SLAB_URL }}"
+          python3 slab/scripts/data_sender.py "${RESULTS_FILENAME}" "${JOB_SECRET}" \
+          --slab-url "${SLAB_URL}"
         env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
           RESULTS_FILENAME: ${{ env.results_filename }}
+          SLAB_URL: ${{ secrets.SLAB_URL }}
 
   teardown-instance:
     name: coprocessor-benchmarks-cpu/teardown

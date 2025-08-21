@@ -13,6 +13,8 @@ concurrency:
   group: fhevm-kms-connector-kms-worker-${{ github.ref_name }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+permissions: {}
+
 jobs:
   check-changes:
     name: kms-connector-kms-worker-docker-build/check-changes

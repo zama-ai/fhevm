@@ -1,6 +1,8 @@
 # Run all fhevm coprocessor benchmarks on a GPU instance on Hyperstack and return parsed results to Slab CI bot.
 name: coprocessor-benchmark-gpu
 
+permissions: {}
+
 on:
   workflow_dispatch:
     inputs:
@@ -65,6 +67,7 @@ env:
   RUST_BACKTRACE: "full"
   RUST_MIN_STACK: "8388608"
   CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN || secrets.GITHUB_TOKEN }}
+  PROFILE: ${{ inputs.profile }}
 
 jobs:
   parse-inputs:
@@ -79,12 +82,12 @@ jobs:
       - name: Parse profile
         id: parse_profile
         run: |
-          echo "profile=$(echo '${{ inputs.profile }}' | sed 's|\(.*\)[[:space:]](.*)|\1|')" >> "${GITHUB_OUTPUT}"
+          echo "profile=$(echo "${PROFILE}" | sed 's|\(.*\)[[:space:]](.*)|\1|')" >> "${GITHUB_OUTPUT}"
 
       - name: Parse hardware name
         id: parse_hardware_name
         run: |
-          echo "name=$(echo '${{ inputs.profile }}' | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
+          echo "name=$(echo "${PROFILE}" | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
 
   setup-instance:
     name: coprocessor-benchmark-gpu/setup-instance
@@ -123,6 +126,12 @@ jobs:
           - os: ubuntu-22.04
             cuda: "12.2"
             gcc: 11
+    env:
+      CUDA_PATH: "/usr/local/cuda-${{ matrix.cuda }}"
+      CUDA_MODULE_LOADER: "EAGER"
+      CC: "/usr/bin/gcc-${{ matrix.gcc }}"
+      CXX: "/usr/bin/g++-${{ matrix.gcc }}"
+      CUDAHOSTCXX: "/usr/bin/g++-${{ matrix.gcc }}"
 
     steps:
       - name: Install git LFS
@@ -145,14 +154,19 @@ jobs:
         uses: ./.github/actions/gpu_setup
         with:
           cuda-version: ${{ matrix.cuda }}
-          gcc-version: ${{ matrix.gcc }}
           github-instance: ${{ env.SECRETS_AVAILABLE == 'false' }}
+
+      - name: Export CUDA variables
+        shell: bash
+        run: |
+          echo "PATH=$PATH:${CUDA_PATH}/bin" >> "${GITHUB_PATH}"
+          echo "LD_LIBRARY_PATH=${CUDA_PATH}/lib64:${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
 
       - name: Get benchmark details
         run: |
           {
             echo "BENCH_DATE=$(date --iso-8601=seconds)";
-            echo "COMMIT_DATE=$(git --no-pager show -s --format=%cd --date=iso8601-strict ${{ github.sha }})";
+            echo "COMMIT_DATE=$(git --no-pager show -s --format=%cd --date=iso8601-strict "${GITHUB_SHA}")";
             echo "COMMIT_HASH=$(git rev-parse HEAD)";
           } >> "${GITHUB_ENV}"
 
@@ -260,10 +274,12 @@ jobs:
       - name: Send data to Slab
         shell: bash
         run: |
-          python3 slab/scripts/data_sender.py "${RESULTS_FILENAME}" "${{ secrets.JOB_SECRET }}" \
-          --slab-url "${{ secrets.SLAB_URL }}"
+          python3 slab/scripts/data_sender.py "${RESULTS_FILENAME}" "${JOB_SECRET}" \
+          --slab-url "${SLAB_URL}"
         env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
           RESULTS_FILENAME: ${{ env.results_filename }}
+          SLAB_URL: ${{ secrets.SLAB_URL }}
 
   teardown-instance:
     name: coprocessor-benchmark-gpu/teardown

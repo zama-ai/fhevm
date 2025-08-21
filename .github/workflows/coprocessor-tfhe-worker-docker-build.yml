@@ -9,6 +9,8 @@ on:
     types:
       - published
 
+permissions: {}
+
 concurrency:
   group: fhevm-coprocessor-tfhe-worker-${{ github.ref_name }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
