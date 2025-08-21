@@ -15,10 +15,10 @@ USER root
 WORKDIR /app
 
 # Copy sources
-COPY test-suite/benchmarks/gateway-stress test-suite/benchmarks/gateway-stress
+COPY test-suite/gateway-stress test-suite/gateway-stress
 
 # Build with improved caching
-WORKDIR /app/test-suite/benchmarks/gateway-stress
+WORKDIR /app/test-suite/gateway-stress
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     cargo build --profile=${LTO_RELEASE}
 
@@ -27,7 +27,7 @@ FROM cgr.dev/chainguard/busybox:latest-glibc AS prod
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
-COPY --from=builder --chown=fhevm:fhevm /app/test-suite/benchmarks/gateway-stress/target/release/gateway-stress /bin/gateway-stress
+COPY --from=builder --chown=fhevm:fhevm /app/test-suite/gateway-stress/target/release/gateway-stress /bin/gateway-stress
 
 USER fhevm:fhevm
 
