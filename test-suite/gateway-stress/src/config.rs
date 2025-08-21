@@ -19,11 +19,10 @@ pub struct Config {
     #[serde(deserialize_with = "parse_ct_handles")]
     pub public_ct_handles: Vec<FixedBytes<32>>,
     pub allowed_contract: Address,
-    #[serde(default = "default_parallel_requests")]
     pub parallel_requests: u32,
-    #[serde(with = "humantime_serde", default = "default_tests_duration")]
+    #[serde(with = "humantime_serde")]
     pub tests_duration: Duration,
-    #[serde(with = "humantime_serde", default = "default_tests_interval")]
+    #[serde(with = "humantime_serde")]
     pub tests_interval: Duration,
 }
 
@@ -45,7 +44,13 @@ impl Config {
             );
         }
 
-        builder = builder.add_source(Environment::default());
+        builder = builder.add_source(
+            Environment::default()
+                .list_separator(",")
+                .with_list_parse_key("public_ct_handles")
+                .with_list_parse_key("user_ct_handles")
+                .try_parsing(true),
+        );
 
         let settings = builder.build()?;
         let config = settings.try_deserialize()?;
@@ -53,20 +58,8 @@ impl Config {
     }
 }
 
-fn default_parallel_requests() -> u32 {
-    100
-}
-
 fn default_mnemonic_index() -> usize {
     0
-}
-
-fn default_tests_duration() -> Duration {
-    Duration::from_secs(3600)
-}
-
-fn default_tests_interval() -> Duration {
-    Duration::from_secs(1)
 }
 
 fn parse_ct_handles<'de, D>(d: D) -> Result<Vec<FixedBytes<32>>, D::Error>
