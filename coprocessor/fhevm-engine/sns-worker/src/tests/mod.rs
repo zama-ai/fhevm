@@ -17,7 +17,7 @@ use std::{
 use test_harness::{
     db_utils::truncate_tables,
     instance::{DBInstance, ImportMode},
-    localstack::LocalstackContainer,
+    localstack::{LocalstackContainer, LOCALSTACK_PORT},
     s3_utils,
 };
 use tfhe::{
@@ -383,7 +383,8 @@ struct TestEnvironment {
     pub pool: sqlx::PgPool,
     pub client_key: Option<ClientKey>,
     pub db_instance: DBInstance,
-    pub s3_instance: Option<(Arc<LocalstackContainer>, aws_sdk_s3::Client)>,
+    pub s3_instance: Option<Arc<LocalstackContainer>>, // If None, it's assumed a global LocalStack is used
+    pub s3_client: aws_sdk_s3::Client,
     pub conf: Config,
 }
 
@@ -403,7 +404,7 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
         .await?;
 
     // Set up S3 storage
-    let s3_instance = Some(setup_localstack(&conf).await?);
+    let (s3_instance, s3_client) = setup_localstack(&conf).await?;
 
     let token = db_instance.parent_token.child_token();
     let config = conf.clone();
@@ -423,6 +424,7 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
         client_key,
         db_instance,
         s3_instance,
+        s3_client,
         conf,
     })
 }
@@ -433,15 +435,20 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
 /// A tuple containing the LocalStack instance and the S3 client
 async fn setup_localstack(
     conf: &Config,
-) -> anyhow::Result<(Arc<LocalstackContainer>, aws_sdk_s3::Client)> {
-    let localstack_instance = Arc::new(test_harness::localstack::start_localstack().await?);
+) -> anyhow::Result<(Option<Arc<LocalstackContainer>>, aws_sdk_s3::Client)> {
+    let (localstack, host_port) =
+        if std::env::var("TXN_SENDER_TEST_GLOBAL_LOCALSTACK").unwrap_or("0".to_string()) == "1" {
+            (None, LOCALSTACK_PORT)
+        } else {
+            let localstack_instance = Arc::new(test_harness::localstack::start_localstack().await?);
+            let host_port = localstack_instance.host_port;
+            (Some(localstack_instance), host_port)
+        };
 
-    tracing::info!(
-        "LocalStack started on port: {}",
-        localstack_instance.host_port
-    );
+    tracing::info!("LocalStack started on port: {}", host_port);
 
-    let endpoint_url = format!("http://127.0.0.1:{}", localstack_instance.host_port);
+    let endpoint_url = format!("http://127.0.0.1:{}", host_port);
+
     std::env::set_var("AWS_ENDPOINT_URL", endpoint_url.clone());
     std::env::set_var("AWS_REGION", "us-east-1");
     std::env::set_var("AWS_ACCESS_KEY_ID", "test");
@@ -464,7 +471,7 @@ async fn setup_localstack(
         .await
         .expect("Failed to create bucket for ciphertext64");
 
-    Ok((localstack_instance, client))
+    Ok((localstack, client))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -627,10 +634,14 @@ async fn assert_ciphertext_uploaded(
     handle: &Vec<u8>,
     expected_ct_len: Option<i64>,
 ) {
-    if let Some(client) = test_env.s3_instance.as_ref().map(|(_, c)| c.clone()) {
-        s3_utils::assert_key_exists(client, bucket, &hex::encode(handle), expected_ct_len, 1000)
-            .await;
-    }
+    s3_utils::assert_key_exists(
+        test_env.s3_client.to_owned(),
+        bucket,
+        &hex::encode(handle),
+        expected_ct_len,
+        1000,
+    )
+    .await;
 }
 
 /// Asserts that the number of ciphertext128 objects in S3 matches the expected count
@@ -639,9 +650,8 @@ async fn assert_ciphertext_s3_object_count(
     bucket: &String,
     expected_count: i64,
 ) {
-    if let Some(client) = test_env.s3_instance.as_ref().map(|(_, c)| c.clone()) {
-        s3_utils::assert_object_count(client, bucket, expected_count as i32).await;
-    }
+    s3_utils::assert_object_count(test_env.s3_client.to_owned(), bucket, expected_count as i32)
+        .await;
 }
 
 fn build_test_config(db_url: String, enable_compression: bool) -> Config {
