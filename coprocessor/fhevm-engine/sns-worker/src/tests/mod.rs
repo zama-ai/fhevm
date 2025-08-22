@@ -60,7 +60,6 @@ async fn test_fhe_ciphertext128_with_compression() {
 }
 
 #[tokio::test]
-#[ignore = "requires valid SnS keys in CI"]
 async fn test_batch_execution() {
     const WITH_COMPRESSION: bool = true;
     let test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
