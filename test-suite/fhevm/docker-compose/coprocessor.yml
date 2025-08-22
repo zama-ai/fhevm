@@ -1,11 +1,11 @@
 services:
-  ######################## DATABASE SETUP #######################
-  db-0:
-    container_name: fhevm-0-coprocessor-db
+  ####################### DATABASE SETUP #######################
+  db:
+    container_name: fhevm-coprocessor-db
     image: postgres:15.7
     restart: always
     env_file:
-      - ../env/staging/.env.coprocessor-0.local
+      - ../env/staging/.env.coprocessor.local
     ports:
       - '5432:5432'
     healthcheck:
@@ -14,15 +14,15 @@ services:
       timeout: 5s
       retries: 3
     volumes:
-      - db-0:/var/lib/postgresql/data
+      - db:/var/lib/postgresql/data
 
-  key-downloader-0:
-    container_name: fhevm-0-key-downloader
+  key-downloader:
+    container_name: fhevm-key-downloader
     image: busybox
     env_file:
-      - ../env/staging/.env.coprocessor-0.local
+      - ../env/staging/.env.coprocessor.local
     volumes:
-      - keys-cache-0:/keys
+      - keys-cache:/keys
     command: >
       sh -c "echo 'Starting key downloads...' &&
         wget $KMS_PUBLIC_KEY -O /keys/pks &&
@@ -32,8 +32,8 @@ services:
         wget $KMS_CRS_KEY -O /keys/pp &&
         echo 'Downloaded PP key - All downloads complete'"
 
-  db-migration-0:
-    container_name: fhevm-0-db-migration
+  db-migration:
+    container_name: fhevm-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
     build:
       context: ../../..
@@ -43,22 +43,22 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor-0.local
+      - ../env/staging/.env.coprocessor.local
     environment:
       - KEY_ID=${FHE_KEY_ID}
     command:
       - /initialize_db.sh
     volumes:
-      - keys-cache-0:/fhevm-keys
+      - keys-cache:/fhevm-keys
     depends_on:
-      db-0:
+      db:
         condition: service_healthy
-      key-downloader-0:
+      key-downloader:
         condition: service_completed_successfully
 
   ####################### COPROCESSOR SERVICES #######################
-  host-listener-0:
-    container_name: fhevm-0-host-listener
+  host-listener:
+    container_name: fhevm-host-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
     build:
       context: ../../..
@@ -68,7 +68,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor-0.local
+      - ../env/staging/.env.coprocessor.local
     command:
       - host_listener
       - --database-url=${DATABASE_URL}
@@ -76,15 +76,14 @@ services:
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_URL}
-      - --initial-block-time=1
     depends_on:
-      db-0:
+      db:
         condition: service_healthy
-      db-migration-0:
+      db-migration:
         condition: service_completed_successfully
 
-  gw-listener-0:
-    container_name: fhevm-0-gw-listener
+  gw-listener:
+    container_name: fhevm-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${GW_LISTENER_VERSION}
     build:
       context: ../../..
@@ -99,7 +98,7 @@ services:
       timeout: 5s
       retries: 3
     env_file:
-      - ../env/staging/.env.coprocessor-0.local
+      - ../env/staging/.env.coprocessor.local
     command:
       - gw_listener
       - --database-url=${DATABASE_URL}
@@ -110,13 +109,13 @@ services:
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
     depends_on:
-      db-0:
+      db:
         condition: service_healthy
-      db-migration-0:
+      db-migration:
         condition: service_completed_successfully
 
-  tfhe-worker-0:
-    container_name: fhevm-0-tfhe-worker
+  tfhe-worker:
+    container_name: fhevm-tfhe-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}
     build:
       context: ../../..
@@ -126,9 +125,9 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor-0.local
+      - ../env/staging/.env.coprocessor.local
     command:
-      - tfhe-worker 
+      - tfhe_worker
       - --run-bg-worker
       - --database-url=${DATABASE_URL}
       - --pg-pool-max-connections=10
@@ -138,13 +137,13 @@ services:
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
     depends_on:
-      db-0:
+      db:
         condition: service_healthy
-      db-migration-0:
+      db-migration:
         condition: service_completed_successfully
 
-  zkproof-worker-0:
-    container_name: fhevm-0-zkproof-worker
+  zkproof-worker:
+    container_name: fhevm-zkproof-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${ZKPROOF_WORKER_VERSION}
     build:
       context: ../../..
@@ -154,7 +153,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor-0.local
+      - ../env/staging/.env.coprocessor.local
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
@@ -164,13 +163,13 @@ services:
       - --pg-pool-connections=5
       - --worker-thread-count=4
     depends_on:
-      db-0:
+      db:
         condition: service_healthy
-      db-migration-0:
+      db-migration:
         condition: service_completed_successfully
 
-  sns-worker-0:
-    container_name: fhevm-0-sns-worker
+  sns-worker:
+    container_name: fhevm-sns-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${SNS_WORKER_VERSION}
     build:
       context: ../../..
@@ -180,7 +179,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor-0.local
+      - ../env/staging/.env.coprocessor.local
     command:
       - sns_worker
       - --database-url=${DATABASE_URL}
@@ -194,7 +193,7 @@ services:
       - --pg-polling-interval=30
       - --pg-pool-connections=10
       - --bucket-name-ct64=ct64
-      - --bucket-name-ct128=ct128-0
+      - --bucket-name-ct128=ct128
       - --s3-max-concurrent-uploads=100
       - --s3-max-retries-per-upload=100
       - --s3-max-backoff=10s
@@ -203,13 +202,13 @@ services:
       - --s3-regular-recheck-duration=120s
       - --enable-compression
     depends_on:
-      db-0:
+      db:
         condition: service_healthy
-      db-migration-0:
+      db-migration:
         condition: service_completed_successfully
 
-  transaction-sender-0:
-    container_name: fhevm-0-transaction-sender
+  transaction-sender:
+    container_name: fhevm-transaction-sender
     image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${TX_SENDER_VERSION}
     build:
       context: ../../..
@@ -219,7 +218,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.coprocessor-0.local
+      - ../env/staging/.env.coprocessor.local
     command:
       - transaction_sender
       - --database-url=${DATABASE_URL}
@@ -237,11 +236,11 @@ services:
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
     depends_on:
-      db-0:
+      db:
         condition: service_healthy
-      db-migration-0:
+      db-migration:
         condition: service_completed_successfully
 
 volumes:
-  db-0:
-  keys-cache-0:
+  db:
+  keys-cache:
