@@ -127,7 +127,7 @@ services:
     env_file:
       - ../env/staging/.env.coprocessor-1.local
     command:
-      - tfhe-worker
+      - tfhe_worker
       - --run-bg-worker
       - --database-url=${DATABASE_URL}
       - --pg-pool-max-connections=10
