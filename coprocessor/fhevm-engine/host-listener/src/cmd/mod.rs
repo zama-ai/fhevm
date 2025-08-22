@@ -36,6 +36,8 @@ const RETRY_GET_LOGS_DELAY_IN_MS: u64 = 100;
 const REORG_RETRY_GET_BLOCK: u64 = 10; // retry 10 times to get logs for a block
 const RETRY_GET_BLOCK_DELAY_IN_MS: u64 = 100;
 
+const DEFAULT_BLOCK_TIME: u64 = 12;
+
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
@@ -86,7 +88,7 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value = "5",
+        default_value_t = DEFAULT_BLOCK_TIME,
         help = "Initial block time, refined on each block"
     )]
     pub initial_block_time: u64,
@@ -715,6 +717,11 @@ impl InfiniteLogIter {
                     self.current_event = Some(log);
                     if is_first_of_block {
                         self.tick_block.update();
+                        if let Some(block_time) =
+                            self.block_history.estimated_block_time()
+                        {
+                            self.block_time = block_time;
+                        }
                     }
                     // check reorgs update the block history
                     let reorg_planned = self.check_missing_ancestors().await;
@@ -755,28 +762,6 @@ impl InfiniteLogIter {
                 current_event.block_number != prev_event.block_number
             }
             _ => false,
-        }
-    }
-
-    fn reestimated_block_time(&mut self) {
-        let Some(Log {
-            block_timestamp: Some(curr_t),
-            block_number: Some(curr_n),
-            ..
-        }) = &self.current_event
-        else {
-            return;
-        };
-        let Some(Log {
-            block_timestamp: Some(prev_t),
-            block_number: Some(prev_n),
-            ..
-        }) = &self.prev_event
-        else {
-            return;
-        };
-        if curr_n > prev_n && curr_t > prev_t {
-            self.block_time = (curr_t - prev_t) / (curr_n - prev_n);
         }
     }
 }
@@ -875,7 +860,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let mut block_tfhe_errors = 0;
     while let Some(log) = log_iter.next().await {
         if log_iter.is_first_of_block() {
-            log_iter.reestimated_block_time();
             if let Some(block_number) = log.block_number {
                 if block_tfhe_errors == 0 {
                     let last_valid_block = db

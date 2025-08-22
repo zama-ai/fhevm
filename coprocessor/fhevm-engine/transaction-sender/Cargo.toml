@@ -15,6 +15,7 @@ clap = { workspace = true }
 futures-util = { workspace = true }
 prometheus = { workspace = true }
 rand = { workspace = true }
+rustls = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
