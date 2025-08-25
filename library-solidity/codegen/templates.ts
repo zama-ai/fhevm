@@ -141,7 +141,7 @@ library Impl {
   bytes32 private constant DecryptionRequestsStorageLocation = 0x878245876662ba28a480c5ea71726db859fb50222b0a3d7cbbc21cfa336faf00;
 
   /**
-   * @dev Returns the FHEVM config.
+   * @dev Returns the Coprocessor config.
    */
   function getCoprocessorConfig() internal pure returns (CoprocessorConfig storage $) {
       assembly {

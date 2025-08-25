@@ -156,6 +156,8 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     /**
      * @notice Re-initializes the contract from V1.
      */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
