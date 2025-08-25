@@ -176,7 +176,20 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   const eventDefinitions = interfaceDefinition.subNodes.filter((node) => node.type === "EventDefinition");
 
   // Extract StructDefinitions from the interface definition
-  const structDefinitions = interfaceDefinition.subNodes.filter((node) => node.type === "StructDefinition");
+  const structDefinitionsInterface = interfaceDefinition.subNodes.filter((node) => node.type === "StructDefinition");
+
+  // Extract StructDefinitions from the contract definition
+  // Exclude the specific storage structs (ex: `GatewayConfigStorage`) as they are not meant to be used
+  // as a function parameter
+  const structDefinitionsContract = contractDefinition.subNodes.filter(
+    (node) => node.type === "StructDefinition" && !node.name.endsWith("Storage"),
+  );
+
+  // Gather all struct definitions used in functions
+  const structDefinitions = structDefinitionsInterface.concat(structDefinitionsContract);
+
+  // Extract EnumDefinitions from the interface definition
+  const enumDefinitions = interfaceDefinition.subNodes.filter((node) => node.type === "EnumDefinition");
 
   // Extract FunctionDefinitions from the contract definition
   const functionDefinitions = contractDefinition.subNodes.filter((node) => node.type === "FunctionDefinition");
@@ -187,10 +200,16 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   // Generate mock struct definitions
   const mockStruct = generateMockStructs(structDefinitions);
 
+  // Generate mock enum definitions
+  const mockEnums = generateMockEnums(enumDefinitions);
+
   // Generate mock counters
   const mockCounters = generateMockCounters(functionDefinitions);
 
   // Generate mock function definitions
+  // Enums do not need to be passed here because they do not need specific handling as a function parameter
+  // like structs do
+  // `sharedStructsDefinitions` needs to be considered as they are used in the struct definitions
   const mockFunctions = generateMockFunctions(
     functionDefinitions,
     eventDefinitions,
@@ -216,6 +235,8 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
 
   // Append struct lines
   mockContract += mockStruct + "\n\n";
+  // Append enum lines
+  mockContract += mockEnums + "\n\n";
   // Append event lines
   mockContract += mockEvents + "\n\n";
   // Append counter lines
@@ -260,6 +281,21 @@ function generateMockStructs(structDefinitions) {
         .join("\n");
 
       return `struct ${structName} {\n${members}\n}`;
+    })
+    .join("\n\n");
+}
+
+/**
+ * @description Generates mock enum definitions based on the provided enum definitions.
+ * @param {BaseASTNode[]} enumDefinitions - Array of enums to generate
+ * @returns string - Generated mock enum definitions
+ */
+function generateMockEnums(enumDefinitions) {
+  return enumDefinitions
+    .map((enumDef) => {
+      const enumName = enumDef.name;
+      const members = enumDef.members.map((m) => m.name).join(",\n");
+      return `enum ${enumName} {\n${members}\n}`;
     })
     .join("\n\n");
 }
