@@ -8,10 +8,12 @@
 # ENV: KMS_CONNECTOR_CHAIN_ID
 chain_id = 54321
 
-# KMS-core gRPC endpoint (required)
+# List of KMS-core gRPC endpoints (required)
 # Format: http://host:port
-# ENV: KMS_CONNECTOR_KMS_CORE_ENDPOINT
-kms_core_endpoint = "http://[::1]:50051"
+# ENV: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
+# If using environment variables, use a comma separated list of URLs
+# Ex: KMS_CONNECTOR_KMS_CORE_ENDPOINTS="http://[::1]:50051,http://[::1]:50052"
+kms_core_endpoint = ["http://[::1]:50051"]
 
 # Gateway WebSocket RPC URL endpoint (required)
 # ENV: KMS_CONNECTOR_GATEWAY_URL
