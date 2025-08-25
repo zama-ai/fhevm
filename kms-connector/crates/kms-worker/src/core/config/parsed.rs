@@ -21,8 +21,8 @@ pub struct Config {
     pub database_polling_timeout: Duration,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
-    /// The KMS Core endpoint.
-    pub kms_core_endpoint: String,
+    /// The KMS Core endpoints.
+    pub kms_core_endpoints: Vec<String>,
     /// The Chain ID of the Gateway.
     pub chain_id: u64,
     /// The `Decryption` contract configuration.
@@ -96,8 +96,8 @@ impl Config {
             return Err(Error::EmptyField("Gateway URL".to_string()));
         }
 
-        if raw_config.kms_core_endpoint.is_empty() {
-            return Err(Error::EmptyField("KMS Core endpoint".to_string()));
+        if raw_config.kms_core_endpoints.is_empty() {
+            return Err(Error::EmptyField("KMS Core endpoints".to_string()));
         }
 
         let database_polling_timeout =
@@ -114,7 +114,7 @@ impl Config {
             database_pool_size: raw_config.database_pool_size,
             database_polling_timeout,
             gateway_url: raw_config.gateway_url,
-            kms_core_endpoint: raw_config.kms_core_endpoint,
+            kms_core_endpoints: raw_config.kms_core_endpoints,
             chain_id: raw_config.chain_id,
             decryption_contract,
             gateway_config_contract,
@@ -155,7 +155,7 @@ mod tests {
         unsafe {
             env::remove_var("KMS_CONNECTOR_DATABASE_URL");
             env::remove_var("KMS_CONNECTOR_GATEWAY_URL");
-            env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT");
+            env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
@@ -184,7 +184,7 @@ mod tests {
 
         // Compare fields
         assert_eq!(raw_config.gateway_url, config.gateway_url);
-        assert_eq!(raw_config.kms_core_endpoint, config.kms_core_endpoint);
+        assert_eq!(raw_config.kms_core_endpoints, config.kms_core_endpoints);
         assert_eq!(raw_config.chain_id, config.chain_id);
         assert_eq!(
             Address::from_str(&raw_config.decryption_contract.address).unwrap(),
@@ -194,7 +194,7 @@ mod tests {
             Address::from_str(&raw_config.gateway_config_contract.address).unwrap(),
             config.gateway_config_contract.address,
         );
-        assert_eq!(raw_config.kms_core_endpoint, config.kms_core_endpoint);
+        assert_eq!(raw_config.kms_core_endpoints, config.kms_core_endpoints);
         assert_eq!(raw_config.service_name, config.service_name);
         assert_eq!(
             raw_config.public_decryption_timeout_secs,
@@ -240,7 +240,10 @@ mod tests {
                 "postgres://postgres:postgres@localhost",
             );
             env::set_var("KMS_CONNECTOR_GATEWAY_URL", "ws://localhost:9545");
-            env::set_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT", "http://localhost:50053");
+            env::set_var(
+                "KMS_CONNECTOR_KMS_CORE_ENDPOINTS",
+                "http://localhost:50053,http://localhost:50054",
+            );
             env::set_var("KMS_CONNECTOR_CHAIN_ID", "31888");
             env::set_var(
                 "KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS",
@@ -265,7 +268,10 @@ mod tests {
 
         // Verify values
         assert_eq!(config.gateway_url, "ws://localhost:9545");
-        assert_eq!(config.kms_core_endpoint, "http://localhost:50053");
+        assert_eq!(
+            config.kms_core_endpoints,
+            vec!["http://localhost:50053", "http://localhost:50054"]
+        );
         assert_eq!(config.chain_id, 31888);
         assert_eq!(
             config.decryption_contract.address,
