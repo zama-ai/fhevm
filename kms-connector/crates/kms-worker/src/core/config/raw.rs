@@ -2,12 +2,15 @@
 //!
 //! The `RawConfig` can then be parsed into a `Config` in the `parsed` module.
 
+use config::{Config as ConfigBuilder, Environment, File, FileFormat};
 use connector_utils::{
-    config::{DeserializeRawConfig, RawContractConfig},
+    config::{DeserializeRawConfig, RawContractConfig, Result, default_database_pool_size},
     monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+use tracing::info;
 
 /// Configuration for S3 ciphertext storage.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -29,7 +32,8 @@ pub struct RawConfig {
     #[serde(default = "default_database_polling_timeout_secs")]
     pub database_polling_timeout_secs: u64,
     pub gateway_url: String,
-    pub kms_core_endpoint: String,
+    pub kms_core_endpoints: Vec<String>,
+    pub kms_core_endpoint: Option<String>,
     pub chain_id: u64,
     pub decryption_contract: RawContractConfig,
     pub gateway_config_contract: RawContractConfig,
@@ -63,10 +67,6 @@ pub struct RawConfig {
 
 fn default_service_name() -> String {
     "kms-connector-kms-worker".to_string()
-}
-
-fn default_database_pool_size() -> u32 {
-    16
 }
 
 fn default_database_polling_timeout_secs() -> u64 {
@@ -105,7 +105,36 @@ fn default_verify_coprocessors() -> bool {
     false
 }
 
-impl DeserializeRawConfig for RawConfig {}
+impl DeserializeRawConfig for RawConfig {
+    fn from_env_and_file<P: AsRef<Path>>(path: Option<P>) -> Result<Self>
+    where
+        for<'a> Self: Sized + Deserialize<'a>,
+    {
+        let mut builder = ConfigBuilder::builder();
+
+        // If path is provided, add it as a config source
+        if let Some(path) = path {
+            builder = builder.add_source(
+                File::with_name(path.as_ref().to_str().unwrap()).format(FileFormat::Toml),
+            );
+        }
+
+        // Add environment variables last so they take precedence
+        info!("Adding environment variables with prefix KMS_CONNECTOR_");
+        builder = builder.add_source(
+            Environment::with_prefix("KMS_CONNECTOR")
+                .prefix_separator("_")
+                .separator("__")
+                .list_separator(",")
+                .with_list_parse_key("kms_core_endpoints")
+                .try_parsing(true),
+        );
+
+        let settings = builder.build()?;
+        let config = settings.try_deserialize()?;
+        Ok(config)
+    }
+}
 
 // Default implementation for testing purpose
 impl Default for RawConfig {
@@ -115,7 +144,8 @@ impl Default for RawConfig {
             database_pool_size: 16,
             database_polling_timeout_secs: default_database_polling_timeout_secs(),
             gateway_url: "ws://localhost:8545".to_string(),
-            kms_core_endpoint: "http://localhost:50052".to_string(),
+            kms_core_endpoints: vec!["http://localhost:50052".to_string()],
+            kms_core_endpoint: None,
             chain_id: 1,
             decryption_contract: RawContractConfig {
                 address: "0x0000000000000000000000000000000000000000".to_string(),

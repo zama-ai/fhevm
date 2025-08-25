@@ -98,7 +98,7 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let provider = connect_to_gateway(&config.gateway_url).await?;
         let kms_client = KmsClient::connect(&config).await?;
-        let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoint).await?;
+        let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
