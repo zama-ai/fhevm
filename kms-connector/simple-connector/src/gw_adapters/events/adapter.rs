@@ -108,17 +108,15 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
 
         tokio::spawn(schedule_log_queue_capacity(event_tx.clone()));
         let handle = tokio::spawn(async move {
-            while running.load(Ordering::SeqCst) {
-                Self::subscribe_to_events(
-                    Arc::clone(&provider),
-                    decryption,
-                    gateway_config,
-                    event_tx.clone(),
-                    running.clone(),
-                )
-                .await
-            }
-            info!("Subscription loop terminated");
+            Self::subscribe_to_events(
+                Arc::clone(&provider),
+                decryption,
+                gateway_config,
+                event_tx.clone(),
+                running.clone(),
+            )
+            .await;
+            info!("Subscription terminated");
         });
 
         self.store_handle(handle);
