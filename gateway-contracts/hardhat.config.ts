@@ -30,7 +30,7 @@ const chainIds = {
   hardhat: 31337,
   localGateway: 123456,
   staging: 54321,
-  zwsDev: 412346,
+  devnet: 10899,
   testnet: 55815,
 };
 
@@ -96,13 +96,13 @@ const config: HardhatUserConfig = {
       chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.staging,
       url: rpcUrl,
     },
-    zwsDev: {
+    devnet: {
       accounts: {
         count: NUM_ACCOUNTS,
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.zwsDev,
+      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.devnet,
       url: rpcUrl,
     },
     testnet: {
@@ -120,16 +120,16 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: {
-      zwsDev: "empty",
+      devnet: "empty",
       testnet: "empty",
     },
     customChains: [
       {
-        network: "zwsDev",
-        chainId: chainIds.zwsDev,
+        network: "devnet",
+        chainId: chainIds.devnet,
         urls: {
-          apiURL: "http://l2-blockscout-zws-dev-blockscout-stack-blockscout-svc/api",
-          browserURL: "https://l2-explorer-zws-dev.diplodocus-boa.ts.net",
+          apiURL: "https://explorer.dev.zama.cloud/api",
+          browserURL: "https://explorer.dev.zama.cloud/",
         },
       },
       {
