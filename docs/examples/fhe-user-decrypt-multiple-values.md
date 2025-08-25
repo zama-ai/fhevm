@@ -1,4 +1,6 @@
-This example demonstrates the FHE decryption mechanism with multiple values.
+This example demonstrates the FHE user decryption mechanism with multiple values.
+
+User decryption is a mechanism that allows specific users to decrypt encrypted values while keeping them hidden from others. Unlike public decryption where decrypted values become visible to everyone, user decryption maintains privacy by only allowing authorized users with the proper permissions to view the data. While permissions are granted onchain through smart contracts, the actual **decryption call occurs off-chain in the frontend application**.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -11,7 +13,7 @@ This ensures Hardhat can compile and test your contracts as expected.
 
 {% tabs %}
 
-{% tab title="DecryptMultipleValues.sol" %}
+{% tab title="UserDecryptMultipleValues.sol" %}
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -20,7 +22,7 @@ pragma solidity ^0.8.24;
 import { FHE, ebool, euint32, euint64 } from "@fhevm/solidity/lib/FHE.sol";
 import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract DecryptMultipleValues is SepoliaConfig {
+contract UserDecryptMultipleValues is SepoliaConfig {
   ebool private _encryptedBool; // = 0 (uninitizalized)
   euint32 private _encryptedUint32; // = 0 (uninitizalized)
   euint64 private _encryptedUint64; // = 0 (uninitizalized)
@@ -41,7 +43,7 @@ contract DecryptMultipleValues is SepoliaConfig {
     _encryptedUint64 = FHE.add(FHE.asEuint64(c), FHE.asEuint64(1));
 
     // see `DecryptSingleValue.sol` for more detailed explanations
-    // about FHE permissions and asynchronous decryption requests.
+    // about FHE permissions and asynchronous user decryption requests.
     FHE.allowThis(_encryptedBool);
     FHE.allowThis(_encryptedUint32);
     FHE.allowThis(_encryptedUint64);
@@ -67,10 +69,10 @@ contract DecryptMultipleValues is SepoliaConfig {
 
 {% endtab %}
 
-{% tab title="DecryptMultipleValues.ts" %}
+{% tab title="UserDecryptMultipleValues.ts" %}
 
 ```ts
-import { DecryptMultipleValues, DecryptMultipleValues__factory } from "../../../types";
+import { UserDecryptMultipleValues, UserDecryptMultipleValues__factory } from "../../../types";
 import type { Signers } from "../../types";
 import { HardhatFhevmRuntimeEnvironment } from "@fhevm/hardhat-plugin";
 import { utils as fhevm_utils } from "@fhevm/mock-utils";
@@ -82,19 +84,19 @@ import * as hre from "hardhat";
 
 async function deployFixture() {
   // Contracts are deployed using the first signer/account by default
-  const factory = (await ethers.getContractFactory("DecryptMultipleValues")) as DecryptMultipleValues__factory;
-  const decryptMultipleValues = (await factory.deploy()) as DecryptMultipleValues;
-  const decryptMultipleValues_address = await decryptMultipleValues.getAddress();
+  const factory = (await ethers.getContractFactory("UserDecryptMultipleValues")) as UserDecryptMultipleValues__factory;
+  const userDecryptMultipleValues = (await factory.deploy()) as UserDecryptMultipleValues;
+  const userDecryptMultipleValues_address = await userDecryptMultipleValues.getAddress();
 
-  return { decryptMultipleValues, decryptMultipleValues_address };
+  return { userDecryptMultipleValues, userDecryptMultipleValues_address };
 }
 
 /**
- * This trivial example demonstrates the FHE decryption mechanism
+ * This trivial example demonstrates the FHE user decryption mechanism
  * and highlights a common pitfall developers may encounter.
  */
-describe("DecryptMultipleValues", function () {
-  let contract: DecryptMultipleValues;
+describe("UserDecryptMultipleValues", function () {
+  let contract: UserDecryptMultipleValues;
   let contractAddress: string;
   let signers: Signers;
 
@@ -111,12 +113,12 @@ describe("DecryptMultipleValues", function () {
   beforeEach(async function () {
     // Deploy a new contract each time we run a new test
     const deployment = await deployFixture();
-    contractAddress = deployment.decryptMultipleValues_address;
-    contract = deployment.decryptMultipleValues;
+    contractAddress = deployment.userDecryptMultipleValues_address;
+    contract = deployment.userDecryptMultipleValues;
   });
 
   // ✅ Test should succeed
-  it("decryption should succeed", async function () {
+  it("user decryption should succeed", async function () {
     const tx = await contract.connect(signers.alice).initialize(true, 123456, 78901234567);
     await tx.wait();
 
