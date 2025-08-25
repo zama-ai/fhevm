@@ -132,7 +132,7 @@ WITH selected_computations AS (
       ah.is_computed
     FROM computations c
     LEFT JOIN allowed_handles ah
-      ON c.output_handle = ah.handle
+      ON c.output_handle = ah.handle AND c.tenant_id = ah.tenant_id
     WHERE c.transaction_id IN (
       -- Select transaction IDs with uncomputed handles
       -- out of the dependence buckets
@@ -172,24 +172,6 @@ WITH selected_computations AS (
       LIMIT $1
     )
   )
-  -- For legacy reasons (or whenever no transaction ID is
-  -- available) we need to also select unsorted
-  -- computations
-  UNION ALL
-  (
-    SELECT 
-      tenant_id, 
-      output_handle,
-      transaction_id,
-      NULL AS handle, 
-      NULL AS is_computed
-    FROM computations 
-    WHERE is_completed = FALSE
-      AND is_error = FALSE
-      AND transaction_id IS NULL  
-    ORDER BY schedule_order
-    LIMIT $1
-  )
 )
 -- Acquire all computations from this transaction set
 SELECT 
@@ -200,14 +182,12 @@ SELECT
   c.is_scalar,
   sc.handle IS NOT NULL AS is_allowed, 
   c.dependence_chain_id,
-  COALESCE(c.transaction_id) AS transaction_id, 
-  c.is_completed, 
-  sc.is_computed
+  COALESCE(sc.is_computed) AS is_computed
 FROM computations c
 JOIN selected_computations sc
   ON c.tenant_id = sc.tenant_id
   AND c.output_handle = sc.output_handle
-  AND (c.transaction_id = sc.transaction_id OR c.transaction_id IS NULL)
+  AND c.transaction_id = sc.transaction_id
 FOR UPDATE SKIP LOCKED            ",
             args.work_items_batch_size as i32,
             args.dependence_chains_per_batch as i32,
@@ -258,16 +238,6 @@ FOR UPDATE SKIP LOCKED            ",
             for w in work.iter_mut() {
                 for dh in &w.dependencies {
                     let _ = cts_to_query.insert(dh);
-                }
-                // If this operation is not part of a labelled
-                // transaction, we need to treat it as if its output
-                // is allowed (meaning that we will consider it needed
-                // and will save its output in the DB) as otherwise we
-                // cannot reasonably keep track of all needed
-                // operations within the set of computations that are
-                // not part of a transaction
-                if w.transaction_id.is_none() {
-                    w.is_allowed = Some(true);
                 }
             }
         }
