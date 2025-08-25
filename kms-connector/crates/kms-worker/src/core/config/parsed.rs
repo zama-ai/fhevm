@@ -53,10 +53,6 @@ pub struct Config {
     /// The maximum number of tasks that can be executed concurrently.
     pub task_limit: usize,
 
-    // TODO: implement to increase security
-    /// Whether to verify coprocessors against the `GatewayConfig` contract (defaults to false).
-    pub verify_coprocessors: bool,
-
     /// The monitoring server endpoint of the `KmsWorker`.
     pub monitoring_endpoint: SocketAddr,
     /// The timeout to perform each external service connection healthcheck.
@@ -128,7 +124,6 @@ impl Config {
             s3_ciphertext_retrieval_retries: raw_config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: s3_ciphertext_retrieval_timeout,
             task_limit: raw_config.task_limit,
-            verify_coprocessors: raw_config.verify_coprocessors,
             monitoring_endpoint,
             healthcheck_timeout,
         })
@@ -225,7 +220,6 @@ mod tests {
             config.gateway_config_contract.domain_version,
         );
         assert_eq!(raw_config.s3_config, config.s3_config);
-        assert_eq!(raw_config.verify_coprocessors, config.verify_coprocessors);
     }
 
     #[tokio::test]

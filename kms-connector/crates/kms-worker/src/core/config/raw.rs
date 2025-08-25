@@ -53,8 +53,6 @@ pub struct RawConfig {
     pub s3_connect_timeout: u64,
     #[serde(default = "default_task_limit")]
     pub task_limit: usize,
-    #[serde(default = "default_verify_coprocessors")]
-    pub verify_coprocessors: bool,
     #[serde(default = "default_monitoring_endpoint")]
     pub monitoring_endpoint: String,
     #[serde(default = "default_healthcheck_timeout_secs")]
@@ -100,11 +98,6 @@ fn default_s3_ciphertext_retrieval_retries() -> u8 {
 fn default_s3_connect_timeout() -> u64 {
     2 // 2 seconds
 }
-
-fn default_verify_coprocessors() -> bool {
-    false
-}
-
 impl DeserializeRawConfig for RawConfig {}
 
 // Default implementation for testing purpose
@@ -137,7 +130,6 @@ impl Default for RawConfig {
             s3_connect_timeout: 2,
             s3_config: None,
             task_limit: default_task_limit(),
-            verify_coprocessors: false,
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
         }
