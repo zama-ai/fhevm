@@ -139,7 +139,7 @@ kmsConnectorKmsWorker:
   env:
     - name: KMS_CONNECTOR_SERVICE_NAME
       value: kms-connector-kms-worker
-    - name: KMS_CONNECTOR_KMS_CORE_ENDPOINT
+    - name: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
       value: http://kms-core:50051
     # - name: KMS_CONNECTOR_MONITORING_ENDPOINT
     #   value: "0.0.0.0:9100"
