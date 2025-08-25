@@ -122,4 +122,5 @@ data:
     {{ . | nindent 4 }}
     {{- end }}
     echo "updating the contracts version to the configmap"
+    CONFIGMAP_NAME="{{ .Values.scDeploy.configmap.name }}"
     kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"{{ .Values.scDeploy.image.tag }}\"}}"
