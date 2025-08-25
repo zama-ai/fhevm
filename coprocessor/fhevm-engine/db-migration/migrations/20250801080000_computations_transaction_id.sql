@@ -1,6 +1,11 @@
 ALTER TABLE computations
-  ADD COLUMN IF NOT EXISTS transaction_id BYTEA,
+  ADD COLUMN IF NOT EXISTS transaction_id BYTEA NOT NULL DEFAULT '\x00'::BYTEA,
   ADD COLUMN IF NOT EXISTS dependence_chain_id BYTEA;
+
+-- We update tranction_id of all complete computations
+UPDATE computations
+  SET transaction_id = '\x01'::BYTEA
+  WHERE is_completed = TRUE;
 
 CREATE INDEX IF NOT EXISTS idx_computations_transaction_id
   ON computations (transaction_id);
