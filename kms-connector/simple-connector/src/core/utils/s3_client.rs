@@ -6,6 +6,7 @@ use fhevm_gateway_rust_bindings::{
 };
 use sha3::{Digest, Keccak256};
 use std::{
+    collections::HashMap,
     sync::{Arc, LazyLock, OnceLock},
     time::Duration,
 };
@@ -15,6 +16,48 @@ use crate::{
     core::config::S3Config,
     error::{Error, Result},
 };
+
+/// Ciphertext format types supported
+#[derive(Debug, Clone, PartialEq)]
+pub enum CiphertextFormat {
+    /// Uncompressed ciphertext (default/legacy format)
+    Uncompressed,
+    /// Compressed ciphertext using CPU compression
+    CompressedOnCpu,
+    /// Unknown or unsupported format
+    Unknown(String),
+}
+
+impl From<Option<&str>> for CiphertextFormat {
+    fn from(value: Option<&str>) -> Self {
+        match value {
+            Some("compressed_on_cpu") => CiphertextFormat::CompressedOnCpu,
+            Some(other) => CiphertextFormat::Unknown(other.to_string()),
+            None => CiphertextFormat::Uncompressed,
+        }
+    }
+}
+
+impl std::fmt::Display for CiphertextFormat {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CiphertextFormat::Uncompressed => write!(f, "uncompressed"),
+            CiphertextFormat::CompressedOnCpu => write!(f, "compressed_on_cpu"),
+            CiphertextFormat::Unknown(format) => write!(f, "unknown({format})"),
+        }
+    }
+}
+
+/// Ciphertext with associated format metadata
+#[derive(Debug, Clone)]
+pub struct CiphertextWithFormat {
+    /// The ciphertext data
+    pub data: Vec<u8>,
+    /// The format of the ciphertext
+    pub format: CiphertextFormat,
+    /// Additional S3 metadata if available
+    pub metadata: HashMap<String, String>,
+}
 
 // Cache entry with creation time for TTL cleanup
 #[derive(Debug, Clone)]
@@ -269,13 +312,15 @@ impl S3Client {
             let mut retrieved = false;
             for s3_url in &s3_urls {
                 match self.retrieve_from_url(s3_url, &ciphertext_digest).await {
-                    Ok(ciphertext) => {
+                    Ok(ciphertext_with_format) => {
                         info!(
-                            "Successfully retrieved ciphertext for digest {} from S3 URL {}",
+                            "Successfully retrieved ciphertext for digest {} from S3 URL {} with format: {}",
                             encode(&ciphertext_digest),
-                            s3_url
+                            s3_url,
+                            ciphertext_with_format.format
                         );
-                        results.push((ct_handle.clone(), ciphertext));
+                        // Extract the data from CiphertextWithFormat for backward compatibility
+                        results.push((ct_handle.clone(), ciphertext_with_format.data));
                         retrieved = true;
                         break;
                     }
@@ -364,8 +409,12 @@ impl S3Client {
         result
     }
 
-    /// Retrieve ciphertext from a specific URL
-    async fn retrieve_from_url(&self, s3_url: &str, ciphertext_digest: &[u8]) -> Result<Vec<u8>> {
+    /// Retrieve ciphertext from a specific URL with format metadata
+    async fn retrieve_from_url(
+        &self,
+        s3_url: &str,
+        ciphertext_digest: &[u8],
+    ) -> Result<CiphertextWithFormat> {
         let digest_hex = encode(ciphertext_digest);
         let url = format!("{}/{}", s3_url.trim_end_matches('/'), digest_hex);
 
@@ -385,6 +434,27 @@ impl S3Client {
                 response.status()
             )));
         }
+
+        // Extract metadata from response headers
+        let mut metadata = HashMap::new();
+        let mut ct_format_header = None;
+
+        for (name, value) in response.headers() {
+            if let Ok(value_str) = value.to_str() {
+                let header_name = name.as_str();
+                metadata.insert(header_name.to_string(), value_str.to_string());
+
+                // Check for ciphertext format header (case-insensitive)
+                if header_name.eq_ignore_ascii_case("ct-format") {
+                    ct_format_header = Some(value_str);
+                    info!("Found Ct-Format header: {}", value_str);
+                }
+            }
+        }
+
+        // Determine ciphertext format
+        let format = CiphertextFormat::from(ct_format_header);
+        info!("Detected ciphertext format: {}", format);
 
         // Read the response body
         let body = response
@@ -407,29 +477,43 @@ impl S3Client {
         }
 
         info!(
-            "DIRECT HTTP RETRIEVAL SUCCESS: Retrieved {} bytes",
-            ciphertext.len()
+            "DIRECT HTTP RETRIEVAL SUCCESS: Retrieved {} bytes with format: {}",
+            ciphertext.len(),
+            format
         );
 
-        // Return data even with digest mismatch for non-failability
-        Ok(ciphertext)
+        // Return ciphertext with format information
+        Ok(CiphertextWithFormat {
+            data: ciphertext,
+            format,
+            metadata,
+        })
+    }
+
+    /// Retrieve ciphertext with full format information
+    /// This method returns the complete CiphertextWithFormat structure
+    pub async fn retrieve_ciphertext_with_format(
+        &self,
+        s3_url: &str,
+        ciphertext_digest: &[u8],
+    ) -> Result<CiphertextWithFormat> {
+        self.retrieve_from_url(s3_url, ciphertext_digest).await
     }
 
     /// Populate cache with S3 URLs from gateway (optional optimization)
-    pub async fn populate_cache_from_gateway<P: Provider + Clone>(
+    pub async fn populate_cache_from_gateway<P: Provider + Clone + 'static>(
         &self,
         coprocessor_addresses: Vec<Address>,
         gateway_config_address: Address,
         provider: Arc<P>,
     ) {
-        for &address in &coprocessor_addresses {
-            if let Some(url) = self
+        for address in coprocessor_addresses {
+            if let Some(s3_url) = self
                 .get_s3_url_from_gateway(address, gateway_config_address, provider.clone())
                 .await
             {
-                // Cache the URL with timestamp for TTL
                 let cache_entry = CacheEntry {
-                    url,
+                    url: s3_url,
                     created_at: Utc::now().timestamp(),
                 };
                 S3_URL_CACHE.insert(address, cache_entry);
@@ -516,5 +600,306 @@ mod tests {
 
         // Clean up for other tests
         S3_URL_CACHE.clear();
+    }
+
+    #[test]
+    fn test_ciphertext_format_from_header() {
+        // Test compressed_on_cpu format
+        let format = CiphertextFormat::from(Some("compressed_on_cpu"));
+        assert_eq!(format, CiphertextFormat::CompressedOnCpu);
+        assert_eq!(format.to_string(), "compressed_on_cpu");
+
+        // Test uncompressed format (None)
+        let format = CiphertextFormat::from(None);
+        assert_eq!(format, CiphertextFormat::Uncompressed);
+        assert_eq!(format.to_string(), "uncompressed");
+
+        // Test unknown format
+        let format = CiphertextFormat::from(Some("some_future_format"));
+        assert_eq!(
+            format,
+            CiphertextFormat::Unknown("some_future_format".to_string())
+        );
+        assert_eq!(format.to_string(), "unknown(some_future_format)");
+
+        // Test empty string
+        let format = CiphertextFormat::from(Some(""));
+        assert_eq!(format, CiphertextFormat::Unknown("".to_string()));
+    }
+
+    #[test]
+    fn test_ciphertext_format_display() {
+        let compressed = CiphertextFormat::CompressedOnCpu;
+        let uncompressed = CiphertextFormat::Uncompressed;
+        let unknown = CiphertextFormat::Unknown("test_format".to_string());
+
+        assert_eq!(format!("{compressed}"), "compressed_on_cpu");
+        assert_eq!(format!("{uncompressed}"), "uncompressed");
+        assert_eq!(format!("{unknown}"), "unknown(test_format)");
+    }
+
+    #[test]
+    fn test_ciphertext_with_format_structure() {
+        let data = vec![1, 2, 3, 4, 5];
+        let format = CiphertextFormat::CompressedOnCpu;
+        let mut metadata = HashMap::new();
+        metadata.insert("ct-format".to_string(), "compressed_on_cpu".to_string());
+        metadata.insert("content-length".to_string(), "5".to_string());
+
+        let ciphertext_with_format = CiphertextWithFormat {
+            data: data.clone(),
+            format: format.clone(),
+            metadata: metadata.clone(),
+        };
+
+        assert_eq!(ciphertext_with_format.data, data);
+        assert_eq!(ciphertext_with_format.format, format);
+        assert_eq!(ciphertext_with_format.metadata, metadata);
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_from_url_with_ct_format_header() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Mock response with Ct-Format header
+        let ciphertext_data = b"test_ciphertext_data";
+        let digest = {
+            let mut hasher = Keccak256::new();
+            hasher.update(ciphertext_data);
+            hasher.finalize().to_vec()
+        };
+        let digest_hex = encode(&digest);
+
+        Mock::given(method("GET"))
+            .and(path(format!("/{digest_hex}")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(ciphertext_data)
+                    .insert_header("Ct-Format", "compressed_on_cpu")
+                    .insert_header("Content-Type", "application/octet-stream"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Create S3 client and test retrieval
+        let client = S3Client::new(None);
+        let result = client.retrieve_from_url(&mock_server.uri(), &digest).await;
+
+        assert!(result.is_ok());
+        let ciphertext_with_format = result.unwrap();
+
+        // Verify data
+        assert_eq!(ciphertext_with_format.data, ciphertext_data);
+
+        // Verify format detection
+        assert_eq!(
+            ciphertext_with_format.format,
+            CiphertextFormat::CompressedOnCpu
+        );
+
+        // Verify metadata
+        assert_eq!(
+            ciphertext_with_format.metadata.get("ct-format"),
+            Some(&"compressed_on_cpu".to_string())
+        );
+        assert_eq!(
+            ciphertext_with_format.metadata.get("content-type"),
+            Some(&"application/octet-stream".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_from_url_without_ct_format_header() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Mock response without Ct-Format header (legacy/uncompressed)
+        let ciphertext_data = b"legacy_ciphertext_data";
+        let digest = {
+            let mut hasher = Keccak256::new();
+            hasher.update(ciphertext_data);
+            hasher.finalize().to_vec()
+        };
+        let digest_hex = encode(&digest);
+
+        Mock::given(method("GET"))
+            .and(path(format!("/{digest_hex}")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(ciphertext_data)
+                    .insert_header("Content-Type", "application/octet-stream"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Create S3 client and test retrieval
+        let client = S3Client::new(None);
+        let result = client.retrieve_from_url(&mock_server.uri(), &digest).await;
+
+        assert!(result.is_ok());
+        let ciphertext_with_format = result.unwrap();
+
+        // Verify data
+        assert_eq!(ciphertext_with_format.data, ciphertext_data);
+
+        // Verify format defaults to uncompressed
+        assert_eq!(
+            ciphertext_with_format.format,
+            CiphertextFormat::Uncompressed
+        );
+
+        // Verify metadata (should not contain ct-format)
+        assert!(!ciphertext_with_format.metadata.contains_key("ct-format"));
+        assert_eq!(
+            ciphertext_with_format.metadata.get("content-type"),
+            Some(&"application/octet-stream".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_from_url_case_insensitive_ct_format() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Mock response with different case Ct-Format header
+        let ciphertext_data = b"case_test_data";
+        let digest = {
+            let mut hasher = Keccak256::new();
+            hasher.update(ciphertext_data);
+            hasher.finalize().to_vec()
+        };
+        let digest_hex = encode(&digest);
+
+        Mock::given(method("GET"))
+            .and(path(format!("/{digest_hex}")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(ciphertext_data)
+                    .insert_header("CT-FORMAT", "compressed_on_cpu") // Different case
+                    .insert_header("Content-Type", "application/octet-stream"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Create S3 client and test retrieval
+        let client = S3Client::new(None);
+        let result = client.retrieve_from_url(&mock_server.uri(), &digest).await;
+
+        assert!(result.is_ok());
+        let ciphertext_with_format = result.unwrap();
+
+        // Verify format detection works with different case
+        assert_eq!(
+            ciphertext_with_format.format,
+            CiphertextFormat::CompressedOnCpu
+        );
+
+        // Verify metadata contains the header (with original case)
+        assert_eq!(
+            ciphertext_with_format.metadata.get("ct-format"),
+            Some(&"compressed_on_cpu".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_from_url_unknown_format() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Mock response with unknown format
+        let ciphertext_data = b"future_format_data";
+        let digest = {
+            let mut hasher = Keccak256::new();
+            hasher.update(ciphertext_data);
+            hasher.finalize().to_vec()
+        };
+        let digest_hex = encode(&digest);
+
+        Mock::given(method("GET"))
+            .and(path(format!("/{digest_hex}")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(ciphertext_data)
+                    .insert_header("Ct-Format", "future_compression_v2")
+                    .insert_header("Content-Type", "application/octet-stream"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Create S3 client and test retrieval
+        let client = S3Client::new(None);
+        let result = client.retrieve_from_url(&mock_server.uri(), &digest).await;
+
+        assert!(result.is_ok());
+        let ciphertext_with_format = result.unwrap();
+
+        // Verify unknown format is handled correctly
+        assert_eq!(
+            ciphertext_with_format.format,
+            CiphertextFormat::Unknown("future_compression_v2".to_string())
+        );
+
+        // Verify metadata
+        assert_eq!(
+            ciphertext_with_format.metadata.get("ct-format"),
+            Some(&"future_compression_v2".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_ciphertext_with_format_method() {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        // Start a mock server
+        let mock_server = MockServer::start().await;
+
+        // Mock response
+        let ciphertext_data = b"method_test_data";
+        let digest = {
+            let mut hasher = Keccak256::new();
+            hasher.update(ciphertext_data);
+            hasher.finalize().to_vec()
+        };
+        let digest_hex = encode(&digest);
+
+        Mock::given(method("GET"))
+            .and(path(format!("/{digest_hex}")))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_bytes(ciphertext_data)
+                    .insert_header("Ct-Format", "compressed_on_cpu"),
+            )
+            .mount(&mock_server)
+            .await;
+
+        // Create S3 client and test the convenience method
+        let client = S3Client::new(None);
+        let result = client
+            .retrieve_ciphertext_with_format(&mock_server.uri(), &digest)
+            .await;
+
+        assert!(result.is_ok());
+        let ciphertext_with_format = result.unwrap();
+
+        // Verify the convenience method works the same as retrieve_from_url
+        assert_eq!(ciphertext_with_format.data, ciphertext_data);
+        assert_eq!(
+            ciphertext_with_format.format,
+            CiphertextFormat::CompressedOnCpu
+        );
     }
 }

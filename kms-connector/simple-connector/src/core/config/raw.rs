@@ -34,7 +34,7 @@ pub struct AwsKmsConfig {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RawConfig {
     pub gateway_url: String,
-    pub kms_core_endpoint: String,
+    pub kms_core_endpoints: Vec<String>,
     pub chain_id: u64,
     pub decryption_address: String,
     pub gateway_config_address: String,
@@ -82,6 +82,11 @@ pub struct RawConfig {
     pub max_blocks_per_batch: u64,
     #[serde(default = "default_gas_boost_percent")]
     pub gas_boost_percent: u32,
+    // Sharding parameters
+    #[serde(default = "default_shard_id")]
+    pub shard_id: Option<u32>,
+    #[serde(default = "default_total_shards")]
+    pub total_shards: Option<u32>,
 }
 
 fn default_service_name() -> String {
@@ -146,6 +151,14 @@ fn default_max_blocks_per_batch() -> u64 {
 
 fn default_gas_boost_percent() -> u32 {
     30 // 30% gas boost by default
+}
+
+fn default_shard_id() -> Option<u32> {
+    None // No sharding by default
+}
+
+fn default_total_shards() -> Option<u32> {
+    None // No sharding by default
 }
 
 impl RawConfig {

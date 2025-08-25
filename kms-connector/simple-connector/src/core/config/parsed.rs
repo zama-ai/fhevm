@@ -18,8 +18,8 @@ use tracing::{info, warn};
 pub struct Config {
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
-    /// The KMS Core endpoint.
-    pub kms_core_endpoint: String,
+    /// The KMS Core endpoints.
+    pub kms_core_endpoints: Vec<String>,
     /// The Chain ID of the Gateway.
     pub chain_id: u64,
     /// The `Decryption` contract address.
@@ -69,12 +69,16 @@ pub struct Config {
     pub max_blocks_per_batch: u64,
     /// Gas boost percentage for transactions (default: 30%)
     pub gas_boost_percent: u32,
+    /// Shard ID for request filtering (None = no sharding)
+    pub shard_id: Option<u32>,
+    /// Total number of shards (None = no sharding)
+    pub total_shards: Option<u32>,
 }
 
 impl Display for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "Service Name: {}", self.service_name)?;
-        writeln!(f, "KMS Core Endpoint: {}", self.kms_core_endpoint)?;
+        writeln!(f, "KMS Core Endpoints: {:?}", self.kms_core_endpoints)?;
         writeln!(f, "Gateway URL: {}", self.gateway_url)?;
         writeln!(f, "Chain ID: {}", self.chain_id)?;
         writeln!(f, "Wallet address: {:#x}", self.wallet.address())?;
@@ -193,10 +197,17 @@ impl Config {
             return Err(Error::Config("Gateway URL is not configured".to_string()));
         }
 
-        if raw_config.kms_core_endpoint.is_empty() {
+        if raw_config.kms_core_endpoints.is_empty() {
             return Err(Error::Config(
-                "KMS Core endpoint is not configured".to_string(),
+                "KMS Core endpoints are not configured".to_string(),
             ));
+        }
+
+        // Validate that all endpoints are non-empty
+        for (i, endpoint) in raw_config.kms_core_endpoints.iter().enumerate() {
+            if endpoint.is_empty() {
+                return Err(Error::Config(format!("KMS Core endpoint {i} is empty")));
+            }
         }
 
         if raw_config.decryption_address.is_empty() {
@@ -221,9 +232,12 @@ impl Config {
         let user_decryption_timeout = Duration::from_secs(raw_config.user_decryption_timeout_secs);
         let retry_interval = Duration::from_secs(raw_config.retry_interval_secs);
 
+        // Validate sharding parameters
+        Self::validate_sharding_config(&raw_config)?;
+
         Ok(Self {
             gateway_url: raw_config.gateway_url,
-            kms_core_endpoint: raw_config.kms_core_endpoint,
+            kms_core_endpoints: raw_config.kms_core_endpoints,
             chain_id: raw_config.chain_id,
             decryption_address,
             gateway_config_address,
@@ -248,8 +262,43 @@ impl Config {
             use_polling_mode: raw_config.use_polling_mode,
             base_poll_interval_ms: raw_config.base_poll_interval_ms,
             max_blocks_per_batch: raw_config.max_blocks_per_batch,
+            shard_id: raw_config.shard_id,
+            total_shards: raw_config.total_shards,
             gas_boost_percent: raw_config.gas_boost_percent,
         })
+    }
+
+    fn validate_sharding_config(raw_config: &RawConfig) -> Result<()> {
+        // Both shard_id and total_shards must be provided together or not at all
+        match (raw_config.shard_id, raw_config.total_shards) {
+            (Some(shard_id), Some(total_shards)) => {
+                if total_shards == 0 {
+                    return Err(Error::Config(
+                        "total_shards must be greater than 0".to_string(),
+                    ));
+                }
+                if shard_id >= total_shards {
+                    return Err(Error::Config(format!(
+                        "shard_id ({shard_id}) must be less than total_shards ({total_shards})"
+                    )));
+                }
+                info!("Sharding enabled: shard {} of {}", shard_id, total_shards);
+            }
+            (Some(_), None) => {
+                return Err(Error::Config(
+                    "shard_id provided but total_shards is missing".to_string(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(Error::Config(
+                    "total_shards provided but shard_id is missing".to_string(),
+                ));
+            }
+            (None, None) => {
+                info!("Sharding disabled - processing all requests");
+            }
+        }
+        Ok(())
     }
 
     async fn parse_kms_wallet(raw_config: &mut RawConfig) -> Result<KmsWallet> {
@@ -419,7 +468,7 @@ mod tests {
 
         // Compare fields
         assert_eq!(raw_config.gateway_url, config.gateway_url);
-        assert_eq!(raw_config.kms_core_endpoint, config.kms_core_endpoint);
+        assert_eq!(raw_config.kms_core_endpoints, config.kms_core_endpoints);
         assert_eq!(raw_config.chain_id, config.chain_id);
         assert_eq!(
             Address::from_str(&raw_config.decryption_address).unwrap(),
@@ -430,7 +479,7 @@ mod tests {
             config.gateway_config_address
         );
         assert_eq!(raw_config.channel_size, config.channel_size);
-        assert_eq!(raw_config.kms_core_endpoint, config.kms_core_endpoint);
+        assert_eq!(raw_config.kms_core_endpoints, config.kms_core_endpoints);
         assert_eq!(raw_config.service_name, config.service_name);
         assert_eq!(
             raw_config.public_decryption_timeout_secs,
@@ -501,7 +550,7 @@ mod tests {
 
         // Verify values
         assert_eq!(config.gateway_url, "ws://localhost:9545");
-        assert_eq!(config.kms_core_endpoint, "http://localhost:50053");
+        assert_eq!(config.kms_core_endpoints, vec!["http://localhost:50053"]);
         assert_eq!(config.chain_id, 31888);
         assert_eq!(
             config.decryption_address,
@@ -602,7 +651,7 @@ mod tests {
         fn default() -> Self {
             Self {
                 gateway_url: "ws://localhost:8545".to_string(),
-                kms_core_endpoint: "http://localhost:50052".to_string(),
+                kms_core_endpoints: vec!["http://localhost:50052".to_string()],
                 chain_id: 1,
                 decryption_address: "0x0000000000000000000000000000000000000000".to_string(),
                 gateway_config_address: "0x0000000000000000000000000000000000000000".to_string(),
@@ -632,6 +681,8 @@ mod tests {
                 base_poll_interval_ms: 2,
                 max_blocks_per_batch: 10,
                 gas_boost_percent: 30,
+                shard_id: None,
+                total_shards: None,
             }
         }
     }

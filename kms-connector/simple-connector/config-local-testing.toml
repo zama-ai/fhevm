@@ -9,9 +9,9 @@
 # ENV: KMS_CONNECTOR_SERVICE_NAME
 service_name = "kms-connector"
 
-# KMS Core gRPC endpoint (local development)
-# ENV: KMS_CONNECTOR_KMS_CORE_ENDPOINT
-kms_core_endpoint = "http://localhost:50051"
+# KMS Core gRPC endpoints (local development)
+# ENV: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
+kms_core_endpoints = ["http://localhost:50051"]
 
 # Primary Gateway WebSocket URL (local node)
 # ENV: KMS_CONNECTOR_GATEWAY_URL
