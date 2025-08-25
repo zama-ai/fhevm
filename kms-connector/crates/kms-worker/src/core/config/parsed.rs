@@ -8,7 +8,7 @@ use connector_utils::{
     monitoring::otlp::default_dispatcher,
 };
 use std::{net::SocketAddr, path::Path, time::Duration};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug)]
@@ -96,8 +96,16 @@ impl Config {
             return Err(Error::EmptyField("Gateway URL".to_string()));
         }
 
+        let kms_core_endpoints;
         if raw_config.kms_core_endpoints.is_empty() {
-            return Err(Error::EmptyField("KMS Core endpoints".to_string()));
+            if let Some(kms_core_endpoint) = raw_config.kms_core_endpoint {
+                warn!("Using deprecated `kms_core_endpoint` field instead of `kms_core_endpoints`");
+                kms_core_endpoints = vec![kms_core_endpoint];
+            } else {
+                return Err(Error::EmptyField("KMS Core endpoints".to_string()));
+            }
+        } else {
+            kms_core_endpoints = raw_config.kms_core_endpoints;
         }
 
         let database_polling_timeout =
@@ -114,7 +122,7 @@ impl Config {
             database_pool_size: raw_config.database_pool_size,
             database_polling_timeout,
             gateway_url: raw_config.gateway_url,
-            kms_core_endpoints: raw_config.kms_core_endpoints,
+            kms_core_endpoints,
             chain_id: raw_config.chain_id,
             decryption_contract,
             gateway_config_contract,
@@ -172,9 +180,9 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[test]
     #[serial(config_tests)]
-    async fn test_load_valid_config_from_file() {
+    fn test_load_valid_config_from_file() {
         cleanup_env_vars();
         let raw_config = RawConfig::default();
 
@@ -228,9 +236,9 @@ mod tests {
         assert_eq!(raw_config.verify_coprocessors, config.verify_coprocessors);
     }
 
-    #[tokio::test]
+    #[test]
     #[serial(config_tests)]
-    async fn test_load_from_env() {
+    fn test_load_from_env() {
         cleanup_env_vars();
 
         // Set environment variables
@@ -293,9 +301,9 @@ mod tests {
         cleanup_env_vars();
     }
 
-    #[tokio::test]
+    #[test]
     #[serial(config_tests)]
-    async fn test_env_overrides_file() {
+    fn test_env_overrides_file() {
         cleanup_env_vars();
 
         // Create a temp config file
@@ -327,9 +335,9 @@ mod tests {
         cleanup_env_vars();
     }
 
-    #[tokio::test]
+    #[test]
     #[serial(config_tests)]
-    async fn test_invalid_address() {
+    fn test_invalid_address() {
         let raw_config = RawConfig {
             decryption_contract: RawContractConfig {
                 address: "0x0000".to_string(),
@@ -345,6 +353,21 @@ mod tests {
             Config::parse(raw_config),
             Err(Error::InvalidConfig(_))
         ));
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn test_kms_core_endpoint_fallback() {
+        let raw_config = RawConfig {
+            kms_core_endpoints: vec![],
+            kms_core_endpoint: Some("http://localhost:50053".to_string()),
+            ..Default::default()
+        };
+        let config = Config::parse(raw_config.clone()).unwrap();
+        assert_eq!(
+            config.kms_core_endpoints,
+            vec![raw_config.kms_core_endpoint.unwrap()]
+        )
     }
 
     impl RawConfig {

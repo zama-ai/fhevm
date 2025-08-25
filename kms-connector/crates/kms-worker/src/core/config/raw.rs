@@ -33,6 +33,7 @@ pub struct RawConfig {
     pub database_polling_timeout_secs: u64,
     pub gateway_url: String,
     pub kms_core_endpoints: Vec<String>,
+    pub kms_core_endpoint: Option<String>,
     pub chain_id: u64,
     pub decryption_contract: RawContractConfig,
     pub gateway_config_contract: RawContractConfig,
@@ -144,6 +145,7 @@ impl Default for RawConfig {
             database_polling_timeout_secs: default_database_polling_timeout_secs(),
             gateway_url: "ws://localhost:8545".to_string(),
             kms_core_endpoints: vec!["http://localhost:50052".to_string()],
+            kms_core_endpoint: None,
             chain_id: 1,
             decryption_contract: RawContractConfig {
                 address: "0x0000000000000000000000000000000000000000".to_string(),
