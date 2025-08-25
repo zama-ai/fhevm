@@ -6,7 +6,7 @@ This guide explains how to use Fully Homomorphic Encryption (FHE) operations in 
 
 FHE operations in FHEVM are computationally intensive compared to standard Ethereum operations, as they require complex mathematical computations to maintain privacy and security. To manage computational load and prevent potential denial-of-service attacks, FHEVM implements a metering system called **Homomorphic Complexity Units ("HCU")**.
 
-To represent this complexity, we introduced the **Homomorphic Complexity Unit ("HCU")**. In Solidity, each FHE operation consumes a set amount of HCU based on the operational computational complexity for hardware computation. Since FHE transactions are symbolic, this helps preventing resource exhaustion outside of the blockchain.
+To represent this complexity, we introduced the **Homomorphic Complexity Unit ("HCU")**. In Solidity, each FHE operation consumes a set amount of HCU based on the operational computational complexity for hardware computation. Since FHE transactions are symbolic, this helps prevent resource exhaustion outside the blockchain.
 
 To do so, there is a contract named `HCULimit`, which monitors HCU consumption for each transaction and enforces two key limits:
 
@@ -17,7 +17,7 @@ If either limit is exceeded, the transaction will revert.
 
 ## HCU limit
 
-The current devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. If either HCU limit is exceeded, the transaction will revert.
+The current Devnet has an HCU limit of **20,000,000** per transaction and an HCU depth limit of **5,000,000** per transaction. If either HCU limit is exceeded, the transaction will revert.
 
 To resolve this, you must do one of the following:
 

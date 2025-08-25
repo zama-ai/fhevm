@@ -1,7 +1,7 @@
 # Input registration
 
 This document explains how to register ciphertexts to the FHEVM.
-Registering ciphertexts to the FHEVM allows for future use on-chain using the `FHE.fromExternal` solidity function.
+Registering ciphertexts to the FHEVM allows for future use onchain using the `FHE.fromExternal` solidity function.
 All values encrypted for use with the FHEVM are encrypted under a public key of the protocol.
 
 ```ts

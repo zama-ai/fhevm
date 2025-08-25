@@ -27,7 +27,7 @@ For more information see [use of encrypted types](../types.md).
 
 ### Casting types
 
-fhevm provides functions to cast between encrypted types:
+FHEVM provides functions to cast between encrypted types:
 
 - **Casting between encrypted types**: `FHE.asEbool` converts encrypted integers to encrypted booleans
 - **Casting to encrypted types**: `FHE.asEuintX` converts plaintext values to encrypted types
@@ -37,13 +37,13 @@ For more information see [use of encrypted types](../types.md).
 
 ### Confidential computation
 
-fhevm enables symbolic execution of encrypted operations, supporting:
+FHEVM enables symbolic execution of encrypted operations, supporting:
 
 - **Arithmetic:** `FHE.add`, `FHE.sub`, `FHE.mul`, `FHE.min`, `FHE.max`, `FHE.neg`, `FHE.div`, `FHE.rem`
   - Note: `div` and `rem` operations are supported only with plaintext divisors
 - **Bitwise:** `FHE.and`, `FHE.or`, `FHE.xor`, `FHE.not`, `FHE.shl`, `FHE.shr`, `FHE.rotl`, `FHE.rotr`
 - **Comparison:** `FHE.eq`, `FHE.ne`, `FHE.lt`, `FHE.le`, `FHE.gt`, `FHE.ge`
-- **Advanced:** `FHE.select` for branching on encrypted conditions, `FHE.randEuintX` for on-chain randomness.
+- **Advanced:** `FHE.select` for branching on encrypted conditions, `FHE.randEuintX` for onchain randomness.
 
 For more information on operations, see [Operations on encrypted types](../operations/README.md).
 
@@ -53,7 +53,7 @@ For more information on random number generation, see [Generate Random Encrypted
 
 ### Access control mechanism
 
-fhevm enforces access control with a blockchain-based Access Control List (ACL):
+FHEVM enforces access control with a blockchain-based Access Control List (ACL):
 
 - **Persistent access**: `FHE.allow`, `FHE.allowThis` grants permanent permissions for ciphertexts.
 - **Transient access**: `FHE.allowTransient` provides temporary access for specific transactions.

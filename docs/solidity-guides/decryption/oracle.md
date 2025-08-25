@@ -1,6 +1,6 @@
 # Oracle
 
-This section explains how to handle decryption in fhevm. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
+This section explains how to handle decryption in FHEVM. Decryption allows plaintext data to be accessed when required for contract logic or user presentation, ensuring confidentiality is maintained throughout the process.
 
 Decryption is essential in two primary cases:
 
@@ -55,13 +55,13 @@ contract TestAsyncDecrypt is SepoliaConfig {
 
 ## Decryption in depth
 
-This document provides a detailed guide on implementing decryption in your smart contracts using the `DecryptionOracle` in fhevm. It covers the setup, usage of the `FHE.requestDecryption` function, and testing with Hardhat.
+This document provides a detailed guide on implementing decryption in your smart contracts using the `DecryptionOracle` in FHEVM. It covers the setup, usage of the `FHE.requestDecryption` function, and testing with Hardhat.
 
 ## `DecryptionOracle` setup
 
 The `DecryptionOracle` is pre-deployed on the FHEVM testnet. It uses a default relayer account specified in the `.env` file.
 
-Anyone can fulfill decryption requests but it is essential to add signature verification (and to include a logic to invalidate the replay of decryption requests). The role of the `DecryptionOracle` contract is to independently verify the KMS signature during execution. This ensures that the relayers cannot manipulate or send fraudulent decryption results, even if compromised.
+Anyone can fulfill decryption requests, but it is essential to add signature verification (and to include a logic to invalidate the replay of decryption requests). The role of the `DecryptionOracle` contract is to independently verify the KMS signature during execution. This ensures that the relayers cannot manipulate or send fraudulent decryption results, even if compromised.
 
 There are two functions to consider: `requestDecryption` and `checkSignatures`.
 
@@ -78,11 +78,11 @@ function requestDecryption(
 
 #### Function arguments
 
-The first argument, `ctsHandles`, should be an array of ciphertexts handles which could be of different types, i.e `uint256` values coming from unwrapping handles of type either `ebool`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`.&#x20;
+The first argument, `ctsHandles`, should be an array of ciphertext handles which could be of different types, i.e. `uint256` values coming from unwrapping handles of type either `ebool`, `euint8`, `euint16`, `euint32`, `euint64` or `eaddress`.&#x20;
 
 `ctsHandles` is the array of ciphertexts that are requested to be decrypted. The relayer will send the corresponding ciphertexts to the KMS for decryption before fulfilling the request.
 
-`callbackSelector` is the function selector of the callback function, which will be called once the relayer fulfils the decryption request.
+`callbackSelector` is the function selector of the callback function, which will be called once the relayer fulfills the decryption request.
 
 ```solidity
 function [callbackName](uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) external;
@@ -119,7 +119,7 @@ function checkSignatures(uint256 requestId, bytes memory cleartexts, bytes[] mem
 
 #### Function arguments
 
-- `requestID`, is the value that was returned in the `requestDecryption` function.
+- `requestID`, is the value that was returned to the `requestDecryption` function.
 - `cleartexts`, is an ABI encoding of the decrypted values associated to the handles (using `abi.encode`). This can contain one or multiple values, depending on the number of handles requested in the `requestDecryption` function. Each of these values' type must match the type of the corresponding handle.
 - `decryptionProof`, is a byte array containing the KMS signatures and extra data.
 

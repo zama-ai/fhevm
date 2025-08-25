@@ -1,6 +1,6 @@
 ## Introduction
 
-The **FHEVM Gateway** is a set of smart contracts that enables decrypting FHE ciphertexts from different host chains. It acts as an intermediary between the chains, the Key Management Service (KMS) and the coprocessors found within the FHEVM protocol. These contracts are responsible for:
+The **FHEVM Gateway** is a set of smart contracts that enables decrypting FHE ciphertexts from different host chains. It acts as an intermediary between the chains, the Key Management Service (KMS) and the coprocessors found within the FHEVM Protocol. These contracts are responsible for:
 
 - Verifying the legitimacy of decryption requests
 - Centralizing multi-chain ciphertexts access

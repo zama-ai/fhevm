@@ -18,7 +18,7 @@ make get-accounts
 
 ## Summary
 
-Here's the complete list of environment variables used for deploying the FHEVM gateway. More detailed information can be found in [this section](#in-details) below. Solidity types are defined in [Solidity's documentation](https://docs.soliditylang.org/en/latest/types.html).
+Here's the complete list of environment variables used for deploying the FHEVM Gateway. More detailed information can be found in [this section](#in-details) below. Solidity types are defined in [Solidity's documentation](https://docs.soliditylang.org/en/latest/types.html).
 
 | Environment Variable                | Description                                  | Solidity Type | Default                                                                                             | Comment                                                                       |
 | ----------------------------------- | -------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -89,7 +89,7 @@ USER_DECRYPTION_THRESHOLD="3" # (uint256)
 
 `PUBLIC_DECRYPTION_THRESHOLD` and `USER_DECRYPTION_THRESHOLD` must be non-null and less or equal to the number of KMS nodes registered below.
 
-In practice in the FHEVM protocol, they are set to values using the following formulas:
+In practice in the FHEVM Protocol, they are set to values using the following formulas:
 
 - public decryption threshold: `floor(n/2) + 1`
 - user decryption threshold: `2*t + 1`
@@ -104,7 +104,7 @@ These values might change in the future.
 NUM_KMS_NODES="1" # (number)
 ```
 
-`NUM_KMS_NODES` is the number of KMS nodes to register in the `GatewayConfig` contract. It it not stored in it and is only used within the deployment script. The following metadata variables must be set for each KMS node, indexed by a node number starting from 0. If not enough variables are set, the deployment will fail. If, on the contrary, too many variables are set, the deployment will succeed but the extra ones will be ignored.
+`NUM_KMS_NODES` is the number of KMS nodes to register in the `GatewayConfig` contract. It is not stored in it and is only used within the deployment script. The following metadata variables must be set for each KMS node, indexed by a node number starting from 0. If not enough variables are set, the deployment will fail. If, on the contrary, too many variables are set, the deployment will succeed, but the extra ones will be ignored.
 
 ```bash
 KMS_TX_SENDER_ADDRESS_0="0xc1d91b49A1B3D1324E93F86778C44a03f1063f1b" # (address)
@@ -118,7 +118,7 @@ KMS_NODE_IP_ADDRESS_0="127.0.0.1" # (string)
 NUM_COPROCESSORS="3" # (number)
 ```
 
-`NUM_COPROCESSORS` is the number of coprocessors to register in the `GatewayConfig` contract. It it not stored in it and is only used within the deployment script. The following metadata variables must be set for each coprocessor, indexed by a coprocessor number starting from 0. If not enough variables are set, the deployment will fail. If, on the contrary, too many variables are set, the deployment will succeed but the extra ones will be ignored.
+`NUM_COPROCESSORS` is the number of coprocessors to register in the `GatewayConfig` contract. It is not stored in it and is only used within the deployment script. The following metadata variables must be set for each coprocessor, indexed by a coprocessor number starting from 0. If not enough variables are set, the deployment will fail. If, on the contrary, too many variables are set, the deployment will succeed, but the extra ones will be ignored.
 
 ```bash
 COPROCESSOR_TX_SENDER_ADDRESS_0="0x6518D50aDc9036Df37119eA465a8159E34417E2E" # (address)
@@ -136,7 +136,7 @@ The following values are set after deployment in a separate script. However, the
 NUM_HOST_CHAINS="1" # (number)
 ```
 
-`NUM_HOST_CHAINS` is the number of host chains to register in the `GatewayConfig` contract. It it not stored in it and is only used within the deployment script. The following metadata variables must be set for each host chain, indexed by a host chain number starting from 0. If not enough variables are set, the script will fail. If, on the contrary, too many variables are set, the script will succeed but the extra ones will be ignored.
+`NUM_HOST_CHAINS` is the number of host chains to register in the `GatewayConfig` contract. It is not stored in it and is only used within the deployment script. The following metadata variables must be set for each host chain, indexed by a host chain number starting from 0. If not enough variables are set, the script will fail. If, on the contrary, too many variables are set, the script will succeed, but the extra ones will be ignored.
 
 ```bash
 HOST_CHAIN_CHAIN_ID_0="2025" # (uint256)
@@ -146,11 +146,11 @@ HOST_CHAIN_NAME_0="Host chain 2025" # (string)
 HOST_CHAIN_WEBSITE_0="https://host-chain-2025.com" # (string)
 ```
 
-`HOST_CHAIN_CHAIN_ID` must be different for all host chains, else the script will fail.
+`HOST_CHAIN_CHAIN_ID` must be different for all host chains, or else the script will fail.
 
 ### KmsManagement parameters
 
-🚧 **Important** 🚧: The `KmsManagement` contract is currently neither used nor up-to-date. It will be reworked in the future. See [this issue](https://github.com/zama-ai/fhevm-gateway/issues/108) for more details. Still, the associated environment variables are required, else the deployment script will fail.
+🚧 **Important** 🚧: The `KmsManagement` contract is currently neither used nor up-to-date. It will be reworked in the future. See [this issue](https://github.com/zama-ai/fhevm-gateway/issues/108) for more details. Still, the associated environment variables are required, or else the deployment script will fail.
 
 The following values are set in the `KmsManagement` contract at deployment.
 
@@ -209,7 +209,7 @@ This is the mnemonic used to generate the addresses and public keys of the deplo
 RPC_URL="http://127.0.0.1:8757" # (string)
 ```
 
-This is the URL of the RPC node for the FHEVM gateway network.
+This is the URL of the RPC node for the FHEVM Gateway network.
 
 #### After deploying contracts in production
 

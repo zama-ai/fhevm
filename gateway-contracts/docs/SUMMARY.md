@@ -1,6 +1,6 @@
 # Table of contents
 
-- [Welcome to fhevm Gateway](README.md)
+- [Welcome to FHEVM Gateway](README.md)
 
 ## Getting Started
 

@@ -1,14 +1,14 @@
 # Generate random numbers
 
-This document explains how to generate cryptographically secure random encrypted numbers fully on-chain using the `FHE` library in fhevm. These numbers are encrypted and remain confidential, enabling privacy-preserving smart contract logic.
+This document explains how to generate cryptographically secure random encrypted numbers fully onchain using the `FHE` library in fhevm. These numbers are encrypted and remain confidential, enabling privacy-preserving smart contract logic.
 
 ## **Key notes on random number generation**
 
-- **On-chain execution**: Random number generation must be executed during a transaction, as it requires the pseudo-random number generator (PRNG) state to be updated on-chain. This operation cannot be performed using the `eth_call` RPC method.
+- **onchain execution**: Random number generation must be executed during a transaction, as it requires the pseudo-random number generator (PRNG) state to be updated onchain. This operation cannot be performed using the `eth_call` RPC method.
 - **Cryptographic security**: The generated random numbers are cryptographically secure and encrypted, ensuring privacy and unpredictability.
 
 {% hint style="info" %}
-Random number generation must be performed during transactions, as it requires the pseudo-random number generator (PRNG) state to be mutated on-chain. Therefore, it cannot be executed using the `eth_call` RPC method.
+Random number generation must be performed during transactions, as it requires the pseudo-random number generator (PRNG) state to be mutated onchain. Therefore, it cannot be executed using the `eth_call` RPC method.
 {% endhint %}
 
 ## **Basic usage**

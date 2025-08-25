@@ -48,7 +48,7 @@ Fill in the relevant environment details where the issue was observed:
 
 - **Operating System**: [e.g., Ubuntu 20.04, Windows 10]
 - **Browser**: [e.g., Chrome v90, Safari v14]
-- **Fhevm Gateway Version**: [e.g., v1.0.0]
+- **FHEVM Gateway Version**: [e.g., v1.0.0]
 - **Tooling**: [Hardhat, Remix]
 - **Node Configuration**:
   - Gateway Chain ID: [e.g., 9000]

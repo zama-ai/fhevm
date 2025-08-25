@@ -29,7 +29,7 @@ contract PrivateKeySale {
 }
 ```
 
-Since the `privateKey`` encrypted variable contains critical information, we don't want to mistakenly leak it for free if a reorg occurs. This could happen in the previous example because we immediately grant authorization to the buyer in the same transaction that processes the sale.
+Since the `privateKey` encrypted variable contains critical information, we don't want to mistakenly leak it for free if a reorg occurs. This could happen in the previous example because we immediately grant authorization to the buyer in the same transaction that processes the sale.
 
 ✅ **We recommend writing something like this instead:**
 

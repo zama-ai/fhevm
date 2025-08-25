@@ -1,5 +1,5 @@
 ---
-name: 🚀 General feature request for fhevm Gateway
+name: 🚀 General feature request for FHEVM Gateway
 about: Suggest an idea for this project
 title: ""
 labels: enhancement

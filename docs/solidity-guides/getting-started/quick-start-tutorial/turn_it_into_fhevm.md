@@ -6,7 +6,7 @@ Starting with the plain `Counter.sol` contract that you built from the ["Write a
 
 - Replace standard types with encrypted equivalents
 - Integrate zero-knowledge proof validation
-- Enable encrypted on-chain computation
+- Enable encrypted onchain computation
 - Grant permissions for secure off-chain decryption
 
 By the end, you'll have a fully functional smart contract that supports FHE computation.
@@ -268,7 +268,7 @@ function increment(externalEuint32 inputEuint32, bytes calldata inputProof) exte
 ```
 
 {% hint style="info" %}
-This FHE operation allows the smart contract to process encrypted values without ever decrypting them — a core feature of FHEVM that enables on-chain privacy.
+This FHE operation allows the smart contract to process encrypted values without ever decrypting them — a core feature of FHEVM that enables onchain privacy.
 {% endhint %}
 
 {% endstep %} {% endstepper %}

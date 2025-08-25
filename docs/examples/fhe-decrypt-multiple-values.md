@@ -140,7 +140,7 @@ describe("DecryptMultipleValues", function () {
       aliceEip712.message,
     );
 
-    const decrytepResults: DecryptedResults = await fhevm.userDecrypt(
+    const decryptedResults: DecryptedResults = await fhevm.userDecrypt(
       [
         { handle: encryptedBool, contractAddress: contractAddress },
         { handle: encryptedUint32, contractAddress: contractAddress },
@@ -155,9 +155,9 @@ describe("DecryptMultipleValues", function () {
       durationDays,
     );
 
-    expect(decrytepResults[encryptedBool]).to.equal(true);
-    expect(decrytepResults[encryptedUint32]).to.equal(123456 + 1);
-    expect(decrytepResults[encryptedUint64]).to.equal(78901234567 + 1);
+    expect(decryptedResults[encryptedBool]).to.equal(true);
+    expect(decryptedResults[encryptedUint32]).to.equal(123456 + 1);
+    expect(decryptedResults[encryptedUint64]).to.equal(78901234567 + 1);
   });
 });
 ```

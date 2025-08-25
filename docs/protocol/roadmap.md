@@ -22,6 +22,6 @@ This document gives a preview of the upcoming features of FHEVM. In addition to 
 | Set inclusion         | `FHE.isIn()`      | Binary             | -           |
 
 {% hint style="info" %}
-Random encrypted integers that are generated fully on-chain. Currently, implemented as a mockup\
+Random encrypted integers that are generated fully onchain. Currently, implemented as a mockup\
 by using a PRNG in the plain. Not for use in production!
 {% endhint %}

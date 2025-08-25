@@ -9,7 +9,7 @@ The operations can be categorized into two main use cases:
 
 ## 1. Trivial encryption
 
-Trivial encryption simply put is a plain text in a format of a ciphertext.
+Trivial encryption, simply put, is plaintext represented in the format of a ciphertext.
 
 ### Overview
 
@@ -28,8 +28,8 @@ When doing trivial encryption, the data is made compatible with FHE operations b
 #### **Example**
 
 ```solidity
-euint64 value64 = FHE.asEuint64(7262);  // Trivial encrypt a uint64
-ebool valueBool = FHE.asEbool(true);   // Trivial encrypt a boolean
+euint64 value64 = FHE.asEuint64(7262);  // Trivially encrypt a uint64
+ebool valueBool = FHE.asEbool(true);   // Trivially encrypt a boolean
 ```
 
 ## 2. Casting between encrypted types
