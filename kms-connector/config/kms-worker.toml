@@ -86,10 +86,6 @@ address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
 # ENV: KMS_CONNECTOR_S3_CONNECT_TIMEOUT
 # s3_connect_timeout = 2
 
-# Whether to verify coprocessors against the GatewayConfig contract (optional, defaults to false)
-# ENV: KMS_CONNECTOR_VERIFY_COPROCESSORS
-# verify_coprocessors = true
-
 # S3 configuration for ciphertext storage (optional)
 # This is used for fallback ciphertext retrieval when coprocessor URLs are unavailable
 # [s3_config]

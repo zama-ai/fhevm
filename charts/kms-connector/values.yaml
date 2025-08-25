@@ -159,8 +159,6 @@ kmsConnectorKmsWorker:
     #   value: "3"
     # - name: KMS_CONNECTOR_S3_CONNECT_TIMEOUT
     #   value: "2"
-    # - name: KMS_CONNECTOR_VERIFY_COPROCESSORS
-    #   value: "true"
     # - name: KMS_CONNECTOR_S3_CONFIG__REGION
     #   value: "us-east-1"
     # - name: KMS_CONNECTOR_S3_CONFIG__BUCKET
