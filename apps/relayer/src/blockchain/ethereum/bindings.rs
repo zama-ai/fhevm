@@ -11,24 +11,10 @@ sol!(
     "./artifacts/contract-abis/DecryptionOracle.json"
 );
 
-// Decryption contract (Gateway)
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    Decryption,
-    "./artifacts/contract-abis/Decryption.json"
-);
-
-// Input Verification (Gateway)
-
-sol!(
-    #[allow(missing_docs)]
-    #[sol(rpc)]
-    #[derive(Debug, serde::Serialize, serde::Deserialize)]
-    InputVerification,
-    "./artifacts/contract-abis/InputVerification.json"
-);
+pub use fhevm_gateway_rust_bindings::{
+    decryption::{Decryption, IDecryption},
+    input_verification::InputVerification,
+};
 
 // Define the Transfer event structure using alloy_sol_types
 sol! {

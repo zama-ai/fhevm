@@ -2243,6 +2243,7 @@ dependencies = [
  "ctor",
  "dashmap",
  "eyre",
+ "fhevm_gateway_rust_bindings",
  "futures",
  "hex",
  "http 0.2.12",
@@ -2265,6 +2266,15 @@ dependencies = [
  "tracing-subscriber",
  "uuid",
  "xxhash-rust",
+]
+
+[[package]]
+name = "fhevm_gateway_rust_bindings"
+version = "0.1.0-rc14"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-3#6c9c11388198ec4da7d3fac6f3d4a1930cff41f6"
+dependencies = [
+ "alloy",
+ "serde",
 ]
 
 [[package]]
