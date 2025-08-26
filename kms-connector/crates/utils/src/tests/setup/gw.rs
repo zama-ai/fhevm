@@ -9,7 +9,7 @@ use alloy::{
     primitives::{Address, ChainId, FixedBytes},
     providers::{ProviderBuilder, WsConnect},
 };
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
     kms_management::KmsManagement::{self, KmsManagementInstance},

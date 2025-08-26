@@ -1,5 +1,5 @@
 use alloy::primitives::{Address, U256};
-use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
+use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 
 /// Struct representing how `SnsCiphertextMaterial` are stored in the database.
 #[derive(sqlx::Type, Clone, Debug, Default, PartialEq)]

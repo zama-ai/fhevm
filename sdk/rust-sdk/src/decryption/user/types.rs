@@ -1,5 +1,5 @@
 use alloy::primitives::{Address, Bytes};
-use fhevm_gateway_rust_bindings::decryption::{
+use fhevm_gateway_bindings::decryption::{
     Decryption::CtHandleContractPair, IDecryption::RequestValidity,
 };
 use kms_grpc::kms::v1::TypedPlaintext;

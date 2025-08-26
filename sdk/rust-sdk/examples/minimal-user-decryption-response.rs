@@ -8,7 +8,7 @@
 //! ```
 
 use alloy::primitives::U256;
-use fhevm_gateway_rust_bindings::decryption::Decryption::CtHandleContractPair;
+use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
 use gateway_sdk::{FhevmSdkBuilder, Result, utils::validate_address_from_str};
 use std::str::FromStr;
 fn main() -> Result<()> {

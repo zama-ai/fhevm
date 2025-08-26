@@ -18,7 +18,7 @@ use connector_utils::{
     tasks::spawn_with_limit,
     types::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse},
 };
-use fhevm_gateway_rust_bindings::decryption::Decryption::{self, DecryptionInstance};
+use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};

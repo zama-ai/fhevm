@@ -12,7 +12,7 @@ use connector_utils::{
     },
     types::KmsResponse,
 };
-use fhevm_gateway_rust_bindings::decryption::Decryption::DecryptionInstance;
+use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use rstest::rstest;
 use std::time::Duration;
 use tokio::task::JoinHandle;

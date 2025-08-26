@@ -1,6 +1,6 @@
 use crate::types::db::SnsCiphertextMaterialDbItem;
 use alloy::primitives::U256;
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::{
         PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
     },
