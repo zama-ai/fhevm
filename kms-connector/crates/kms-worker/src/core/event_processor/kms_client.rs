@@ -211,7 +211,10 @@ impl KmsClient {
     }
 
     fn choose_client(&self, request_id: RequestId) -> CoreServiceEndpointClient<Channel> {
-        let request_id = request_id.request_id.parse::<usize>().unwrap_or_default();
+        let request_id = request_id.request_id.parse::<usize>().unwrap_or_else(|_| {
+            warn!("Failed to parse request ID. Sending request to shard 0 by default");
+            0
+        });
         let client_index = request_id % self.inners.len();
         self.inners[client_index].clone()
     }
