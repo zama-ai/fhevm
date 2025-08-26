@@ -17,7 +17,9 @@ use crate::{
     },
     store::{UserDecryptRequestCacheStore, UserDecryptResponseCacheStore},
     transaction::{
-        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
+        fhevm::{parse_fhevm_error, retryable_error},
+        helper::TransactionType,
+        ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
     },
 };
 
@@ -488,12 +490,23 @@ impl GatewayHandler {
                     );
                 }
                 Err(err) => {
-                    info!(
-                        "Gateway not ready yet: {:?} error info: {}",
-                        user_decrypt_request.user_address, err
-                    );
+                    let fhevm_error = parse_fhevm_error(&err);
+                    should_retry = retryable_error(&fhevm_error);
 
-                    should_retry = true;
+                    if !should_retry {
+                        warn!(
+                            "Gateway un-retriable error for {:?} error info: {:?}",
+                            user_decrypt_request.user_address, fhevm_error
+                        );
+                        return Err(EventProcessingError::HandlerError(format!(
+                            "Non-retryable on-chain error {fhevm_error:?}"
+                        )));
+                    } else {
+                        info!(
+                            "Gateway not ready yet: {:?} error info: {:?}, retry={}",
+                            user_decrypt_request.user_address, fhevm_error, should_retry
+                        );
+                    }
                 }
             }
 

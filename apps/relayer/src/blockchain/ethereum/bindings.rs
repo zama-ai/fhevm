@@ -2,6 +2,13 @@
 
 use alloy::sol;
 
+pub use fhevm_gateway_rust_bindings::{
+    ciphertext_commits::CiphertextCommits,
+    decryption::{Decryption, IDecryption},
+    input_verification::InputVerification,
+    multichain_acl::MultichainAcl,
+};
+
 // New version of DecryptionOracle
 sol!(
     #[allow(missing_docs)]
@@ -10,11 +17,6 @@ sol!(
     DecryptionOracle,
     "./artifacts/contract-abis/DecryptionOracle.json"
 );
-
-pub use fhevm_gateway_rust_bindings::{
-    decryption::{Decryption, IDecryption},
-    input_verification::InputVerification,
-};
 
 // Define the Transfer event structure using alloy_sol_types
 sol! {
