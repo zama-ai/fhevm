@@ -1,4 +1,6 @@
-This example demonstrates the FHE decryption mechanism in Solidity with multiple values.
+This example demonstrates the FHE public decryption mechanism with multiple value.
+
+Public decryption is a mechanism that makes encrypted values visible to everyone once decrypted. Unlike user decryption where values remain private to authorized users, public decryption makes the data permanently visible to all participants. The public decryption call occurs onchain through smart contracts, making the decrypted value part of the blockchain's public state.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -11,7 +13,7 @@ This ensures Hardhat can compile and test your contracts as expected.
 
 {% tabs %}
 
-{% tab title="DecryptMultipleValuesInSolidity.sol" %}
+{% tab title="PublicDecryptMultipleValues.sol" %}
 
 ```solidity
 // SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -20,7 +22,7 @@ pragma solidity ^0.8.24;
 import { FHE, ebool, euint32, euint64 } from "@fhevm/solidity/lib/FHE.sol";
 import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 
-contract DecryptMultipleValuesInSolidity is SepoliaConfig {
+contract PublicDecryptMultipleValues is SepoliaConfig {
   ebool private _encryptedBool; // = 0 (uninitialized)
   euint32 private _encryptedUint32; // = 0 (uninitialized)
   euint64 private _encryptedUint64; // = 0 (uninitialized)
@@ -45,18 +47,18 @@ contract DecryptMultipleValuesInSolidity is SepoliaConfig {
     _encryptedUint64 = FHE.add(FHE.asEuint64(c), FHE.asEuint64(1));
 
     // see `DecryptSingleValueInSolidity.sol` for more detailed explanations
-    // about FHE permissions and asynchronous decryption requests.
+    // about FHE permissions and asynchronous public decryption requests.
     FHE.allowThis(_encryptedBool);
     FHE.allowThis(_encryptedUint32);
     FHE.allowThis(_encryptedUint64);
   }
 
   function requestDecryptMultipleValues() external {
-    // To decrypt multiple values, we must construct an array of the encrypted values
-    // we want to decrypt.
+    // To public decrypt multiple values, we must construct an array of the encrypted values
+    // we want to public decrypt.
     //
     // ⚠️ Warning: The order of values in the array is critical!
-    // The FHEVM backend will pass the decrypted values to the callback function
+    // The FHEVM backend will pass the public decrypted values to the callback function
     // in the exact same order they appear in this array.
     // Therefore, the order must match the parameter declaration in the callback.
     bytes32[] memory cypherTexts = new bytes32[](3);
@@ -65,7 +67,7 @@ contract DecryptMultipleValuesInSolidity is SepoliaConfig {
     cypherTexts[2] = FHE.toBytes32(_encryptedUint64);
 
     FHE.requestDecryption(
-      // the list of encrypte values we want to decrypt
+      // the list of encrypte values we want to public decrypt
       cypherTexts,
       // Selector of the Solidity callback function that the FHEVM backend will call with
       // the decrypted (clear) values as arguments
@@ -113,10 +115,10 @@ contract DecryptMultipleValuesInSolidity is SepoliaConfig {
 
 {% endtab %}
 
-{% tab title="DecryptMultipleValuesInSolidity.ts" %}
+{% tab title="PublicDecryptMultipleValues.ts" %}
 
 ```ts
-import { DecryptMultipleValuesInSolidity, DecryptMultipleValuesInSolidity__factory } from "../../../types";
+import { PublicDecryptMultipleValues, PublicDecryptMultipleValues__factory } from "../../../types";
 import type { Signers } from "../../types";
 import { HardhatFhevmRuntimeEnvironment } from "@fhevm/hardhat-plugin";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -127,20 +129,20 @@ import * as hre from "hardhat";
 async function deployFixture() {
   // Contracts are deployed using the first signer/account by default
   const factory = (await ethers.getContractFactory(
-    "DecryptMultipleValuesInSolidity",
-  )) as DecryptMultipleValuesInSolidity__factory;
-  const decryptMultipleValuesInSolidity = (await factory.deploy()) as DecryptMultipleValuesInSolidity;
-  const decryptMultipleValuesInSolidity_address = await decryptMultipleValuesInSolidity.getAddress();
+    "PublicDecryptMultipleValues",
+  )) as PublicDecryptMultipleValues__factory;
+  const publicDecryptMultipleValues = (await factory.deploy()) as PublicDecryptMultipleValues;
+  const publicDecryptMultipleValues_address = await publicDecryptMultipleValues.getAddress();
 
-  return { decryptMultipleValuesInSolidity, decryptMultipleValuesInSolidity_address };
+  return { publicDecryptMultipleValues, publicDecryptMultipleValues_address };
 }
 
 /**
- * This trivial example demonstrates the FHE decryption mechanism
+ * This trivial example demonstrates the FHE public decryption mechanism
  * and highlights a common pitfall developers may encounter.
  */
-describe("DecryptMultipleValuesInSolidity", function () {
-  let contract: DecryptMultipleValuesInSolidity;
+describe("PublicDecryptMultipleValues", function () {
+  let contract: PublicDecryptMultipleValues;
   let signers: Signers;
 
   before(async function () {
@@ -156,28 +158,28 @@ describe("DecryptMultipleValuesInSolidity", function () {
   beforeEach(async function () {
     // Deploy a new contract each time we run a new test
     const deployment = await deployFixture();
-    contract = deployment.decryptMultipleValuesInSolidity;
+    contract = deployment.publicDecryptMultipleValues;
   });
 
   // ✅ Test should succeed
-  it("decryption should succeed", async function () {
-    // For simplicity, we create 3 trivially encrypted values on-chain.
+  it("public decryption should succeed", async function () {
+    // For simplicity, we create 3 trivialy encrypted values onchain.
     let tx = await contract.connect(signers.alice).initialize(true, 123456, 78901234567);
     await tx.wait();
 
     tx = await contract.requestDecryptMultipleValues();
     await tx.wait();
 
-    // We use the FHEVM Hardhat plugin to simulate the asynchronous on-chain
-    // decryption
+    // We use the FHEVM Hardhat plugin to simulate the asynchronous onchain
+    // public decryption
     const fhevm: HardhatFhevmRuntimeEnvironment = hre.fhevm;
 
-    // Use the built-in `awaitDecryptionOracle` helper to wait for the FHEVM decryption oracle
-    // to complete all pending Solidity decryption requests.
+    // Use the built-in `awaitDecryptionOracle` helper to wait for the FHEVM public decryption oracle
+    // to complete all pending Solidity public decryption requests.
     await fhevm.awaitDecryptionOracle();
 
     // At this point, the Solidity callback should have been invoked by the FHEVM backend.
-    // We can now retrieve the 3 decrypted (clear) values.
+    // We can now retrieve the 3 publicly decrypted (clear) values.
     const clearBool = await contract.clearBool();
     const clearUint32 = await contract.clearUint32();
     const clearUint64 = await contract.clearUint64();

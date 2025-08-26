@@ -11,7 +11,7 @@ use connector_utils::{
     types::{KmsGrpcRequest, KmsGrpcResponse},
 };
 use kms_grpc::{
-    kms::v1::{Empty, PublicDecryptionRequest, UserDecryptionRequest},
+    kms::v1::{Empty, PublicDecryptionRequest, RequestId, UserDecryptionRequest},
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
 use std::time::{Duration, Instant};
@@ -21,8 +21,8 @@ use tracing::{info, warn};
 /// The struct handling the communication with the KMS Core.
 #[derive(Clone, Debug)]
 pub struct KmsClient {
-    /// The internal KMS Core client from the `kms_grpc` crate.
-    inner: CoreServiceEndpointClient<Channel>,
+    /// The internal KMS Core clients from the `kms_grpc` crate.
+    inners: Vec<CoreServiceEndpointClient<Channel>>,
 
     /// Number of retries for GRPC requests sent to the KMS Core.
     grpc_request_retries: u8,
@@ -38,17 +38,20 @@ pub struct KmsClient {
 }
 
 impl KmsClient {
-    /// Creates a new instance of `KmsClient`.
     pub fn new(
-        channel: Channel,
+        channels: Vec<Channel>,
         grpc_request_retries: u8,
         public_decryption_timeout: Duration,
         user_decryption_timeout: Duration,
         grpc_poll_interval: Duration,
     ) -> Self {
-        let inner = CoreServiceEndpointClient::new(channel);
+        let inners = channels
+            .into_iter()
+            .map(CoreServiceEndpointClient::new)
+            .collect();
+
         Self {
-            inner,
+            inners,
             grpc_request_retries,
             public_decryption_timeout,
             user_decryption_timeout,
@@ -56,27 +59,37 @@ impl KmsClient {
         }
     }
 
-    /// Connects to the KMS Core.
+    /// Connects to all the KMS Core shards.
     pub async fn connect(config: &Config) -> anyhow::Result<Self> {
-        let kms_core_endpoint = &config.kms_core_endpoint;
-        let grpc_endpoint = Channel::from_shared(kms_core_endpoint.to_string())
-            .map_err(|e| anyhow!("Invalid KMS Core endpoint {kms_core_endpoint}: {e}"))?;
+        let mut channels = vec![];
+        for (i, kms_shard_endpoint) in config.kms_core_endpoints.iter().enumerate() {
+            channels.push(KmsClient::connect_single_shard(i, kms_shard_endpoint).await?);
+        }
+
+        Ok(Self::new(
+            channels,
+            config.grpc_request_retries,
+            config.public_decryption_timeout,
+            config.user_decryption_timeout,
+            config.grpc_poll_interval,
+        ))
+    }
+
+    async fn connect_single_shard(shard_id: usize, endpoint: &str) -> anyhow::Result<Channel> {
+        let grpc_endpoint = Channel::from_shared(endpoint.to_string())
+            .map_err(|e| anyhow!("Invalid KMS Core shard endpoint #{shard_id} {endpoint}: {e}"))?;
 
         for i in 1..=CONNECTION_RETRY_NUMBER {
-            info!("Attempting connection to KMS Core... ({i}/{CONNECTION_RETRY_NUMBER})");
+            info!(
+                "Attempting connection to KMS Core shard #{shard_id}... ({i}/{CONNECTION_RETRY_NUMBER})"
+            );
 
             match grpc_endpoint.connect().await {
                 Ok(channel) => {
-                    info!("Connected to KMS Core at {kms_core_endpoint}");
-                    return Ok(Self::new(
-                        channel,
-                        config.grpc_request_retries,
-                        config.public_decryption_timeout,
-                        config.user_decryption_timeout,
-                        config.grpc_poll_interval,
-                    ));
+                    info!("Connected to KMS Core shard #{shard_id} at {endpoint}");
+                    return Ok(channel);
                 }
-                Err(e) => warn!("KMS Core connection attempt #{i} failed: {e}"),
+                Err(e) => warn!("KMS Core shard #{shard_id} connection attempt #{i} failed: {e}"),
             }
 
             if i != CONNECTION_RETRY_NUMBER {
@@ -85,7 +98,7 @@ impl KmsClient {
         }
 
         Err(anyhow!(
-            "Could not connect to KMS Core at {kms_core_endpoint}"
+            "Could not connect to KMS Core shard #{shard_id} at {endpoint}"
         ))
     }
 
@@ -103,7 +116,6 @@ impl KmsClient {
         }
     }
 
-    /// Sends a public decryption request to the KMS Core.
     async fn request_public_decryption(
         &mut self,
         request: PublicDecryptionRequest,
@@ -124,10 +136,11 @@ impl KmsClient {
         }
 
         // Send initial request with retries
+        let inner_client = self.choose_client(request_id.clone());
         send_request_with_retry(self.grpc_request_retries, || {
-            let mut inner_client = self.inner.clone();
+            let mut client = inner_client.clone();
             let request = request.clone();
-            async move { inner_client.public_decrypt(request).await }
+            async move { client.public_decrypt(request).await }
         })
         .await?;
 
@@ -137,8 +150,8 @@ impl KmsClient {
             self.grpc_poll_interval,
             || {
                 let request = Request::new(request_id.clone());
-                let mut inner_client = self.inner.clone();
-                async move { inner_client.get_public_decryption_result(request).await }
+                let mut client = inner_client.clone();
+                async move { client.get_public_decryption_result(request).await }
             },
         )
         .await?;
@@ -146,7 +159,6 @@ impl KmsClient {
         KmsGrpcResponse::try_from((request_id, grpc_response))
     }
 
-    /// Sends a user decryption request to the KMS Core.
     async fn request_user_decryption(
         &mut self,
         request: UserDecryptionRequest,
@@ -175,10 +187,11 @@ impl KmsClient {
         );
 
         // Send initial request with retries
+        let inner_client = self.choose_client(request_id.clone());
         send_request_with_retry(self.grpc_request_retries, || {
-            let mut inner_client = self.inner.clone();
+            let mut client = inner_client.clone();
             let request = request.clone();
-            async move { inner_client.user_decrypt(request).await }
+            async move { client.user_decrypt(request).await }
         })
         .await?;
 
@@ -187,18 +200,26 @@ impl KmsClient {
             self.user_decryption_timeout,
             self.grpc_poll_interval,
             || {
+                let mut client = inner_client.clone();
                 let request = Request::new(request_id.clone());
-                let mut inner_client = self.inner.clone();
-                async move { inner_client.get_user_decryption_result(request).await }
+                async move { client.get_user_decryption_result(request).await }
             },
         )
         .await?;
 
         KmsGrpcResponse::try_from((request_id, grpc_response))
     }
+
+    fn choose_client(&self, request_id: RequestId) -> CoreServiceEndpointClient<Channel> {
+        let request_id = request_id.request_id.parse::<usize>().unwrap_or_else(|_| {
+            warn!("Failed to parse request ID. Sending request to shard 0 by default");
+            0
+        });
+        let client_index = request_id % self.inners.len();
+        self.inners[client_index].clone()
+    }
 }
 
-/// Sends a GRPC request with retry.
 #[tracing::instrument(skip_all)]
 async fn send_request_with_retry<F, Fut>(retries: u8, mut request_fn: F) -> anyhow::Result<()>
 where

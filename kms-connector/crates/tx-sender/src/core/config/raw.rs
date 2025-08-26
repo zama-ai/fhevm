@@ -3,7 +3,7 @@
 //! The `RawConfig` can then be parsed into a `Config` in the `parsed` module.
 
 use connector_utils::{
-    config::{AwsKmsConfig, DeserializeRawConfig, RawContractConfig},
+    config::{AwsKmsConfig, DeserializeRawConfig, RawContractConfig, default_database_pool_size},
     monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
@@ -43,10 +43,6 @@ pub struct RawConfig {
 
 fn default_service_name() -> String {
     "kms-connector-tx-sender".to_string()
-}
-
-fn default_database_pool_size() -> u32 {
-    16
 }
 
 fn default_database_polling_timeout_secs() -> u64 {

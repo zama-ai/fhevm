@@ -1,9 +1,9 @@
 use crate::monitoring::metrics::EVENT_STORED_COUNTER;
 use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, db::SnsCiphertextMaterialDbItem};
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kmsmanagement::KmsManagement::{
+    kms_management::KmsManagement::{
         CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
         PreprocessKskgenRequest,
     },

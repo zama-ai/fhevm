@@ -36,6 +36,8 @@ const RETRY_GET_LOGS_DELAY_IN_MS: u64 = 100;
 const REORG_RETRY_GET_BLOCK: u64 = 10; // retry 10 times to get logs for a block
 const RETRY_GET_BLOCK_DELAY_IN_MS: u64 = 100;
 
+const DEFAULT_BLOCK_TIME: u64 = 12;
+
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
@@ -86,7 +88,7 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value = "5",
+        default_value_t = DEFAULT_BLOCK_TIME,
         help = "Initial block time, refined on each block"
     )]
     pub initial_block_time: u64,
@@ -305,12 +307,13 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn recheck_block(&mut self, block: Option<BlockSummary>) -> bool {
+    async fn recheck_tip_block(&mut self) {
+        let block = self.block_history.tip();
         if self.no_block_immediate_recheck {
-            return false;
+            return;
         }
         let Some(block) = block else {
-            return false;
+            return;
         };
         let logs = match self.get_logs_at_hash(block.hash).await {
             Ok(logs) => logs,
@@ -321,7 +324,7 @@ impl InfiniteLogIter {
                     block_hash = ?block.hash,
                     "Error, Replaying Block"
                 );
-                return false;
+                return;
             }
         };
         let last_block_event_count = self.last_block_event_count;
@@ -333,14 +336,13 @@ impl InfiniteLogIter {
             "Replaying Block"
         );
         if logs.is_empty() {
-            return false;
+            return;
         }
         self.last_block_event_count = 0;
         self.catchup_logs.extend(logs);
         if let Some(event) = self.current_event.take() {
             self.catchup_logs.push_back(event);
         }
-        true
     }
 
     async fn get_current_block(&self) -> Result<Block> {
@@ -502,28 +504,30 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn check_missing_ancestors(&mut self) -> bool {
-        let current_block_hash =
-            self.current_event.as_ref().and_then(|e| e.block_hash);
+    async fn check_missing_ancestors(
+        &mut self,
+        event_block_hash: Option<BlockHash>,
+    ) {
+        let has_event = event_block_hash.is_some();
         let mut current_block = None;
-        let current_block_hash = if current_block_hash.is_none() {
-            // if no info is available we do the check+catchup from current block
+        let current_block_hash = if has_event {
+            event_block_hash
+        } else {
+            // if no event is available we do the check+catchup from current block
             // can happens in block timeout
             current_block = self.get_current_block().await.ok();
             current_block.as_ref().map(|b| b.header.hash)
-        } else {
-            current_block_hash
         };
         let Some(current_block_hash) = current_block_hash else {
             // Cannot happen, but just in case
             error!("Check missing ancestors. No current block hash, skipping the check");
-            return false;
+            return;
         };
         if self
             .block_history
             .block_has_not_changed(&current_block_hash)
         {
-            return false;
+            return;
         }
         // starting the detection
         let current_block = match current_block {
@@ -537,28 +541,22 @@ impl InfiniteLogIter {
                             current_block_hash = ?current_block_hash,
                             "Reorg. Cannot get current block, cannot detect reorgs",
                         );
-                        return false; // no reorg
+                        return; // no reorg
                     }
                 },
             },
         };
-        let current_block_summary = current_block.into();
-        if self.current_event.is_some() {
-            // we don't add to history from which we have no event
-            // e.g. at timeout, because empty blocks are not get_logs
-            self.block_history.add_block(current_block_summary);
-        }
-
         if !self.block_history.is_ready_to_detect_reorg() {
             // at fresh restart no ancestor are known
-            return false;
+            return;
         }
 
+        let current_block_summary = current_block.into();
         let missing_blocks =
             self.get_missings_ancestors(current_block_summary).await;
 
         if missing_blocks.is_empty() {
-            return false; // no reorg
+            return; // no reorg
         }
         warn!(
             nb_missing_blocks = missing_blocks.len(),
@@ -567,9 +565,12 @@ impl InfiniteLogIter {
         self.populate_catchup_logs_from_missing_blocks(missing_blocks)
             .await;
         // let's maintain the tip block by re-adding at end
-        self.block_history.add_block(current_block_summary);
+        // we don't add to history from which we have no event
+        // e.g. at timeout, because empty blocks are not get_logs
+        if has_event {
+            self.block_history.add_block(current_block_summary);
+        }
         warn!("Missing ancestors catchup done.");
-        true
     }
 
     async fn new_log_stream(&mut self, not_initialized: bool) {
@@ -708,37 +709,38 @@ impl InfiniteLogIter {
                         return None;
                     }
                     info!(log = ?log, "Log event");
-                    let block_hash_or_0 = log.block_hash.unwrap_or_default();
+                    let block_hash = log.block_hash;
+                    let block_hash_or_0 = block_hash.unwrap_or_default();
                     let is_first_of_block = !self
                         .block_history
                         .block_has_not_changed(&block_hash_or_0);
                     self.current_event = Some(log);
                     if is_first_of_block {
                         self.tick_block.update();
+                        self.recheck_tip_block().await;
+                        self.check_missing_ancestors(block_hash).await;
+                        if self.current_event.is_none() {
+                            // current log has been pushed in catchup_logs
+                            // after events from previous block (recheck or reorg)
+                            continue; // jump to process events from catchup_logs
+                        }
+                        if let Some(block_time) =
+                            self.block_history.estimated_block_time()
+                        {
+                            self.block_time = block_time;
+                        }
                     }
-                    // check reorgs update the block history
-                    let reorg_planned = self.check_missing_ancestors().await;
-                    let prev_block = self.block_history.tip();
-                    let recheck_planned = is_first_of_block
-                        && self.recheck_block(prev_block).await;
-                    if reorg_planned || recheck_planned {
-                        // current log is delayed and pushed to be replayed
-                        // after the previous block in catchup
-                        continue; // jump to the first event of catchup phase
-                    } else {
-                        break;
-                    }
+                    break; // we have a log to process
                 }
                 LogOrBlockTimeout::BlockTimeout => {
                     self.tick_timeout.update();
-                    let prev_block = self.block_history.tip();
                     // check reorgs update the block history
                     warn!(
                         block_time = self.block_time,
                         "Block timeout, checking for missing ancestors"
                     );
-                    self.check_missing_ancestors().await;
-                    self.recheck_block(prev_block).await;
+                    self.recheck_tip_block().await;
+                    self.check_missing_ancestors(None).await;
                     continue;
                 }
             }
@@ -755,28 +757,6 @@ impl InfiniteLogIter {
                 current_event.block_number != prev_event.block_number
             }
             _ => false,
-        }
-    }
-
-    fn reestimated_block_time(&mut self) {
-        let Some(Log {
-            block_timestamp: Some(curr_t),
-            block_number: Some(curr_n),
-            ..
-        }) = &self.current_event
-        else {
-            return;
-        };
-        let Some(Log {
-            block_timestamp: Some(prev_t),
-            block_number: Some(prev_n),
-            ..
-        }) = &self.prev_event
-        else {
-            return;
-        };
-        if curr_n > prev_n && curr_t > prev_t {
-            self.block_time = (curr_t - prev_t) / (curr_n - prev_n);
         }
     }
 }
@@ -875,7 +855,6 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
     let mut block_tfhe_errors = 0;
     while let Some(log) = log_iter.next().await {
         if log_iter.is_first_of_block() {
-            log_iter.reestimated_block_time();
             if let Some(block_number) = log.block_number {
                 if block_tfhe_errors == 0 {
                     let last_valid_block = db
