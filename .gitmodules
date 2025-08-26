@@ -5,6 +5,3 @@
 [submodule "apps/relayer/fhevm-relayer/hardhat/contracts/lib/forge-std"]
 	path = apps/relayer/fhevm-relayer/hardhat/contracts/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
-[submodule "apps/relayer/fhevm-relayer/contracts/gateway-l2"]
-	path = apps/relayer/contracts/gateway-l2
-	url = git@github.com:zama-ai/gateway-l2.git
