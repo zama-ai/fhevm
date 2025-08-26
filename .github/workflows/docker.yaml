@@ -75,12 +75,6 @@ jobs:
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'docker/front/**'
-            relayer:
-              - 'apps/relayer/**'
-              - 'docker/relayer/**'
-            relayer-migrate:
-              - 'apps/relayer/**'
-              - 'docker/relayer-migrate/**'
           list-files: json
   
   
@@ -103,7 +97,6 @@ jobs:
       packages: write
       contents: read
     steps:
-      # TODO: remove this when we separate the relayer service from the console
       - name: Map Service Variables
         uses: kanga333/variable-mapper@3681b75f5c6c00162721168fb91ab74925eaebcb # v0.3.0
         id: vars
@@ -116,8 +109,6 @@ jobs:
               "orchestrator":   { "context": ".", "cargo_git_cli": "false" },
               "web3":           { "context": ".", "cargo_git_cli": "false" },
               "front":          { "context": ".", "cargo_git_cli": "false" },
-              "relayer":        { "context": "./apps/relayer", "cargo_git_cli": "true"  },
-              "relayer-migrate":{ "context": "./apps/relayer", "cargo_git_cli": "true"  }
             }
 
       - name: Checkout Project

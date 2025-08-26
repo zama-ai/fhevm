@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./apps/relayer/fhevm-relayer/oracle
+        working-directory: ./apps/relayer/oracle
     permissions:
       contents: read
       id-token: write

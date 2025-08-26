@@ -1,28 +1,28 @@
-name: "Docker - fhevm Relayer"
+name: "Docker - Relayer"
 
 on:
   pull_request:
     paths:
       - .github/workflows/docker_relayer.yml
-      - apps/relayer/fhevm-relayer/src/**
-      - apps/relayer/fhevm-relayer/config/**
-      - apps/relayer/fhevm-relayer/Dockerfile
-      - apps/relayer/fhevm-relayer/.hadolint.yaml
-      - apps/relayer/fhevm-relayer/Makefile
-      - apps/relayer/fhevm-relayer/Cargo.toml
-      - apps/relayer/fhevm-relayer/Cargo.lock
+      - apps/relayer/src/**
+      - apps/relayer/config/**
+      - apps/relayer/Dockerfile
+      - apps/relayer/.hadolint.yaml
+      - apps/relayer/Makefile
+      - apps/relayer/Cargo.toml
+      - apps/relayer/Cargo.lock
   push:
     branches:
       - main
     paths:
       - .github/workflows/docker_relayer.yml
-      - apps/relayer/fhevm-relayer/src/**
-      - apps/relayer/fhevm-relayer/config/**
-      - apps/relayer/fhevm-relayer/Dockerfile
-      - apps/relayer/fhevm-relayer/.hadolint.yaml
-      - apps/relayer/fhevm-relayer/Makefile
-      - apps/relayer/fhevm-relayer/Cargo.toml
-      - apps/relayer/fhevm-relayer/Cargo.lock
+      - apps/relayer/src/**
+      - apps/relayer/config/**
+      - apps/relayer/Dockerfile
+      - apps/relayer/.hadolint.yaml
+      - apps/relayer/Makefile
+      - apps/relayer/Cargo.toml
+      - apps/relayer/Cargo.lock
   release:
     types:
       - published
@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   docker-relayer:
-    if: ${{ github.event_name != 'release' || startsWith(github.ref_name, 'fhevm-relayer') }}
+    if: ${{ github.event_name != 'release' || startsWith(github.ref_name, 'relayer') }}
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@4d722297aae4626adec8eb5d678dc00a2adc0a72 # main
     secrets:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
@@ -43,14 +43,14 @@ jobs:
       id-token: "write"
       packages: "write"
     with:
-      working-directory: "apps/relayer/fhevm-relayer"
-      docker-context: "apps/relayer/fhevm-relayer"
+      working-directory: "apps/relayer"
+      docker-context: "apps/relayer"
       push_image: true
-      image-name: "console/fhevm-relayer"
+      image-name: "console/relayer"
       docker-file: "Dockerfile"
       arm-build: true
   docker-oracle:
-    if: ${{ github.event_name != 'release' || startsWith(github.ref_name, 'fhevm-relayer') }}
+    if: ${{ github.event_name != 'release' || startsWith(github.ref_name, 'relayer') }}
     uses: zama-ai/ci-templates/.github/workflows/docker_common.yml@4d722297aae4626adec8eb5d678dc00a2adc0a72 # main
     secrets:
       GHCR_ACTION_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
@@ -61,9 +61,9 @@ jobs:
       packages: "write"
     with:
       ref: 
-      working-directory: "apps/relayer/fhevm-relayer/oracle"
-      docker-context: "apps/relayer/fhevm-relayer/oracle"
+      working-directory: "apps/relayer/oracle"
+      docker-context: "apps/relayer/oracle"
       push_image: true
-      image-name: "console/fhevm-relayer-decryption-oracle-contracts"
+      image-name: "console/relayer-decryption-oracle-contracts"
       docker-file: "Dockerfile"
       arm-build: true

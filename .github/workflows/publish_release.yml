@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/relayer/fhevm-relayer
+        working-directory: apps/relayer
     outputs:
       hash: ${{ steps.hash.outputs.hash }}
     steps:
@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/relayer/fhevm-relayer
+        working-directory: apps/relayer
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
