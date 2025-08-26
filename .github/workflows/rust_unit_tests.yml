@@ -2,8 +2,6 @@ name: Rust Unit Tests
 
 on:
   pull_request:
-    paths:
-      - "apps/relayer/fhevm-relayer"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
@@ -14,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: apps/relayer/fhevm-relayer
+        working-directory: apps/relayer
     env:
       RUST_BACKTRACE: 1
 

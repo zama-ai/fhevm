@@ -2,8 +2,6 @@ name: Rust Linting
 
 on:
   pull_request:
-    paths:
-    - "apps/relayer/fhevm-relayer"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
