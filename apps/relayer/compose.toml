@@ -1,4 +1,0 @@
-[queues]
-console_queue = "http://console-aws:4566/000000000000/orchestrator-queue"
-relayer_queue = "http://console-aws:4566/000000000000/relayer-queue"
-transaction_queue = "http://console-aws:4566/000000000000/tx-manager-queue"
