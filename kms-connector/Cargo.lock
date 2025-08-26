@@ -3037,24 +3037,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "connector-tests"
-version = "0.8.0"
-dependencies = [
- "alloy 1.0.9",
- "anyhow",
- "connector-utils",
- "gw-listener",
- "kms-worker",
- "rstest",
- "sqlx",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tracing",
- "tx-sender",
-]
-
-[[package]]
 name = "connector-utils"
 version = "0.8.0"
 dependencies = [
@@ -4858,6 +4840,7 @@ dependencies = [
  "alloy 1.0.9",
  "anyhow",
  "bincode 1.3.3",
+ "config",
  "connector-utils",
  "dashmap",
  "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-2)",
