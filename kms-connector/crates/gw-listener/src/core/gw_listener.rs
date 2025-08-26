@@ -14,7 +14,7 @@ use connector_utils::{
     tasks::spawn_with_limit,
     types::GatewayEvent,
 };
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     kms_management::KmsManagement::{self, KmsManagementInstance},
 };
@@ -246,7 +246,7 @@ mod tests {
         },
     };
     use anyhow::Result;
-    use fhevm_gateway_rust_bindings::{
+    use fhevm_gateway_bindings::{
         decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
         kms_management::KmsManagement::{
             CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,

@@ -1971,9 +1971,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "fhevm_gateway_rust_bindings"
+name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://git@github.com/zama-ai/fhevm.git?rev=2d994c9651b8f141a3ca080c82f5eef2b74577ab#2d994c9651b8f141a3ca080c82f5eef2b74577ab"
+source = "git+https://git@github.com/zama-ai/fhevm.git?rev=2c9fb79fa557feb4c113f1482f0a4805e9d6acac#2c9fb79fa557feb4c113f1482f0a4805e9d6acac"
 dependencies = [
  "alloy",
  "serde",
@@ -2167,7 +2167,7 @@ dependencies = [
  "bc2wrap",
  "bincode 1.3.3",
  "crypto_box",
- "fhevm_gateway_rust_bindings",
+ "fhevm_gateway_bindings",
  "futures-util",
  "hex",
  "kms",

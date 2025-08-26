@@ -16,7 +16,7 @@ name = "fhevm-demo"
 path = "src/main.rs"
 
 [dependencies]
-fhevm_gateway_rust_bindings = { git = "https://git@github.com/zama-ai/fhevm.git", rev = "2d994c9651b8f141a3ca080c82f5eef2b74577ab", default-features = false }
+fhevm_gateway_bindings = { git = "https://git@github.com/zama-ai/fhevm.git", rev = "2c9fb79fa557feb4c113f1482f0a4805e9d6acac", default-features = false }
 kms = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.11.0-26", default-features = false }
 kms-grpc = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.11.0-26", default-features = false }
 bc2wrap = { git = "https://git@github.com/zama-ai/kms.git", tag = "v0.11.0-26", default-features = false }

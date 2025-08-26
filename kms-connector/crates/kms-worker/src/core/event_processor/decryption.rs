@@ -13,7 +13,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::KmsGrpcRequest;
-use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
+use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use kms_grpc::kms::v1::{
     PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };

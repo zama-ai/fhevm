@@ -7,7 +7,7 @@ publish.workspace = true
 version.workspace = true
 
 [dependencies]
-fhevm_gateway_rust_bindings.workspace = true
+fhevm_gateway_bindings.workspace = true
 kms-grpc.workspace = true
 tfhe.workspace = true
 
