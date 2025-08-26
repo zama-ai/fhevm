@@ -615,7 +615,7 @@ FOR UPDATE SKIP LOCKED            ",
                     .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
             );
 
-            let _ = sqlx::query(
+            let _ = sqlx::query!(
                 "
                 UPDATE computations
                 SET is_completed = true, completed_at = CURRENT_TIMESTAMP
@@ -624,19 +624,15 @@ FOR UPDATE SKIP LOCKED            ",
                     SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
                 )
                 ",
-            )
-            .bind(*tenant_id)
-            .bind(
-                handles_to_update
+                *tenant_id,
+                &handles_to_update
                     .iter()
                     .map(|(handle, _)| handle.clone())
                     .collect::<Vec<_>>(),
-            )
-            .bind(
-                handles_to_update
+                &handles_to_update
                     .iter()
                     .map(|(_, txn_id)| txn_id.clone())
-                    .collect::<Vec<_>>(),
+                    .collect::<Vec<_>>()
             )
             .execute(trx.as_mut())
             .await?;
@@ -649,20 +645,18 @@ FOR UPDATE SKIP LOCKED            ",
                     .iter()
                     .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
             );
-            let _ = sqlx::query(
+            let _ = sqlx::query!(
                 "
                     UPDATE allowed_handles
                     SET is_computed = TRUE
                     WHERE tenant_id = $1
                     AND handle = ANY($2::BYTEA[])
                     ",
-            )
-            .bind(*tenant_id)
-            .bind(
-                handles_to_update
+                *tenant_id,
+                &handles_to_update
                     .iter()
-                    .map(|(h, _)| (h))
-                    .collect::<Vec<_>>(),
+                    .map(|(handle, _)| handle.clone())
+                    .collect::<Vec<_>>()
             )
             .execute(trx.as_mut())
             .await?;
