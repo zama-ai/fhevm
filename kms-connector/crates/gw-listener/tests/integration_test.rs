@@ -9,7 +9,7 @@ use connector_utils::tests::{
     },
 };
 use connector_utils::types::db::SnsCiphertextMaterialDbItem;
-use fhevm_gateway_rust_bindings::decryption::IDecryption::{ContractsInfo, RequestValidity};
+use fhevm_gateway_bindings::decryption::IDecryption::{ContractsInfo, RequestValidity};
 use gw_listener::core::{Config, DbEventPublisher, GatewayListener};
 use rstest::rstest;
 use sqlx::Row;

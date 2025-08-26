@@ -1154,7 +1154,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde 0.13.0",
  "alloy-sol-types 0.8.25",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -1174,7 +1174,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde 1.0.9",
  "alloy-sol-types 1.1.2",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -3049,7 +3049,7 @@ dependencies = [
  "bincode 1.3.3",
  "clap",
  "config",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-2)",
+ "fhevm_gateway_bindings",
  "futures",
  "git-version",
  "kms-grpc 0.11.0-26",
@@ -3721,20 +3721,20 @@ dependencies = [
 ]
 
 [[package]]
-name = "fhevm_gateway_rust_bindings"
+name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.7.12#28205828daa84b6ef429703e4aa751036d000e97"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=2c9fb79fa557feb4c113f1482f0a4805e9d6acac#2c9fb79fa557feb4c113f1482f0a4805e9d6acac"
 dependencies = [
- "alloy 0.13.0",
+ "alloy 1.0.9",
  "serde",
 ]
 
 [[package]]
 name = "fhevm_gateway_rust_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-2#64c846d424d5517480034b2e59e73d3556f1d0cb"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.7.12#28205828daa84b6ef429703e4aa751036d000e97"
 dependencies = [
- "alloy 1.0.9",
+ "alloy 0.13.0",
  "serde",
 ]
 
@@ -4068,7 +4068,7 @@ dependencies = [
  "alloy 1.0.9",
  "anyhow",
  "connector-utils",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-2)",
+ "fhevm_gateway_bindings",
  "prometheus",
  "rstest",
  "serde",
@@ -4765,7 +4765,7 @@ dependencies = [
  "clap",
  "config",
  "dashmap",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.7.12)",
+ "fhevm_gateway_rust_bindings",
  "futures",
  "kms-grpc 0.11.0-21",
  "serde",
@@ -4843,7 +4843,7 @@ dependencies = [
  "config",
  "connector-utils",
  "dashmap",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-2)",
+ "fhevm_gateway_bindings",
  "kms-grpc 0.11.0-26",
  "prometheus",
  "rstest",
@@ -4898,7 +4898,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.53.3",
 ]
 
 [[package]]
@@ -5822,7 +5822,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "once_cell",
@@ -5842,7 +5842,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
@@ -8170,7 +8170,7 @@ dependencies = [
  "alloy 1.0.9",
  "anyhow",
  "connector-utils",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-2)",
+ "fhevm_gateway_bindings",
  "prometheus",
  "rstest",
  "serde",

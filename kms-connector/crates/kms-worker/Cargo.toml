@@ -8,7 +8,7 @@ version.workspace = true
 
 [dependencies]
 connector-utils.workspace = true
-fhevm_gateway_rust_bindings.workspace = true
+fhevm_gateway_bindings.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true

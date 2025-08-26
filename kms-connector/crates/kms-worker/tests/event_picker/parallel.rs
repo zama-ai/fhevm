@@ -5,7 +5,7 @@ use connector_utils::{
     tests::{rand::rand_sns_ct, setup::TestInstanceBuilder},
     types::{GatewayEvent, db::SnsCiphertextMaterialDbItem},
 };
-use fhevm_gateway_rust_bindings::decryption::Decryption::PublicDecryptionRequest;
+use fhevm_gateway_bindings::decryption::Decryption::PublicDecryptionRequest;
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use tokio::time::timeout;
 

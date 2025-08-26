@@ -4,7 +4,7 @@ use crate::utils::{parse_hex_string, validate_address_from_str};
 use crate::{FhevmError, Result};
 use alloy::primitives::Address;
 use alloy::signers::Signature;
-use fhevm_gateway_rust_bindings::decryption::Decryption::CtHandleContractPair;
+use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
 use kms_grpc::kms::v1::{Eip712DomainMsg, TypedPlaintext};
 use kms_grpc::rpc_types::protobuf_to_alloy_domain;
 use kms_lib::client::js_api::{new_client, new_server_id_addr};
@@ -23,7 +23,7 @@ use tracing::{debug, info};
 /// # Example
 ///
 /// ```no_run
-/// # use fhevm_gateway_rust_bindings::decryption::Decryption::CtHandleContractPair;
+/// # use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
 /// # use gateway_sdk::decryption::user::process_user_decryption_response;
 /// # use gateway_sdk::FhevmError;
 /// # use alloy::primitives::{Address, U256};

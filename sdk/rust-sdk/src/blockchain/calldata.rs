@@ -4,11 +4,11 @@ use crate::Result;
 use crate::decryption::user::UserDecryptRequest;
 use alloy::primitives::{Address, Bytes, FixedBytes, U256};
 use alloy::sol_types::SolCall;
-use fhevm_gateway_rust_bindings::decryption::Decryption::{
+use fhevm_gateway_bindings::decryption::Decryption::{
     publicDecryptionRequestCall, userDecryptionRequestCall,
 };
-use fhevm_gateway_rust_bindings::decryption::IDecryption::ContractsInfo;
-use fhevm_gateway_rust_bindings::input_verification::InputVerification;
+use fhevm_gateway_bindings::decryption::IDecryption::ContractsInfo;
+use fhevm_gateway_bindings::input_verification::InputVerification;
 use tracing::info;
 
 pub fn public_decryption_req(handles: Vec<FixedBytes<32>>) -> Result<Bytes> {
