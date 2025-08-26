@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                UPDATE allowed_handles\n                SET is_computed = TRUE\n                WHERE handle = $1;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f532521352dee5faca35692313343cd82938c6790a6f47ed2321dafb70b57760"
+}
