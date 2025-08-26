@@ -57,11 +57,23 @@ services:
   # Deploy gateway mock smart contracts
   gateway-sc-deploy:
     container_name: fhevm-gateway-sc-deploy-mock
-    image: ghcr.io/zama-ai/fhevm/gateway-contracts:v0.7.0-rc0
+    image: ghcr.io/zama-ai/fhevm/gateway-contracts:v0.8.0-3-dev
+    init: true
+    restart: no
     env_file:
       - ./.env.gateway
     command:
-      - npx hardhat task:deployGatewayMockContracts
+      - |
+        npx hardhat task:deployGatewayMockContracts &&
+        touch /tmp/done &&
+        sleep 100
+    healthcheck:
+      test: [ "CMD", "test", "-f", "/tmp/done" ]
+      interval: 5s
+      timeout: 1s
+      retries: 240
+      start_period: 60s
+
     depends_on:
       anvil-gateway:
         condition: service_started

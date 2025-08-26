@@ -40,6 +40,7 @@ mod tests {
             "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
             "ciphertextWithInputVerification": "abcdef",
             "requestId": request_id.to_string(),
+                "extraData": "0x00"
             },
             "type": "relayer:input-registration:input-registration-request",
         });
@@ -88,7 +89,8 @@ mod tests {
                 "contractChainId": "123456",
                 "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
                 "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "aaaaaaaaaaaa"
+                "ciphertextWithInputVerification": "aaaaaaaaaaaa",
+                "extraData": "0x00"
             }))
             .send()
             .await
@@ -115,13 +117,14 @@ mod tests {
                 "contractChainId": "123456",
                 "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
                 "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "abcdef"
+                "ciphertextWithInputVerification": "abcdef",
+                "extraData": "0x00"
             }))
             .send()
             .await
             .map_err(|e| format!("Input proof that was supposed to be accepted failed.: {e}"))
             .unwrap();
-        assert_eq!(res.status(), 200);
+        assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
         let after_time = tokio::time::Instant::now();
         // NOTE: this duration is a bit biased by the fact that other queries might launched in
         // parallel due to the parallelization of the tests
@@ -144,11 +147,12 @@ mod tests {
                         .header("Content-Type", "application/json")
                         .timeout(std::time::Duration::from_secs(5))
                         .json(&json!({
-                            "contractChainId": "123456",
-                            "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
-                            "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                            "ciphertextWithInputVerification": "abcdef"
-                        }))
+                                    "contractChainId": "123456",
+                                    "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
+                                    "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
+                                    "ciphertextWithInputVerification": "abcdef",
+                        "extraData": "0x00"
+                                }))
                         .send()
                         .await,
                     i,
@@ -170,7 +174,7 @@ mod tests {
                 })
                 .unwrap();
             let result = result.unwrap();
-            assert_eq!(result.status(), 200);
+            assert_eq!(result.status(), 200, "{}", result.text().await.unwrap());
             println!("{index} request is ok");
         }
 
@@ -195,7 +199,8 @@ mod tests {
                 "contractChainId": "123456",
                 "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
                 "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": ""
+                "ciphertextWithInputVerification": "",
+                "extraData": "0x00"
             }))
             .send()
             .await
@@ -222,7 +227,8 @@ mod tests {
                 "contractChainId": "0",
                 "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
                 "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "abcdef"
+                "ciphertextWithInputVerification": "abcdef",
+                "extraData": "0x00"
             }))
             .send()
             .await
@@ -252,7 +258,8 @@ mod tests {
                 "contractChainId": "123456",
                 "contractAddress": "0xfds",
                 "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "abcdef"
+                "ciphertextWithInputVerification": "abcdef",
+                "extraData": "0x00"
             }))
             .send()
             .await
@@ -279,7 +286,8 @@ mod tests {
                 "contractChainId": "123456",
                 "contractAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
                 "userAddress": "0xfds",
-                "ciphertextWithInputVerification": "abcdef"
+                "ciphertextWithInputVerification": "abcdef",
+                "extraData": "0x00"
             }))
             .send()
             .await
@@ -306,7 +314,8 @@ mod tests {
                 "contractChainId": "123456",
                 "contractAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
                 "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "abcdefabcdefs"
+                "ciphertextWithInputVerification": "abcdefabcdefs",
+                "extraData": "0x00"
             }))
             .send()
             .await
@@ -336,20 +345,20 @@ mod tests {
     async fn test_user_single_request(payload: serde_json::Value) {
         let client = reqwest::Client::new();
         let (res, _response_time) = helpers::post_user_decrypt(&client, &payload, 10).await;
-        assert_eq!(res.status(), 200);
+        assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
         println!("Single user decrypt request completed.");
     }
 
     async fn test_user_sequential_requests(payload: serde_json::Value) {
         let client = reqwest::Client::new();
         let (res, response_time) = helpers::post_user_decrypt(&client, &payload, 10).await;
-        assert_eq!(res.status(), 200);
+        assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
         println!("First public decrypt request took: {:?}", response_time);
 
         let mut response_times_micros = Vec::new();
         for i in 0..3 {
             let (res, response_time) = helpers::post_user_decrypt(&client, &payload, 1).await;
-            assert_eq!(res.status(), 200);
+            assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
             response_times_micros.push(response_time.as_micros());
             println!(
                 "Sequential user decrypt request {} completed in {:?}.",
@@ -379,21 +388,21 @@ mod tests {
     async fn test_single_request(payload: serde_json::Value) {
         let client = reqwest::Client::new();
         let (res, response_time) = helpers::post_public_decrypt(&client, &payload, 10).await;
-        assert_eq!(res.status(), 200);
+        assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
         println!("Simple public decrypt request took: {:?}", response_time);
     }
 
     async fn test_sequential_requests(payload: serde_json::Value) {
         let client = reqwest::Client::new();
         let (res, response_time) = helpers::post_public_decrypt(&client, &payload, 10).await;
-        assert_eq!(res.status(), 200);
+        assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
         println!("First public decrypt request took: {:?}", response_time);
 
         let mut response_times_micros = Vec::new();
         for i in 0..3 {
             let (res, elapsed) = helpers::post_public_decrypt(&client, &payload, 1).await;
             response_times_micros.push(elapsed.as_micros());
-            assert_eq!(res.status(), 200);
+            assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
             println!(
                 "Sequential public decrypt request {} took: {:?}",
                 i + 1,
@@ -417,7 +426,7 @@ mod tests {
                 let client = reqwest::Client::new();
                 let (res, response_time) =
                     helpers::post_public_decrypt(&client, &payload_clone, 10).await;
-                assert_eq!(res.status(), 200);
+                assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
                 println!(
                     "Parallel public decrypt request 1 (payload) took: {:?}",
                     response_time
@@ -437,7 +446,7 @@ mod tests {
                     let client = reqwest::Client::new();
                     let (res, response_time) =
                         helpers::post_public_decrypt(&client, &payload_clone, 10).await;
-                    assert_eq!(res.status(), 200);
+                    assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
                     println!(
                         "Parallel public decrypt request {} (payload) took: {:?}",
                         i + 1,
@@ -497,12 +506,12 @@ mod tests {
 
         pub fn random_payload_for_public_decrypt() -> serde_json::Value {
             let random_handle = random_handle();
-            json!({"ciphertextHandles": [random_handle]})
+            json!({"ciphertextHandles": [random_handle], "extraData": "0x00"})
         }
 
         pub fn random_payload_for_user_decrypt() -> serde_json::Value {
             let random_handle = random_handle();
-            json!({"handleContractPairs":[{"handle":random_handle,"contractAddress":"0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"}],"requestValidity":{"startTimestamp":"1742450894","durationDays":"10"},"contractsChainId":"123456","contractAddresses":["0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"],"userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80","signature":"f77ca89b541ca80645dfa2822a95354142b73d078429083569d9ec97e23868282a11bc8f2addeac311edbb0d6b4e2763ae1f8e69702f2ddb89ff952dded2c2d61c","publicKey":"2000000000000000127eae823019dbba103069c7d2ee53b16de8a29057911dfd8ba82c25abfb071a"})
+            json!({"handleContractPairs":[{"handle":random_handle,"contractAddress":"0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"}],"requestValidity":{"startTimestamp":"1742450894","durationDays":"10"},"contractsChainId":"123456","contractAddresses":["0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"],"userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80","signature":"f77ca89b541ca80645dfa2822a95354142b73d078429083569d9ec97e23868282a11bc8f2addeac311edbb0d6b4e2763ae1f8e69702f2ddb89ff952dded2c2d61c","publicKey":"2000000000000000127eae823019dbba103069c7d2ee53b16de8a29057911dfd8ba82c25abfb071a", "extraData": "0x00"})
         }
 
         pub async fn post_public_decrypt(
