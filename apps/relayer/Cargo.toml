@@ -15,19 +15,15 @@ ci = []
 
 [dependencies]
 xxhash-rust = { version = "0.8.12", features = ["xxh3", "const_xxh3"] }
-alloy = { version = "1.0.22", features = ["full"] }
-alloy-sol-types = "1.2.1"
-base64ct = "=1.6.0"
+alloy = { version = "1.0.22", features = ["provider-ws"] }
 dashmap = "6.1.0"
 eyre = "0.6.12"
 futures = "0.3.31"
-futures-util = "0.3.31"
 hex = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.68"
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["rt-multi-thread", "signal"] }
 async-trait = "0.1.51"
-zerocopy = "0.8.14"
 thiserror = "2.0.11"
 config = "0.15.6"
 anyhow = "1.0.44"
@@ -48,8 +44,8 @@ aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-sdk-sqs = { version = "1" }
 rustls = { version = "0.23", features = [
   "aws-lc-rs",
-], default-features = false } #, features = ["ring", "aws-lc-rs", "std", "tls12"]
-rocksdb = "0.23.0"
+], default-features = false }
+rocksdb = {version = "0.23.0", default-features = false, features = ["snappy", "bindgen-runtime"]}
 
 
 [dev-dependencies]

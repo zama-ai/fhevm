@@ -7,7 +7,7 @@ use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use crate::store::BlockNumberStore;
 use alloy::rpc::types::Log;
-use futures_util::StreamExt;
+use futures::StreamExt;
 use std::sync::Arc;
 
 pub type EventLogConverter = fn(Log) -> RelayerEventData;

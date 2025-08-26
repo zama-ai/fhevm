@@ -11,7 +11,7 @@ use crate::orchestrator::Orchestrator;
 use alloy::hex;
 use alloy::primitives::FixedBytes;
 use alloy::rpc::types::Log;
-use futures_util::StreamExt;
+use futures::StreamExt;
 use std::sync::Arc;
 
 // Define event topics as constants
