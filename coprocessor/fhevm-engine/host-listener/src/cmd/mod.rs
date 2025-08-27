@@ -546,16 +546,26 @@ impl InfiniteLogIter {
                 },
             },
         };
+        let current_block_summary = current_block.into();
+
         if !self.block_history.is_ready_to_detect_reorg() {
             // at fresh restart no ancestor are known
+            if has_event {
+                // we don't add to history from which we have no event
+                // e.g. at timeout, because empty blocks are not get_logs
+                self.block_history.add_block(current_block_summary);
+            }
             return;
         }
 
-        let current_block_summary = current_block.into();
         let missing_blocks =
             self.get_missings_ancestors(current_block_summary).await;
-
         if missing_blocks.is_empty() {
+            // we don't add to history from which we have no event
+            // e.g. at timeout, because empty blocks are not get_logs
+            if has_event {
+                self.block_history.add_block(current_block_summary);
+            }
             return; // no reorg
         }
         warn!(
@@ -564,7 +574,6 @@ impl InfiniteLogIter {
         );
         self.populate_catchup_logs_from_missing_blocks(missing_blocks)
             .await;
-        // let's maintain the tip block by re-adding at end
         // we don't add to history from which we have no event
         // e.g. at timeout, because empty blocks are not get_logs
         if has_event {
