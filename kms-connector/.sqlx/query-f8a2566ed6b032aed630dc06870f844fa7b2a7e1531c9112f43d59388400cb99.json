@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE prep_keygen_requests SET under_process = FALSE WHERE prep_keygen_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f8a2566ed6b032aed630dc06870f844fa7b2a7e1531c9112f43d59388400cb99"
+}

@@ -2,13 +2,16 @@ use alloy::{
     primitives::{Address, Bytes, U256},
     providers::Provider,
 };
-use connector_utils::tests::{
-    rand::{rand_address, rand_public_key, rand_u256},
-    setup::{
-        DECRYPTION_MOCK_ADDRESS, KMS_MANAGEMENT_MOCK_ADDRESS, TestInstance, TestInstanceBuilder,
+use connector_utils::{tests::rand::rand_signature, types::db::SnsCiphertextMaterialDbItem};
+use connector_utils::{
+    tests::{
+        rand::{rand_address, rand_public_key, rand_u256},
+        setup::{
+            DECRYPTION_MOCK_ADDRESS, KMS_MANAGEMENT_MOCK_ADDRESS, TestInstance, TestInstanceBuilder,
+        },
     },
+    types::db::ParamsTypeDb,
 };
-use connector_utils::types::db::SnsCiphertextMaterialDbItem;
 use fhevm_gateway_bindings::decryption::IDecryption::{ContractsInfo, RequestValidity};
 use gw_listener::core::{Config, DbEventPublisher, GatewayListener};
 use rstest::rstest;
@@ -138,21 +141,21 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
 #[rstest]
 #[timeout(Duration::from_secs(60))]
 #[tokio::test]
-async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
+async fn test_publish_prep_keygen() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
 
     // Wait for gw-listener to be ready + 2 anvil blocks
     test_instance
-        .wait_for_log("Waiting for next PreprocessKeygenRequest...")
+        .wait_for_log("Waiting for next PrepKeygenRequest...")
         .await;
     tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
-    info!("Mocking PreprocessKeygenRequest on Anvil...");
+    info!("Mocking PrepKeygenRequest on Anvil...");
     let pending_tx = test_instance
         .kms_management_contract()
-        .preprocessKeygenRequest(String::new())
+        .keygen(ParamsTypeDb::Test as u8)
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -168,65 +171,16 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
         .await;
 
     info!("Checking event is stored in DB...");
-    let row = sqlx::query(
-        "SELECT pre_keygen_request_id, fhe_params_digest FROM preprocess_keygen_requests",
-    )
-    .fetch_one(test_instance.db())
-    .await?;
-
-    let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_keygen_request_id")?);
-    let digest = U256::from_le_bytes(row.try_get::<[u8; 32], _>("fhe_params_digest")?);
-    assert_eq!(id, U256::ONE);
-    assert_eq!(digest, U256::default());
-    info!("Event successfully stored! Stopping GatewayListener...");
-
-    cancel_token.cancel();
-    Ok(gw_listener_task?.await?)
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
-    let cancel_token = CancellationToken::new();
-    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
-
-    // Wait for gw-listener to be ready + 2 anvil blocks
-    test_instance
-        .wait_for_log("Waiting for next PreprocessKskgenRequest...")
-        .await;
-    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
-
-    info!("Mocking PreprocessKskgenRequest on Anvil...");
-    let pending_tx = test_instance
-        .kms_management_contract()
-        .preprocessKskgenRequest(String::new())
-        .send()
+    let row = sqlx::query("SELECT prep_keygen_id, epoch_id, params_type FROM prep_keygen_requests")
+        .fetch_one(test_instance.db())
         .await?;
-    let receipt = pending_tx.get_receipt().await?;
-    let _tx = test_instance
-        .provider()
-        .get_transaction_by_hash(receipt.transaction_hash)
-        .await?
-        .unwrap();
-    info!("Tx successfully sent!");
 
-    test_instance
-        .wait_for_log("Event successfully stored in DB!")
-        .await;
-
-    info!("Checking event is stored in DB...");
-    let row = sqlx::query(
-        "SELECT pre_kskgen_request_id, fhe_params_digest FROM preprocess_kskgen_requests",
-    )
-    .fetch_one(test_instance.db())
-    .await?;
-
-    let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_kskgen_request_id")?);
-    let digest = U256::from_le_bytes(row.try_get::<[u8; 32], _>("fhe_params_digest")?);
-    assert_eq!(id, U256::ONE);
-    assert_eq!(digest, U256::default());
+    let prep_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?);
+    let epoch_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?);
+    let params_type = row.try_get::<ParamsTypeDb, _>("params_type")?;
+    assert_eq!(prep_id, U256::ONE);
+    assert_eq!(epoch_id, U256::default());
+    assert_eq!(params_type, ParamsTypeDb::Test);
     info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
@@ -248,10 +202,11 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
     tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     info!("Mocking KeygenRequest on Anvil...");
-    let rand_id = rand_u256();
+    let rand_prep_id = rand_u256();
+    let rand_signature = rand_signature();
     let pending_tx = test_instance
         .kms_management_contract()
-        .keygenRequest(rand_id)
+        .prepKeygenResponse(rand_prep_id, rand_signature.into())
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -267,70 +222,14 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
         .await;
 
     info!("Checking event is stored in DB...");
-    let row = sqlx::query("SELECT pre_key_id, fhe_params_digest FROM keygen_requests")
+    let row = sqlx::query("SELECT prep_keygen_id, key_id FROM keygen_requests")
         .fetch_one(test_instance.db())
         .await?;
 
-    let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_key_id")?);
-    let digest = U256::from_le_bytes(row.try_get::<[u8; 32], _>("fhe_params_digest")?);
-    assert_eq!(id, rand_id);
-    assert_eq!(digest, U256::default());
-    info!("Event successfully stored! Stopping GatewayListener...");
-
-    cancel_token.cancel();
-    Ok(gw_listener_task?.await?)
-}
-
-#[rstest]
-#[timeout(Duration::from_secs(60))]
-#[tokio::test]
-async fn test_publish_kskgen() -> anyhow::Result<()> {
-    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
-    let cancel_token = CancellationToken::new();
-    let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
-
-    // Wait for gw-listener to be ready + 2 anvil blocks
-    test_instance
-        .wait_for_log("Waiting for next KskgenRequest...")
-        .await;
-    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
-
-    info!("Mocking KskgenRequest on Anvil...");
-    let rand_id = rand_u256();
-    let rand_source_key_id = rand_u256();
-    let rand_dest_key_id = rand_u256();
-    let pending_tx = test_instance
-        .kms_management_contract()
-        .kskgenRequest(rand_id, rand_source_key_id, rand_dest_key_id)
-        .send()
-        .await?;
-    let receipt = pending_tx.get_receipt().await?;
-    let _tx = test_instance
-        .provider()
-        .get_transaction_by_hash(receipt.transaction_hash)
-        .await?
-        .unwrap();
-    info!("Tx successfully sent!");
-
-    test_instance
-        .wait_for_log("Event successfully stored in DB!")
-        .await;
-
-    info!("Checking event is stored in DB...");
-    let row = sqlx::query(
-        "SELECT pre_ksk_id, source_key_id, dest_key_id, fhe_params_digest FROM kskgen_requests",
-    )
-    .fetch_one(test_instance.db())
-    .await?;
-
-    let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_ksk_id")?);
-    let source_key_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("source_key_id")?);
-    let dest_key_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("dest_key_id")?);
-    let digest = U256::from_le_bytes(row.try_get::<[u8; 32], _>("fhe_params_digest")?);
-    assert_eq!(id, rand_id);
-    assert_eq!(rand_source_key_id, source_key_id);
-    assert_eq!(rand_dest_key_id, dest_key_id);
-    assert_eq!(digest, U256::default());
+    let prep_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?);
+    let key_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?);
+    assert_eq!(prep_id, rand_prep_id);
+    assert_eq!(key_id, U256::ONE);
     info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
@@ -352,9 +251,10 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
     tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     info!("Mocking CrsgenRequest on Anvil...");
+    let rand_max_bit_length = rand_u256();
     let pending_tx = test_instance
         .kms_management_contract()
-        .crsgenRequest(String::new())
+        .crsgenRequest(rand_max_bit_length, ParamsTypeDb::Test as u8)
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -370,14 +270,16 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
         .await;
 
     info!("Checking event is stored in DB...");
-    let row = sqlx::query("SELECT crsgen_request_id, fhe_params_digest FROM crsgen_requests")
+    let row = sqlx::query("SELECT crs_id, max_bit_length, params_type FROM crsgen_requests")
         .fetch_one(test_instance.db())
         .await?;
 
-    let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("crsgen_request_id")?);
-    let digest = U256::from_le_bytes(row.try_get::<[u8; 32], _>("fhe_params_digest")?);
+    let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?);
+    let max_bit_length = U256::from_le_bytes(row.try_get::<[u8; 32], _>("max_bit_length")?);
+    let params_type = row.try_get::<ParamsTypeDb, _>("params_type")?;
     assert_eq!(id, U256::ONE);
-    assert_eq!(digest, U256::default());
+    assert_eq!(max_bit_length, rand_max_bit_length);
+    assert_eq!(params_type, ParamsTypeDb::Test);
     info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();

@@ -1154,7 +1154,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde 0.13.0",
  "alloy-sol-types 0.8.25",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -1174,7 +1174,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde 1.0.9",
  "alloy-sol-types 1.1.2",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
@@ -3723,7 +3723,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?rev=2c9fb79fa557feb4c113f1482f0a4805e9d6acac#2c9fb79fa557feb4c113f1482f0a4805e9d6acac"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=0dcae2eff8e3fc86f53b596a356e1a238889569b#0dcae2eff8e3fc86f53b596a356e1a238889569b"
 dependencies = [
  "alloy 1.0.9",
  "serde",
@@ -5822,7 +5822,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "once_cell",
@@ -5842,7 +5842,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.106",
