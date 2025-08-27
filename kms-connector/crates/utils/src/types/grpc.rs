@@ -1,8 +1,8 @@
 use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
-    PublicDecryptionRequest, PublicDecryptionResponse, RequestId, UserDecryptionRequest,
-    UserDecryptionResponse,
+    KeyGenPreprocRequest, KeyGenPreprocResult, PublicDecryptionRequest, PublicDecryptionResponse,
+    RequestId, UserDecryptionRequest, UserDecryptionResponse,
 };
 use tonic::Response;
 
@@ -11,6 +11,7 @@ use tonic::Response;
 pub enum KmsGrpcRequest {
     PublicDecryption(PublicDecryptionRequest),
     UserDecryption(UserDecryptionRequest),
+    PrepKeygen(KeyGenPreprocRequest),
 }
 
 impl From<PublicDecryptionRequest> for KmsGrpcRequest {
@@ -35,6 +36,10 @@ pub enum KmsGrpcResponse {
     UserDecryption {
         decryption_id: U256,
         grpc_response: UserDecryptionResponse,
+    },
+    PrepKeygen {
+        prep_keygen_id: U256,
+        grpc_response: KeyGenPreprocResult,
     },
 }
 
@@ -63,6 +68,20 @@ impl TryFrom<(RequestId, Response<UserDecryptionResponse>)> for KmsGrpcResponse 
 
         Ok(Self::UserDecryption {
             decryption_id,
+            grpc_response: value.1.into_inner(),
+        })
+    }
+}
+
+impl TryFrom<(RequestId, Response<KeyGenPreprocResult>)> for KmsGrpcResponse {
+    type Error = anyhow::Error;
+
+    fn try_from(value: (RequestId, Response<KeyGenPreprocResult>)) -> Result<Self, Self::Error> {
+        let prep_keygen_id = U256::try_from_be_slice(&hex::decode(value.0.request_id)?)
+            .ok_or_else(|| anyhow!("Failed to parse prep_keygen_id"))?;
+
+        Ok(Self::PrepKeygen {
+            prep_keygen_id,
             grpc_response: value.1.into_inner(),
         })
     }

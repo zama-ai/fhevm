@@ -20,6 +20,7 @@ pub trait KmsResponsePicker {
 // Postgres notifications for KMS Core's responses
 const PUBLIC_DECRYPT_NOTIFICATION: &str = "public_decryption_response_available";
 const USER_DECRYPT_NOTIFICATION: &str = "user_decryption_response_available";
+const PREP_KEYGEN_NOTIFICATION: &str = "prep_keygen_response_available";
 
 /// Struct that collects KMS Core's responses from a `Postgres` database.
 pub struct DbKmsResponsePicker {
@@ -72,7 +73,8 @@ impl DbKmsResponsePicker {
 
     async fn listen(&mut self) -> sqlx::Result<()> {
         self.db_listener.listen(PUBLIC_DECRYPT_NOTIFICATION).await?;
-        self.db_listener.listen(USER_DECRYPT_NOTIFICATION).await
+        self.db_listener.listen(USER_DECRYPT_NOTIFICATION).await?;
+        self.db_listener.listen(PREP_KEYGEN_NOTIFICATION).await
     }
 }
 
@@ -113,6 +115,7 @@ impl DbKmsResponsePicker {
         match notification.channel() {
             PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_responses().await,
             USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_responses().await,
+            PREP_KEYGEN_NOTIFICATION => self.pick_prep_keygen_responses().await,
             channel => return Err(anyhow!("Unexpected notification: {channel}")),
         }
         .map_err(anyhow::Error::from)
@@ -169,6 +172,28 @@ impl DbKmsResponsePicker {
         .await?
         .iter()
         .map(KmsResponse::from_user_decryption_row)
+        .collect()
+    }
+
+    async fn pick_prep_keygen_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                UPDATE prep_keygen_responses
+                SET under_process = TRUE
+                FROM (
+                    SELECT prep_keygen_id
+                    FROM prep_keygen_responses
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE prep_keygen_responses.prep_keygen_id = resp.prep_keygen_id
+                RETURNING resp.prep_keygen_id, signature
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(KmsResponse::from_prep_keygen_row)
         .collect()
     }
 }

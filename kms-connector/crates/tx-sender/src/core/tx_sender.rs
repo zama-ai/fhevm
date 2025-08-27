@@ -16,9 +16,12 @@ use anyhow::anyhow;
 use connector_utils::{
     conn::{WalletGatewayProvider, connect_to_db, connect_to_gateway_with_wallet},
     tasks::spawn_with_limit,
-    types::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse},
+    types::{KmsResponse, PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse},
 };
-use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
+use fhevm_gateway_bindings::{
+    decryption::Decryption::{self, DecryptionInstance},
+    kms_management::KmsManagement::{self, KmsManagementInstance},
+};
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
@@ -107,9 +110,13 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponse
         let provider = connect_to_gateway_with_wallet(&config.gateway_url, config.wallet).await?;
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
+        let kms_management_contract =
+            KmsManagement::new(config.kms_management_contract.address, provider.clone());
+
         let inner = TransactionSenderInner::new(
             provider.clone(),
             decryption_contract,
+            kms_management_contract,
             config.tx_retries,
             config.tx_retry_interval,
             config.gas_multiplier_percent,
@@ -132,6 +139,9 @@ pub struct TransactionSenderInner<P: Provider> {
     /// The `Decryption` contract instance of the Gateway.
     decryption_contract: DecryptionInstance<P>,
 
+    /// The `KmsManagement` contract instance of the Gateway.
+    kms_management_contract: KmsManagementInstance<P>,
+
     /// The number of retries to send a transaction to the Gateway.
     tx_retries: u8,
 
@@ -146,6 +156,7 @@ impl<P: Provider> TransactionSenderInner<P> {
     pub fn new(
         provider: P,
         decryption_contract: DecryptionInstance<P>,
+        kms_management_contract: KmsManagementInstance<P>,
         tx_retries: u8,
         tx_retry_interval: Duration,
         gas_multiplier_percent: usize,
@@ -153,6 +164,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         Self {
             provider,
             decryption_contract,
+            kms_management_contract,
             tx_retries,
             tx_retry_interval,
             gas_multiplier_percent,
@@ -160,7 +172,6 @@ impl<P: Provider> TransactionSenderInner<P> {
     }
 
     #[tracing::instrument(skip_all)]
-    /// Sends a KMS Core's response to the Gateway.
     async fn send_to_gateway(&self, response: KmsResponse) -> anyhow::Result<()> {
         info!("Sending response to the Gateway...");
         match response {
@@ -170,6 +181,7 @@ impl<P: Provider> TransactionSenderInner<P> {
             KmsResponse::UserDecryption(response) => {
                 self.send_user_decryption_response(response).await
             }
+            KmsResponse::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
         }
         .inspect_err(|e| {
             GATEWAY_TX_SENT_ERRORS.inc();
@@ -181,19 +193,10 @@ impl<P: Provider> TransactionSenderInner<P> {
         })
     }
 
-    /// Sends a PublicDecryptionResponse to the Gateway.
     pub async fn send_public_decryption_response(
         &self,
         response: PublicDecryptionResponse,
     ) -> anyhow::Result<()> {
-        if response.signature.len() != EIP712_SIGNATURE_LENGTH {
-            return Err(anyhow!(
-                "Invalid EIP-712 signature length: {}, expected 65 bytes",
-                response.signature.len()
-            ));
-        }
-
-        // Create and send transaction
         info!("Sending public decryption response to the Gateway...");
         let call_builder = self.decryption_contract.publicDecryptionResponse(
             response.decryption_id,
@@ -206,26 +209,16 @@ impl<P: Provider> TransactionSenderInner<P> {
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
 
-        // TODO: optimize for low latency
         let receipt = tx.get_receipt().await?;
         info!("Response sent successfully!");
         debug!("Transaction receipt: {:?}", receipt);
         Ok(())
     }
 
-    /// Sends a UserDecryptionResponse to the Gateway.
     pub async fn send_user_decryption_response(
         &self,
         response: UserDecryptionResponse,
     ) -> anyhow::Result<()> {
-        if response.signature.len() != EIP712_SIGNATURE_LENGTH {
-            return Err(anyhow!(
-                "Invalid EIP-712 signature length: {}, expected 65 bytes",
-                response.signature.len()
-            ));
-        }
-
-        // Create and send transaction
         info!("Sending user decryption response to the Gateway...");
         let call_builder = self.decryption_contract.userDecryptionResponse(
             response.decryption_id,
@@ -238,7 +231,25 @@ impl<P: Provider> TransactionSenderInner<P> {
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
 
-        // TODO: optimize for low latency
+        let receipt = tx.get_receipt().await?;
+        info!("Response sent successfully!");
+        debug!("Transaction receipt: {:?}", receipt);
+        Ok(())
+    }
+
+    pub async fn send_prep_keygen_response(
+        &self,
+        response: PrepKeygenResponse,
+    ) -> anyhow::Result<()> {
+        info!("Sending prep keygen response to the Gateway...");
+        let call_builder = self
+            .kms_management_contract
+            .prepKeygenResponse(response.prep_keygen_id, response.signature.into());
+        debug!("Calldata length {}", call_builder.calldata().len());
+
+        let call = call_builder.into_transaction_request();
+        let tx = self.send_tx_with_retry(call).await?;
+
         let receipt = tx.get_receipt().await?;
         info!("Response sent successfully!");
         debug!("Transaction receipt: {:?}", receipt);
@@ -295,6 +306,7 @@ impl<P: Provider + Clone> Clone for TransactionSenderInner<P> {
         Self {
             provider: self.provider.clone(),
             decryption_contract: self.decryption_contract.clone(),
+            kms_management_contract: self.kms_management_contract.clone(),
             tx_retries: self.tx_retries,
             tx_retry_interval: self.tx_retry_interval,
             gas_multiplier_percent: self.gas_multiplier_percent,

@@ -88,7 +88,7 @@ impl GatewayEvent {
                 Self::mark_user_decryption_as_pending(db, e.decryptionId).await
             }
             GatewayEvent::PrepKeygen(e) => {
-                Self::mark_pre_keygen_as_pending(db, e.prepKeygenId).await
+                Self::mark_prep_keygen_as_pending(db, e.prepKeygenId).await
             }
             GatewayEvent::Keygen(e) => Self::mark_keygen_as_pending(db, e.prepKeygenId).await,
             GatewayEvent::Crsgen(e) => Self::mark_crsgen_as_pending(db, e.crsId).await,
@@ -114,7 +114,7 @@ impl GatewayEvent {
     }
 
     /// Sets the `under_process` field of the `PrepKeygenRequest` as `FALSE` in the database.
-    pub async fn mark_pre_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
+    pub async fn mark_prep_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
             "UPDATE prep_keygen_requests SET under_process = FALSE WHERE prep_keygen_id = $1",
             id.as_le_slice()
