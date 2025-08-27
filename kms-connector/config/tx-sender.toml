@@ -30,16 +30,16 @@ address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 # ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
 # domain_version = "1"
 
-# Configuration of the KmsManagement contract (required)
+# Configuration of the KMSManagement contract (required)
 [kms_management_contract]
-# Address of the KmsManagement contract (required)
+# Address of the KMSManagement contract (required)
 # Format: hex string with 0x prefix
 # ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS
 address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
-# EIP-712 domain name for KmsManagement contract (optional, defaults to "KmsManagement")
+# EIP-712 domain name for KMSManagement contract (optional, defaults to "KMSManagement")
 # ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_NAME
-# domain_name = "KmsManagement"
-# EIP-712 domain version for KmsManagement contract (optional, defaults to "1")
+# domain_name = "KMSManagement"
+# EIP-712 domain version for KMSManagement contract (optional, defaults to "1")
 # ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 

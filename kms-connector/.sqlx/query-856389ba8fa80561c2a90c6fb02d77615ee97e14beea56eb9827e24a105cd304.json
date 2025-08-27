@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM crsgen_requests WHERE crsgen_request_id = $1",
+  "query": "DELETE FROM crsgen_requests WHERE crs_id = $1",
   "describe": {
     "columns": [],
     "parameters": {
@@ -10,5 +10,5 @@
     },
     "nullable": []
   },
-  "hash": "ecb29f9063e1f6e084a34863f6376b1a839c09f5ebc062b6d7e7882f74cff8a9"
+  "hash": "856389ba8fa80561c2a90c6fb02d77615ee97e14beea56eb9827e24a105cd304"
 }
