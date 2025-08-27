@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use crate::{
     core::Config,
     monitoring::metrics::{EVENT_RECEIVED_COUNTER, EVENT_RECEIVED_ERRORS},
@@ -10,6 +8,7 @@ use sqlx::{
     Pool, Postgres,
     postgres::{PgListener, PgNotification},
 };
+use std::time::Duration;
 use tokio::select;
 use tracing::{debug, info};
 
@@ -23,10 +22,8 @@ pub trait EventPicker {
 // Postgres notifications
 const PUBLIC_DECRYPT_NOTIFICATION: &str = "public_decryption_request_available";
 const USER_DECRYPT_NOTIFICATION: &str = "user_decryption_request_available";
-const PRE_KEYGEN_NOTIFICATION: &str = "preprocess_keygen_request_available";
-const PRE_KSKGEN_NOTIFICATION: &str = "preprocess_kskgen_request_available";
+const PREP_KEYGEN_NOTIFICATION: &str = "prep_keygen_request_available";
 const KEYGEN_NOTIFICATION: &str = "keygen_request_available";
-const KSKGEN_NOTIFICATION: &str = "kskgen_request_available";
 const CRSGEN_NOTIFICATION: &str = "crs_request_available";
 
 /// Struct that collects Gateway's events from a `Postgres` database.
@@ -81,10 +78,8 @@ impl DbEventPicker {
     async fn listen(&mut self) -> sqlx::Result<()> {
         self.db_listener.listen(PUBLIC_DECRYPT_NOTIFICATION).await?;
         self.db_listener.listen(USER_DECRYPT_NOTIFICATION).await?;
-        self.db_listener.listen(PRE_KEYGEN_NOTIFICATION).await?;
-        self.db_listener.listen(PRE_KSKGEN_NOTIFICATION).await?;
+        self.db_listener.listen(PREP_KEYGEN_NOTIFICATION).await?;
         self.db_listener.listen(KEYGEN_NOTIFICATION).await?;
-        self.db_listener.listen(KSKGEN_NOTIFICATION).await?;
         self.db_listener.listen(CRSGEN_NOTIFICATION).await
     }
 }
@@ -128,10 +123,8 @@ impl DbEventPicker {
         match notification.channel() {
             PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_requests().await,
             USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_requests().await,
-            PRE_KEYGEN_NOTIFICATION => self.pick_pre_keygen_requests().await,
-            PRE_KSKGEN_NOTIFICATION => self.pick_pre_kskgen_requests().await,
+            PREP_KEYGEN_NOTIFICATION => self.pick_prep_keygen_requests().await,
             KEYGEN_NOTIFICATION => self.pick_keygen_requests().await,
-            KSKGEN_NOTIFICATION => self.pick_kskgen_requests().await,
             CRSGEN_NOTIFICATION => self.pick_crsgen_requests().await,
             channel => return Err(anyhow!("Unexpected notification: {channel}")),
         }
@@ -142,10 +135,8 @@ impl DbEventPicker {
         Ok([
             self.pick_public_decryption_requests().await?,
             self.pick_user_decryption_requests().await?,
-            self.pick_pre_keygen_requests().await?,
-            self.pick_pre_kskgen_requests().await?,
+            self.pick_prep_keygen_requests().await?,
             self.pick_keygen_requests().await?,
-            self.pick_kskgen_requests().await?,
             self.pick_crsgen_requests().await?,
         ]
         .concat())
@@ -197,49 +188,26 @@ impl DbEventPicker {
         .collect()
     }
 
-    async fn pick_pre_keygen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
+    async fn pick_prep_keygen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
-                UPDATE preprocess_keygen_requests
+                UPDATE prep_keygen_requests
                 SET under_process = TRUE
                 FROM (
-                    SELECT pre_keygen_request_id
-                    FROM preprocess_keygen_requests
+                    SELECT prep_keygen_id
+                    FROM prep_keygen_requests
                     WHERE under_process = FALSE
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
-                WHERE preprocess_keygen_requests.pre_keygen_request_id = req.pre_keygen_request_id
-                RETURNING req.pre_keygen_request_id, fhe_params_digest
+                WHERE prep_keygen_requests.prep_keygen_id = req.prep_keygen_id
+                RETURNING req.prep_keygen_id, epoch_id, params_type
             ",
         )
         .bind(self.events_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(GatewayEvent::from_pre_keygen_row)
-        .collect()
-    }
-
-    async fn pick_pre_kskgen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
-        sqlx::query(
-            "
-                UPDATE preprocess_kskgen_requests
-                SET under_process = TRUE
-                FROM (
-                    SELECT pre_kskgen_request_id
-                    FROM preprocess_kskgen_requests
-                    WHERE under_process = FALSE
-                    LIMIT $1 FOR UPDATE SKIP LOCKED
-                ) AS req
-                WHERE preprocess_kskgen_requests.pre_kskgen_request_id = req.pre_kskgen_request_id
-                RETURNING req.pre_kskgen_request_id, fhe_params_digest
-            ",
-        )
-        .bind(self.events_batch_size as i16)
-        .fetch_all(&self.db_pool)
-        .await?
-        .iter()
-        .map(GatewayEvent::from_pre_kskgen_row)
+        .map(GatewayEvent::from_prep_keygen_row)
         .collect()
     }
 
@@ -249,13 +217,13 @@ impl DbEventPicker {
                 UPDATE keygen_requests
                 SET under_process = TRUE
                 FROM (
-                    SELECT pre_key_id
+                    SELECT prep_keygen_id
                     FROM keygen_requests
                     WHERE under_process = FALSE
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
-                WHERE keygen_requests.pre_key_id = req.pre_key_id
-                RETURNING req.pre_key_id, fhe_params_digest
+                WHERE keygen_requests.prep_keygen_id = req.prep_keygen_id
+                RETURNING req.prep_keygen_id, key_id
             ",
         )
         .bind(self.events_batch_size as i16)
@@ -266,42 +234,19 @@ impl DbEventPicker {
         .collect()
     }
 
-    async fn pick_kskgen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
-        sqlx::query(
-            "
-                UPDATE kskgen_requests
-                SET under_process = TRUE
-                FROM (
-                    SELECT pre_ksk_id
-                    FROM kskgen_requests
-                    WHERE under_process = FALSE
-                    LIMIT $1 FOR UPDATE SKIP LOCKED
-                ) AS req
-                WHERE kskgen_requests.pre_ksk_id = req.pre_ksk_id
-                RETURNING req.pre_ksk_id, source_key_id, dest_key_id, fhe_params_digest
-            ",
-        )
-        .bind(self.events_batch_size as i16)
-        .fetch_all(&self.db_pool)
-        .await?
-        .iter()
-        .map(GatewayEvent::from_kskgen_row)
-        .collect()
-    }
-
     async fn pick_crsgen_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
         sqlx::query(
             "
                 UPDATE crsgen_requests
                 SET under_process = TRUE
                 FROM (
-                    SELECT crsgen_request_id
+                    SELECT crs_id
                     FROM crsgen_requests
                     WHERE under_process = FALSE
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
-                WHERE crsgen_requests.crsgen_request_id = req.crsgen_request_id
-                RETURNING req.crsgen_request_id, fhe_params_digest
+                WHERE crsgen_requests.crs_id = req.crs_id
+                RETURNING req.crs_id, max_bit_length, params_type
             ",
         )
         .bind(self.events_batch_size as i16)

@@ -76,10 +76,8 @@ where
 
         tasks.spawn(self.clone().subscribe_to_public_decryption_requests());
         tasks.spawn(self.clone().subscribe_to_user_decryption_requests());
-        tasks.spawn(self.clone().subscribe_to_preprocess_keygen_requests());
-        tasks.spawn(self.clone().subscribe_to_preprocess_kskgen_requests());
+        tasks.spawn(self.clone().subscribe_to_prep_keygen_requests());
         tasks.spawn(self.clone().subscribe_to_keygen_requests());
-        tasks.spawn(self.clone().subscribe_to_kskgen_requests());
         tasks.spawn(self.subscribe_to_crsgen_requests());
 
         tasks.join_all().await;
@@ -163,25 +161,11 @@ where
         .await;
     }
 
-    async fn subscribe_to_preprocess_keygen_requests(self) {
-        let preprocess_keygen_filter = self
-            .kms_management_contract
-            .PreprocessKeygenRequest_filter();
+    async fn subscribe_to_prep_keygen_requests(self) {
+        let prep_keygen_filter = self.kms_management_contract.PrepKeygenRequest_filter();
         self.subscribe_to_events(
-            "PreprocessKeygenRequest",
-            preprocess_keygen_filter,
-            self.config.key_management_polling,
-        )
-        .await;
-    }
-
-    async fn subscribe_to_preprocess_kskgen_requests(self) {
-        let preprocess_kskgen_filter = self
-            .kms_management_contract
-            .PreprocessKskgenRequest_filter();
-        self.subscribe_to_events(
-            "PreprocessKskgenRequest",
-            preprocess_kskgen_filter,
+            "PrepKeygenRequest",
+            prep_keygen_filter,
             self.config.key_management_polling,
         )
         .await;
@@ -192,16 +176,6 @@ where
         self.subscribe_to_events(
             "KeygenRequest",
             keygen_filter,
-            self.config.key_management_polling,
-        )
-        .await;
-    }
-
-    async fn subscribe_to_kskgen_requests(self) {
-        let kskgen_filter = self.kms_management_contract.KskgenRequest_filter();
-        self.subscribe_to_events(
-            "KskgenRequest",
-            kskgen_filter,
             self.config.key_management_polling,
         )
         .await;
@@ -247,10 +221,7 @@ mod tests {
     use anyhow::Result;
     use fhevm_gateway_bindings::{
         decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-        kms_management::KmsManagement::{
-            CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
-            PreprocessKskgenRequest,
-        },
+        kms_management::KmsManagement::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
     };
     use tracing_test::traced_test;
 
@@ -298,13 +269,14 @@ mod tests {
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
-    async fn test_preprocess_keygen_requests_subscription() {
+    async fn test_prep_keygen_requests_subscription() {
         let (asserter, gw_listener) = test_setup().await;
 
         // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(PreprocessKeygenRequest::default());
+        let rpc_event_log = mock_rpc_event_log(PrepKeygenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
+<<<<<<< HEAD
         tokio::spawn(gw_listener.subscribe_to_preprocess_keygen_requests());
         loop {
             if logs_contain("PreprocessKeygenRequest published!") {
@@ -332,6 +304,10 @@ mod tests {
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+=======
+        gw_listener.subscribe_to_prep_keygen_requests().await;
+        assert!(logs_contain("PrepKeygenRequest published!"));
+>>>>>>> 88186be7 (chore(kms-connector): update keygen events)
     }
 
     #[rstest::rstest]
@@ -358,6 +334,7 @@ mod tests {
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
+<<<<<<< HEAD
     async fn test_kskgen_requests_subscription() {
         let (asserter, gw_listener) = test_setup().await;
 
@@ -378,6 +355,8 @@ mod tests {
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
+=======
+>>>>>>> 88186be7 (chore(kms-connector): update keygen events)
     async fn test_crsgen_requests_subscription() {
         let (asserter, gw_listener) = test_setup().await;
 
@@ -444,10 +423,8 @@ mod tests {
             match event {
                 GatewayEvent::PublicDecryption(_) => info!("PublicDecryptionRequest published!"),
                 GatewayEvent::UserDecryption(_) => info!("UserDecryptionRequest published!"),
-                GatewayEvent::PreprocessKeygen(_) => info!("PreprocessKeygenRequest published!"),
-                GatewayEvent::PreprocessKskgen(_) => info!("PreprocessKskgenRequest published!"),
+                GatewayEvent::PrepKeygen(_) => info!("PrepKeygenRequest published!"),
                 GatewayEvent::Keygen(_) => info!("KeygenRequest published!"),
-                GatewayEvent::Kskgen(_) => info!("KskgenRequest published!"),
                 GatewayEvent::Crsgen(_) => info!("CrsgenRequest published!"),
             }
             Ok(())

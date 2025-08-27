@@ -1,4 +1,5 @@
 use alloy::primitives::{Address, U256};
+use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 
 /// Struct representing how `SnsCiphertextMaterial` are stored in the database.
@@ -37,6 +38,27 @@ impl From<&SnsCiphertextMaterialDbItem> for SnsCiphertextMaterial {
                 .iter()
                 .map(Address::from)
                 .collect(),
+        }
+    }
+}
+
+#[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
+#[sqlx(type_name = "params_type")]
+pub enum ParamsTypeDb {
+    Default,
+    Test,
+}
+
+impl TryFrom<u8> for ParamsTypeDb {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if value == Self::Default as u8 {
+            Ok(Self::Default)
+        } else if value == Self::Test as u8 {
+            Ok(Self::Test)
+        } else {
+            Err(anyhow!("Invalid ParamsType value"))
         }
     }
 }

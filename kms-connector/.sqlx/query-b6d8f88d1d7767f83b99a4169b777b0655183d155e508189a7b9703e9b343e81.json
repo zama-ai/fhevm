@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO crsgen_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        {
+          "Custom": {
+            "name": "params_type",
+            "kind": {
+              "Enum": [
+                "Default",
+                "Test"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b6d8f88d1d7767f83b99a4169b777b0655183d155e508189a7b9703e9b343e81"
+}
