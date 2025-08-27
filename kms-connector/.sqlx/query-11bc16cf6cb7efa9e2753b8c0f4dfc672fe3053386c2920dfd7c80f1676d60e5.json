@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO prep_keygen_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        {
+          "Custom": {
+            "name": "params_type",
+            "kind": {
+              "Enum": [
+                "Default",
+                "Test"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "11bc16cf6cb7efa9e2753b8c0f4dfc672fe3053386c2920dfd7c80f1676d60e5"
+}
