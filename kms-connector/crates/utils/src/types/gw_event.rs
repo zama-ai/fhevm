@@ -1,13 +1,10 @@
-use crate::types::db::SnsCiphertextMaterialDbItem;
+use crate::types::db::{ParamsTypeDb, SnsCiphertextMaterialDbItem};
 use alloy::primitives::U256;
 use fhevm_gateway_bindings::{
     decryption::Decryption::{
         PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
     },
-    kms_management::KmsManagement::{
-        CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
-        PreprocessKskgenRequest,
-    },
+    kms_management::KmsManagement::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
 };
 use sqlx::{
     Pool, Postgres, Row,
@@ -22,15 +19,12 @@ use tracing::{error, info, warn};
 pub enum GatewayEvent {
     PublicDecryption(PublicDecryptionRequest),
     UserDecryption(UserDecryptionRequest),
-    PreprocessKeygen(PreprocessKeygenRequest),
-    PreprocessKskgen(PreprocessKskgenRequest),
+    PrepKeygen(PrepKeygenRequest),
     Keygen(KeygenRequest),
-    Kskgen(KskgenRequest),
     Crsgen(CrsgenRequest),
 }
 
 impl GatewayEvent {
-    /// Create a new `GatewayEvent::PublicDecryption` from a `PgRow`.
     pub fn from_public_decryption_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let sns_ct_materials = row
             .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
@@ -45,7 +39,6 @@ impl GatewayEvent {
         }))
     }
 
-    /// Create a new `GatewayEvent::UserDecryption` from a `PgRow`.
     pub fn from_user_decryption_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         let sns_ct_materials = row
             .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
@@ -62,49 +55,26 @@ impl GatewayEvent {
         }))
     }
 
-    /// Create a new `GatewayEvent::PreprocessKeygen` from a `PgRow`.
-    pub fn from_pre_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        Ok(GatewayEvent::PreprocessKeygen(PreprocessKeygenRequest {
-            preKeygenRequestId: U256::from_le_bytes(
-                row.try_get::<[u8; 32], _>("pre_keygen_request_id")?,
-            ),
-            fheParamsDigest: row.try_get::<[u8; 32], _>("fhe_params_digest")?.into(),
+    pub fn from_prep_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(GatewayEvent::PrepKeygen(PrepKeygenRequest {
+            prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
+            epochId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?),
+            paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
         }))
     }
 
-    /// Create a new `GatewayEvent::PreprocessKskgen` from a `PgRow`.
-    pub fn from_pre_kskgen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        Ok(GatewayEvent::PreprocessKskgen(PreprocessKskgenRequest {
-            preKskgenRequestId: U256::from_le_bytes(
-                row.try_get::<[u8; 32], _>("pre_kskgen_request_id")?,
-            ),
-            fheParamsDigest: row.try_get::<[u8; 32], _>("fhe_params_digest")?.into(),
-        }))
-    }
-
-    /// Create a new `GatewayEvent::Keygen` from a `PgRow`.
     pub fn from_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         Ok(GatewayEvent::Keygen(KeygenRequest {
-            preKeyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_key_id")?),
-            fheParamsDigest: row.try_get::<[u8; 32], _>("fhe_params_digest")?.into(),
+            prepKeygenId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
+            keyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
         }))
     }
 
-    /// Create a new `GatewayEvent::Kskgen` from a `PgRow`.
-    pub fn from_kskgen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        Ok(GatewayEvent::Kskgen(KskgenRequest {
-            preKskId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("pre_ksk_id")?),
-            fheParamsDigest: row.try_get::<[u8; 32], _>("fhe_params_digest")?.into(),
-            sourceKeyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("source_key_id")?),
-            destKeyId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("dest_key_id")?),
-        }))
-    }
-
-    /// Create a new `GatewayEvent::Crsgen` from a `PgRow`.
     pub fn from_crsgen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         Ok(GatewayEvent::Crsgen(CrsgenRequest {
-            crsgenRequestId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crsgen_request_id")?),
-            fheParamsDigest: row.try_get::<[u8; 32], _>("fhe_params_digest")?.into(),
+            crsId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
+            maxBitLength: U256::from_le_bytes(row.try_get::<[u8; 32], _>("max_bit_length")?),
+            paramsType: row.try_get::<ParamsTypeDb, _>("params_type")? as u8,
         }))
     }
 
@@ -117,15 +87,11 @@ impl GatewayEvent {
             GatewayEvent::UserDecryption(e) => {
                 Self::mark_user_decryption_as_pending(db, e.decryptionId).await
             }
-            GatewayEvent::PreprocessKeygen(e) => {
-                Self::mark_pre_keygen_as_pending(db, e.preKeygenRequestId).await
+            GatewayEvent::PrepKeygen(e) => {
+                Self::mark_pre_keygen_as_pending(db, e.prepKeygenId).await
             }
-            GatewayEvent::PreprocessKskgen(e) => {
-                Self::mark_pre_kskgen_as_pending(db, e.preKskgenRequestId).await
-            }
-            GatewayEvent::Keygen(e) => Self::mark_keygen_as_pending(db, e.preKeyId).await,
-            GatewayEvent::Kskgen(e) => Self::mark_kskgen_as_pending(db, e.preKskId).await,
-            GatewayEvent::Crsgen(e) => Self::mark_crsgen_as_pending(db, e.crsgenRequestId).await,
+            GatewayEvent::Keygen(e) => Self::mark_keygen_as_pending(db, e.prepKeygenId).await,
+            GatewayEvent::Crsgen(e) => Self::mark_crsgen_as_pending(db, e.crsId).await,
         }
     }
 
@@ -147,19 +113,10 @@ impl GatewayEvent {
         Self::execute_free_event_query(db, query).await;
     }
 
-    /// Sets the `under_process` field of the `PreprocessKeygenRequest` as `FALSE` in the database.
+    /// Sets the `under_process` field of the `PrepKeygenRequest` as `FALSE` in the database.
     pub async fn mark_pre_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
-            "UPDATE preprocess_keygen_requests SET under_process = FALSE WHERE pre_keygen_request_id = $1",
-            id.as_le_slice()
-        );
-        Self::execute_free_event_query(db, query).await;
-    }
-
-    /// Sets the `under_process` field of the `PreprocessKskgenRequest` as `FALSE` in the database.
-    pub async fn mark_pre_kskgen_as_pending(db: &Pool<Postgres>, id: U256) {
-        let query = sqlx::query!(
-            "UPDATE preprocess_kskgen_requests SET under_process = FALSE WHERE pre_kskgen_request_id = $1",
+            "UPDATE prep_keygen_requests SET under_process = FALSE WHERE prep_keygen_id = $1",
             id.as_le_slice()
         );
         Self::execute_free_event_query(db, query).await;
@@ -168,16 +125,7 @@ impl GatewayEvent {
     /// Sets the `under_process` field of the `KeyRequest` as `FALSE` in the database.
     pub async fn mark_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
-            "UPDATE keygen_requests SET under_process = FALSE WHERE pre_key_id = $1",
-            id.as_le_slice()
-        );
-        Self::execute_free_event_query(db, query).await;
-    }
-
-    /// Sets the `under_process` field of the `KskgenRequest` as `FALSE` in the database.
-    pub async fn mark_kskgen_as_pending(db: &Pool<Postgres>, id: U256) {
-        let query = sqlx::query!(
-            "UPDATE kskgen_requests SET under_process = FALSE WHERE pre_ksk_id = $1",
+            "UPDATE keygen_requests SET under_process = FALSE WHERE prep_keygen_id = $1",
             id.as_le_slice()
         );
         Self::execute_free_event_query(db, query).await;
@@ -186,7 +134,7 @@ impl GatewayEvent {
     /// Sets the `under_process` field of the `CrsgenRequest` as `FALSE` in the database.
     pub async fn mark_crsgen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
-            "UPDATE crsgen_requests SET under_process = FALSE WHERE crsgen_request_id = $1",
+            "UPDATE crsgen_requests SET under_process = FALSE WHERE crs_id = $1",
             id.as_le_slice()
         );
         Self::execute_free_event_query(db, query).await;
@@ -319,15 +267,11 @@ impl Display for GatewayEvent {
             GatewayEvent::UserDecryption(e) => {
                 write!(f, "UserDecryptionRequest #{}", e.decryptionId)
             }
-            GatewayEvent::PreprocessKeygen(e) => {
-                write!(f, "PreprocessKeygenRequest #{}", e.preKeygenRequestId)
+            GatewayEvent::PrepKeygen(e) => {
+                write!(f, "PrepKeygenRequest #{}", e.prepKeygenId)
             }
-            GatewayEvent::PreprocessKskgen(e) => {
-                write!(f, "PreprocessKskgenRequest #{}", e.preKskgenRequestId)
-            }
-            GatewayEvent::Keygen(e) => write!(f, "KeygenRequest #{}", e.preKeyId),
-            GatewayEvent::Kskgen(e) => write!(f, "KskgenRequest #{}", e.preKskId),
-            GatewayEvent::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsgenRequestId),
+            GatewayEvent::Keygen(e) => write!(f, "KeygenRequest #{}", e.keyId),
+            GatewayEvent::Crsgen(e) => write!(f, "CrsgenRequest #{}", e.crsId),
         }
     }
 }
@@ -344,27 +288,15 @@ impl From<UserDecryptionRequest> for GatewayEvent {
     }
 }
 
-impl From<PreprocessKeygenRequest> for GatewayEvent {
-    fn from(value: PreprocessKeygenRequest) -> Self {
-        Self::PreprocessKeygen(value)
-    }
-}
-
-impl From<PreprocessKskgenRequest> for GatewayEvent {
-    fn from(value: PreprocessKskgenRequest) -> Self {
-        Self::PreprocessKskgen(value)
+impl From<PrepKeygenRequest> for GatewayEvent {
+    fn from(value: PrepKeygenRequest) -> Self {
+        Self::PrepKeygen(value)
     }
 }
 
 impl From<KeygenRequest> for GatewayEvent {
     fn from(value: KeygenRequest) -> Self {
         Self::Keygen(value)
-    }
-}
-
-impl From<KskgenRequest> for GatewayEvent {
-    fn from(value: KskgenRequest) -> Self {
-        Self::Kskgen(value)
     }
 }
 
