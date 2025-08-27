@@ -44,6 +44,7 @@ impl From<&SnsCiphertextMaterialDbItem> for SnsCiphertextMaterial {
 
 #[derive(sqlx::Type, Copy, Clone, Debug, PartialEq)]
 #[sqlx(type_name = "params_type")]
+/// Struct representing the `ParamsType` enum in the database.
 pub enum ParamsTypeDb {
     Default,
     Test,

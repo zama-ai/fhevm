@@ -88,7 +88,7 @@ impl GatewayEvent {
                 Self::mark_user_decryption_as_pending(db, e.decryptionId).await
             }
             GatewayEvent::PrepKeygen(e) => {
-                Self::mark_pre_keygen_as_pending(db, e.prepKeygenId).await
+                Self::mark_prep_keygen_as_pending(db, e.prepKeygenId).await
             }
             GatewayEvent::Keygen(e) => Self::mark_keygen_as_pending(db, e.prepKeygenId).await,
             GatewayEvent::Crsgen(e) => Self::mark_crsgen_as_pending(db, e.crsId).await,
@@ -114,7 +114,7 @@ impl GatewayEvent {
     }
 
     /// Sets the `under_process` field of the `PrepKeygenRequest` as `FALSE` in the database.
-    pub async fn mark_pre_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
+    pub async fn mark_prep_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
             "UPDATE prep_keygen_requests SET under_process = FALSE WHERE prep_keygen_id = $1",
             id.as_le_slice()
@@ -169,15 +169,11 @@ impl GatewayEvent {
             GatewayEvent::UserDecryption(e) => {
                 Self::delete_user_decryption_from_db(db, e.decryptionId).await
             }
-            GatewayEvent::PreprocessKeygen(e) => {
-                Self::delete_pre_keygen_from_db(db, e.preKeygenRequestId).await
+            GatewayEvent::PrepKeygen(e) => {
+                Self::delete_prep_keygen_from_db(db, e.prepKeygenId).await
             }
-            GatewayEvent::PreprocessKskgen(e) => {
-                Self::delete_pre_kskgen_from_db(db, e.preKskgenRequestId).await
-            }
-            GatewayEvent::Keygen(e) => Self::delete_keygen_from_db(db, e.preKeyId).await,
-            GatewayEvent::Kskgen(e) => Self::delete_kskgen_from_db(db, e.preKskId).await,
-            GatewayEvent::Crsgen(e) => Self::delete_crsgen_from_db(db, e.crsgenRequestId).await,
+            GatewayEvent::Keygen(e) => Self::delete_keygen_from_db(db, e.keyId).await,
+            GatewayEvent::Crsgen(e) => Self::delete_crsgen_from_db(db, e.crsId).await,
         }
     }
 
@@ -197,17 +193,9 @@ impl GatewayEvent {
         Self::execute_delete_event_query(db, query).await;
     }
 
-    pub async fn delete_pre_keygen_from_db(db: &Pool<Postgres>, id: U256) {
+    pub async fn delete_prep_keygen_from_db(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
-            "DELETE FROM preprocess_keygen_requests WHERE pre_keygen_request_id = $1",
-            id.as_le_slice()
-        );
-        Self::execute_delete_event_query(db, query).await;
-    }
-
-    pub async fn delete_pre_kskgen_from_db(db: &Pool<Postgres>, id: U256) {
-        let query = sqlx::query!(
-            "DELETE FROM preprocess_kskgen_requests WHERE pre_kskgen_request_id = $1",
+            "DELETE FROM prep_keygen_requests WHERE prep_keygen_id = $1",
             id.as_le_slice()
         );
         Self::execute_delete_event_query(db, query).await;
@@ -215,15 +203,7 @@ impl GatewayEvent {
 
     pub async fn delete_keygen_from_db(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
-            "DELETE FROM keygen_requests WHERE pre_key_id = $1",
-            id.as_le_slice()
-        );
-        Self::execute_delete_event_query(db, query).await;
-    }
-
-    pub async fn delete_kskgen_from_db(db: &Pool<Postgres>, id: U256) {
-        let query = sqlx::query!(
-            "DELETE FROM kskgen_requests WHERE pre_ksk_id = $1",
+            "DELETE FROM keygen_requests WHERE key_id = $1",
             id.as_le_slice()
         );
         Self::execute_delete_event_query(db, query).await;
@@ -231,7 +211,7 @@ impl GatewayEvent {
 
     pub async fn delete_crsgen_from_db(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
-            "DELETE FROM crsgen_requests WHERE crsgen_request_id = $1",
+            "DELETE FROM crsgen_requests WHERE crs_id = $1",
             id.as_le_slice()
         );
         Self::execute_delete_event_query(db, query).await;

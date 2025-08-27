@@ -1,4 +1,6 @@
-use connector_utils::types::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse};
+use connector_utils::types::{
+    KmsResponse, PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse,
+};
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
 use tracing::{info, warn};
 
@@ -30,6 +32,7 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
                 self.publish_public_decryption(response).await
             }
             KmsResponse::UserDecryption(response) => self.publish_user_decryption(response).await,
+            KmsResponse::PrepKeygen(response) => self.publish_prep_keygen(response).await,
         };
 
         // Mark event associated to the current response as free on error
@@ -79,6 +82,19 @@ impl DbKmsResponsePublisher {
             response.user_decrypted_shares,
             response.signature,
             response.extra_data,
+        )
+        .execute(&self.db_pool)
+        .await
+    }
+
+    async fn publish_prep_keygen(
+        &self,
+        response: PrepKeygenResponse,
+    ) -> sqlx::Result<PgQueryResult> {
+        sqlx::query!(
+            "INSERT INTO prep_keygen_responses VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            response.prep_keygen_id.as_le_slice(),
+            response.signature,
         )
         .execute(&self.db_pool)
         .await

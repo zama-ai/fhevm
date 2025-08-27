@@ -2,7 +2,7 @@ use crate::types::{GatewayEvent, KmsGrpcResponse, fhe::abi_encode_plaintexts};
 use alloy::primitives::U256;
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
-    PublicDecryptionResponse as GrpcPublicDecryptionResponse,
+    KeyGenPreprocResult, PublicDecryptionResponse as GrpcPublicDecryptionResponse,
     UserDecryptionResponse as GrpcUserDecryptionResponse,
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
@@ -13,6 +13,7 @@ use tracing::{debug, info};
 pub enum KmsResponse {
     PublicDecryption(PublicDecryptionResponse),
     UserDecryption(UserDecryptionResponse),
+    PrepKeygen(PrepKeygenResponse),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -31,11 +32,18 @@ pub struct UserDecryptionResponse {
     pub extra_data: Vec<u8>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct PrepKeygenResponse {
+    pub prep_keygen_id: U256,
+    pub signature: Vec<u8>,
+}
+
 impl KmsResponse {
     pub fn id(&self) -> U256 {
         match self {
             KmsResponse::PublicDecryption(r) => r.decryption_id,
             KmsResponse::UserDecryption(r) => r.decryption_id,
+            KmsResponse::PrepKeygen(r) => r.prep_keygen_id,
         }
     }
 
@@ -52,6 +60,10 @@ impl KmsResponse {
                 grpc_response,
             } => UserDecryptionResponse::process(decryption_id, grpc_response)
                 .map(Self::UserDecryption),
+            KmsGrpcResponse::PrepKeygen {
+                prep_keygen_id,
+                grpc_response,
+            } => PrepKeygenResponse::process(prep_keygen_id, grpc_response).map(Self::PrepKeygen),
         }
     }
 
@@ -73,6 +85,13 @@ impl KmsResponse {
         }))
     }
 
+    pub fn from_prep_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(KmsResponse::PrepKeygen(PrepKeygenResponse {
+            prep_keygen_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
+            signature: row.try_get("signature")?,
+        }))
+    }
+
     /// Sets the `under_process` field of the event associated to this response as `FALSE` in the
     /// database.
     pub async fn mark_associated_event_as_pending(&self, db: &Pool<Postgres>) {
@@ -82,6 +101,9 @@ impl KmsResponse {
             }
             KmsResponse::UserDecryption(r) => {
                 GatewayEvent::mark_user_decryption_as_pending(db, r.decryption_id).await
+            }
+            KmsResponse::PrepKeygen(r) => {
+                GatewayEvent::mark_prep_keygen_as_pending(db, r.prep_keygen_id).await
             }
         }
     }
@@ -159,6 +181,18 @@ impl UserDecryptionResponse {
     }
 }
 
+impl PrepKeygenResponse {
+    fn process(prep_keygen_id: U256, _grpc_response: KeyGenPreprocResult) -> anyhow::Result<Self> {
+        let signature = vec![]; // TODO
+
+        info!("Storing prep keygen response for request {prep_keygen_id}",);
+        Ok(PrepKeygenResponse {
+            prep_keygen_id,
+            signature,
+        })
+    }
+}
+
 impl Display for KmsResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -167,6 +201,9 @@ impl Display for KmsResponse {
             }
             KmsResponse::UserDecryption(r) => {
                 write!(f, "UserDecryptionResponse #{}", r.decryption_id)
+            }
+            KmsResponse::PrepKeygen(r) => {
+                write!(f, "PrepKeygenResponse #{}", r.prep_keygen_id)
             }
         }
     }
