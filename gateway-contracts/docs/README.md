@@ -41,4 +41,3 @@ Collaborate with us to advance the FHE spaces and drive innovation together.
 - [Request a feature](https://github.com/zama-ai/fhevm-gateway/issues/new/choose)
 - [Report a bug](https://github.com/zama-ai/fhevm-gateway/issues/new/choose)
 <!-- markdown-link-check-enable -->
-
