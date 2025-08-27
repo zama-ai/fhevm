@@ -15,7 +15,9 @@ use connector_utils::{
     types::{KmsGrpcRequest, KmsGrpcResponse, decode_request_id, u256_to_u32},
 };
 use kms_grpc::{
-    kms::v1::{Empty, PublicDecryptionRequest, RequestId, UserDecryptionRequest},
+    kms::v1::{
+        Empty, KeyGenPreprocRequest, PublicDecryptionRequest, RequestId, UserDecryptionRequest,
+    },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
 use std::time::{Duration, Instant};
@@ -117,6 +119,7 @@ impl KmsClient {
                 self.request_public_decryption(request).await
             }
             KmsGrpcRequest::UserDecryption(request) => self.request_user_decryption(request).await,
+            KmsGrpcRequest::PrepKeygen(request) => self.request_prep_keygen(request).await,
         }
     }
 
@@ -139,7 +142,6 @@ impl KmsClient {
             info!("[OUT] Sending GRPC request with no ciphertexts",);
         }
 
-        // Send initial request with retries
         let inner_client = self.choose_client(request_id.clone());
         send_request_with_retry(self.grpc_request_retries, || {
             let mut client = inner_client.clone();
@@ -148,7 +150,6 @@ impl KmsClient {
         })
         .await?;
 
-        // Poll for result with timeout
         let grpc_response = poll_for_result(
             self.public_decryption_timeout,
             self.grpc_poll_interval,
@@ -192,7 +193,6 @@ impl KmsClient {
             request.client_address, fhe_types
         );
 
-        // Send initial request with retries
         let inner_client = self.choose_client(request_id.clone());
         send_request_with_retry(self.grpc_request_retries, || {
             let mut client = inner_client.clone();
@@ -201,7 +201,6 @@ impl KmsClient {
         })
         .await?;
 
-        // Poll for result with timeout
         let grpc_response = poll_for_result(
             self.user_decryption_timeout,
             self.grpc_poll_interval,
@@ -209,6 +208,41 @@ impl KmsClient {
                 let mut client = inner_client.clone();
                 let request = Request::new(request_id.clone());
                 async move { client.get_user_decryption_result(request).await }
+            },
+        )
+        .await
+        .map_err(ProcessingError::from_response_status)?;
+
+        KmsGrpcResponse::try_from((request_id, grpc_response))
+            .map_err(ProcessingError::Irrecoverable)
+    }
+
+    async fn request_prep_keygen(
+        &self,
+        request: KeyGenPreprocRequest,
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
+        let prep_keygen_id = U256::default(); // TODO
+        let _epoch_id = U256::default(); // TODO
+        let request_id = RequestId {
+            request_id: prep_keygen_id.to_string(),
+        };
+        info!("[OUT] TODO"); // TODO
+
+        let inner_client = self.choose_client(request_id.clone());
+        send_request_with_retry(self.grpc_request_retries, || {
+            let mut client = inner_client.clone();
+            let request = request.clone();
+            async move { client.key_gen_preproc(request).await }
+        })
+        .await?;
+
+        let grpc_response = poll_for_result(
+            self.user_decryption_timeout,
+            self.grpc_poll_interval,
+            || {
+                let mut client = inner_client.clone();
+                let request = Request::new(request_id.clone());
+                async move { client.get_key_gen_preproc_result(request).await }
             },
         )
         .await

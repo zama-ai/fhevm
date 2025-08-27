@@ -217,13 +217,13 @@ impl DbEventPicker {
                 UPDATE keygen_requests
                 SET under_process = TRUE
                 FROM (
-                    SELECT prep_keygen_id
+                    SELECT key_id
                     FROM keygen_requests
                     WHERE under_process = FALSE
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS req
-                WHERE keygen_requests.prep_keygen_id = req.prep_keygen_id
-                RETURNING req.prep_keygen_id, key_id
+                WHERE keygen_requests.key_id = req.key_id
+                RETURNING prep_keygen_id, req.key_id
             ",
         )
         .bind(self.events_batch_size as i16)

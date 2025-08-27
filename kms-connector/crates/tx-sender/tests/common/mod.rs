@@ -1,6 +1,6 @@
 use connector_utils::{
     tests::rand::{rand_signature, rand_u256},
-    types::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse},
+    types::{KmsResponse, PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse},
 };
 use sqlx::{Pool, Postgres};
 
@@ -49,5 +49,23 @@ pub async fn insert_rand_user_decrypt_response(db: &Pool<Postgres>) -> anyhow::R
         user_decrypted_shares,
         signature,
         extra_data: vec![],
+    }))
+}
+
+pub async fn insert_rand_prep_keygen_response(db: &Pool<Postgres>) -> anyhow::Result<KmsResponse> {
+    let prep_keygen_id = rand_u256();
+    let signature = rand_signature();
+
+    sqlx::query!(
+        "INSERT INTO prep_keygen_responses VALUES ($1, $2) ON CONFLICT DO NOTHING",
+        prep_keygen_id.as_le_slice(),
+        signature,
+    )
+    .execute(db)
+    .await?;
+
+    Ok(KmsResponse::PrepKeygen(PrepKeygenResponse {
+        prep_keygen_id,
+        signature,
     }))
 }

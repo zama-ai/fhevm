@@ -20,12 +20,12 @@ use anyhow::anyhow;
 use connector_utils::{
     conn::{WalletGatewayProvider, connect_to_db, connect_to_gateway_with_wallet},
     tasks::spawn_with_limit,
-    types::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse},
+    types::{KmsResponse, PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse},
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionErrors, DecryptionInstance},
     gateway_config::GatewayConfig::GatewayConfigErrors,
-    kms_management::KmsManagement::KmsManagementErrors,
+    kms_management::KmsManagement::{self, KmsManagementErrors, KmsManagementInstance},
 };
 use std::time::Duration;
 use thiserror::Error;
@@ -132,9 +132,13 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponse
         let provider = connect_to_gateway_with_wallet(&config.gateway_url, config.wallet).await?;
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
+        let kms_management_contract =
+            KmsManagement::new(config.kms_management_contract.address, provider.clone());
+
         let inner = TransactionSenderInner::new(
             provider.clone(),
             decryption_contract,
+            kms_management_contract,
             TransactionSenderInnerConfig {
                 tx_retries: config.tx_retries,
                 tx_retry_interval: config.tx_retry_interval,
@@ -156,6 +160,7 @@ pub const EIP712_SIGNATURE_LENGTH: usize = 65;
 pub struct TransactionSenderInner<P: Provider> {
     provider: P,
     decryption_contract: DecryptionInstance<P>,
+    kms_management_contract: KmsManagementInstance<P>,
     config: TransactionSenderInnerConfig,
 }
 
@@ -171,11 +176,13 @@ impl<P: Provider> TransactionSenderInner<P> {
     pub fn new(
         provider: P,
         decryption_contract: DecryptionInstance<P>,
+        kms_management_contract: KmsManagementInstance<P>,
         inner_config: TransactionSenderInnerConfig,
     ) -> Self {
         Self {
             provider,
             decryption_contract,
+            kms_management_contract,
             config: inner_config,
         }
     }
@@ -190,6 +197,7 @@ impl<P: Provider> TransactionSenderInner<P> {
             KmsResponse::UserDecryption(response) => {
                 self.send_user_decryption_response(response).await
             }
+            KmsResponse::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
         };
 
         let receipt = tx_result.inspect_err(|e| {
@@ -222,12 +230,10 @@ impl<P: Provider> TransactionSenderInner<P> {
         }
     }
 
-    /// Sends a PublicDecryptionResponse to the Gateway.
     pub async fn send_public_decryption_response(
         &self,
         response: PublicDecryptionResponse,
     ) -> Result<TransactionReceipt, Error> {
-        info!("Sending public decryption response to the Gateway...");
         let call_builder = self.decryption_contract.publicDecryptionResponse(
             response.decryption_id,
             response.decrypted_result.into(),
@@ -240,12 +246,10 @@ impl<P: Provider> TransactionSenderInner<P> {
         self.send_tx_sync_with_retry(call).await
     }
 
-    /// Sends a UserDecryptionResponse to the Gateway.
     pub async fn send_user_decryption_response(
         &self,
         response: UserDecryptionResponse,
     ) -> Result<TransactionReceipt, Error> {
-        info!("Sending user decryption response to the Gateway...");
         let call_builder = self.decryption_contract.userDecryptionResponse(
             response.decryption_id,
             response.user_decrypted_shares.into(),
@@ -256,6 +260,20 @@ impl<P: Provider> TransactionSenderInner<P> {
 
         let call = call_builder.into_transaction_request();
         self.send_tx_sync_with_retry(call).await
+    }
+
+    pub async fn send_prep_keygen_response(
+        &self,
+        response: PrepKeygenResponse,
+    ) -> Result<TransactionReceipt, Error> {
+        let call_builder = self
+            .kms_management_contract
+            .prepKeygenResponse(response.prep_keygen_id, response.signature.into());
+        debug!("Calldata length {}", call_builder.calldata().len());
+
+        let call = call_builder.into_transaction_request();
+        let tx = self.send_tx_with_retry(call).await?;
+        tx.get_receipt().await.map_err(Error::from)
     }
 
     /// Increases the `gas_limit` for the upcoming transaction.
@@ -355,6 +373,7 @@ impl<P: Provider + Clone> Clone for TransactionSenderInner<P> {
         Self {
             provider: self.provider.clone(),
             decryption_contract: self.decryption_contract.clone(),
+            kms_management_contract: self.kms_management_contract.clone(),
             config: self.config.clone(),
         }
     }
@@ -439,7 +458,8 @@ mod tests {
         // Mock out of gas tx
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
-            DecryptionInstance::new(Address::default(), mock_provider),
+            DecryptionInstance::new(Address::default(), mock_provider.clone()),
+            KmsManagementInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 trace_reverted_tx: true,
@@ -474,7 +494,8 @@ mod tests {
         let mock_provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
-            DecryptionInstance::new(Address::default(), mock_provider),
+            DecryptionInstance::new(Address::default(), mock_provider.clone()),
+            KmsManagementInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 trace_reverted_tx: false,
                 ..Default::default()
@@ -516,7 +537,8 @@ mod tests {
 
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
-            DecryptionInstance::new(Address::default(), mock_provider),
+            DecryptionInstance::new(Address::default(), mock_provider.clone()),
+            KmsManagementInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 ..Default::default()
@@ -563,7 +585,8 @@ mod tests {
 
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
-            DecryptionInstance::new(Address::default(), mock_provider),
+            DecryptionInstance::new(Address::default(), mock_provider.clone()),
+            KmsManagementInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 ..Default::default()
@@ -610,7 +633,8 @@ mod tests {
 
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
-            DecryptionInstance::new(Address::default(), mock_provider),
+            DecryptionInstance::new(Address::default(), mock_provider.clone()),
+            KmsManagementInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 ..Default::default()
