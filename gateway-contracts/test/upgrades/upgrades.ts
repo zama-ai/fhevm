@@ -91,7 +91,7 @@ describe("Upgrades", function () {
     });
     const ciphertextCommits = await upgrades.upgradeProxy(emptyUUPS, ciphertextCommitsFactoryV1);
     await ciphertextCommits.waitForDeployment();
-    expect(await ciphertextCommits.getVersion()).to.equal("CiphertextCommits v0.2.0");
+    expect(await ciphertextCommits.getVersion()).to.equal("CiphertextCommits v0.3.0");
     const ciphertextCommitsV2 = await upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactoryV2);
     await ciphertextCommitsV2.waitForDeployment();
     expect(await ciphertextCommitsV2.getVersion()).to.equal("CiphertextCommits v1000.0.0");
