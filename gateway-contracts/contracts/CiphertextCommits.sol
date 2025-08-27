@@ -190,7 +190,7 @@ contract CiphertextCommits is
             // added in V1: the handle was used to retrieve the list of transaction sender addresses
             // instead of the hash
             // We therefore consider this in order to be backward compatible.
-            // We should remove this in the future.
+            // To be deprecated
             // See https://github.com/zama-ai/fhevm-internal/issues/381
             address[] memory coprocessorTxSenderAddresses;
             if (addCiphertextHash == bytes32(0)) {
@@ -229,7 +229,7 @@ contract CiphertextCommits is
             // added in V1: the handle was used to retrieve the list of transaction sender addresses
             // instead of the hash
             // We therefore consider this in order to be backward compatible.
-            // We should remove this in the future.
+            // To be deprecated
             // See https://github.com/zama-ai/fhevm-internal/issues/381
             address[] memory coprocessorTxSenderAddresses;
             if (addCiphertextHash == bytes32(0)) {
@@ -267,7 +267,7 @@ contract CiphertextCommits is
         // added in V1: the handle was used to retrieve the list of transaction sender addresses
         // instead of the hash
         // We therefore consider this in order to be backward compatible.
-        // We should remove this in the future.
+        // DEPRECATED: to remove before mainnet
         // See https://github.com/zama-ai/fhevm-internal/issues/381
         if (addCiphertextHash == bytes32(0) && $._isCiphertextMaterialAdded[ctHandle]) {
             return $._coprocessorTxSenderAddresses[ctHandle];
