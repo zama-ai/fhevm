@@ -150,7 +150,7 @@ jobs:
       - name: Public Decryption test
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test public-decryption
+          timeout 5m ./fhevm-cli test public-decryption
 
       - name: User Decryption test
         working-directory: test-suite/fhevm
@@ -184,6 +184,9 @@ jobs:
           echo "::endgroup::"
           echo "::group::Transaction Sender Logs (filtered)"
           ./fhevm-cli logs transaction-sender | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+          echo "::group::Host Listener"
+          ./fhevm-cli logs host-listener
           echo "::endgroup::"
 
       - name: Cleanup
