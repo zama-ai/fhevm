@@ -102,6 +102,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_READ_TOKEN }}
 
+      - name: Login to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
       - name: Set version from release
         if: github.event_name == 'release'
         run: |
@@ -150,7 +157,7 @@ jobs:
       - name: Public Decryption test
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test public-decryption
+          timeout 5m ./fhevm-cli test public-decryption
 
       - name: User Decryption test
         working-directory: test-suite/fhevm
@@ -184,6 +191,9 @@ jobs:
           echo "::endgroup::"
           echo "::group::Transaction Sender Logs (filtered)"
           ./fhevm-cli logs transaction-sender | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+          echo "::group::Host Listener"
+          ./fhevm-cli logs host-listener
           echo "::endgroup::"
 
       - name: Cleanup
