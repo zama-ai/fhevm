@@ -21,7 +21,10 @@ use anyhow::anyhow;
 use connector_utils::{
     conn::{WalletGatewayProvider, connect_to_db, connect_to_gateway_with_wallet},
     tasks::spawn_with_limit,
-    types::{KmsResponse, PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse},
+    types::{
+        KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
+        UserDecryptionResponse,
+    },
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionErrors, DecryptionInstance},
@@ -199,6 +202,7 @@ impl<P: Provider> TransactionSenderInner<P> {
                 self.send_user_decryption_response(response).await
             }
             KmsResponse::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
+            KmsResponse::Keygen(response) => self.send_keygen_response(response).await,
         };
 
         let receipt = tx_result.inspect_err(|e| {
@@ -277,6 +281,25 @@ impl<P: Provider> TransactionSenderInner<P> {
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
         tx.get_receipt().await.map_err(Error::from)
+    }
+
+    pub async fn send_keygen_response(
+        &self,
+        response: KeygenResponse,
+    ) -> anyhow::Result<TransactionReceipt> {
+        info!("Sending keygen response to the Gateway...");
+        // TODO
+        let call_builder = self.kms_management_contract.keygenResponse(
+            response.key_id,
+            vec![].into(),
+            vec![].into(),
+            response.signature.into(),
+        );
+        debug!("Calldata length {}", call_builder.calldata().len());
+
+        let call = call_builder.into_transaction_request();
+        let tx = self.send_tx_with_retry(call).await?;
+        tx.get_receipt().await.map_err(anyhow::Error::from)
     }
 
     /// Increases the `gas_limit` for the upcoming transaction.
