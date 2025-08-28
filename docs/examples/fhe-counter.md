@@ -1,4 +1,4 @@
-This example demonstrates how to build an confidential counter using FHEVM, in comparison to a simple counter.
+This example that you are already familiar with from the [Quick start guide](../solidity-guides/getting-started/quick-start-tutorial/README.md) demonstrates how to build a confidential counter using FHEVM, in comparison to a simple counter.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:
@@ -6,10 +6,12 @@ To run this example correctly, make sure the files are placed in the following d
 - `.sol` file → `<your-project-root-dir>/contracts/`
 - `.ts` file → `<your-project-root-dir>/test/`
 
-This ensures Hardhat can compile and test your contracts as expected.
+This ensures Hardhat can compile and test your contracts as expected. If you get lost anywhere in the process refer to the examples in the [dapps repository](https://github.com/zama-ai/dapps).
 {% endhint %}
 
-## A simple counter
+## Simple counter
+
+A simple counter that doesn't use FHEVM.
 
 {% tabs %}
 
@@ -110,7 +112,9 @@ describe("Counter", function () {
 
 {% endtabs %}
 
-## An FHE counter
+## Confidential counter
+
+A simple counter contract that uses FHE.
 
 {% tabs %}
 

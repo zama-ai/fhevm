@@ -14,8 +14,13 @@
   - [Decrypt single value in Solidity](fhe-decrypt-single-value-in-solidity.md)
   - [Decrypt multiple values in Solidity](fhe-decrypt-multiple-values-in-solidity.md)
 
+## Confidential Token
+
+- [Confidential token example](confidential-token.md)
+  - [Confidential token tutorial](confidential-token-tutorial.md)
+
 ## Advanced
 
 - [Sealed-bid auction](sealed-bid-auction.md)
-  - [Tutorial](sealed-bid-auction-tutorial.md)
+  - [Sealed-bid auction tutorial](sealed-bid-auction-tutorial.md)
 - [Confidential ERC20](https://docs.openzeppelin.com/confidential-contracts/0.1.0/token)
