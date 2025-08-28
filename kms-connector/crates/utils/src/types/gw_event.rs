@@ -122,10 +122,10 @@ impl GatewayEvent {
         Self::execute_free_event_query(db, query).await;
     }
 
-    /// Sets the `under_process` field of the `KeyRequest` as `FALSE` in the database.
+    /// Sets the `under_process` field of the `KeygenRequest` as `FALSE` in the database.
     pub async fn mark_keygen_as_pending(db: &Pool<Postgres>, id: U256) {
         let query = sqlx::query!(
-            "UPDATE keygen_requests SET under_process = FALSE WHERE prep_keygen_id = $1",
+            "UPDATE keygen_requests SET under_process = FALSE WHERE key_id = $1",
             id.as_le_slice()
         );
         Self::execute_free_event_query(db, query).await;

@@ -1,14 +1,17 @@
 mod common;
 
 use common::{
-    insert_rand_prep_keygen_response, insert_rand_public_decrypt_response,
-    insert_rand_user_decrypt_response,
+    insert_rand_keygen_response, insert_rand_prep_keygen_response,
+    insert_rand_public_decrypt_response, insert_rand_user_decrypt_response,
 };
 use connector_utils::tests::setup::TestInstanceBuilder;
+use rstest::rstest;
 use std::time::Duration;
 use tracing::info;
 use tx_sender::core::{Config, DbKmsResponsePicker, KmsResponsePicker};
 
+#[rstest]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_pick_public_decryption() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
@@ -28,6 +31,8 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_pick_user_decryption() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
@@ -46,6 +51,8 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_pick_prep_keygen() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
@@ -64,6 +71,28 @@ async fn test_pick_prep_keygen() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_pick_keygen() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+
+    let mut response_picker =
+        DbKmsResponsePicker::connect(test_instance.db().clone(), &Config::default().await).await?;
+
+    info!("Triggering Postgres notification with KeygenResponse insertion...");
+    let inserted_response = insert_rand_keygen_response(test_instance.db()).await?;
+    info!("Picking KeygenResponse...");
+    let responses = response_picker.pick_responses().await?;
+
+    info!("Checking KeygenResponse data...");
+    assert_eq!(responses[0], inserted_response);
+    info!("Data OK!");
+    Ok(())
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn test_polling_backup() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;

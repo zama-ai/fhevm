@@ -10,13 +10,16 @@ use crate::{
 use alloy::{
     network::Ethereum,
     providers::{PendingTransactionBuilder, Provider},
-    rpc::types::TransactionRequest,
+    rpc::types::{TransactionReceipt, TransactionRequest},
 };
 use anyhow::anyhow;
 use connector_utils::{
     conn::{WalletGatewayProvider, connect_to_db, connect_to_gateway_with_wallet},
     tasks::spawn_with_limit,
-    types::{KmsResponse, PrepKeygenResponse, PublicDecryptionResponse, UserDecryptionResponse},
+    types::{
+        KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
+        UserDecryptionResponse,
+    },
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
@@ -182,13 +185,15 @@ impl<P: Provider> TransactionSenderInner<P> {
                 self.send_user_decryption_response(response).await
             }
             KmsResponse::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
+            KmsResponse::Keygen(response) => self.send_keygen_response(response).await,
         }
         .inspect_err(|e| {
             GATEWAY_TX_SENT_ERRORS.inc();
             error!("Failed to send response to the Gateway: {e}");
         })
-        .inspect(|_| {
+        .map(|receipt| {
             GATEWAY_TX_SENT_COUNTER.inc();
+            debug!("Transaction receipt: {:?}", receipt);
             info!("Response successfully sent to the Gateway!");
         })
     }
@@ -196,7 +201,7 @@ impl<P: Provider> TransactionSenderInner<P> {
     pub async fn send_public_decryption_response(
         &self,
         response: PublicDecryptionResponse,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<TransactionReceipt> {
         info!("Sending public decryption response to the Gateway...");
         let call_builder = self.decryption_contract.publicDecryptionResponse(
             response.decryption_id,
@@ -208,17 +213,13 @@ impl<P: Provider> TransactionSenderInner<P> {
 
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
-
-        let receipt = tx.get_receipt().await?;
-        info!("Response sent successfully!");
-        debug!("Transaction receipt: {:?}", receipt);
-        Ok(())
+        tx.get_receipt().await.map_err(anyhow::Error::from)
     }
 
     pub async fn send_user_decryption_response(
         &self,
         response: UserDecryptionResponse,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<TransactionReceipt> {
         info!("Sending user decryption response to the Gateway...");
         let call_builder = self.decryption_contract.userDecryptionResponse(
             response.decryption_id,
@@ -230,17 +231,13 @@ impl<P: Provider> TransactionSenderInner<P> {
 
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
-
-        let receipt = tx.get_receipt().await?;
-        info!("Response sent successfully!");
-        debug!("Transaction receipt: {:?}", receipt);
-        Ok(())
+        tx.get_receipt().await.map_err(anyhow::Error::from)
     }
 
     pub async fn send_prep_keygen_response(
         &self,
         response: PrepKeygenResponse,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<TransactionReceipt> {
         info!("Sending prep keygen response to the Gateway...");
         let call_builder = self
             .kms_management_contract
@@ -249,11 +246,26 @@ impl<P: Provider> TransactionSenderInner<P> {
 
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
+        tx.get_receipt().await.map_err(anyhow::Error::from)
+    }
 
-        let receipt = tx.get_receipt().await?;
-        info!("Response sent successfully!");
-        debug!("Transaction receipt: {:?}", receipt);
-        Ok(())
+    pub async fn send_keygen_response(
+        &self,
+        response: KeygenResponse,
+    ) -> anyhow::Result<TransactionReceipt> {
+        info!("Sending keygen response to the Gateway...");
+        // TODO
+        let call_builder = self.kms_management_contract.keygenResponse(
+            response.key_id,
+            vec![].into(),
+            vec![].into(),
+            response.signature.into(),
+        );
+        debug!("Calldata length {}", call_builder.calldata().len());
+
+        let call = call_builder.into_transaction_request();
+        let tx = self.send_tx_with_retry(call).await?;
+        tx.get_receipt().await.map_err(anyhow::Error::from)
     }
 
     /// Increases the `gas_limit` for the upcoming transaction.

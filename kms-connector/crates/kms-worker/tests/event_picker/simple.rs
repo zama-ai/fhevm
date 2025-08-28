@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use connector_utils::{
     tests::{
         rand::{rand_address, rand_public_key, rand_sns_ct, rand_u256},
@@ -15,6 +13,8 @@ use fhevm_gateway_bindings::{
     kms_management::KmsManagement::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
 };
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
+use std::time::Duration;
+use tracing::info;
 
 #[tokio::test]
 async fn test_pick_public_decryption() -> anyhow::Result<()> {
@@ -30,7 +30,7 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
         .map(SnsCiphertextMaterialDbItem::from)
         .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
-    println!("Triggering Postgres notification with PublicDecryptionRequest insertion...");
+    info!("Triggering Postgres notification with PublicDecryptionRequest insertion...");
     sqlx::query!(
         "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
@@ -40,10 +40,10 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
     .execute(test_instance.db())
     .await?;
 
-    println!("Picking PublicDecryptionRequest...");
+    info!("Picking PublicDecryptionRequest...");
     let events = event_picker.pick_events().await?;
 
-    println!("Checking PublicDecryptionRequest data...");
+    info!("Checking PublicDecryptionRequest data...");
     assert_eq!(
         events,
         vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
@@ -52,7 +52,7 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
             extraData: vec![].into(),
         })]
     );
-    println!("Data OK!");
+    info!("Data OK!");
     Ok(())
 }
 
@@ -72,7 +72,7 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
         .map(SnsCiphertextMaterialDbItem::from)
         .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
-    println!("Triggering Postgres notification with UserDecryptionRequest insertion...");
+    info!("Triggering Postgres notification with UserDecryptionRequest insertion...");
     sqlx::query!(
         "INSERT INTO user_decryption_requests VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
@@ -84,10 +84,10 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
     .execute(test_instance.db())
     .await?;
 
-    println!("Picking UserDecryptionRequest...");
+    info!("Picking UserDecryptionRequest...");
     let events = event_picker.pick_events().await?;
 
-    println!("Checking UserDecryptionRequest data...");
+    info!("Checking UserDecryptionRequest data...");
     assert_eq!(
         events,
         vec![GatewayEvent::UserDecryption(UserDecryptionRequest {
@@ -98,7 +98,7 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
             extraData: vec![].into(),
         })]
     );
-    println!("Data OK!");
+    info!("Data OK!");
     Ok(())
 }
 
@@ -113,7 +113,7 @@ async fn test_pick_prep_keygen() -> anyhow::Result<()> {
     let epoch_id = rand_u256();
     let params_type = ParamsTypeDb::Test;
 
-    println!("Triggering Postgres notification with PrepKeygenRequest insertion...");
+    info!("Triggering Postgres notification with PrepKeygenRequest insertion...");
     sqlx::query!(
         "INSERT INTO prep_keygen_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         prep_keygen_request_id.as_le_slice(),
@@ -123,10 +123,10 @@ async fn test_pick_prep_keygen() -> anyhow::Result<()> {
     .execute(test_instance.db())
     .await?;
 
-    println!("Picking PrepKeygenRequest...");
+    info!("Picking PrepKeygenRequest...");
     let events = event_picker.pick_events().await?;
 
-    println!("Checking PrepKeygenRequest data...");
+    info!("Checking PrepKeygenRequest data...");
     assert_eq!(
         events,
         vec![GatewayEvent::PrepKeygen(PrepKeygenRequest {
@@ -135,7 +135,7 @@ async fn test_pick_prep_keygen() -> anyhow::Result<()> {
             paramsType: params_type as u8,
         })]
     );
-    println!("Data OK!");
+    info!("Data OK!");
     Ok(())
 }
 
@@ -149,7 +149,7 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
     let prep_key_id = rand_u256();
     let key_id = rand_u256();
 
-    println!("Triggering Postgres notification with KeygenRequest insertion...");
+    info!("Triggering Postgres notification with KeygenRequest insertion...");
     sqlx::query!(
         "INSERT INTO keygen_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
         prep_key_id.as_le_slice(),
@@ -158,10 +158,10 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
     .execute(test_instance.db())
     .await?;
 
-    println!("Picking KeygenRequest...");
+    info!("Picking KeygenRequest...");
     let events = event_picker.pick_events().await?;
 
-    println!("Checking KeygenRequest data...");
+    info!("Checking KeygenRequest data...");
     assert_eq!(
         events,
         vec![GatewayEvent::Keygen(KeygenRequest {
@@ -169,7 +169,7 @@ async fn test_pick_keygen() -> anyhow::Result<()> {
             keyId: key_id,
         })]
     );
-    println!("Data OK!");
+    info!("Data OK!");
     Ok(())
 }
 
@@ -184,7 +184,7 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
     let max_bit_length = rand_u256();
     let params_type = ParamsTypeDb::Test;
 
-    println!("Triggering Postgres notification with CrsgenRequest insertion...");
+    info!("Triggering Postgres notification with CrsgenRequest insertion...");
     sqlx::query!(
         "INSERT INTO crsgen_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         crs_id.as_le_slice(),
@@ -194,10 +194,10 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
     .execute(test_instance.db())
     .await?;
 
-    println!("Picking CrsgenRequest...");
+    info!("Picking CrsgenRequest...");
     let events = event_picker.pick_events().await?;
 
-    println!("Checking CrsgenRequest data...");
+    info!("Checking CrsgenRequest data...");
     assert_eq!(
         events,
         vec![GatewayEvent::Crsgen(CrsgenRequest {
@@ -206,7 +206,7 @@ async fn test_pick_crsgen() -> anyhow::Result<()> {
             paramsType: params_type as u8,
         })]
     );
-    println!("Data OK!");
+    info!("Data OK!");
     Ok(())
 }
 
@@ -220,7 +220,7 @@ async fn test_polling_backup() -> anyhow::Result<()> {
         .iter()
         .map(SnsCiphertextMaterialDbItem::from)
         .collect::<Vec<SnsCiphertextMaterialDbItem>>();
-    println!("Inserting PublicDecryptionRequest before starting the event picker...");
+    info!("Inserting PublicDecryptionRequest before starting the event picker...");
     sqlx::query!(
         "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
@@ -236,10 +236,10 @@ async fn test_polling_backup() -> anyhow::Result<()> {
     };
     let mut event_picker = DbEventPicker::connect(test_instance.db().clone(), &config).await?;
 
-    println!("Picking PublicDecryptionRequest...");
+    info!("Picking PublicDecryptionRequest...");
     let events = event_picker.pick_events().await?;
 
-    println!("Checking PublicDecryptionRequest data...");
+    info!("Checking PublicDecryptionRequest data...");
     assert_eq!(
         events,
         vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
@@ -248,6 +248,6 @@ async fn test_polling_backup() -> anyhow::Result<()> {
             extraData: vec![].into(),
         })]
     );
-    println!("Data OK!");
+    info!("Data OK!");
     Ok(())
 }

@@ -1,8 +1,8 @@
 use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
-    KeyGenPreprocRequest, KeyGenPreprocResult, PublicDecryptionRequest, PublicDecryptionResponse,
-    RequestId, UserDecryptionRequest, UserDecryptionResponse,
+    KeyGenPreprocRequest, KeyGenPreprocResult, KeyGenResult, PublicDecryptionRequest,
+    PublicDecryptionResponse, RequestId, UserDecryptionRequest, UserDecryptionResponse,
 };
 use tonic::Response;
 
@@ -40,6 +40,9 @@ pub enum KmsGrpcResponse {
     PrepKeygen {
         prep_keygen_id: U256,
         grpc_response: KeyGenPreprocResult,
+    },
+    Keygen {
+        grpc_response: KeyGenResult,
     },
 }
 
