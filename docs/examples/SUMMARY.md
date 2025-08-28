@@ -13,7 +13,7 @@
   - [Public Decrypt single value](fhe-public-decrypt-single-value.md)
   - [Public Decrypt multiple values](fhe-public-decrypt-multiple-values.md)
 
-## OpenZeppelin
+## OpenZeppelin confidential contracts
 
 - [OpenZeppelin Confidential Contracts](openzeppelin/README.md)
   - [ERC7984 Standard](openzeppelin/erc7984.md)
