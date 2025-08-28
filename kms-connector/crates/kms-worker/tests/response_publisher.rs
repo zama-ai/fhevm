@@ -7,7 +7,7 @@ use connector_utils::{
     types::{KmsGrpcResponse, KmsResponse},
 };
 use kms_grpc::kms::v1::{
-    KeyGenPreprocResult, PublicDecryptionResponse, PublicDecryptionResponsePayload,
+    KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload,
     UserDecryptionResponse, UserDecryptionResponsePayload,
 };
 use kms_worker::core::{DbKmsResponsePublisher, KmsResponsePublisher};
@@ -113,9 +113,44 @@ async fn test_publish_prep_keygen_response() -> anyhow::Result<()> {
         .fetch_one(test_instance.db())
         .await?;
 
-    let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?);
+    let prep_keygen_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?);
     // let signature = row.try_get::<Vec<u8>, _>("signature")?;
-    assert_eq!(decryption_id, rand_prep_keygen_id);
+    assert_eq!(prep_keygen_id, rand_prep_keygen_id);
+    // assert_eq!(signature, rand_signature); // TODO
+    info!("Response successfully stored!");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_publish_keygen_response() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+
+    let publisher = DbKmsResponsePublisher::new(test_instance.db().clone());
+
+    info!("Mocking KeygenResponse from KMS Core...");
+    let rand_key_id = rand_u256();
+    // let rand_signature = rand_signature(); // TODO
+    let grpc_response = KmsGrpcResponse::Keygen {
+        grpc_response: KeyGenResult {
+            request_id: Some(kms_grpc::kms::v1::RequestId {
+                request_id: rand_key_id.to_string(),
+            }),
+            ..Default::default() // TODO
+        },
+    };
+    let response = KmsResponse::process(grpc_response)?;
+
+    publisher.publish(response).await?;
+    info!("KeygenResponse successfully published!");
+
+    info!("Checking KeygenResponse is stored in DB...");
+    let row = sqlx::query("SELECT key_id, signature FROM keygen_responses")
+        .fetch_one(test_instance.db())
+        .await?;
+
+    let key_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?);
+    // let signature = row.try_get::<Vec<u8>, _>("signature")?;
+    assert_eq!(key_id, rand_key_id);
     // assert_eq!(signature, rand_signature); // TODO
     info!("Response successfully stored!");
     Ok(())

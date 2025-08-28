@@ -34,6 +34,7 @@ impl KmsResponseRemover for DbKmsResponseRemover {
             }
             KmsResponse::UserDecryption(r) => self.remove_user_decryption(r.decryption_id).await?,
             KmsResponse::PrepKeygen(r) => self.remove_prep_keygen(r.prep_keygen_id).await?,
+            KmsResponse::Keygen(r) => self.remove_keygen(r.key_id).await?,
         };
 
         if query_result.rows_affected() == 1 {
@@ -56,6 +57,7 @@ impl KmsResponseRemover for DbKmsResponseRemover {
                 self.mark_user_decryption_as_pending(r.decryption_id).await
             }
             KmsResponse::PrepKeygen(r) => self.mark_prep_keygen_as_pending(r.prep_keygen_id).await,
+            KmsResponse::Keygen(r) => self.mark_keygen_as_pending(r.key_id).await,
         };
     }
 }
@@ -92,6 +94,15 @@ impl DbKmsResponseRemover {
         .await
     }
 
+    async fn remove_keygen(&self, key_id: U256) -> sqlx::Result<PgQueryResult> {
+        sqlx::query!(
+            "DELETE FROM keygen_responses WHERE key_id = $1",
+            key_id.as_le_slice()
+        )
+        .execute(&self.db_pool)
+        .await
+    }
+
     /// Sets the `under_process` field of the `PublicDecryptionResponse` as `FALSE` in the database.
     pub async fn mark_public_decryption_as_pending(&self, id: U256) {
         let query = sqlx::query!(
@@ -114,6 +125,15 @@ impl DbKmsResponseRemover {
     pub async fn mark_prep_keygen_as_pending(&self, id: U256) {
         let query = sqlx::query!(
             "UPDATE prep_keygen_responses SET under_process = FALSE WHERE prep_keygen_id = $1",
+            id.as_le_slice()
+        );
+        self.execute_free_response_query(query).await;
+    }
+
+    /// Sets the `under_process` field of the `KeygenResponse` as `FALSE` in the database.
+    pub async fn mark_keygen_as_pending(&self, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE keygen_responses SET under_process = FALSE WHERE key_id = $1",
             id.as_le_slice()
         );
         self.execute_free_response_query(query).await;

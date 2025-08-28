@@ -61,7 +61,7 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
     let decryption_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?);
     let sns_ct_materials =
         row.try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
-    assert_eq!(decryption_id, U256::ONE);
+    assert_eq!(decryption_id, PUB_DECRYPTION_COUNTER + U256::ONE);
     assert_eq!(
         sns_ct_materials,
         vec![SnsCiphertextMaterialDbItem::default()]
@@ -125,7 +125,7 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
     let sns_ct_materials =
         row.try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
 
-    assert_eq!(decryption_id, U256::ONE);
+    assert_eq!(decryption_id, USR_DECRYPTION_COUNTER + U256::ONE);
     assert_eq!(
         sns_ct_materials,
         vec![SnsCiphertextMaterialDbItem::default()]
@@ -178,7 +178,7 @@ async fn test_publish_prep_keygen() -> anyhow::Result<()> {
     let prep_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?);
     let epoch_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("epoch_id")?);
     let params_type = row.try_get::<ParamsTypeDb, _>("params_type")?;
-    assert_eq!(prep_id, U256::ONE);
+    assert_eq!(prep_id, PREP_KEY_COUNTER + U256::ONE);
     assert_eq!(epoch_id, U256::default());
     assert_eq!(params_type, ParamsTypeDb::Test);
     info!("Event successfully stored! Stopping GatewayListener...");
@@ -229,7 +229,7 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
     let prep_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?);
     let key_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?);
     assert_eq!(prep_id, rand_prep_id);
-    assert_eq!(key_id, U256::ONE);
+    assert_eq!(key_id, KEY_COUNTER + U256::ONE);
     info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
@@ -274,10 +274,10 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
         .fetch_one(test_instance.db())
         .await?;
 
-    let id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?);
+    let crs_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?);
     let max_bit_length = U256::from_le_bytes(row.try_get::<[u8; 32], _>("max_bit_length")?);
     let params_type = row.try_get::<ParamsTypeDb, _>("params_type")?;
-    assert_eq!(id, U256::ONE);
+    assert_eq!(crs_id, CRS_COUNTER + U256::ONE);
     assert_eq!(max_bit_length, rand_max_bit_length);
     assert_eq!(params_type, ParamsTypeDb::Test);
     info!("Event successfully stored! Stopping GatewayListener...");
@@ -357,7 +357,7 @@ async fn test_catchup() -> anyhow::Result<()> {
     let decryption_id1 = U256::from_le_bytes(row[0].try_get::<[u8; 32], _>("decryption_id")?);
     let sns_ct_materials =
         row[0].try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
-    assert_eq!(decryption_id1, U256::from(1));
+    assert_eq!(decryption_id1, PUB_DECRYPTION_COUNTER + U256::ONE);
     assert_eq!(
         sns_ct_materials,
         vec![SnsCiphertextMaterialDbItem::default()]
@@ -366,7 +366,7 @@ async fn test_catchup() -> anyhow::Result<()> {
     let decryption_id2 = U256::from_le_bytes(row[1].try_get::<[u8; 32], _>("decryption_id")?);
     let sns_ct_materials =
         row[1].try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?;
-    assert_eq!(decryption_id2, U256::from(2));
+    assert_eq!(decryption_id2, PUB_DECRYPTION_COUNTER + U256::from(2));
     assert_eq!(
         sns_ct_materials,
         vec![SnsCiphertextMaterialDbItem::default()]
@@ -394,3 +394,23 @@ fn start_test_listener(
 
     Ok(tokio::spawn(gw_listener.start(cancel_token)))
 }
+
+const PUB_DECRYPTION_COUNTER: U256 = U256::from_be_bytes([
+    1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+]);
+
+const USR_DECRYPTION_COUNTER: U256 = U256::from_be_bytes([
+    2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+]);
+
+const PREP_KEY_COUNTER: U256 = U256::from_be_bytes([
+    3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+]);
+
+const KEY_COUNTER: U256 = U256::from_be_bytes([
+    4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+]);
+
+const CRS_COUNTER: U256 = U256::from_be_bytes([
+    5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+]);
