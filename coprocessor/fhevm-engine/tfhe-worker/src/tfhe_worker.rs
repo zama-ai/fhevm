@@ -195,7 +195,12 @@ FOR UPDATE SKIP LOCKED            ",
             args.dependence_chains_per_batch as i32,
         )
         .fetch_all(trx.as_mut())
-        .await?;
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
+            err
+        })?;
+
         s.set_attribute(KeyValue::new("count", the_work.len() as i64));
         s.end();
         health_check.update_db_access();
@@ -272,7 +277,12 @@ FOR UPDATE SKIP LOCKED            ",
             &cts_to_query
         )
         .fetch_all(trx.as_mut())
-        .await?;
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
+            err
+        })?;
+
         s.end();
         // index ciphertexts in hashmap
         let mut ciphertext_map: HashMap<(i32, &[u8]), _> =
@@ -454,7 +464,7 @@ FOR UPDATE SKIP LOCKED            ",
                     "
                             UPDATE computations
                             SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
-                                uncomputable_counter = uncomputable_counter * 2 
+                                uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
                             WHERE tenant_id = $1
                             AND output_handle = ANY($2::BYTEA[])
                         ",
@@ -462,7 +472,10 @@ FOR UPDATE SKIP LOCKED            ",
                     &uncomputable.into_values().collect::<Vec<_>>()
                 )
                 .execute(trx.as_mut())
-                .await?;
+                .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while marking computations as unschedulable");
+                    err
+                })?;
                 s.end();
             }
             // Traverse computations that have been scheduled and
@@ -600,7 +613,10 @@ FOR UPDATE SKIP LOCKED            ",
                     ",
 		&tenant_ids, &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types)
 			.execute(trx.as_mut())
-			.await?;
+			.await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while inserting new ciphertexts");
+                    err
+                })?;
             // Notify all workers that new ciphertext is inserted
             // For now, it's only the SnS workers that are listening for these events
             let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
@@ -633,7 +649,10 @@ FOR UPDATE SKIP LOCKED            ",
                 &txn_ids_vec
             )
             .execute(trx.as_mut())
-            .await?;
+            .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while updating computations as completed");
+                    err
+                })?;
 
             s.end();
             let mut s = tracer.start_with_context("update_allowed_handles_is_computed", &loop_ctx);
@@ -657,7 +676,10 @@ FOR UPDATE SKIP LOCKED            ",
                     .collect::<Vec<_>>()
             )
             .execute(trx.as_mut())
-            .await?;
+            .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while marking allowed handles as computed");
+                    err
+                })?;
 
             s.end();
             let mut s = tracer.start_with_context("update_intermediate_computation", &loop_ctx);
@@ -688,7 +710,10 @@ FOR UPDATE SKIP LOCKED            ",
                     .collect::<Vec<_>>()
             )
             .execute(trx.as_mut())
-            .await?;
+            .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while updating intermediate computations as completed");
+                    err
+                })?;
             s.end();
 
             s_outer.end();
