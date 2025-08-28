@@ -9,7 +9,7 @@ use alloy::{
     sol_types::{self, SolEvent},
 };
 use anyhow::anyhow;
-use fhevm_gateway_rust_bindings::decryption::Decryption::{
+use fhevm_gateway_bindings::decryption::Decryption::{
     self, DecryptionInstance, PublicDecryptionResponse,
 };
 use futures::{Stream, StreamExt};

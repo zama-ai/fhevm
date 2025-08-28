@@ -2838,18 +2838,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "fhevm_gateway_rust_bindings"
+name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-3#6c9c11388198ec4da7d3fac6f3d4a1930cff41f6"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-6#d2bc2238599668537dafc521b3474599b2aa68e5"
 dependencies = [
  "alloy",
  "serde",
 ]
 
 [[package]]
-name = "fhevm_gateway_rust_bindings"
+name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://git@github.com/zama-ai/fhevm.git?rev=2d994c9651b8f141a3ca080c82f5eef2b74577ab#2d994c9651b8f141a3ca080c82f5eef2b74577ab"
+source = "git+https://git@github.com/zama-ai/fhevm.git?rev=2c9fb79fa557feb4c113f1482f0a4805e9d6acac#2c9fb79fa557feb4c113f1482f0a4805e9d6acac"
 dependencies = [
  "alloy",
  "serde",
@@ -3044,13 +3044,13 @@ checksum = "312d2295c7302019c395cfb90dacd00a82a2eabd700429bba9c7a3f38dbbe11b"
 [[package]]
 name = "gateway-sdk"
 version = "0.1.0"
-source = "git+https://github.com/zama-ai/fhevm.git?rev=ea79a8acf40b5a52892608a88b550adac52b9ea8#ea79a8acf40b5a52892608a88b550adac52b9ea8"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-6#d2bc2238599668537dafc521b3474599b2aa68e5"
 dependencies = [
  "alloy",
  "bc2wrap",
  "bincode 1.3.3",
  "crypto_box",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://git@github.com/zama-ai/fhevm.git?rev=2d994c9651b8f141a3ca080c82f5eef2b74577ab)",
+ "fhevm_gateway_bindings 0.1.0-rc14 (git+https://git@github.com/zama-ai/fhevm.git?rev=2c9fb79fa557feb4c113f1482f0a4805e9d6acac)",
  "futures-util",
  "hex",
  "kms",
@@ -3080,12 +3080,13 @@ dependencies = [
  "aws-sdk-s3",
  "clap",
  "config",
- "fhevm_gateway_rust_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-3)",
+ "fhevm_gateway_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-6)",
  "futures",
  "gateway-sdk",
  "humantime",
  "humantime-serde",
  "indicatif",
+ "rustls 0.23.31",
  "serde",
  "serde_json",
  "tokio",
@@ -5432,6 +5433,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0ebcbd2f03de0fc1122ad9bb24b127a5a6cd51d72604a3f3c50ac459762b6cc"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",

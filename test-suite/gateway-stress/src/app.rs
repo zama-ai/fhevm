@@ -17,10 +17,11 @@ use alloy::{
         fillers::{FillProvider, JoinFill, WalletFiller},
     },
 };
-use fhevm_gateway_rust_bindings::decryption::Decryption::{self, DecryptionInstance};
+use anyhow::anyhow;
+use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use gateway_sdk::{FhevmSdk, FhevmSdkBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::sync::Arc;
+use std::sync::{Arc, Once};
 use tokio::{
     task::JoinSet,
     time::{Instant, interval},
@@ -53,16 +54,26 @@ pub struct App {
 impl App {
     /// Connects the tool to the Gateway.
     pub async fn connect(config: Config) -> anyhow::Result<Self> {
+        INSTALL_CRYPTO_PROVIDER_ONCE.call_once(|| {
+            rustls::crypto::aws_lc_rs::default_provider()
+                .install_default()
+                .map_err(|e| anyhow!("Failed to install AWS-LC crypto provider: {e:?}"))
+                .unwrap()
+        });
+
         let wallet = Wallet::from_config(&config).await?;
+        let gateway_url = &config.gateway_url;
         let provider = NonceManagedProvider::new(
             ProviderBuilder::new()
                 .disable_recommended_fillers()
                 .filler(FillersWithoutNonceManagement::default())
                 .wallet(wallet.clone())
-                .connect_ws(WsConnect::new(&config.gateway_url))
-                .await?,
+                .connect_ws(WsConnect::new(gateway_url))
+                .await
+                .map_err(|e| anyhow!("Failed to connect to Gateway at {gateway_url}: {e}"))?,
             wallet.address(),
         );
+        info!("Successfully connected to the Gateway");
         let decryption_contract = Decryption::new(config.decryption_address, provider);
 
         let sdk = Arc::new(
@@ -204,3 +215,5 @@ impl App {
         Ok((requests_pb, responses_pb))
     }
 }
+
+static INSTALL_CRYPTO_PROVIDER_ONCE: Once = Once::new();
