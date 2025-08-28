@@ -32,6 +32,8 @@
 
 ## Development Guide
 
+- [Confidential contracts by OpenZeppelin](https://docs.openzeppelin.com/confidential-contracts/0.2/)
+- [Zama Protocol GPT](https://chatgpt.com/g/g-687548533b7c819185a5f992b7f48e72-zama-protocol-gpt)
 - [Hardhat plugin](hardhat/README.md)
   - [Setup Hardhat](getting-started/quick-start-tutorial/setup.md)
   - [Write FHEVM tests in Hardhat](hardhat/write_test.md)
