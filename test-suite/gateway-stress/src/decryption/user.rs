@@ -10,7 +10,7 @@ use alloy::{
     sol_types::{self, SolEvent},
 };
 use anyhow::anyhow;
-use fhevm_gateway_rust_bindings::decryption::{
+use fhevm_gateway_bindings::decryption::{
     Decryption::{self, CtHandleContractPair, DecryptionInstance, UserDecryptionResponse},
     IDecryption::{ContractsInfo, RequestValidity},
 };

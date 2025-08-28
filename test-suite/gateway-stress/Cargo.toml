@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-fhevm_gateway_rust_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.8.0-3", default-features = false }
-gateway-sdk = { git = "https://github.com/zama-ai/fhevm.git", rev = "ea79a8acf40b5a52892608a88b550adac52b9ea8", default-features = false }
+fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.8.0-6", default-features = false }
+gateway-sdk = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.8.0-6", default-features = false }
 
 alloy = { version = "1.0", default-features = false, features = [
     "essentials",
@@ -28,6 +28,7 @@ humantime-serde = "1.1.1"
 indicatif = { version = "0.18.0", default-features = true, features = [
     "tokio",
 ] }
+rustls = "0.23.31"
 serde = { version = "1.0.219", default-features = false, features = [
     "derive",
     "std",
