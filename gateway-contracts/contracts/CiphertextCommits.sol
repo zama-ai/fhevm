@@ -1,15 +1,21 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import { gatewayConfigAddress, kmsManagementAddress } from "../addresses/GatewayAddresses.sol";
+import {
+    gatewayConfigAddress,
+    kmsManagementAddress,
+    coprocessorContextsAddress
+} from "../addresses/GatewayAddresses.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
+import { ICoprocessorContexts } from "./interfaces/ICoprocessorContexts.sol";
 import "./interfaces/IKmsManagement.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./libraries/HandleOps.sol";
 import "./shared/Pausable.sol";
+import { ContextChecks } from "./shared/ContextChecks.sol";
 
 /**
  * @title CiphertextCommits smart contract
@@ -20,10 +26,14 @@ contract CiphertextCommits is
     Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
-    Pausable
+    Pausable,
+    ContextChecks
 {
-    /// @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
+    /// @notice The address of the GatewayConfig contract, used for fetching information about host chains.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
+
+    /// @notice The address of the CoprocessorContexts contract, used for fetching information about coprocessors.
+    ICoprocessorContexts private constant COPROCESSOR_CONTEXTS = ICoprocessorContexts(coprocessorContextsAddress);
 
     /// @notice The address of the KmsManagement contract, used for fetching information about the current key.
     IKmsManagement private constant KMS_MANAGEMENT = IKmsManagement(kmsManagementAddress);
@@ -33,12 +43,12 @@ contract CiphertextCommits is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "CiphertextCommits";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
     uint256 private constant PATCH_VERSION = 0;
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 5;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.CiphertextCommits
@@ -67,6 +77,8 @@ contract CiphertextCommits is
         mapping(bytes32 addCiphertextHash => address[] coprocessorTxSenderAddresses) _coprocessorTxSenderAddresses;
         /// @notice The digest of the ciphertext material addition that reached consensus for a handle.
         mapping(bytes32 ctHandle => bytes32 addCiphertextHash) _ctHandleConsensusHash;
+        /// @notice The coprocessor context ID associated to the add ciphertext
+        mapping(bytes32 addCiphertextHash => uint256 contextId) addCiphertextContextId;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -91,27 +103,53 @@ contract CiphertextCommits is
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V3.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @notice See {ICiphertextCommits-addCiphertextMaterial}.
-    /// @dev This function calls the GatewayConfig contract to check that the sender address is a Coprocessor.
     function addCiphertextMaterial(
         bytes32 ctHandle,
         uint256 keyId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) external virtual onlyCoprocessorTxSender {
+    ) external virtual refreshCoprocessorContextStatuses {
         // Extract the chainId from the ciphertext handle
         uint256 chainId = HandleOps.extractChainId(ctHandle);
 
         // Check that the associated host chain is registered
         GATEWAY_CONFIG.checkHostChainIsRegistered(chainId);
 
+        // The addCiphertextHash is the hash of all received input arguments which means that multiple
+        // Coprocessors can only have a consensus on a ciphertext material with the same information.
+        // This hash is used to differentiate different calls to the function, in particular when
+        // tracking the consensus on the received ciphertext material.
+        // Note that chainId is not included in the hash because it is already contained in the ctHandle.
+        bytes32 addCiphertextHash = keccak256(abi.encode(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest));
+
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
+
+        // Get the context ID from the input verification context ID mapping
+        uint256 contextId = $.addCiphertextContextId[addCiphertextHash];
+
+        // If the context ID is not set, get the active coprocessor context's ID and associate it to
+        // this ciphertext material addition
+        if (contextId == 0) {
+            contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
+            $.addCiphertextContextId[addCiphertextHash] = contextId;
+
+            // Else, that means a coprocessor already started to add the ciphertext material
+            // and we need to check that the context is active or suspended
+            // If it is not, that means the context is no longer valid for this operation and we revert
+        } else if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
+            ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
+            revert InvalidCoprocessorContextAddCiphertext(ctHandle, contextId, contextStatus);
+        }
+
+        // Only accept coprocessor transaction senders from the same context
+        COPROCESSOR_CONTEXTS.checkIsCoprocessorTxSenderFromContext(contextId, msg.sender);
 
         // Check if the coprocessor transaction sender has already added the ciphertext handle.
         if ($._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender]) {
@@ -124,12 +162,6 @@ contract CiphertextCommits is
         // TODO: Re-enable this check once keys are generated through the Gateway
         // KMS_MANAGEMENT.checkCurrentKeyId(keyId);
 
-        // The addCiphertextHash is the hash of all received input arguments which means that multiple
-        // Coprocessors can only have a consensus on a ciphertext material with the same information.
-        // This hash is used to differentiate different calls to the function, in particular when
-        // tracking the consensus on the received ciphertext material.
-        // Note that chainId is not included in the hash because it is already contained in the ctHandle.
-        bytes32 addCiphertextHash = keccak256(abi.encode(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest));
         $._addCiphertextHashCounters[addCiphertextHash]++;
 
         // It is ok to only the handle can be considered here as a handle should only be added once
@@ -146,9 +178,10 @@ contract CiphertextCommits is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
+        // Besides, consensus only considers the coprocessors of the same context
         if (
             !$._isCiphertextMaterialAdded[ctHandle] &&
-            _isConsensusReached($._addCiphertextHashCounters[addCiphertextHash])
+            _isConsensusReached(contextId, $._addCiphertextHashCounters[addCiphertextHash])
         ) {
             $._ciphertextDigests[ctHandle] = ciphertextDigest;
             $._snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
@@ -203,7 +236,8 @@ contract CiphertextCommits is
                 ctHandles[i],
                 $._keyIds[ctHandles[i]],
                 $._ciphertextDigests[ctHandles[i]],
-                coprocessorTxSenderAddresses
+                coprocessorTxSenderAddresses,
+                $.addCiphertextContextId[addCiphertextHash]
             );
         }
 
@@ -242,7 +276,8 @@ contract CiphertextCommits is
                 ctHandles[i],
                 $._keyIds[ctHandles[i]],
                 $._snsCiphertextDigests[ctHandles[i]],
-                coprocessorTxSenderAddresses
+                coprocessorTxSenderAddresses,
+                $.addCiphertextContextId[addCiphertextHash]
             );
         }
 
@@ -306,11 +341,14 @@ contract CiphertextCommits is
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
-    /// @notice Checks if the consensus is reached among the Coprocessors.
-    /// @param coprocessorCounter The number of coprocessors that agreed
-    /// @return Whether the consensus is reached
-    function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
+    /**
+     * @notice Checks if the consensus is reached among the coprocessors from the same context.
+     * @param contextId The coprocessor context ID
+     * @param coprocessorCounter The number of coprocessors that agreed
+     * @return Whether the consensus is reached
+     */
+    function _isConsensusReached(uint256 contextId, uint256 coprocessorCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = COPROCESSOR_CONTEXTS.getCoprocessorMajorityThresholdFromContext(contextId);
         return coprocessorCounter >= consensusThreshold;
     }
 

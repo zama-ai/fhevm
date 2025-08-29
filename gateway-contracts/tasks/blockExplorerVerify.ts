@@ -77,6 +77,30 @@ task("task:verifyGatewayConfig")
     });
   });
 
+task("task:verifyCoprocessorContexts")
+  .addOptionalParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+    }
+    const proxyAddress = getRequiredEnvVar("COPROCESSOR_CONTEXTS_ADDRESS");
+
+    const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await run("verify:verify", {
+      address: proxyAddress,
+      constructorArguments: [],
+    });
+    await run("verify:verify", {
+      address: implementationAddress,
+      constructorArguments: [],
+    });
+  });
+
 task("task:verifyInputVerification")
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -174,6 +198,9 @@ task("task:verifyAllGatewayContracts")
 
     console.log("Verify Decryption contract:");
     await hre.run("task:verifyDecryption", { useInternalProxyAddress });
+
+    console.log("Verify CoprocessorContexts contract:");
+    await hre.run("task:verifyCoprocessorContexts", { useInternalProxyAddress });
 
     console.log("Contract verification done!");
   });
