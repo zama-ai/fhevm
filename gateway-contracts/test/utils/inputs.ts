@@ -4,7 +4,7 @@ import hre from "hardhat";
 export const UINT64_MAX = (BigInt(1) << BigInt(64)) - BigInt(1);
 
 // Create a byte input of a given length
-export function createByteInput(length: number = 32): string {
+export function createByteInput(length: number = 64): string {
   return hre.ethers.hexlify(hre.ethers.randomBytes(length));
 }
 
@@ -48,4 +48,10 @@ export function createCtHandle(chainId: number = 0, fheType: number = 0): string
 // Create a list of ctHandles (bytes32[])
 export function createCtHandles(length: number, chainId: number = 0, fheType: number = 0): string[] {
   return Array.from({ length }, () => createCtHandle(chainId, fheType));
+}
+
+// Defined in IKmsManagement.sol
+export enum ParamsTypeEnum {
+  Default = 0,
+  Test = 1,
 }
