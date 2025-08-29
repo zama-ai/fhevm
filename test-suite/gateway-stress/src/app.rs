@@ -106,7 +106,9 @@ impl App {
             init_public_decryption_response_listener(self.decryption_contract.clone()).await?;
 
         loop {
-            interval.tick().await;
+            if !self.config.sequential {
+                interval.tick().await;
+            }
 
             if session_start.elapsed() > self.config.tests_duration {
                 break;
@@ -125,6 +127,10 @@ impl App {
             ));
 
             burst_index += 1;
+
+            if self.config.sequential {
+                burst_tasks.join_next().await;
+            }
         }
 
         burst_tasks.join_all().await;
@@ -149,7 +155,9 @@ impl App {
             init_user_decryption_response_listener(self.decryption_contract.clone()).await?;
 
         loop {
-            interval.tick().await;
+            if !self.config.sequential {
+                interval.tick().await;
+            }
 
             if session_start.elapsed() > self.config.tests_duration {
                 break;
@@ -170,6 +178,10 @@ impl App {
             ));
 
             burst_index += 1;
+
+            if self.config.sequential {
+                burst_tasks.join_next().await;
+            }
         }
 
         burst_tasks.join_all().await;

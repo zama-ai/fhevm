@@ -64,7 +64,7 @@ where
                     .get_receipt()
                     .await
                     .map_err(|e| anyhow!("Failed to get receipt: {e}"))?;
-                debug!("PublicDecryptionRequest successfully sent!");
+                debug!("Decryption request successfully sent!");
 
                 let id = extract_id_fn(&receipt)?;
                 id_sender.send(id)?;

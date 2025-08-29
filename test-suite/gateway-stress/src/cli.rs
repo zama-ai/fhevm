@@ -8,6 +8,14 @@ pub struct Cli {
     #[arg(short, long, value_name = "FILE")]
     pub config: Option<PathBuf>,
 
+    /// Enable sequential sending of burst requests
+    #[arg(short, long, default_value_t = false)]
+    pub sequential: bool,
+
+    /// Sets the number of parallel requests in one burst
+    #[arg(short, long)]
+    pub parallel: Option<u32>,
+
     #[command(subcommand)]
     pub subcommand: Subcommands,
 }

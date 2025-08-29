@@ -26,10 +26,18 @@ async fn main() -> ExitCode {
 
 async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let config = Config::from_env_and_file(cli.config)?;
-    info!("Config: {config:?}");
+    let mut config = Config::from_env_and_file(cli.config)?;
 
-    let app = App::connect(config.clone()).await?;
+    // Override some fields of the config by the CLI
+    if cli.sequential {
+        config.sequential = cli.sequential;
+    }
+    if let Some(parallel) = cli.parallel {
+        config.parallel_requests = parallel;
+    }
+
+    info!("Config: {config:?}");
+    let app = App::connect(config).await?;
     match cli.subcommand {
         Subcommands::Public => app.public_decryption_stress_test().await?,
         Subcommands::User => app.user_decryption_stress_test().await?,
