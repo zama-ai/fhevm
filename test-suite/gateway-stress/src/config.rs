@@ -24,6 +24,7 @@ pub struct Config {
     pub tests_duration: Duration,
     #[serde(with = "humantime_serde")]
     pub tests_interval: Duration,
+    pub sequential: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

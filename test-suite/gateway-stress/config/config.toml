@@ -17,7 +17,12 @@ decryption_address = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
 # The time during which the tool will send requests burst to the Gateway
 # Format documentation: https://docs.rs/humantime/latest/humantime/
 # ENV: TESTS_DURATION
-tests_duration = "500ms"
+tests_duration = "10s"
+
+# If requests burst must be sent sequentially when the previous one has been completed.
+# If true, `tests_interval` is ignored.
+# ENV: SEQUENTIAL
+sequential = false
 
 # The interval between two requests burst
 # Format documentation: https://docs.rs/humantime/latest/humantime/
@@ -26,20 +31,20 @@ tests_interval = "1s"
 
 # The number of parallel requests to send to the Gateway, at each interval
 # ENV: PARALLEL_REQUESTS
-parallel_requests = 1
+parallel_requests = 5
 
 # The handles used for user decryptions
 # ENV: USER_CT_HANDLES (format: comma separated list)
 # Example: USER_CT_HANDLES="0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500,0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500"
 user_ct_handles = [
-    "0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500",
+    "0x7a88b93ad2e636eaba00eab25e3db6a39bb3965a2fff00000000000030390500",
 ]
 
 # The handles used for public decryptions
 # ENV: PUBLIC_CT_HANDLES (format: comma separated list)
 # Example: PUBLIC_CT_HANDLES="0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500,0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500"
 public_ct_handles = [
-    "0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500",
+    "0x1c7538f08f6054130981aca8a7d85896ca2a197067ff00000000000030390500",
 ]
 
 # The contract allowed for user decrytion on ct_handles

@@ -3,18 +3,15 @@
 # RUST_IMAGE_VERSION arg can be used to override the default version
 ARG RUST_IMAGE_VERSION=1.89.0
 
-# Stage 1: Build gw-listener
+# Stage 1: Build gateway-stress tool
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
 
-# The profile used to run `cargo build`
 ARG LTO_RELEASE=release
 
-# Use root user for build stage
 USER root
 
 WORKDIR /app
 
-# Copy sources
 COPY test-suite/gateway-stress test-suite/gateway-stress
 
 # Build with improved caching
