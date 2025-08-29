@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+
+# RUST_IMAGE_VERSION arg can be used to override the default version
+ARG RUST_IMAGE_VERSION=1.89.0
+
+# Stage 1: Build gateway-stress tool
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
+
+ARG LTO_RELEASE=release
+
+USER root
+
+WORKDIR /app
+
+COPY test-suite/gateway-stress test-suite/gateway-stress
+
+# Build with improved caching
+WORKDIR /app/test-suite/gateway-stress
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    cargo build --profile=${LTO_RELEASE}
+
+# Stage 2: Runtime image
+FROM cgr.dev/chainguard/busybox:latest-glibc AS prod
+
+COPY --from=builder /etc/group /etc/group
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder --chown=fhevm:fhevm /app/test-suite/gateway-stress/target/release/gateway-stress /bin/gateway-stress
+
+USER fhevm:fhevm
+
+ENTRYPOINT ["/bin/gateway-stress"]
+
+HEALTHCHECK --start-period=5s --interval=1m --timeout=3s --retries=3 \
+    CMD ["ls", "/bin/gateway-stress"]
+
+FROM prod AS dev
