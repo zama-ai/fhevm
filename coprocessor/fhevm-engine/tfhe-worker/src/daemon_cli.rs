@@ -49,7 +49,7 @@ pub struct Args {
     pub maximum_handles_per_input: u8,
 
     /// Coprocessor FHE processing threads
-    #[arg(long, default_value_t = 8)]
+    #[arg(long, default_value_t = 32)]
     pub coprocessor_fhe_threads: usize,
 
     /// Tokio Async IO threads

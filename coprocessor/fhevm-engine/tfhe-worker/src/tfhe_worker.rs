@@ -137,7 +137,7 @@ WITH selected_computations AS (
     WHERE c.transaction_id IN (
       -- Select transaction IDs with uncomputed handles
       -- out of the dependence buckets
-      SELECT transaction_id 
+      SELECT DISTINCT transaction_id 
       FROM computations
       WHERE is_completed = FALSE
         AND is_error = FALSE
@@ -157,19 +157,6 @@ WITH selected_computations AS (
           )
           SELECT DISTINCT dependence_chain_id FROM dep_chains
         )
-      -- In case an ACL event is missed and we get a late allow event
-      UNION
-      (
-        SELECT transaction_id
-        FROM computations
-        WHERE (tenant_id, output_handle) IN (
-          SELECT tenant_id, handle
-          FROM allowed_handles
-          WHERE is_computed = FALSE
-          ORDER BY allowed_at
-          LIMIT $2
-        )
-      )
       LIMIT $1
     )
   )
@@ -223,15 +210,37 @@ FOR UPDATE SKIP LOCKED            ",
         let key_cache = tenant_key_cache.read().await;
         // Clear unneeded work items
         for (_, work) in work_by_tenant.iter_mut() {
-            let mut work_to_remove = vec![];
+            let mut work_to_remove: BTreeSet<usize> = BTreeSet::new();
+            let mut transactions: HashMap<&Handle, (bool, Vec<usize>)> = HashMap::new();
             for (idx, w) in work.iter_mut().enumerate() {
+                transactions
+                    .entry(&w.transaction_id)
+                    .and_modify(|(_needed, ops)| ops.push(idx))
+                    .or_insert((false, vec![idx]));
                 // If this handle is already marked as computed in
                 // allowed_handles, we don't need to re-compute it
                 // (nor any other intermediate handles it depends on,
                 // which will be marked as unneeded during compute
                 // graph finalization).  Remove it from the work set.
                 if w.is_computed.unwrap_or(false) {
-                    work_to_remove.push(idx);
+                    work_to_remove.insert(idx);
+                } else if w.is_allowed.unwrap_or(false) {
+                    // If for a given transaction we never set the
+                    // needed flag, we'll remove all of its operations
+                    // from the work set. This happens if there is no
+                    // computable allowed handle present, in which
+                    // case no useful work can be done.
+                    transactions
+                        .entry(&w.transaction_id)
+                        .and_modify(|(needed, _ops)| *needed = true)
+                        .or_insert((true, vec![idx]));
+                }
+            }
+            for (_, (needed, ops)) in transactions {
+                if !needed {
+                    ops.iter().for_each(|idx| {
+                        work_to_remove.insert(*idx);
+                    });
                 }
             }
             for idx in work_to_remove.iter().rev() {
