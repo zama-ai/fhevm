@@ -15,7 +15,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
@@ -137,40 +137,17 @@ WITH selected_computations AS (
     WHERE c.transaction_id IN (
       -- Select transaction IDs with uncomputed handles
       -- out of the dependence buckets
-      SELECT transaction_id 
+      SELECT DISTINCT transaction_id 
       FROM computations
-      WHERE is_completed = FALSE
-        AND is_error = FALSE
-        AND dependence_chain_id IN (
-          WITH dep_chains AS (
-            -- Find oldest uncomputed allowed handles and
-            -- get their dependence buckets
-            SELECT dependence_chain_id
-            FROM computations
-            WHERE (tenant_id, output_handle) IN (
-              SELECT tenant_id, handle
-              FROM allowed_handles
-              WHERE is_computed = FALSE
-              ORDER BY allowed_at
-              LIMIT $2
-            )
-          )
-          SELECT DISTINCT dependence_chain_id FROM dep_chains
-        )
-      -- In case an ACL event is missed and we get a late allow event
-      UNION
-      (
-        SELECT transaction_id
-        FROM computations
-        WHERE (tenant_id, output_handle) IN (
+      WHERE is_error = FALSE
+        AND (tenant_id, output_handle) IN (
           SELECT tenant_id, handle
           FROM allowed_handles
           WHERE is_computed = FALSE
-          ORDER BY allowed_at
-          LIMIT $2
+          ORDER BY schedule_order
+          LIMIT $1
         )
-      )
-      LIMIT $1
+      LIMIT $2
     )
   )
 )
@@ -223,15 +200,37 @@ FOR UPDATE SKIP LOCKED            ",
         let key_cache = tenant_key_cache.read().await;
         // Clear unneeded work items
         for (_, work) in work_by_tenant.iter_mut() {
-            let mut work_to_remove = vec![];
+            let mut work_to_remove: BTreeSet<usize> = BTreeSet::new();
+            let mut transactions: HashMap<&Handle, (bool, Vec<usize>)> = HashMap::new();
             for (idx, w) in work.iter_mut().enumerate() {
+                transactions
+                    .entry(&w.transaction_id)
+                    .and_modify(|(_needed, ops)| ops.push(idx))
+                    .or_insert((false, vec![idx]));
                 // If this handle is already marked as computed in
                 // allowed_handles, we don't need to re-compute it
                 // (nor any other intermediate handles it depends on,
                 // which will be marked as unneeded during compute
                 // graph finalization).  Remove it from the work set.
                 if w.is_computed.unwrap_or(false) {
-                    work_to_remove.push(idx);
+                    work_to_remove.insert(idx);
+                } else if w.is_allowed.unwrap_or(false) {
+                    // If for a given transaction we never set the
+                    // needed flag, we'll remove all of its operations
+                    // from the work set. This happens if there is no
+                    // computable allowed handle present, in which
+                    // case no useful work can be done.
+                    transactions
+                        .entry(&w.transaction_id)
+                        .and_modify(|(needed, _ops)| *needed = true)
+                        .or_insert((true, vec![idx]));
+                }
+            }
+            for (_, (needed, ops)) in transactions {
+                if !needed {
+                    ops.iter().for_each(|idx| {
+                        work_to_remove.insert(*idx);
+                    });
                 }
             }
             for idx in work_to_remove.iter().rev() {
@@ -462,11 +461,11 @@ FOR UPDATE SKIP LOCKED            ",
                 );
                 let _ = query!(
                     "
-                            UPDATE computations
+                            UPDATE allowed_handles
                             SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
                                 uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
                             WHERE tenant_id = $1
-                            AND output_handle = ANY($2::BYTEA[])
+                            AND handle = ANY($2::BYTEA[])
                         ",
                     *tenant_id,
                     &uncomputable.into_values().collect::<Vec<_>>()
@@ -556,11 +555,25 @@ FOR UPDATE SKIP LOCKED            ",
                         WORK_ITEMS_PROCESSED_COUNTER.inc();
                     }
                     Err((err, tenant_id, output_handle, transaction_id)) => {
+                        // Downgrade SchedulerError to warning as the
+                        // error is not about the operations themselves.
+                        // Do not set the error flag in the DB.
+                        if let Some(cerr) = err.downcast_ref::<CoprocessorError>() {
+                            if matches!(cerr, CoprocessorError::SchedulerError(_)) {
+                                warn!(target: "tfhe_worker",
+                                                  { tenant_id = tenant_id, error = err,
+                                output_handle = format!("0x{}", hex::encode(&output_handle)) },
+                                                "scheduler encountered an error while processing work item"
+                                            );
+                                continue;
+                            }
+                        }
                         WORKER_ERRORS_COUNTER.inc();
                         error!(target: "tfhe_worker",
-                            { tenant_id = tenant_id, error = err, output_handle = format!("0x{}", hex::encode(&output_handle)) },
-                            "error while processing work item"
-                        );
+                                      { tenant_id = tenant_id, error = err,
+                        output_handle = format!("0x{}", hex::encode(&output_handle)) },
+                                   "error while processing work item"
+                               );
                         let mut s =
                             tracer.start_with_context("set_computation_error_in_db", &loop_ctx);
                         s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
