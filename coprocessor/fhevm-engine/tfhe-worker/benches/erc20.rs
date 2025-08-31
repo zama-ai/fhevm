@@ -1,8 +1,9 @@
 #[path = "./utils.rs"]
 mod utils;
 use crate::utils::{
-    allow_handles, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
-    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, OperatorType,
+    allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
+    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, EnvConfig,
+    OperatorType,
 };
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
@@ -20,7 +21,6 @@ use tfhe_worker::server::tfhe_worker::{
 use tfhe_worker::tfhe_worker::TIMING;
 use tokio::runtime::Runtime;
 use tonic::metadata::MetadataValue;
-use utils::EnvConfig;
 
 fn test_random_user_address() -> String {
     let _private_key = "bd2400c676871534a682ca1c5e4cd647ec9c3e122f188c6e3f54e6900d586c7b";
@@ -184,7 +184,6 @@ async fn schedule_erc20_whitepaper(
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 3);
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         let handle_bals = first_resp.input_handles[0].handle.clone();
@@ -258,8 +257,8 @@ async fn schedule_erc20_whitepaper(
             ],
         });
 
-        handles_to_allow.push(new_to_amount_handle.clone());
-        handles_to_allow.push(new_from_amount_handle.clone());
+        allow_handle(&new_to_amount_handle, &pool).await?;
+        allow_handle(&new_from_amount_handle, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -270,7 +269,6 @@ async fn schedule_erc20_whitepaper(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.clone().async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
@@ -372,7 +370,6 @@ async fn schedule_erc20_no_cmux(
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 3);
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         let handle_bals = first_resp.input_handles[0].handle.clone();
@@ -452,8 +449,8 @@ async fn schedule_erc20_no_cmux(
             ],
         });
 
-        handles_to_allow.push(new_to_amount_handle.clone());
-        handles_to_allow.push(new_from_amount_handle.clone());
+        allow_handle(&new_to_amount_handle, &pool).await?;
+        allow_handle(&new_from_amount_handle, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -464,7 +461,6 @@ async fn schedule_erc20_no_cmux(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.clone().async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
@@ -592,7 +588,6 @@ async fn schedule_dependent_erc20_whitepaper(
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 2);
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         let handle_bals = first_resp.input_handles[0].handle.clone();
@@ -662,8 +657,8 @@ async fn schedule_dependent_erc20_whitepaper(
             ],
         });
 
-        handles_to_allow.push(new_to_amount_handle.clone());
-        handles_to_allow.push(new_from_amount_handle.clone());
+        allow_handle(&new_to_amount_handle, &pool).await?;
+        allow_handle(&new_from_amount_handle, &pool).await?;
 
         bald = AsyncComputationInput {
             input: Some(Input::InputHandle(new_to_amount_handle.clone())),
@@ -678,7 +673,6 @@ async fn schedule_dependent_erc20_whitepaper(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.clone().async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
@@ -807,7 +801,6 @@ async fn schedule_dependent_erc20_no_cmux(
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 2);
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         let handle_bals = first_resp.input_handles[0].handle.clone();
@@ -883,8 +876,8 @@ async fn schedule_dependent_erc20_no_cmux(
             ],
         });
 
-        handles_to_allow.push(new_to_amount_handle.clone());
-        handles_to_allow.push(new_from_amount_handle.clone());
+        allow_handle(&new_to_amount_handle, &pool).await?;
+        allow_handle(&new_from_amount_handle, &pool).await?;
 
         bald = AsyncComputationInput {
             input: Some(Input::InputHandle(new_to_amount_handle.clone())),
@@ -899,7 +892,6 @@ async fn schedule_dependent_erc20_no_cmux(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.clone().async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
