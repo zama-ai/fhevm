@@ -1,8 +1,9 @@
 #[path = "./utils.rs"]
 mod utils;
 use crate::utils::{
-    allow_handles, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
-    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, OperatorType,
+    allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
+    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, EnvConfig,
+    OperatorType,
 };
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
@@ -20,7 +21,6 @@ use tfhe_worker::server::tfhe_worker::{
 use tfhe_worker::tfhe_worker::TIMING;
 use tokio::runtime::Runtime;
 use tonic::metadata::MetadataValue;
-use utils::EnvConfig;
 
 fn test_random_user_address() -> String {
     let _private_key = "bd2400c676871534a682ca1c5e4cd647ec9c3e122f188c6e3f54e6900d586c7b";
@@ -268,7 +268,6 @@ async fn swap_request_whitepaper(
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 10);
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         // Swap request inputs
@@ -468,10 +467,10 @@ async fn swap_request_whitepaper(
             inputs: vec![total_dex_token_1_in.clone(), sent_1.clone()],
         });
 
-        handles_to_allow.push(pending_0_in_handle.clone());
-        handles_to_allow.push(pending_1_in_handle.clone());
-        handles_to_allow.push(pending_total_token_0_in.clone());
-        handles_to_allow.push(pending_total_token_1_in.clone());
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -482,7 +481,6 @@ async fn swap_request_whitepaper(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
@@ -590,7 +588,6 @@ async fn swap_request_no_cmux(
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 10);
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         // Swap request inputs
@@ -806,10 +803,10 @@ async fn swap_request_no_cmux(
             inputs: vec![total_dex_token_1_in.clone(), sent_1.clone()],
         });
 
-        handles_to_allow.push(pending_0_in_handle.clone());
-        handles_to_allow.push(pending_1_in_handle.clone());
-        handles_to_allow.push(pending_total_token_0_in.clone());
-        handles_to_allow.push(pending_total_token_1_in.clone());
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -820,7 +817,6 @@ async fn swap_request_no_cmux(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
@@ -928,7 +924,6 @@ async fn swap_claim_whitepaper(
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 6);
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         // Swap claim inputs
@@ -1088,8 +1083,8 @@ async fn swap_claim_whitepaper(
                     current_dex_balance_0.clone(),
                 ],
             });
-            handles_to_allow.push(new_from_amount_handle_0.clone());
-            handles_to_allow.push(new_to_amount_handle_0.clone());
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
         if total_dex_token_0_in != 0 {
             async_computations.push(AsyncComputation {
@@ -1214,8 +1209,8 @@ async fn swap_claim_whitepaper(
                     current_dex_balance_1.clone(),
                 ],
             });
-            handles_to_allow.push(new_from_amount_handle_1.clone());
-            handles_to_allow.push(new_to_amount_handle_1.clone());
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -1227,7 +1222,6 @@ async fn swap_claim_whitepaper(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
@@ -1335,7 +1329,6 @@ async fn swap_claim_no_cmux(
     let first_resp = &resp.upload_responses[0];
     assert_eq!(first_resp.input_handles.len(), 6);
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         // Swap claim inputs
@@ -1494,8 +1487,8 @@ async fn swap_claim_no_cmux(
                     },
                 ],
             });
-            handles_to_allow.push(new_from_amount_handle_0.clone());
-            handles_to_allow.push(new_to_amount_handle_0.clone());
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
 
         if total_dex_token_0_in != 0 {
@@ -1619,8 +1612,8 @@ async fn swap_claim_no_cmux(
                     },
                 ],
             });
-            handles_to_allow.push(new_from_amount_handle_1.clone());
-            handles_to_allow.push(new_to_amount_handle_1.clone());
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -1632,7 +1625,6 @@ async fn swap_claim_no_cmux(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
@@ -1751,7 +1743,6 @@ async fn swap_request_whitepaper_dep(
         input: Some(Input::InputHandle(current_dex_balance_1.clone())),
     };
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         // Swap request inputs
@@ -1946,10 +1937,10 @@ async fn swap_request_whitepaper_dep(
         current_dex_balance_0 = new_current_balance_0.clone();
         current_dex_balance_1 = new_current_balance_1.clone();
 
-        handles_to_allow.push(pending_0_in_handle.clone());
-        handles_to_allow.push(pending_1_in_handle.clone());
-        handles_to_allow.push(pending_total_token_0_in.clone());
-        handles_to_allow.push(pending_total_token_1_in.clone());
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -1960,7 +1951,6 @@ async fn swap_request_whitepaper_dep(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
@@ -2078,7 +2068,6 @@ async fn swap_request_no_cmux_dep(
         input: Some(Input::InputHandle(current_dex_balance_1.clone())),
     };
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         // Swap request inputs
@@ -2289,10 +2278,10 @@ async fn swap_request_no_cmux_dep(
         current_dex_balance_0 = new_current_balance_0.clone();
         current_dex_balance_1 = new_current_balance_1.clone();
 
-        handles_to_allow.push(pending_0_in_handle.clone());
-        handles_to_allow.push(pending_1_in_handle.clone());
-        handles_to_allow.push(pending_total_token_0_in.clone());
-        handles_to_allow.push(pending_total_token_1_in.clone());
+        allow_handle(&pending_0_in_handle, &pool).await?;
+        allow_handle(&pending_1_in_handle, &pool).await?;
+        allow_handle(&pending_total_token_0_in, &pool).await?;
+        allow_handle(&pending_total_token_1_in, &pool).await?;
     }
 
     let mut compute_request = tonic::Request::new(AsyncComputeRequest {
@@ -2303,7 +2292,6 @@ async fn swap_request_no_cmux_dep(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
@@ -2421,7 +2409,6 @@ async fn swap_claim_whitepaper_dep(
         input: Some(Input::InputHandle(current_dex_balance_1.clone())),
     };
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         // Swap claim inputs
@@ -2577,8 +2564,8 @@ async fn swap_claim_whitepaper_dep(
             current_dex_balance_0 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_0.clone())),
             };
-            handles_to_allow.push(new_from_amount_handle_0.clone());
-            handles_to_allow.push(new_to_amount_handle_0.clone());
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
         if total_dex_token_0_in != 0 {
             async_computations.push(AsyncComputation {
@@ -2707,8 +2694,8 @@ async fn swap_claim_whitepaper_dep(
             current_dex_balance_1 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_1.clone())),
             };
-            handles_to_allow.push(new_from_amount_handle_1.clone());
-            handles_to_allow.push(new_to_amount_handle_1.clone());
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -2720,7 +2707,6 @@ async fn swap_claim_whitepaper_dep(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
@@ -2838,7 +2824,6 @@ async fn swap_claim_no_cmux_dep(
         input: Some(Input::InputHandle(current_dex_balance_1.clone())),
     };
 
-    let mut handles_to_allow = vec![];
     for _ in 0..=(num_samples - 1) as u32 {
         let transaction_id = next_handle();
         // Swap claim inputs
@@ -2993,8 +2978,8 @@ async fn swap_claim_no_cmux_dep(
             current_dex_balance_0 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_0.clone())),
             };
-            handles_to_allow.push(new_from_amount_handle_0.clone());
-            handles_to_allow.push(new_to_amount_handle_0.clone());
+            allow_handle(&new_from_amount_handle_0, &pool).await?;
+            allow_handle(&new_to_amount_handle_0, &pool).await?;
         }
 
         if total_dex_token_0_in != 0 {
@@ -3122,8 +3107,8 @@ async fn swap_claim_no_cmux_dep(
             current_dex_balance_1 = AsyncComputationInput {
                 input: Some(Input::InputHandle(new_from_amount_handle_1.clone())),
             };
-            handles_to_allow.push(new_from_amount_handle_1.clone());
-            handles_to_allow.push(new_to_amount_handle_1.clone());
+            allow_handle(&new_from_amount_handle_1, &pool).await?;
+            allow_handle(&new_to_amount_handle_1, &pool).await?;
         }
     }
 
@@ -3135,7 +3120,6 @@ async fn swap_claim_no_cmux_dep(
         MetadataValue::from_str(&api_key_header).unwrap(),
     );
     let _resp = client.async_compute(compute_request).await.unwrap();
-    let _ = allow_handles(&handles_to_allow, &pool).await;
     let app_ref = &app;
     bencher
         .to_async(FuturesExecutor)
