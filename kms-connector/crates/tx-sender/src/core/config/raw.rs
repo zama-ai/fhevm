@@ -62,7 +62,7 @@ fn default_responses_batch_size() -> u8 {
 }
 
 fn default_gas_multiplier_percent() -> usize {
-    130 // 130% gas increase by default
+    300 // 300% gas increase by default
 }
 
 impl DeserializeRawConfig for RawConfig {}
