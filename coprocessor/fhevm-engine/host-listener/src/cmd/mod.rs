@@ -115,6 +115,13 @@ pub struct Args {
         help = "Maximum duration in blocks to detect reorgs"
     )]
     pub reorg_maximum_duration_in_blocks: u64,
+
+    #[arg(
+        long,
+        default_value_t = 12,
+        help = "Maximum number of block to wait before a block is finalized"
+    )]
+    pub finalization_maximum_duration_in_blocks: u64,
 }
 
 // TODO: to merge with Levent works
@@ -141,11 +148,30 @@ struct InfiniteLogIter {
     pub tick_block: HeartBeat,
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
+    finalization_maximum_duration_in_blocks: u64,
 }
 #[allow(clippy::large_enum_variant)]
 enum LogOrBlockTimeout {
     Log(Option<Log>),
     BlockTimeout,
+}
+
+mod eth_rpc_err {
+    use alloy::transports::{RpcError, TransportErrorKind};
+    pub fn too_much_blocks_or_events(
+        err: &RpcError<TransportErrorKind>,
+    ) -> bool {
+        // quicknode message about asking too much blocks can vary
+        // e.g. doc: -32602	eth_getLogs and eth_newFilter are limited to a 10,000 blocks range
+        // e.g. tesnet: ErrorResp(ErrorPayload { code: -32614, message: "eth_getLogs is limited to a 10,000 range", data: None })
+        // doc: -32005	Limit Exceeded
+        // also some limitation are from alloy
+        // {"message":"WS connection error","err":"Space limit exceeded: Message too long: 67112162 > 67108864"}
+        let msg = err.to_string();
+        (msg.contains("limited to a") && msg.contains("range"))
+            || msg.contains("Limit Exceeded")
+            || msg.contains("Space limit exceeded: Message too long")
+    }
 }
 
 impl InfiniteLogIter {
@@ -183,6 +209,8 @@ impl InfiniteLogIter {
             block_history: BlockHistory::new(
                 args.reorg_maximum_duration_in_blocks as usize,
             ),
+            finalization_maximum_duration_in_blocks: args
+                .finalization_maximum_duration_in_blocks,
         }
     }
 
@@ -219,92 +247,99 @@ impl InfiniteLogIter {
         BlockNumberOrTag::Number(last_block - catch_size.min(last_block))
     }
 
+    async fn get_blocks_range_no_retry(
+        &mut self,
+        from_block: u64,
+        to_block: u64,
+    ) -> Result<Vec<Log>> {
+        let mut filter =
+            Filter::new().from_block(from_block).to_block(to_block);
+        if !self.contract_addresses.is_empty() {
+            filter = filter.address(self.contract_addresses.clone())
+        }
+        // we use a specidic provider to no disturb the real-time one (no buffer shared)
+        let ws = WsConnect::new(&self.url).with_max_retries(0); // disabled, alloy skips events
+        let provider = match ProviderBuilder::new().connect_ws(ws).await {
+            Ok(provider) => provider,
+            Err(_) => anyhow::bail!("Cannot get a provider"),
+        };
+        provider.get_logs(&filter).await.map_err(|err| {
+            if eth_rpc_err::too_much_blocks_or_events(&err) {
+                anyhow::anyhow!("Too much blocks or events: {err}")
+            } else {
+                anyhow::anyhow!("Cannot get logs for {filter:?} due to {err}")
+            }
+        })
+    }
+
     async fn consume_catchup_blocks(&mut self) {
-        let Some((_, to_block)) = self.catchup_blocks else {
+        let Some((from_block, to_block)) = self.catchup_blocks else {
+            // nothing to consume
             return;
         };
+        let to_block_or_max = to_block.unwrap_or(u64::MAX);
+        if from_block > to_block_or_max {
+            self.catchup_blocks = None;
+            info!("Catchup no next get_logs step");
+            return;
+        }
+        let finalized_block = if let Some(current_block) =
+            self.block_history.tip()
+        {
+            // non finalized block will be post-poned until they are finalized
+            current_block.number - self.finalization_maximum_duration_in_blocks
+        } else {
+            // happen at service start, assuming everything is finalized
+            info!("Unkown top block, assuming full finalized catchup");
+            from_block + self.catchup_paging
+        };
+        if from_block >= finalized_block {
+            // non finalized blocks are post-poned
+            info!("Post-pone catchup");
+            return;
+        }
         let mut paging_size = self.catchup_paging;
-        let (logs, from_block, paging_to_block) = loop {
-            let Some((from_block, to_block)) = self.catchup_blocks else {
-                return;
-            };
-            let paging_to_block = if let Some(to_block) = to_block {
-                to_block.min(from_block + paging_size)
-            } else {
-                from_block + paging_size
-            };
-            let mut filter = Filter::new()
-                .from_block(from_block)
-                .to_block(paging_to_block);
-            if !self.contract_addresses.is_empty() {
-                filter = filter.address(self.contract_addresses.clone())
-            }
-            // TODO: function
-            let logs = {
-                let Some(provider) = &*self.provider.read().await else {
-                    error!("No provider, inconsistent state");
-                    return;
-                };
-                provider.get_logs(&filter).await
-            };
+        let mut remain_retry = 3;
+        let (logs, paging_to_block) = loop {
+            let paging_to_block = from_block + paging_size - 1;
+            // non finalized blocks are post-poned
+            let paging_to_block =
+                paging_to_block.min(finalized_block).min(to_block_or_max);
+            let logs = self
+                .get_blocks_range_no_retry(from_block, paging_to_block)
+                .await;
             match logs {
-                Ok(logs) => break (logs, from_block, paging_to_block),
-                Err(err) => {
-                    if err.to_string().contains("limited") {
-                        // too much blocks or logs
-                        if paging_size == 1 {
-                            error!(block=from_block, "Cannot catchup block {filter:?} due to {err}, aborting this block");
-                            self.catchup_blocks =
-                                Some((from_block + 1, to_block));
-                            continue;
-                        } else {
-                            // retry with paging size 1
-                            info!("Retrying catchup with smaller paging size");
-                            paging_size = (paging_size / 2).max(1);
-                            continue;
-                        }
+                Ok(logs) => break (logs, paging_to_block),
+                Err(err) if from_block == paging_to_block => {
+                    // we asked only one block and it still fails
+                    // continue with a limited number of retry
+                    if remain_retry > 0 {
+                        warn!(block=from_block, error=?err, remain_retry=remain_retry, "Catchup of block failed, retrying");
+                        remain_retry -= 1;
+                        continue;
                     }
-                    warn!("Cannot get logs for {filter:?} due to {err}");
+                    error!(block=from_block, error=?err, "Catchup of block impossible. Will be retried later after handling a real-time message.");
                     return;
                 }
-            };
+                Err(err) => {
+                    // too big paging size detection cannot be done reliably for all provider
+                    // so it assumes the error is due to too big paging size
+                    // and it retries with reduced paging, this also serves as normal retry for transient error
+                    warn!(error = ?err, "Retrying catchup with smaller paging size.");
+                    paging_size = (paging_size / 2).max(1);
+                    continue;
+                }
+            }
         };
-
         info!(
             nb_events = logs.len(),
             from_block = from_block,
-            to_block = paging_to_block,
+            page_to_block = paging_to_block,
+            to_block = to_block,
             "Catchup get_logs step done"
         );
-
-        let nb_logs = logs.len();
         self.catchup_logs.extend(logs);
-        self.catchup_blocks = Some((paging_to_block + 1, to_block)); //default
-
-        if Some(paging_to_block) == to_block {
-            self.catchup_blocks = None;
-        } else if let Some(to_block) = to_block {
-            if paging_to_block + 1 > to_block {
-                self.catchup_blocks = None;
-            }
-        } else if nb_logs == 0 {
-            // either empty or future block
-            let current_block = {
-                let Some(provider) = &*self.provider.read().await else {
-                    error!("No provider, inconsistent state");
-                    return;
-                };
-                provider.get_block_number().await
-            };
-            if let Ok(current_block) = current_block {
-                if current_block < paging_to_block + 1 {
-                    self.catchup_blocks = None;
-                }
-            }
-        };
-        if self.catchup_blocks.is_none() {
-            info!("Catchup no next get_logs step");
-        }
+        self.catchup_blocks = Some((paging_to_block + 1, to_block)); // end is detected at function start
     }
 
     async fn recheck_tip_block(&mut self) {
@@ -670,14 +705,19 @@ impl InfiniteLogIter {
         }
     }
 
-    fn end_at_block_reached(&self, log: &Log) -> bool {
+    async fn end_at_block_reached(&self) -> bool {
         let Some(end_at_block) = self.end_at_block else {
             return false;
         };
-        let Some(current_block) = log.block_number else {
-            return false;
-        };
-        current_block > end_at_block
+        let current_block_number =
+            if let Some(current_block) = self.block_history.tip() {
+                current_block.number
+            } else if let Ok(current_block) = self.get_current_block().await {
+                current_block.header.number
+            } else {
+                return false;
+            };
+        current_block_number > end_at_block
     }
 
     async fn next(&mut self) -> Option<Log> {
@@ -693,12 +733,21 @@ impl InfiniteLogIter {
                 self.consume_catchup_blocks().await;
             };
             if let Some(log) = self.catchup_logs.pop_front() {
-                if self.catchup_logs.is_empty() {
+                if self.catchup_logs.is_empty() && self.catchup_blocks.is_none()
+                {
                     info!("Going back to real-time events");
                 };
                 self.current_event = Some(log);
                 break;
             };
+            if self.end_at_block_reached().await {
+                eprintln!(
+                    "End at block reached: {}",
+                    self.end_at_block.unwrap()
+                );
+                warn!("Stopping due to --end-at-block");
+                return None;
+            }
             match self.next_event_or_block_end().await {
                 LogOrBlockTimeout::Log(None) => {
                     // the stream ends, could be a restart of the full node, or
@@ -709,14 +758,6 @@ impl InfiniteLogIter {
                     continue;
                 }
                 LogOrBlockTimeout::Log(Some(log)) => {
-                    if self.end_at_block_reached(&log) {
-                        info!(
-                            block = log.block_number,
-                            end_at_block = self.end_at_block,
-                            "Stopping due to --end-at-block"
-                        );
-                        return None;
-                    }
                     info!(log = ?log, "Log event");
                     let block_hash = log.block_hash;
                     let block_hash_or_0 = block_hash.unwrap_or_default();
