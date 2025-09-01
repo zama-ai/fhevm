@@ -1,4 +1,4 @@
-name: Publish Release
+name: publish-relayer-release
 
 on:
   workflow_dispatch:
@@ -15,6 +15,7 @@ env:
 jobs:
   ## TODO: add a job to verify the tagged commit
   package:
+    name: publish-relayer-release/package
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,6 +40,7 @@ jobs:
         run: cd target/package && echo "hash=$(sha256sum ./*.crate | base64 -w0)" >> "${GITHUB_OUTPUT}"
 
   provenance:
+    name: publish-relayer-release/provenance
     if: ${{ !inputs.dry_run }}
     needs: [package]
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@5a775b367a56d5bd118a224a811bba288150a563 #v2.0.0
@@ -50,7 +52,8 @@ jobs:
       # SHA-256 hashes of the Crate package.
       base64-subjects: ${{ needs.package.outputs.hash }}
 
-  publish_release:
+  publish-release:
+    name: publish-relayer-release/publish-release
     needs: [package]
     runs-on: ubuntu-latest
     defaults:

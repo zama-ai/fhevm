@@ -1,14 +1,10 @@
 # syntax=docker/dockerfile:1
-# TODO: move this image to use a safer base
-
 # Base from https://docs.docker.com/guides/rust/develop/
 ARG RUST_VERSION=1.87.0
-ARG CARGO_NET_GIT_FETCH_WITH_CLI=false
-ARG APP_NAME=zws-relayer  # binary name specified in apps/relayer/relayer/Cargo.toml
+ARG APP_NAME=fhevm-relayer
 
 FROM rust:${RUST_VERSION}-slim-bullseye AS build
 ARG APP_NAME
-ARG CARGO_NET_GIT_FETCH_WITH_CLI
 WORKDIR /app
 
 # Build the application.
@@ -18,23 +14,16 @@ WORKDIR /app
 # Leverage a bind mount to the src directory to avoid having to copy the
 # source code into the container. Once built, copy the executable to an
 # output directory before the cache mounted /app/target is unmounted.
-# NOTE: We need to mount ssh to be able to fetch the `fhevm-relayer` git repo.
-RUN --mount=type=ssh \
-    --mount=type=bind,source=lib/Cargo.toml,target=lib/Cargo.toml \
-    --mount=type=bind,source=lib/src,target=lib/src \
-    --mount=type=bind,source=relayer/Cargo.toml,target=relayer/Cargo.toml \
-    --mount=type=bind,source=relayer/src,target=relayer/src \
-    --mount=type=bind,source=fhevm-relayer/Cargo.toml,target=fhevm-relayer/Cargo.toml \
-    --mount=type=bind,source=fhevm-relayer/src,target=fhevm-relayer/src \
-    --mount=type=bind,source=fhevm-relayer/artifacts,target=fhevm-relayer/artifacts \
-    --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
+RUN --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
+    --mount=type=bind,source=src,target=src \
+    --mount=type=bind,source=artifacts/contract-abis,target=artifacts/contract-abis \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     <<EOF
 set -e
-# TODO: investigate why sqlite3 is required to build diesel if only postgres is specified
-apt-get update && apt-get install libssl-dev git musl-dev pkg-config libpq-dev libsqlite3-dev clang -y
+
+apt-get update && apt-get install build-essential libclang-dev libssl-dev libpq-dev libsqlite3-dev ca-certificates gettext git musl-dev pkg-config -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
 ls -R && cargo build --locked --release
 cp ./target/release/$APP_NAME /bin/server
 EOF
@@ -51,7 +40,7 @@ EOF
 # reproducibility is important, consider using a digest
 # (e.g.,    debian@sha256:ac707220fbd7b67fc19b112cee8170b41a9e97f703f588b2cdbbcdcecdd8af57).
 FROM debian:bullseye-slim AS runtime
-RUN apt-get update && apt-get install libssl-dev libpq-dev libsqlite3-dev ca-certificates gettext -y && update-ca-certificates
+RUN apt-get update && apt-get install libssl-dev libpq-dev libsqlite3-dev ca-certificates gettext git musl-dev pkg-config -y --no-install-recommends && update-ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/   #user
@@ -66,12 +55,8 @@ USER appuser
 
 WORKDIR /app/config
 
-
 # Copy the executable from the "build" stage.
 COPY --from=build /bin/server /bin/
-
-# Expose the port that the application listens on.
-EXPOSE 8000
 
 # What the container should run when it is started.
 CMD ["/bin/server"]

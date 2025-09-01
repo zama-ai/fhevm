@@ -5,7 +5,7 @@
 # This allows to have a single entrypoint against which github can accept PR requirements or not.
 # Also this creates less actions and a more coherent view of all checks made for a PR or new commit to main.
 
-name: CI
+name: ci
 
 on:
   pull_request:
@@ -17,9 +17,11 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  checks: write
 
 jobs:
   check-changes:
+    name: ci/check-changes
     runs-on: ubuntu-latest
     outputs:
       # Each output indicates if files in a specific component were modified
@@ -51,7 +53,10 @@ jobs:
             - 'package.json'
             - 'pnpm-lock.yaml'
 
+  # TODO: migrate from per language CI to per-component
+
   js:
+    name: ci/js (bpr)
     needs:
       - check-changes
     if: >-
@@ -63,6 +68,7 @@ jobs:
       node-version: 22
 
   rust:
+    name: ci/rust (bpr)
     needs:
       - check-changes
     if: >-
@@ -72,6 +78,8 @@ jobs:
     uses: ./.github/workflows/rust_ci.yaml
     secrets:
       RELAYER_TOKEN: ${{ secrets.RELAYER_TOKEN }}
+      BOT_USERNAME: ${{ secrets.BOT_USERNAME }}
+
     # TODO: setup S3 cache
     #   AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
     #   AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}

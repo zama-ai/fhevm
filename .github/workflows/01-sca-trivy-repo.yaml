@@ -46,14 +46,12 @@ jobs:
       - name: Set global vars
         id: myvars
         run: |
-          DATE_BUILD=$(date +%y%m%d_%H%M%S)
-          GIT_HASH_SHORT=$(git rev-parse --short HEAD)
-          GH_ORG_REPO_NAME=$( echo ${{ github.repository }} | tr -d ' ' | sed -E 's|/|_|g' )
+          DATE_BUILD="$(date +%y%m%d_%H%M%S)"
+          GIT_HASH_SHORT="$(git rev-parse --short HEAD)"
+          GH_ORG_REPO_NAME="$( echo ${{ github.repository }} | tr -d ' ' | sed -E 's|/|_|g' )"
 
           ## Set global vars
-          echo "DATE_BUILD=$DATE_BUILD" >> $GITHUB_OUTPUT
-          echo "GIT_HASH_SHORT=$GIT_HASH_SHORT" >> $GITHUB_OUTPUT
-          echo "GH_ORG_REPO_NAME=$GH_ORG_REPO_NAME" >> $GITHUB_OUTPUT
+          { echo "DATE_BUILD=$DATE_BUILD";echo "GIT_HASH_SHORT=$GIT_HASH_SHORT";echo "GH_ORG_REPO_NAME=$GH_ORG_REPO_NAME"; } >> "$GITHUB_OUTPUT"
 
   run-trivy:
     runs-on: ubuntu-latest
@@ -79,7 +77,7 @@ jobs:
             TARGET_REPO="."
 
             ## Set vars
-            echo "REPORT_NAME=$REPORT_NAME" >> $GITHUB_OUTPUT
+            echo "REPORT_NAME=$REPORT_NAME" >> "$GITHUB_OUTPUT"
 
             ## Generates json table and summary reports
             trivy -q fs -f json --scanners secret,vuln,misconfig ${TARGET_REPO} -o trivy.${REPORT_NAME}.json
@@ -126,15 +124,17 @@ jobs:
             trivy_report_json=trivy.${{ steps.run_trivy.outputs.REPORT_NAME }}.json
 
             ## Extract total of detected issues
-            TRIVY_ISSUES_VULNS=$(jq '[.Results[].Vulnerabilities[]?] | length' ${trivy_report_json})
-            TRIVY_ISSUES_MISCFG=$(jq '[.Results[].Misconfigurations[]?] | length' ${trivy_report_json})
-            TRIVY_ISSUES_SECRETS=$(jq '[.Results[].Secrets[]?] | length' ${trivy_report_json})
+            TRIVY_ISSUES_VULNS=$(jq '[.Results[].Vulnerabilities[]?] | length' "${trivy_report_json}")
+            TRIVY_ISSUES_MISCFG=$(jq '[.Results[].Misconfigurations[]?] | length' "${trivy_report_json}")
+            TRIVY_ISSUES_SECRETS=$(jq '[.Results[].Secrets[]?] | length' "${trivy_report_json}")
 
             if [ "$TRIVY_ISSUES_VULNS" -eq 0 ] && [ "$TRIVY_ISSUES_MISCFG" -eq 0 ] && [ "$TRIVY_ISSUES_SECRETS" -eq 0 ]; then
-                echo ':white_check_mark: **Trivy** $${\color{green}NOT FOUND}$$ **issues in your Repo**' >> $GITHUB_STEP_SUMMARY
+                # shellcheck disable=SC2016 # irrelevant
+                echo ':white_check_mark: **Trivy** $${\color{green}NOT FOUND}$$ **issues in your Repo**' >> "$GITHUB_STEP_SUMMARY"
                 ENFORCE_ZERO_VULNS=NOT
             else
-                echo ':x: **Trivy** $${\color{red}FOUND}$$ **issues in your Repo**' >> $GITHUB_STEP_SUMMARY
+                # shellcheck disable=SC2016 # irrelevant
+                echo ':x: **Trivy** $${\color{red}FOUND}$$ **issues in your Repo**' >> "$GITHUB_STEP_SUMMARY"
                 ENFORCE_ZERO_VULNS=YES
             fi
 
@@ -150,9 +150,11 @@ jobs:
             } >> "${GITHUB_STEP_SUMMARY}"
             fi
 
-            echo ":information_source: Download Trivy Reports (Github artifact) for more information" >> $GITHUB_STEP_SUMMARY
+            echo ":information_source: Download Trivy Reports (Github artifact) for more information" >> "$GITHUB_STEP_SUMMARY"
 
             # Enable next lines to exit 1 (vulns)
-            # if [ "$ENFORCE_ZERO_VULNS" = "YES" ]; then
-            #   exit 1
-            # fi
+            if [ "$ENFORCE_ZERO_VULNS" = "YES" ]; then
+              echo "NOT 0-Vulns"
+              # FIXME: https://github.com/zama-ai/console/issues/544
+              # exit 1
+            fi

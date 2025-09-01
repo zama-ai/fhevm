@@ -1,9 +1,7 @@
-name: CI lint and checks
+name: action-lint
 
 on:
   pull_request:
-    paths:
-    - ".github"
 
 concurrency:
   group: ci-lint-${{ github.ref }}
@@ -14,11 +12,15 @@ env:
 
 jobs:
   lint-check:
-    name: Lint and checks
+    name: action-lint/lint-check (bpr)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Remove `package.json` to avoid conflict with actionlint
+        run: |
+          rm package.json
 
       - name: actionlint
         uses: raven-actions/actionlint@01fce4f43a270a612932cb1c64d40505a029f821 # v2.0.0

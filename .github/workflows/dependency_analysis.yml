@@ -1,19 +1,15 @@
-name: Dependency analysis
+name: dependency-analysis
 
 on:
   pull_request:
-    paths:
-    - "apps/relayer"
-    - "!apps/relayer/deployments/**"
-    - "!apps/relayer/hardhat/**"
 
 concurrency:
   group: deps-analysis-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-
   dependencies-check:
+    name: dependency-analysis/dependencies-check (bpr)
     runs-on: ubuntu-latest
     defaults:
       run:

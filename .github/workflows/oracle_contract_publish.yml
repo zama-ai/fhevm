@@ -1,4 +1,4 @@
-name: Publish Solidity oracle contract
+name: publish-solidity-oracle-contract
 
 on:
   workflow_dispatch:
@@ -10,6 +10,7 @@ on:
 
 jobs:
   publish:
+    name: publish-solidity-oracle-contract/publish
     runs-on: ubuntu-latest
     defaults:
       run:
