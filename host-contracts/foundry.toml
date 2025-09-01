@@ -5,3 +5,7 @@ libs = ['node_modules', 'lib']
 test = 'test'
 cache_path  = 'cache_forge'
 solc = '0.8.24'
+
+[fuzz]
+# The number of fuzz runs for fuzz tests
+runs = 2560

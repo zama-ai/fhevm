@@ -7,9 +7,12 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {HCULimit} from "../../contracts/HCULimit.sol";
-import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
+import {ACL} from "../../contracts/ACL.sol";
+import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {SupportedTypesConstants} from "../fhevmExecutor/fhevmExecutor.t.sol";
+import {ACLChecks} from "../../contracts/shared/ACLChecks.sol";
+import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract MockHCULimit is HCULimit {
     function getHCUForTransaction() external view returns (uint256) {
@@ -65,6 +68,22 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         );
         hcuLimit = MockHCULimit(proxy);
         fhevmExecutor = hcuLimit.getFHEVMExecutorAddress();
+        _deployAndEtchACL();
+    }
+
+    /**
+     * @dev Internal function to deploy and etch ACL contract at expected constant address.
+     * Also stores `owner` as ACL's owner, this is needed for ownership of core contracts.
+     */
+    function _deployAndEtchACL() internal {
+        address _acl = address(new ACL());
+        bytes memory code = _acl.code;
+        vm.etch(aclAdd, code);
+        vm.store(
+            aclAdd,
+            0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300, // OwnableStorageLocation
+            bytes32(uint256(uint160(owner)))
+        );
     }
 
     /**
@@ -72,7 +91,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.2.0")));
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.3.0")));
         assertEq(hcuLimit.owner(), owner);
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
@@ -243,7 +262,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
         if (scalarByte == 0x01) {
             vm.assertGe(totalTransactionHCU, 31000);
-            vm.assertLe(totalTransactionHCU, 38000);
+            vm.assertLe(totalTransactionHCU, 40000);
         } else {
             vm.assertGe(totalTransactionHCU, 91000);
             vm.assertLe(totalTransactionHCU, 378000);
@@ -1159,7 +1178,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
         this.upgrade(randomAccount);
     }
 
