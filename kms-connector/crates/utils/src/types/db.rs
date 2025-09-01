@@ -1,6 +1,10 @@
+use std::str::FromStr;
+
 use alloy::primitives::{Address, U256};
 use anyhow::anyhow;
-use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
+use fhevm_gateway_bindings::{
+    decryption::Decryption::SnsCiphertextMaterial, kms_management::IKmsManagement::KeyDigest,
+};
 
 /// Struct representing how `SnsCiphertextMaterial` are stored in the database.
 #[derive(sqlx::Type, Clone, Debug, Default, PartialEq)]
@@ -60,6 +64,58 @@ impl TryFrom<u8> for ParamsTypeDb {
             Ok(Self::Test)
         } else {
             Err(anyhow!("Invalid ParamsType value"))
+        }
+    }
+}
+
+#[derive(sqlx::Type, Copy, Clone, Debug, Default, PartialEq)]
+#[sqlx(type_name = "key_type")]
+/// Struct representing the `ParamsType` enum in the database.
+pub enum KeyType {
+    Server,
+    #[default]
+    Public,
+}
+
+impl TryFrom<u8> for KeyType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        if value == Self::Server as u8 {
+            Ok(Self::Server)
+        } else if value == Self::Public as u8 {
+            Ok(Self::Public)
+        } else {
+            Err(anyhow!("Invalid KeyType value"))
+        }
+    }
+}
+
+impl FromStr for KeyType {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "server" => Ok(Self::Server),
+            "public" => Ok(Self::Public),
+            _ => Err(anyhow!("Invalid KeyType value")),
+        }
+    }
+}
+
+/// Struct representing how `KeyDigest` are stored in the database.
+#[derive(sqlx::Type, Clone, Debug, Default, PartialEq)]
+#[sqlx(type_name = "key_digest")]
+pub struct KeyDigestDbItem {
+    pub key_type: KeyType,
+    pub digest: Vec<u8>,
+}
+
+impl From<KeyDigestDbItem> for KeyDigest {
+    fn from(value: KeyDigestDbItem) -> Self {
+        Self {
+            keyType: value.key_type as u8,
+            digest: value.digest.into(),
         }
     }
 }

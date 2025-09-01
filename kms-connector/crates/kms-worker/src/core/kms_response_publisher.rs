@@ -1,6 +1,6 @@
 use connector_utils::types::{
     KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
-    UserDecryptionResponse,
+    UserDecryptionResponse, db::KeyDigestDbItem,
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
 use tracing::{info, warn};
@@ -104,10 +104,9 @@ impl DbKmsResponsePublisher {
 
     async fn publish_keygen(&self, response: KeygenResponse) -> sqlx::Result<PgQueryResult> {
         sqlx::query!(
-            "INSERT INTO keygen_responses VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            "INSERT INTO keygen_responses VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             response.key_id.as_le_slice(),
-            vec![],
-            vec![], // TODO
+            response.key_digests as Vec<KeyDigestDbItem>,
             response.signature,
         )
         .execute(&self.db_pool)

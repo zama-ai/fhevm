@@ -50,6 +50,19 @@ address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
 # ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
+# Configuration of the KmsManagement contract (required)
+[kms_management_contract]
+# Address of the KmsManagement contract (required)
+# Format: hex string with 0x prefix
+# ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS
+address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
+# EIP-712 domain name for KmsManagement contract (optional, defaults to "KmsManagement")
+# ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_NAME
+# domain_name = "KmsManagement"
+# EIP-712 domain version for KmsManagement contract (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_VERSION
+# domain_version = "1"
+
 # The endpoint used to monitor the connector components (optional, defaults to "0.0.0.0:9100")
 # ENV: KMS_CONNECTOR_MONITORING_ENDPOINT
 # monitoring_endpoint = "0.0.0.0:9100"

@@ -12,8 +12,9 @@ DROP TABLE IF EXISTS preprocess_kskgen_requests;
 --------------------------------------------------------
 --    Updating/creating PrepKeygen tables/triggers    --
 --------------------------------------------------------
--- Create new ParamsType enum
+-- Create new ParamsType and KeyType enums
 CREATE TYPE params_type AS ENUM ('Default', 'Test');
+CREATE TYPE key_type AS ENUM ('Server', 'Public');
 
 CREATE TABLE IF NOT EXISTS prep_keygen_requests (
     prep_keygen_id BYTEA NOT NULL,
@@ -84,10 +85,19 @@ ALTER TABLE keygen_requests DROP CONSTRAINT keygen_requests_pkey;
 ALTER TABLE keygen_requests RENAME pre_key_id TO prep_keygen_id;
 ALTER TABLE keygen_requests ADD PRIMARY KEY (key_id);
 
+-- Create KeyDigest type representation
+DO $$ BEGIN
+    CREATE TYPE key_digest AS (
+        key_type key_type,
+        digest BYTEA
+    );
+EXCEPTION
+    WHEN duplicate_object THEN null;
+END $$;
+
 CREATE TABLE IF NOT EXISTS keygen_responses (
     key_id BYTEA NOT NULL,
-    server_key_digest BYTEA NOT NULL,
-    public_key_digest BYTEA NOT NULL,
+    key_digests key_digest[] NOT NULL NOT NULL,
     signature BYTEA NOT NULL,
     under_process BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
