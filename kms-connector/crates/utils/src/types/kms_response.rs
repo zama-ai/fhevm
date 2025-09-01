@@ -1,5 +1,7 @@
-use crate::types::{GatewayEvent, KmsGrpcResponse, fhe::abi_encode_plaintexts};
-use alloy::primitives::U256;
+use crate::types::{
+    GatewayEvent, KmsGrpcResponse, db::KeyDigestDbItem, fhe::abi_encode_plaintexts,
+};
+use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
     KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse as GrpcPublicDecryptionResponse,
@@ -7,7 +9,7 @@ use kms_grpc::kms::v1::{
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use std::fmt::Display;
-use tracing::{debug, info};
+use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum KmsResponse {
@@ -41,8 +43,8 @@ pub struct PrepKeygenResponse {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeygenResponse {
-    // TODO
     pub key_id: U256,
+    pub key_digests: Vec<KeyDigestDbItem>,
     pub signature: Vec<u8>,
 }
 
@@ -69,11 +71,10 @@ impl KmsResponse {
                 grpc_response,
             } => UserDecryptionResponse::process(decryption_id, grpc_response)
                 .map(Self::UserDecryption),
-            KmsGrpcResponse::PrepKeygen {
-                prep_keygen_id,
-                grpc_response,
-            } => PrepKeygenResponse::process(prep_keygen_id, grpc_response).map(Self::PrepKeygen),
-            KmsGrpcResponse::Keygen { grpc_response } => {
+            KmsGrpcResponse::PrepKeygen(grpc_response) => {
+                PrepKeygenResponse::process(grpc_response).map(Self::PrepKeygen)
+            }
+            KmsGrpcResponse::Keygen(grpc_response) => {
                 KeygenResponse::process(grpc_response).map(Self::Keygen)
             }
         }
@@ -106,8 +107,8 @@ impl KmsResponse {
 
     pub fn from_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
         Ok(KmsResponse::Keygen(KeygenResponse {
-            // TODO
             key_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
+            key_digests: row.try_get("key_digests")?,
             signature: row.try_get("signature")?,
         }))
     }
@@ -149,20 +150,10 @@ impl PublicDecryptionResponse {
         // Encode all plaintexts using ABI encoding
         let result = abi_encode_plaintexts(&payload.plaintexts);
 
-        // Get the external signature
-        let signature = grpc_response
-            .external_signature
-            .ok_or_else(|| anyhow!("KMS Core did not provide required EIP-712 signature"))?;
-
-        info!(
-            "Storing public decryption response for request {} with {} plaintexts",
-            decryption_id,
-            payload.plaintexts.len()
-        );
         Ok(PublicDecryptionResponse {
             decryption_id,
             decrypted_result: result.into(),
-            signature,
+            signature: grpc_response.external_signature,
             extra_data: grpc_response.extra_data,
         })
     }
@@ -188,11 +179,6 @@ impl UserDecryptionResponse {
             );
         }
 
-        info!(
-            "Storing user decryption response for request {} with {} ciphertexts",
-            decryption_id,
-            payload.signcrypted_ciphertexts.len()
-        );
         Ok(UserDecryptionResponse {
             decryption_id,
             user_decrypted_shares: serialized_response_payload,
@@ -203,28 +189,55 @@ impl UserDecryptionResponse {
 }
 
 impl PrepKeygenResponse {
-    fn process(prep_keygen_id: U256, _grpc_response: KeyGenPreprocResult) -> anyhow::Result<Self> {
-        let signature = vec![]; // TODO
+    fn process(grpc_response: KeyGenPreprocResult) -> anyhow::Result<Self> {
+        let prep_keygen_id = U256::try_from_be_slice(&hex::decode(
+            &grpc_response
+                .preprocessing_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("No preprocessing id in `KeyGenPreprocResult`"))?
+                .request_id,
+        )?)
+        .ok_or_else(|| {
+            anyhow!(
+                "Failed to parse preprocessing_id: {:?}",
+                grpc_response.preprocessing_id
+            )
+        })?;
 
-        info!("Storing prep keygen response for request {prep_keygen_id}",);
         Ok(PrepKeygenResponse {
             prep_keygen_id,
-            signature,
+            signature: grpc_response.external_signature,
         })
     }
 }
 
 impl KeygenResponse {
     fn process(grpc_response: KeyGenResult) -> anyhow::Result<Self> {
-        let key_id = grpc_response
-            .request_id
-            .ok_or_else(|| anyhow!("No request id in KeyGenResult"))?
-            .request_id
-            .parse()?;
-        let signature = vec![]; // TODO
+        let key_id = U256::try_from_be_slice(&hex::decode(
+            &grpc_response
+                .request_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("No preprocessing id in `KeyGenPreprocResult`"))?
+                .request_id,
+        )?)
+        .ok_or_else(|| anyhow!("Failed to parse request_id: {:?}", grpc_response.request_id))?;
 
-        info!("Storing keygen response for request {key_id}",);
-        Ok(KeygenResponse { key_id, signature })
+        let key_digests = grpc_response
+            .key_digests
+            .into_iter()
+            .map(|(k, d)| {
+                Ok(KeyDigestDbItem {
+                    key_type: k.parse()?,
+                    digest: d,
+                })
+            })
+            .collect::<anyhow::Result<Vec<KeyDigestDbItem>>>()?;
+
+        Ok(KeygenResponse {
+            key_id,
+            key_digests,
+            signature: grpc_response.external_signature,
+        })
     }
 }
 

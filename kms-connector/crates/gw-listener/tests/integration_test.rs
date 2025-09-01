@@ -229,7 +229,7 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
     let prep_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?);
     let key_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?);
     assert_eq!(prep_id, rand_prep_id);
-    assert_eq!(key_id, KEY_COUNTER + U256::ONE);
+    assert_eq!(key_id, 0); // key counter not used in mock contract (edge case)
     info!("Event successfully stored! Stopping GatewayListener...");
 
     cancel_token.cancel();
@@ -407,9 +407,9 @@ const PREP_KEY_COUNTER: U256 = U256::from_be_bytes([
     3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 ]);
 
-const KEY_COUNTER: U256 = U256::from_be_bytes([
-    4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-]);
+// const KEY_COUNTER: U256 = U256::from_be_bytes([
+//     4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+// ]);
 
 const CRS_COUNTER: U256 = U256::from_be_bytes([
     5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,

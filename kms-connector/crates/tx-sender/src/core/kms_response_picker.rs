@@ -212,7 +212,7 @@ impl DbKmsResponsePicker {
                     LIMIT 1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE keygen_responses.key_id = resp.key_id
-                RETURNING resp.key_id, server_key_digest, public_key_digest, signature
+                RETURNING resp.key_id, key_digests, signature
             ",
         )
         .fetch_all(&self.db_pool)

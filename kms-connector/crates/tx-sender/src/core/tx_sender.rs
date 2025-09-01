@@ -286,20 +286,17 @@ impl<P: Provider> TransactionSenderInner<P> {
     pub async fn send_keygen_response(
         &self,
         response: KeygenResponse,
-    ) -> anyhow::Result<TransactionReceipt> {
-        info!("Sending keygen response to the Gateway...");
-        // TODO
+    ) -> Result<TransactionReceipt, Error> {
         let call_builder = self.kms_management_contract.keygenResponse(
             response.key_id,
-            vec![].into(),
-            vec![].into(),
+            response.key_digests.into_iter().map(|k| k.into()).collect(),
             response.signature.into(),
         );
         debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
-        tx.get_receipt().await.map_err(anyhow::Error::from)
+        tx.get_receipt().await.map_err(Error::from)
     }
 
     /// Increases the `gas_limit` for the upcoming transaction.
