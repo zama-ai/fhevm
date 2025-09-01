@@ -1,6 +1,6 @@
 use crate::utils::{
-    allow_handle, generate_trivial_encrypt, next_random_handle, tfhe_event, Context, EnvConfig,
-    FheType, DEF_TYPE,
+    allow_handle, generate_trivial_encrypt, insert_tfhe_event, next_random_handle, tfhe_event,
+    Context, EnvConfig, FheType, DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 use fhevm_engine_common::types::AllowEvents;
@@ -8,6 +8,7 @@ use host_listener::contracts::{TfheContract, TfheContract::TfheContractEvents};
 use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, ScalarByte,
 };
+
 use sqlx::Postgres;
 use std::io::prelude::*;
 
@@ -25,7 +26,7 @@ pub async fn add_chain_transaction(
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     let transaction_id = transaction_id.unwrap_or_else(|| next_random_handle(DEF_TYPE));
-    let mut counter =
+    let counter =
         generate_random_handle_amount_if_none(ctx, counter, contract_address, user_address).await?;
 
     let amount = match amount {
@@ -45,24 +46,14 @@ pub async fn add_chain_transaction(
 
     for _ in 0..length {
         let new_counter = next_random_handle(FheType::FheUint64);
-        let log = alloy::rpc::types::Log {
-            inner: tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
-                caller,
-                lhs: counter,
-                rhs: amount,
-                result: new_counter,
-                scalarByte: ScalarByte::from(false as u8),
-            })),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
-            transaction_hash: Some(transaction_id),
-            transaction_index: Some(0),
-            log_index: None,
-            removed: false,
-        };
-        listener_event_to_db.insert_tfhe_event(&log).await?;
-        counter = new_counter;
+        let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+            caller,
+            lhs: counter,
+            rhs: amount,
+            result: new_counter,
+            scalarByte: ScalarByte::from(false as u8),
+        }));
+        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
     }
     allow_handle(
         &counter.to_vec(),
@@ -108,23 +99,14 @@ pub async fn mul_chain_transaction(
 
     for _ in 0..length {
         let new_counter = next_random_handle(FheType::FheUint64);
-        let log = alloy::rpc::types::Log {
-            inner: tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
-                caller,
-                lhs: counter,
-                rhs: amount,
-                result: new_counter,
-                scalarByte: ScalarByte::from(false as u8),
-            })),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
-            transaction_hash: Some(transaction_id),
-            transaction_index: Some(0),
-            log_index: None,
-            removed: false,
-        };
-        listener_event_to_db.insert_tfhe_event(&log).await?;
+        let event = tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+            caller,
+            lhs: counter,
+            rhs: amount,
+            result: new_counter,
+            scalarByte: ScalarByte::from(false as u8),
+        }));
+        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
         counter = new_counter;
     }
     allow_handle(
