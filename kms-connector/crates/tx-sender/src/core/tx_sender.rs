@@ -114,9 +114,12 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponse
         let inner = TransactionSenderInner::new(
             provider.clone(),
             decryption_contract,
-            config.tx_retries,
-            config.tx_retry_interval,
-            config.gas_multiplier_percent,
+            TransactionSenderInnerConfig {
+                tx_retries: config.tx_retries,
+                tx_retry_interval: config.tx_retry_interval,
+                trace_reverted_tx: config.trace_reverted_tx,
+                gas_multiplier_percent: config.gas_multiplier_percent,
+            },
         );
 
         let state = State::new(db_pool, provider, config.healthcheck_timeout);
@@ -130,36 +133,29 @@ pub const EIP712_SIGNATURE_LENGTH: usize = 65;
 
 /// The internal struct used to send transaction to the Gateway.
 pub struct TransactionSenderInner<P: Provider> {
-    /// The `Provider` used to interact with the Gateway
     provider: P,
-
-    /// The `Decryption` contract instance of the Gateway.
     decryption_contract: DecryptionInstance<P>,
+    config: TransactionSenderInnerConfig,
+}
 
-    /// The number of retries to send a transaction to the Gateway.
-    tx_retries: u8,
-
-    /// The time to wait between two transactions attempt.
-    tx_retry_interval: Duration,
-
-    /// The gas multiplier percentage after each transaction attempt.
-    gas_multiplier_percent: usize,
+#[derive(Clone, Default)]
+pub struct TransactionSenderInnerConfig {
+    pub tx_retries: u8,
+    pub tx_retry_interval: Duration,
+    pub trace_reverted_tx: bool,
+    pub gas_multiplier_percent: usize,
 }
 
 impl<P: Provider> TransactionSenderInner<P> {
     pub fn new(
         provider: P,
         decryption_contract: DecryptionInstance<P>,
-        tx_retries: u8,
-        tx_retry_interval: Duration,
-        gas_multiplier_percent: usize,
+        inner_config: TransactionSenderInnerConfig,
     ) -> Self {
         Self {
             provider,
             decryption_contract,
-            tx_retries,
-            tx_retry_interval,
-            gas_multiplier_percent,
+            config: inner_config,
         }
     }
 
@@ -257,7 +253,8 @@ impl<P: Provider> TransactionSenderInner<P> {
                 Err(e) => return warn!("Failed to estimate gas for the tx: {e}"),
             },
         };
-        let new_gas = (current_gas as u128 * self.gas_multiplier_percent as u128 / 100) as u64;
+        let new_gas =
+            (current_gas as u128 * self.config.gas_multiplier_percent as u128 / 100) as u64;
         call.gas = Some(new_gas);
         info!("Initial gas estimation for the tx: {current_gas}. Increased to {new_gas}");
     }
@@ -269,7 +266,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         &self,
         mut call: TransactionRequest,
     ) -> anyhow::Result<PendingTransactionBuilder<Ethereum>> {
-        for i in 1..=self.tx_retries {
+        for i in 1..=self.config.tx_retries {
             self.overprovision_gas(&mut call).await;
 
             match self.provider.send_transaction(call.clone()).await {
@@ -278,11 +275,11 @@ impl<P: Provider> TransactionSenderInner<P> {
                     warn!(
                         "Transaction attempt #{}/{} failed: {}. Retrying in {}ms...",
                         i,
-                        self.tx_retries,
+                        self.config.tx_retries,
                         e,
-                        self.tx_retry_interval.as_millis()
+                        self.config.tx_retry_interval.as_millis()
                     );
-                    tokio::time::sleep(self.tx_retry_interval).await;
+                    tokio::time::sleep(self.config.tx_retry_interval).await;
                 }
             }
         }
@@ -291,6 +288,12 @@ impl<P: Provider> TransactionSenderInner<P> {
 
     /// Tries to use the `debug_trace_transaction` RPC call to find the cause of a reverted tx.
     async fn get_revert_reason(&self, receipt: &TransactionReceipt) -> anyhow::Result<String> {
+        if !self.config.trace_reverted_tx {
+            return Err(anyhow!(
+                "Reverted transaction tracing is disabled. See configuration documentation to enable it."
+            ));
+        }
+
         let trace = self
             .provider
             .debug_trace_transaction(
@@ -318,9 +321,7 @@ impl<P: Provider + Clone> Clone for TransactionSenderInner<P> {
         Self {
             provider: self.provider.clone(),
             decryption_contract: self.decryption_contract.clone(),
-            tx_retries: self.tx_retries,
-            tx_retry_interval: self.tx_retry_interval,
-            gas_multiplier_percent: self.gas_multiplier_percent,
+            config: self.config.clone(),
         }
     }
 }
@@ -364,9 +365,11 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider),
-            1,
-            Duration::from_secs(1),
-            100,
+            TransactionSenderInnerConfig {
+                tx_retries: 1,
+                trace_reverted_tx: true,
+                ..Default::default()
+            },
         );
         let result = inner_sender
             .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
@@ -380,6 +383,31 @@ mod tests {
             .to_string();
         assert!(result.contains("Failed to send response to the Gateway: out of gas"));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_disable_reverted_tx_tracing() {
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
+        let inner_sender = TransactionSenderInner::new(
+            mock_provider.clone(),
+            DecryptionInstance::new(Address::default(), mock_provider),
+            TransactionSenderInnerConfig {
+                trace_reverted_tx: false,
+                ..Default::default()
+            },
+        );
+
+        let test_data_dir = test_data_dir();
+        let tx_receipt: TransactionReceipt =
+            parse_mock(&format!("{test_data_dir}/3_get_receipt.json")).unwrap();
+
+        let result = inner_sender
+            .get_revert_reason(&tx_receipt)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(result.contains("Reverted transaction tracing is disabled"));
     }
 
     fn parse_mock<T: DeserializeOwned>(path: &str) -> anyhow::Result<T> {

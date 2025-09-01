@@ -82,6 +82,10 @@ private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 # ENV: KMS_CONNECTOR_TX_RETRY_INTERVAL_MS
 # tx_retry_interval = 100
 
+# Boolean to enable tracing of reverted transactions, using `debug_trace_transaction` RPC call (optional, defaults to true)
+# ENV: KMS_CONNECTOR_TRACE_REVERTED_TX
+# trace_reverted_tx = true
+
 # The gas multiplier percentage after each transaction attempt (optional, defaults to 130%)
 # ENV: KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT
 # gas_multiplier_percent = 130
