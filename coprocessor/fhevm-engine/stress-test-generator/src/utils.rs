@@ -3,7 +3,7 @@ use bigdecimal::num_bigint::BigInt;
 use fhevm_engine_common::{types::AllowEvents, utils::safe_deserialize_key};
 use host_listener::contracts::TfheContract::TfheContractEvents;
 use host_listener::database::tfhe_event_propagate::{
-    ClearConst, Database as ListenerDatabase, Handle,
+    ClearConst, Database as ListenerDatabase, Handle, LogTfhe, TransactionHash,
 };
 use rand::Rng;
 use sqlx::Postgres;
@@ -204,7 +204,7 @@ pub fn as_scalar_uint(big_int: &BigInt) -> ClearConst {
 pub async fn generate_trivial_encrypt(
     _contract_address: &str,
     user_address: &str,
-    transaction_id: Handle,
+    transaction_hash: TransactionHash,
     listener_event_to_db: &mut ListenerDatabase,
     ct_type: Option<FheType>,
     ct_value: Option<u128>,
@@ -213,8 +213,8 @@ pub async fn generate_trivial_encrypt(
     let ct_type = ct_type.unwrap_or(DEF_TYPE);
     let handle = next_random_handle(ct_type.clone());
     let ct_value = ct_value.unwrap_or(rand::rng().random::<u128>());
-    let log = alloy::rpc::types::Log {
-        inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
+    let log = LogTfhe {
+        event: tfhe_event(TfheContractEvents::TrivialEncrypt(
             host_listener::contracts::TfheContract::TrivialEncrypt {
                 caller,
                 pt: as_scalar_uint(&BigInt::from(ct_value)),
@@ -222,15 +222,13 @@ pub async fn generate_trivial_encrypt(
                 result: handle,
             },
         )),
-        block_hash: None,
-        block_number: None,
-        block_timestamp: None,
-        transaction_hash: Some(transaction_id),
-        transaction_index: Some(0),
-        log_index: None,
-        removed: false,
+        transaction_hash: Some(transaction_hash),
     };
-    listener_event_to_db.insert_tfhe_event(&log).await?;
+    let mut tx = listener_event_to_db.new_transaction().await?;
+    listener_event_to_db
+        .insert_tfhe_event(&mut tx, &log)
+        .await?;
+    tx.commit().await?;
     Ok(handle)
 }
 
@@ -364,4 +362,23 @@ impl EnvConfig {
             output_handles_for_usr_decryption,
         }
     }
+}
+
+pub async fn insert_tfhe_event(
+    listener_event_to_db: &ListenerDatabase,
+    transaction_hash: TransactionHash,
+    event: Log<TfheContractEvents>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let started_at = tokio::time::Instant::now();
+    let mut tx = listener_event_to_db.new_transaction().await?;
+    let log = LogTfhe {
+        event,
+        transaction_hash: Some(transaction_hash),
+    };
+    listener_event_to_db
+        .insert_tfhe_event(&mut tx, &log)
+        .await?;
+    tx.commit().await?;
+    tracing::debug!(target: "tool", duration = ?started_at.elapsed(), "TFHE event, db_query");
+    Ok(())
 }
