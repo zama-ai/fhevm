@@ -8,9 +8,13 @@ use crate::{
     },
 };
 use alloy::{
+    hex,
     network::Ethereum,
-    providers::{PendingTransactionBuilder, Provider},
-    rpc::types::TransactionRequest,
+    providers::{PendingTransactionBuilder, Provider, ext::DebugApi},
+    rpc::types::{
+        TransactionReceipt, TransactionRequest,
+        trace::geth::{CallConfig, GethDebugTracingOptions},
+    },
 };
 use anyhow::anyhow;
 use connector_utils::{
@@ -110,9 +114,12 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponse
         let inner = TransactionSenderInner::new(
             provider.clone(),
             decryption_contract,
-            config.tx_retries,
-            config.tx_retry_interval,
-            config.gas_multiplier_percent,
+            TransactionSenderInnerConfig {
+                tx_retries: config.tx_retries,
+                tx_retry_interval: config.tx_retry_interval,
+                trace_reverted_tx: config.trace_reverted_tx,
+                gas_multiplier_percent: config.gas_multiplier_percent,
+            },
         );
 
         let state = State::new(db_pool, provider, config.healthcheck_timeout);
@@ -126,74 +133,79 @@ pub const EIP712_SIGNATURE_LENGTH: usize = 65;
 
 /// The internal struct used to send transaction to the Gateway.
 pub struct TransactionSenderInner<P: Provider> {
-    /// The `Provider` used to interact with the Gateway
     provider: P,
-
-    /// The `Decryption` contract instance of the Gateway.
     decryption_contract: DecryptionInstance<P>,
+    config: TransactionSenderInnerConfig,
+}
 
-    /// The number of retries to send a transaction to the Gateway.
-    tx_retries: u8,
-
-    /// The time to wait between two transactions attempt.
-    tx_retry_interval: Duration,
-
-    /// The gas multiplier percentage after each transaction attempt.
-    gas_multiplier_percent: usize,
+#[derive(Clone, Default)]
+pub struct TransactionSenderInnerConfig {
+    pub tx_retries: u8,
+    pub tx_retry_interval: Duration,
+    pub trace_reverted_tx: bool,
+    pub gas_multiplier_percent: usize,
 }
 
 impl<P: Provider> TransactionSenderInner<P> {
     pub fn new(
         provider: P,
         decryption_contract: DecryptionInstance<P>,
-        tx_retries: u8,
-        tx_retry_interval: Duration,
-        gas_multiplier_percent: usize,
+        inner_config: TransactionSenderInnerConfig,
     ) -> Self {
         Self {
             provider,
             decryption_contract,
-            tx_retries,
-            tx_retry_interval,
-            gas_multiplier_percent,
+            config: inner_config,
         }
     }
 
     #[tracing::instrument(skip_all)]
-    /// Sends a KMS Core's response to the Gateway.
     async fn send_to_gateway(&self, response: KmsResponse) -> anyhow::Result<()> {
-        info!("Sending response to the Gateway...");
-        match response {
+        info!("Sending response to the Gateway: {response:?}");
+        let tx_result = match response {
             KmsResponse::PublicDecryption(response) => {
                 self.send_public_decryption_response(response).await
             }
             KmsResponse::UserDecryption(response) => {
                 self.send_user_decryption_response(response).await
             }
-        }
-        .inspect_err(|e| {
+        };
+
+        let receipt = tx_result.inspect_err(|e| {
             GATEWAY_TX_SENT_ERRORS.inc();
             error!("Failed to send response to the Gateway: {e}");
-        })
-        .inspect(|_| {
+        })?;
+
+        debug!("Transaction receipt: {:?}", receipt);
+        if receipt.status() {
             GATEWAY_TX_SENT_COUNTER.inc();
-            info!("Response successfully sent to the Gateway!");
-        })
+            info!(
+                tx_hash = hex::encode(receipt.transaction_hash),
+                block_hash = receipt.block_hash.map(hex::encode),
+                "Response successfully sent to the Gateway!"
+            );
+            Ok(())
+        } else {
+            GATEWAY_TX_SENT_ERRORS.inc();
+            let revert_reason = self
+                .get_revert_reason(&receipt)
+                .await
+                .unwrap_or_else(|e| e.to_string());
+            error!(
+                tx_hash = hex::encode(receipt.transaction_hash),
+                "Failed to send response to the Gateway: {revert_reason}"
+            );
+            Err(anyhow!(
+                "Failed to send response to the Gateway: {revert_reason}"
+            ))
+        }
     }
 
     /// Sends a PublicDecryptionResponse to the Gateway.
     pub async fn send_public_decryption_response(
         &self,
         response: PublicDecryptionResponse,
-    ) -> anyhow::Result<()> {
-        if response.signature.len() != EIP712_SIGNATURE_LENGTH {
-            return Err(anyhow!(
-                "Invalid EIP-712 signature length: {}, expected 65 bytes",
-                response.signature.len()
-            ));
-        }
-
-        // Create and send transaction
+    ) -> anyhow::Result<TransactionReceipt> {
         info!("Sending public decryption response to the Gateway...");
         let call_builder = self.decryption_contract.publicDecryptionResponse(
             response.decryption_id,
@@ -205,27 +217,14 @@ impl<P: Provider> TransactionSenderInner<P> {
 
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
-
-        // TODO: optimize for low latency
-        let receipt = tx.get_receipt().await?;
-        info!("Response sent successfully!");
-        debug!("Transaction receipt: {:?}", receipt);
-        Ok(())
+        tx.get_receipt().await.map_err(anyhow::Error::from)
     }
 
     /// Sends a UserDecryptionResponse to the Gateway.
     pub async fn send_user_decryption_response(
         &self,
         response: UserDecryptionResponse,
-    ) -> anyhow::Result<()> {
-        if response.signature.len() != EIP712_SIGNATURE_LENGTH {
-            return Err(anyhow!(
-                "Invalid EIP-712 signature length: {}, expected 65 bytes",
-                response.signature.len()
-            ));
-        }
-
-        // Create and send transaction
+    ) -> anyhow::Result<TransactionReceipt> {
         info!("Sending user decryption response to the Gateway...");
         let call_builder = self.decryption_contract.userDecryptionResponse(
             response.decryption_id,
@@ -237,12 +236,7 @@ impl<P: Provider> TransactionSenderInner<P> {
 
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
-
-        // TODO: optimize for low latency
-        let receipt = tx.get_receipt().await?;
-        info!("Response sent successfully!");
-        debug!("Transaction receipt: {:?}", receipt);
-        Ok(())
+        tx.get_receipt().await.map_err(anyhow::Error::from)
     }
 
     /// Increases the `gas_limit` for the upcoming transaction.
@@ -259,17 +253,20 @@ impl<P: Provider> TransactionSenderInner<P> {
                 Err(e) => return warn!("Failed to estimate gas for the tx: {e}"),
             },
         };
-        let new_gas = (current_gas as u128 * self.gas_multiplier_percent as u128 / 100) as u64;
+        let new_gas =
+            (current_gas as u128 * self.config.gas_multiplier_percent as u128 / 100) as u64;
         call.gas = Some(new_gas);
         info!("Initial gas estimation for the tx: {current_gas}. Increased to {new_gas}");
     }
 
-    /// Sends the requested transactions with one retry.
+    /// Sends the requested transaction with retries.
+    ///
+    /// The `gas_limit` is increased at each attempts.
     async fn send_tx_with_retry(
         &self,
         mut call: TransactionRequest,
     ) -> anyhow::Result<PendingTransactionBuilder<Ethereum>> {
-        for i in 1..=self.tx_retries {
+        for i in 1..=self.config.tx_retries {
             self.overprovision_gas(&mut call).await;
 
             match self.provider.send_transaction(call.clone()).await {
@@ -278,15 +275,44 @@ impl<P: Provider> TransactionSenderInner<P> {
                     warn!(
                         "Transaction attempt #{}/{} failed: {}. Retrying in {}ms...",
                         i,
-                        self.tx_retries,
+                        self.config.tx_retries,
                         e,
-                        self.tx_retry_interval.as_millis()
+                        self.config.tx_retry_interval.as_millis()
                     );
-                    tokio::time::sleep(self.tx_retry_interval).await;
+                    tokio::time::sleep(self.config.tx_retry_interval).await;
                 }
             }
         }
         Err(anyhow!("All transactions attempt failed"))
+    }
+
+    /// Tries to use the `debug_trace_transaction` RPC call to find the cause of a reverted tx.
+    async fn get_revert_reason(&self, receipt: &TransactionReceipt) -> anyhow::Result<String> {
+        if !self.config.trace_reverted_tx {
+            return Err(anyhow!(
+                "Reverted transaction tracing is disabled. See configuration documentation to enable it."
+            ));
+        }
+
+        let trace = self
+            .provider
+            .debug_trace_transaction(
+                receipt.transaction_hash,
+                GethDebugTracingOptions::call_tracer(CallConfig::default()),
+            )
+            .await
+            .map_err(|e| {
+                anyhow!("Unable to use `debug_trace_transaction` to get revert reason: {e}")
+            })?
+            .try_into_call_frame()
+            .map_err(|e| anyhow!("Unable to retrieve revert reason: {e}"))?;
+
+        debug!("`debug_trace_transaction` result: {trace:?}");
+        trace
+            .clone()
+            .revert_reason
+            .or_else(|| trace.calls.iter().find_map(|c| c.error.clone()))
+            .ok_or_else(|| anyhow!("Unable to find revert reason in trace: {trace:?}"))
     }
 }
 
@@ -295,9 +321,100 @@ impl<P: Provider + Clone> Clone for TransactionSenderInner<P> {
         Self {
             provider: self.provider.clone(),
             decryption_contract: self.decryption_contract.clone(),
-            tx_retries: self.tx_retries,
-            tx_retry_interval: self.tx_retry_interval,
-            gas_multiplier_percent: self.gas_multiplier_percent,
+            config: self.config.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::{
+        primitives::{Address, TxHash},
+        providers::{ProviderBuilder, mock::Asserter},
+        rpc::types::trace::geth::GethTrace,
+    };
+    use connector_utils::tests::rand::{rand_signature, rand_u256};
+    use serde::de::DeserializeOwned;
+    use std::fs::File;
+
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn test_send_tx_out_of_gas() -> anyhow::Result<()> {
+        // Create a mocked `alloy::Provider`
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+
+        // Used to mock all RPC responses of transaction sending operation
+        let test_data_dir = test_data_dir();
+        let estimate_gas: usize = parse_mock(&format!("{test_data_dir}/1_estimate_gas.json"))?;
+        let send_tx: TxHash = parse_mock(&format!("{test_data_dir}/2_send_tx.json"))?;
+        let get_receipt: TransactionReceipt =
+            parse_mock(&format!("{test_data_dir}/3_get_receipt.json"))?;
+        let debug_trace_tx: GethTrace =
+            parse_mock(&format!("{test_data_dir}/4_debug_trace_tx.json"))?;
+        asserter.push_success(&estimate_gas);
+        asserter.push_success(&send_tx);
+        asserter.push_success(&get_receipt);
+        asserter.push_success(&get_receipt); // RPC call is made twice
+        asserter.push_success(&debug_trace_tx);
+
+        // Mock out of gas tx
+        let inner_sender = TransactionSenderInner::new(
+            mock_provider.clone(),
+            DecryptionInstance::new(Address::default(), mock_provider),
+            TransactionSenderInnerConfig {
+                tx_retries: 1,
+                trace_reverted_tx: true,
+                ..Default::default()
+            },
+        );
+        let result = inner_sender
+            .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
+                decryption_id: rand_u256(),
+                user_decrypted_shares: vec![],
+                signature: rand_signature(),
+                extra_data: vec![],
+            }))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(result.contains("Failed to send response to the Gateway: out of gas"));
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_disable_reverted_tx_tracing() {
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
+        let inner_sender = TransactionSenderInner::new(
+            mock_provider.clone(),
+            DecryptionInstance::new(Address::default(), mock_provider),
+            TransactionSenderInnerConfig {
+                trace_reverted_tx: false,
+                ..Default::default()
+            },
+        );
+
+        let test_data_dir = test_data_dir();
+        let tx_receipt: TransactionReceipt =
+            parse_mock(&format!("{test_data_dir}/3_get_receipt.json")).unwrap();
+
+        let result = inner_sender
+            .get_revert_reason(&tx_receipt)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(result.contains("Reverted transaction tracing is disabled"));
+    }
+
+    fn parse_mock<T: DeserializeOwned>(path: &str) -> anyhow::Result<T> {
+        Ok(serde_json::from_reader::<_, T>(File::open(path)?)?)
+    }
+
+    fn test_data_dir() -> String {
+        format!("{}/tests/data/tx_out_of_gas", env!("CARGO_MANIFEST_DIR"))
     }
 }
