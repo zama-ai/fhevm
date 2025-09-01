@@ -1,4 +1,4 @@
-name: 01-sca-trivy-repo
+name: trivy
 
 # description: |
 #     This workflows uses Trivy to scan for vulnerabilities, leaked secrets and misconfigurations in the repository.
@@ -30,6 +30,7 @@ permissions:
 
 jobs:
   prepare:
+    name: trivy/prepare
     runs-on: ubuntu-latest
     outputs:
       DATE_BUILD: ${{ steps.myvars.outputs.DATE_BUILD }}
@@ -54,6 +55,7 @@ jobs:
           { echo "DATE_BUILD=$DATE_BUILD";echo "GIT_HASH_SHORT=$GIT_HASH_SHORT";echo "GH_ORG_REPO_NAME=$GH_ORG_REPO_NAME"; } >> "$GITHUB_OUTPUT"
 
   run-trivy:
+    name: trivy/run-trivy
     runs-on: ubuntu-latest
     needs: [prepare]
     steps:
