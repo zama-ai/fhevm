@@ -23,7 +23,7 @@ describe('InputVerifier', function () {
       const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
       const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
       const inputVerifier = await this.inputVerifierFactory.attach(origIVAdd);
-      expect(await inputVerifier.getVersion()).to.equal('InputVerifier v0.1.0');
+      expect(await inputVerifier.getVersion()).to.equal('InputVerifier v0.2.0');
 
       const addressSigner = process.env['COPROCESSOR_SIGNER_ADDRESS_1']!;
       const tx = await inputVerifier.connect(deployer).addSigner(addressSigner);
@@ -189,12 +189,12 @@ describe('InputVerifier', function () {
 
     await expect(inputVerifier.connect(randomAccount).addSigner(randomAccount)).to.be.revertedWithCustomError(
       inputVerifier,
-      'OwnableUnauthorizedAccount',
+      'NotHostOwner',
     );
 
     await expect(inputVerifier.connect(randomAccount).removeSigner(randomAccount)).to.be.revertedWithCustomError(
       inputVerifier,
-      'OwnableUnauthorizedAccount',
+      'NotHostOwner',
     );
   });
 });

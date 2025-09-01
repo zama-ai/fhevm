@@ -5,6 +5,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {fhevmExecutorAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {ACLChecks} from "./shared/ACLChecks.sol";
 
 import {FheType} from "./shared/FheType.sol";
 
@@ -14,7 +15,7 @@ import {FheType} from "./shared/FheType.sol";
  * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
  * @dev The contract is designed to be used with the FHEVMExecutor contract.
  */
-contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
+contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChecks {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
@@ -37,7 +38,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -55,7 +56,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 5;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCULimitStorageLocation =
@@ -79,7 +80,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Check the homomorphic complexity units limit for FheAdd.
@@ -132,6 +133,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheSub.
      * @param resultType Result type.
@@ -183,6 +185,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheMul.
      * @param resultType Result type.
@@ -234,6 +237,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheDiv.
      * @param resultType Result type.
@@ -267,6 +271,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
 
         _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheRem.
      * @param resultType Result type.
@@ -300,6 +305,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
 
         _adjustAndCheckFheTransactionLimitOneOp(opHCU, lhs, result);
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheBitAnd.
      * @param resultType Result type.
@@ -359,6 +365,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheBitOr.
      * @param resultType Result type.
@@ -418,6 +425,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheBitXor.
      * @param resultType Result type.
@@ -477,6 +485,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheShl.
      * @param resultType Result type.
@@ -532,6 +541,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheShr.
      * @param resultType Result type.
@@ -587,6 +597,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheRotl.
      * @param resultType Result type.
@@ -642,6 +653,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheRotr.
      * @param resultType Result type.
@@ -697,6 +709,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheEq.
      * @param resultType Result type.
@@ -760,6 +773,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheNe.
      * @param resultType Result type.
@@ -823,6 +837,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheGe.
      * @param resultType Result type.
@@ -874,6 +889,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheGt.
      * @param resultType Result type.
@@ -925,6 +941,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheLe.
      * @param resultType Result type.
@@ -976,6 +993,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheLt.
      * @param resultType Result type.
@@ -1027,6 +1045,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheMin.
      * @param resultType Result type.
@@ -1078,6 +1097,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheMax.
      * @param resultType Result type.
@@ -1129,6 +1149,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
             _adjustAndCheckFheTransactionLimitTwoOps(opHCU, lhs, rhs, result);
         }
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheNeg.
      * @param ct The only operand.
@@ -1154,6 +1175,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         }
         _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheNot.
      * @param ct The only operand.
@@ -1181,6 +1203,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         }
         _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for Cast.
      * @param ct The only operand.
@@ -1208,6 +1231,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         }
         _adjustAndCheckFheTransactionLimitOneOp(opHCU, ct, result);
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for TrivialEncrypt.
      * @param resultType Result type.
@@ -1238,6 +1262,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         _updateAndVerifyHCUTransactionLimit(opHCU);
         _setHCUForHandle(result, opHCU);
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for IfThenElse.
      * @param resultType Result type.
@@ -1275,6 +1300,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         }
         _adjustAndCheckFheTransactionLimitThreeOps(opHCU, lhs, middle, rhs, result);
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheRand.
      * @param resultType Result type.
@@ -1303,6 +1329,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         _updateAndVerifyHCUTransactionLimit(opHCU);
         _setHCUForHandle(result, opHCU);
     }
+
     /**
      * @notice Check the homomorphic complexity units limit for FheRandBounded.
      * @param resultType Result type.
@@ -1329,6 +1356,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
         _updateAndVerifyHCUTransactionLimit(opHCU);
         _setHCUForHandle(result, opHCU);
     }
+
     /**
      * @notice Getter function for the FHEVMExecutor contract address.
      * @return fhevmExecutorAddress Address of the FHEVMExecutor.
@@ -1479,7 +1507,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     /**
      * @dev Should revert when msg.sender is not authorized to upgrade the contract.
      */
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
 
     /**
      * @dev Returns the maximum of two numbers.

@@ -9,8 +9,9 @@ import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/Messa
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {FHEEvents} from "../../contracts/FHEEvents.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
-import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
+import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
+import {ACLChecks} from "../../contracts/shared/ACLChecks.sol";
 
 import {aclAdd, hcuLimitAdd, inputVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
@@ -150,7 +151,22 @@ contract SupportedTypesConstants {
 /// It provides a simple mapping to check if an account is allowed for a given handle.
 /// For mock purposes, it doesn't distinguish between allowTransient and allow.
 contract MockACL {
+    /// @custom:storage-location erc7201:openzeppelin.storage.Ownable
+    struct OwnableStorage {
+        address _owner;
+    }
     mapping(bytes32 handle => mapping(address => bool)) internal allowed;
+
+    // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.Ownable")) - 1)) & ~bytes32(uint256(0xff))
+    bytes32 private constant OwnableStorageLocation =
+        0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300;
+
+    function _getOwnableStorage() private pure returns (OwnableStorage storage $) {
+        assembly {
+            $.slot := OwnableStorageLocation
+        }
+    }
+
     function allowTransient(bytes32 handle, address account) external {
         allowed[handle][account] = true;
     }
@@ -161,6 +177,14 @@ contract MockACL {
 
     function isAllowed(bytes32 handle, address account) external view returns (bool) {
         return allowed[handle][account];
+    }
+
+    /**
+     * @dev Returns the address of the current owner.
+     */
+    function owner() public view virtual returns (address) {
+        OwnableStorage storage $ = _getOwnableStorage();
+        return $._owner;
     }
 }
 
@@ -230,6 +254,11 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.etch(inputVerifierAdd, address(new MockInputVerifier()).code);
         acl = MockACL(aclAdd);
         inputVerifier = MockInputVerifier(inputVerifierAdd);
+        vm.store(
+            aclAdd,
+            0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300, // OwnableStorageLocation
+            bytes32(uint256(uint160(owner)))
+        );
     }
 
     function _generateMockHandle(FheType fheType) internal returns (bytes32 handle) {
@@ -340,12 +369,10 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
      */
     function test_PostProxyUpgradeCheck() public {
         upgradeProxyAndDeployMockContracts();
-        // Check if the owner is set correctly
-        assertEq(fhevmExecutor.owner(), owner);
         assertEq(fhevmExecutor.getInputVerifierAddress(), inputVerifierAdd);
         assertEq(fhevmExecutor.getACLAddress(), aclAdd);
         assertEq(fhevmExecutor.getHCULimitAddress(), hcuLimitAdd);
-        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.2.0")));
+        assertEq(fhevmExecutor.getVersion(), string(abi.encodePacked("FHEVMExecutor v0.3.0")));
     }
 
     /// @dev This function exists for the test below to call it externally.
@@ -361,7 +388,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
         this.upgrade(randomAccount);
     }
 
