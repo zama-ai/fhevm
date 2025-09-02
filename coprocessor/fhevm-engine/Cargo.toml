@@ -37,7 +37,7 @@ bigdecimal = "0.4.8"
 bincode = "1.3.3"
 clap = { version = "4.5.38", features = ["derive"] }
 daggy = "0.8.1"
-foundry-compilers = { version = "0.13.5", features = ["svm-solc"] }
+foundry-compilers = { version = "0.19.1", features = ["svm-solc"] }
 futures-util = "0.3.31"
 hex = "0.4.3"
 lru = "0.13.0"
@@ -80,7 +80,7 @@ tokio-util = "0.7.15"
 tonic = { version = "0.12.3", features = ["server"] }
 tonic-build = "0.12.3"
 tracing = "0.1.41"
-tracing-subscriber = { version = "0.3.19", features = ["fmt", "json"] }
+tracing-subscriber = { version = "0.3.20", features = ["fmt", "json"] }
 humantime = "2.2.0"
 bytesize = "2.0.1"
 http = "1.3.1"
