@@ -6,7 +6,7 @@ use host_listener::database::tfhe_event_propagate::{
 use sqlx::Postgres;
 
 use crate::utils::{
-    DEF_TYPE, ERCTransferVariant, FheType, allow_handle, next_random_handle, tfhe_event,
+    allow_handle, next_random_handle, tfhe_event, ERCTransferVariant, FheType, DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 
