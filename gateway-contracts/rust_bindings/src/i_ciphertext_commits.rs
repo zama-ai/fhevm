@@ -278,7 +278,7 @@ pub mod ICiphertextCommits {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextDigest; address[] coprocessorTxSenderAddresses; }
@@ -306,6 +306,7 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Uint<256>,
@@ -563,7 +564,7 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphertextDigest; address[] coprocessorTxSenderAddresses; }
@@ -591,6 +592,7 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Uint<256>,
@@ -848,7 +850,7 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CiphertextMaterialNotFound(bytes32)` and selector `0x0666cbdf`.
 ```solidity
@@ -869,6 +871,7 @@ error CiphertextMaterialNotFound(bytes32 ctHandle);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -930,7 +933,7 @@ error CiphertextMaterialNotFound(bytes32 ctHandle);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyAdded(bytes32,address)` and selector `0x1dd7250c`.
 ```solidity
@@ -953,6 +956,7 @@ error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Address,
@@ -1024,7 +1028,7 @@ error CoprocessorAlreadyAdded(bytes32 ctHandle, address txSender);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AddCiphertextMaterial(bytes32,bytes32,bytes32,address[])` and selector `0xcb89ccb347018d7f282bb4c048e135e19bc1d13660fa0f2850e10518422536de`.
 ```solidity
@@ -1158,7 +1162,7 @@ event AddCiphertextMaterial(bytes32 indexed ctHandle, bytes32 ciphertextDigest, 
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `addCiphertextMaterial(bytes32,uint256,bytes32,bytes32)` and selector `0x90f30354`.
 ```solidity
@@ -1190,6 +1194,7 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 cipherte
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -1243,6 +1248,7 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 cipherte
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1346,7 +1352,7 @@ function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 cipherte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkCiphertextMaterial(bytes32)` and selector `0xd4476f63`.
 ```solidity
@@ -1372,6 +1378,7 @@ function checkCiphertextMaterial(bytes32 ctHandle) external view;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -1405,6 +1412,7 @@ function checkCiphertextMaterial(bytes32 ctHandle) external view;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -1494,7 +1502,7 @@ function checkCiphertextMaterial(bytes32 ctHandle) external view;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getAddCiphertextMaterialConsensusTxSenders(bytes32)` and selector `0xe6f6ab94`.
 ```solidity
@@ -1506,7 +1514,7 @@ function getAddCiphertextMaterialConsensusTxSenders(bytes32 ctHandle) external v
         #[allow(missing_docs)]
         pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getAddCiphertextMaterialConsensusTxSenders(bytes32)`](getAddCiphertextMaterialConsensusTxSendersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -1525,6 +1533,7 @@ function getAddCiphertextMaterialConsensusTxSenders(bytes32 ctHandle) external v
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -1558,6 +1567,7 @@ function getAddCiphertextMaterialConsensusTxSenders(bytes32 ctHandle) external v
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -1661,7 +1671,7 @@ function getAddCiphertextMaterialConsensusTxSenders(bytes32 ctHandle) external v
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCiphertextMaterials(bytes32[])` and selector `0x55c4d997`.
 ```solidity
@@ -1675,7 +1685,7 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
             alloy::sol_types::private::FixedBytes<32>,
         >,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getCiphertextMaterials(bytes32[])`](getCiphertextMaterialsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -1696,6 +1706,7 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<
                     alloy::sol_types::sol_data::FixedBytes<32>,
@@ -1737,6 +1748,7 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<CiphertextMaterial>,
             );
@@ -1841,7 +1853,7 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getSnsCiphertextMaterials(bytes32[])` and selector `0xa14f8971`.
 ```solidity
@@ -1855,7 +1867,7 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
             alloy::sol_types::private::FixedBytes<32>,
         >,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getSnsCiphertextMaterials(bytes32[])`](getSnsCiphertextMaterialsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -1876,6 +1888,7 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<
                     alloy::sol_types::sol_data::FixedBytes<32>,
@@ -1917,6 +1930,7 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<SnsCiphertextMaterial>,
             );
@@ -2021,7 +2035,7 @@ function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view ret
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
@@ -2030,7 +2044,7 @@ function getVersion() external pure returns (string memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -2049,6 +2063,7 @@ function getVersion() external pure returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2080,6 +2095,7 @@ function getVersion() external pure returns (string memory);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -2165,7 +2181,7 @@ function getVersion() external pure returns (string memory);
         }
     };
     ///Container for all the [`ICiphertextCommits`](self) function calls.
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive()]
     pub enum ICiphertextCommitsCalls {
         #[allow(missing_docs)]
@@ -2488,7 +2504,7 @@ function getVersion() external pure returns (string memory);
         }
     }
     ///Container for all the [`ICiphertextCommits`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ICiphertextCommitsErrors {
         #[allow(missing_docs)]
@@ -2651,7 +2667,7 @@ function getVersion() external pure returns (string memory);
         }
     }
     ///Container for all the [`ICiphertextCommits`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum ICiphertextCommitsEvents {
         #[allow(missing_docs)]
@@ -2732,9 +2748,9 @@ See the [wrapper's documentation](`ICiphertextCommitsInstance`) for more details
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        provider: P,
+        __provider: P,
     ) -> ICiphertextCommitsInstance<P, N> {
-        ICiphertextCommitsInstance::<P, N>::new(address, provider)
+        ICiphertextCommitsInstance::<P, N>::new(address, __provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -2746,11 +2762,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        provider: P,
+        __provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<ICiphertextCommitsInstance<P, N>>,
     > {
-        ICiphertextCommitsInstance::<P, N>::deploy(provider)
+        ICiphertextCommitsInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -2761,8 +2777,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        ICiphertextCommitsInstance::<P, N>::deploy_builder(provider)
+    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        ICiphertextCommitsInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`ICiphertextCommits`](self) instance.
 
@@ -2800,11 +2816,11 @@ See the [wrapper's documentation](`ICiphertextCommitsInstance`) for more details
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            provider: P,
+            __provider: P,
         ) -> Self {
             Self {
                 address,
-                provider,
+                provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -2815,9 +2831,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            provider: P,
+            __provider: P,
         ) -> alloy_contract::Result<ICiphertextCommitsInstance<P, N>> {
-            let call_builder = Self::deploy_builder(provider);
+            let call_builder = Self::deploy_builder(__provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -2827,9 +2843,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                provider,
+                __provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }

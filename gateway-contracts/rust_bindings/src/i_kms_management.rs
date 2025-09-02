@@ -955,7 +955,7 @@ pub mod IKmsManagement {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ActivateKeyCoprocessorAlreadyResponded(uint256,address)` and selector `0x488133e7`.
 ```solidity
@@ -978,6 +978,7 @@ error ActivateKeyCoprocessorAlreadyResponded(uint256 keyId, address coprocessorT
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Address,
@@ -1051,7 +1052,7 @@ error ActivateKeyCoprocessorAlreadyResponded(uint256 keyId, address coprocessorT
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ActivateKeyRequestAlreadySent(uint256)` and selector `0x23bd4fd3`.
 ```solidity
@@ -1072,6 +1073,7 @@ error ActivateKeyRequestAlreadySent(uint256 keyId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -1135,7 +1137,7 @@ error ActivateKeyRequestAlreadySent(uint256 keyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ActivateKeyRequiresKeygen(uint256)` and selector `0xe3b34609`.
 ```solidity
@@ -1156,6 +1158,7 @@ error ActivateKeyRequiresKeygen(uint256 keyId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -1219,7 +1222,7 @@ error ActivateKeyRequiresKeygen(uint256 keyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ActivateKeyRequiresKskgen(uint256,uint256)` and selector `0xe854ac28`.
 ```solidity
@@ -1242,6 +1245,7 @@ error ActivateKeyRequiresKskgen(uint256 currentKeyId, uint256 keyId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Uint<256>,
@@ -1315,7 +1319,7 @@ error ActivateKeyRequiresKskgen(uint256 currentKeyId, uint256 keyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CrsgenKmsNodeAlreadyResponded(uint256,address)` and selector `0xf89d760d`.
 ```solidity
@@ -1338,6 +1342,7 @@ error CrsgenKmsNodeAlreadyResponded(uint256 crsId, address kmsTxSender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Address,
@@ -1411,7 +1416,7 @@ error CrsgenKmsNodeAlreadyResponded(uint256 crsId, address kmsTxSender);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FheParamsAlreadyInitialized(string)` and selector `0xbcdf9993`.
 ```solidity
@@ -1432,6 +1437,7 @@ error FheParamsAlreadyInitialized(string fheParamsName);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -1493,7 +1499,7 @@ error FheParamsAlreadyInitialized(string fheParamsName);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `FheParamsNotInitialized()` and selector `0x7dcd17f9`.
 ```solidity
@@ -1511,6 +1517,7 @@ error FheParamsNotInitialized();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1566,7 +1573,7 @@ error FheParamsNotInitialized();
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KeygenKmsNodeAlreadyResponded(uint256,address)` and selector `0x181e6501`.
 ```solidity
@@ -1589,6 +1596,7 @@ error KeygenKmsNodeAlreadyResponded(uint256 keyId, address kmsTxSender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Address,
@@ -1662,7 +1670,7 @@ error KeygenKmsNodeAlreadyResponded(uint256 keyId, address kmsTxSender);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KeygenPreprocessingRequired(uint256)` and selector `0xbea1ca4c`.
 ```solidity
@@ -1683,6 +1691,7 @@ error KeygenPreprocessingRequired(uint256 preKeyId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -1746,7 +1755,7 @@ error KeygenPreprocessingRequired(uint256 preKeyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KeygenRequestAlreadySent(uint256)` and selector `0x5bf84e11`.
 ```solidity
@@ -1767,6 +1776,7 @@ error KeygenRequestAlreadySent(uint256 preKeyId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -1830,7 +1840,7 @@ error KeygenRequestAlreadySent(uint256 preKeyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KskgenDestKeyNotGenerated(uint256)` and selector `0x2800229d`.
 ```solidity
@@ -1851,6 +1861,7 @@ error KskgenDestKeyNotGenerated(uint256 destKeyId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -1914,7 +1925,7 @@ error KskgenDestKeyNotGenerated(uint256 destKeyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KskgenKmsNodeAlreadyResponded(uint256,address)` and selector `0x0ff55fe8`.
 ```solidity
@@ -1937,6 +1948,7 @@ error KskgenKmsNodeAlreadyResponded(uint256 kskId, address kmsTxSender);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Address,
@@ -2010,7 +2022,7 @@ error KskgenKmsNodeAlreadyResponded(uint256 kskId, address kmsTxSender);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KskgenPreprocessingRequired(uint256)` and selector `0xbe48e7d0`.
 ```solidity
@@ -2031,6 +2043,7 @@ error KskgenPreprocessingRequired(uint256 preKskId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -2094,7 +2107,7 @@ error KskgenPreprocessingRequired(uint256 preKskId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KskgenRequestAlreadySent(uint256)` and selector `0x49cbbf34`.
 ```solidity
@@ -2115,6 +2128,7 @@ error KskgenRequestAlreadySent(uint256 preKskId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -2178,7 +2192,7 @@ error KskgenRequestAlreadySent(uint256 preKskId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KskgenSameSrcAndDestKeyIds(uint256)` and selector `0xd6f4a687`.
 ```solidity
@@ -2199,6 +2213,7 @@ error KskgenSameSrcAndDestKeyIds(uint256 keyId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -2262,7 +2277,7 @@ error KskgenSameSrcAndDestKeyIds(uint256 keyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `KskgenSourceKeyNotGenerated(uint256)` and selector `0x05fc6161`.
 ```solidity
@@ -2283,6 +2298,7 @@ error KskgenSourceKeyNotGenerated(uint256 sourceKeyId);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -2346,7 +2362,7 @@ error KskgenSourceKeyNotGenerated(uint256 sourceKeyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `PreprocessKeygenKmsNodeAlreadyResponded(uint256,address)` and selector `0x4409282d`.
 ```solidity
@@ -2369,6 +2385,7 @@ error PreprocessKeygenKmsNodeAlreadyResponded(uint256 preKeyId, address kmsTxSen
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Address,
@@ -2442,7 +2459,7 @@ error PreprocessKeygenKmsNodeAlreadyResponded(uint256 preKeyId, address kmsTxSen
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `PreprocessKskgenKmsNodeAlreadyResponded(uint256,address)` and selector `0x7aebd3bd`.
 ```solidity
@@ -2465,6 +2482,7 @@ error PreprocessKskgenKmsNodeAlreadyResponded(uint256 preKskId, address kmsTxSen
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Address,
@@ -2538,7 +2556,7 @@ error PreprocessKskgenKmsNodeAlreadyResponded(uint256 preKskId, address kmsTxSen
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ActivateKeyRequest(uint256)` and selector `0xbddc1662cdaa871ae40d9edc0e435e0988c6095bfc7c452aedb16c89606b6b75`.
 ```solidity
@@ -2643,7 +2661,7 @@ event ActivateKeyRequest(uint256 keyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ActivateKeyResponse(uint256)` and selector `0x7066963379f0648a6475860de4447aec0b04c03db5bc169b401c88d16ff6578d`.
 ```solidity
@@ -2748,7 +2766,7 @@ event ActivateKeyResponse(uint256 keyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AddFheParams(string,bytes32)` and selector `0xe63dba14ba216c43efbd6e0206cd2172a4a64f894c8faf004691aa6f88fecada`.
 ```solidity
@@ -2864,7 +2882,7 @@ event AddFheParams(string fheParamsName, bytes32 fheParamsDigest);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `CrsgenRequest(uint256,bytes32)` and selector `0x04f7b6ae222ef47289cfdc7c3b8298273e1bc92eeb346e805163ed4b37e76b29`.
 ```solidity
@@ -2980,7 +2998,7 @@ event CrsgenRequest(uint256 crsgenRequestId, bytes32 fheParamsDigest);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `CrsgenResponse(uint256,uint256,bytes32)` and selector `0x95c123ae3e63573231605272667e1410a9e3c618227ff509e3c6a152c664b3a2`.
 ```solidity
@@ -3103,7 +3121,7 @@ event CrsgenResponse(uint256 crsgenRequestId, uint256 crsId, bytes32 fheParamsDi
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `KeygenRequest(uint256,bytes32)` and selector `0x796482d60009a80331529afb48bf3415a16c9ff539a8cd138e77a745af6c7b78`.
 ```solidity
@@ -3219,7 +3237,7 @@ event KeygenRequest(uint256 preKeyId, bytes32 fheParamsDigest);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `KeygenResponse(uint256,uint256,bytes32)` and selector `0xbc9d79366dad6b972d61e3f1567ee2f1e24c0ce10c72dcfb1452ee3b35c8d13e`.
 ```solidity
@@ -3342,7 +3360,7 @@ event KeygenResponse(uint256 preKeyId, uint256 keygenId, bytes32 fheParamsDigest
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `KskgenRequest(uint256,uint256,uint256,bytes32)` and selector `0xfd6857403eadbdc0c8b68b151bb46a31d6c352af79b065d472cbd77781514dd4`.
 ```solidity
@@ -3472,7 +3490,7 @@ event KskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId, by
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `KskgenResponse(uint256,uint256,bytes32)` and selector `0xc607d1695840ce0dc9d24a547edaec485e01e5939a540c2e4c23e360e2243767`.
 ```solidity
@@ -3595,7 +3613,7 @@ event KskgenResponse(uint256 preKskId, uint256 kskId, bytes32 fheParamsDigest);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PreprocessKeygenRequest(uint256,bytes32)` and selector `0x8511337ad89c20ef904f13e9b9e7eb05f4c0fff128a8760c2c1d436c111b309f`.
 ```solidity
@@ -3713,7 +3731,7 @@ event PreprocessKeygenRequest(uint256 preKeygenRequestId, bytes32 fheParamsDiges
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PreprocessKeygenResponse(uint256,uint256)` and selector `0x4187011e59171694872e08b3d3cdd3c901567aa0e38aaa6dbb4368837c1e8e34`.
 ```solidity
@@ -3831,7 +3849,7 @@ event PreprocessKeygenResponse(uint256 preKeygenRequestId, uint256 preKeyId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PreprocessKskgenRequest(uint256,bytes32)` and selector `0x596d111e7512a47ee0c5eb66eef6f22c45d8ad4fee0520340785a11e221ed512`.
 ```solidity
@@ -3949,7 +3967,7 @@ event PreprocessKskgenRequest(uint256 preKskgenRequestId, bytes32 fheParamsDiges
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PreprocessKskgenResponse(uint256,uint256)` and selector `0x76863545735c29cf1c7ebb0028e734d1d738d2a5d099ba8b529c1793354ae312`.
 ```solidity
@@ -4067,7 +4085,7 @@ event PreprocessKskgenResponse(uint256 preKskgenRequestId, uint256 preKskId);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UpdateFheParams(string,bytes32)` and selector `0xf0bb05ed11b11e9a83db1fdfdb364ce1579b1bb34d4080b670b5794692079e3d`.
 ```solidity
@@ -4183,7 +4201,7 @@ event UpdateFheParams(string fheParamsName, bytes32 fheParamsDigest);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `activateKeyRequest(uint256)` and selector `0x9e167f76`.
 ```solidity
@@ -4209,6 +4227,7 @@ function activateKeyRequest(uint256 keyId) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -4244,6 +4263,7 @@ function activateKeyRequest(uint256 keyId) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4331,7 +4351,7 @@ function activateKeyRequest(uint256 keyId) external;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `activateKeyResponse(uint256)` and selector `0x3b41a6dd`.
 ```solidity
@@ -4357,6 +4377,7 @@ function activateKeyResponse(uint256 keyId) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -4392,6 +4413,7 @@ function activateKeyResponse(uint256 keyId) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4479,7 +4501,7 @@ function activateKeyResponse(uint256 keyId) external;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `activatedKeyIds(uint256)` and selector `0x622c078f`.
 ```solidity
@@ -4491,7 +4513,7 @@ function activatedKeyIds(uint256 index) external view returns (uint256);
         #[allow(missing_docs)]
         pub index: alloy::sol_types::private::primitives::aliases::U256,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`activatedKeyIds(uint256)`](activatedKeyIdsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -4510,6 +4532,7 @@ function activatedKeyIds(uint256 index) external view returns (uint256);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -4543,6 +4566,7 @@ function activatedKeyIds(uint256 index) external view returns (uint256);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -4635,7 +4659,7 @@ function activatedKeyIds(uint256 index) external view returns (uint256);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `addFheParams(string,bytes32)` and selector `0xa7ab4440`.
 ```solidity
@@ -4663,6 +4687,7 @@ function addFheParams(string memory fheParamsName, bytes32 fheParamsDigest) exte
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::String,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -4703,6 +4728,7 @@ function addFheParams(string memory fheParamsName, bytes32 fheParamsDigest) exte
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -4794,7 +4820,7 @@ function addFheParams(string memory fheParamsName, bytes32 fheParamsDigest) exte
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `crsFheParamsDigests(uint256)` and selector `0xeed01e7d`.
 ```solidity
@@ -4806,7 +4832,7 @@ function crsFheParamsDigests(uint256 crsId) external view returns (bytes32);
         #[allow(missing_docs)]
         pub crsId: alloy::sol_types::private::primitives::aliases::U256,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`crsFheParamsDigests(uint256)`](crsFheParamsDigestsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -4825,6 +4851,7 @@ function crsFheParamsDigests(uint256 crsId) external view returns (bytes32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -4860,6 +4887,7 @@ function crsFheParamsDigests(uint256 crsId) external view returns (bytes32);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -4950,7 +4978,7 @@ function crsFheParamsDigests(uint256 crsId) external view returns (bytes32);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `crsgenRequest(string)` and selector `0x6532745f`.
 ```solidity
@@ -4976,6 +5004,7 @@ function crsgenRequest(string memory fheParamsName) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -5007,6 +5036,7 @@ function crsgenRequest(string memory fheParamsName) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5092,7 +5122,7 @@ function crsgenRequest(string memory fheParamsName) external;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `crsgenResponse(uint256,uint256)` and selector `0x40c24f15`.
 ```solidity
@@ -5120,6 +5150,7 @@ function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -5160,6 +5191,7 @@ function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5253,7 +5285,7 @@ function crsgenResponse(uint256 crsgenRequestId, uint256 crsId) external;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `fheParamsDigests(string)` and selector `0x45e3b193`.
 ```solidity
@@ -5265,7 +5297,7 @@ function fheParamsDigests(string memory fheParamsName) external view returns (by
         #[allow(missing_docs)]
         pub fheParamsName: alloy::sol_types::private::String,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`fheParamsDigests(string)`](fheParamsDigestsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -5284,6 +5316,7 @@ function fheParamsDigests(string memory fheParamsName) external view returns (by
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -5317,6 +5350,7 @@ function fheParamsDigests(string memory fheParamsName) external view returns (by
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -5407,7 +5441,7 @@ function fheParamsDigests(string memory fheParamsName) external view returns (by
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getCurrentKeyId()` and selector `0xd8909eab`.
 ```solidity
@@ -5416,7 +5450,7 @@ function getCurrentKeyId() external view returns (uint256);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getCurrentKeyIdCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getCurrentKeyId()`](getCurrentKeyIdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -5435,6 +5469,7 @@ function getCurrentKeyId() external view returns (uint256);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5466,6 +5501,7 @@ function getCurrentKeyId() external view returns (uint256);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -5554,7 +5590,7 @@ function getCurrentKeyId() external view returns (uint256);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
@@ -5563,7 +5599,7 @@ function getVersion() external pure returns (string memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -5582,6 +5618,7 @@ function getVersion() external pure returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5613,6 +5650,7 @@ function getVersion() external pure returns (string memory);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -5697,7 +5735,7 @@ function getVersion() external pure returns (string memory);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `keyFheParamsDigests(uint256)` and selector `0x8af77f03`.
 ```solidity
@@ -5709,7 +5747,7 @@ function keyFheParamsDigests(uint256 keyId) external view returns (bytes32);
         #[allow(missing_docs)]
         pub keyId: alloy::sol_types::private::primitives::aliases::U256,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`keyFheParamsDigests(uint256)`](keyFheParamsDigestsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -5728,6 +5766,7 @@ function keyFheParamsDigests(uint256 keyId) external view returns (bytes32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -5763,6 +5802,7 @@ function keyFheParamsDigests(uint256 keyId) external view returns (bytes32);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -5853,7 +5893,7 @@ function keyFheParamsDigests(uint256 keyId) external view returns (bytes32);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `keygenRequest(uint256)` and selector `0xe0e55fd7`.
 ```solidity
@@ -5879,6 +5919,7 @@ function keygenRequest(uint256 preKeyId) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -5912,6 +5953,7 @@ function keygenRequest(uint256 preKeyId) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -5997,7 +6039,7 @@ function keygenRequest(uint256 preKeyId) external;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `keygenResponse(uint256,uint256)` and selector `0x6aafa976`.
 ```solidity
@@ -6025,6 +6067,7 @@ function keygenResponse(uint256 preKeyId, uint256 keyId) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -6065,6 +6108,7 @@ function keygenResponse(uint256 preKeyId, uint256 keyId) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6158,7 +6202,7 @@ function keygenResponse(uint256 preKeyId, uint256 keyId) external;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `kskFheParamsDigests(uint256)` and selector `0xf1244c5d`.
 ```solidity
@@ -6170,7 +6214,7 @@ function kskFheParamsDigests(uint256 kskId) external view returns (bytes32);
         #[allow(missing_docs)]
         pub kskId: alloy::sol_types::private::primitives::aliases::U256,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`kskFheParamsDigests(uint256)`](kskFheParamsDigestsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -6189,6 +6233,7 @@ function kskFheParamsDigests(uint256 kskId) external view returns (bytes32);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
@@ -6224,6 +6269,7 @@ function kskFheParamsDigests(uint256 kskId) external view returns (bytes32);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -6314,7 +6360,7 @@ function kskFheParamsDigests(uint256 kskId) external view returns (bytes32);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `kskgenRequest(uint256,uint256,uint256)` and selector `0x394c7bd6`.
 ```solidity
@@ -6344,6 +6390,7 @@ function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId)
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -6387,6 +6434,7 @@ function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId)
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6482,7 +6530,7 @@ function kskgenRequest(uint256 preKskId, uint256 sourceKeyId, uint256 destKeyId)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `kskgenResponse(uint256,uint256)` and selector `0x9594a901`.
 ```solidity
@@ -6510,6 +6558,7 @@ function kskgenResponse(uint256 preKskId, uint256 kskId) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -6550,6 +6599,7 @@ function kskgenResponse(uint256 preKskId, uint256 kskId) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6643,7 +6693,7 @@ function kskgenResponse(uint256 preKskId, uint256 kskId) external;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `preprocessKeygenRequest(string)` and selector `0x26739e7c`.
 ```solidity
@@ -6669,6 +6719,7 @@ function preprocessKeygenRequest(string memory fheParamsName) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -6702,6 +6753,7 @@ function preprocessKeygenRequest(string memory fheParamsName) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6791,7 +6843,7 @@ function preprocessKeygenRequest(string memory fheParamsName) external;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `preprocessKeygenResponse(uint256,uint256)` and selector `0xfaac73b4`.
 ```solidity
@@ -6819,6 +6871,7 @@ function preprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId) ext
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -6861,6 +6914,7 @@ function preprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId) ext
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -6956,7 +7010,7 @@ function preprocessKeygenResponse(uint256 preKeyRequestId, uint256 preKeyId) ext
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `preprocessKskgenRequest(string)` and selector `0x428e76d8`.
 ```solidity
@@ -6982,6 +7036,7 @@ function preprocessKskgenRequest(string memory fheParamsName) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -7015,6 +7070,7 @@ function preprocessKskgenRequest(string memory fheParamsName) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -7104,7 +7160,7 @@ function preprocessKskgenRequest(string memory fheParamsName) external;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `preprocessKskgenResponse(uint256,uint256)` and selector `0x941c8df6`.
 ```solidity
@@ -7132,6 +7188,7 @@ function preprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId) ext
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Uint<256>,
@@ -7174,6 +7231,7 @@ function preprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId) ext
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -7269,7 +7327,7 @@ function preprocessKskgenResponse(uint256 preKskRequestId, uint256 preKskId) ext
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `updateFheParams(string,bytes32)` and selector `0x293479b1`.
 ```solidity
@@ -7297,6 +7355,7 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::String,
                 alloy::sol_types::sol_data::FixedBytes<32>,
@@ -7337,6 +7396,7 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -7431,7 +7491,7 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
         }
     };
     ///Container for all the [`IKmsManagement`](self) function calls.
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive()]
     pub enum IKmsManagementCalls {
         #[allow(missing_docs)]
@@ -8333,7 +8393,7 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
         }
     }
     ///Container for all the [`IKmsManagement`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IKmsManagementErrors {
         #[allow(missing_docs)]
@@ -9132,7 +9192,7 @@ function updateFheParams(string memory fheParamsName, bytes32 fheParamsDigest) e
         }
     }
     ///Container for all the [`IKmsManagement`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IKmsManagementEvents {
         #[allow(missing_docs)]
@@ -9483,9 +9543,9 @@ See the [wrapper's documentation](`IKmsManagementInstance`) for more details.*/
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        provider: P,
+        __provider: P,
     ) -> IKmsManagementInstance<P, N> {
-        IKmsManagementInstance::<P, N>::new(address, provider)
+        IKmsManagementInstance::<P, N>::new(address, __provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -9497,11 +9557,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        provider: P,
+        __provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<IKmsManagementInstance<P, N>>,
     > {
-        IKmsManagementInstance::<P, N>::deploy(provider)
+        IKmsManagementInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -9512,8 +9572,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IKmsManagementInstance::<P, N>::deploy_builder(provider)
+    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        IKmsManagementInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IKmsManagement`](self) instance.
 
@@ -9551,11 +9611,11 @@ See the [wrapper's documentation](`IKmsManagementInstance`) for more details.*/
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            provider: P,
+            __provider: P,
         ) -> Self {
             Self {
                 address,
-                provider,
+                provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -9566,9 +9626,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            provider: P,
+            __provider: P,
         ) -> alloy_contract::Result<IKmsManagementInstance<P, N>> {
-            let call_builder = Self::deploy_builder(provider);
+            let call_builder = Self::deploy_builder(__provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -9578,9 +9638,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                provider,
+                __provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }

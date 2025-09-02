@@ -533,7 +533,7 @@ pub mod IMultichainAcl {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
 struct DelegationAccounts { address delegatorAddress; address delegatedAddress; }
@@ -555,6 +555,7 @@ struct DelegationAccounts { address delegatorAddress; address delegatedAddress; 
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Address,
             alloy::sol_types::sol_data::Address,
@@ -753,7 +754,7 @@ struct DelegationAccounts { address delegatorAddress; address delegatedAddress; 
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AccountNotAllowedToUseCiphertext(bytes32,address)` and selector `0x160a2b4b`.
 ```solidity
@@ -776,6 +777,7 @@ error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress)
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Address,
@@ -849,7 +851,7 @@ error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `AccountNotDelegated(uint256,(address,address),address)` and selector `0xc0a41015`.
 ```solidity
@@ -874,6 +876,7 @@ error AccountNotDelegated(uint256 chainId, DelegationAccounts delegationAccounts
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             DelegationAccounts,
@@ -951,7 +954,7 @@ error AccountNotDelegated(uint256 chainId, DelegationAccounts delegationAccounts
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ContractsMaxLengthExceeded(uint8,uint256)` and selector `0x116caea3`.
 ```solidity
@@ -974,6 +977,7 @@ error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<8>,
             alloy::sol_types::sol_data::Uint<256>,
@@ -1047,7 +1051,7 @@ error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyAllowedAccount(bytes32,address,address)` and selector `0x6637e32d`.
 ```solidity
@@ -1072,6 +1076,7 @@ error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, addres
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Address,
@@ -1151,7 +1156,7 @@ error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, addres
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyAllowedPublicDecrypt(bytes32,address)` and selector `0xa6f04d26`.
 ```solidity
@@ -1174,6 +1179,7 @@ error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender)
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Address,
@@ -1247,7 +1253,7 @@ error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender)
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyDelegated(uint256,(address,address),address[],address)` and selector `0x0cc695ad`.
 ```solidity
@@ -1276,6 +1282,7 @@ error CoprocessorAlreadyDelegated(uint256 chainId, DelegationAccounts delegation
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (
             alloy::sol_types::sol_data::Uint<256>,
             DelegationAccounts,
@@ -1366,7 +1373,7 @@ error CoprocessorAlreadyDelegated(uint256 chainId, DelegationAccounts delegation
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `EmptyContractAddresses()` and selector `0x57cfa217`.
 ```solidity
@@ -1384,6 +1391,7 @@ error EmptyContractAddresses();
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = ();
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = ();
@@ -1439,7 +1447,7 @@ error EmptyContractAddresses();
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `PublicDecryptNotAllowed(bytes32)` and selector `0x4331a85d`.
 ```solidity
@@ -1460,6 +1468,7 @@ error PublicDecryptNotAllowed(bytes32 ctHandle);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
+        #[allow(dead_code)]
         type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -1519,7 +1528,7 @@ error PublicDecryptNotAllowed(bytes32 ctHandle);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AllowAccount(bytes32,address)` and selector `0x18f825f318ffa4ed5bf3f6ed24fd54d33378b0e9f16ddb37c3419691b2e16566`.
 ```solidity
@@ -1635,7 +1644,7 @@ event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `AllowPublicDecrypt(bytes32)` and selector `0x0868eca75126ba0a46bbec5eefa883e20a13e6c7d936c9bf47ed886e2eb43d3a`.
 ```solidity
@@ -1742,7 +1751,7 @@ event AllowPublicDecrypt(bytes32 indexed ctHandle);
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `DelegateAccount(uint256,(address,address),address[])` and selector `0x06c13155cfa90343cb4fba180ce8d383b4f56a5bc7aac0e5d8f194b64672a51e`.
 ```solidity
@@ -1869,7 +1878,7 @@ event DelegateAccount(uint256 indexed chainId, DelegationAccounts delegationAcco
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `allowAccount(bytes32,address,bytes)` and selector `0x294a8705`.
 ```solidity
@@ -1899,6 +1908,7 @@ function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory ext
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
@@ -1942,6 +1952,7 @@ function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory ext
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2037,7 +2048,7 @@ function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory ext
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `allowPublicDecrypt(bytes32,bytes)` and selector `0xd90724b5`.
 ```solidity
@@ -2065,6 +2076,7 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Bytes,
@@ -2107,6 +2119,7 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2200,7 +2213,7 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkAccountAllowed(bytes32,address)` and selector `0x3bce498d`.
 ```solidity
@@ -2228,6 +2241,7 @@ function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external 
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
@@ -2270,6 +2284,7 @@ function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external 
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2363,7 +2378,7 @@ function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external 
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkAccountDelegated(uint256,(address,address),address[])` and selector `0x51c41d0e`.
 ```solidity
@@ -2395,6 +2410,7 @@ function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delega
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 DelegationAccounts,
@@ -2440,6 +2456,7 @@ function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delega
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2539,7 +2556,7 @@ function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delega
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `checkPublicDecryptAllowed(bytes32)` and selector `0x193f3f2c`.
 ```solidity
@@ -2565,6 +2582,7 @@ function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -2598,6 +2616,7 @@ function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2687,7 +2706,7 @@ function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `delegateAccount(uint256,(address,address),address[])` and selector `0xf4c5f493`.
 ```solidity
@@ -2719,6 +2738,7 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 DelegationAccounts,
@@ -2762,6 +2782,7 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -2859,7 +2880,7 @@ function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAc
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getAllowAccountConsensusTxSenders(bytes32,address)` and selector `0xae953186`.
 ```solidity
@@ -2873,7 +2894,7 @@ function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddr
         #[allow(missing_docs)]
         pub accountAddress: alloy::sol_types::private::Address,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getAllowAccountConsensusTxSenders(bytes32,address)`](getAllowAccountConsensusTxSendersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -2892,6 +2913,7 @@ function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddr
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Address,
@@ -2934,6 +2956,7 @@ function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddr
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -3038,7 +3061,7 @@ function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddr
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getAllowPublicDecryptConsensusTxSenders(bytes32)` and selector `0x97c49a40`.
 ```solidity
@@ -3050,7 +3073,7 @@ function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view
         #[allow(missing_docs)]
         pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getAllowPublicDecryptConsensusTxSenders(bytes32)`](getAllowPublicDecryptConsensusTxSendersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -3069,6 +3092,7 @@ function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
@@ -3102,6 +3126,7 @@ function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -3200,7 +3225,7 @@ function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getDelegateAccountConsensusTxSenders(uint256,(address,address),address[])` and selector `0xad8b0b2b`.
 ```solidity
@@ -3218,7 +3243,7 @@ function getDelegateAccountConsensusTxSenders(uint256 chainId, DelegationAccount
             alloy::sol_types::private::Address,
         >,
     }
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getDelegateAccountConsensusTxSenders(uint256,(address,address),address[])`](getDelegateAccountConsensusTxSendersCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -3237,6 +3262,7 @@ function getDelegateAccountConsensusTxSenders(uint256 chainId, DelegationAccount
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 DelegationAccounts,
@@ -3282,6 +3308,7 @@ function getDelegateAccountConsensusTxSenders(uint256 chainId, DelegationAccount
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (
                 alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
             );
@@ -3390,7 +3417,7 @@ function getDelegateAccountConsensusTxSenders(uint256 chainId, DelegationAccount
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
@@ -3399,7 +3426,7 @@ function getVersion() external pure returns (string memory);
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct getVersionCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     ///Container type for the return parameters of the [`getVersion()`](getVersionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -3418,6 +3445,7 @@ function getVersion() external pure returns (string memory);
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = ();
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = ();
@@ -3449,6 +3477,7 @@ function getVersion() external pure returns (string memory);
         }
         {
             #[doc(hidden)]
+            #[allow(dead_code)]
             type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::String,);
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (alloy::sol_types::private::String,);
@@ -3534,7 +3563,7 @@ function getVersion() external pure returns (string memory);
         }
     };
     ///Container for all the [`IMultichainAcl`](self) function calls.
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive()]
     pub enum IMultichainAclCalls {
         #[allow(missing_docs)]
@@ -4017,7 +4046,7 @@ function getVersion() external pure returns (string memory);
         }
     }
     ///Container for all the [`IMultichainAcl`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IMultichainAclErrors {
         #[allow(missing_docs)]
@@ -4418,7 +4447,7 @@ function getVersion() external pure returns (string memory);
         }
     }
     ///Container for all the [`IMultichainAcl`](self) events.
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(serde::Serialize, serde::Deserialize, Clone)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IMultichainAclEvents {
         #[allow(missing_docs)]
@@ -4539,9 +4568,9 @@ See the [wrapper's documentation](`IMultichainAclInstance`) for more details.*/
         N: alloy_contract::private::Network,
     >(
         address: alloy_sol_types::private::Address,
-        provider: P,
+        __provider: P,
     ) -> IMultichainAclInstance<P, N> {
-        IMultichainAclInstance::<P, N>::new(address, provider)
+        IMultichainAclInstance::<P, N>::new(address, __provider)
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
@@ -4553,11 +4582,11 @@ For more fine-grained control over the deployment process, use [`deploy_builder`
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
     >(
-        provider: P,
+        __provider: P,
     ) -> impl ::core::future::Future<
         Output = alloy_contract::Result<IMultichainAclInstance<P, N>>,
     > {
-        IMultichainAclInstance::<P, N>::deploy(provider)
+        IMultichainAclInstance::<P, N>::deploy(__provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
 and constructor arguments, if any.
@@ -4568,8 +4597,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
-        IMultichainAclInstance::<P, N>::deploy_builder(provider)
+    >(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        IMultichainAclInstance::<P, N>::deploy_builder(__provider)
     }
     /**A [`IMultichainAcl`](self) instance.
 
@@ -4607,11 +4636,11 @@ See the [wrapper's documentation](`IMultichainAclInstance`) for more details.*/
         #[inline]
         pub const fn new(
             address: alloy_sol_types::private::Address,
-            provider: P,
+            __provider: P,
         ) -> Self {
             Self {
                 address,
-                provider,
+                provider: __provider,
                 _network: ::core::marker::PhantomData,
             }
         }
@@ -4622,9 +4651,9 @@ Returns a new instance of the contract, if the deployment was successful.
 For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
         pub async fn deploy(
-            provider: P,
+            __provider: P,
         ) -> alloy_contract::Result<IMultichainAclInstance<P, N>> {
-            let call_builder = Self::deploy_builder(provider);
+            let call_builder = Self::deploy_builder(__provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
@@ -4634,9 +4663,9 @@ and constructor arguments, if any.
 This is a simple wrapper around creating a `RawCallBuilder` with the data set to
 the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
-        pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+        pub fn deploy_builder(__provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
-                provider,
+                __provider,
                 ::core::clone::Clone::clone(&BYTECODE),
             )
         }
