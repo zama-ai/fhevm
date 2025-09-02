@@ -1,8 +1,8 @@
 use axum::{
-    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     routing::{get, post},
+    Json, Router,
 };
 use chrono::{DateTime, Utc};
 use host_listener::database::tfhe_event_propagate::{Database as ListenerDatabase, Handle};
@@ -18,9 +18,10 @@ use std::{
     time::{Duration, SystemTime},
 };
 use stress_test_generator::utils::{
-    Dependence, GeneratorKind, Transaction, default_dependence_cache_size,
+    default_dependence_cache_size, Dependence, GeneratorKind, Transaction,
 };
 use stress_test_generator::zk_gen::{generate_input_verification_transaction, get_inputs_vector};
+use stress_test_generator::{args::parse_args, dex::dex_swap_claim_transaction};
 use stress_test_generator::{
     args::Args,
     synthetics::{
@@ -28,13 +29,12 @@ use stress_test_generator::{
         generate_user_decrypt_handles_types, mul_chain_transaction,
     },
 };
-use stress_test_generator::{args::parse_args, dex::dex_swap_claim_transaction};
 use stress_test_generator::{
     dex::dex_swap_request_transaction,
     erc20::erc20_transaction,
     utils::{EnvConfig, Job, Scenario},
 };
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info};
 
 #[tokio::main]
@@ -238,10 +238,7 @@ async fn parse_and_execute() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
     let iter = rdr.deserialize::<Scenario>();
     let generators: Vec<Scenario> = iter
-        .map(|res| {
-            
-            res.as_ref().expect("Incorrect scenario file").clone()
-        })
+        .map(|res| res.as_ref().expect("Incorrect scenario file").clone())
         .collect();
 
     spawn_and_wait_all(generators).await?;
