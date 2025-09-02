@@ -4,7 +4,7 @@ use crate::{
     conn::WalletGatewayProvider,
     tests::setup::{CustomTestWriter, DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
 };
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
     gateway_config::GatewayConfig::GatewayConfigInstance,
     kms_management::KmsManagement::KmsManagementInstance,

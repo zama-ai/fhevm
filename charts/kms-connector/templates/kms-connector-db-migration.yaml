@@ -36,8 +36,10 @@ spec:
       containers:
       - name: kms-connector-db-migration
         image: {{ .Values.kmsConnectorDbMigration.image.name }}:{{ .Values.kmsConnectorDbMigration.image.tag }}
+        command:
+          {{- toYaml .Values.kmsConnectorDbMigration.command | nindent 10 }}
         env:
-{{ toYaml .Values.kmsConnectorDbMigration.env | nindent 12 }}
+{{- toYaml .Values.kmsConnectorDbMigration.env | nindent 12 }}
         resources:
           requests:
             cpu: {{ .Values.kmsConnectorDbMigration.resources.requests.cpu | default "100m" }}

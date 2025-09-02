@@ -41,6 +41,12 @@ kmsConnectorDbMigration:
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration
     tag: v0.8.0-1
+  command:
+    - "sqlx"
+    - "migrate"
+    - "run"
+    - "--source"
+    - "/migrations"
   env:
     - name: DATABASE_URL
       value: "postgresql://postgres:postgres@fhevm-db:5432/kms-connector"
@@ -133,7 +139,7 @@ kmsConnectorKmsWorker:
   env:
     - name: KMS_CONNECTOR_SERVICE_NAME
       value: kms-connector-kms-worker
-    - name: KMS_CONNECTOR_KMS_CORE_ENDPOINT
+    - name: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
       value: http://kms-core:50051
     # - name: KMS_CONNECTOR_MONITORING_ENDPOINT
     #   value: "0.0.0.0:9100"
@@ -153,8 +159,6 @@ kmsConnectorKmsWorker:
     #   value: "3"
     # - name: KMS_CONNECTOR_S3_CONNECT_TIMEOUT
     #   value: "2"
-    # - name: KMS_CONNECTOR_VERIFY_COPROCESSORS
-    #   value: "true"
     # - name: KMS_CONNECTOR_S3_CONFIG__REGION
     #   value: "us-east-1"
     # - name: KMS_CONNECTOR_S3_CONFIG__BUCKET

@@ -237,6 +237,8 @@ contract Decryption is
     /**
      * @notice Re-initializes the contract from V2.
      */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IDecryption-publicDecryptionRequest}.

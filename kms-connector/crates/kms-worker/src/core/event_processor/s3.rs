@@ -6,7 +6,7 @@ use alloy::{hex, primitives::Address, providers::Provider, transports::http::req
 use anyhow::anyhow;
 use connector_utils::types::fhe::extract_fhe_type_from_handle;
 use dashmap::DashMap;
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::SnsCiphertextMaterial,
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
 };

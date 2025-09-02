@@ -8,7 +8,7 @@ version.workspace = true
 
 [dependencies]
 connector-utils.workspace = true
-fhevm_gateway_rust_bindings.workspace = true
+fhevm_gateway_bindings.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true
@@ -24,6 +24,7 @@ tracing.workspace = true
 connector-utils = { workspace = true, features = ["tests"] }
 rstest.workspace = true
 serial_test.workspace = true
+serde_json.workspace = true
 tempfile.workspace = true
 tokio-stream.workspace = true
 toml.workspace = true

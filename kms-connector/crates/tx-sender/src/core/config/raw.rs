@@ -3,7 +3,7 @@
 //! The `RawConfig` can then be parsed into a `Config` in the `parsed` module.
 
 use connector_utils::{
-    config::{AwsKmsConfig, DeserializeRawConfig, RawContractConfig},
+    config::{AwsKmsConfig, DeserializeRawConfig, RawContractConfig, default_database_pool_size},
     monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
     tasks::default_task_limit,
 };
@@ -29,6 +29,8 @@ pub struct RawConfig {
     pub tx_retries: u8,
     #[serde(default = "default_tx_retry_interval_ms")]
     pub tx_retry_interval_ms: u64,
+    #[serde(default = "default_trace_reverted_tx")]
+    pub trace_reverted_tx: bool,
     #[serde(default = "default_responses_batch_size")]
     pub responses_batch_size: u8,
     #[serde(default = "default_gas_multiplier_percent")]
@@ -45,10 +47,6 @@ fn default_service_name() -> String {
     "kms-connector-tx-sender".to_string()
 }
 
-fn default_database_pool_size() -> u32 {
-    16
-}
-
 fn default_database_polling_timeout_secs() -> u64 {
     5
 }
@@ -61,12 +59,16 @@ fn default_tx_retry_interval_ms() -> u64 {
     100
 }
 
+fn default_trace_reverted_tx() -> bool {
+    true
+}
+
 fn default_responses_batch_size() -> u8 {
     10
 }
 
 fn default_gas_multiplier_percent() -> usize {
-    130 // 130% gas increase by default
+    300 // 300% gas increase by default
 }
 
 impl DeserializeRawConfig for RawConfig {}
@@ -97,6 +99,7 @@ impl Default for RawConfig {
             aws_kms_config: None,
             tx_retries: default_tx_retries(),
             tx_retry_interval_ms: default_tx_retry_interval_ms(),
+            trace_reverted_tx: default_trace_reverted_tx(),
             responses_batch_size: default_responses_batch_size(),
             gas_multiplier_percent: default_gas_multiplier_percent(),
             task_limit: default_task_limit(),
