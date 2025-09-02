@@ -9,6 +9,7 @@ members = [
     "transaction-sender",
     "zkproof-worker",
     "test-harness",
+    "stress-test-generator"
 ]
 
 [workspace.package]
