@@ -2,7 +2,6 @@ use crate::core::event_processor::{
     KmsClient,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
 };
-use alloy::providers::Provider;
 use connector_utils::types::{GatewayEvent, KmsGrpcRequest, KmsResponse};
 use sqlx::{Pool, Postgres};
 use tracing::info;
@@ -19,18 +18,18 @@ pub trait EventProcessor: Send {
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
 #[derive(Clone)]
-pub struct DbEventProcessor<P: Provider> {
+pub struct DbEventProcessor {
     /// The GRPC client used to communicate with the KMS Core.
     kms_client: KmsClient,
 
     /// The entity used to process decryption requests.
-    decryption_processor: DecryptionProcessor<P>,
+    decryption_processor: DecryptionProcessor,
 
     /// The DB connection pool used to reset events `under_process` field on error.
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider> EventProcessor for DbEventProcessor<P> {
+impl EventProcessor for DbEventProcessor {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
@@ -49,10 +48,10 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
     }
 }
 
-impl<P: Provider> DbEventProcessor<P> {
+impl DbEventProcessor {
     pub fn new(
         kms_client: KmsClient,
-        decryption_processor: DecryptionProcessor<P>,
+        decryption_processor: DecryptionProcessor,
         db_pool: Pool<Postgres>,
     ) -> Self {
         Self {

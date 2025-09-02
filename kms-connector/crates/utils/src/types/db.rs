@@ -1,4 +1,4 @@
-use alloy::primitives::{Address, U256};
+use alloy::primitives::U256;
 use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 
 /// Struct representing how `SnsCiphertextMaterial` are stored in the database.
@@ -8,7 +8,6 @@ pub struct SnsCiphertextMaterialDbItem {
     ct_handle: [u8; 32],
     key_id: [u8; 32],
     sns_ciphertext_digest: [u8; 32],
-    coprocessor_tx_sender_addresses: Vec<[u8; 20]>,
 }
 
 impl From<&SnsCiphertextMaterial> for SnsCiphertextMaterialDbItem {
@@ -17,11 +16,6 @@ impl From<&SnsCiphertextMaterial> for SnsCiphertextMaterialDbItem {
             ct_handle: *value.ctHandle,
             key_id: value.keyId.to_le_bytes(),
             sns_ciphertext_digest: *value.snsCiphertextDigest,
-            coprocessor_tx_sender_addresses: value
-                .coprocessorTxSenderAddresses
-                .iter()
-                .map(|a| *a.0)
-                .collect(),
         }
     }
 }
@@ -32,11 +26,6 @@ impl From<&SnsCiphertextMaterialDbItem> for SnsCiphertextMaterial {
             ctHandle: value.ct_handle.into(),
             keyId: U256::from_le_bytes(value.key_id),
             snsCiphertextDigest: value.sns_ciphertext_digest.into(),
-            coprocessorTxSenderAddresses: value
-                .coprocessor_tx_sender_addresses
-                .iter()
-                .map(Address::from)
-                .collect(),
         }
     }
 }

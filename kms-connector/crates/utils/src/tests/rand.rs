@@ -27,6 +27,5 @@ pub fn rand_sns_ct() -> SnsCiphertextMaterial {
         keyId: rand_u256(),
         ctHandle: rand::rng().random::<[u8; 32]>().into(),
         snsCiphertextDigest: rand::rng().random::<[u8; 32]>().into(),
-        coprocessorTxSenderAddresses: vec![rand_address()],
     }
 }

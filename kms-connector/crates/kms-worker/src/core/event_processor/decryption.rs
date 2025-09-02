@@ -8,8 +8,7 @@ use crate::core::{
 use alloy::{
     hex,
     primitives::{Address, Bytes, U256},
-    providers::Provider,
-    sol_types::Eip712Domain,
+    sol_types::{Eip712Domain, SolValue},
 };
 use anyhow::anyhow;
 use connector_utils::types::KmsGrpcRequest;
@@ -22,19 +21,16 @@ use tracing::info;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
-pub struct DecryptionProcessor<P: Provider> {
+pub struct DecryptionProcessor {
     /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712Domain,
 
     /// The entity used to collect ciphertexts from S3 buckets.
-    s3_service: S3Service<P>,
+    s3_service: S3Service,
 }
 
-impl<P> DecryptionProcessor<P>
-where
-    P: Provider,
-{
-    pub fn new(config: &Config, s3_service: S3Service<P>) -> Self {
+impl DecryptionProcessor {
+    pub fn new(config: &Config, s3_service: S3Service) -> Self {
         // Create EIP-712 domain using alloy primitives
         let domain = Eip712Domain {
             name: Some(Cow::Owned(config.decryption_contract.domain_name.clone())),
@@ -66,7 +62,7 @@ where
         info!("Extracted key_id {key_id} from snsCtMaterials[0]");
 
         let ciphertexts = self
-            .prepare_ciphertexts(decryption_id, &key_id, sns_materials)
+            .prepare_ciphertexts(decryption_id, &key_id, sns_materials, &extra_data)
             .await?;
 
         // Convert alloy domain to protobuf domain
@@ -118,14 +114,14 @@ where
         decryption_id: U256,
         key_id: &str,
         sns_materials: Vec<SnsCiphertextMaterial>,
+        extra_data: &[u8],
     ) -> anyhow::Result<Vec<TypedCiphertext>> {
-        // Retrieve ciphertext materials from S3
+        let s3_url_matrix = decode_s3_url_matrix(extra_data)?;
         let sns_ciphertext_materials = self
             .s3_service
-            .retrieve_sns_ciphertext_materials(sns_materials)
+            .retrieve_sns_ciphertext_materials(sns_materials, s3_url_matrix)
             .await;
 
-        // If we couldn't retrieve any materials, fail the request
         if sns_ciphertext_materials.is_empty() {
             return Err(anyhow!("Failed to retrieve any ciphertext materials"));
         }
@@ -148,6 +144,13 @@ where
     }
 }
 
+fn decode_s3_url_matrix(extra_data: &[u8]) -> anyhow::Result<Vec<Vec<String>>> {
+    let Some(encoded_urls) = extra_data.get(1..) else {
+        return Err(anyhow!("No encoded urls in extra_data: {extra_data:?}"));
+    };
+    Ok(SolValue::abi_decode(encoded_urls)?)
+}
+
 pub struct UserDecryptionExtraData {
     pub user_address: Address,
     pub public_key: Bytes,
@@ -160,4 +163,41 @@ impl UserDecryptionExtraData {
             public_key,
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_urls_decoding() {
+        let url_matrix = vec![
+            vec![
+                String::from("http://localhost"),
+                String::from("https://127.0.0.1:80/"),
+            ],
+            vec![String::from("http://localhost:81/test")],
+        ];
+
+        let extra_data = hex::decode(REMIX_GENERATED_EXTRA_DATA).unwrap();
+        let decoded_url_matrix = decode_s3_url_matrix(&extra_data).unwrap();
+        assert_eq!(url_matrix, decoded_url_matrix);
+    }
+
+    // Encoded bytes retrieved with the following function in Remix
+    // ```
+    // function encode() public pure returns (bytes memory) {
+    //     string[] memory url_array1 = new string[](2);
+    //     url_array1[0] = "http://localhost";
+    //     url_array1[1] = "https://127.0.0.1:80/";
+    //     string[] memory url_array2 = new string[](1);
+    //     url_array2[0] = "http://localhost:81/test";
+    //     string[][] memory url_matrix =  new string[][](2);
+    //     url_matrix[0] = url_array1;
+    //     url_matrix[1] = url_array2;
+    //     uint8 version = 1;
+    //     return bytes.concat(bytes1(version), abi.encode(url_matrix));
+    // }
+    // ```
+    const REMIX_GENERATED_EXTRA_DATA: &str = "0x0100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000800000000000000000000000000000000000000000000000000000000000000010687474703a2f2f6c6f63616c686f737400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001568747470733a2f2f3132372e302e302e313a38302f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000018687474703a2f2f6c6f63616c686f73743a38312f746573740000000000000000";
 }

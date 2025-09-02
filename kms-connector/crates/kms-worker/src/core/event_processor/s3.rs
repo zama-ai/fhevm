@@ -2,31 +2,21 @@ use crate::{
     core::config::{Config, S3Config},
     monitoring::metrics::{S3_CIPHERTEXT_RETRIEVAL_COUNTER, S3_CIPHERTEXT_RETRIEVAL_ERRORS},
 };
-use alloy::{hex, primitives::Address, providers::Provider, transports::http::reqwest};
+use alloy::{hex, transports::http::reqwest};
 use anyhow::anyhow;
 use connector_utils::types::fhe::extract_fhe_type_from_handle;
-use dashmap::DashMap;
-use fhevm_gateway_bindings::{
-    decryption::Decryption::SnsCiphertextMaterial,
-    gateway_config::GatewayConfig::{self, GatewayConfigInstance},
-};
+use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use kms_grpc::kms::v1::{CiphertextFormat, TypedCiphertext};
 use sha3::{Digest, Keccak256};
-use std::{sync::LazyLock, time::Duration};
+use std::time::Duration;
 use tracing::{debug, error, info, warn};
-
-/// Global cache for coprocessor S3 bucket URLs.
-static S3_BUCKET_CACHE: LazyLock<DashMap<Address, String>> = LazyLock::new(DashMap::new);
 
 /// The header used to retrieve the ciphertext format from the S3 HTTP response.
 const CT_FORMAT_HEADER: &str = "x-amz-meta-Ct-Format";
 
 /// Struct used to fetch ciphertext from S3 buckets.
 #[derive(Clone)]
-pub struct S3Service<P: Provider> {
-    /// The instance of the `GatewayConfig` contract.
-    gateway_config_contract: GatewayConfigInstance<P>,
-
+pub struct S3Service {
     /// An optional S3 bucket fallback configuration.
     fallback_config: Option<S3Config>,
 
@@ -37,208 +27,42 @@ pub struct S3Service<P: Provider> {
     s3_connect_timeout: Duration,
 }
 
-impl<P> S3Service<P>
-where
-    P: Provider,
-{
-    pub fn new(config: &Config, provider: P) -> Self {
-        let gateway_config_contract =
-            GatewayConfig::new(config.gateway_config_contract.address, provider);
-
+impl S3Service {
+    pub fn new(config: &Config) -> Self {
         Self {
-            gateway_config_contract,
             fallback_config: config.s3_config.clone(),
             s3_ciphertext_retrieval_retries: config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: config.s3_connect_timeout,
         }
     }
 
-    /// Retrieves the S3 bucket URL for a coprocessor from the GatewayConfig contract.
-    async fn get_s3_url(&self, copro_addr: Address) -> Option<String> {
-        info!(
-            "Attempting to get S3 bucket URL for coprocessor {:?}",
-            copro_addr
-        );
-
-        // Try to find a cached S3 bucket URL for any of the coprocessors
-        if let Some(url) = S3_BUCKET_CACHE.get(&copro_addr) {
-            info!(
-                "CACHE HIT: Using cached S3 bucket URL for coprocessor {:?}: {}",
-                copro_addr,
-                url.value()
-            );
-            return Some(url.value().clone());
-        }
-
-        // If no cached URL found, query the GatewayConfig contract for the first available coprocessor
-        info!(
-            "CACHE MISS: Querying GatewayConfig contract for coprocessor {:?} S3 bucket URL",
-            copro_addr
-        );
-
-        // Call getCoprocessor method to retrieve S3 bucket URL of the coprocessor
-        let s3_bucket_url = match self
-            .gateway_config_contract
-            .getCoprocessor(copro_addr)
-            .call()
-            .await
-        {
-            Ok(coprocessor) => coprocessor.s3BucketUrl.to_string(),
-            Err(e) => {
-                warn!(
-                    "GatewayConfig contract call failed for coprocessor {:?}: {}",
-                    copro_addr, e
-                );
-                return None;
-            }
-        };
-
-        if s3_bucket_url.is_empty() {
-            warn!("Coprocessor {:?} returned empty S3 bucket URL", copro_addr);
-            return None;
-        }
-
-        // Cache the URL for future use
-        info!(
-            "CACHE UPDATE: Adding S3 bucket URL for coprocessor {:?}: {}",
-            copro_addr, s3_bucket_url
-        );
-        S3_BUCKET_CACHE.insert(copro_addr, s3_bucket_url.clone());
-
-        // Log the updated cache state
-        log_cache("S3 cache state after insert");
-
-        info!(
-            "Successfully retrieved and cached S3 bucket URL for coprocessor {:?}: {}",
-            copro_addr, s3_bucket_url
-        );
-        Some(s3_bucket_url)
-    }
-
-    /// Prefetches and caches S3 bucket URLs to return a list of coprocessor s3 urls.
-    async fn prefetch_coprocessor_buckets(
-        &self,
-        coprocessor_addresses: Vec<Address>,
-    ) -> Vec<String> {
-        info!(
-            "S3 PREFETCH START: Prefetching S3 bucket URLs for {} coprocessors",
-            coprocessor_addresses.len()
-        );
-        log_cache("S3 cache state before prefetching");
-
-        let mut s3_urls = Vec::new();
-        let mut success_count = 0;
-        let mut cache_hit_count = 0;
-        let mut cache_miss_count = 0;
-        let mut fallback_used = false;
-
-        for (idx, address) in coprocessor_addresses.iter().enumerate() {
-            info!(
-                "Processing coprocessor {}/{}: {:?}",
-                idx + 1,
-                coprocessor_addresses.len(),
-                address
-            );
-
-            // Add the cached URL to our result list
-            if let Some(url) = S3_BUCKET_CACHE.get(address) {
-                info!(
-                    "CACHE HIT: S3 bucket URL for coprocessor {:?} already cached",
-                    address
-                );
-                cache_hit_count += 1;
-                success_count += 1;
-
-                s3_urls.push(url.value().clone());
-                continue;
-            }
-
-            cache_miss_count += 1;
-            info!(
-                "CACHE MISS: Fetching S3 bucket URL for coprocessor {:?}",
-                address
-            );
-
-            match self.get_s3_url(*address).await {
-                Some(s3_url) => {
-                    info!(
-                        "Successfully fetched S3 bucket URL for coprocessor {:?}: {}",
-                        address, s3_url
-                    );
-                    success_count += 1;
-                    s3_urls.push(s3_url);
-                }
-                None => {
-                    warn!(
-                        "Failed to prefetch S3 bucket URL for coprocessor {:?}",
-                        address
-                    );
-                }
-            };
-        }
-        log_cache("S3 cache state after prefetching");
-
-        // If we couldn't get any URLs but have a fallback config, use it
-        if s3_urls.is_empty() {
-            if let Some(config) = &self.fallback_config {
-                if !config.bucket.is_empty() {
-                    let fallback_url = format!(
-                        "https://s3.{}.amazonaws.com/{}",
-                        config.region, config.bucket
-                    );
-                    warn!(
-                        "All S3 URL retrievals failed. Using global fallback S3 URL: {}",
-                        fallback_url
-                    );
-                    s3_urls.push(fallback_url);
-                    success_count += 1;
-                    fallback_used = true;
-                } else {
-                    warn!(
-                        "All S3 URL retrievals failed and fallback bucket is empty. No URLs available."
-                    );
-                }
-            } else {
-                warn!(
-                    "All S3 URL retrievals failed and no fallback configuration available. No URLs available."
-                );
-            }
-        }
-
-        info!(
-            "S3 PREFETCH COMPLETE: Successfully prefetched {}/{} S3 bucket URLs (cache hits: {}, cache misses: {}, fallback used: {})",
-            success_count,
-            coprocessor_addresses.len(),
-            cache_hit_count,
-            cache_miss_count,
-            fallback_used
-        );
-        s3_urls
-    }
-
     /// Helper method to retrieve ciphertext materials from S3.
     pub async fn retrieve_sns_ciphertext_materials(
         &self,
         sns_materials: Vec<SnsCiphertextMaterial>,
+        s3_urls_metrix: Vec<Vec<String>>,
     ) -> Vec<TypedCiphertext> {
         let mut sns_ciphertext_materials = Vec::new();
 
-        for sns_material in sns_materials {
-            // Get S3 URL and retrieve ciphertext
+        for (sns_material, mut s3_urls) in sns_materials.into_iter().zip(s3_urls_metrix) {
             // 1. For each SNS material, we try to retrieve its ciphertext from multiple possible S3 URLs
             //    1.1. We try to fetch the ciphertext for `self.s3_ct_retrieval_retries` times for each S3 URL
             // 2. Once we successfully retrieve a ciphertext from any of those URLs, we break out of the S3 URLs loop
             // 3. Then we continue processing the next SNS material in the outer loop
-            let s3_urls = self
-                .prefetch_coprocessor_buckets(sns_material.coprocessorTxSenderAddresses)
-                .await;
 
             let handle = sns_material.ctHandle.to_vec();
             let ct_digest = sns_material.snsCiphertextDigest.as_slice();
             let ct_digest_hex = hex::encode(ct_digest);
             if s3_urls.is_empty() {
-                warn!("No S3 URLs found for ciphertext digest {ct_digest_hex}",);
-                continue;
+                if let Some(fallback_s3_config) = &self.fallback_config {
+                    warn!(
+                        "No S3 URLs found for ciphertext digest {ct_digest_hex}, using S3 fallback config"
+                    );
+                    s3_urls.push(extract_fallback_url(fallback_s3_config));
+                } else {
+                    warn!("No S3 URLs found for ciphertext digest {ct_digest_hex}");
+                    continue;
+                }
             }
 
             match self
@@ -382,20 +206,6 @@ where
     }
 }
 
-/// Logs the current state of the S3 bucket cache.
-fn log_cache(prefix: &str) {
-    let cache_size = S3_BUCKET_CACHE.len();
-    info!("{prefix}: {cache_size} entries");
-
-    if cache_size > 0 {
-        let mut cache_entries = Vec::new();
-        for entry in S3_BUCKET_CACHE.iter() {
-            cache_entries.push(format!("{:?}: {}", entry.key(), entry.value()));
-        }
-        debug!("S3_BUCKET_CACHE contents: {}", cache_entries.join(", "));
-    }
-}
-
 /// Computes Keccak256 digest of a byte array.
 pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
     debug!("Computing Keccak256 digest for {} bytes of data", ct.len());
@@ -404,6 +214,17 @@ pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
     let result = hasher.finalize().to_vec();
     debug!("Digest computed: {}", hex::encode(&result));
     result
+}
+
+pub fn extract_fallback_url(s3_config: &S3Config) -> String {
+    if let Some(fallback_s3_endpoint) = s3_config.endpoint.clone() {
+        fallback_s3_endpoint
+    } else {
+        format!(
+            "https://s3.{}.amazonaws.com/{}",
+            s3_config.region, s3_config.bucket
+        )
+    }
 }
 
 #[cfg(test)]

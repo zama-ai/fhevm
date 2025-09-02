@@ -1,7 +1,4 @@
-use alloy::{
-    hex,
-    providers::{ProviderBuilder, mock::Asserter},
-};
+use alloy::hex;
 use connector_utils::tests::{
     rand::rand_u256,
     setup::{S3_CT, S3Instance, TestInstance},
@@ -14,11 +11,10 @@ async fn test_get_ciphertext_from_s3() -> anyhow::Result<()> {
         .with_s3(S3Instance::setup().await?)
         .build();
     let config = Config::default();
-    let mock_provider = ProviderBuilder::new().connect_mocked_client(Asserter::new());
 
     let handle = rand_u256().to_be_bytes_vec(); // dummy handle
     let bucket_url = format!("{}/ct128", test_instance.s3_url());
-    let s3_service = S3Service::new(&config, mock_provider);
+    let s3_service = S3Service::new(&config);
     s3_service
         .retrieve_s3_ciphertext_with_retry(vec![bucket_url], &handle, &hex::decode(S3_CT)?, S3_CT)
         .await
@@ -42,11 +38,10 @@ async fn test_get_unstored_s3_ciphertext() -> anyhow::Result<()> {
         .with_s3(S3Instance::setup().await?)
         .build();
     let config = Config::default();
-    let mock_provider = ProviderBuilder::new().connect_mocked_client(Asserter::new());
 
     let handle = rand_u256().to_be_bytes_vec(); // dummy handle
     let bucket_url = format!("{}/ct128", test_instance.s3_url());
-    let s3_service = S3Service::new(&config, mock_provider);
+    let s3_service = S3Service::new(&config);
     if let Some(ct) = s3_service
         .retrieve_s3_ciphertext_with_retry(
             vec![bucket_url],

@@ -92,7 +92,7 @@ where
     }
 }
 
-impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePublisher> {
+impl KmsWorker<DbEventPicker, DbEventProcessor, DbKmsResponsePublisher> {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
@@ -102,7 +102,7 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
-        let s3_service = S3Service::new(&config, provider.clone());
+        let s3_service = S3Service::new(&config);
         let decryption_processor = DecryptionProcessor::new(&config, s3_service);
         let event_processor =
             DbEventProcessor::new(kms_client.clone(), decryption_processor, db_pool.clone());
