@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE crsgen_responses SET under_process = FALSE WHERE crs_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4d8fef33610f8baf96a2da80dec76e23423aa66331b1315c5c74a06d8a4af120"
+}

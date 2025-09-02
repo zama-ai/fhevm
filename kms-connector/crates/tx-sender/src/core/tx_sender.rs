@@ -22,7 +22,7 @@ use connector_utils::{
     conn::{WalletGatewayProvider, connect_to_db, connect_to_gateway_with_wallet},
     tasks::spawn_with_limit,
     types::{
-        KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
+        CrsgenResponse, KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
         UserDecryptionResponse,
     },
 };
@@ -203,6 +203,7 @@ impl<P: Provider> TransactionSenderInner<P> {
             }
             KmsResponse::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
             KmsResponse::Keygen(response) => self.send_keygen_response(response).await,
+            KmsResponse::Crsgen(response) => self.send_crsgen_response(response).await,
         };
 
         let receipt = tx_result.inspect_err(|e| {
@@ -290,6 +291,22 @@ impl<P: Provider> TransactionSenderInner<P> {
         let call_builder = self.kms_management_contract.keygenResponse(
             response.key_id,
             response.key_digests.into_iter().map(|k| k.into()).collect(),
+            response.signature.into(),
+        );
+        debug!("Calldata length {}", call_builder.calldata().len());
+
+        let call = call_builder.into_transaction_request();
+        let tx = self.send_tx_with_retry(call).await?;
+        tx.get_receipt().await.map_err(Error::from)
+    }
+
+    pub async fn send_crsgen_response(
+        &self,
+        response: CrsgenResponse,
+    ) -> Result<TransactionReceipt, Error> {
+        let call_builder = self.kms_management_contract.crsgenResponse(
+            response.crs_id,
+            response.crs_digest.into(),
             response.signature.into(),
         );
         debug!("Calldata length {}", call_builder.calldata().len());

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use alloy::{hex, primitives::U256};
 use connector_utils::{
     tests::{
@@ -12,11 +10,13 @@ use connector_utils::{
     },
 };
 use kms_grpc::kms::v1::{
-    KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse, PublicDecryptionResponsePayload,
-    RequestId, UserDecryptionResponse, UserDecryptionResponsePayload,
+    CrsGenResult, KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse,
+    PublicDecryptionResponsePayload, RequestId, UserDecryptionResponse,
+    UserDecryptionResponsePayload,
 };
 use kms_worker::core::{DbKmsResponsePublisher, KmsResponsePublisher};
 use sqlx::Row;
+use std::collections::HashMap;
 use tracing::info;
 
 #[tokio::test]
@@ -169,6 +169,44 @@ async fn test_publish_keygen_response() -> anyhow::Result<()> {
         };
         assert_eq!(Some(&kd.digest), rand_key_digests.get(key_type_str));
     }
+    assert_eq!(signature, rand_signature);
+    info!("Response successfully stored!");
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_publish_crsgen_response() -> anyhow::Result<()> {
+    let test_instance = TestInstanceBuilder::db_setup().await?;
+    let publisher = DbKmsResponsePublisher::new(test_instance.db().clone());
+
+    info!("Mocking CrsgenResponse from KMS Core...");
+    let rand_crs_id = rand_u256();
+    let rand_crs_digest = rand_digest().to_vec();
+    let rand_signature = rand_signature();
+    let grpc_response = KmsGrpcResponse::Crsgen(CrsGenResult {
+        request_id: Some(RequestId {
+            request_id: hex::encode(rand_crs_id.to_be_bytes_vec()),
+        }),
+        crs_digest: rand_crs_digest.clone(),
+        external_signature: rand_signature.clone(),
+        max_num_bits: 256,
+    });
+    let response = KmsResponse::process(grpc_response)?;
+
+    publisher.publish(response).await?;
+    info!("CrsgenResponse successfully published!");
+
+    info!("Checking CrsgenResponse is stored in DB...");
+    let row = sqlx::query("SELECT crs_id, crs_digest, signature FROM crsgen_responses")
+        .fetch_one(test_instance.db())
+        .await?;
+
+    let crs_id = U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?);
+    let crs_digest = row.try_get::<Vec<u8>, _>("crs_digest")?;
+    let signature = row.try_get::<Vec<u8>, _>("signature")?;
+
+    assert_eq!(crs_id, rand_crs_id);
+    assert_eq!(crs_digest, rand_crs_digest);
     assert_eq!(signature, rand_signature);
     info!("Response successfully stored!");
     Ok(())

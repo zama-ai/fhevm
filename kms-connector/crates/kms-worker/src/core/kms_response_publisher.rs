@@ -1,5 +1,5 @@
 use connector_utils::types::{
-    KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
+    CrsgenResponse, KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
     UserDecryptionResponse, db::KeyDigestDbItem,
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
@@ -35,6 +35,7 @@ impl KmsResponsePublisher for DbKmsResponsePublisher {
             KmsResponse::UserDecryption(response) => self.publish_user_decryption(response).await,
             KmsResponse::PrepKeygen(response) => self.publish_prep_keygen(response).await,
             KmsResponse::Keygen(response) => self.publish_keygen(response).await,
+            KmsResponse::Crsgen(response) => self.publish_crsgen(response).await,
         };
 
         // Mark event associated to the current response as free on error
@@ -107,6 +108,17 @@ impl DbKmsResponsePublisher {
             "INSERT INTO keygen_responses VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             response.key_id.as_le_slice(),
             response.key_digests as Vec<KeyDigestDbItem>,
+            response.signature,
+        )
+        .execute(&self.db_pool)
+        .await
+    }
+
+    async fn publish_crsgen(&self, response: CrsgenResponse) -> sqlx::Result<PgQueryResult> {
+        sqlx::query!(
+            "INSERT INTO crsgen_responses VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            response.crs_id.as_le_slice(),
+            response.crs_digest,
             response.signature,
         )
         .execute(&self.db_pool)

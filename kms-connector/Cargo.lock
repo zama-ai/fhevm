@@ -1929,7 +1929,7 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?rev=6e748e369f43366d24d945bc98243936ed8d0852#6e748e369f43366d24d945bc98243936ed8d0852"
+source = "git+https://github.com/zama-ai/kms.git?rev=b6a38229943be87e04e4921a8c716b154323a0d2#b6a38229943be87e04e4921a8c716b154323a0d2"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -3960,7 +3960,7 @@ dependencies = [
 [[package]]
 name = "kms-grpc"
 version = "0.11.0-26"
-source = "git+https://github.com/zama-ai/kms.git?rev=6e748e369f43366d24d945bc98243936ed8d0852#6e748e369f43366d24d945bc98243936ed8d0852"
+source = "git+https://github.com/zama-ai/kms.git?rev=b6a38229943be87e04e4921a8c716b154323a0d2#b6a38229943be87e04e4921a8c716b154323a0d2"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -4049,7 +4049,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.53.3",
 ]
 
 [[package]]
@@ -6645,7 +6645,7 @@ dependencies = [
 [[package]]
 name = "threshold-fhe"
 version = "0.11.0-26"
-source = "git+https://github.com/zama-ai/kms.git?rev=6e748e369f43366d24d945bc98243936ed8d0852#6e748e369f43366d24d945bc98243936ed8d0852"
+source = "git+https://github.com/zama-ai/kms.git?rev=b6a38229943be87e04e4921a8c716b154323a0d2#b6a38229943be87e04e4921a8c716b154323a0d2"
 dependencies = [
  "aes",
  "aes-prng",

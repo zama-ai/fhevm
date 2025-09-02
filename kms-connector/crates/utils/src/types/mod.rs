@@ -7,7 +7,7 @@ mod kms_response;
 pub use grpc::{KmsGrpcRequest, KmsGrpcResponse};
 pub use gw_event::GatewayEvent;
 pub use kms_response::{
-    KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
+    CrsgenResponse, KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
     UserDecryptionResponse,
 };
 

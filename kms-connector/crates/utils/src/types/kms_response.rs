@@ -4,7 +4,8 @@ use crate::types::{
 use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
-    KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse as GrpcPublicDecryptionResponse,
+    CrsGenResult, KeyGenPreprocResult, KeyGenResult,
+    PublicDecryptionResponse as GrpcPublicDecryptionResponse,
     UserDecryptionResponse as GrpcUserDecryptionResponse,
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
@@ -17,6 +18,7 @@ pub enum KmsResponse {
     UserDecryption(UserDecryptionResponse),
     PrepKeygen(PrepKeygenResponse),
     Keygen(KeygenResponse),
+    Crsgen(CrsgenResponse),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -48,16 +50,14 @@ pub struct KeygenResponse {
     pub signature: Vec<u8>,
 }
 
-impl KmsResponse {
-    pub fn id(&self) -> U256 {
-        match self {
-            KmsResponse::PublicDecryption(r) => r.decryption_id,
-            KmsResponse::UserDecryption(r) => r.decryption_id,
-            KmsResponse::PrepKeygen(r) => r.prep_keygen_id,
-            KmsResponse::Keygen(r) => r.key_id,
-        }
-    }
+#[derive(Clone, Debug, PartialEq)]
+pub struct CrsgenResponse {
+    pub crs_id: U256,
+    pub crs_digest: Vec<u8>,
+    pub signature: Vec<u8>,
+}
 
+impl KmsResponse {
     /// Processes a KMS GRPC response into a `KmsResponse` enum.
     pub fn process(response: KmsGrpcResponse) -> anyhow::Result<Self> {
         match response {
@@ -76,6 +76,9 @@ impl KmsResponse {
             }
             KmsGrpcResponse::Keygen(grpc_response) => {
                 KeygenResponse::process(grpc_response).map(Self::Keygen)
+            }
+            KmsGrpcResponse::Crsgen(grpc_response) => {
+                CrsgenResponse::process(grpc_response).map(Self::Crsgen)
             }
         }
     }
@@ -113,6 +116,14 @@ impl KmsResponse {
         }))
     }
 
+    pub fn from_crsgen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(KmsResponse::Crsgen(CrsgenResponse {
+            crs_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
+            crs_digest: row.try_get("crs_digest")?,
+            signature: row.try_get("signature")?,
+        }))
+    }
+
     /// Sets the `under_process` field of the event associated to this response as `FALSE` in the
     /// database.
     pub async fn mark_associated_event_as_pending(&self, db: &Pool<Postgres>) {
@@ -127,6 +138,7 @@ impl KmsResponse {
                 GatewayEvent::mark_prep_keygen_as_pending(db, r.prep_keygen_id).await
             }
             KmsResponse::Keygen(r) => GatewayEvent::mark_keygen_as_pending(db, r.key_id).await,
+            KmsResponse::Crsgen(r) => GatewayEvent::mark_crsgen_as_pending(db, r.crs_id).await,
         }
     }
 }
@@ -217,7 +229,7 @@ impl KeygenResponse {
             &grpc_response
                 .request_id
                 .as_ref()
-                .ok_or_else(|| anyhow!("No preprocessing id in `KeyGenPreprocResult`"))?
+                .ok_or_else(|| anyhow!("No request_id in `KeyGenResult`"))?
                 .request_id,
         )?)
         .ok_or_else(|| anyhow!("Failed to parse request_id: {:?}", grpc_response.request_id))?;
@@ -241,6 +253,25 @@ impl KeygenResponse {
     }
 }
 
+impl CrsgenResponse {
+    fn process(grpc_response: CrsGenResult) -> anyhow::Result<Self> {
+        let crs_id = U256::try_from_be_slice(&hex::decode(
+            &grpc_response
+                .request_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("No request_id in `CrsGenResult`"))?
+                .request_id,
+        )?)
+        .ok_or_else(|| anyhow!("Failed to parse request_id: {:?}", grpc_response.request_id))?;
+
+        Ok(CrsgenResponse {
+            crs_id,
+            crs_digest: grpc_response.crs_digest,
+            signature: grpc_response.external_signature,
+        })
+    }
+}
+
 impl Display for KmsResponse {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -255,6 +286,9 @@ impl Display for KmsResponse {
             }
             KmsResponse::Keygen(r) => {
                 write!(f, "KeygenResponse #{}", r.key_id)
+            }
+            KmsResponse::Crsgen(r) => {
+                write!(f, "CrsgenResponse #{}", r.crs_id)
             }
         }
     }

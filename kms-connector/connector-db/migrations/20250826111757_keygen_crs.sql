@@ -160,3 +160,56 @@ ALTER TABLE crsgen_requests DROP COLUMN created_at;
 ALTER TABLE crsgen_requests ADD params_type params_type NOT NULL;
 ALTER TABLE crsgen_requests ADD under_process BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE crsgen_requests ADD created_at TIMESTAMP NOT NULL DEFAULT NOW();
+
+CREATE TABLE IF NOT EXISTS crsgen_responses (
+    crs_id BYTEA NOT NULL,
+    crs_digest BYTEA NOT NULL,
+    signature BYTEA NOT NULL,
+    under_process BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (crs_id)
+);
+
+-- Create all triggers on insert of crsgen requests/responses
+CREATE OR REPLACE FUNCTION notify_crsgen_request()
+    RETURNS trigger AS $$
+BEGIN
+    NOTIFY crsgen_request_available;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trigger_from_crsgen_requests_insertions
+    AFTER INSERT
+    ON crsgen_requests
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION notify_crsgen_request();
+
+
+CREATE OR REPLACE FUNCTION notify_crsgen_response()
+    RETURNS trigger AS $$
+BEGIN
+    NOTIFY crsgen_response_available;
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER trigger_from_crsgen_responses_insertions
+    AFTER INSERT
+    ON crsgen_responses
+    FOR EACH STATEMENT
+    EXECUTE FUNCTION notify_crsgen_response();
+
+-- Autoremove prep crsgen requests associated to responses when they are inserted in the DB
+CREATE OR REPLACE FUNCTION delete_from_crsgen_requests()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM crsgen_requests WHERE crs_id = NEW.crs_id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_delete_crsgen_requests
+AFTER INSERT ON crsgen_responses
+FOR EACH ROW
+EXECUTE FUNCTION delete_from_crsgen_requests();

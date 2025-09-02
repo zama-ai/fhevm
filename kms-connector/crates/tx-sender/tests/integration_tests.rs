@@ -13,7 +13,6 @@ use connector_utils::{
         CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, KMS_MANAGEMENT_MOCK_ADDRESS,
         TestInstance, TestInstanceBuilder,
     },
-    types::KmsResponse,
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
@@ -29,6 +28,8 @@ use tx_sender::core::{
     Config, DbKmsResponsePicker, DbKmsResponseRemover, TransactionSender,
     tx_sender::{TransactionSenderInner, TransactionSenderInnerConfig},
 };
+
+use crate::common::insert_rand_crsgen_response;
 
 #[rstest]
 #[timeout(Duration::from_secs(60))]
@@ -60,12 +61,7 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
         .next()
         .await
         .ok_or_else(|| anyhow!("Failed to capture PublicDecryptionResponse"))??;
-    match inserted_response {
-        KmsResponse::PublicDecryption(r) => {
-            assert_eq!(response.decryptionId, r.decryption_id)
-        }
-        _ => unreachable!(),
-    }
+    assert_eq!(response.decryptionId, inserted_response.decryption_id);
     info!("Response successfully sent to Anvil!");
 
     test_instance
@@ -114,12 +110,7 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
         .next()
         .await
         .ok_or_else(|| anyhow!("Failed to capture UserDecryptionResponse"))??;
-    match inserted_response {
-        KmsResponse::UserDecryption(r) => {
-            assert_eq!(response.decryptionId, r.decryption_id)
-        }
-        _ => unreachable!(),
-    }
+    assert_eq!(response.decryptionId, inserted_response.decryption_id);
     info!("Response successfully sent to Anvil!");
 
     test_instance
@@ -168,12 +159,7 @@ async fn test_process_prep_keygen_response() -> anyhow::Result<()> {
         .next()
         .await
         .ok_or_else(|| anyhow!("Failed to capture PrepKeygenResponse"))??;
-    match inserted_response {
-        KmsResponse::PrepKeygen(r) => {
-            assert_eq!(response.prepKeygenId, r.prep_keygen_id)
-        }
-        _ => unreachable!(),
-    }
+    assert_eq!(response.prepKeygenId, inserted_response.prep_keygen_id);
     info!("Response successfully sent to Anvil!");
 
     test_instance
@@ -221,12 +207,7 @@ async fn test_process_keygen_response() -> anyhow::Result<()> {
         .next()
         .await
         .ok_or_else(|| anyhow!("Failed to capture KeygenResponse"))??;
-    match inserted_response {
-        KmsResponse::Keygen(r) => {
-            assert_eq!(response.keyId, r.key_id)
-        }
-        _ => unreachable!(),
-    }
+    assert_eq!(response.keyId, inserted_response.key_id);
     info!("Response successfully sent to Anvil!");
 
     test_instance
@@ -235,6 +216,54 @@ async fn test_process_keygen_response() -> anyhow::Result<()> {
 
     info!("Checking response has been removed from DB...");
     let count: i64 = sqlx::query_scalar("SELECT COUNT(key_id) FROM keygen_responses")
+        .fetch_one(test_instance.db())
+        .await?;
+    assert_eq!(count, 0);
+    info!("Response successfully removed from DB! Stopping TransactionSender...");
+
+    cancel_token.cancel();
+    Ok(tx_sender_task.await?)
+}
+
+#[rstest]
+#[timeout(Duration::from_secs(60))]
+#[tokio::test]
+async fn test_process_crsgen_response() -> anyhow::Result<()> {
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut activate_crs_filter = test_instance
+        .kms_management_contract()
+        .ActivateCrs_filter()
+        .watch()
+        .await?;
+    activate_crs_filter.poller = activate_crs_filter
+        .poller
+        .with_poll_interval(Duration::from_millis(500));
+    let mut activate_crs_stream = activate_crs_filter.into_stream();
+
+    // Wait for 2 anvil blocks before starting the tx-sender, so event listening is fully ready
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
+
+    let cancel_token = CancellationToken::new();
+    let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
+
+    info!("Mocking CrsgenResponse in Postgres...");
+    let inserted_response = insert_rand_crsgen_response(test_instance.db()).await?;
+    info!("CrsgenResponse successfully stored!");
+
+    info!("Checking response has been sent to Anvil...");
+    let (response, _) = activate_crs_stream
+        .next()
+        .await
+        .ok_or_else(|| anyhow!("Failed to capture CrsgenResponse"))??;
+    assert_eq!(response.crsId, inserted_response.crs_id);
+    info!("Response successfully sent to Anvil!");
+
+    test_instance
+        .wait_for_log("Successfully removed response from DB!")
+        .await;
+
+    info!("Checking response has been removed from DB...");
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(crs_id) FROM crsgen_responses")
         .fetch_one(test_instance.db())
         .await?;
     assert_eq!(count, 0);
@@ -269,12 +298,8 @@ async fn stress_test() -> anyhow::Result<()> {
     info!("Mocking {nb_response} UserDecryptionResponse in Postgres...");
     let mut responses_id = Vec::with_capacity(nb_response);
     for _ in 0..nb_response {
-        match insert_rand_user_decrypt_response(test_instance.db()).await? {
-            KmsResponse::UserDecryption(r) => {
-                responses_id.push(r.decryption_id);
-            }
-            _ => unreachable!(),
-        }
+        let response = insert_rand_user_decrypt_response(test_instance.db()).await?;
+        responses_id.push(response.decryption_id);
     }
     info!("{nb_response} UserDecryptionResponse successfully stored!");
 

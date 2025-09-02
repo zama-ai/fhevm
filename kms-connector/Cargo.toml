@@ -19,7 +19,7 @@ kms-worker.path = "crates/kms-worker"
 tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "22fbcfdb52fe5bc4fc5c73f4c490a99cf9c664df", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "6e748e369f43366d24d945bc98243936ed8d0852", default-features = true }
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "b6a38229943be87e04e4921a8c716b154323a0d2", default-features = true }
 tfhe = "1.3.3"
 
 #####################################################################
