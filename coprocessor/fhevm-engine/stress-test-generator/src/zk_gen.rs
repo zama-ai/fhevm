@@ -1,4 +1,4 @@
-use crate::utils::{DEF_TYPE, EnvConfig, Inputs, next_random_handle, query_and_save_pks};
+use crate::utils::{next_random_handle, query_and_save_pks, EnvConfig, Inputs, DEF_TYPE};
 use host_listener::database::tfhe_event_propagate::Handle;
 use rand::Rng;
 use std::collections::HashMap;

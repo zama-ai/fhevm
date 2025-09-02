@@ -1,6 +1,6 @@
 use crate::utils::{
-    DEF_TYPE, EnvConfig, FheType, allow_handle, generate_trivial_encrypt, next_random_handle,
-    tfhe_event,
+    allow_handle, generate_trivial_encrypt, next_random_handle, tfhe_event, EnvConfig, FheType,
+    DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 use fhevm_engine_common::types::AllowEvents;
