@@ -75,8 +75,6 @@ where
 
         if let Some(user_decrypt_data) = user_decrypt_data {
             let client_address = user_decrypt_data.user_address.to_checksum(None);
-            info!("Proceeding with Client address: {client_address}");
-
             let enc_key = user_decrypt_data.public_key.to_vec();
             let user_decryption_request = UserDecryptionRequest {
                 request_id,
