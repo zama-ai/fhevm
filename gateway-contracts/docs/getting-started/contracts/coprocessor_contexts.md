@@ -23,10 +23,6 @@ Several metadata are stored for each coprocessor:
 - `signerAddress` : see [Sender and signer](#sender-and-signer) below.
 - `s3BucketUrl` : URL of the S3 bucket where the ciphertexts are stored. In the fhevm protocol, this URL is fetched by the KMS connector in order to download the ciphertexts needed for decryption requests.
 
-The current list of [active](#lifecycle) coprocessors can be retrieved using the following view function:
-
-- `getCoprocessors()`: get all the active coprocessors' metadata.
-
 ### Sender and signer
 
 A coprocessor has both a transaction sender and a signer assigned to it:
