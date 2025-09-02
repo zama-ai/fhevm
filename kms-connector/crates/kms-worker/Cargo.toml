@@ -14,7 +14,6 @@ actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
 config.workspace = true
-dashmap.workspace = true
 kms-grpc.workspace = true
 prometheus.workspace = true
 serde.workspace = true

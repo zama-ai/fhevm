@@ -3,34 +3,28 @@ use crate::{
     conn::WalletGatewayProvider,
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
     tests::setup::{ROOT_CARGO_TOML, pick_free_port},
-    // tests::setup::{ROOT_CARGO_TOML, pick_free_port},
 };
 use alloy::{
-    primitives::{Address, ChainId, FixedBytes},
+    primitives::{Address, ChainId, address},
     providers::{ProviderBuilder, WsConnect},
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
-    gateway_config::GatewayConfig::{self, GatewayConfigInstance},
     kms_generation::KMSGeneration::{self, KMSGenerationInstance},
 };
-use std::{sync::LazyLock, time::Duration};
+use std::{str::from_utf8, sync::LazyLock, time::Duration};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
     core::{WaitFor, client::docker_client_instance},
     runners::AsyncRunner,
 };
-use tracing::info;
+use tracing::{debug, info};
 
-pub const DECRYPTION_MOCK_ADDRESS: Address = Address(FixedBytes([
-    184, 174, 68, 54, 92, 69, 167, 197, 37, 107, 20, 246, 7, 202, 226, 59, 192, 64, 195, 84,
-]));
-pub const GATEWAY_CONFIG_MOCK_ADDRESS: Address = Address(FixedBytes([
-    159, 167, 153, 249, 90, 114, 37, 140, 4, 21, 223, 237, 216, 207, 118, 210, 97, 60, 117, 15,
-]));
-pub const KMS_GENERATION_MOCK_ADDRESS: Address = Address(FixedBytes([
-    200, 27, 227, 169, 24, 21, 210, 212, 9, 109, 174, 8, 26, 113, 22, 201, 250, 123, 223, 8,
-]));
+pub const DECRYPTION_MOCK_ADDRESS: Address = address!("0x9FA799F95A72258c0415DFEdd8Cf76D2613c750f");
+pub const GATEWAY_CONFIG_MOCK_ADDRESS: Address =
+    address!("0xE61cff9C581c7c91AEF682c2C10e8632864339ab");
+pub const KMS_GENERATION_MOCK_ADDRESS: Address =
+    address!("0x286f5339934279C74df10123bDbeEF3CaE932c22");
 
 pub const TEST_MNEMONIC: &str =
     "coyote sketch defense hover finger envelope celery urge panther venue verb cheese";
@@ -45,7 +39,6 @@ const ANVIL_PORT: u16 = 8545;
 pub struct GatewayInstance {
     pub provider: WalletGatewayProvider,
     pub decryption_contract: DecryptionInstance<WalletGatewayProvider>,
-    pub gateway_config_contract: GatewayConfigInstance<WalletGatewayProvider>,
     pub kms_generation_contract: KMSGenerationInstance<WalletGatewayProvider>,
     pub anvil: ContainerAsync<GenericImage>,
     pub anvil_host_port: u16,
@@ -60,15 +53,12 @@ impl GatewayInstance {
         block_time: u64,
     ) -> Self {
         let decryption_contract = Decryption::new(DECRYPTION_MOCK_ADDRESS, provider.clone());
-        let gateway_config_contract =
-            GatewayConfig::new(GATEWAY_CONFIG_MOCK_ADDRESS, provider.clone());
         let kms_generation_contract =
             KMSGeneration::new(KMS_GENERATION_MOCK_ADDRESS, provider.clone());
 
         GatewayInstance {
             provider,
             decryption_contract,
-            gateway_config_contract,
             kms_generation_contract,
             anvil,
             anvil_host_port,
@@ -151,7 +141,7 @@ pub async fn setup_anvil_gateway(
 
     info!("Deploying Gateway mock contracts...");
     let version = ROOT_CARGO_TOML.get_gateway_bindings_version();
-    let _deploy_mock_container =
+    let deploy_mock_container =
         GenericImage::new("ghcr.io/zama-ai/fhevm/gateway-contracts", &version)
             .with_wait_for(WaitFor::message_on_stdout("Mock contract deployment done!"))
             .with_env_var("HARDHAT_NETWORK", "staging")
@@ -173,6 +163,15 @@ pub async fn setup_anvil_gateway(
             .with_cmd(["npx hardhat task:deployGatewayMockContracts"])
             .start()
             .await?;
+
+    let stdout = deploy_mock_container.stdout_to_vec().await;
+    let stderr = deploy_mock_container.stderr_to_vec().await;
+    if let Ok(Ok(stdout)) = stdout.as_deref().map(from_utf8) {
+        debug!("Stdout: {stdout}");
+    }
+    if let Ok(Ok(stderr)) = stderr.as_deref().map(from_utf8) {
+        debug!("Stderr: {stderr}");
+    }
     info!("Mock contract successfully deployed on Anvil!");
 
     Ok(anvil)

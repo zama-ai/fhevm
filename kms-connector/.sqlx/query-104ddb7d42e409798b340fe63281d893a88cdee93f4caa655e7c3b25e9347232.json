@@ -26,10 +26,6 @@
                       [
                         "sns_ciphertext_digest",
                         "Bytea"
-                      ],
-                      [
-                        "coprocessor_tx_sender_addresses",
-                        "ByteaArray"
                       ]
                     ]
                   }

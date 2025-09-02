@@ -24,17 +24,13 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
         DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let decryption_id = rand_u256();
-    let sns_ct = vec![rand_sns_ct()];
-    let sns_ciphertexts_db = sns_ct
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    let sns_ciphertexts_db = vec![rand_sns_ct()];
 
     info!("Triggering Postgres notification with PublicDecryptionRequest insertion...");
     sqlx::query!(
         "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        sns_ciphertexts_db.clone() as Vec<SnsCiphertextMaterialDbItem>,
         vec![],
     )
     .execute(test_instance.db())
@@ -48,7 +44,11 @@ async fn test_pick_public_decryption() -> anyhow::Result<()> {
         events,
         vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: decryption_id,
-            snsCtMaterials: sns_ct,
+            storageUrls: sns_ciphertexts_db
+                .iter()
+                .map(|s| s.storage_urls.clone())
+                .collect(),
+            snsCtMaterials: sns_ciphertexts_db.iter().map(|s| s.into()).collect(),
             extraData: vec![].into(),
         })]
     );
@@ -64,19 +64,15 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
         DbEventPicker::connect(test_instance.db().clone(), &Config::default()).await?;
 
     let decryption_id = rand_u256();
-    let sns_ct = vec![rand_sns_ct()];
+    let sns_ciphertexts_db = vec![rand_sns_ct()];
     let user_address = rand_address();
     let public_key = rand_public_key();
-    let sns_ciphertexts_db = sns_ct
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
     info!("Triggering Postgres notification with UserDecryptionRequest insertion...");
     sqlx::query!(
         "INSERT INTO user_decryption_requests VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        sns_ciphertexts_db.clone() as Vec<SnsCiphertextMaterialDbItem>,
         user_address.as_slice(),
         &public_key,
         vec![],
@@ -92,7 +88,11 @@ async fn test_pick_user_decryption() -> anyhow::Result<()> {
         events,
         vec![GatewayEvent::UserDecryption(UserDecryptionRequest {
             decryptionId: decryption_id,
-            snsCtMaterials: sns_ct,
+            storageUrls: sns_ciphertexts_db
+                .iter()
+                .map(|s| s.storage_urls.clone())
+                .collect(),
+            snsCtMaterials: sns_ciphertexts_db.iter().map(|s| s.into()).collect(),
             userAddress: user_address,
             publicKey: public_key.into(),
             extraData: vec![].into(),
@@ -215,16 +215,12 @@ async fn test_polling_backup() -> anyhow::Result<()> {
     let test_instance = TestInstanceBuilder::db_setup().await?;
 
     let decryption_id = rand_u256();
-    let sns_ct = vec![rand_sns_ct()];
-    let sns_ciphertexts_db = sns_ct
-        .iter()
-        .map(SnsCiphertextMaterialDbItem::from)
-        .collect::<Vec<SnsCiphertextMaterialDbItem>>();
+    let sns_ciphertexts_db = vec![rand_sns_ct()];
     info!("Inserting PublicDecryptionRequest before starting the event picker...");
     sqlx::query!(
         "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
         decryption_id.as_le_slice(),
-        sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+        sns_ciphertexts_db.clone() as Vec<SnsCiphertextMaterialDbItem>,
         vec![],
     )
     .execute(test_instance.db())
@@ -244,7 +240,11 @@ async fn test_polling_backup() -> anyhow::Result<()> {
         events,
         vec![GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: decryption_id,
-            snsCtMaterials: sns_ct,
+            storageUrls: sns_ciphertexts_db
+                .iter()
+                .map(|s| s.storage_urls.clone())
+                .collect(),
+            snsCtMaterials: sns_ciphertexts_db.iter().map(|s| s.into()).collect(),
             extraData: vec![].into(),
         })]
     );

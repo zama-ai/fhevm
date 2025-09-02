@@ -8,7 +8,6 @@ use crate::core::{
 use alloy::{
     hex,
     primitives::{Address, Bytes, U256},
-    providers::Provider,
     sol_types::Eip712Domain,
 };
 use anyhow::anyhow;
@@ -22,19 +21,17 @@ use tracing::info;
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming decryption requests.
-pub struct DecryptionProcessor<P: Provider> {
+pub struct DecryptionProcessor {
     /// The EIP712 domain of the `Decryption` contract.
     domain: Eip712Domain,
 
     /// The entity used to collect ciphertexts from S3 buckets.
-    s3_service: S3Service<P>,
+    s3_service: S3Service,
 }
 
-impl<P> DecryptionProcessor<P>
-where
-    P: Provider,
-{
-    pub fn new(config: &Config, s3_service: S3Service<P>) -> Self {
+impl DecryptionProcessor {
+    pub fn new(config: &Config, s3_service: S3Service) -> Self {
+        // Create EIP-712 domain using alloy primitives
         let domain = Eip712Domain {
             name: Some(Cow::Owned(config.decryption_contract.domain_name.clone())),
             version: Some(Cow::Owned(
@@ -52,6 +49,7 @@ where
         &self,
         decryption_id: U256,
         sns_materials: Vec<SnsCiphertextMaterial>,
+        storage_urls: Vec<Vec<String>>,
         extra_data: Vec<u8>,
         user_decrypt_data: Option<UserDecryptionExtraData>,
     ) -> anyhow::Result<KmsGrpcRequest> {
@@ -64,7 +62,9 @@ where
             })?;
         info!("Extracted key_id {key_id} from snsCtMaterials[0]");
 
-        let ciphertexts = self.prepare_ciphertexts(&key_id, sns_materials).await?;
+        let ciphertexts = self
+            .prepare_ciphertexts(&key_id, sns_materials, storage_urls)
+            .await?;
 
         let domain_msg = alloy_to_protobuf_domain(&self.domain)?;
         info!("Eip712Domain constructed: {domain_msg:?}",);
@@ -108,10 +108,11 @@ where
         &self,
         key_id: &str,
         sns_materials: Vec<SnsCiphertextMaterial>,
+        storage_urls: Vec<Vec<String>>,
     ) -> anyhow::Result<Vec<TypedCiphertext>> {
         let sns_ciphertext_materials = self
             .s3_service
-            .retrieve_sns_ciphertext_materials(sns_materials)
+            .retrieve_sns_ciphertext_materials(sns_materials, storage_urls)
             .await;
 
         if sns_ciphertext_materials.is_empty() {

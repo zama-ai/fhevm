@@ -31,13 +31,11 @@ pub struct RawConfig {
     pub database_pool_size: u32,
     #[serde(default = "default_database_polling_timeout_secs")]
     pub database_polling_timeout_secs: u64,
-    pub gateway_url: String,
     #[serde(default)]
     pub kms_core_endpoints: Vec<String>,
     pub kms_core_endpoint: Option<String>,
     pub chain_id: u64,
     pub decryption_contract: RawContractConfig,
-    pub gateway_config_contract: RawContractConfig,
     pub kms_generation_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
@@ -139,18 +137,12 @@ impl Default for RawConfig {
             database_url: "postgres://postgres:postgres@localhost".to_string(),
             database_pool_size: 16,
             database_polling_timeout_secs: default_database_polling_timeout_secs(),
-            gateway_url: "ws://localhost:8545".to_string(),
             kms_core_endpoints: vec!["http://localhost:50052".to_string()],
             kms_core_endpoint: None,
             chain_id: 1,
             decryption_contract: RawContractConfig {
                 address: "0x0000000000000000000000000000000000000000".to_string(),
                 domain_name: Some("Decryption".to_string()),
-                domain_version: Some("1".to_string()),
-            },
-            gateway_config_contract: RawContractConfig {
-                address: "0x0000000000000000000000000000000000000000".to_string(),
-                domain_name: Some("GatewayConfig".to_string()),
                 domain_version: Some("1".to_string()),
             },
             kms_generation_contract: RawContractConfig {

@@ -19,16 +19,12 @@ pub struct Config {
     pub database_pool_size: u32,
     /// The timeout for polling the database for events.
     pub database_polling_timeout: Duration,
-    /// The Gateway RPC endpoint.
-    pub gateway_url: String,
     /// The KMS Core endpoints.
     pub kms_core_endpoints: Vec<String>,
     /// The Chain ID of the Gateway.
     pub chain_id: u64,
     /// The `Decryption` contract configuration.
     pub decryption_contract: ContractConfig,
-    /// The `GatewayConfig` contract configuration.
-    pub gateway_config_contract: ContractConfig,
     /// The `KMSGeneration` contract configuration.
     pub kms_generation_contract: ContractConfig,
     /// The service name used for tracing.
@@ -86,15 +82,8 @@ impl Config {
             .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let decryption_contract =
             ContractConfig::parse("Decryption", raw_config.decryption_contract)?;
-        let gateway_config_contract =
-            ContractConfig::parse("GatewayConfig", raw_config.gateway_config_contract)?;
         let kms_generation_contract =
             ContractConfig::parse("KMSGeneration", raw_config.kms_generation_contract)?;
-
-        // Validate critical configuration parts
-        if raw_config.gateway_url.is_empty() {
-            return Err(Error::EmptyField("Gateway URL".to_string()));
-        }
 
         let kms_core_endpoints;
         if raw_config.kms_core_endpoints.is_empty() {
@@ -121,11 +110,9 @@ impl Config {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
             database_polling_timeout,
-            gateway_url: raw_config.gateway_url,
             kms_core_endpoints,
             chain_id: raw_config.chain_id,
             decryption_contract,
-            gateway_config_contract,
             kms_generation_contract,
             service_name: raw_config.service_name,
             events_batch_size: raw_config.events_batch_size,
@@ -162,11 +149,9 @@ mod tests {
     fn cleanup_env_vars() {
         unsafe {
             env::remove_var("KMS_CONNECTOR_DATABASE_URL");
-            env::remove_var("KMS_CONNECTOR_GATEWAY_URL");
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
-            env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_S3_CONFIG__REGION");
@@ -192,7 +177,6 @@ mod tests {
         let config = Config::from_env_and_file(Some(temp_file.path())).unwrap();
 
         // Compare fields
-        assert_eq!(raw_config.gateway_url, config.gateway_url);
         assert_eq!(raw_config.kms_core_endpoints, config.kms_core_endpoints);
         assert_eq!(raw_config.chain_id, config.chain_id);
         assert_eq!(
@@ -200,8 +184,8 @@ mod tests {
             config.decryption_contract.address,
         );
         assert_eq!(
-            Address::from_str(&raw_config.gateway_config_contract.address).unwrap(),
-            config.gateway_config_contract.address,
+            Address::from_str(&raw_config.kms_generation_contract.address).unwrap(),
+            config.kms_generation_contract.address,
         );
         assert_eq!(raw_config.kms_core_endpoints, config.kms_core_endpoints);
         assert_eq!(raw_config.service_name, config.service_name);
@@ -225,14 +209,6 @@ mod tests {
             raw_config.decryption_contract.domain_version.unwrap(),
             config.decryption_contract.domain_version,
         );
-        assert_eq!(
-            raw_config.gateway_config_contract.domain_name.unwrap(),
-            config.gateway_config_contract.domain_name,
-        );
-        assert_eq!(
-            raw_config.gateway_config_contract.domain_version.unwrap(),
-            config.gateway_config_contract.domain_version,
-        );
         assert_eq!(raw_config.s3_config, config.s3_config);
     }
 
@@ -247,7 +223,6 @@ mod tests {
                 "KMS_CONNECTOR_DATABASE_URL",
                 "postgres://postgres:postgres@localhost",
             );
-            env::set_var("KMS_CONNECTOR_GATEWAY_URL", "ws://localhost:9545");
             env::set_var(
                 "KMS_CONNECTOR_KMS_CORE_ENDPOINTS",
                 "http://localhost:50053,http://localhost:50054",
@@ -255,10 +230,6 @@ mod tests {
             env::set_var("KMS_CONNECTOR_CHAIN_ID", "31888");
             env::set_var(
                 "KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS",
-                "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-            );
-            env::set_var(
-                "KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS",
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var(
@@ -279,7 +250,6 @@ mod tests {
         let config = Config::from_env_and_file::<&str>(None).unwrap();
 
         // Verify values
-        assert_eq!(config.gateway_url, "ws://localhost:9545");
         assert_eq!(
             config.kms_core_endpoints,
             vec!["http://localhost:50053", "http://localhost:50054"]
@@ -287,10 +257,6 @@ mod tests {
         assert_eq!(config.chain_id, 31888);
         assert_eq!(
             config.decryption_contract.address,
-            Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
-        );
-        assert_eq!(
-            config.gateway_config_contract.address,
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(
@@ -337,9 +303,6 @@ mod tests {
         assert_eq!(config.s3_config.as_ref().unwrap().region, "test-region");
         assert_eq!(config.s3_config.as_ref().unwrap().bucket, "test-bucket");
 
-        // File values should be used for non-overridden fields
-        assert_eq!(config.gateway_url, "ws://localhost:8545");
-
         cleanup_env_vars();
     }
 
@@ -351,7 +314,7 @@ mod tests {
                 address: "0x0000".to_string(),
                 ..Default::default()
             },
-            gateway_config_contract: RawContractConfig {
+            kms_generation_contract: RawContractConfig {
                 address: "0x000010".to_string(),
                 ..Default::default()
             },

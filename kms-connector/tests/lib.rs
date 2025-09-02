@@ -113,7 +113,6 @@ impl KmsConnector {
             ..Default::default()
         };
         kms_worker_conf.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
-        kms_worker_conf.gateway_config_contract.address = GATEWAY_CONFIG_MOCK_ADDRESS;
         let (kms_worker, _) = KmsWorker::from_config(kms_worker_conf).await?;
 
         let mut tx_sender_conf = tx_sender::core::Config::default().await;

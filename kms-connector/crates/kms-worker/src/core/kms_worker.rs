@@ -11,10 +11,7 @@ use crate::{
     },
     monitoring::health::{KmsHealthClient, State},
 };
-use connector_utils::{
-    conn::{GatewayProvider, connect_to_db, connect_to_gateway},
-    tasks::spawn_with_limit,
-};
+use connector_utils::{conn::connect_to_db, tasks::spawn_with_limit};
 use std::fmt::Display;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -93,17 +90,16 @@ where
     }
 }
 
-impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePublisher> {
+impl KmsWorker<DbEventPicker, DbEventProcessor, DbKmsResponsePublisher> {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
-        let s3_service = S3Service::new(&config, provider.clone());
+        let s3_service = S3Service::new(&config);
         let decryption_processor = DecryptionProcessor::new(&config, s3_service);
         let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let event_processor = DbEventProcessor::new(
@@ -114,12 +110,7 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
         );
         let response_publisher = DbKmsResponsePublisher::new(db_pool.clone());
 
-        let state = State::new(
-            db_pool,
-            provider,
-            kms_health_client,
-            config.healthcheck_timeout,
-        );
+        let state = State::new(db_pool, kms_health_client, config.healthcheck_timeout);
         let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
         Ok((kms_worker, state))
     }

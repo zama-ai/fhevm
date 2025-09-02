@@ -3,7 +3,6 @@ use crate::core::event_processor::{
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
     kms::KMSGenerationProcessor,
 };
-use alloy::providers::Provider;
 use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, KmsGrpcRequest, KmsResponse};
 use sqlx::{Pool, Postgres};
@@ -23,12 +22,12 @@ pub trait EventProcessor: Send {
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
 #[derive(Clone)]
-pub struct DbEventProcessor<P: Provider> {
+pub struct DbEventProcessor {
     /// The GRPC client used to communicate with the KMS Core.
     kms_client: KmsClient,
 
     /// The entity used to process decryption requests.
-    decryption_processor: DecryptionProcessor<P>,
+    decryption_processor: DecryptionProcessor,
 
     /// The entity used to process key management requests.
     kms_generation_processor: KMSGenerationProcessor,
@@ -37,7 +36,7 @@ pub struct DbEventProcessor<P: Provider> {
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider> EventProcessor for DbEventProcessor<P> {
+impl EventProcessor for DbEventProcessor {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
@@ -68,10 +67,10 @@ pub enum ProcessingError {
     Recoverable(anyhow::Error),
 }
 
-impl<P: Provider> DbEventProcessor<P> {
+impl DbEventProcessor {
     pub fn new(
         kms_client: KmsClient,
-        decryption_processor: DecryptionProcessor<P>,
+        decryption_processor: DecryptionProcessor,
         kms_generation_processor: KMSGenerationProcessor,
         db_pool: Pool<Postgres>,
     ) -> Self {
@@ -95,6 +94,7 @@ impl<P: Provider> DbEventProcessor<P> {
                     .prepare_decryption_request(
                         req.decryptionId,
                         req.snsCtMaterials,
+                        req.storageUrls,
                         req.extraData.into(),
                         None,
                     )
@@ -105,6 +105,7 @@ impl<P: Provider> DbEventProcessor<P> {
                     .prepare_decryption_request(
                         req.decryptionId,
                         req.snsCtMaterials,
+                        req.storageUrls,
                         req.extraData.into(),
                         Some(UserDecryptionExtraData::new(req.userAddress, req.publicKey)),
                     )
