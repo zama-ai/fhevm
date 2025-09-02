@@ -39,6 +39,12 @@ contract InputVerification is
     /// @notice The address of the CoprocessorContexts contract, used for fetching information about coprocessors.
     ICoprocessorContexts private constant COPROCESSOR_CONTEXTS = ICoprocessorContexts(coprocessorContextsAddress);
 
+    /// @notice The version number of the extra data for the input verification request event.
+    uint8 private constant EXTRA_DATA_VERSION_REQUEST_EVENT = 1;
+
+    /// @notice The version number of the extra data for the ciphertext verification struct.
+    uint8 private constant EXTRA_DATA_VERSION_CIPHERTEXT_VERIFICATION_STRUCT = 1;
+
     /**
      * @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
      * @dev ctHandles: The coprocessor's computed ciphertext handles.
@@ -49,7 +55,7 @@ contract InputVerification is
      * @dev contextId: The coprocessor context ID associated to the input verification request.
      */
     string private constant EIP712_ZKPOK_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData,uint256 contextId)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
 
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
@@ -138,7 +144,7 @@ contract InputVerification is
         address contractAddress,
         address userAddress,
         bytes calldata ciphertextWithZKProof,
-        bytes calldata extraData
+        bytes calldata /* extraData */
     ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused refreshCoprocessorContextStatuses {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
@@ -152,14 +158,16 @@ contract InputVerification is
         uint256 contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
         $.inputVerificationContextId[zkProofId] = contextId;
 
+        // Build the extra data for the input verification request event.
+        bytes memory extraDataV1 = _buildExtraDataV1RequestEvent(contextId);
+
         emit VerifyProofRequest(
             zkProofId,
-            contextId,
             contractChainId,
             contractAddress,
             userAddress,
             ciphertextWithZKProof,
-            extraData
+            extraDataV1
         );
     }
 
@@ -172,7 +180,7 @@ contract InputVerification is
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature,
-        bytes calldata extraData
+        bytes calldata /* extraData */
     ) external virtual refreshCoprocessorContextStatuses {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
@@ -193,8 +201,11 @@ contract InputVerification is
             revert InvalidCoprocessorContextProofVerification(zkProofId, contextId, contextStatus);
         }
 
-        // Compute the digest of the CiphertextVerification structure.
-        bytes32 digest = _hashCiphertextVerification(zkProofId, ctHandles, extraData, contextId);
+        // Build the extra data for the CiphertextVerification struct.
+        bytes memory extraDataV1 = _buildExtraDataV1CiphertextVerificationStruct(contextId);
+
+        // Compute the digest of the CiphertextVerification struct.
+        bytes32 digest = _hashCiphertextVerification(zkProofId, ctHandles, extraDataV1);
 
         // Recover the signer address from the signature,
         address signerAddress = ECDSA.recover(digest, signature);
@@ -379,14 +390,12 @@ contract InputVerification is
      * @param zkProofId The ID of the ZK Proof.
      * @param ctHandles The coprocessor's computed ciphertext handles.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
-     * @param contextId The coprocessor context ID associated to the input verification request.
      * @return The hash of the CiphertextVerification structure
      */
     function _hashCiphertextVerification(
         uint256 zkProofId,
         bytes32[] memory ctHandles,
-        bytes memory extraData,
-        uint256 contextId
+        bytes memory extraData
     ) internal view virtual returns (bytes32) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
@@ -402,11 +411,34 @@ contract InputVerification is
                         zkProofInput.userAddress,
                         zkProofInput.contractAddress,
                         zkProofInput.contractChainId,
-                        keccak256(abi.encodePacked(extraData)),
-                        contextId
+                        keccak256(abi.encodePacked(extraData))
                     )
                 )
             );
+    }
+
+    /// @notice Builds the extra data V1 for the input verification request event.
+    /// @param contextId The coprocessor context ID associated to the input verification request.
+    /// @return The extra data for the input verification request event
+    function _buildExtraDataV1RequestEvent(uint256 contextId) internal view virtual returns (bytes memory) {
+        // Insert the coprocessor context ID in the extra data.
+        // Version 1 of the extra data is of byte format [version_0 | contextId_1..32]:
+        // - byte 0: the version number
+        // - bytes 1..32: the coprocessor context ID
+        return bytes.concat(bytes1(EXTRA_DATA_VERSION_REQUEST_EVENT), bytes32(contextId));
+    }
+
+    /// @notice Builds the extra data V1 for the input verification request event.
+    /// @param contextId The coprocessor context ID associated to the input verification request.
+    /// @return The extra data for the input verification request event
+    function _buildExtraDataV1CiphertextVerificationStruct(
+        uint256 contextId
+    ) internal view virtual returns (bytes memory) {
+        // Insert the coprocessor context ID in the extra data.
+        // Version 1 of the extra data is of byte format [version_0 | contextId_1..32]:
+        // - byte 0: the version number
+        // - bytes 1..32: the coprocessor context ID
+        return bytes.concat(bytes1(EXTRA_DATA_VERSION_CIPHERTEXT_VERIFICATION_STRUCT), bytes32(contextId));
     }
 
     /**

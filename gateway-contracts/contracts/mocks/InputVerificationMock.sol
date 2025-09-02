@@ -5,7 +5,6 @@ import "../shared/Enums.sol";
 contract InputVerificationMock {
     event VerifyProofRequest(
         uint256 indexed zkProofId,
-        uint256 indexed contextId,
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
@@ -24,15 +23,14 @@ contract InputVerificationMock {
         address contractAddress,
         address userAddress,
         bytes calldata ciphertextWithZKProof,
-        bytes calldata extraData
+        bytes calldata /* unusedVariable */
     ) external {
         zkProofIdCounter++;
         uint256 zkProofId = zkProofIdCounter;
-        uint256 contextId;
+        bytes memory extraData;
 
         emit VerifyProofRequest(
             zkProofId,
-            contextId,
             contractChainId,
             contractAddress,
             userAddress,
@@ -45,7 +43,7 @@ contract InputVerificationMock {
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature,
-        bytes calldata extraData
+        bytes calldata /* unusedVariable */
     ) external {
         bytes[] memory signatures = new bytes[](1);
 

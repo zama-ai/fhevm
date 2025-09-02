@@ -330,15 +330,7 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(inputVerificationMock, "VerifyProofRequest")
-        .withArgs(
-          zkProofCounterId,
-          DefaultUint256,
-          DefaultUint256,
-          DefaultAddress,
-          DefaultAddress,
-          DefaultBytes,
-          DefaultBytes,
-        );
+        .withArgs(zkProofCounterId, DefaultUint256, DefaultAddress, DefaultAddress, DefaultBytes, DefaultBytes);
     });
 
     it("Should emit VerifyProofResponse event on verify proof response", async function () {

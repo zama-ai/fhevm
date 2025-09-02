@@ -20,6 +20,24 @@ import {
   refreshCoprocessorContextAfterTimePeriod,
 } from "./utils";
 
+// Build the extra data v1 for the input verification request event
+function buildExtraDataV1InputVerificationRequestEvent(contextId: number) {
+  // For now, there is only one version of the extra data for input verification request event
+  const version = 1;
+  return hre.ethers.hexlify(
+    hre.ethers.concat([hre.ethers.toBeArray(version), hre.ethers.zeroPadValue(hre.ethers.toBeHex(contextId), 32)]),
+  );
+}
+
+// Build the extra data v1 for the CiphertextVerification struct
+function buildExtraDataV1CiphertextVerificationStruct(contextId: number) {
+  // For now, there is only one version of the extra data for CiphertextVerification struct
+  const version = 1;
+  return hre.ethers.hexlify(
+    hre.ethers.concat([hre.ethers.toBeArray(version), hre.ethers.zeroPadValue(hre.ethers.toBeHex(contextId), 32)]),
+  );
+}
+
 describe("InputVerification", function () {
   // Define 3 ciphertext handles
   const ctHandles = createCtHandles(3);
@@ -100,17 +118,12 @@ describe("InputVerification", function () {
         extraDataV0,
       );
 
+      // Build extra data v1 for the input verification request event
+      const extraDataV1 = buildExtraDataV1InputVerificationRequestEvent(contextId);
+
       await expect(txResponse)
         .to.emit(inputVerification, "VerifyProofRequest")
-        .withArgs(
-          zkProofId,
-          contextId,
-          contractChainId,
-          contractAddress,
-          userAddress,
-          ciphertextWithZKProof,
-          extraDataV0,
-        );
+        .withArgs(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV1);
     });
 
     it("Should revert because the contract's chain ID does not correspond to a registered host chain", async function () {
@@ -224,6 +237,9 @@ describe("InputVerification", function () {
 
       inputVerificationAddress = await inputVerification.getAddress();
 
+      // Build extra data v1 for the CiphertextVerification struct
+      const extraDataV1 = buildExtraDataV1CiphertextVerificationStruct(contextId);
+
       // Create the EIP712 message
       eip712Message = createEIP712ResponseZKPoK(
         hre.network.config.chainId!,
@@ -232,8 +248,7 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
-        extraDataV0,
-        contextId,
+        extraDataV1,
       );
 
       // Get the EIP712 signatures
@@ -316,6 +331,9 @@ describe("InputVerification", function () {
     });
 
     it("Should verify a proof with 2 valid and 1 malicious signatures", async function () {
+      // Build extra data v1 for the CiphertextVerification struct
+      const extraDataV1 = buildExtraDataV1CiphertextVerificationStruct(contextId);
+
       // Create a malicious EIP712 message: the ctHandles are different from the expected ones
       // but the signature is valid (the new handles will be given to the response call )
       const fakeEip712Message = createEIP712ResponseZKPoK(
@@ -325,8 +343,7 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
-        extraDataV0,
-        contextId,
+        extraDataV1,
       );
 
       // Get the EIP712 signatures
@@ -408,6 +425,9 @@ describe("InputVerification", function () {
         .connect(coprocessorTxSenders[1])
         .verifyProofResponse(zkProofId, ctHandles, signatures[1], extraDataV0);
 
+      // Build extra data v1 for the CiphertextVerification struct
+      const extraDataV1 = buildExtraDataV1CiphertextVerificationStruct(contextId);
+
       // Create a malicious EIP712 message: the ctHandles are different from the expected ones
       // but the signature is valid (the new handles will be given to the response call)
       const fakeEip712Message = createEIP712ResponseZKPoK(
@@ -417,8 +437,7 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
-        extraDataV0,
-        contextId,
+        extraDataV1,
       );
 
       // Get the EIP712 signatures
@@ -693,6 +712,9 @@ describe("InputVerification", function () {
     });
 
     it("Should reject a proof with 2 valid responses and 1 valid proof verification response", async function () {
+      // Build extra data v1 for the CiphertextVerification struct
+      const extraDataV1 = buildExtraDataV1CiphertextVerificationStruct(contextId);
+
       // Create the EIP712 message
       const eip712Message = createEIP712ResponseZKPoK(
         hre.network.config.chainId!,
@@ -701,8 +723,7 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
-        extraDataV0,
-        contextId,
+        extraDataV1,
       );
 
       // Get the EIP712 signature
@@ -775,6 +796,9 @@ describe("InputVerification", function () {
       await inputVerification.connect(coprocessorTxSenders[0]).rejectProofResponse(zkProofId, extraDataV0);
       await inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId, extraDataV0);
 
+      // Build extra data v1 for the CiphertextVerification struct
+      const extraDataV1 = buildExtraDataV1CiphertextVerificationStruct(contextId);
+
       // Create the EIP712 message
       const eip712Message = createEIP712ResponseZKPoK(
         hre.network.config.chainId!,
@@ -783,8 +807,7 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
-        extraDataV0,
-        contextId,
+        extraDataV1,
       );
 
       // Get the EIP712 signature
@@ -832,6 +855,9 @@ describe("InputVerification", function () {
       const coprocessorTxSender = coprocessorTxSenders[0];
       const coprocessorSigner = coprocessorSigners[0];
 
+      // Build extra data v1 for the CiphertextVerification struct
+      const extraDataV1 = buildExtraDataV1CiphertextVerificationStruct(contextId);
+
       // Create the EIP712 message
       const eip712Message = createEIP712ResponseZKPoK(
         hre.network.config.chainId!,
@@ -840,8 +866,7 @@ describe("InputVerification", function () {
         userAddress,
         contractAddress,
         contractChainId,
-        extraDataV0,
-        contextId,
+        extraDataV1,
       );
 
       // Get the EIP712 signatures

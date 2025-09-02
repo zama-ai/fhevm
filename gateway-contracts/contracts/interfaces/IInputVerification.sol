@@ -11,7 +11,6 @@ interface IInputVerification {
     /**
      * @notice Emitted when a ZK Proof verification is started.
      * @param zkProofId The ID of the ZK Proof.
-     * @param contextId The context ID.
      * @param contractChainId The host chain's chain ID of the contract requiring the ZK Proof verification.
      * @param contractAddress The address of the dapp requiring the ZK Proof verification.
      * @param userAddress The address of the user providing the input.
@@ -20,7 +19,6 @@ interface IInputVerification {
      */
     event VerifyProofRequest(
         uint256 indexed zkProofId,
-        uint256 indexed contextId,
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,

@@ -237,8 +237,8 @@ contract Decryption is
 
         // Insert the s3 bucket URLs in the extra data.
         // Version 1 of the extra data is of byte format [version_0 | s3BucketUrls_1..]:
-        // - byte 1: the version number
-        // - bytes 2..: the S3 bucket URLs that have reached consensus for the ciphertexts (ABI encoded)
+        // - byte 0: the version number
+        // - bytes 1..: the S3 bucket URLs that have reached consensus for the ciphertexts (ABI encoded)
         bytes memory extraDataV1 = bytes.concat(
             bytes1(EXTRA_DATA_VERSION_PUBLIC_DECRYPTION_REQUEST_EVENT),
             abi.encode(s3BucketUrls)
@@ -368,10 +368,7 @@ contract Decryption is
         /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        // Insert the s3 bucket URLs in the extra data.
-        // Version 1 of the extra data is of byte format [version_0 | s3BucketUrls_1..]:
-        // - byte 1: the version number
-        // - bytes 2..: the S3 bucket URLs that have reached consensus for the ciphertexts (ABI encoded)
+        // Build the extra data for the decryption request event.
         bytes memory extraDataV1 = _buildExtraDataV1DecryptionRequestEvent(
             EXTRA_DATA_VERSION_DELEGATED_USER_DECRYPTION_REQUEST_EVENT,
             ctHandles
@@ -454,10 +451,7 @@ contract Decryption is
         /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        // Insert the s3 bucket URLs in the extra data.
-        // Version 1 of the extra data is of byte format [version_0 | s3BucketUrls_1..]:
-        // - byte 1: the version number
-        // - bytes 2..: the S3 bucket URLs that have reached consensus for the ciphertexts (ABI encoded)
+        // Build the extra data for the decryption request event.
         bytes memory extraDataV1 = _buildExtraDataV1DecryptionRequestEvent(
             EXTRA_DATA_VERSION_DELEGATED_USER_DECRYPTION_REQUEST_EVENT,
             ctHandles
@@ -975,8 +969,8 @@ contract Decryption is
 
         // Insert the s3 bucket URLs in the extra data.
         // Version 1 of the extra data is of byte format [version_0 | s3BucketUrls_1..]:
-        // - byte 1: the version number
-        // - bytes 2..: the S3 bucket URLs that have reached consensus for the ciphertexts (ABI encoded)
+        // - byte 0: the version number
+        // - bytes 1..: the S3 bucket URLs that have reached consensus for the ciphertexts (ABI encoded)
         return bytes.concat(bytes1(version), abi.encode(s3BucketUrls));
     }
 
