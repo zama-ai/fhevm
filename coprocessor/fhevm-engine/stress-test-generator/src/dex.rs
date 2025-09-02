@@ -8,8 +8,8 @@ use sqlx::Postgres;
 
 use crate::erc20::erc20_transaction;
 use crate::utils::{
-    DEF_TYPE, ERCTransferVariant, allow_handle, generate_trivial_encrypt, next_random_handle,
-    tfhe_event,
+    allow_handle, generate_trivial_encrypt, next_random_handle, tfhe_event, ERCTransferVariant,
+    DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 
