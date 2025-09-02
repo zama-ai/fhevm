@@ -263,7 +263,7 @@ contract InputVerification is
          * lead to situations where a coprocessor can both verify and reject a proof, which is forbidden. This check
          * is directly done within `_checkCoprocessorAlreadyResponded` below.
          */
-        Coprocessor memory coprocessor = COPROCESSOR_CONTEXTS.getCoprocessorFromContext(contextId, msg.sender);
+        CoprocessorV2 memory coprocessor = COPROCESSOR_CONTEXTS.getCoprocessorFromContext(contextId, msg.sender);
         address coprocessorSignerAddress = coprocessor.signerAddress;
 
         // Check that the coprocessor has not already responded to the ZKPoK verification request.

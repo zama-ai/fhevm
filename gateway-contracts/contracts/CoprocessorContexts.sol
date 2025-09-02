@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "./interfaces/ICoprocessorContexts.sol";
+import { ICoprocessorContexts } from "./interfaces/ICoprocessorContexts.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./shared/Pausable.sol";
+import { Pausable } from "./shared/Pausable.sol";
 import { ContextLifecycle } from "./libraries/ContextLifecycle.sol";
-import { CoprocessorContext, CoprocessorContextTimePeriods } from "./shared/Structs.sol";
+import { CoprocessorV2, CoprocessorContext, CoprocessorContextTimePeriods } from "./shared/Structs.sol";
 import { ContextStatus } from "./shared/Enums.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 
@@ -40,7 +40,7 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         /// @notice The number of coprocessor contexts
         uint256 coprocessorContextCount;
         /// @notice The coprocessors' metadata per context
-        mapping(uint256 contextId => mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor)) coprocessors;
+        mapping(uint256 contextId => mapping(address coprocessorTxSenderAddress => CoprocessorV2 coprocessor)) coprocessors;
         /// @notice Whether a coprocessor is a transaction sender in a context
         mapping(uint256 contextId => mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender)) isCoprocessorTxSender;
         /// @notice The coprocessors' transaction sender address list per context
@@ -89,7 +89,7 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
         uint256 initialFeatureSet,
-        Coprocessor[] calldata initialCoprocessors
+        CoprocessorV2[] calldata initialCoprocessors
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
@@ -165,7 +165,7 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
      */
     function addCoprocessorContext(
         uint256 featureSet,
-        Coprocessor[] calldata coprocessors,
+        CoprocessorV2[] calldata coprocessors,
         CoprocessorContextTimePeriods calldata timePeriods
     ) external virtual onlyOwner {
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
@@ -377,9 +377,9 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
     function getCoprocessorFromContext(
         uint256 contextId,
         address coprocessorTxSenderAddress
-    ) public view virtual ensureContextInitialized(contextId) returns (Coprocessor memory) {
+    ) public view virtual ensureContextInitialized(contextId) returns (CoprocessorV2 memory) {
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
-        Coprocessor memory coprocessor = $.coprocessors[contextId][coprocessorTxSenderAddress];
+        CoprocessorV2 memory coprocessor = $.coprocessors[contextId][coprocessorTxSenderAddress];
 
         // A null address for the transaction sender address indicates that the coprocessor is not part
         // of the coprocessor context
@@ -442,7 +442,7 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
     function _addCoprocessorContext(
         uint256 previousContextId,
         uint256 featureSet,
-        Coprocessor[] calldata coprocessors
+        CoprocessorV2[] calldata coprocessors
     ) internal virtual returns (CoprocessorContext memory) {
         // A coprocessor context must contain at least one coprocessor
         if (coprocessors.length == 0) {

@@ -51,10 +51,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address kmsTxSenderAddress => bool isKmsTxSender) _isKmsTxSender;
         /// @notice The KMS nodes' signer addresses
         mapping(address kmsSignerAddress => bool isKmsSigner) _isKmsSigner;
-        /// @notice The coprocessors' transaction sender addresses
-        mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender; // deprecated
-        /// @notice The coprocessors' signer addresses
-        mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner; // deprecated
+        /// @notice DEPRECATED: coprocessors are stored in `CoprocessorContexts` contract
+        mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender; // DEPRECATED
+        /// @notice DEPRECATED: coprocessors are stored in `CoprocessorContexts` contract
+        mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner; // DEPRECATED
         // ----------------------------------------------------------------------------------------------
         // Host chains state variables:
         // ----------------------------------------------------------------------------------------------
@@ -81,14 +81,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @notice The threshold to consider for user decryption consensus
         uint256 userDecryptionThreshold;
         // ----------------------------------------------------------------------------------------------
-        // Coprocessors state variables (deprecated):
+        // Coprocessors state variables (DEPRECATED):
         // ----------------------------------------------------------------------------------------------
-        /// @notice The coprocessors' metadata
-        mapping(address coprocessorTxSenderAddress => DeprecatedCoprocessor coprocessor) coprocessors; // deprecated
-        /// @notice The coprocessors' transaction sender address list
-        address[] coprocessorTxSenderAddresses; // deprecated
-        /// @notice The coprocessors' signer address list
-        address[] coprocessorSignerAddresses; // deprecated
+        /// @notice DEPRECATED: coprocessors are stored in `CoprocessorContexts` contract
+        mapping(address coprocessorTxSenderAddress => CoprocessorV1 coprocessor) coprocessors; // DEPRECATED
+        /// @notice DEPRECATED: coprocessors are stored in `CoprocessorContexts` contract
+        address[] coprocessorTxSenderAddresses; // DEPRECATED
+        /// @notice DEPRECATED: coprocessors are stored in `CoprocessorContexts` contract
+        address[] coprocessorSignerAddresses; // DEPRECATED
         // ----------------------------------------------------------------------------------------------
         // Host chains state variables:
         // ----------------------------------------------------------------------------------------------

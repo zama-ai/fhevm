@@ -20,7 +20,7 @@ struct KmsNode {
 }
 
 /// @notice Struct that represents a coprocessor
-struct Coprocessor {
+struct CoprocessorV2 {
     /// @notice Name of the coprocessor, as a human-readable identifier
     string name;
     /// @notice Address of the coprocessor's transaction sender
@@ -40,7 +40,7 @@ struct CoprocessorContext {
     /// @notice The feature set of the coprocessor context
     uint256 featureSet;
     /// @notice The coprocessors in the coprocessor context
-    Coprocessor[] coprocessors;
+    CoprocessorV2[] coprocessors;
 }
 
 /// @notice Struct that represents the time periods for a coprocessor context
@@ -126,7 +126,7 @@ struct DelegationAccounts {
 // DEPRECATED
 // ----------------------------------------------------------------------------------------------
 
-struct DeprecatedCoprocessor {
+struct CoprocessorV1 {
     address txSenderAddress;
     address signerAddress;
     string s3BucketUrl;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { Coprocessor, CoprocessorContextTimePeriods, CoprocessorContext } from "../shared/Structs.sol";
+import { CoprocessorV2, CoprocessorContextTimePeriods, CoprocessorContext } from "../shared/Structs.sol";
 import { ContextStatus } from "../shared/Enums.sol";
 
 /**
@@ -19,7 +19,7 @@ interface ICoprocessorContexts {
      * @param featureSet The feature set.
      * @param coprocessors The coprocessors.
      */
-    event InitializeCoprocessorContexts(uint256 featureSet, Coprocessor[] coprocessors);
+    event InitializeCoprocessorContexts(uint256 featureSet, CoprocessorV2[] coprocessors);
 
     /**
      * @notice Emitted when a new coprocessor context has been suggested to be added.
@@ -90,7 +90,7 @@ interface ICoprocessorContexts {
      * @param coprocessorIndex The index of the coprocessor in the coprocessors list.
      * @param coprocessors The list of coprocessors to register in the context.
      */
-    error NullCoprocessorTxSenderAddress(uint256 coprocessorIndex, Coprocessor[] coprocessors);
+    error NullCoprocessorTxSenderAddress(uint256 coprocessorIndex, CoprocessorV2[] coprocessors);
 
     /**
      * @notice Error indicating that the list of coprocessors in the context to register has at
@@ -98,7 +98,7 @@ interface ICoprocessorContexts {
      * @param coprocessorIndex The index of the coprocessor in the coprocessors list.
      * @param coprocessors The list of coprocessors to register in the context.
      */
-    error NullCoprocessorSignerAddress(uint256 coprocessorIndex, Coprocessor[] coprocessors);
+    error NullCoprocessorSignerAddress(uint256 coprocessorIndex, CoprocessorV2[] coprocessors);
 
     /**
      * @notice Error indicating that the list of coprocessors in the context to register has at
@@ -110,7 +110,7 @@ interface ICoprocessorContexts {
     error CoprocessorTxSenderAddressesNotUnique(
         address txSenderAddress,
         uint256 coprocessorIndex,
-        Coprocessor[] coprocessors
+        CoprocessorV2[] coprocessors
     );
 
     /**
@@ -123,7 +123,7 @@ interface ICoprocessorContexts {
     error CoprocessorSignerAddressesNotUnique(
         address signerAddress,
         uint256 coprocessorIndex,
-        Coprocessor[] coprocessors
+        CoprocessorV2[] coprocessors
     );
 
     /**
@@ -207,7 +207,7 @@ interface ICoprocessorContexts {
      */
     function addCoprocessorContext(
         uint256 featureSet,
-        Coprocessor[] calldata coprocessors,
+        CoprocessorV2[] calldata coprocessors,
         CoprocessorContextTimePeriods calldata timePeriods
     ) external;
 
@@ -290,7 +290,7 @@ interface ICoprocessorContexts {
     function getCoprocessorFromContext(
         uint256 contextId,
         address coprocessorTxSenderAddress
-    ) external view returns (Coprocessor memory);
+    ) external view returns (CoprocessorV2 memory);
 
     /**
      * @notice Get the list of all coprocessors' transaction sender addresses from a context.

@@ -36,7 +36,7 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
         uint256 mpcThreshold;
         uint256 publicDecryptionThreshold;
         uint256 userDecryptionThreshold;
-        mapping(address coprocessorTxSenderAddress => DeprecatedCoprocessor coprocessor) coprocessors;
+        mapping(address coprocessorTxSenderAddress => CoprocessorV1 coprocessor) coprocessors;
         address[] coprocessorTxSenderAddresses;
         address[] coprocessorSignerAddresses;
         HostChain[] hostChains;
