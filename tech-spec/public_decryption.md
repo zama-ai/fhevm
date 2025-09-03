@@ -1,14 +1,8 @@
 # Public Decryption
 
-Public decryption is when a contract calls the ZWS Public Decryption Oracle to get a ciphertext decrypted publicly on-chain.
-
-<!-- TODO: Add transaction receipt flow from tx-manager to relayer to console to payment -->
-
-[HTTPZ Flow](https://github.com/zama-ai/tech-spec/blob/main/architecture/public_decryption.md)
-
-## Flow
-
-
+Public decryption is when a contract calls either the Public Decryption Oracle to get a ciphertext decrypted publicly on-chain, or a user calls directly the HTTP endpoint of the Relayer.
+<!-- TODO: add user-diagram flows -->
+## On-chain Flow
 - Some Contract calls the ZWS Decryption Oracle Contract
     - The Oracle contract checks if said caller is allowed to call the endpoint otherwise reverts
     - If ok it emits a decryption-request event
@@ -59,3 +53,4 @@ Public decryption is when a contract calls the ZWS Public Decryption Oracle to g
 - The orchestrator calls the L1-tx-maker(/factory) to make the payload of the tx with the result + the callback info from the L1 event
 - The orchestrator calls the wallet-manager to sign the payload with L1 ZWS wallet (and optionally make the transaction or then forward the payload to the L1-tx-maker)
     - That means from my understanding that we’ll need to make sure that the contract that called the public decryption MUST have an endpoint where to push the decrypted result.
+## HTTP Flow

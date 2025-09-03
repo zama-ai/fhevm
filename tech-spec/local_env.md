@@ -20,12 +20,14 @@ These docker-compose files build a local development environment. It includes:
 ## Steps
 
 ```bash
-make httpz-up
+make fhevm-up
 make console-build
 make console-up
 make httpz-test-input
+# Or
+make all
 ```
-
+TODO: revise the following
 ### 1. Build Console's docker images locally
 
 ```sh

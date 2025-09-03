@@ -82,3 +82,5 @@ apps/back/config/compose.yaml
 *storybook.log
 
 *rustc-ice*
+
+.obsidian
