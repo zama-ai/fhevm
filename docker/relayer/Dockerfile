@@ -14,10 +14,15 @@ WORKDIR /app
 # Leverage a bind mount to the src directory to avoid having to copy the
 # source code into the container. Once built, copy the executable to an
 # output directory before the cache mounted /app/target is unmounted.
-RUN --mount=type=bind,source=Cargo.toml,target=Cargo.toml \
-    --mount=type=bind,source=Cargo.lock,target=Cargo.lock \
-    --mount=type=bind,source=src,target=src \
-    --mount=type=bind,source=artifacts/contract-abis,target=artifacts/contract-abis \
+RUN --mount=type=bind,source=apps/relayer/Cargo.toml,target=Cargo.toml \
+    --mount=type=bind,source=apps/relayer/Cargo.lock,target=Cargo.lock \
+    --mount=type=bind,source=apps/relayer/build.rs,target=build.rs \
+    --mount=type=bind,source=apps/relayer/src,target=src \
+    --mount=type=bind,source=.git/HEAD,target=.git/HEAD \
+    --mount=type=bind,source=.git/index,target=.git/index \
+    --mount=type=bind,source=.git/objects,target=.git/objects \
+    --mount=type=bind,source=.git/refs,target=.git/refs \
+    --mount=type=bind,source=apps/relayer/artifacts/contract-abis,target=artifacts/contract-abis \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
     <<EOF
@@ -52,6 +57,7 @@ RUN adduser \
     appuser
 
 USER appuser
+# TODO: embed build information like git hash in env-var
 
 WORKDIR /app/config
 

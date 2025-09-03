@@ -1,5 +1,6 @@
 use crate::config::settings::KeyUrl;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
+use crate::http::health::{health_handler, liveness_handler, version_handler, HealthChecker};
 use crate::http::input_http_listener::{InputProofHandler, InputProofRequestJson};
 use crate::http::keyurl_http_listener::KeyUrlResponseJson;
 use crate::http::public_decrypt_http_listener::{PublicDecryptHandler, PublicDecryptRequestJson};
@@ -17,10 +18,15 @@ pub async fn run_http_server<D>(
     http_endpoint: SocketAddr,
     orchestrator: Arc<Orchestrator<D, RelayerEvent>>,
     key_url: KeyUrl,
+    gateway_rpc_url: String,
+    host_rpc_url: String,
 ) where
     D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
 {
     let api_version = ApiVersion::new(ApiCategory::PRODUCTION, 1);
+
+    // Initialize health checker
+    let health_checker = Arc::new(HealthChecker::new(gateway_rpc_url, host_rpc_url));
 
     // Build our application with the POST endpoint '/input-proof'
     let input_proof_handler = Arc::new(InputProofHandler::new(orchestrator.clone(), api_version));
@@ -30,6 +36,12 @@ pub async fn run_http_server<D>(
     ));
     let public_decrypt_handler = Arc::new(PublicDecryptHandler::new(orchestrator, api_version));
     let app = Router::new()
+        .route("/liveness", get(liveness_handler))
+        .route(
+            "/healthz",
+            get(move || async move { health_handler(health_checker).await }),
+        )
+        .route("/version", get(version_handler))
         .route(
             format!("/{api_version}/input-proof").as_str(),
             post({

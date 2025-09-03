@@ -1,6 +1,6 @@
 generated/
 node_modules
-.git
+# .git
 .gitignore
 *.md
 dist

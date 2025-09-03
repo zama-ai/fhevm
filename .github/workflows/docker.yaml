@@ -148,7 +148,7 @@ jobs:
               "orchestrator":   { "context": ".", "cargo_git_cli": "false", "file": "docker/orchestrator/Dockerfile", "target": "runtime"},
               "web3":           { "context": ".", "cargo_git_cli": "false", "file": "docker/web3/Dockerfile", "target": "runtime"},
               "front":          { "context": ".", "cargo_git_cli": "false", "file": "docker/front/Dockerfile", "target": "runtime"},
-              "relayer":        { "context": "apps/relayer", "cargo_git_cli": "false", "file": "docker/relayer/Dockerfile", "target": "runtime"},
+              "relayer":        { "context": ".", "cargo_git_cli": "false", "file": "docker/relayer/Dockerfile", "target": "runtime"},
               "decryption-oracle-contracts": {"context": "apps/relayer/oracle/", "cargo_git_cli": "false", "file": "apps/relayer/oracle/Dockerfile", "target": "prod"}
             }
 

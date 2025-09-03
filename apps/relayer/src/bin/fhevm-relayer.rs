@@ -438,6 +438,8 @@ async fn main() -> eyre::Result<()> {
                     addr,
                     Arc::clone(&orchestrator),
                     settings.keyurl,
+                    gateway_settings.ws_url,
+                    settings.networks.fhevm.ws_url,
                 ));
             };
 
