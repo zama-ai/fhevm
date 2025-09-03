@@ -1378,6 +1378,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrayref"
+version = "0.3.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "76a2e8124351fda1ef8aaaa3bbd7ebbcb486bbcd4225aca0aa0d84bb2db8fecb"
+
+[[package]]
 name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2151,6 +2157,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "blake3"
+version = "1.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3888aaa89e4b2a40fca9848e400f6a658a5a3978de7be858e209cafa8be9a4a0"
+dependencies = [
+ "arrayref",
+ "arrayvec",
+ "cc",
+ "cfg-if",
+ "constant_time_eq",
+]
+
+[[package]]
 name = "block-buffer"
 version = "0.10.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2523,6 +2542,12 @@ dependencies = [
  "quote",
  "unicode-xid",
 ]
+
+[[package]]
+name = "constant_time_eq"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c74b8349d32d297c9134b8c88677813a227df8f779daa29bfc29c183fe3dca6"
 
 [[package]]
 name = "convert_case"
@@ -6179,6 +6204,7 @@ dependencies = [
  "rayon",
  "tfhe",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -7370,12 +7396,12 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.3.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81d2bfa12b8ed34e6c70d04489c9201daefde2030bc48f437eeba2ee14bcb46a"
+version = "1.4.0"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=ns%2Ffeat%2Frerand_preview#85ff0eb698648e60d2cb8b79d0f26a90f125765a"
 dependencies = [
  "aligned-vec",
  "bincode",
+ "blake3",
  "bytemuck",
  "dyn-stack",
  "itertools 0.14.0",
@@ -7396,11 +7422,11 @@ dependencies = [
 
 [[package]]
 name = "tfhe-csprng"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06450766ae375cd305281c5d691a41d8877e40d3cc7510a33244775d62f60ad4"
+version = "0.7.1"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=ns%2Ffeat%2Frerand_preview#85ff0eb698648e60d2cb8b79d0f26a90f125765a"
 dependencies = [
  "aes",
+ "getrandom 0.2.15",
  "libc",
  "rayon",
 ]
@@ -7408,8 +7434,7 @@ dependencies = [
 [[package]]
 name = "tfhe-cuda-backend"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fcea29526dc65bee515c160a54665a595fa56ec36846b003d941d196165ec29"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=ns%2Ffeat%2Frerand_preview#85ff0eb698648e60d2cb8b79d0f26a90f125765a"
 dependencies = [
  "bindgen 0.71.1",
  "cmake",
@@ -7419,8 +7444,7 @@ dependencies = [
 [[package]]
 name = "tfhe-fft"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8621277f2fcbcf56e4cd0e19476854bd9ac195f17f6906476826dceff4063fc"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=ns%2Ffeat%2Frerand_preview#85ff0eb698648e60d2cb8b79d0f26a90f125765a"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -7434,8 +7458,7 @@ dependencies = [
 [[package]]
 name = "tfhe-ntt"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c64925e25d6ba666f75332ce44fbd2e80be64dbd657e3c2652a6a07f2868d17"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=ns%2Ffeat%2Frerand_preview#85ff0eb698648e60d2cb8b79d0f26a90f125765a"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -7457,8 +7480,7 @@ dependencies = [
 [[package]]
 name = "tfhe-versionable"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d41b22104d3cfb329a012fdbd9764decc31efd1d71289c74df913be1f7051dac"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=ns%2Ffeat%2Frerand_preview#85ff0eb698648e60d2cb8b79d0f26a90f125765a"
 dependencies = [
  "aligned-vec",
  "num-complex",
@@ -7480,8 +7502,7 @@ dependencies = [
 [[package]]
 name = "tfhe-versionable-derive"
 version = "0.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f5a8431efbbcda5c501d6573928ebbc9c99f4d0ffd34b228395cf948e33f443a"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=ns%2Ffeat%2Frerand_preview#85ff0eb698648e60d2cb8b79d0f26a90f125765a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7536,8 +7557,7 @@ dependencies = [
 [[package]]
 name = "tfhe-zk-pok"
 version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e73edceedf380f2c28a42f5f6e25ca5cce7721fcf18cc17a3e248ea490ec03ec"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=ns%2Ffeat%2Frerand_preview#85ff0eb698648e60d2cb8b79d0f26a90f125765a"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
