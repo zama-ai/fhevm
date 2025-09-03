@@ -330,7 +330,7 @@ pub(crate) fn verify_proof(
     set_server_key(keys.server_key.clone());
 
     let mut s = t.child_span("verify_and_expand");
-    let cts = match try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data) {
+    let mut cts = match try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data) {
         Ok(cts) => {
             telemetry::attribute(&mut s, "count", cts.len().to_string());
             telemetry::end_span(s);
@@ -345,12 +345,14 @@ pub(crate) fn verify_proof(
 
     let _s = t.child_span("create_ciphertext");
 
+    let hash_domain_separator = *b"ZK-w.rct";
     let mut h = Keccak256::new();
     h.update(raw_ct);
+    h.update(hash_domain_separator);
     let blob_hash = h.finalize().to_vec();
 
     let cts = cts
-        .iter()
+        .iter_mut()
         .enumerate()
         .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
         .collect::<Result<Vec<Ciphertext>, ExecutionError>>()?;
@@ -401,14 +403,17 @@ fn create_ciphertext(
     request_id: i64,
     blob_hash: &[u8],
     ct_idx: usize,
-    the_ct: &SupportedFheCiphertexts,
+    the_ct: &mut SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
 ) -> Result<Ciphertext, ExecutionError> {
-    let (serialized_type, compressed) = the_ct.compress();
+    if ct_idx > MAX_INPUT_INDEX as usize {
+        return Err(ExecutionError::TooManyInputs(ct_idx));
+    }
+
     let chain_id_bytes: [u8; 32] = alloy_primitives::U256::from(aux_data.chain_id)
         .to_owned()
         .to_be_bytes();
-
+    let hash_domain_separator = *b"ZK-w.hdl";
     let mut handle_hash = Keccak256::new();
     handle_hash.update(blob_hash);
     handle_hash.update([ct_idx as u8]);
@@ -418,13 +423,15 @@ fn create_ciphertext(
             .into_array(),
     );
     handle_hash.update(chain_id_bytes);
+    handle_hash.update(hash_domain_separator);
     let mut handle = handle_hash.finalize().to_vec();
-
     assert_eq!(handle.len(), 32);
 
-    if ct_idx > MAX_INPUT_INDEX as usize {
-        return Err(ExecutionError::TooManyInputs(ct_idx));
-    }
+    // Add the full 256bit hash as re-randomization metadata, NOT the
+    // truncated hash of the handle
+    the_ct.add_re_randomization_metadata(&handle);
+    let (serialized_type, compressed) = the_ct.compress();
+
     // idx cast to u8 must succeed because we don't allow
     // more handles than u8 size
     handle[21] = ct_idx as u8;
