@@ -29,17 +29,17 @@ enum WalletSigner {
 impl Wallet {
     pub async fn from_config(config: &Config) -> anyhow::Result<Self> {
         if let Some(aws_config) = &config.aws_kms_config {
-            info!("Building wallet using AWS KMS configuration...");
+            debug!("Building wallet using AWS KMS configuration...");
             Self::from_aws_kms(aws_config.clone(), Some(config.gateway_chain_id)).await
         } else if let Some(mnemonic) = &config.mnemonic {
-            info!("Building wallet using mnemonic...");
+            debug!("Building wallet using mnemonic...");
             Self::from_mnemonic_with_index(
                 mnemonic,
                 config.mnemonic_index,
                 Some(config.gateway_chain_id),
             )
         } else if let Some(private_key) = &config.private_key {
-            info!("Building wallet using private key...");
+            debug!("Building wallet using private key...");
             Self::from_private_key_str(private_key, Some(config.gateway_chain_id))
         } else {
             Err(anyhow!(

@@ -30,13 +30,12 @@ where
         if let Some(first_topic) = log.topics().first()
             && first_topic == &event_hash
         {
-            let event_id = decode_fn(log.data())?;
+            let decryption_id = decode_fn(log.data())?;
             debug!(
                 ?receipt.transaction_hash,
-                ?event_id,
-                "Found decryption ID from event"
+                "Decryption #{decryption_id} has been accepted on the Gateway!"
             );
-            return Ok(event_id);
+            return Ok(decryption_id);
         }
     }
 
@@ -63,11 +62,11 @@ where
 
         match provider.send_transaction(decryption_call.clone()).await {
             Ok(decryption_tx) => {
+                debug!("Transaction has been sent to the Gateway");
                 let receipt = decryption_tx
                     .get_receipt()
                     .await
                     .map_err(|e| anyhow!("Failed to get receipt: {e}"))?;
-                debug!("Decryption request successfully sent!");
 
                 let id = extract_id_fn(&receipt)?;
                 id_sender.send(id)?;
@@ -98,5 +97,5 @@ async fn overprovision_gas<P: Provider>(provider: &P, call: &mut TransactionRequ
     };
     let new_gas = (current_gas as u128 * TX_GAS_INCREASE_PERCENT / 100) as u64;
     call.gas = Some(new_gas);
-    debug!("Initial gas estimation for the tx: {current_gas}. Increased to {new_gas}");
+    trace!("Initial gas estimation for the tx: {current_gas}. Increased to {new_gas}");
 }

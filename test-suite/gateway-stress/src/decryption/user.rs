@@ -30,7 +30,7 @@ use tokio::{
     task::JoinSet,
     time::Instant,
 };
-use tracing::{debug, error, trace};
+use tracing::{Instrument, debug, error, trace};
 
 /// Sends a burst of UserDecryptionRequest.
 #[allow(clippy::too_many_arguments)]
@@ -56,25 +56,32 @@ pub async fn user_decryption_burst<P, S>(
     P: Provider + Clone + 'static,
     S: Stream<Item = sol_types::Result<(UserDecryptionResponse, Log)>> + Unpin + Send + 'static,
 {
+    debug!("Start of the burst...");
     let (id_sender, id_receiver) = mpsc::unbounded_channel();
-    let wait_response_task = tokio::spawn(wait_for_burst_responses(
-        burst_index,
-        response_listener,
-        id_receiver,
-        config.clone(),
-        responses_pb,
-    ));
+    let wait_response_task = tokio::spawn(
+        wait_for_burst_responses(
+            burst_index,
+            response_listener,
+            id_receiver,
+            config.clone(),
+            responses_pb,
+        )
+        .in_current_span(),
+    );
 
     let mut requests_tasks = JoinSet::new();
     for index in 0..config.parallel_requests {
-        requests_tasks.spawn(send_user_decryption(
-            index,
-            decryption_contract.clone(),
-            user_addr,
-            Arc::clone(&sdk),
-            config.clone(),
-            id_sender.clone(),
-        ));
+        requests_tasks.spawn(
+            send_user_decryption(
+                index,
+                decryption_contract.clone(),
+                user_addr,
+                Arc::clone(&sdk),
+                config.clone(),
+                id_sender.clone(),
+            )
+            .in_current_span(),
+        );
     }
 
     for _ in 0..config.parallel_requests {
@@ -82,10 +89,13 @@ pub async fn user_decryption_burst<P, S>(
         requests_pb.inc(1);
     }
     requests_pb.finish_with_message("All requests were sent!");
+    debug!("All requests of the burst have been sent! Waiting for responses...");
 
     drop(id_sender); // Dropping last sender so `wait_for_responses` can exit properly
     if let Err(e) = wait_response_task.await {
         error!("{e}");
+    } else {
+        debug!("Successfully received all responses of the burst!");
     }
 }
 
@@ -260,7 +270,7 @@ where
             ));
         };
 
-        debug!("UserDecryptionRequest #{id} was sent. Waiting for UserDecryptionResponse #{id}...");
+        trace!("UserDecryptionRequest #{id} was sent. Waiting for UserDecryptionResponse #{id}...");
 
         while !received_id_guard.remove(&id) {
             match listener_guard.next().await {

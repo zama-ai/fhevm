@@ -26,7 +26,7 @@ use tokio::{
     task::JoinSet,
     time::{Instant, interval},
 };
-use tracing::info;
+use tracing::{Instrument, info};
 
 /// The provider used to interact with the Gateway.
 type AppProvider = NonceManagedProvider<
@@ -117,14 +117,17 @@ impl App {
             let (requests_pb, responses_pb) =
                 self.init_progress_bars(&progress_tracker, burst_index)?;
 
-            burst_tasks.spawn(public_decryption_burst(
-                burst_index,
-                self.config.clone(),
-                self.decryption_contract.clone(),
-                response_listener.clone(),
-                requests_pb,
-                responses_pb,
-            ));
+            burst_tasks.spawn(
+                public_decryption_burst(
+                    burst_index,
+                    self.config.clone(),
+                    self.decryption_contract.clone(),
+                    response_listener.clone(),
+                    requests_pb,
+                    responses_pb,
+                )
+                .in_current_span(),
+            );
 
             burst_index += 1;
 
