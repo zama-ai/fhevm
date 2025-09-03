@@ -2,7 +2,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { HDNodeWallet, Wallet } from "ethers";
 import { ethers } from "hardhat";
 
-import { EIP712 } from "./interface";
+import { EIP712, getSignaturesEIP712 } from "./interface";
 
 // Create an EIP712 message for a public decryption response
 export function createEIP712ResponsePublicDecrypt(
@@ -180,15 +180,7 @@ export async function getSignaturesDelegatedUserDecryptRequest(
   eip712: EIP712,
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
-  return Promise.all(
-    signers.map((signer) =>
-      signer.signTypedData(
-        eip712.domain,
-        { DelegatedUserDecryptRequestVerification: eip712.types.DelegatedUserDecryptRequestVerification },
-        eip712.message,
-      ),
-    ),
-  );
+  return getSignaturesEIP712(eip712, signers);
 }
 
 // Create an EIP712 message for a user decryption response
@@ -234,7 +226,7 @@ export function createEIP712ResponseUserDecrypt(
   };
 }
 
-// Get signatures from signers using the EIP712 message response for user decryption
+// Get signatures for user decryption responses, pairing each EIP712 message with its corresponding signer by index.
 export async function getSignaturesUserDecryptResponse(
   eip712s: EIP712[],
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
@@ -244,12 +236,13 @@ export async function getSignaturesUserDecryptResponse(
   }
 
   return Promise.all(
-    signers.map((signer, index) =>
-      signer.signTypedData(
+    signers.map((signer, index) => {
+      const primaryType = eip712s[index].primaryType;
+      return signer.signTypedData(
         eip712s[index].domain,
-        { UserDecryptResponseVerification: eip712s[index].types.UserDecryptResponseVerification },
+        { [primaryType]: eip712s[index].types[primaryType] },
         eip712s[index].message,
-      ),
-    ),
+      );
+    }),
   );
 }

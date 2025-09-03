@@ -20,8 +20,8 @@ interface IKmsManagement {
      * @notice The type of the generated key.
      */
     enum KeyType {
-        SERVER, // 0
-        PUBLIC // 1
+        Server, // 0
+        Public // 1
     }
 
     /**
@@ -110,7 +110,7 @@ interface IKmsManagement {
      * @notice Trigger an FHE key generation.
      * @param paramsType The type of FHE parameters to use.
      */
-    function keygen(ParamsType paramsType) external;
+    function keygenRequest(ParamsType paramsType) external;
 
     /**
      * @notice Handle the response of a preprocessing keygen request.

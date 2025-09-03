@@ -41,7 +41,7 @@ export async function getSignaturesPrepKeygen(
   eip712: EIP712,
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
-  return getSignaturesEIP712(eip712, "PrepKeygenVerification", signers);
+  return getSignaturesEIP712(eip712, signers);
 }
 
 // Create an EIP712 message for a keygen response
@@ -66,7 +66,7 @@ export function createEIP712ResponseKeygen(
       KeygenVerification: [
         { name: "prepKeygenId", type: "uint256" },
         { name: "keyId", type: "uint256" },
-        { name: "keyDigests", type: "(uint8,bytes)[]" },
+        { name: "keyDigests", type: "KeyDigest[]" },
       ],
     },
     primaryType: "KeygenVerification",
@@ -89,15 +89,21 @@ export async function getSignaturesKeygen(
   eip712: EIP712,
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
-  return getSignaturesEIP712(eip712, "KeygenVerification", signers);
+  const nestedTypes = {
+    KeyDigest: [
+      { name: "keyType", type: "uint8" },
+      { name: "digest", type: "bytes" },
+    ],
+  };
+  return getSignaturesEIP712(eip712, signers, nestedTypes);
 }
 
 // Create an EIP712 message for a crsgen response
 export function createEIP712ResponseCrsgen(
   gatewayChainId: number,
   verifyingContract: string,
-  crsId: BigInt,
-  maxBitLength: BigInt,
+  crsId: BigNumberish,
+  maxBitLength: BigNumberish,
   crsDigest: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
@@ -137,5 +143,5 @@ export async function getSignaturesCrsgen(
   eip712: EIP712,
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
-  return getSignaturesEIP712(eip712, "CrsgenVerification", signers);
+  return getSignaturesEIP712(eip712, signers);
 }
