@@ -33,7 +33,7 @@ async function generateKey(
 ) {
   // Start a keygen with test parameters
   // This first triggers a preprocessing keygen request
-  const txRequestPrepKeygen = await kmsManagement.connect(owner).keygen(ParamsTypeEnum.Test);
+  const txRequestPrepKeygen = await kmsManagement.connect(owner).keygenRequest(ParamsTypeEnum.Test);
 
   // Get the prepKeygenId from the event in the transaction receipt
   const receiptPrepKeygen = await txRequestPrepKeygen.wait();
