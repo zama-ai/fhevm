@@ -673,11 +673,11 @@ interface Decryption {
     event EIP712DomainChanged();
     event Initialized(uint64 version);
     event Paused(address account);
-    event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, bytes extraData);
+    event PublicDecryptionRequest(uint256 indexed publicDecryptionId, SnsCiphertextMaterial[] snsCtMaterials, bytes extraData);
     event PublicDecryptionResponse(uint256 indexed decryptionId, bytes decryptedResult, bytes[] signatures, bytes extraData);
     event Unpaused(address account);
     event Upgraded(address indexed implementation);
-    event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey, bytes extraData);
+    event UserDecryptionRequest(uint256 indexed userDecryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey, bytes extraData);
     event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecryptedShares, bytes[] signatures, bytes extraData);
 
     constructor();
@@ -1269,7 +1269,7 @@ interface Decryption {
     "name": "PublicDecryptionRequest",
     "inputs": [
       {
-        "name": "decryptionId",
+        "name": "publicDecryptionId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
@@ -1373,7 +1373,7 @@ interface Decryption {
     "name": "UserDecryptionRequest",
     "inputs": [
       {
-        "name": "decryptionId",
+        "name": "userDecryptionId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
@@ -6061,7 +6061,7 @@ event Paused(address account);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `PublicDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],bytes)` and selector `0x22db480a39bd72556438aadb4a32a3d2a6638b87c03bbec5fef6997e109587ff`.
 ```solidity
-event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, bytes extraData);
+event PublicDecryptionRequest(uint256 indexed publicDecryptionId, SnsCiphertextMaterial[] snsCtMaterials, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -6072,7 +6072,7 @@ event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMateria
     #[derive(Clone)]
     pub struct PublicDecryptionRequest {
         #[allow(missing_docs)]
-        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+        pub publicDecryptionId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub snsCtMaterials: alloy::sol_types::private::Vec<
             <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
@@ -6115,7 +6115,7 @@ event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMateria
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    decryptionId: topics.1,
+                    publicDecryptionId: topics.1,
                     snsCtMaterials: data.0,
                     extraData: data.1,
                 }
@@ -6148,7 +6148,7 @@ event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMateria
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.decryptionId.clone())
+                (Self::SIGNATURE_HASH.into(), self.publicDecryptionId.clone())
             }
             #[inline]
             fn encode_topics_raw(
@@ -6163,7 +6163,9 @@ event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMateria
                 );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.decryptionId);
+                > as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.publicDecryptionId,
+                );
                 Ok(())
             }
         }
@@ -6536,7 +6538,7 @@ event Upgraded(address indexed implementation);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)` and selector `0xf9011bd6ba0da6049c520d70fe5971f17ed7ab795486052544b51019896c596b`.
 ```solidity
-event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey, bytes extraData);
+event UserDecryptionRequest(uint256 indexed userDecryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -6547,7 +6549,7 @@ event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[
     #[derive(Clone)]
     pub struct UserDecryptionRequest {
         #[allow(missing_docs)]
-        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+        pub userDecryptionId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub snsCtMaterials: alloy::sol_types::private::Vec<
             <SnsCiphertextMaterial as alloy::sol_types::SolType>::RustType,
@@ -6596,7 +6598,7 @@ event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    decryptionId: topics.1,
+                    userDecryptionId: topics.1,
                     snsCtMaterials: data.0,
                     userAddress: data.1,
                     publicKey: data.2,
@@ -6637,7 +6639,7 @@ event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.decryptionId.clone())
+                (Self::SIGNATURE_HASH.into(), self.userDecryptionId.clone())
             }
             #[inline]
             fn encode_topics_raw(
@@ -6652,7 +6654,7 @@ event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[
                 );
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
-                > as alloy_sol_types::EventTopic>::encode_topic(&self.decryptionId);
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.userDecryptionId);
                 Ok(())
             }
         }
