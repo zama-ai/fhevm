@@ -1,7 +1,4 @@
-use alloy::{
-    providers::RootProvider,
-    transports::http::reqwest::{self, StatusCode, Url},
-};
+use alloy::transports::http::reqwest::{self, StatusCode, Url};
 use connector_utils::{
     monitoring::{
         health::{Healthcheck, query_healthcheck_endpoint},
@@ -23,7 +20,6 @@ async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
         KmsHealthClient::connect(&[test_instance.kms_url().to_string()]).await?;
     let state = State::new(
         test_instance.db().clone(),
-        test_instance.provider().clone(),
         kms_health_client,
         Duration::from_secs(5),
     );
@@ -61,7 +57,7 @@ async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
     assert_eq!(
         response.json::<VersionResponse>().await?,
         VersionResponse {
-            name: State::<RootProvider>::service_name().to_string(),
+            name: State::service_name().to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             build: GIT_COMMIT_HASH.to_string(),
         }

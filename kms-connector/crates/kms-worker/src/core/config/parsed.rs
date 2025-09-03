@@ -27,8 +27,6 @@ pub struct Config {
     pub chain_id: u64,
     /// The `Decryption` contract configuration.
     pub decryption_contract: ContractConfig,
-    /// The `GatewayConfig` contract configuration.
-    pub gateway_config_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
 
@@ -84,8 +82,6 @@ impl Config {
             .map_err(|e| Error::InvalidConfig(e.to_string()))?;
         let decryption_contract =
             ContractConfig::parse("Decryption", raw_config.decryption_contract)?;
-        let gateway_config_contract =
-            ContractConfig::parse("GatewayConfig", raw_config.gateway_config_contract)?;
 
         // Validate critical configuration parts
         if raw_config.gateway_url.is_empty() {
@@ -121,7 +117,6 @@ impl Config {
             kms_core_endpoints,
             chain_id: raw_config.chain_id,
             decryption_contract,
-            gateway_config_contract,
             service_name: raw_config.service_name,
             events_batch_size: raw_config.events_batch_size,
             grpc_request_retries: raw_config.grpc_request_retries,
@@ -161,7 +156,6 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
-            env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_S3_CONFIG__REGION");
             env::remove_var("KMS_CONNECTOR_S3_CONFIG__BUCKET");
@@ -193,10 +187,6 @@ mod tests {
             Address::from_str(&raw_config.decryption_contract.address).unwrap(),
             config.decryption_contract.address,
         );
-        assert_eq!(
-            Address::from_str(&raw_config.gateway_config_contract.address).unwrap(),
-            config.gateway_config_contract.address,
-        );
         assert_eq!(raw_config.kms_core_endpoints, config.kms_core_endpoints);
         assert_eq!(raw_config.service_name, config.service_name);
         assert_eq!(
@@ -218,14 +208,6 @@ mod tests {
         assert_eq!(
             raw_config.decryption_contract.domain_version.unwrap(),
             config.decryption_contract.domain_version,
-        );
-        assert_eq!(
-            raw_config.gateway_config_contract.domain_name.unwrap(),
-            config.gateway_config_contract.domain_name,
-        );
-        assert_eq!(
-            raw_config.gateway_config_contract.domain_version.unwrap(),
-            config.gateway_config_contract.domain_version,
         );
         assert_eq!(raw_config.s3_config, config.s3_config);
     }
@@ -251,10 +233,7 @@ mod tests {
                 "KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS",
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
-            env::set_var(
-                "KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS",
-                "0x0000000000000000000000000000000000000001",
-            );
+
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
             env::set_var("KMS_CONNECTOR_EVENTS_BATCH_SIZE", "15");
             env::set_var("KMS_CONNECTOR_GRPC_REQUEST_RETRIES", "5");
@@ -278,10 +257,6 @@ mod tests {
         assert_eq!(
             config.decryption_contract.address,
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
-        );
-        assert_eq!(
-            config.gateway_config_contract.address,
-            Address::from_str("0x0000000000000000000000000000000000000001").unwrap()
         );
         assert_eq!(config.service_name, "kms-connector-test");
         assert_eq!(config.events_batch_size, 15);
@@ -335,10 +310,6 @@ mod tests {
         let raw_config = RawConfig {
             decryption_contract: RawContractConfig {
                 address: "0x0000".to_string(),
-                ..Default::default()
-            },
-            gateway_config_contract: RawContractConfig {
-                address: "0x000010".to_string(),
                 ..Default::default()
             },
             ..Default::default()

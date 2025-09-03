@@ -10,10 +10,7 @@ use crate::{
     },
     monitoring::health::{KmsHealthClient, State},
 };
-use connector_utils::{
-    conn::{GatewayProvider, connect_to_db, connect_to_gateway},
-    tasks::spawn_with_limit,
-};
+use connector_utils::{conn::connect_to_db, tasks::spawn_with_limit};
 use std::fmt::Display;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -94,9 +91,8 @@ where
 
 impl KmsWorker<DbEventPicker, DbEventProcessor, DbKmsResponsePublisher> {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(&config.gateway_url).await?;
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
 
@@ -108,12 +104,7 @@ impl KmsWorker<DbEventPicker, DbEventProcessor, DbKmsResponsePublisher> {
             DbEventProcessor::new(kms_client.clone(), decryption_processor, db_pool.clone());
         let response_publisher = DbKmsResponsePublisher::new(db_pool.clone());
 
-        let state = State::new(
-            db_pool,
-            provider,
-            kms_health_client,
-            config.healthcheck_timeout,
-        );
+        let state = State::new(db_pool, kms_health_client, config.healthcheck_timeout);
         let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
         Ok((kms_worker, state))
     }
