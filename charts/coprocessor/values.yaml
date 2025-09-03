@@ -281,7 +281,7 @@ tfheWorker:
         selectPolicy: Min
         policies:
         - type: Percent
-          value: 50
+          value: 40
           periodSeconds: 60
 
 zkProofWorker:
@@ -359,7 +359,7 @@ zkProofWorker:
         selectPolicy: Min
         policies:
         - type: Percent
-          value: 50
+          value: 40
           periodSeconds: 60
 
 snsWorker:
@@ -447,7 +447,7 @@ snsWorker:
         selectPolicy: Min
         policies:
         - type: Percent
-          value: 50
+          value: 40
           periodSeconds: 60
 
 txSender:
