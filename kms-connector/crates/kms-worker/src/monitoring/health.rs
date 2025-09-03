@@ -1,6 +1,5 @@
 use actix_web::http::StatusCode;
-use alloy::providers::Provider;
-use connector_utils::monitoring::health::{Healthcheck, database_healthcheck, gateway_healthcheck};
+use connector_utils::monitoring::health::{Healthcheck, database_healthcheck};
 use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
@@ -13,36 +12,31 @@ use tonic_health::pb::{HealthCheckRequest, HealthCheckResponse, health_client::H
 
 #[derive(Clone)]
 /// The struct used to monitor the state of the `KmsWorker`.
-pub struct State<P> {
+pub struct State {
     db_pool: Pool<Postgres>,
-    provider: P,
     kms_health_client: KmsHealthClient,
     healthcheck_timeout: Duration,
 }
 
-impl<P: Provider> State<P> {
+impl State {
     pub fn new(
         db_pool: Pool<Postgres>,
-        provider: P,
         kms_health_client: KmsHealthClient,
         healthcheck_timeout: Duration,
     ) -> Self {
         Self {
             db_pool,
-            provider,
             kms_health_client,
             healthcheck_timeout,
         }
     }
 }
 
-impl<P: Provider> Healthcheck for State<P> {
+impl Healthcheck for State {
     async fn healthcheck(&self) -> actix_web::HttpResponse {
         let mut errors = vec![];
         let database_connected =
             database_healthcheck(&self.db_pool, self.healthcheck_timeout, &mut errors).await;
-        let gateway_connected =
-            gateway_healthcheck(&self.provider, self.healthcheck_timeout, &mut errors).await;
 
         let mut kms_core_connected = true;
         let kms_healtcheck_results = self.kms_health_client.check(self.healthcheck_timeout).await;
@@ -69,7 +63,6 @@ impl<P: Provider> Healthcheck for State<P> {
         let status = HealthStatus {
             healthy,
             database_connected,
-            gateway_connected,
             kms_core_connected,
             details: errors.join("; "),
         };
@@ -89,8 +82,6 @@ pub struct HealthStatus {
     pub healthy: bool,
     /// Database connection status.
     pub database_connected: bool,
-    /// Gateway provider connection status.
-    pub gateway_connected: bool,
     /// KMS Core connections status.
     pub kms_core_connected: bool,
     /// Details about any issues encountered during healthcheck.

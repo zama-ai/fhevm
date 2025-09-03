@@ -15,7 +15,6 @@ alloy.workspace = true
 anyhow.workspace = true
 bincode.workspace = true
 config.workspace = true
-dashmap.workspace = true
 kms-grpc.workspace = true
 prometheus.workspace = true
 serde.workspace = true

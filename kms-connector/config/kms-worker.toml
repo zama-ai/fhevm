@@ -15,10 +15,6 @@ chain_id = 54321
 # Ex: KMS_CONNECTOR_KMS_CORE_ENDPOINTS="http://[::1]:50051,http://[::1]:50052"
 kms_core_endpoints = ["http://[::1]:50051"]
 
-# Gateway WebSocket RPC URL endpoint (required)
-# ENV: KMS_CONNECTOR_GATEWAY_URL
-gateway_url = "ws://gateway-node:8546"
-
 # URL of the KMS Connector internal database (required)
 # Format: see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
 # ENV: KMS_CONNECTOR_DATABASE_URL
@@ -35,19 +31,6 @@ address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 # domain_name = "Decryption"
 # EIP-712 domain version for Decryption contract (optional, defaults to "1")
 # ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
-# domain_version = "1"
-
-# Configuration of the GatewayConfig contract (required)
-[gateway_config_contract]
-# Address of the GatewayConfig contract (required)
-# Format: hex string with 0x prefix
-# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
-address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
-# EIP-712 domain name for GatewayConfig contract (optional, defaults to "GatewayConfig")
-# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_NAME
-# domain_name = "GatewayConfig"
-# EIP-712 domain version for GatewayConfig contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
 # The endpoint used to monitor the connector components (optional, defaults to "0.0.0.0:9100")

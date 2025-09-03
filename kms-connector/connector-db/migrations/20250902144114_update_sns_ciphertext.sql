@@ -1,0 +1,1 @@
+ALTER TYPE sns_ciphertext_material DROP ATTRIBUTE coprocessor_tx_sender_addresses CASCADE;
