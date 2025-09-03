@@ -60,8 +60,9 @@ function buildExtraDataV1DecryptionRequestEvent(ctHandles: string[], s3BucketUrl
 
   // For now, there is only one version of the extra data for all decryption request events
   const version = 1;
-  const abiEncoded = hre.ethers.AbiCoder.defaultAbiCoder().encode(["string[][]"], [s3BucketUrls]);
-  return hre.ethers.hexlify(hre.ethers.concat([hre.ethers.toBeArray(version), abiEncoded]));
+
+  // Encode the extra data the same way it is done in the Decryption contract
+  return hre.ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "string[][]"], [version, s3BucketUrls]);
 }
 
 // Create a new key, rotate it and activate it. It returns the new key ID.

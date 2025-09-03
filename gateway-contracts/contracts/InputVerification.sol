@@ -40,10 +40,10 @@ contract InputVerification is
     ICoprocessorContexts private constant COPROCESSOR_CONTEXTS = ICoprocessorContexts(coprocessorContextsAddress);
 
     /// @notice The version number of the extra data for the input verification request event.
-    uint8 private constant EXTRA_DATA_VERSION_REQUEST_EVENT = 1;
+    uint256 private constant EXTRA_DATA_VERSION_REQUEST_EVENT = 1;
 
     /// @notice The version number of the extra data for the ciphertext verification struct.
-    uint8 private constant EXTRA_DATA_VERSION_CIPHERTEXT_VERIFICATION_STRUCT = 1;
+    uint256 private constant EXTRA_DATA_VERSION_CIPHERTEXT_VERIFICATION_STRUCT = 1;
 
     /**
      * @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
@@ -422,10 +422,10 @@ contract InputVerification is
     /// @return The extra data for the input verification request event
     function _buildExtraDataV1RequestEvent(uint256 contextId) internal view virtual returns (bytes memory) {
         // Insert the coprocessor context ID in the extra data.
-        // Version 1 of the extra data is of byte format [version_0 | contextId_1..32]:
-        // - byte 0: the version number
-        // - bytes 1..32: the coprocessor context ID
-        return bytes.concat(bytes1(EXTRA_DATA_VERSION_REQUEST_EVENT), bytes32(contextId));
+        // Version 1 of the extra data is of byte format [version_0..31 | contextId_32..63]:
+        // - byte 0..31: this extra data's version number
+        // - bytes 32..63: the coprocessor context ID
+        return abi.encode(EXTRA_DATA_VERSION_REQUEST_EVENT, contextId);
     }
 
     /// @notice Builds the extra data V1 for the input verification request event.
@@ -435,10 +435,10 @@ contract InputVerification is
         uint256 contextId
     ) internal view virtual returns (bytes memory) {
         // Insert the coprocessor context ID in the extra data.
-        // Version 1 of the extra data is of byte format [version_0 | contextId_1..32]:
-        // - byte 0: the version number
-        // - bytes 1..32: the coprocessor context ID
-        return bytes.concat(bytes1(EXTRA_DATA_VERSION_CIPHERTEXT_VERIFICATION_STRUCT), bytes32(contextId));
+        // Version 1 of the extra data is of byte format [version_0..31 | contextId_32..63]:
+        // - byte 0..31: this extra data's version number
+        // - bytes 32..63: the coprocessor context ID
+        return abi.encode(EXTRA_DATA_VERSION_CIPHERTEXT_VERIFICATION_STRUCT, contextId);
     }
 
     /**

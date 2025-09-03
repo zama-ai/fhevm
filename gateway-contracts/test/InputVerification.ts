@@ -24,18 +24,18 @@ import {
 function buildExtraDataV1InputVerificationRequestEvent(contextId: number) {
   // For now, there is only one version of the extra data for input verification request event
   const version = 1;
-  return hre.ethers.hexlify(
-    hre.ethers.concat([hre.ethers.toBeArray(version), hre.ethers.zeroPadValue(hre.ethers.toBeHex(contextId), 32)]),
-  );
+
+  // Encode the extra data the same way it is done in the InputVerification contract
+  return hre.ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [version, contextId]);
 }
 
 // Build the extra data v1 for the CiphertextVerification struct
 function buildExtraDataV1CiphertextVerificationStruct(contextId: number) {
   // For now, there is only one version of the extra data for CiphertextVerification struct
   const version = 1;
-  return hre.ethers.hexlify(
-    hre.ethers.concat([hre.ethers.toBeArray(version), hre.ethers.zeroPadValue(hre.ethers.toBeHex(contextId), 32)]),
-  );
+
+  // Encode the extra data the same way it is done in the InputVerification contract
+  return hre.ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [version, contextId]);
 }
 
 describe("InputVerification", function () {

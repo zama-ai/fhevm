@@ -57,13 +57,13 @@ contract Decryption is
     uint256 internal constant MAX_DECRYPTION_REQUEST_BITS = 2048;
 
     /// @notice The version number of the extra data for the public decryption request event.
-    uint8 private constant EXTRA_DATA_VERSION_PUBLIC_DECRYPTION_REQUEST_EVENT = 1;
+    uint256 private constant EXTRA_DATA_VERSION_PUBLIC_DECRYPTION_REQUEST_EVENT = 1;
 
     /// @notice The version number of the extra data for the user decryption request event.
-    uint8 private constant EXTRA_DATA_VERSION_USER_DECRYPTION_REQUEST_EVENT = 1;
+    uint256 private constant EXTRA_DATA_VERSION_USER_DECRYPTION_REQUEST_EVENT = 1;
 
     /// @notice The version number of the extra data for the delegated user decryption request event.
-    uint8 private constant EXTRA_DATA_VERSION_DELEGATED_USER_DECRYPTION_REQUEST_EVENT = 1;
+    uint256 private constant EXTRA_DATA_VERSION_DELEGATED_USER_DECRYPTION_REQUEST_EVENT = 1;
 
     bytes32 private constant DOMAIN_TYPE_HASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
@@ -232,16 +232,10 @@ contract Decryption is
         /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        // Fetch the S3 bucket URLs that have reached consensus for the ciphertexts
-        string[][] memory s3BucketUrls = CIPHERTEXT_COMMITS.getConsensusS3BucketUrls(ctHandles);
-
-        // Insert the s3 bucket URLs in the extra data.
-        // Version 1 of the extra data is of byte format [version_0 | s3BucketUrls_1..]:
-        // - byte 0: the version number
-        // - bytes 1..: the S3 bucket URLs that have reached consensus for the ciphertexts (ABI encoded)
-        bytes memory extraDataV1 = bytes.concat(
-            bytes1(EXTRA_DATA_VERSION_PUBLIC_DECRYPTION_REQUEST_EVENT),
-            abi.encode(s3BucketUrls)
+        // Build the extra data for the decryption request event.
+        bytes memory extraDataV1 = _buildExtraDataV1DecryptionRequestEvent(
+            EXTRA_DATA_VERSION_PUBLIC_DECRYPTION_REQUEST_EVENT,
+            ctHandles
         );
 
         DecryptionStorage storage $ = _getDecryptionStorage();
@@ -961,17 +955,17 @@ contract Decryption is
     /// @param ctHandles The list of ciphertext handles
     /// @return The extra data for the decryption request event
     function _buildExtraDataV1DecryptionRequestEvent(
-        uint8 version,
+        uint256 version,
         bytes32[] memory ctHandles
     ) internal view virtual returns (bytes memory) {
         // Fetch the S3 bucket URLs that have reached consensus for the ciphertexts
         string[][] memory s3BucketUrls = CIPHERTEXT_COMMITS.getConsensusS3BucketUrls(ctHandles);
 
         // Insert the s3 bucket URLs in the extra data.
-        // Version 1 of the extra data is of byte format [version_0 | s3BucketUrls_1..]:
-        // - byte 0: the version number
-        // - bytes 1..: the S3 bucket URLs that have reached consensus for the ciphertexts (ABI encoded)
-        return bytes.concat(bytes1(version), abi.encode(s3BucketUrls));
+        // Version 1 of the extra data is of byte format [version_0..31 | s3BucketUrls_32..]:
+        // - byte 0..31: the version number
+        // - bytes 32..: the S3 bucket URLs that have reached consensus for the ciphertexts (ABI encoded)
+        return abi.encode(version, s3BucketUrls);
     }
 
     /// @notice Checks if a given contractAddress is included in the contractAddresses list.
