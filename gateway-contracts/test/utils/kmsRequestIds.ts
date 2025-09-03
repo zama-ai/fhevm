@@ -40,5 +40,5 @@ export function getKeyId(counter: number): bigint {
 
 // Get the expected crsId for a crsgen request
 export function getCrsId(counter: number): bigint {
-  return getKmsRequestIds(counter, KmsRequestType.Keygen);
+  return getKmsRequestIds(counter, KmsRequestType.Crsgen);
 }

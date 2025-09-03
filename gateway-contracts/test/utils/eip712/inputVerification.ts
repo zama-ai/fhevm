@@ -55,5 +55,5 @@ export async function getSignaturesZKPoK(
   eip712: EIP712,
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
-  return getSignaturesEIP712(eip712, "CiphertextVerification", signers);
+  return getSignaturesEIP712(eip712, signers);
 }

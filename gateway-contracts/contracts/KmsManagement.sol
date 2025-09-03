@@ -42,13 +42,24 @@ contract KmsManagement is
     bytes32 private constant EIP712_PREP_KEYGEN_TYPE_HASH = keccak256(bytes(EIP712_PREP_KEYGEN_TYPE));
 
     /**
+     * @notice The EIP-712 type definition for the KeyDigest struct.
+     * @dev Required because EIP-712 mandates that each nested struct type
+     *      used in a primary type (e.g. KeygenVerification) must be explicitly
+     *      declared with its own type string and type hash.
+     *      These constants are used when computing the struct hash of each
+     *      KeyDigest element inside the keyDigests[] array.
+     */
+    string private constant EIP712_KEYDIGEST_TYPE = "KeyDigest(uint8 keyType,bytes digest)";
+    bytes32 private constant EIP712_KEYDIGEST_TYPE_HASH = keccak256(bytes(EIP712_KEYDIGEST_TYPE));
+
+    /**
      * @notice The KeygenVerification typed definition.
      * @dev prepKeygenId: The ID of the preprocessing keygen request.
      * @dev keyId: The ID of the generated key.
      * @dev keyDigests: The digests of the generated key.
      */
     string private constant EIP712_KEYGEN_TYPE =
-        "KeygenVerification(uint256 prepKeygenId,uint256 keyId,(uint8,bytes)[] keyDigests)";
+        "KeygenVerification(uint256 prepKeygenId,uint256 keyId,KeyDigest[] keyDigests)KeyDigest(uint8 keyType,bytes digest)";
 
     /**
      * @notice The hash of the KeygenVerification typed definition.
@@ -275,7 +286,7 @@ contract KmsManagement is
     /**
      * @dev See {IKmsManagement-keygen}.
      */
-    function keygen(ParamsType paramsType) external virtual onlyGatewayOwner {
+    function keygenRequest(ParamsType paramsType) external virtual onlyGatewayOwner {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         // Generate a globally unique prepKeygenId for the key generation preprocessing
@@ -480,11 +491,14 @@ contract KmsManagement is
     function getKeyParamsType(uint256 keyId) external view virtual returns (ParamsType) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
-        if (!$._isKeyGenerated[keyId]) {
+        if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
         }
 
-        return $.requestParamsType[keyId];
+        // Get the prepKeygenId associated to the keyId
+        uint256 prepKeygenId = $.keygenIdPairs[keyId];
+
+        return $.requestParamsType[prepKeygenId];
     }
 
     /**
@@ -493,7 +507,7 @@ contract KmsManagement is
     function getCrsParamsType(uint256 crsId) external view virtual returns (ParamsType) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
-        if (!$._isCrsGenerated[crsId]) {
+        if (!$.isRequestDone[crsId]) {
             revert CrsNotGenerated(crsId);
         }
 
@@ -539,7 +553,7 @@ contract KmsManagement is
     function getKeyMaterials(uint256 keyId) external view virtual returns (string[] memory, KeyDigest[] memory) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
-        if (!$._isKeyGenerated[keyId]) {
+        if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
         }
 
@@ -555,7 +569,7 @@ contract KmsManagement is
     function getCrsMaterials(uint256 crsId) external view virtual returns (string[] memory, bytes memory) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
-        if (!$._isCrsGenerated[crsId]) {
+        if (!$.isRequestDone[crsId]) {
             revert CrsNotGenerated(crsId);
         }
 
@@ -660,9 +674,24 @@ contract KmsManagement is
         uint256 keyId,
         KeyDigest[] calldata keyDigests
     ) internal view virtual returns (bytes32) {
+        // Encode each KeyDigest struct and compute its struct hash.
+        bytes32[] memory keyDigestHashes = new bytes32[](keyDigests.length);
+        for (uint256 i = 0; i < keyDigests.length; i++) {
+            keyDigestHashes[i] = keccak256(
+                abi.encode(EIP712_KEYDIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
+            );
+        }
+
         return
             _hashTypedDataV4(
-                keccak256(abi.encode(EIP712_KEYGEN_TYPE_HASH, prepKeygenId, keyId, keccak256(abi.encode(keyDigests))))
+                keccak256(
+                    abi.encode(
+                        EIP712_KEYGEN_TYPE_HASH,
+                        prepKeygenId,
+                        keyId,
+                        keccak256(abi.encodePacked(keyDigestHashes))
+                    )
+                )
             );
     }
 
@@ -679,7 +708,11 @@ contract KmsManagement is
         bytes calldata crsDigest
     ) internal view virtual returns (bytes32) {
         return
-            _hashTypedDataV4(keccak256(abi.encode(EIP712_CRSGEN_TYPE_HASH, crsId, maxBitLength, keccak256(crsDigest))));
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(EIP712_CRSGEN_TYPE_HASH, crsId, maxBitLength, keccak256(abi.encodePacked(crsDigest)))
+                )
+            );
     }
 
     /**

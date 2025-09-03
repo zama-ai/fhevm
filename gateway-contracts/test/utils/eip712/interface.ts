@@ -33,12 +33,19 @@ export interface EIP712 {
 // General method to get signatures from signers using a single EIP712 message and the struct name
 export async function getSignaturesEIP712(
   eip712: EIP712,
-  structName: string,
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
+  nestedTypes?: Record<string, EIP712Type[]>,
 ): Promise<string[]> {
   return Promise.all(
     signers.map((signer) =>
-      signer.signTypedData(eip712.domain, { [structName]: eip712.types[structName] }, eip712.message),
+      signer.signTypedData(
+        eip712.domain,
+        {
+          ...nestedTypes,
+          [eip712.primaryType]: eip712.types[eip712.primaryType],
+        },
+        eip712.message,
+      ),
     ),
   );
 }

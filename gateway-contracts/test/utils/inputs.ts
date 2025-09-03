@@ -55,3 +55,8 @@ export enum ParamsTypeEnum {
   Default = 0,
   Test = 1,
 }
+
+export enum KeyTypeEnum {
+  Server = 0,
+  Public = 1,
+}

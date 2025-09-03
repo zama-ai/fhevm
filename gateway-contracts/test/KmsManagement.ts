@@ -6,11 +6,17 @@ import hre from "hardhat";
 
 import { IKmsManagement, KmsManagement, KmsManagement__factory } from "../typechain-types";
 import {
+  KeyTypeEnum,
   ParamsTypeEnum,
   createByteInput,
+  createEIP712ResponseCrsgen,
   createEIP712ResponseKeygen,
   createEIP712ResponsePrepKeygen,
   createRandomWallet,
+  getCrsId,
+  getKeyId,
+  getPrepKeygenId,
+  getSignaturesCrsgen,
   getSignaturesKeygen,
   getSignaturesPrepKeygen,
   loadTestVariablesFixture,
@@ -24,10 +30,10 @@ async function generateKey(
   gatewayChainId: number,
   kmsTxSenders: HardhatEthersSigner[],
   kmsSigners: HardhatEthersSigner[],
-): Promise<bigint> {
+) {
   // Start a keygen with test parameters
   // This first triggers a preprocessing keygen request
-  const txRequestPrepKeygen = await kmsManagement.connect(owner).keygen(ParamsTypeEnum.Test);
+  const txRequestPrepKeygen = await kmsManagement.connect(owner).keygenRequest(ParamsTypeEnum.Test);
 
   // Get the prepKeygenId from the event in the transaction receipt
   const receiptPrepKeygen = await txRequestPrepKeygen.wait();
@@ -52,14 +58,14 @@ async function generateKey(
   const filter = kmsManagement.filters.KeygenRequest;
   const events = await kmsManagement.queryFilter(filter);
   if (events.length > 0) {
-    keyId = BigInt(events[0].args[1]);
+    keyId = BigInt(events[events.length - 1].args[1]);
   } else {
     throw new Error("No KeygenRequest event found");
   }
 
   // Create the key digests
-  const serverKeyDigest: IKmsManagement.KeyDigestStruct = { keyType: 0, digest: createByteInput() };
-  const publicKeyDigest: IKmsManagement.KeyDigestStruct = { keyType: 1, digest: createByteInput() };
+  const serverKeyDigest: IKmsManagement.KeyDigestStruct = { keyType: KeyTypeEnum.Server, digest: createByteInput() };
+  const publicKeyDigest: IKmsManagement.KeyDigestStruct = { keyType: KeyTypeEnum.Public, digest: createByteInput() };
 
   const keyDigests = [serverKeyDigest, publicKeyDigest];
 
@@ -80,128 +86,108 @@ async function generateKey(
     await kmsManagement.connect(kmsTxSenders[i]).keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[i]);
   }
 
-  return keyId;
+  return {
+    keyId,
+    keyDigests,
+  };
+}
+
+// Trigger a CRS generation in KmsManagement contract.
+async function generateCrs(
+  kmsManagement: KmsManagement,
+  owner: Wallet,
+  gatewayChainId: number,
+  kmsTxSenders: HardhatEthersSigner[],
+  kmsSigners: HardhatEthersSigner[],
+  maxBitLength: number,
+) {
+  // Start a CRS generation with test parameters.
+  const txRequestCrsgen = await kmsManagement.connect(owner).crsgenRequest(maxBitLength, ParamsTypeEnum.Test);
+
+  // Get the crsId from the event in the transaction receipt.
+  const receiptCrsgen = await txRequestCrsgen.wait();
+  const eventCrsgen = receiptCrsgen?.logs[0] as EventLog;
+  const crsId = BigInt(eventCrsgen?.args[0]);
+
+  const kmsManagementAddress = await kmsManagement.getAddress();
+
+  // Create an EIP712 message for the crsgen response.
+  const crsDigest = createByteInput();
+  const eip712MessageCrsgen = createEIP712ResponseCrsgen(
+    gatewayChainId,
+    kmsManagementAddress,
+    crsId,
+    maxBitLength,
+    crsDigest,
+  );
+
+  // Sign the crsgen EIP712 message with all KMS signers.
+  const kmsSignaturesCrsgen = await getSignaturesCrsgen(eip712MessageCrsgen, kmsSigners);
+
+  // Trigger crsgen responses for all KMS nodes.
+  for (let i = 0; i < kmsTxSenders.length; i++) {
+    await kmsManagement.connect(kmsTxSenders[i]).crsgenResponse(crsId, crsDigest, kmsSignaturesCrsgen[i]);
+  }
+
+  return {
+    crsId,
+    crsDigest,
+  };
 }
 
 describe("KmsManagement", function () {
-  const fakeFheParamsName = "FAKE_FHE_PARAMS_NAME";
-
   const fakeOwner = createRandomWallet();
+  const maxBitLength = 256;
 
-  // Run a preprocessing keygen
-  async function prepareKmsManagementPreKeygenFixture() {
-    const fixtureData = await loadFixture(loadTestVariablesFixture);
-    const { kmsManagement, owner, kmsTxSenders, fheParamsName } = fixtureData;
-
-    // Trigger a preprocessing keygen request
-    const txRequest = await kmsManagement.connect(owner).preprocessKeygenRequest(fheParamsName);
-
-    const receipt = await txRequest.wait();
-
-    // Get the preKeyRequestId from the event in the transaction receipt (preKeyRequestId is the first argument of the event)
-    const event = receipt?.logs[0] as EventLog;
-    const preKeyRequestId = Number(event?.args[0]);
-
-    // Define a preKeyId for the keygen response
-    const preKeyId = 1;
-
-    // Trigger preprocessing keygen responses for all KMS nodes
-    // Note: not all responses are strictly needed (the consensus can be reached before the last response(s))
-    for (let i = 0; i < kmsTxSenders.length; i++) {
-      await kmsManagement.connect(kmsTxSenders[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
-    }
-
-    return { ...fixtureData, preKeyId };
-  }
-
-  // Run a keygen
+  // Fixture running a key generation.
   async function prepareKmsManagementKeygenFixture() {
-    const fixtureData = await loadFixture(prepareKmsManagementPreKeygenFixture);
-    const { kmsManagement, owner, kmsTxSenders, preKeyId } = fixtureData;
+    const fixtureData = await loadFixture(loadTestVariablesFixture);
 
-    // Trigger a keygen request
-    await kmsManagement.connect(owner).keygenRequest(preKeyId);
+    const { kmsManagement, owner, kmsTxSenders, kmsSigners } = fixtureData;
 
-    // Define 2 keyIds for keygen responses
-    const keyId1 = 1;
-    const keyId2 = 2;
+    // Get the gateway's chain ID.
+    const gatewayChainId = hre.network.config.chainId!;
 
-    // Trigger keygen responses for all KMS nodes
-    // Note: not all responses are strictly needed (the consensus can be reached before the last response(s))
-    for (let i = 0; i < kmsTxSenders.length; i++) {
-      await kmsManagement.connect(kmsTxSenders[i]).keygenResponse(preKeyId, keyId1);
-      await kmsManagement.connect(kmsTxSenders[i]).keygenResponse(preKeyId, keyId2);
-    }
+    // Generate key.
+    const { keyId, keyDigests } = await generateKey(kmsManagement, owner, gatewayChainId, kmsTxSenders, kmsSigners);
 
-    return { ...fixtureData, keyId1, keyId2 };
+    return { ...fixtureData, keyId, keyDigests };
   }
 
-  // Run a preprocessing KSK generation
-  async function prepareKmsManagementPreKskgenFixture() {
-    const fixtureData = await loadFixture(prepareKmsManagementKeygenFixture);
-    const { kmsManagement, owner, kmsTxSenders, fheParamsName } = fixtureData;
+  // Fixture running a CRS generation.
+  async function prepareKmsManagementCrsgenFixture() {
+    const fixtureData = await loadFixture(loadTestVariablesFixture);
 
-    // Trigger a preprocessing KSK generation request
-    const txRequest = await kmsManagement.connect(owner).preprocessKskgenRequest(fheParamsName);
+    const { kmsManagement, owner, kmsTxSenders, kmsSigners } = fixtureData;
 
-    const receipt = await txRequest.wait();
+    // Get the gateway's chain ID.
+    const gatewayChainId = hre.network.config.chainId!;
 
-    // Get the preKskRequestId from the event in the transaction receipt (preKskRequestId is the first argument of the event)
-    const event = receipt?.logs[0] as EventLog;
-    const preKskRequestId = Number(event?.args[0]);
+    // Generate CRS.
+    const { crsId, crsDigest } = await generateCrs(
+      kmsManagement,
+      owner,
+      gatewayChainId,
+      kmsTxSenders,
+      kmsSigners,
+      maxBitLength,
+    );
 
-    // Define a preKskId for the KSK generation response
-    const preKskId = 1;
-
-    // Trigger preprocessing KSK generation responses for all KMS nodes
-    // Note: not all responses are strictly needed (the consensus can be reached before the last response(s))
-    for (let i = 0; i < kmsTxSenders.length; i++) {
-      await kmsManagement.connect(kmsTxSenders[i]).preprocessKskgenResponse(preKskRequestId, preKskId);
-    }
-
-    return { ...fixtureData, preKskId };
-  }
-
-  // Run a KSK generation and activate the first key
-  async function prepareKmsManagementActivateFixture() {
-    const fixtureData = await loadFixture(prepareKmsManagementPreKskgenFixture);
-    const { kmsManagement, owner, kmsTxSenders, coprocessorTxSenders, preKskId, keyId1, keyId2 } = fixtureData;
-
-    // Trigger a KSK generation request
-    await kmsManagement.connect(owner).kskgenRequest(preKskId, keyId1, keyId2);
-
-    // Define a kskId for KSK generation response
-    const kskId = 1;
-
-    // Trigger preprocessing KSK generation responses for all KMS nodes
-    // Note: not all responses are strictly needed (the consensus can be reached before the last response(s))
-    for (let i = 0; i < kmsTxSenders.length; i++) {
-      await kmsManagement.connect(kmsTxSenders[i]).kskgenResponse(preKskId, kskId);
-    }
-
-    // Request activation of the first key
-    await kmsManagement.connect(owner).activateKeyRequest(keyId1);
-
-    // Trigger activation responses for all coprocessors
-    for (let i = 0; i < coprocessorTxSenders.length; i++) {
-      await kmsManagement.connect(coprocessorTxSenders[i]).activateKeyResponse(keyId1);
-    }
-
-    return { ...fixtureData, kskId };
+    return {
+      ...fixtureData,
+      crsId,
+      crsDigest,
+    };
   }
 
   describe("Deployment", function () {
     let kmsManagementFactory: KmsManagement__factory;
     let kmsManagement: KmsManagement;
     let owner: Wallet;
-    let fheParamsName: string;
-    let fheParamsDigest: string;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       kmsManagement = fixtureData.kmsManagement;
-      fheParamsName = fixtureData.fheParamsName;
-      fheParamsDigest = fixtureData.fheParamsDigest;
       owner = fixtureData.owner;
 
       // Get the KmsManagement contract factory
@@ -211,761 +197,337 @@ describe("KmsManagement", function () {
     it("Should revert because initialization is not from an empty proxy", async function () {
       await expect(
         hre.upgrades.upgradeProxy(kmsManagement, kmsManagementFactory, {
-          call: { fn: "initializeFromEmptyProxy", args: [fheParamsName, fheParamsDigest] },
+          call: { fn: "initializeFromEmptyProxy", args: [] },
         }),
       ).to.be.revertedWithCustomError(kmsManagement, "NotInitializingFromEmptyProxy");
     });
   });
 
   describe("Key generation", function () {
-    it("Should revert if the FHE params are not initialized", async function () {
-      const { kmsManagement, owner } = await loadFixture(loadTestVariablesFixture);
-
-      // Check that a preprocessing keygen request cannot be triggered if the fheParams are not initialized
-      await expect(
-        kmsManagement.connect(owner).preprocessKeygenRequest(fakeFheParamsName),
-      ).to.be.revertedWithCustomError(kmsManagement, "FheParamsNotInitialized");
-    });
-
     it("Should revert because of access controls", async function () {
-      const { gatewayConfig, kmsManagement, fheParamsName } = await loadFixture(loadTestVariablesFixture);
+      const { gatewayConfig, kmsManagement } = await loadFixture(loadTestVariablesFixture);
 
-      // Check that someone else than the owner cannot trigger a preprocessing keygen request
-      await expect(kmsManagement.connect(fakeOwner).preprocessKeygenRequest(fheParamsName))
+      // Check that only the owner can trigger a keygen request.
+      await expect(kmsManagement.connect(fakeOwner).keygenRequest(ParamsTypeEnum.Default))
         .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
-      // Check that someone else than a KMS transaction sender cannot trigger a preprocessing
-      // keygen response
-      await expect(kmsManagement.connect(fakeOwner).preprocessKeygenResponse(0, 0))
+      // Check that only the KMS transaction sender can send a preprocessing keygen response.
+      await expect(kmsManagement.connect(fakeOwner).prepKeygenResponse(0n, "0x"))
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
         .withArgs(fakeOwner.address);
 
-      // Check that someone else than the owner cannot trigger a keygen request
-      await expect(kmsManagement.connect(fakeOwner).keygenRequest(0))
-        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
-        .withArgs(fakeOwner.address);
-
-      // Check that someone else than the KMS transaction sender cannot trigger a keygen response
-      await expect(kmsManagement.connect(fakeOwner).keygenResponse(0, 0))
+      // Check that only the KMS transaction sender can trigger a keygen response.
+      await expect(kmsManagement.connect(fakeOwner).keygenResponse(0n, [], "0x"))
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
         .withArgs(fakeOwner.address);
     });
 
-    it("Should handle a preprocessed keygen", async function () {
-      const { kmsManagement, owner, kmsTxSenders, fheParamsName, fheParamsDigest } =
+    it("Should handle a key generation", async function () {
+      const { kmsManagement, owner, kmsTxSenders, kmsSigners, kmsNodeS3BucketUrls } =
         await loadFixture(loadTestVariablesFixture);
+      const paramsType = ParamsTypeEnum.Test;
+      const gatewayChainId = hre.network.config.chainId!;
+      const kmsManagementAddress = await kmsManagement.getAddress();
 
-      // Define the expected preprocessing key request ID
-      const expectedPreKeyRequestId = 1;
+      // Trigger a keygen request.
+      const txRequest = await kmsManagement.connect(owner).keygenRequest(paramsType);
 
-      // Trigger a preprocessing keygen request
-      const txRequest = await kmsManagement.connect(owner).preprocessKeygenRequest(fheParamsName);
+      // Check for the PrepKeygenRequest event.
+      const prepKeygenId = getPrepKeygenId(1);
+      const epochId = 0;
+      await expect(txRequest).to.emit(kmsManagement, "PrepKeygenRequest").withArgs(prepKeygenId, epochId, paramsType);
 
-      // Check event
-      await expect(txRequest)
-        .to.emit(kmsManagement, "PreprocessKeygenRequest")
-        .withArgs(expectedPreKeyRequestId, fheParamsDigest);
+      // Define a keyId for keygen responses.
+      const keyId = getKeyId(1);
 
-      // Define a preKeyId for the keygen response
-      const preKeyId = 1;
+      // Create the EIP712 message
+      const eip712MessagePrepKeygen = createEIP712ResponsePrepKeygen(
+        gatewayChainId,
+        kmsManagementAddress,
+        prepKeygenId,
+      );
 
-      // Trigger a preprocessing keygen response with the first KMS node
-      const txResponse1 = await kmsManagement
+      // Sign the preprocessing keygen EIP712 message with all KMS signers.
+      const kmsSignaturesPrepKeygen = await getSignaturesPrepKeygen(eip712MessagePrepKeygen, kmsSigners);
+
+      // Trigger a preprocessing keygen responses.
+      const txPrepKeygenResponse1 = await kmsManagement
         .connect(kmsTxSenders[0])
-        .preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
+        .prepKeygenResponse(prepKeygenId, kmsSignaturesPrepKeygen[0]);
 
-      // Check that the first response does not emit an event (consensus is not reached yet)
-      await expect(txResponse1).to.not.emit(kmsManagement, "PreprocessKeygenResponse");
+      // Check that the first response does not emit an event (consensus is not reached yet).
+      await expect(txPrepKeygenResponse1).to.not.emit(kmsManagement, "KeygenRequest");
 
-      // Check that a KMS node cannot respond twice to the same preprocessing keygen request
-      await expect(kmsManagement.connect(kmsTxSenders[0]).preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId))
-        .to.be.revertedWithCustomError(kmsManagement, "PreprocessKeygenKmsNodeAlreadyResponded")
-        .withArgs(preKeyId, kmsTxSenders[0]);
+      // Check that a KMS node cannot respond twice to the same preprocessing keygen request.
+      await expect(kmsManagement.connect(kmsTxSenders[0]).prepKeygenResponse(prepKeygenId, kmsSignaturesPrepKeygen[0]))
+        .to.be.revertedWithCustomError(kmsManagement, "KmsAlreadySignedForPrepKeygen")
+        .withArgs(prepKeygenId, kmsSigners[0]);
 
-      // Trigger a second preprocessing keygen response with the first KMS node
-      await kmsManagement.connect(kmsTxSenders[1]).preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
+      // Trigger a second keygen response.
+      await kmsManagement.connect(kmsTxSenders[1]).prepKeygenResponse(prepKeygenId, kmsSignaturesPrepKeygen[1]);
 
-      // Trigger a third preprocessing keygen response with the second KMS node, which should reach
-      // consensus (4 / 2 + 1 = 3) and thus emit an event
-      const txResponse3 = await kmsManagement
+      // Trigger a third keygen response which should reach consensus (4 / 2 + 1 = 3) and thus emit an event.
+      const txPrepKeygenResponse3 = await kmsManagement
         .connect(kmsTxSenders[2])
-        .preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
+        .prepKeygenResponse(prepKeygenId, kmsSignaturesPrepKeygen[2]);
 
-      // Check event
-      await expect(txResponse3)
-        .to.emit(kmsManagement, "PreprocessKeygenResponse")
-        .withArgs(expectedPreKeyRequestId, preKeyId);
+      // Check for the KeygenRequest event.
+      await expect(txPrepKeygenResponse3).to.emit(kmsManagement, "KeygenRequest").withArgs(prepKeygenId, keyId);
 
-      // The 4th response should be ignored (not reverted) and not emit an event
-      const txResponse4 = await kmsManagement
+      // The 4th response should be ignored (not reverted) and not emit the KeygenRequest event.
+      const txPrepKeygenResponse4 = await kmsManagement
         .connect(kmsTxSenders[3])
-        .preprocessKeygenResponse(expectedPreKeyRequestId, preKeyId);
+        .prepKeygenResponse(prepKeygenId, kmsSignaturesPrepKeygen[3]);
 
-      // Check that the 4th response does not emit an event
-      await expect(txResponse4).to.not.emit(kmsManagement, "PreprocessKeygenResponse");
+      // Check that the 4th response does not emit the KeygenRequest event.
+      await expect(txPrepKeygenResponse4).to.not.emit(kmsManagement, "KeygenRequest");
 
-      // Check that triggering a new preprocessing keygen request again gives a different preKeyRequestId
-      // (the counter is incremented by 1)
-      const txRequest2 = await kmsManagement.connect(owner).preprocessKeygenRequest(fheParamsName);
-      await expect(txRequest2)
-        .to.emit(kmsManagement, "PreprocessKeygenRequest")
-        .withArgs(expectedPreKeyRequestId + 1, fheParamsDigest);
+      // Prepare the keygen responses materials.
+      const serverKeyDigest: IKmsManagement.KeyDigestStruct = {
+        keyType: KeyTypeEnum.Server,
+        digest: createByteInput(),
+      };
+      const publicKeyDigest: IKmsManagement.KeyDigestStruct = {
+        keyType: KeyTypeEnum.Public,
+        digest: createByteInput(),
+      };
+      const keyDigests = [serverKeyDigest, publicKeyDigest];
+
+      // Create the EIP712 message.
+      const eip712MessageKeygen = createEIP712ResponseKeygen(
+        gatewayChainId,
+        kmsManagementAddress,
+        prepKeygenId,
+        keyId,
+        keyDigests,
+      );
+
+      // Sign the keygen EIP712 message with all KMS signers.
+      const kmsSignaturesKeygen = await getSignaturesKeygen(eip712MessageKeygen, kmsSigners);
+
+      // Trigger the keygen responses.
+      const txKeygenResponse1 = await kmsManagement
+        .connect(kmsTxSenders[0])
+        .keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[0]);
+
+      // Check that the first response does not emit an event (consensus is not reached yet).
+      await expect(txKeygenResponse1).to.not.emit(kmsManagement, "ActivateKey");
+
+      // Check that a KMS node cannot respond twice to the same keygen request.
+      await expect(kmsManagement.connect(kmsTxSenders[0]).keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[0]))
+        .to.be.revertedWithCustomError(kmsManagement, "KmsAlreadySignedForKeygen")
+        .withArgs(keyId, kmsSigners[0]);
+
+      // Trigger a second keygen response.
+      await kmsManagement.connect(kmsTxSenders[1]).keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[1]);
+
+      // Trigger a third keygen response which should reach consensus (4 / 2 + 1 = 3) and thus emit the ActivateKey event.
+      const txKeygenResponse3 = await kmsManagement
+        .connect(kmsTxSenders[2])
+        .keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[2]);
+
+      // Check for the ActivateKey event.
+      await expect(txKeygenResponse3)
+        .to.emit(kmsManagement, "ActivateKey")
+        .withArgs(keyId, kmsNodeS3BucketUrls.slice(0, 3), toValues(keyDigests));
+
+      // The 4th response should be ignored (not reverted).
+      const txKeygenResponse4 = await kmsManagement
+        .connect(kmsTxSenders[3])
+        .keygenResponse(keyId, keyDigests, kmsSignaturesKeygen[3]);
+
+      // Check that the 4th response does not emit the ActivateKey event.
+      await expect(txKeygenResponse4).to.not.emit(kmsManagement, "ActivateKey");
     });
 
-    it("Should handle a keygen", async function () {
-      const { kmsManagement, owner, kmsTxSenders, preKeyId, fheParamsDigest } = await loadFixture(
-        prepareKmsManagementPreKeygenFixture,
-      );
+    it("Should revert on get params type because the key is not generated", async function () {
+      const { kmsManagement } = await loadFixture(loadTestVariablesFixture);
 
-      // Check that a keygen request cannot be triggered if the preprocessing keygen is not done,
-      // using a preKeyId different than the one given by the preprocessing keygen
-      const fakePreKeyId = preKeyId + 1;
-      await expect(kmsManagement.connect(owner).keygenRequest(fakePreKeyId))
-        .to.be.revertedWithCustomError(kmsManagement, "KeygenPreprocessingRequired")
-        .withArgs(fakePreKeyId);
+      const fakeKeyId = getKeyId(1);
 
-      // Trigger a keygen request
-      const txRequest = await kmsManagement.connect(owner).keygenRequest(preKeyId);
-
-      // Check event
-      await expect(txRequest).to.emit(kmsManagement, "KeygenRequest").withArgs(preKeyId, fheParamsDigest);
-
-      // Check that a keygen request cannot be triggered again with the same preKeyId
-      await expect(kmsManagement.connect(owner).keygenRequest(preKeyId))
-        .to.be.revertedWithCustomError(kmsManagement, "KeygenRequestAlreadySent")
-        .withArgs(preKeyId);
-
-      // Define a keyId for keygen responses
-      const keyId = 1;
-
-      // Trigger a keygen response
-      const txResponse1 = await kmsManagement.connect(kmsTxSenders[0]).keygenResponse(preKeyId, keyId);
-
-      // Check that the first response does not emit an event (consensus is not reached yet)
-      await expect(txResponse1).to.not.emit(kmsManagement, "KeygenResponse");
-
-      // Check that a KMS node cannot respond twice to the same keygen request
-      await expect(kmsManagement.connect(kmsTxSenders[0]).keygenResponse(preKeyId, keyId))
-        .to.be.revertedWithCustomError(kmsManagement, "KeygenKmsNodeAlreadyResponded")
-        .withArgs(keyId, kmsTxSenders[0]);
-
-      // Trigger a second keygen response
-      await kmsManagement.connect(kmsTxSenders[1]).keygenResponse(preKeyId, keyId);
-
-      // Trigger a third keygen response with the second KMS node, which should reach
-      // consensus (4 / 2 + 1 = 3) and thus emit an event
-      const txResponse3 = await kmsManagement.connect(kmsTxSenders[2]).keygenResponse(preKeyId, keyId);
-
-      // Check event
-      await expect(txResponse3).to.emit(kmsManagement, "KeygenResponse").withArgs(preKeyId, keyId, fheParamsDigest);
-
-      // The 4th response should be ignored (not reverted) and not emit an event
-      const txResponse4 = await kmsManagement.connect(kmsTxSenders[3]).keygenResponse(preKeyId, keyId);
-
-      // Check that the 4th response does not emit an event
-      await expect(txResponse4).to.not.emit(kmsManagement, "KeygenResponse");
+      // Check that getting the params type of a non-existing key reverts.
+      await expect(kmsManagement.getKeyParamsType(fakeKeyId))
+        .to.be.revertedWithCustomError(kmsManagement, "KeyNotGenerated")
+        .withArgs(fakeKeyId);
     });
 
-    it("Should get the fheParams digest associated to the key ID", async function () {
-      const { kmsManagement, owner, kmsTxSenders, preKeyId, fheParamsDigest } = await loadFixture(
-        prepareKmsManagementPreKeygenFixture,
-      );
+    it("Should get params type associated to the key", async function () {
+      const { kmsManagement, keyId } = await loadFixture(prepareKmsManagementKeygenFixture);
 
-      // Complete a key generation
-      const keyId = 1;
-      await kmsManagement.connect(owner).keygenRequest(preKeyId);
-      for (const kmsTxSender of kmsTxSenders) {
-        await kmsManagement.connect(kmsTxSender).keygenResponse(preKeyId, keyId);
-      }
-
-      // Check that the initialized FHE params digest is correctly associated to the KSK ID
-      expect(await kmsManagement.keyFheParamsDigests(keyId)).to.equal(fheParamsDigest);
+      // Check that the params type associated to the key is correct.
+      expect(await kmsManagement.getKeyParamsType(keyId)).to.equal(ParamsTypeEnum.Test);
     });
 
-    it("Should revert because the contract is paused", async function () {
-      const { kmsManagement, owner, kmsTxSenders, preKeyId, fheParamsName, pauser } = await loadFixture(
-        prepareKmsManagementPreKeygenFixture,
+    it("Should revert on get materials because the key is not generated", async function () {
+      const { kmsManagement } = await loadFixture(loadTestVariablesFixture);
+
+      const fakeKeyId = getKeyId(5);
+
+      // Check that getting the materials of a non-existing key reverts.
+      await expect(kmsManagement.getKeyMaterials(fakeKeyId))
+        .to.be.revertedWithCustomError(kmsManagement, "KeyNotGenerated")
+        .withArgs(fakeKeyId);
+    });
+
+    it("Should get materials associated to the key", async function () {
+      const { kmsManagement, keyId, keyDigests, kmsNodeS3BucketUrls } = await loadFixture(
+        prepareKmsManagementKeygenFixture,
       );
 
-      // Pause the contract
-      await kmsManagement.connect(pauser).pause();
+      // Check that the materials associated to the key are correct.
+      expect(await kmsManagement.getKeyMaterials(keyId)).to.deep.equal([kmsNodeS3BucketUrls, toValues(keyDigests)]);
+    });
 
-      // Try calling paused preprocessing keygen request
-      await expect(kmsManagement.connect(owner).preprocessKeygenRequest(fheParamsName)).to.be.revertedWithCustomError(
-        kmsManagement,
-        "EnforcedPause",
-      );
+    it("Should get the current active key", async function () {
+      const { kmsManagement, keyId } = await loadFixture(prepareKmsManagementKeygenFixture);
 
-      // Try calling paused preprocessing keygen response
-      await expect(
-        kmsManagement.connect(kmsTxSenders[0]).preprocessKeygenResponse(0, preKeyId),
-      ).to.be.revertedWithCustomError(kmsManagement, "EnforcedPause");
+      // Check that the current active key is correct.
+      expect(await kmsManagement.getActiveKeyId()).to.equal(keyId);
+    });
 
-      // Try calling paused keygen request
-      await expect(kmsManagement.connect(owner).keygenRequest(preKeyId)).to.be.revertedWithCustomError(
-        kmsManagement,
-        "EnforcedPause",
-      );
+    it("Should get the list of KMS transaction senders associated to the key", async function () {
+      const { kmsManagement, keyId, kmsTxSenders } = await loadFixture(prepareKmsManagementKeygenFixture);
 
-      // Try calling paused keygen response
-      await expect(kmsManagement.connect(kmsTxSenders[0]).keygenResponse(preKeyId, 1)).to.be.revertedWithCustomError(
-        kmsManagement,
-        "EnforcedPause",
-      );
+      // Check that the KMS transaction senders associated to the key are correct.
+      const kmsTxSenderAddresses = kmsTxSenders.map((s) => s.address);
+      expect(await kmsManagement.getConsensusTxSenders(keyId)).to.deep.equal(kmsTxSenderAddresses);
     });
   });
 
   describe("CRS generation", async function () {
-    it("Should revert if the FHE params are not initialized", async function () {
-      const { kmsManagement, owner } = await loadFixture(loadTestVariablesFixture);
-
-      // Check that a CRS generation request cannot be triggered if the fheParams are not initialized
-      await expect(kmsManagement.connect(owner).crsgenRequest(fakeFheParamsName)).to.be.revertedWithCustomError(
-        kmsManagement,
-        "FheParamsNotInitialized",
-      );
-    });
-
     it("Should revert because of access controls", async function () {
-      const { gatewayConfig, kmsManagement, fheParamsName } = await loadFixture(loadTestVariablesFixture);
+      const { gatewayConfig, kmsManagement } = await loadFixture(loadTestVariablesFixture);
 
-      // Check that someone else than the owner cannot trigger a CRS generation request
-      await expect(kmsManagement.connect(fakeOwner).crsgenRequest(fheParamsName))
+      // Check that only the owner can trigger a CRS generation request.
+      await expect(kmsManagement.connect(fakeOwner).crsgenRequest(maxBitLength, ParamsTypeEnum.Test))
         .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
-      // Check that someone else than the KMS transaction sender cannot trigger a CRS generation response
-      await expect(kmsManagement.connect(fakeOwner).crsgenResponse(0, 0))
+      // Check that only the KMS transaction sender can send a CRS generation response.
+      await expect(kmsManagement.connect(fakeOwner).crsgenResponse(0n, "0x", "0x"))
         .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
         .withArgs(fakeOwner.address);
     });
 
     it("Should handle a CRS generation", async function () {
-      const { kmsManagement, owner, kmsTxSenders, fheParamsName, fheParamsDigest } =
+      const { kmsManagement, owner, kmsTxSenders, kmsSigners, kmsNodeS3BucketUrls } =
         await loadFixture(loadTestVariablesFixture);
 
-      // Define an expected preCrsId
-      const expectedPreCrsId = 1;
+      // Define an expected crsId.
+      const crsId = getCrsId(1);
 
-      // Trigger a CRS generation request
-      const txRequest = await kmsManagement.connect(owner).crsgenRequest(fheParamsName);
+      // Trigger a CRS generation request.
+      const txRequest = await kmsManagement.connect(owner).crsgenRequest(maxBitLength, ParamsTypeEnum.Test);
 
-      // Check event
-      await expect(txRequest).to.emit(kmsManagement, "CrsgenRequest").withArgs(expectedPreCrsId, fheParamsDigest);
-
-      // Define a crsId for responses
-      const crsId = 1;
-
-      // Trigger a CRS generation response with the first KMS node
-      const txResponse1 = await kmsManagement.connect(kmsTxSenders[0]).crsgenResponse(expectedPreCrsId, crsId);
-
-      // Check that the first response does not emit an event (consensus is not reached yet)
-      await expect(txResponse1).to.not.emit(kmsManagement, "CrsgenResponse");
-
-      // Check that a KMS node cannot respond twice to the same CRS generation request
-      await expect(kmsManagement.connect(kmsTxSenders[0]).crsgenResponse(expectedPreCrsId, crsId))
-        .to.be.revertedWithCustomError(kmsManagement, "CrsgenKmsNodeAlreadyResponded")
-        .withArgs(crsId, kmsTxSenders[0]);
-
-      // Trigger a second CRS generation response with the first KMS node
-      await kmsManagement.connect(kmsTxSenders[1]).crsgenResponse(expectedPreCrsId, crsId);
-
-      // Trigger a third CRS generation response with the second KMS node, which should reach
-      // consensus (4 / 2 + 1 = 3) and thus emit an event
-      const txResponse3 = await kmsManagement.connect(kmsTxSenders[2]).crsgenResponse(expectedPreCrsId, crsId);
-
-      // Check event
-      await expect(txResponse3)
-        .to.emit(kmsManagement, "CrsgenResponse")
-        .withArgs(expectedPreCrsId, crsId, fheParamsDigest);
-
-      // The 4th response should be ignored (not reverted) and not emit an event
-      const txResponse4 = await kmsManagement.connect(kmsTxSenders[3]).crsgenResponse(expectedPreCrsId, crsId);
-
-      // Check that the 4th response does not emit an event
-      await expect(txResponse4).to.not.emit(kmsManagement, "CrsgenResponse");
-
-      // Check that triggering a new preprocessing keygen request again gives a different preKeyId
-      // (the counter is incremented by 1)
-      const txRequest2 = await kmsManagement.connect(owner).crsgenRequest(fheParamsName);
-      await expect(txRequest2)
-        .to.emit(kmsManagement, "CrsgenRequest")
-        .withArgs(expectedPreCrsId + 1, fheParamsDigest);
-    });
-
-    it("Should get the fheParams digest associated to the CRS ID", async function () {
-      const { kmsManagement, owner, kmsTxSenders, fheParamsName, fheParamsDigest } =
-        await loadFixture(loadTestVariablesFixture);
-
-      // Complete a CRS generation
-      const crsgenRequestId = 1;
-      const crsId = 1;
-      await kmsManagement.connect(owner).crsgenRequest(fheParamsName);
-      for (const kmsTxSender of kmsTxSenders) {
-        await kmsManagement.connect(kmsTxSender).crsgenResponse(crsgenRequestId, crsId);
-      }
-
-      // Check that the initialized FHE params digest is correctly associated to the KSK ID
-      expect(await kmsManagement.crsFheParamsDigests(crsId)).to.equal(fheParamsDigest);
-    });
-
-    it("Should revert because the contract is paused", async function () {
-      const { kmsManagement, owner, kmsTxSenders, fheParamsName, pauser } = await loadFixture(loadTestVariablesFixture);
-
-      // Pause the contract
-      await kmsManagement.connect(pauser).pause();
-
-      // Try calling paused crsgen request
-      await expect(kmsManagement.connect(owner).crsgenRequest(fheParamsName)).to.be.revertedWithCustomError(
-        kmsManagement,
-        "EnforcedPause",
-      );
-
-      // Try calling paused crsgen response
-      await expect(kmsManagement.connect(kmsTxSenders[0]).crsgenResponse(0, 0)).to.be.revertedWithCustomError(
-        kmsManagement,
-        "EnforcedPause",
-      );
-    });
-  });
-
-  describe("KSK generation", async function () {
-    it("Should revert if the FHE params are not initialized", async function () {
-      const { kmsManagement, owner } = await loadFixture(loadTestVariablesFixture);
-
-      // Check that a preprocessing KSK generation request cannot be triggered if the fheParams are not initialized
-      await expect(
-        kmsManagement.connect(owner).preprocessKskgenRequest(fakeFheParamsName),
-      ).to.be.revertedWithCustomError(kmsManagement, "FheParamsNotInitialized");
-    });
-
-    it("Should revert because of access controls", async function () {
-      const { gatewayConfig, kmsManagement, fheParamsName } = await loadFixture(loadTestVariablesFixture);
-
-      // Check that someone else than the owner cannot trigger a preprocessing KSK generation request
-      await expect(kmsManagement.connect(fakeOwner).preprocessKskgenRequest(fheParamsName))
-        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
-        .withArgs(fakeOwner.address);
-
-      // Check that someone else than the KMS transaction sender cannot trigger a preprocessing KSK generation response
-      await expect(kmsManagement.connect(fakeOwner).preprocessKskgenResponse(0, 0))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
-        .withArgs(fakeOwner.address);
-
-      // Check that someone else than the owner cannot trigger a KSK generation request
-      await expect(kmsManagement.connect(fakeOwner).kskgenRequest(0, 0, 0))
-        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
-        .withArgs(fakeOwner.address);
-
-      // Check that someone else than the KMS transaction sender cannot trigger a KSK generation response
-      await expect(kmsManagement.connect(fakeOwner).kskgenResponse(0, 0))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
-        .withArgs(fakeOwner.address);
-    });
-
-    it("Should handle a preprocessed KSK generation", async function () {
-      const { kmsManagement, owner, kmsTxSenders, fheParamsName, fheParamsDigest } =
-        await loadFixture(loadTestVariablesFixture);
-
-      // Define the expected preprocessing KSK ID
-      const expectedPreKskRequestId = 1;
-
-      // Trigger a preprocessing KSK generation request
-      const txRequest = await kmsManagement.connect(owner).preprocessKskgenRequest(fheParamsName);
-
-      // Check event
+      // Check for the CrsgenRequest event.
       await expect(txRequest)
-        .to.emit(kmsManagement, "PreprocessKskgenRequest")
-        .withArgs(expectedPreKskRequestId, fheParamsDigest);
+        .to.emit(kmsManagement, "CrsgenRequest")
+        .withArgs(crsId, maxBitLength, ParamsTypeEnum.Test);
 
-      // Define a preKskRequestId for the preprocessing KSK generation request
-      const preKskRequestId = 1;
+      // Trigger a CRS generation response with the first KMS node.
+      const crsDigest = createByteInput();
+      const kmsManagementAddress = await kmsManagement.getAddress();
+      const eip712MessageCrsgen = createEIP712ResponseCrsgen(
+        hre.network.config.chainId!,
+        kmsManagementAddress,
+        crsId,
+        maxBitLength,
+        crsDigest,
+      );
 
-      // Trigger a preprocessing KSK generation response with the first KMS node
+      // Sign the crsgen EIP712 message with all KMS signers.
+      const kmsSignaturesCrsgen = await getSignaturesCrsgen(eip712MessageCrsgen, kmsSigners);
+
       const txResponse1 = await kmsManagement
         .connect(kmsTxSenders[0])
-        .preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
+        .crsgenResponse(crsId, crsDigest, kmsSignaturesCrsgen[0]);
 
-      // Check that the first response does not emit an event (consensus is not reached yet)
-      await expect(txResponse1).to.not.emit(kmsManagement, "PreprocessKskgenResponse");
+      // Check that the first response does not emit an event (consensus is not reached yet).
+      await expect(txResponse1).to.not.emit(kmsManagement, "ActivateCrs");
 
-      // Check that a KMS node cannot respond twice to the same preprocessing KSK generation request
-      await expect(
-        kmsManagement.connect(kmsTxSenders[0]).preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId),
-      )
-        .to.be.revertedWithCustomError(kmsManagement, "PreprocessKskgenKmsNodeAlreadyResponded")
-        .withArgs(preKskRequestId, kmsTxSenders[0]);
+      // Check that a KMS node cannot respond twice to the same CRS generation request.
+      await expect(kmsManagement.connect(kmsTxSenders[0]).crsgenResponse(crsId, crsDigest, kmsSignaturesCrsgen[0]))
+        .to.be.revertedWithCustomError(kmsManagement, "KmsAlreadySignedForCrsgen")
+        .withArgs(crsId, kmsSigners[0]);
 
-      // Trigger a second preprocessing KSK generation response with the first KMS node
-      await kmsManagement.connect(kmsTxSenders[1]).preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
+      // Trigger a second CRS generation response with the first KMS node.
+      await kmsManagement.connect(kmsTxSenders[1]).crsgenResponse(crsId, crsDigest, kmsSignaturesCrsgen[1]);
 
-      // Trigger a third preprocessing KSK generation response with the second KMS node, which should reach
-      // consensus (4 / 2 + 1 = 3) and thus emit an event
+      // Trigger a third CRS generation response which should reach consensus (4 / 2 + 1 = 3) and thus emit an event.
       const txResponse3 = await kmsManagement
         .connect(kmsTxSenders[2])
-        .preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
+        .crsgenResponse(crsId, crsDigest, kmsSignaturesCrsgen[2]);
 
-      // Check event
+      // Check for the ActivateCrs event.
       await expect(txResponse3)
-        .to.emit(kmsManagement, "PreprocessKskgenResponse")
-        .withArgs(expectedPreKskRequestId, preKskRequestId);
+        .to.emit(kmsManagement, "ActivateCrs")
+        .withArgs(crsId, kmsNodeS3BucketUrls.slice(0, 3), crsDigest);
 
-      // The 4th response should be ignored (not reverted) and not emit an event
+      // The 4th response should be ignored (not reverted) and not emit the ActivateCrs event.
       const txResponse4 = await kmsManagement
         .connect(kmsTxSenders[3])
-        .preprocessKskgenResponse(expectedPreKskRequestId, preKskRequestId);
+        .crsgenResponse(crsId, crsDigest, kmsSignaturesCrsgen[3]);
 
-      // Check that the 4th response does not emit an event
-      await expect(txResponse4).to.not.emit(kmsManagement, "PreprocessKskgenResponse");
-
-      // Check that triggering a new preprocessing KSK generation request again gives a different preKskRequestId
-      // (the counter is incremented by 1)
-      const txRequest2 = await kmsManagement.connect(owner).preprocessKskgenRequest(fheParamsName);
-      await expect(txRequest2)
-        .to.emit(kmsManagement, "PreprocessKskgenRequest")
-        .withArgs(expectedPreKskRequestId + 1, fheParamsDigest);
+      // Check that the 4th response does not emit the ActivateCrs event.
+      await expect(txResponse4).to.not.emit(kmsManagement, "ActivateCrs");
     });
 
-    it("Should handle a KSK generation", async function () {
-      const { kmsManagement, owner, kmsTxSenders, fheParamsDigest, keyId1, keyId2, preKskId } = await loadFixture(
-        prepareKmsManagementPreKskgenFixture,
-      );
+    it("Should revert on get params type because the CRS is not generated", async function () {
+      const { kmsManagement } = await loadFixture(loadTestVariablesFixture);
 
-      // Check that a KSK generation request cannot be triggered if the preprocessing KSK generation is not done,
-      // using a preKskId different than the one given by the preprocessing KSK generation
-      const fakePreKskId = preKskId + 1;
-      await expect(kmsManagement.connect(owner).kskgenRequest(fakePreKskId, keyId1, keyId2))
-        .to.be.revertedWithCustomError(kmsManagement, "KskgenPreprocessingRequired")
-        .withArgs(fakePreKskId);
+      const fakeCrsId = getCrsId(1);
 
-      // Check that the source key must be different from the destination key
-      await expect(kmsManagement.connect(owner).kskgenRequest(preKskId, keyId1, keyId1))
-        .to.be.revertedWithCustomError(kmsManagement, "KskgenSameSrcAndDestKeyIds")
-        .withArgs(keyId1);
-
-      // Check that the source key must be generated
-      const fakeKeyId = keyId1 + keyId2;
-      await expect(kmsManagement.connect(owner).kskgenRequest(preKskId, fakeKeyId, keyId2))
-        .to.be.revertedWithCustomError(kmsManagement, "KskgenSourceKeyNotGenerated")
-        .withArgs(fakeKeyId);
-
-      // Check that the destination key must be generated
-      await expect(kmsManagement.connect(owner).kskgenRequest(preKskId, keyId1, fakeKeyId))
-        .to.be.revertedWithCustomError(kmsManagement, "KskgenDestKeyNotGenerated")
-        .withArgs(fakeKeyId);
-
-      // Trigger a KSK generation request
-      const txRequest = await kmsManagement.connect(owner).kskgenRequest(preKskId, keyId1, keyId2);
-
-      // Check event
-      await expect(txRequest)
-        .to.emit(kmsManagement, "KskgenRequest")
-        .withArgs(preKskId, keyId1, keyId2, fheParamsDigest);
-
-      // Check that a keygen request cannot be triggered again with the same preKeyId
-      await expect(kmsManagement.connect(owner).kskgenRequest(preKskId, keyId1, keyId2))
-        .to.be.revertedWithCustomError(kmsManagement, "KskgenRequestAlreadySent")
-        .withArgs(preKskId);
-
-      // Define a keyId for keygen responses
-      const kskId = 1;
-
-      // Trigger a KSK generation response
-      const txResponse1 = await kmsManagement.connect(kmsTxSenders[0]).kskgenResponse(preKskId, kskId);
-
-      // Check that the first response does not emit an event (consensus is not reached yet)
-      await expect(txResponse1).to.not.emit(kmsManagement, "KskgenResponse");
-
-      // Check that a KMS node cannot respond twice to the same KSK generation request
-      await expect(kmsManagement.connect(kmsTxSenders[0]).kskgenResponse(preKskId, kskId))
-        .to.be.revertedWithCustomError(kmsManagement, "KskgenKmsNodeAlreadyResponded")
-        .withArgs(kskId, kmsTxSenders[0]);
-
-      // Trigger a second KSK generation response with the first KMS node
-      await kmsManagement.connect(kmsTxSenders[1]).kskgenResponse(preKskId, kskId);
-
-      // Trigger a third KSK generation response with the second KMS node, which should reach
-      // consensus (4 / 2 + 1 = 3) and thus emit an event
-      const txResponse3 = await kmsManagement.connect(kmsTxSenders[2]).kskgenResponse(preKskId, kskId);
-
-      // Check event
-      await expect(txResponse3).to.emit(kmsManagement, "KskgenResponse").withArgs(preKskId, kskId, fheParamsDigest);
-
-      // The 4th response should be ignored (not reverted) and not emit an event
-      const txResponse4 = await kmsManagement.connect(kmsTxSenders[3]).kskgenResponse(preKskId, kskId);
-
-      // Check that the 4th response does not emit an event
-      await expect(txResponse4).to.not.emit(kmsManagement, "KskgenResponse");
+      // Check that getting the params type of a non-existing CRS reverts
+      await expect(kmsManagement.getCrsParamsType(fakeCrsId))
+        .to.be.revertedWithCustomError(kmsManagement, "CrsNotGenerated")
+        .withArgs(fakeCrsId);
     });
 
-    it("Should get the fheParams digest associated to the KSK ID", async function () {
-      const { kmsManagement, owner, kmsTxSenders, keyId1, keyId2, preKskId, fheParamsDigest } = await loadFixture(
-        prepareKmsManagementPreKskgenFixture,
-      );
+    it("Should get params type associated to the CRS", async function () {
+      const { kmsManagement, crsId } = await loadFixture(prepareKmsManagementCrsgenFixture);
 
-      // Complete a KSK generation
-      const kskId = 1;
-      await kmsManagement.connect(owner).kskgenRequest(preKskId, keyId1, keyId2);
-      for (const kmsTxSender of kmsTxSenders) {
-        await kmsManagement.connect(kmsTxSender).kskgenResponse(preKskId, kskId);
-      }
-
-      // Check that the initialized FHE params digest is correctly associated to the KSK ID
-      expect(await kmsManagement.kskFheParamsDigests(kskId)).to.equal(fheParamsDigest);
+      // Check that the params type associated to the CRS is correct.
+      expect(await kmsManagement.getCrsParamsType(crsId)).to.equal(ParamsTypeEnum.Test);
     });
 
-    it("Should revert because the contract is paused", async function () {
-      const { kmsManagement, owner, kmsTxSenders, keyId1, keyId2, preKskId, fheParamsName, pauser } = await loadFixture(
-        prepareKmsManagementPreKskgenFixture,
+    it("Should revert on get materials because the CRS is not generated", async function () {
+      const { kmsManagement } = await loadFixture(loadTestVariablesFixture);
+
+      const fakeCrsId = getCrsId(5);
+
+      // Check that getting the materials of a non-existing CRS reverts.
+      await expect(kmsManagement.getCrsMaterials(fakeCrsId))
+        .to.be.revertedWithCustomError(kmsManagement, "CrsNotGenerated")
+        .withArgs(fakeCrsId);
+    });
+
+    it("Should get materials associated to the CRS", async function () {
+      const { kmsManagement, crsId, crsDigest, kmsNodeS3BucketUrls } = await loadFixture(
+        prepareKmsManagementCrsgenFixture,
       );
 
-      // Pause the contract
-      await kmsManagement.connect(pauser).pause();
+      // Check that the materials associated to the CRS are correct.
+      expect(await kmsManagement.getCrsMaterials(crsId)).to.deep.equal([kmsNodeS3BucketUrls, crsDigest]);
+    });
 
-      // Try calling paused preprocessing kskgen request
-      await expect(kmsManagement.connect(owner).preprocessKskgenRequest(fheParamsName)).to.be.revertedWithCustomError(
-        kmsManagement,
-        "EnforcedPause",
-      );
+    it("Should get the current active CRS", async function () {
+      const { kmsManagement, crsId } = await loadFixture(prepareKmsManagementCrsgenFixture);
 
-      // Try calling paused preprocessing kskgen response
-      await expect(
-        kmsManagement.connect(kmsTxSenders[0]).preprocessKskgenResponse(0, preKskId),
-      ).to.be.revertedWithCustomError(kmsManagement, "EnforcedPause");
+      // Check that the current active CRS is correct.
+      expect(await kmsManagement.getActiveCrsId()).to.equal(crsId);
+    });
 
-      // Try calling paused kskgen request
-      await expect(kmsManagement.connect(owner).kskgenRequest(preKskId, keyId1, keyId2)).to.be.revertedWithCustomError(
-        kmsManagement,
-        "EnforcedPause",
-      );
+    it("Should get the list of KMS transaction senders associated to the CRS", async function () {
+      const { kmsManagement, crsId, kmsTxSenders } = await loadFixture(prepareKmsManagementCrsgenFixture);
 
-      // Try calling paused kskgen response
-      await expect(kmsManagement.connect(kmsTxSenders[0]).kskgenResponse(preKskId, 1)).to.be.revertedWithCustomError(
-        kmsManagement,
-        "EnforcedPause",
-      );
+      // Check that the KMS transaction senders associated to the CRS are correct.
+      const kmsTxSenderAddresses = kmsTxSenders.map((s) => s.address);
+      expect(await kmsManagement.getConsensusTxSenders(crsId)).to.deep.equal(kmsTxSenderAddresses);
     });
   });
 
-  describe("Key activation", async function () {
-    it("Should revert because of access controls", async function () {
-      const { gatewayConfig, kmsManagement } = await loadFixture(loadTestVariablesFixture);
-
-      // Check that someone else than the owner cannot trigger a key activation request
-      await expect(kmsManagement.connect(fakeOwner).activateKeyRequest(0))
-        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
-        .withArgs(fakeOwner.address);
-
-      // Check that someone else than a coprocessor transaction sender cannot trigger a key activation response
-      await expect(kmsManagement.connect(fakeOwner).activateKeyResponse(0))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
-        .withArgs(fakeOwner.address);
-    });
-
-    it("Should get the ID of the current activated key", async function () {
-      const { kmsManagement, owner, coprocessorTxSenders, keyId1, keyId2 } = await loadFixture(
-        prepareKmsManagementKeygenFixture,
-      );
-
-      // Complete a key activation
-      await kmsManagement.connect(owner).activateKeyRequest(keyId1);
-      for (const coprocessorTxSender of coprocessorTxSenders) {
-        await kmsManagement.connect(coprocessorTxSender).activateKeyResponse(keyId1);
-      }
-
-      // Check that the current activated key ID is the activated one
-      expect(await kmsManagement.getCurrentKeyId()).to.equal(keyId1);
-    });
-
-    it("Should handle a first key activation (no KSK generation)", async function () {
-      const { kmsManagement, owner, coprocessorTxSenders, keyId1, keyId2 } = await loadFixture(
-        prepareKmsManagementKeygenFixture,
-      );
-
-      // Check that the key to activate must be generated
-      const fakeKeyId = keyId1 + keyId2;
-      await expect(kmsManagement.connect(owner).activateKeyRequest(fakeKeyId))
-        .to.be.revertedWithCustomError(kmsManagement, "ActivateKeyRequiresKeygen")
-        .withArgs(fakeKeyId);
-
-      // Trigger a key activation request
-      const txRequest1 = await kmsManagement.connect(owner).activateKeyRequest(keyId1);
-
-      // Check event
-      await expect(txRequest1).to.emit(kmsManagement, "ActivateKeyRequest").withArgs(keyId1);
-
-      // Check that the key activation request cannot be triggered again with the same keyId
-      await expect(kmsManagement.connect(owner).activateKeyRequest(keyId1))
-        .to.be.revertedWithCustomError(kmsManagement, "ActivateKeyRequestAlreadySent")
-        .withArgs(keyId1);
-
-      // Trigger a key activation response
-      const txResponse1 = await kmsManagement.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId1);
-
-      // Check that the first response does not emit an event (consensus is not reached yet)
-      await expect(txResponse1).to.not.emit(kmsManagement, "ActivateKeyResponse");
-
-      // Check that a coprocessor cannot respond twice to the same key activation request
-      await expect(kmsManagement.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId1))
-        .to.be.revertedWithCustomError(kmsManagement, "ActivateKeyCoprocessorAlreadyResponded")
-        .withArgs(keyId1, coprocessorTxSenders[0]);
-
-      // Trigger a 2nd key activation response with the 2nd coprocessor, which should reach consensus
-      // (tests use a total of 3 coprocessors) and thus emit an event
-      const txResponse2 = await kmsManagement.connect(coprocessorTxSenders[1]).activateKeyResponse(keyId1);
-
-      // Check that the 2nd response emits an event
-      await expect(txResponse2).to.emit(kmsManagement, "ActivateKeyResponse").withArgs(keyId1);
-
-      // Check that we cannot activate the 2nd key (which has been generated but for which a KSK key
-      // has not been generated)
-      await expect(kmsManagement.connect(owner).activateKeyRequest(keyId2))
-        .to.be.revertedWithCustomError(kmsManagement, "ActivateKeyRequiresKskgen")
-        .withArgs(keyId1, keyId2);
-
-      // The 3rd response should be ignored (not reverted) and not emit an event
-      const txResponse3 = await kmsManagement.connect(coprocessorTxSenders[2]).activateKeyResponse(keyId1);
-
-      // Check that the 3rd response does not emit an event
-      await expect(txResponse3).to.not.emit(kmsManagement, "ActivateKeyResponse");
-    });
-
-    it("Should handle a second key activation (with KSK generation)", async function () {
-      const { kmsManagement, owner, coprocessorTxSenders, keyId1, keyId2 } = await loadFixture(
-        prepareKmsManagementActivateFixture,
-      );
-
-      // Activate the 2nd key
-      await kmsManagement.connect(owner).activateKeyRequest(keyId2);
-      await kmsManagement.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId2);
-      await kmsManagement.connect(coprocessorTxSenders[1]).activateKeyResponse(keyId2);
-      await kmsManagement.connect(coprocessorTxSenders[2]).activateKeyResponse(keyId2);
-
-      // Check that we can get both activated key ids
-      expect(await kmsManagement.activatedKeyIds(0)).to.be.equal(keyId1);
-      expect(await kmsManagement.activatedKeyIds(1)).to.be.equal(keyId2);
-    });
-
-    it("Should revert because the contract is paused", async function () {
-      const { kmsManagement, owner, kmsTxSenders, coprocessorTxSenders, keyId1, pauser } = await loadFixture(
-        prepareKmsManagementActivateFixture,
-      );
-
-      // Pause the contract
-      await kmsManagement.connect(pauser).pause();
-
-      // Try calling paused activate key request
-      await expect(kmsManagement.connect(owner).activateKeyRequest(keyId1)).to.be.revertedWithCustomError(
-        kmsManagement,
-        "EnforcedPause",
-      );
-
-      // Try calling paused activate key response
-      await expect(
-        kmsManagement.connect(coprocessorTxSenders[0]).activateKeyResponse(keyId1),
-      ).to.be.revertedWithCustomError(kmsManagement, "EnforcedPause");
-    });
-  });
-
-  describe("FHE parameters", async function () {
-    it("Should get the fheParams digest associated to the fheParams name", async function () {
-      const { kmsManagement, fheParamsName, fheParamsDigest } = await loadFixture(loadTestVariablesFixture);
-
-      expect(await kmsManagement.fheParamsDigests(fheParamsName)).to.equal(fheParamsDigest);
-    });
-
-    it("Should revert because of access controls", async function () {
-      const { kmsManagement, gatewayConfig } = await loadFixture(loadTestVariablesFixture);
-
-      // Get dummy FHE params
-      const fheParamsName = "TEST";
-      const fheParamsDigest = hre.ethers.randomBytes(32);
-
-      // Check that only the owner can set the FHE params
-      await expect(kmsManagement.connect(fakeOwner).addFheParams(fheParamsName, fheParamsDigest))
-        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
-        .withArgs(fakeOwner.address);
-
-      // Check that only the owner can update the FHE params
-      await expect(kmsManagement.connect(fakeOwner).updateFheParams(fheParamsName, fheParamsDigest))
-        .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
-        .withArgs(fakeOwner.address);
-    });
-
-    it("Should add fheParams", async function () {
-      const { kmsManagement, owner } = await loadFixture(loadTestVariablesFixture);
-
-      // Get dummy FHE params
-      const newFheParamsName = "DEFAULT";
-      const newFheParamsDigest = hre.ethers.randomBytes(32);
-
-      // Set the FHE params
-      const txSetFheParams = await kmsManagement.connect(owner).addFheParams(newFheParamsName, newFheParamsDigest);
-
-      // Check event
-      await expect(txSetFheParams)
-        .to.emit(kmsManagement, "AddFheParams")
-        .withArgs(newFheParamsName, newFheParamsDigest);
-    });
-
-    it("Should revert when adding fheParams because they are initialized", async function () {
-      const { kmsManagement, owner, fheParamsName } = await loadFixture(loadTestVariablesFixture);
-
-      // Get dummy FHE params digest
-      const newFheParamsDigest = hre.ethers.randomBytes(32);
-
-      // Check that we can only set the FHE params once
-      await expect(kmsManagement.connect(owner).addFheParams(fheParamsName, newFheParamsDigest))
-        .to.be.revertedWithCustomError(kmsManagement, "FheParamsAlreadyInitialized")
-        .withArgs(fheParamsName);
-    });
-
-    it("Should update fheParams", async function () {
-      const { kmsManagement, owner, fheParamsName } = await loadFixture(loadTestVariablesFixture);
-
-      // Get dummy FHE params
-      const newFheParamsDigest = hre.ethers.randomBytes(32);
-
-      // Update the FHE params
-      const txUpdateFheParams = await kmsManagement.connect(owner).updateFheParams(fheParamsName, newFheParamsDigest);
-
-      // Check event
-      await expect(txUpdateFheParams)
-        .to.emit(kmsManagement, "UpdateFheParams")
-        .withArgs(fheParamsName, newFheParamsDigest);
-    });
-
-    it("Should revert when updating fheParams because they are not initialized", async function () {
-      const { kmsManagement, owner } = await loadFixture(loadTestVariablesFixture);
-
-      // Get dummy FHE params
-      const newFheParamsDigest = hre.ethers.randomBytes(32);
-
-      // Check that FHE params cannot be updated if they are not initialized
-      await expect(
-        kmsManagement.connect(owner).updateFheParams(fakeFheParamsName, newFheParamsDigest),
-      ).to.be.revertedWithCustomError(kmsManagement, "FheParamsNotInitialized");
-    });
-
-    it("Should revert because the contract is paused", async function () {
-      const { kmsManagement, owner, kmsTxSenders, fheParamsName, fheParamsDigest, pauser } =
-        await loadFixture(loadTestVariablesFixture);
-
-      // Pause the contract
-      await kmsManagement.connect(pauser).pause();
-
-      // Try calling paused add FHE params
-      await expect(
-        kmsManagement.connect(owner).addFheParams(fheParamsName, fheParamsDigest),
-      ).to.be.revertedWithCustomError(kmsManagement, "EnforcedPause");
-
-      // Try calling paused update FHE params
-      await expect(
-        kmsManagement.connect(owner).updateFheParams(fheParamsName, fheParamsDigest),
-      ).to.be.revertedWithCustomError(kmsManagement, "EnforcedPause");
-    });
-  });
+  describe("FHE parameters", async function () {});
 
   describe("Pause", async function () {
     let kmsManagement: KmsManagement;
