@@ -14,6 +14,7 @@ use tfhe::{
         CompactPublicKeyEncryptionParameters, CompressionParameters,
         NoiseSquashingCompressionParameters, NoiseSquashingParameters,
         ShortintKeySwitchingParameters,
+        PARAM_KEYSWITCH_TO_BIG_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
     },
     zk::CompactPkeCrs,
     ClientKey, CompactPublicKey, CompressedServerKey, Config, ConfigBuilder, ServerKey,
@@ -31,6 +32,8 @@ pub const TFHE_NOISE_SQUASHING_PARAMS: NoiseSquashingParameters =
     v1_3::V1_3_NOISE_SQUASHING_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
 pub const TFHE_NOISE_SQUASHING_PARAMS_COMPRESSED: NoiseSquashingCompressionParameters =
     V1_3_NOISE_SQUASHING_COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+pub const TFHE_PKS_RERANDOMIZATION_PARAMS: ShortintKeySwitchingParameters =
+    PARAM_KEYSWITCH_TO_BIG_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
 
 #[cfg(not(feature = "gpu"))]
 pub const TFHE_PARAMS: tfhe::shortint::ClassicPBSParameters =
@@ -104,6 +107,7 @@ impl FhevmKeys {
                 TFHE_COMPACT_PK_ENCRYPTION_PARAMS,
                 TFHE_KS_PARAMS,
             ))
+            .enable_ciphertext_re_randomization(TFHE_PKS_RERANDOMIZATION_PARAMS)
             .build()
     }
 

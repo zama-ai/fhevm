@@ -48,7 +48,7 @@ opentelemetry-semantic-conventions = "0.29.0"
 prometheus = "0.14.0"
 prost = "0.13.5"
 rand = "0.9.1"
-rayon = "1.10.0"
+rayon = "1.11.0"
 reqwest = "0.12.20"
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 semver = "1.0.26"
