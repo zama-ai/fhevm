@@ -14,6 +14,8 @@ use anyhow::anyhow;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, trace, warn};
 
+pub const EVENT_LISTENER_POLLING: Duration = Duration::from_millis(500);
+
 fn extract_id_from_receipt<F>(
     receipt: &TransactionReceipt,
     event_hash: B256,
@@ -55,6 +57,7 @@ where
     F: Fn(&TransactionReceipt) -> anyhow::Result<U256>,
     P: Provider,
 {
+    let mut last_error = String::new();
     for i in 1..=TX_RETRIES {
         overprovision_gas(provider, &mut decryption_call).await;
 
@@ -75,11 +78,14 @@ where
                     "WARN: Transaction attempt #{i}/{TX_RETRIES} failed: {e}. Retrying in {}ms...",
                     TX_RETRY_INTERVAL.as_millis()
                 );
+                last_error = e.to_string();
                 tokio::time::sleep(TX_RETRY_INTERVAL).await;
             }
         }
     }
-    Err(anyhow!("All transactions attempt failed"))
+    Err(anyhow!(
+        "All transactions attempt failed. Last error: {last_error}"
+    ))
 }
 
 async fn overprovision_gas<P: Provider>(provider: &P, call: &mut TransactionRequest) {

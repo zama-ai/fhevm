@@ -19,10 +19,10 @@ decryption_address = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
 # ENV: TESTS_DURATION
 tests_duration = "10s"
 
-# If requests burst must be sent sequentially when the previous one has been completed.
-# If true, `tests_interval` is ignored.
+# If requests burst must be sent sequentially when the previous one has been completed
+# Defaults to false, if set to true, then `tests_interval` is ignored
 # ENV: SEQUENTIAL
-sequential = false
+# sequential = false
 
 # The interval between two requests burst
 # Format documentation: https://docs.rs/humantime/latest/humantime/

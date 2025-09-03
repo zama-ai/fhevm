@@ -5,8 +5,8 @@ use crate::{
     },
     config::Config,
     decryption::{
-        init_public_decryption_response_listener, init_user_decryption_response_listener,
-        public_decryption_burst, user_decryption_burst,
+        EVENT_LISTENER_POLLING, init_public_decryption_response_listener,
+        init_user_decryption_response_listener, public_decryption_burst, user_decryption_burst,
     },
 };
 use alloy::{
@@ -96,15 +96,15 @@ impl App {
 
     /// Performs the public decryption stress test.
     pub async fn public_decryption_stress_test(&self) -> anyhow::Result<()> {
-        let session_start = Instant::now();
-        let mut interval = interval(self.config.tests_interval);
-
-        let mut burst_tasks = JoinSet::new();
-        let mut burst_index = 1;
         let progress_tracker = MultiProgress::new();
         let response_listener =
             init_public_decryption_response_listener(self.decryption_contract.clone()).await?;
+        tokio::time::sleep(EVENT_LISTENER_POLLING).await; // Sleep for listener to be ready
 
+        let session_start = Instant::now();
+        let mut interval = interval(self.config.tests_interval);
+        let mut burst_tasks = JoinSet::new();
+        let mut burst_index = 1;
         loop {
             if !self.config.sequential {
                 interval.tick().await;
@@ -145,15 +145,15 @@ impl App {
 
     /// Performs the user decryption stress test.
     pub async fn user_decryption_stress_test(&self) -> anyhow::Result<()> {
-        let session_start = Instant::now();
-        let mut interval = interval(self.config.tests_interval);
-
-        let mut burst_tasks = JoinSet::new();
-        let mut burst_index = 1;
         let progress_tracker = MultiProgress::new();
         let response_listener =
             init_user_decryption_response_listener(self.decryption_contract.clone()).await?;
+        tokio::time::sleep(EVENT_LISTENER_POLLING).await; // Sleep for listener to be ready
 
+        let session_start = Instant::now();
+        let mut interval = interval(self.config.tests_interval);
+        let mut burst_tasks = JoinSet::new();
+        let mut burst_index = 1;
         loop {
             if !self.config.sequential {
                 interval.tick().await;

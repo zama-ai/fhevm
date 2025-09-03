@@ -1,6 +1,6 @@
 use crate::{
     config::Config,
-    decryption::{extract_id_from_receipt, send_tx_with_retries},
+    decryption::{EVENT_LISTENER_POLLING, extract_id_from_receipt, send_tx_with_retries},
 };
 use alloy::{
     hex,
@@ -20,7 +20,7 @@ use indicatif::ProgressBar;
 use std::{
     collections::HashSet,
     sync::{Arc, LazyLock},
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 use tokio::{
     sync::{
@@ -186,7 +186,7 @@ pub async fn init_user_decryption_response_listener<P: Provider>(
 
     response_filter.poller = response_filter
         .poller
-        .with_poll_interval(Duration::from_millis(500));
+        .with_poll_interval(EVENT_LISTENER_POLLING);
 
     Ok(Arc::new(Mutex::new(response_filter.into_stream())))
 }
