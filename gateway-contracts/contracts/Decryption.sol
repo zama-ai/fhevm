@@ -300,12 +300,12 @@ contract Decryption is
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
         $.publicDecryptionCounter++;
-        uint256 decryptionId = $.publicDecryptionCounter;
+        uint256 publicDecryptionId = $.publicDecryptionCounter;
 
         /// @dev The handles are used during response calls for the EIP712 signature validation.
-        $.publicCtHandles[decryptionId] = ctHandles;
+        $.publicCtHandles[publicDecryptionId] = ctHandles;
 
-        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
+        emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
     }
 
     /// @dev See {IDecryption-publicDecryptionResponse}.
@@ -443,12 +443,12 @@ contract Decryption is
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
         $.userDecryptionCounter++;
-        uint256 decryptionId = $.userDecryptionCounter;
+        uint256 userDecryptionId = $.userDecryptionCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
     /// @dev See {IDecryption-userDecryptionWithDelegationRequest}.
@@ -531,13 +531,13 @@ contract Decryption is
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
         $.userDecryptionCounter++;
-        uint256 decryptionId = $.userDecryptionCounter;
+        uint256 userDecryptionId = $.userDecryptionCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         emit UserDecryptionRequest(
-            decryptionId,
+            userDecryptionId,
             snsCtMaterials,
             delegationAccounts.delegatedAddress,
             publicKey,

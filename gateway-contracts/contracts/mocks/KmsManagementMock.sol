@@ -13,8 +13,8 @@ contract KmsManagementMock {
     }
 
     enum KeyType {
-        SERVER,
-        PUBLIC
+        Server,
+        Public
     }
 
     event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType);
@@ -31,7 +31,7 @@ contract KmsManagementMock {
     uint256 keyCounter = 4 << 248;
     uint256 crsCounter = 5 << 248;
 
-    function keygen(ParamsType paramsType) external {
+    function keygenRequest(ParamsType paramsType) external {
         prepKeygenCounter++;
         uint256 prepKeygenId = prepKeygenCounter;
         uint256 epochId;
@@ -40,7 +40,8 @@ contract KmsManagementMock {
     }
 
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external {
-        uint256 keyId;
+        keyCounter++;
+        uint256 keyId = keyCounter;
 
         emit KeygenRequest(prepKeygenId, keyId);
     }

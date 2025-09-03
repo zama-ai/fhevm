@@ -347,6 +347,14 @@ function generateMockEvents(eventDefinitions) {
  * @returns string - Generated mock functions
  */
 function generateMockFunctions(functionDefinitions, eventDefinitions, structDefinitions) {
+  // Get the ID assignments from all the function definitions.
+  const counterOperators = functionDefinitions.flatMap((functionDef) =>
+    findCounterOperators(functionDef.body.statements),
+  );
+  const idCounterAssignments = functionDefinitions.flatMap((functionDef) =>
+    findCounterIdAssignments(functionDef.body.statements, counterOperators),
+  );
+
   return functionDefinitions
     .filter(
       (functionDef) =>
@@ -374,10 +382,6 @@ function generateMockFunctions(functionDefinitions, eventDefinitions, structDefi
           return `${parameterType} ${location}${parameter.name}`;
         })
         .join(", ");
-
-      // Get the function ID assignments based on counters
-      const counterOperators = findCounterOperators(functionDef.body.statements);
-      const idCounterAssignments = findCounterIdAssignments(functionDef.body.statements, counterOperators);
 
       // Initialize the mock function's header
       let mockFunction = `function ${functionDef.name}(${functionParameters}) ${functionDef.visibility} {\n`;
