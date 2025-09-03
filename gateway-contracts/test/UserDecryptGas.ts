@@ -1,0 +1,250 @@
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { expect } from "chai";
+import { EventLog } from "ethers";
+import hre from "hardhat";
+
+//import sharesObject from "../getDecryptionShares/UserDecryptionResponseExampleOld.json";
+import sharesObject from "../getDecryptionShares/UserDecryptionResponseExample.json";
+import { Decryption, IDecryption } from "../typechain-types";
+// The type needs to be imported separately because it is not properly detected by the linter
+// as this type is defined as a shared structs instead of directly in the IDecryption interface
+import {
+  CtHandleContractPairStruct,
+  SnsCiphertextMaterialStruct,
+} from "../typechain-types/contracts/interfaces/IDecryption";
+import {
+  createBytes32,
+  createCtHandle,
+  createEIP712RequestUserDecrypt,
+  createEIP712ResponseUserDecrypt,
+  createRandomAddress,
+  createRandomWallet,
+  getSignaturesUserDecryptRequest,
+  getSignaturesUserDecryptResponse,
+  loadHostChainIds,
+  loadTestVariablesFixture,
+} from "./utils";
+
+// Get the current date in seconds. This is needed because Solidity works with seconds, not milliseconds
+// See https://docs.soliditylang.org/en/develop/units-and-global-variables.html#time-units
+function getDateInSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+describe.only("Decryption", function () {
+  // Get the registered host chains' chain IDs
+  const hostChainIds = loadHostChainIds();
+  const hostChainId = hostChainIds[0];
+
+  // Get the gateway's chain ID
+  const gatewayChainId = hre.network.config.chainId!;
+
+  // Expected decryption request ID (after a first request) for each kind of decryption request
+  // The IDs won't increase between requests made in different "describe" sections as the blockchain
+  // state is cleaned each time `loadFixture` is called
+  const decryptionId = 1;
+
+  // Define input values
+  const ciphertextDigest = createBytes32();
+  const snsCiphertextDigest = createBytes32();
+
+  // Define the ebytes128 ctHandle (which has a bit size of 1024 bits)
+  const ebytes128CtHandle = createCtHandle(hostChainId, 10);
+
+  // Create ciphertext handles for the host chain ID with different TFHE-rs types
+  // Note that the list is made so that the total bit size represented by these handles (1034 bits)
+  // does not exceed 2048 bits (the maximum allowed for a single list of handles)
+  const ctHandles = [createCtHandle(hostChainId, 0), createCtHandle(hostChainId, 2), ebytes128CtHandle];
+
+  // Define extra data for version 0
+  const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
+
+  let decryption: Decryption;
+  let kmsSignatures: string[];
+  let kmsTxSenders: HardhatEthersSigner[];
+
+  // Trigger a key generation in KmsManagement contract and activate the key
+  async function prepareAddCiphertextFixture() {
+    const fixtureData = await loadFixture(loadTestVariablesFixture);
+    const { kmsManagement, ciphertextCommits, owner, kmsTxSenders, coprocessorTxSenders, fheParamsName } = fixtureData;
+
+    // Trigger a preprocessing keygen request
+    const txRequest = await kmsManagement.connect(owner).preprocessKeygenRequest(fheParamsName);
+
+    // Get the preKeyRequestId from the event in the transaction receipt
+    const receipt = await txRequest.wait();
+    const event = receipt?.logs[0] as EventLog;
+    const preKeyRequestId = Number(event?.args[0]);
+
+    // Define a preKeyId for the preprocessing keygen response
+    const preKeyId = 1;
+
+    // Trigger preprocessing keygen responses for all KMS nodes
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await kmsManagement.connect(kmsTxSenders[i]).preprocessKeygenResponse(preKeyRequestId, preKeyId);
+    }
+
+    // Trigger a keygen request
+    await kmsManagement.connect(owner).keygenRequest(preKeyId);
+
+    // Define a keyId for keygen response
+    const keyId1 = 1;
+
+    // Trigger keygen responses for all KMS nodes
+    for (let i = 0; i < kmsTxSenders.length; i++) {
+      await kmsManagement.connect(kmsTxSenders[i]).keygenResponse(preKeyId, keyId1);
+    }
+
+    // Request activation of the key
+    await kmsManagement.connect(owner).activateKeyRequest(keyId1);
+
+    // Trigger activation responses for all coprocessors
+    for (let i = 0; i < coprocessorTxSenders.length; i++) {
+      await kmsManagement.connect(coprocessorTxSenders[i]).activateKeyResponse(keyId1);
+    }
+
+    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[] = [];
+
+    // Allow public decryption
+    for (const ctHandle of ctHandles) {
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
+        await ciphertextCommits
+          .connect(coprocessorTxSenders[i])
+          .addCiphertextMaterial(ctHandle, keyId1, ciphertextDigest, snsCiphertextDigest);
+      }
+
+      // Store the SNS ciphertext materials for event checks
+      snsCiphertextMaterials.push({
+        ctHandle,
+        keyId: keyId1,
+        snsCiphertextDigest,
+        coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+      });
+    }
+
+    return { ...fixtureData, snsCiphertextMaterials, keyId1 };
+  }
+
+  describe("User Decryption", function () {
+    let userSignature: string;
+    let userDecryptedShares: string[];
+
+    // Create valid input values
+    const user = createRandomWallet();
+    const contractAddress = createRandomAddress();
+    const publicKey = createBytes32();
+    const startTimestamp = getDateInSeconds();
+    const durationDays = 120;
+    const contractsInfo: IDecryption.ContractsInfoStruct = {
+      addresses: [contractAddress],
+      chainId: hostChainId,
+    };
+    const requestValidity: IDecryption.RequestValidityStruct = {
+      startTimestamp,
+      durationDays,
+    };
+
+    // Define the ctHandleContractPairs (the handles have been added and allowed by default)
+    const ctHandleContractPairs: CtHandleContractPairStruct[] = ctHandles.map((ctHandle) => ({
+      contractAddress,
+      ctHandle,
+    }));
+
+    // Allow access the the handles for the user and the contract
+    async function prepareUserDecryptEIP712Fixture() {
+      const fixtureData = await loadFixture(prepareAddCiphertextFixture);
+      const { decryption, multichainAcl, kmsSigners, coprocessorTxSenders } = fixtureData;
+
+      // Allow user decryption for the user and contract address over all handles
+      for (const ctHandle of ctHandles) {
+        for (let i = 0; i < coprocessorTxSenders.length; i++) {
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, user.address, extraDataV0);
+          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress, extraDataV0);
+        }
+      }
+
+      // Create EIP712 messages
+      const decryptionAddress = await decryption.getAddress();
+      const eip712RequestMessage = createEIP712RequestUserDecrypt(
+        decryptionAddress,
+        publicKey,
+        contractsInfo.addresses as string[],
+        contractsInfo.chainId as number,
+        requestValidity.startTimestamp.toString(),
+        requestValidity.durationDays.toString(),
+        extraDataV0,
+      );
+
+      // Sign the message with the user
+      const [userSignature] = await getSignaturesUserDecryptRequest(eip712RequestMessage, [user]);
+
+      const userDecryptedShares = sharesObject[0].userDecryptedShares;
+
+      // those following 4 lines are just needed because we require 13 signatures anyways, and only 9 were emitted in consensus event
+      userDecryptedShares.push(userDecryptedShares.at(-1));
+      userDecryptedShares.push(userDecryptedShares.at(-1));
+      userDecryptedShares.push(userDecryptedShares.at(-1));
+      userDecryptedShares.push(userDecryptedShares.at(-1));
+
+      const eip712ResponseMessages = userDecryptedShares.map((userDecryptedShare) =>
+        createEIP712ResponseUserDecrypt(
+          gatewayChainId,
+          decryptionAddress,
+          publicKey,
+          ctHandles,
+          userDecryptedShare,
+          extraDataV0,
+        ),
+      );
+
+      // Sign the message with all KMS signers
+      const kmsSignatures = await getSignaturesUserDecryptResponse(eip712ResponseMessages, kmsSigners);
+
+      return {
+        ...fixtureData,
+        userDecryptedShares,
+        eip712RequestMessage,
+        eip712ResponseMessages,
+        userSignature,
+        kmsSignatures,
+        requestValidity,
+      };
+    }
+
+    beforeEach(async function () {
+      // Initialize globally used variables before each test
+      const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
+      decryption = fixtureData.decryption;
+      userSignature = fixtureData.userSignature;
+      kmsSignatures = fixtureData.kmsSignatures;
+      kmsTxSenders = fixtureData.kmsTxSenders;
+      userDecryptedShares = fixtureData.userDecryptedShares;
+    });
+
+    it("Should user decrypt with 9 valid responses", async function () {
+      // Request user decryption
+      await decryption.userDecryptionRequest(
+        ctHandleContractPairs,
+        requestValidity,
+        contractsInfo,
+        user.address,
+        publicKey,
+        userSignature,
+        extraDataV0,
+      );
+
+      for (let i = 0; i < 9; i++) {
+        const responseTx = await decryption
+          .connect(kmsTxSenders[2])
+          .userDecryptionResponse(decryptionId, userDecryptedShares[i], kmsSignatures[i], extraDataV0);
+        const rcpt = await responseTx.wait();
+        console.log(`tx${i} gasUsed:`, rcpt!.gasUsed.toString());
+      }
+      // console.log("Consensus has been reached - with old shares size");
+      console.log("Consensus has been reached - with new shares size");
+      // Check that the user decryption is done
+      await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
+    });
+  });
+});
