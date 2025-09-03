@@ -10,11 +10,25 @@ pub fn extract_server_key_without_ns(sns_key: &[u8]) -> anyhow::Result<Vec<u8>> 
 
     let server_key: ServerKey = safe_deserialize_sns_key(sns_key)?;
 
-    let (sks, kskm, compression_key, decompression_key, _, noise_squashing_key, tag) =
-        server_key.into_raw_parts();
+    let (
+        sks,
+        kskm,
+        compression_key,
+        decompression_key,
+        noise_squashing_key,
+        noise_squashing_compression_key,
+        re_randomization_keyswitching_key,
+        tag,
+    ) = server_key.into_raw_parts();
 
     if noise_squashing_key.is_none() {
         anyhow::bail!("Server key does not have noise squashing");
+    }
+    if noise_squashing_compression_key.is_none() {
+        anyhow::bail!("Server key does not have noise squashing compresion");
+    }
+    if re_randomization_keyswitching_key.is_none() {
+        anyhow::bail!("Server key does not have rerandomisation");
     }
 
     Ok(safe_serialize_key(&ServerKey::from_raw_parts(
@@ -22,8 +36,9 @@ pub fn extract_server_key_without_ns(sns_key: &[u8]) -> anyhow::Result<Vec<u8>> 
         kskm,
         compression_key,
         decompression_key,
-        None, // noise squashing key excluded
-        None, // noise squashing compression key excluded
+        None,                              // noise squashing key excluded
+        None,                              // noise squashing compression key excluded
+        re_randomization_keyswitching_key, // rerandomisation keyswitching key excluded
         tag,
     )))
 }

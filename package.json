@@ -10,5 +10,8 @@
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "prettier": "^3.5.3",
     "prettier-plugin-solidity": "^2.0.0"
+  },
+  "dependencies": {
+    "relayer-sdk": "^1.0.1"
   }
 }
