@@ -9,7 +9,7 @@ use tfhe::integer::ciphertext::BaseRadixCiphertext;
 use tfhe::integer::U256;
 use tfhe::prelude::{CiphertextList, FheDecrypt};
 use tfhe::shortint::Ciphertext;
-use tfhe::{CompressedCiphertextList, CompressedCiphertextListBuilder};
+use tfhe::{CPKReRandomizationContext, CompressedCiphertextList, CompressedCiphertextListBuilder};
 
 use crate::utils::{safe_deserialize, safe_serialize};
 
@@ -624,6 +624,90 @@ impl SupportedFheCiphertexts {
             | SupportedFheCiphertexts::FheUint160(_)
             | SupportedFheCiphertexts::FheUint256(_)
             | SupportedFheCiphertexts::Scalar(_) => false,
+        }
+    }
+
+    pub fn add_to_re_randomization_context(&self, context: &mut CPKReRandomizationContext) {
+        match self {
+            SupportedFheCiphertexts::FheBool(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint4(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint8(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint16(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint32(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint64(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint128(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint160(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint256(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheBytes64(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheBytes128(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheBytes256(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::Scalar(_) => (),
+        }
+    }
+
+    pub fn add_re_randomization_metadata(&mut self, hash_data: &[u8]) {
+        match self {
+            SupportedFheCiphertexts::FheBool(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint4(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint8(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint16(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint32(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint64(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint128(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint160(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint256(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheBytes64(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheBytes128(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheBytes256(ct) => {
+                ct.cpk_re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::Scalar(_) => (),
         }
     }
 }

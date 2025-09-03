@@ -7259,9 +7259,8 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11e74f14e2812ac6a2fe516f2c090431b614d589c24c6e3bca3fe763d4de928e"
+version = "1.3.0"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=am%2Ffeat%2Ffriendly-re-randomizer#9601a9a8c7af3bc62a4fb04038996f4786c96b1a"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -7279,15 +7278,14 @@ dependencies = [
  "tfhe-cuda-backend",
  "tfhe-fft",
  "tfhe-ntt",
- "tfhe-versionable 0.6.0",
+ "tfhe-versionable 0.6.1",
  "tfhe-zk-pok",
 ]
 
 [[package]]
 name = "tfhe-csprng"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06450766ae375cd305281c5d691a41d8877e40d3cc7510a33244775d62f60ad4"
+version = "0.6.1"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=am%2Ffeat%2Ffriendly-re-randomizer#9601a9a8c7af3bc62a4fb04038996f4786c96b1a"
 dependencies = [
  "aes",
  "libc",
@@ -7297,8 +7295,7 @@ dependencies = [
 [[package]]
 name = "tfhe-cuda-backend"
 version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7fcea29526dc65bee515c160a54665a595fa56ec36846b003d941d196165ec29"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=am%2Ffeat%2Ffriendly-re-randomizer#9601a9a8c7af3bc62a4fb04038996f4786c96b1a"
 dependencies = [
  "bindgen 0.71.1",
  "cmake",
@@ -7308,8 +7305,7 @@ dependencies = [
 [[package]]
 name = "tfhe-fft"
 version = "0.9.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8621277f2fcbcf56e4cd0e19476854bd9ac195f17f6906476826dceff4063fc"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=am%2Ffeat%2Ffriendly-re-randomizer#9601a9a8c7af3bc62a4fb04038996f4786c96b1a"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -7323,8 +7319,7 @@ dependencies = [
 [[package]]
 name = "tfhe-ntt"
 version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c64925e25d6ba666f75332ce44fbd2e80be64dbd657e3c2652a6a07f2868d17"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=am%2Ffeat%2Ffriendly-re-randomizer#9601a9a8c7af3bc62a4fb04038996f4786c96b1a"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -7345,14 +7340,13 @@ dependencies = [
 
 [[package]]
 name = "tfhe-versionable"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d853f69b5e95332fa76424525cc403f34645838927212609776e26f8beab52c5"
+version = "0.6.1"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=am%2Ffeat%2Ffriendly-re-randomizer#9601a9a8c7af3bc62a4fb04038996f4786c96b1a"
 dependencies = [
  "aligned-vec",
  "num-complex",
  "serde",
- "tfhe-versionable-derive 0.6.0",
+ "tfhe-versionable-derive 0.6.1",
 ]
 
 [[package]]
@@ -7368,9 +7362,8 @@ dependencies = [
 
 [[package]]
 name = "tfhe-versionable-derive"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d916462cab867a9d95fe6097ed20ed491fc37cdac766e8c736b84b09859d4afd"
+version = "0.6.1"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=am%2Ffeat%2Ffriendly-re-randomizer#9601a9a8c7af3bc62a4fb04038996f4786c96b1a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7424,9 +7417,8 @@ dependencies = [
 
 [[package]]
 name = "tfhe-zk-pok"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ed6d29772b0f7e6021b7d2c3fe789cad26e3e8e49ef6f8a18887f16a6a5bfa7"
+version = "0.7.1"
+source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=am%2Ffeat%2Ffriendly-re-randomizer#9601a9a8c7af3bc62a4fb04038996f4786c96b1a"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
@@ -7437,7 +7429,7 @@ dependencies = [
  "rayon",
  "serde",
  "sha3",
- "tfhe-versionable 0.6.0",
+ "tfhe-versionable 0.6.1",
  "zeroize",
 ]
 
