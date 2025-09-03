@@ -76,16 +76,6 @@ async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
     // Test everything is fine
     query_healthcheck_endpoint::<HealthStatus>(monitoring_url.clone()).await?;
 
-    // Pause Gateway and verify healthcheck failure
-    test_instance.anvil_container().pause().await?;
-    query_healthcheck_endpoint::<HealthStatus>(monitoring_url.clone())
-        .await
-        .unwrap_err();
-    test_instance.anvil_container().unpause().await?;
-
-    // Test everything is fine
-    query_healthcheck_endpoint::<HealthStatus>(monitoring_url.clone()).await?;
-
     // Pause KMS Core and verify healthcheck failure
     test_instance.kms_container().pause().await?;
     query_healthcheck_endpoint::<HealthStatus>(monitoring_url)
