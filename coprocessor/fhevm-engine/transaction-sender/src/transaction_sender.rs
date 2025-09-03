@@ -1,4 +1,4 @@
-use alloy::{network::Ethereum, primitives::Address, providers::Provider};
+use alloy::primitives::Address;
 use futures_util::FutureExt;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use std::{sync::Arc, time::Duration};
@@ -11,24 +11,25 @@ use crate::{
 };
 
 #[derive(Clone)]
-pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
+pub struct TransactionSender {
     cancel_token: CancellationToken,
     conf: ConfigSettings,
-    operations: Vec<Arc<dyn ops::TransactionOperation<P>>>,
+    operations: Vec<Arc<dyn ops::TransactionOperation>>,
     input_verification_address: Address,
     ciphertext_commits_address: Address,
     multichain_acl_address: Address,
     db_pool: Pool<Postgres>,
+    provider: NonceManagedProvider,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
+impl TransactionSender {
     #[expect(clippy::too_many_arguments)]
     pub async fn new(
         input_verification_address: Address,
         ciphertext_commits_address: Address,
         multichain_acl_address: Address,
         signer: AbstractSigner,
-        provider: NonceManagedProvider<P>,
+        provider: NonceManagedProvider,
         cancel_token: CancellationToken,
         conf: ConfigSettings,
         gas: Option<u64>,
@@ -38,7 +39,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             .connect(&conf.database_url)
             .await?;
 
-        let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![
+        let operations: Vec<Arc<dyn ops::TransactionOperation>> = vec![
             Arc::new(
                 ops::verify_proof::VerifyProofOperation::new(
                     input_verification_address,
@@ -73,6 +74,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             ciphertext_commits_address,
             multichain_acl_address,
             db_pool,
+            provider,
         })
     }
 
@@ -203,27 +205,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                 error_details.push(format!("Database query error: {}", e));
             }
         }
-        // Check blockchain connection for at least one operation
-        if let Some(op) = self.operations.first() {
-            // The provider internal retry may last a long time, so we set a timeout
-            match tokio::time::timeout(
-                self.conf.health_check_timeout,
-                op.check_provider_connection(),
-            )
-            .await
-            {
-                Ok(Ok(_)) => {
-                    blockchain_connected = true;
-                }
-                Ok(Err(e)) => {
-                    error_details.push(format!("Blockchain connection error: {}", e));
-                }
-                Err(_) => {
-                    error_details.push("Blockchain connection timeout".to_string());
-                }
+
+        // Check blockchain connection by getting the last block number.
+        match tokio::time::timeout(
+            self.conf.health_check_timeout,
+            self.provider.get_block_number(),
+        )
+        .await
+        {
+            Ok(Ok(_)) => {
+                blockchain_connected = true;
             }
-        } else {
-            error_details.push("No operations configured".to_string());
+            Ok(Err(e)) => {
+                error_details.push(format!("Blockchain connection error: {}", e));
+            }
+            Err(_) => {
+                error_details.push("Blockchain connection timeout".to_string());
+            }
         }
 
         // Determine overall health status

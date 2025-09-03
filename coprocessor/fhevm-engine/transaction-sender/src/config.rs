@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use alloy::transports::http::reqwest::Url;
+
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {
     pub database_url: String,
@@ -30,11 +32,16 @@ pub struct ConfigSettings {
 
     pub review_after_unlimited_retries: u16,
 
+    pub provider_max_retries: u32,
+    pub provider_retry_interval: Duration,
+
     pub http_server_port: u16,
 
     pub health_check_timeout: Duration,
 
     pub gas_limit_overprovision_percent: u32,
+
+    pub gateway_url: Url,
 }
 
 impl Default for ConfigSettings {
@@ -59,9 +66,12 @@ impl Default for ConfigSettings {
             txn_receipt_timeout_secs: 10,
             required_txn_confirmations: 0,
             review_after_unlimited_retries: 30,
+            provider_max_retries: 3,
+            provider_retry_interval: Duration::from_secs(4),
             http_server_port: 8080,
             health_check_timeout: Duration::from_secs(4),
             gas_limit_overprovision_percent: 120,
+            gateway_url: Url::parse("http://localhost:8545").unwrap(),
         }
     }
 }

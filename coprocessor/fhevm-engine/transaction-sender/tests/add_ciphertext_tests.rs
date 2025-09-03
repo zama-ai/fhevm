@@ -12,9 +12,7 @@ use serial_test::serial;
 use std::time::Duration;
 use test_harness::db_utils::{insert_ciphertext_digest, insert_random_tenant};
 use tokio::time::sleep;
-use transaction_sender::{
-    ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
-};
+use transaction_sender::{ConfigSettings, NonceManagedProvider, TransactionSender};
 
 #[rstest]
 #[case::private_key(SignerType::PrivateKey)]
@@ -30,14 +28,10 @@ async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Resu
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
-
     let already_added_revert = false;
     let ciphertext_commits =
         CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
@@ -132,11 +126,8 @@ async fn ciphertext_digest_already_added(#[case] signer_type: SignerType) -> any
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
 
@@ -221,11 +212,8 @@ async fn recover_from_transport_error(#[case] signer_type: SignerType) -> anyhow
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
 
@@ -321,17 +309,13 @@ async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Re
         .wallet(env.wallet.clone())
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
+
+    // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
+    env.conf.provider_max_retries = 2;
+    env.conf.provider_retry_interval = Duration::from_millis(100);
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(
-                // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
-                WsConnect::new(env.ws_endpoint_url())
-                    .with_max_retries(2)
-                    .with_retry_interval(Duration::from_millis(100)),
-            )
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
 
@@ -428,11 +412,8 @@ async fn retry_mechanism(#[case] signer_type: SignerType) -> anyhow::Result<()> 
     // Create a provider with a random wallet without funds.
     let wallet: EthereumWallet = PrivateKeySigner::random().into();
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(wallet)
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &wallet,
         Some(env.wallet.default_signer().address()),
     );
 
@@ -536,11 +517,8 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
 

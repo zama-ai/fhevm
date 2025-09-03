@@ -5,10 +5,9 @@ use crate::overprovision_gas_limit::try_overprovision_gas_limit;
 use crate::AbstractSigner;
 use alloy::network::TransactionBuilder;
 use alloy::primitives::{Address, U256};
-use alloy::providers::Provider;
 use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
-use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
+use alloy::{primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
@@ -34,9 +33,9 @@ sol!(
 );
 
 #[derive(Clone)]
-pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> {
+pub(crate) struct VerifyProofOperation {
     input_verification_address: Address,
-    provider: NonceManagedProvider<P>,
+    provider: NonceManagedProvider,
     signer: AbstractSigner,
     conf: crate::ConfigSettings,
     gas: Option<u64>,
@@ -44,10 +43,10 @@ pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> 
     db_pool: Pool<Postgres>,
 }
 
-impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOperation<P> {
+impl VerifyProofOperation {
     pub(crate) async fn new(
         input_verification_address: Address,
-        provider: NonceManagedProvider<P>,
+        provider: NonceManagedProvider,
         signer: AbstractSigner,
         conf: crate::ConfigSettings,
         gas: Option<u64>,
@@ -123,7 +122,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         info!(zk_proof_id = txn_request.0, "Processing proof");
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request.1,
-            self.provider.inner(),
+            &self.provider,
             self.conf.gas_limit_overprovision_percent,
         )
         .await;
@@ -227,17 +226,16 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
 }
 
 #[async_trait]
-impl<P> TransactionOperation<P> for VerifyProofOperation<P>
-where
-    P: alloy::providers::Provider<Ethereum> + Clone + 'static,
-{
+impl TransactionOperation for VerifyProofOperation {
     fn channel(&self) -> &str {
         &self.conf.verify_proof_resp_db_channel
     }
 
     async fn execute(&self) -> anyhow::Result<bool> {
-        let input_verification =
-            InputVerification::new(self.input_verification_address, self.provider.inner());
+        let input_verification = InputVerification::new(
+            self.input_verification_address,
+            self.provider.inner().await?,
+        );
         if self.conf.verify_proof_remove_after_max_retries {
             self.remove_proofs_by_retry_count().await?;
         }
@@ -365,9 +363,5 @@ where
             res??;
         }
         Ok(maybe_has_more_work)
-    }
-
-    fn provider(&self) -> &P {
-        self.provider.inner()
     }
 }

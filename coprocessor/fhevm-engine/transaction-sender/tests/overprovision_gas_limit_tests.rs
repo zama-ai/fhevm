@@ -1,7 +1,7 @@
 mod common;
 
 use alloy::primitives::{FixedBytes, U256};
-use alloy::providers::{Provider, ProviderBuilder, WsConnect};
+use alloy::providers::{ProviderBuilder, WsConnect};
 use common::SignerType;
 use common::{CiphertextCommits, TestEnvironment};
 use rstest::*;
@@ -15,14 +15,17 @@ use transaction_sender::overprovision_gas_limit::try_overprovision_gas_limit;
 #[tokio::test]
 #[serial(db)]
 async fn overprovision_gas_limit(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    use transaction_sender::NonceManagedProvider;
+
     let env = TestEnvironment::new(signer_type).await?;
-    let provider = ProviderBuilder::new()
+    let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
 
     let already_added_revert = false;
-    let ciphertext_commits = CiphertextCommits::deploy(&provider, already_added_revert).await?;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
 
     let txn_req = ciphertext_commits
         .addCiphertextMaterial(
@@ -36,6 +39,12 @@ async fn overprovision_gas_limit(#[case] signer_type: SignerType) -> anyhow::Res
     assert!(
         txn_req.gas.is_none(),
         "Gas limit should not be set initially"
+    );
+
+    let provider = NonceManagedProvider::new(
+        &env.conf,
+        &env.wallet,
+        Some(env.wallet.default_signer().address()),
     );
 
     let without_overprovision = provider.estimate_gas(txn_req.clone()).await?;
@@ -59,19 +68,17 @@ async fn overprovision_gas_limit(#[case] signer_type: SignerType) -> anyhow::Res
 #[tokio::test]
 #[serial(db)]
 async fn overprovision_estimate_failure(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    use transaction_sender::NonceManagedProvider;
+
     let mut env = TestEnvironment::new(signer_type).await?;
-    let provider = ProviderBuilder::new()
+    let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())
-        .connect_ws(
-            // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
-            WsConnect::new(env.ws_endpoint_url())
-                .with_max_retries(2)
-                .with_retry_interval(Duration::from_millis(100)),
-        )
+        .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
 
     let already_added_revert = false;
-    let ciphertext_commits = CiphertextCommits::deploy(&provider, already_added_revert).await?;
+    let ciphertext_commits =
+        CiphertextCommits::deploy(&provider_deploy, already_added_revert).await?;
 
     let txn_req = ciphertext_commits
         .addCiphertextMaterial(
@@ -85,6 +92,15 @@ async fn overprovision_estimate_failure(#[case] signer_type: SignerType) -> anyh
     assert!(
         txn_req.gas.is_none(),
         "Gas limit should not be set initially"
+    );
+
+    // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
+    env.conf.provider_max_retries = 2;
+    env.conf.provider_retry_interval = Duration::from_millis(100);
+    let provider = NonceManagedProvider::new(
+        &env.conf,
+        &env.wallet,
+        Some(env.wallet.default_signer().address()),
     );
 
     env.drop_anvil();

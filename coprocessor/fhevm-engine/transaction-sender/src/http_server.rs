@@ -14,8 +14,6 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 use crate::{transaction_sender::TransactionSender, HealthStatus};
-use alloy::{network::Ethereum, providers::Provider};
-
 #[derive(Serialize)]
 struct HealthResponse {
     status_code: String,
@@ -41,18 +39,14 @@ impl From<HealthStatus> for HealthResponse {
     }
 }
 
-pub struct HttpServer<P: Provider<Ethereum> + Clone + Send + Sync + 'static> {
-    sender: Arc<TransactionSender<P>>,
+pub struct HttpServer {
+    sender: Arc<TransactionSender>,
     port: u16,
     cancel_token: CancellationToken,
 }
 
-impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
-    pub fn new(
-        sender: Arc<TransactionSender<P>>,
-        port: u16,
-        cancel_token: CancellationToken,
-    ) -> Self {
+impl HttpServer {
+    pub fn new(sender: Arc<TransactionSender>, port: u16, cancel_token: CancellationToken) -> Self {
         Self {
             sender,
             port,
@@ -90,9 +84,7 @@ impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
 }
 
 // Health handler returns appropriate HTTP status code based on health
-async fn health_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
-    State(sender): State<Arc<TransactionSender<P>>>,
-) -> impl IntoResponse {
+async fn health_handler(State(sender): State<Arc<TransactionSender>>) -> impl IntoResponse {
     let status = sender.health_check().await;
     let http_status = if status.healthy {
         StatusCode::OK
@@ -104,9 +96,7 @@ async fn health_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
     (http_status, Json(HealthResponse::from(status)))
 }
 
-async fn liveness_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
-    State(_sender): State<Arc<TransactionSender<P>>>,
-) -> impl IntoResponse {
+async fn liveness_handler(State(_sender): State<Arc<TransactionSender>>) -> impl IntoResponse {
     (
         StatusCode::OK,
         Json(serde_json::json!({

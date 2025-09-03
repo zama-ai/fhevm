@@ -1,15 +1,16 @@
-use alloy::network::{Ethereum, TransactionBuilder};
-use alloy::providers::Provider;
+use alloy::network::TransactionBuilder;
 use alloy::rpc::types::TransactionRequest;
 use tracing::{debug, warn};
+
+use crate::NonceManagedProvider;
 
 // If `txn_request.gas` is set, overprovision it by the given percent.
 // If `txn_request.gas` is not set, estimate the gas limit and then overprovision it by the given percent.
 // If the percent is less than 100, code will assert.
 // If the gas estimation fails, it will not set the gas limit for overprovisioning and will log a warning.
-pub async fn try_overprovision_gas_limit<T: Provider<Ethereum>>(
+pub async fn try_overprovision_gas_limit(
     txn_request: impl Into<TransactionRequest>,
-    provider: &T,
+    provider: &NonceManagedProvider,
     percent: u32,
 ) -> TransactionRequest {
     assert!(percent >= 100, "Overprovision percent must be at least 100");

@@ -12,9 +12,7 @@ use sqlx::PgPool;
 use std::time::Duration;
 use test_harness::db_utils::insert_random_tenant;
 use tokio::time::sleep;
-use transaction_sender::{
-    ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
-};
+use transaction_sender::{ConfigSettings, NonceManagedProvider, TransactionSender};
 
 mod common;
 
@@ -99,11 +97,8 @@ async fn allow_call(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let multichain_acl = MultichainAcl::deploy(&provider_deploy, already_allowed_revert).await?;
@@ -212,11 +207,8 @@ async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Re
         )
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_allowed_revert = false;
@@ -311,11 +303,8 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_allowed_revert = false;

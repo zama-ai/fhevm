@@ -10,9 +10,8 @@ use crate::{
 use super::common::try_into_array;
 use super::TransactionOperation;
 use alloy::{
-    network::{Ethereum, TransactionBuilder},
+    network::TransactionBuilder,
     primitives::{Address, FixedBytes, U256},
-    providers::Provider,
     rpc::types::TransactionRequest,
     sol,
     transports::{RpcError, TransportErrorKind},
@@ -32,15 +31,15 @@ sol!(
 );
 
 #[derive(Clone)]
-pub struct AddCiphertextOperation<P: Provider<Ethereum> + Clone + 'static> {
+pub struct AddCiphertextOperation {
     ciphertext_commits_address: Address,
-    provider: NonceManagedProvider<P>,
+    provider: NonceManagedProvider,
     conf: crate::ConfigSettings,
     gas: Option<u64>,
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
+impl AddCiphertextOperation {
     async fn send_transaction(
         &self,
         handle: &[u8],
@@ -54,7 +53,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
 
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request,
-            self.provider.inner(),
+            &self.provider,
             self.conf.gas_limit_overprovision_percent,
         )
         .await;
@@ -209,10 +208,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
     }
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
+impl AddCiphertextOperation {
     pub fn new(
         ciphertext_commits_address: Address,
-        provider: NonceManagedProvider<P>,
+        provider: NonceManagedProvider,
         conf: crate::ConfigSettings,
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
@@ -307,10 +306,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
 }
 
 #[async_trait]
-impl<P> TransactionOperation<P> for AddCiphertextOperation<P>
-where
-    P: alloy::providers::Provider<Ethereum> + Clone + 'static,
-{
+impl TransactionOperation for AddCiphertextOperation {
     fn channel(&self) -> &str {
         &self.conf.add_ciphertexts_db_channel
     }
@@ -334,8 +330,10 @@ where
         .fetch_all(&self.db_pool)
         .await?;
 
-        let ciphertext_manager =
-            CiphertextCommits::new(self.ciphertext_commits_address, self.provider.inner());
+        let ciphertext_manager = CiphertextCommits::new(
+            self.ciphertext_commits_address,
+            self.provider.inner().await?,
+        );
 
         info!(rows_count = rows.len(), "Selected rows to process");
 
@@ -415,9 +413,5 @@ where
         }
 
         Ok(maybe_has_more_work)
-    }
-
-    fn provider(&self) -> &P {
-        self.provider.inner()
     }
 }

@@ -14,9 +14,8 @@ use crate::{
 
 use super::TransactionOperation;
 use alloy::{
-    network::{Ethereum, TransactionBuilder},
+    network::TransactionBuilder,
     primitives::{Address, Bytes, FixedBytes},
-    providers::Provider,
     rpc::types::TransactionRequest,
     sol,
     transports::{RpcError, TransportErrorKind},
@@ -56,15 +55,15 @@ impl Display for Key {
 }
 
 #[derive(Clone)]
-pub struct MultichainAclOperation<P: Provider<Ethereum> + Clone + 'static> {
+pub struct MultichainAclOperation {
     multichain_acl_address: Address,
-    provider: NonceManagedProvider<P>,
+    provider: NonceManagedProvider,
     conf: crate::ConfigSettings,
     gas: Option<u64>,
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
+impl MultichainAclOperation {
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
@@ -81,7 +80,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
 
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request,
-            self.provider.inner(),
+            &self.provider,
             self.conf.gas_limit_overprovision_percent,
         )
         .await;
@@ -242,10 +241,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
     }
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
+impl MultichainAclOperation {
     pub fn new(
         multichain_acl_address: Address,
-        provider: NonceManagedProvider<P>,
+        provider: NonceManagedProvider,
         conf: crate::ConfigSettings,
         gas: Option<u64>,
         db_pool: Pool<Postgres>,
@@ -352,10 +351,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
 }
 
 #[async_trait]
-impl<P> TransactionOperation<P> for MultichainAclOperation<P>
-where
-    P: alloy::providers::Provider<Ethereum> + Clone + 'static,
-{
+impl TransactionOperation for MultichainAclOperation {
     fn channel(&self) -> &str {
         &self.conf.allow_handle_db_channel
     }
@@ -375,7 +371,8 @@ where
         .fetch_all(&self.db_pool)
         .await?;
 
-        let multichain_acl = MultichainAcl::new(self.multichain_acl_address, self.provider.inner());
+        let multichain_acl =
+            MultichainAcl::new(self.multichain_acl_address, self.provider.inner().await?);
 
         info!(rows_count = rows.len(), "Selected rows to process");
 
@@ -485,9 +482,5 @@ where
         }
 
         Ok(maybe_has_more_work)
-    }
-
-    fn provider(&self) -> &P {
-        self.provider.inner()
     }
 }

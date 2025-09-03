@@ -3,7 +3,6 @@ use std::{str::FromStr, time::Duration};
 use alloy::{
     network::EthereumWallet,
     primitives::Address,
-    providers::{ProviderBuilder, WsConnect},
     signers::{aws::AwsSigner, local::PrivateKeySigner, Signer},
     transports::http::reqwest::Url,
 };
@@ -15,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
 use transaction_sender::{
     get_chain_id, http_server::HttpServer, make_abstract_signer, AbstractSigner, ConfigSettings,
-    FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
+    NonceManagedProvider, TransactionSender,
 };
 
 use humantime::parse_duration;
@@ -28,7 +27,7 @@ enum SignerType {
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
-struct Conf {
+struct CliConf {
     #[arg(short, long)]
     input_verification_address: Address,
 
@@ -101,7 +100,7 @@ struct Conf {
     #[arg(long, default_value = "30")]
     review_after_unlimited_retries: u16,
 
-    #[arg(long, default_value = "1000000")]
+    #[arg(long, default_value = "3")]
     provider_max_retries: u32,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
@@ -141,25 +140,29 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
-    let conf = Conf::parse();
+    let cli_conf = CliConf::parse();
 
     tracing_subscriber::fmt()
         .json()
         .with_level(true)
-        .with_max_level(conf.log_level)
+        .with_max_level(cli_conf.log_level)
         .init();
 
-    let chain_id = get_chain_id(conf.gateway_url.clone(), conf.provider_retry_interval).await;
+    let chain_id = get_chain_id(
+        cli_conf.gateway_url.clone(),
+        cli_conf.provider_retry_interval,
+    )
+    .await;
     let abstract_signer: AbstractSigner;
-    match conf.signer_type {
+    match cli_conf.signer_type {
         SignerType::PrivateKey => {
-            if conf.private_key.is_none() {
+            if cli_conf.private_key.is_none() {
                 error!("Private key is required for PrivateKey signer");
                 return Err(anyhow::anyhow!(
                     "Private key is required for PrivateKey signer"
                 ));
             }
-            let mut signer = PrivateKeySigner::from_str(conf.private_key.unwrap().trim())?;
+            let mut signer = PrivateKeySigner::from_str(cli_conf.private_key.unwrap().trim())?;
             signer.set_chain_id(Some(chain_id));
             abstract_signer = make_abstract_signer(signer);
         }
@@ -173,78 +176,54 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     let wallet = EthereumWallet::new(abstract_signer.clone());
-    let database_url = match conf.database_url.clone() {
+    let database_url = match cli_conf.database_url.clone() {
         Some(url) => url,
         None => std::env::var("DATABASE_URL").context("DATABASE_URL is undefined")?,
     };
     let cancel_token = CancellationToken::new();
 
-    let provider = loop {
-        match ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(wallet.clone())
-            .connect_ws(
-                WsConnect::new(conf.gateway_url.clone())
-                    .with_max_retries(conf.provider_max_retries)
-                    .with_retry_interval(conf.provider_retry_interval),
-            )
-            .await
-        {
-            Ok(inner_provider) => {
-                info!(
-                    gateway_url = %conf.gateway_url,
-                    "Connected to Gateway"
-                );
-                break NonceManagedProvider::new(
-                    inner_provider,
-                    Some(wallet.default_signer().address()),
-                );
-            }
-            Err(e) => {
-                error!(
-                    gateway_url = %conf.gateway_url,
-                    error = %e,
-                    retry_interval = ?conf.provider_retry_interval,
-                    "Failed to connect to Gateway on startup, retrying"
-                );
-                tokio::time::sleep(conf.provider_retry_interval).await;
-            }
-        }
+    let config_settings = ConfigSettings {
+        database_url,
+        database_pool_size: cli_conf.database_pool_size,
+        verify_proof_resp_db_channel: cli_conf.verify_proof_resp_database_channel,
+        add_ciphertexts_db_channel: cli_conf.add_ciphertexts_database_channel,
+        allow_handle_db_channel: cli_conf.allow_handle_database_channel,
+        verify_proof_resp_batch_limit: cli_conf.verify_proof_resp_batch_limit,
+        verify_proof_resp_max_retries: cli_conf.verify_proof_resp_max_retries,
+        verify_proof_remove_after_max_retries: cli_conf.verify_proof_remove_after_max_retries,
+        add_ciphertexts_batch_limit: cli_conf.add_ciphertexts_batch_limit,
+        db_polling_interval_secs: cli_conf.database_polling_interval_secs,
+        error_sleep_initial_secs: cli_conf.error_sleep_initial_secs,
+        error_sleep_max_secs: cli_conf.error_sleep_max_secs,
+        add_ciphertexts_max_retries: cli_conf.add_ciphertexts_max_retries,
+        allow_handle_batch_limit: cli_conf.allow_handle_batch_limit,
+        allow_handle_max_retries: cli_conf.allow_handle_max_retries,
+        txn_receipt_timeout_secs: cli_conf.txn_receipt_timeout_secs,
+        required_txn_confirmations: cli_conf.required_txn_confirmations,
+        review_after_unlimited_retries: cli_conf.review_after_unlimited_retries,
+        provider_max_retries: cli_conf.provider_max_retries,
+        provider_retry_interval: cli_conf.provider_retry_interval,
+        http_server_port: cli_conf.http_server_port,
+        health_check_timeout: cli_conf.health_check_timeout,
+        gas_limit_overprovision_percent: cli_conf.gas_limit_overprovision_percent,
+        gateway_url: cli_conf.gateway_url,
     };
 
-    let config = ConfigSettings {
-        database_url,
-        database_pool_size: conf.database_pool_size,
-        verify_proof_resp_db_channel: conf.verify_proof_resp_database_channel,
-        add_ciphertexts_db_channel: conf.add_ciphertexts_database_channel,
-        allow_handle_db_channel: conf.allow_handle_database_channel,
-        verify_proof_resp_batch_limit: conf.verify_proof_resp_batch_limit,
-        verify_proof_resp_max_retries: conf.verify_proof_resp_max_retries,
-        verify_proof_remove_after_max_retries: conf.verify_proof_remove_after_max_retries,
-        add_ciphertexts_batch_limit: conf.add_ciphertexts_batch_limit,
-        db_polling_interval_secs: conf.database_polling_interval_secs,
-        error_sleep_initial_secs: conf.error_sleep_initial_secs,
-        error_sleep_max_secs: conf.error_sleep_max_secs,
-        add_ciphertexts_max_retries: conf.add_ciphertexts_max_retries,
-        allow_handle_batch_limit: conf.allow_handle_batch_limit,
-        allow_handle_max_retries: conf.allow_handle_max_retries,
-        txn_receipt_timeout_secs: conf.txn_receipt_timeout_secs,
-        required_txn_confirmations: conf.required_txn_confirmations,
-        review_after_unlimited_retries: conf.review_after_unlimited_retries,
-        http_server_port: conf.http_server_port,
-        health_check_timeout: conf.health_check_timeout,
-        gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
-    };
+    let provider = NonceManagedProvider::new(
+        &config_settings,
+        &wallet,
+        Some(wallet.default_signer().address()),
+    );
 
     let transaction_sender = std::sync::Arc::new(
         TransactionSender::new(
-            conf.input_verification_address,
-            conf.ciphertext_commits_address,
-            conf.multichain_acl_address,
+            cli_conf.input_verification_address,
+            cli_conf.ciphertext_commits_address,
+            cli_conf.multichain_acl_address,
             abstract_signer,
             provider,
             cancel_token.clone(),
-            config.clone(),
+            config_settings.clone(),
             None,
         )
         .await?,
@@ -252,15 +231,15 @@ async fn main() -> anyhow::Result<()> {
 
     let http_server = HttpServer::new(
         transaction_sender.clone(),
-        conf.http_server_port,
+        cli_conf.http_server_port,
         cancel_token.clone(),
     );
 
     install_signal_handlers(cancel_token.clone())?;
 
     info!(
-        http_server_port = conf.http_server_port,
-        conf = ?config,
+        http_server_port = cli_conf.http_server_port,
+        config_settings = ?config_settings,
         "Transaction sender and HTTP server starting"
     );
 

@@ -15,7 +15,7 @@ use sqlx::{Postgres, QueryBuilder};
 use std::collections::HashMap;
 use std::time::Duration;
 use tokio::time::sleep;
-use transaction_sender::{FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender};
+use transaction_sender::{NonceManagedProvider, TransactionSender};
 mod common;
 
 sol! {
@@ -39,11 +39,8 @@ async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyho
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -155,11 +152,8 @@ async fn verify_proof_response_empty_handles_success(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -274,11 +268,8 @@ async fn verify_proof_response_concurrent_success(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -391,11 +382,8 @@ async fn reject_proof_response_success(#[case] signer_type: SignerType) -> anyho
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -501,11 +489,8 @@ async fn verify_proof_response_reversal_already_verified(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = true;
@@ -603,11 +588,8 @@ async fn reject_proof_response_reversal_already_rejected(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -704,11 +686,8 @@ async fn verify_proof_response_other_reversal(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -803,11 +782,8 @@ async fn reject_proof_response_other_reversal(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -898,11 +874,8 @@ async fn verify_proof_response_other_reversal_gas_estimation(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -996,11 +969,8 @@ async fn reject_proof_response_other_reversal_gas_estimation(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -1096,11 +1066,8 @@ async fn verify_proof_max_retries_remove_entry(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;
@@ -1186,11 +1153,8 @@ async fn verify_proof_max_retries_do_not_remove_entry(
         .connect_ws(WsConnect::new(env.ws_endpoint_url()))
         .await?;
     let provider = NonceManagedProvider::new(
-        ProviderBuilder::default()
-            .filler(FillersWithoutNonceManagement::default())
-            .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
-            .await?,
+        &env.conf,
+        &env.wallet,
         Some(env.wallet.default_signer().address()),
     );
     let already_verified_revert = false;

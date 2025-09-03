@@ -69,7 +69,7 @@ impl TestEnvironment {
 
     pub async fn new_with_config(
         signer_type: SignerType,
-        conf: ConfigSettings,
+        mut conf: ConfigSettings,
         force_per_test_localstack: bool,
     ) -> anyhow::Result<Self> {
         let _ = tracing_subscriber::fmt()
@@ -124,6 +124,7 @@ impl TestEnvironment {
             }
         }
         let wallet = abstract_signer.clone().into();
+        conf.gateway_url = anvil.ws_endpoint_url();
         Ok(Self {
             signer: abstract_signer,
             conf,
