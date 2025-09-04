@@ -101,6 +101,7 @@ async fn run_service(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         while let Some(job) = rx.recv().await {
             info!(target: "tool", job_id = job.id, "Processing job");
+            let started_at = SystemTime::now();
             s.set_status(job.id, JobStatus::Running(Utc::now())).await;
 
             if let Err(e) = spawn_and_wait_all(job.scenarios).await {
@@ -108,6 +109,8 @@ async fn run_service(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
             }
 
             s.set_status(job.id, JobStatus::Completed(Utc::now())).await;
+
+            info!(target: "tool", job_id = job.id, duration = ?started_at.elapsed(), "Job completed");
         }
     });
 
@@ -250,15 +253,16 @@ async fn spawn_and_wait_all(scenarios: Vec<Scenario>) -> Result<(), Box<dyn std:
     let mut handles = vec![];
     for scenario in scenarios {
         let handle = tokio::spawn(async move {
+            info!(target: "tool", scenario = ?scenario, "Execute scenario");
             match scenario.kind {
                 GeneratorKind::Count => {
-                    if generate_transactions_count(scenario).await.is_err() {
-                        panic!("Generating transactions failed");
+                    if let Err(err) = generate_transactions_count(&scenario).await {
+                        error!(scenario = ?scenario, err, "Generating transactions with count failed");
                     }
                 }
                 GeneratorKind::Rate => {
-                    if generate_transactions_at_rate(scenario).await.is_err() {
-                        panic!("Generating transactions failed");
+                    if let Err(err) = generate_transactions_at_rate(&scenario).await {
+                        error!(scenario = ?scenario, err, "Generating transactions at rate failed");
                     }
                 }
             }
@@ -270,7 +274,7 @@ async fn spawn_and_wait_all(scenarios: Vec<Scenario>) -> Result<(), Box<dyn std:
 }
 
 async fn generate_transactions_at_rate(
-    scenario: Scenario,
+    scenario: &Scenario,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
     let coprocessor_api_key = sqlx::types::Uuid::parse_str(&ecfg.api_key).unwrap();
@@ -302,8 +306,10 @@ async fn generate_transactions_at_rate(
             if transaction_start > end_target {
                 break;
             }
+            info!(target: "tool" , "Generating new transaction at rate");
+
             let (dep1, dep2) = generate_transaction(
-                &scenario,
+                scenario,
                 dependence_handle1,
                 dependence_handle2,
                 &mut listener_event_to_db,
@@ -330,7 +336,9 @@ async fn generate_transactions_at_rate(
     Ok(())
 }
 
-async fn generate_transactions_count(scenario: Scenario) -> Result<(), Box<dyn std::error::Error>> {
+async fn generate_transactions_count(
+    scenario: &Scenario,
+) -> Result<(), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
     let coprocessor_api_key = sqlx::types::Uuid::parse_str(&ecfg.api_key).unwrap();
     let mut listener_event_to_db = ListenerDatabase::new(
@@ -344,13 +352,16 @@ async fn generate_transactions_count(scenario: Scenario) -> Result<(), Box<dyn s
         .connect(&ecfg.evgen_db_url)
         .await
         .unwrap();
+
     let mut dependence_handle1: Option<Handle> = None;
     let mut dependence_handle2: Option<Handle> = None;
     for (num_transactions, iter_count) in scenario.scenario.iter() {
         let iters = (*num_transactions * *iter_count as f64) as u64;
-        for _ in 0..iters {
+        for iter in 0..iters {
+            info!(target: "tool", iter , "Generating new transaction");
+
             let (dep1, dep2) = generate_transaction(
-                &scenario,
+                scenario,
                 dependence_handle1,
                 dependence_handle2,
                 &mut listener_event_to_db,
@@ -380,7 +391,6 @@ async fn generate_transaction(
         &scenario.user_address,
     )
     .await?;
-    info!("Generating transaction: {:?}", scenario);
     match scenario.transaction {
         Transaction::ERC20Transfer => {
             let (_, output_dependence) = erc20_transaction(

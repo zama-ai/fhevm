@@ -8,6 +8,7 @@ use host_listener::database::tfhe_event_propagate::{
 use rand::Rng;
 use sqlx::Postgres;
 use std::sync::Arc;
+use tracing::info;
 
 use alloy::primitives::Log;
 pub fn tfhe_event(data: TfheContractEvents) -> Log<TfheContractEvents> {
@@ -227,6 +228,18 @@ pub async fn query_and_save_pks(
     tenant_id: i32,
     pool: &sqlx::PgPool,
 ) -> Result<(tfhe::CompactPublicKey, Arc<tfhe::zk::CompactPkeCrs>), Box<dyn std::error::Error>> {
+    let keys = KEYS.read().await;
+    if let Some(keys) = keys.as_ref() {
+        return Ok(keys.clone());
+    }
+    drop(keys);
+    let mut keys = KEYS.write().await;
+    if let Some(keys) = keys.as_ref() {
+        return Ok(keys.clone());
+    }
+
+    info!("Querying database for keys of tenant {}", tenant_id);
+
     let tenants = sqlx::query!(
         "
             SELECT tenant_id, chain_id, acl_contract_address, verifying_contract_address, pks_key, public_params
@@ -239,9 +252,11 @@ pub async fn query_and_save_pks(
     .await?;
 
     let pks: tfhe::CompactPublicKey = safe_deserialize_key(&tenants.pks_key)?;
-    let public_params: tfhe::zk::CompactPkeCrs = safe_deserialize_key(&tenants.public_params)?;
+    let public_params: Arc<tfhe::zk::CompactPkeCrs> =
+        Arc::new(safe_deserialize_key(&tenants.public_params)?);
 
-    Ok((pks, Arc::new(public_params)))
+    keys.replace((pks.clone(), public_params.clone()));
+    Ok((pks, public_params))
 }
 
 /// User configuration in which benchmarks must be run.
@@ -272,6 +287,8 @@ pub struct EnvConfig {
 }
 
 use std::env;
+
+use crate::zk_gen::KEYS;
 impl EnvConfig {
     #[allow(dead_code)]
     pub fn new() -> Self {
