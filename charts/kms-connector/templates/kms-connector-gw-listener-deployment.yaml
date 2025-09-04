@@ -45,7 +45,12 @@ spec:
           image: {{ .Values.kmsConnectorGwListener.image.name }}:{{ .Values.kmsConnectorGwListener.image.tag }}
           env:
           {{- if .Values.kmsConnectorGwListener.tracing.enabled }}
-{{ toYaml .Values.monitoringConfig.env | nindent 12 }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.tracing.endpoint }}
+            - name: KMS_CONNECTOR_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           {{- end }}
 {{ toYaml .Values.commonConfig.env | nindent 12 }}
 {{ toYaml .Values.kmsConnectorGwListener.env | nindent 12 }}

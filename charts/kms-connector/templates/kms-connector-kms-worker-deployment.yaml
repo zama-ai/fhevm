@@ -45,7 +45,8 @@ spec:
           image: {{ .Values.kmsConnectorKmsWorker.image.name }}:{{ .Values.kmsConnectorKmsWorker.image.tag }}
           env:
           {{- if .Values.kmsConnectorKmsWorker.tracing.enabled }}
-{{ toYaml .Values.monitoringConfig.env | nindent 12 }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.tracing.endpoint }}
           {{- end }}
 {{ toYaml .Values.commonConfig.env | nindent 12 }}
 {{ toYaml .Values.kmsConnectorKmsWorker.env | nindent 12 }}

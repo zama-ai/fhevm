@@ -27,11 +27,6 @@ commonConfig:
     # - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_VERSION
     #   value: "1"
 
-monitoringConfig:
-  env:
-    - name: OTEL_EXPORTER_OTLP_ENDPOINT
-      value: http://otlp-endpoint:4317
-
 kmsConnectorDbMigration:
   enabled: true
   annotations:
@@ -89,7 +84,7 @@ kmsConnectorGwListener:
     #   value: "1234"
 
   tracing:
-    enabled: true
+    enabled: false
   ports:
     monitoring: 9100
   serviceMonitor:
@@ -165,7 +160,7 @@ kmsConnectorKmsWorker:
     # - name: KMS_CONNECTOR_TASK_LIMIT
     #   value: "1000"
   tracing:
-    enabled: true
+    enabled: false
   ports:
     monitoring: 9100
   serviceMonitor:
@@ -284,3 +279,6 @@ kmsConnectorTxSender:
 podAnnotations: {}
 # Set Pod Labels, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 podLabels: {}
+
+tracing:
+  endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
