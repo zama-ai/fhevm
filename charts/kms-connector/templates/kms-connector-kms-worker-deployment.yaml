@@ -31,12 +31,18 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
+      {{- with .Values.kmsConnectorKmsWorker.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.kmsConnectorKmsWorker.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorKmsWorker.affinity }}
       affinity:
-        {{- toYaml .Values.kmsConnectorKmsWorker.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorKmsWorker.tolerations }}
       tolerations:
-        {{- toYaml .Values.kmsConnectorKmsWorker.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.kmsConnectorKmsWorker.serviceAccountName }}
       serviceAccountName: {{ .Values.kmsConnectorKmsWorker.serviceAccountName }}
       {{- end }}
@@ -44,12 +50,28 @@ spec:
         - name: kms-connector-kms-worker
           image: {{ .Values.kmsConnectorKmsWorker.image.name }}:{{ .Values.kmsConnectorKmsWorker.image.tag }}
           env:
+            - name: KMS_CONNECTOR_DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+            - name: KMS_CONNECTOR_GATEWAY_URL
+              value: {{ .Values.commonConfig.gatewayUrl | quote }}
+            - name: KMS_CONNECTOR_CHAIN_ID
+              value: {{ .Values.commonConfig.chainId | quote }}
           {{- if .Values.kmsConnectorKmsWorker.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.tracing.endpoint }}
+            - name: KMS_CONNECTOR_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           {{- end }}
-{{ toYaml .Values.commonConfig.env | nindent 12 }}
-{{ toYaml .Values.kmsConnectorKmsWorker.env | nindent 12 }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+            - name: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
+              value: {{ .Values.kmsConnectorKmsWorker.config.kmsCoreEndpoints | quote }}
+          {{- with .Values.kmsConnectorKmsWorker.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorKmsWorker.ports }}
             - name: {{ $portName }}
@@ -65,10 +87,10 @@ spec:
               memory: {{ .Values.kmsConnectorKmsWorker.resources.limits.memory }}
           {{- if and .Values.kmsConnectorKmsWorker.probes .Values.kmsConnectorKmsWorker.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.kmsConnectorKmsWorker.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml .Values.kmsConnectorKmsWorker.probes.liveness | nindent 12 }}
           {{- end }}
           {{- if and .Values.kmsConnectorKmsWorker.probes .Values.kmsConnectorKmsWorker.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.kmsConnectorKmsWorker.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml .Values.kmsConnectorKmsWorker.probes.readiness | nindent 12 }}
           {{- end }}
 {{- end -}}

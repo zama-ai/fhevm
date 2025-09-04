@@ -31,12 +31,18 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
+      {{- with .Values.kmsConnectorTxSender.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.kmsConnectorTxSender.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorTxSender.affinity }}
       affinity:
-        {{- toYaml .Values.kmsConnectorTxSender.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorTxSender.tolerations }}
       tolerations:
-        {{- toYaml .Values.kmsConnectorTxSender.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.kmsConnectorTxSender.serviceAccountName }}
       serviceAccountName: {{ .Values.kmsConnectorTxSender.serviceAccountName }}
       {{- end }}
@@ -44,12 +50,37 @@ spec:
         - name: kms-connector-tx-sender
           image: {{ .Values.kmsConnectorTxSender.image.name }}:{{ .Values.kmsConnectorTxSender.image.tag }}
           env:
+            - name: KMS_CONNECTOR_DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+            - name: KMS_CONNECTOR_GATEWAY_URL
+              value: {{ .Values.commonConfig.gatewayUrl | quote }}
+            - name: KMS_CONNECTOR_CHAIN_ID
+              value: {{ .Values.commonConfig.chainId | quote }}
+            - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
+              value: {{ .Values.commonConfig.gatewayContractAddresses.decryption | quote }}
+            - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
+              value: {{ .Values.commonConfig.gatewayContractAddresses.gatewayConfig | quote }}
+            - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS
+              value: {{ .Values.commonConfig.gatewayContractAddresses.kmsManagement | quote }}
+            - name: KMS_CONNECTOR_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kmsConnectorTxSender.wallet.secret.name | quote }}
+                  key: {{ .Values.kmsConnectorTxSender.wallet.key | quote }}
           {{- if .Values.kmsConnectorTxSender.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.tracing.endpoint }}
+            - name: KMS_CONNECTOR_SERVICE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
           {{- end }}
-{{ toYaml .Values.commonConfig.env | nindent 12 }}
-{{ toYaml .Values.kmsConnectorTxSender.env | nindent 12 }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.kmsConnectorTxSender.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorTxSender.ports }}
             - name: {{ $portName }}
@@ -65,10 +96,10 @@ spec:
               memory: {{ .Values.kmsConnectorTxSender.resources.limits.memory }}
           {{- if and .Values.kmsConnectorTxSender.probes .Values.kmsConnectorTxSender.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.kmsConnectorTxSender.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml .Values.kmsConnectorTxSender.probes.liveness | nindent 12 }}
           {{- end }}
           {{- if and .Values.kmsConnectorTxSender.probes .Values.kmsConnectorTxSender.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.kmsConnectorTxSender.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml .Values.kmsConnectorTxSender.probes.readiness | nindent 12 }}
           {{- end }}
 {{- end -}}

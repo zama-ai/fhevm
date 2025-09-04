@@ -1,38 +1,34 @@
 # Commented env variables means they are optional. Their default value is the commented one.
 
 commonConfig:
-  env:
-    - name: KMS_CONNECTOR_DATABASE_URL
-      value: "postgresql://postgres:postgres@fhevm-db:5432/kms-connector"
-    - name: KMS_CONNECTOR_GATEWAY_URL
-      value: ws://gateway-anvil-node:8546
-    - name: KMS_CONNECTOR_CHAIN_ID
-      value: "54321"
-    - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS
-      value: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
-    # - name: KMS_CONNECTOR_DECRYPTION_CONTRACT__DOMAIN_NAME
-    #   value: Decryption
-    # - name: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
-    #   value: "1"
-    - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
-      value: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
-    # - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_NAME
-    #   value: GatewayConfig
-    # - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__DOMAIN_VERSION
-    #   value: "1"
-    - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS
-      value: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
-    # - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_NAME
-    #   value: KmsManagement
-    # - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_VERSION
-    #   value: "1"
+  databaseUrl: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/connector"
+  gatewayUrl: "ws://gateway-anvil-node:8546"
+  chainId: "54321"
+  gatewayContractAddresses:
+    decryption: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
+    gatewayConfig: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
+    kmsManagement: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+  env: {}
+# E.g. Database configuration from secret
+#    - name: DATABASE_ENDPOINT
+#      valueFrom:
+#        secretKeyRef:
+#          name: connector-database
+#          key: endpoint
+#    - name: DATABASE_USERNAME
+#      valueFrom:
+#        secretKeyRef:
+#          name: connector-database
+#          key: username
+#    - name: DATABASE_PASSWORD
+#      valueFrom:
+#        secretKeyRef:
+#          name: connector-database
+#          key: password
 
 kmsConnectorDbMigration:
   enabled: true
   annotations:
-#    "helm.sh/hook": "pre-install, pre-upgrade"
-#    "helm.sh/hook-weight": "0"
-#    "helm.sh/hook-needs": "config-setup"
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration
     tag: v0.8.0-1
@@ -42,9 +38,7 @@ kmsConnectorDbMigration:
     - "run"
     - "--source"
     - "/migrations"
-  env:
-    - name: DATABASE_URL
-      value: "postgresql://postgres:postgres@fhevm-db:5432/kms-connector"
+  env: {}
   serviceAccountName:
   # Size of the non-persistent volume.
   storage:
@@ -67,22 +61,7 @@ kmsConnectorGwListener:
     name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener
     tag: v0.8.0-1
   replicas: 1
-  env:
-    - name: KMS_CONNECTOR_SERVICE_NAME
-      value: kms-connector-gw-listener
-    # - name: KMS_CONNECTOR_MONITORING_ENDPOINT
-    #   value: "0.0.0.0:9100"
-    # - name: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT_SECS
-    #   value: "3"
-    # - name: KMS_CONNECTOR_TASK_LIMIT
-    #   value: "1000"
-    # - name: KMS_CONNECTOR_DECRYPTION_POLLING_MS
-    #   value: "1000"
-    # - name: KMS_CONNECTOR_KMS_MANAGEMENT_POLLING_MS
-    #   value: "30000"
-    # - name: KMS_CONNECTOR_FROM_BLOCK_NUMBER
-    #   value: "1234"
-
+  env: {}
   tracing:
     enabled: false
   ports:
@@ -128,37 +107,9 @@ kmsConnectorKmsWorker:
     name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker
     tag: v0.8.0-1
   replicas: 1
-  env:
-    - name: KMS_CONNECTOR_SERVICE_NAME
-      value: kms-connector-kms-worker
-    - name: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
-      value: http://kms-core:50051
-    # - name: KMS_CONNECTOR_MONITORING_ENDPOINT
-    #   value: "0.0.0.0:9100"
-    # - name: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT_SECS
-    #   value: "3"
-    # - name: KMS_CONNECTOR_EVENTS_BATCH_SIZE
-    #   value: "10"
-    # - name: KMS_CONNECTOR_GRPC_REQUEST_RETRIES
-    #   value: "3"
-    # - name: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
-    #   value: "300"
-    # - name: KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS
-    #   value: "300"
-    # - name: KMS_CONNECTOR_GRPC_POLL_INTERVAL_SECS
-    #   value: "5"
-    # - name: KMS_CONNECTOR_S3_CIPHERTEXT_RETRIEVAL_RETRIES
-    #   value: "3"
-    # - name: KMS_CONNECTOR_S3_CONNECT_TIMEOUT
-    #   value: "2"
-    # - name: KMS_CONNECTOR_S3_CONFIG__REGION
-    #   value: "us-east-1"
-    # - name: KMS_CONNECTOR_S3_CONFIG__BUCKET
-    #   value: "my-ciphertext-bucket"
-    # - name: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
-    #   value: "http://localhost:9876"
-    # - name: KMS_CONNECTOR_TASK_LIMIT
-    #   value: "1000"
+  config:
+    kmsCoreEndpoints: "http://kms-core:50051"
+  env: {}
   tracing:
     enabled: false
   ports:
@@ -204,39 +155,11 @@ kmsConnectorTxSender:
     name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender
     tag: v0.8.0-1
   replicas: 1
+  env:
   wallet:
     secret:
-      name: kms-connector-tx-sender.aws-kms-wallet
-      key: kms-connector-tx-sender.aws-kms-wallet
-      value: ""
-  env:
-    - name: KMS_CONNECTOR_SERVICE_NAME
-      value: kms-connector-tx-sender
-    - name: KMS_CONNECTOR_PRIVATE_KEY  # Do not use in production!
-      value: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
-    # - name: KMS_CONNECTOR_AWS_KMS_CONFIG__KEY_ID
-    #   valueFrom:
-    #     secretKeyRef:
-    #       name: kms-connector-tx-sender.aws-kms-wallet
-    #       key: kms-connector-tx-sender.aws-kms-wallet
-    # - name: KMS_CONNECTOR_AWS_KMS_CONFIG__REGION
-    #   value: null
-    # - name: KMS_CONNECTOR_AWS_KMS_CONFIG__ENDPOINT
-    #   value: null
-    # - name: KMS_CONNECTOR_MONITORING_ENDPOINT
-    #   value: "0.0.0.0:9100"
-    # - name: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT_SECS
-    #   value: "3"
-    # - name: KMS_CONNECTOR_RESPONSES_BATCH_SIZE
-    #   value: "10"
-    # - name: KMS_CONNECTOR_TX_RETRIES
-    #   value: "3"
-    # - name: KMS_CONNECTOR_TX_RETRY_INTERVAL_MS
-    #   value: "100"
-    # - name: KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT
-    #   value: "130"
-    # - name: KMS_CONNECTOR_TASK_LIMIT
-    #   value: "1000"
+      name: kms-connector-tx-sender
+      key: kms-wallet
   tracing:
     enabled: true
   ports:

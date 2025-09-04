@@ -31,12 +31,18 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
+      {{- with .Values.kmsConnectorGwListener.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.kmsConnectorGwListener.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorGwListener.affinity }}
       affinity:
-        {{- toYaml .Values.kmsConnectorGwListener.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorGwListener.tolerations }}
       tolerations:
-        {{- toYaml .Values.kmsConnectorGwListener.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.kmsConnectorGwListener.serviceAccountName }}
       serviceAccountName: {{ .Values.kmsConnectorGwListener.serviceAccountName }}
       {{- end }}
@@ -44,6 +50,12 @@ spec:
         - name: kms-connector-gw-listener
           image: {{ .Values.kmsConnectorGwListener.image.name }}:{{ .Values.kmsConnectorGwListener.image.tag }}
           env:
+            - name: KMS_CONNECTOR_DATABASE_URL
+              value: {{ .Values.commonConfig.databaseUrl | quote }}
+            - name: KMS_CONNECTOR_GATEWAY_URL
+              value: {{ .Values.commonConfig.gatewayUrl | quote }}
+            - name: KMS_CONNECTOR_CHAIN_ID
+              value: {{ .Values.commonConfig.chainId | quote }}
           {{- if .Values.kmsConnectorGwListener.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.tracing.endpoint }}
@@ -52,8 +64,12 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
           {{- end }}
-{{ toYaml .Values.commonConfig.env | nindent 12 }}
-{{ toYaml .Values.kmsConnectorGwListener.env | nindent 12 }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.kmsConnectorGwListener.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorGwListener.ports }}
             - name: {{ $portName }}
@@ -69,10 +85,10 @@ spec:
               memory: {{ .Values.kmsConnectorGwListener.resources.limits.memory }}
           {{- if and .Values.kmsConnectorGwListener.probes .Values.kmsConnectorGwListener.probes.liveness.enabled }}
           livenessProbe:
-{{ toYaml (omit .Values.kmsConnectorGwListener.probes.liveness "enabled") | nindent 12 }}
+            {{- toYaml .Values.kmsConnectorGwListener.probes.liveness | nindent 12 }}
           {{- end }}
           {{- if and .Values.kmsConnectorGwListener.probes .Values.kmsConnectorGwListener.probes.readiness.enabled }}
           readinessProbe:
-{{ toYaml (omit .Values.kmsConnectorGwListener.probes.readiness "enabled") | nindent 12 }}
+            {{- toYaml .Values.kmsConnectorGwListener.probes.readiness | nindent 12 }}
           {{- end }}
 {{- end -}}
