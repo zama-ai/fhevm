@@ -13,7 +13,7 @@ import {
 } from "../typechain-types";
 import {
   CoprocessorContextTimePeriodsStruct,
-  CoprocessorStruct,
+  CoprocessorV2Struct,
 } from "../typechain-types/contracts/interfaces/ICoprocessorContexts";
 import {
   ContextStatus,
@@ -63,7 +63,7 @@ describe("CiphertextCommits", function () {
   let owner: Wallet;
   let pauser: HardhatEthersSigner;
   let contractChainId: number;
-  let coprocessors: CoprocessorStruct[];
+  let coprocessors: CoprocessorV2Struct[];
 
   async function prepareViewTestFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);

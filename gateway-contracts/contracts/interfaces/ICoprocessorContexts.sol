@@ -146,6 +146,15 @@ interface ICoprocessorContexts {
     error NoActiveCoprocessorContext();
 
     /**
+     * @notice Emitted when a coprocessor context status targeted for a forced update is invalid.
+     * This means that the status does not reflect that the context has already been added
+     * (ex: `NotInitialized`, `Generating`, `PreActivation`).
+     * @param contextId The ID of the coprocessor context.
+     * @param status The status that was attempted to be updated.
+     */
+    error InvalidContextStatusForceUpdate(uint256 contextId, ContextStatus status);
+
+    /**
      * @notice Error indicating that a transaction sender address is not associated with a registered
      * coprocessor within the context.
      * @param contextId The coprocessor context ID.
@@ -217,25 +226,35 @@ interface ICoprocessorContexts {
      * - checks if there is a pre-activation coprocessor context that should be activated (by
      * checking if the pre-activation period has ended)
      * - checks if there is a suspended coprocessor context that should be deactivated (by checking
-     * if the suspension period has ended)
+     * if the suspended period has ended)
      */
     function refreshCoprocessorContextStatuses() external;
 
     /**
-     * @notice Compromise a coprocessor context.
-     * @param contextId The ID of the coprocessor context to compromise.
+     * @notice Manually force the status update of a coprocessor context.
+     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
+     * used correctly. ⚠️
+     * Hence, prior to using this function, the caller should make sure that:
+     * - the status update is not against any of the lifecycle's rules (else it will revert)
+     * - the usually expected requirements (in the whole protocol) for the status update are met
+     * Additionally:
+     * - this function expects the context to already have been added and thus will revert if the
+     * targeted status does not reflect that
+     * - if a status update needs to be associated to a block timestamp, the current block timestamp
+     * will be used (i.e., the status update is immediate)
+     * The following context status updates are only possible through this function:
+     * - Compromised
+     * - Destroyed
+     * @param contextId The ID of the coprocessor context to update.
+     * @param status The status to update the coprocessor context to.
      */
-    function compromiseCoprocessorContext(uint256 contextId) external;
-
-    /**
-     * @notice Destroy a coprocessor context.
-     * @param contextId The ID of the coprocessor context to destroy.
-     */
-    function destroyCoprocessorContext(uint256 contextId) external;
+    function forceUpdateContextToStatus(uint256 contextId, ContextStatus status) external;
 
     /**
      * @notice Move a suspended coprocessor context to active.
-     * @dev This function is provided in case of emergency (ex: if a software update failed)
+     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
+     * used correctly. ⚠️
+     * It is provided in case of emergency (ex: if a software update failed)
      */
     function moveSuspendedCoprocessorContextToActive() external;
 

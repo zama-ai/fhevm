@@ -6,7 +6,7 @@ import { ContextStatus } from "../shared/Enums.sol";
 /**
  * @title ContextLifecycle library
  * @notice This library is used to manage the lifecycle of a context (of any kind).
- * It implements the full logic and checks around lifecycle state updates.
+ * It implements the full logic and checks around lifecycle status updates.
  */
 library ContextLifecycle {
     /**
@@ -24,6 +24,8 @@ library ContextLifecycle {
         uint256 activeContextId;
         /// @notice The ID of the context that is suspended (at most one)
         uint256 suspendedContextId;
+        /// @notice Whether the context lifecycle is initialized with a first active context
+        bool initialized;
     }
 
     /**
@@ -57,9 +59,9 @@ library ContextLifecycle {
     error ContextNotGenerated(uint256 contextId);
 
     /**
-     * @notice Error indicating that the context is not pre-activated or suspended.
+     * @notice Error indicating that the context is not pre-activated.
      */
-    error ContextNotPreActivatedOrSuspended(uint256 contextId);
+    error ContextNotPreActivated(uint256 contextId);
 
     /**
      * @notice Error indicating that the context is not active.
@@ -67,9 +69,9 @@ library ContextLifecycle {
     error ContextNotActive(uint256 contextId);
 
     /**
-     * @notice Error indicating that the context is not active or suspended.
+     * @notice Error indicating that the context is not suspended.
      */
-    error ContextNotActiveOrSuspended(uint256 contextId);
+    error ContextNotSuspended(uint256 contextId);
 
     /**
      * @notice Error indicating that the context is generating.
@@ -118,7 +120,7 @@ library ContextLifecycle {
         }
 
         // It is not possible to generate a new context if there is already one in pre-activation
-        // The union of contexts in state Generating and Pre-Activation should have size at most 1
+        // The union of contexts in status Generating and Pre-Activation should have size at most 1
         if ($.preActivationContextId != 0) {
             revert PreActivationContextOngoing($.preActivationContextId);
         }
@@ -151,24 +153,39 @@ library ContextLifecycle {
         $.preActivationContextId = contextId;
 
         // Reset the generating context ID as it is now pre-activated
-        // The union of contexts in state Generating and Pre-Activation should have size at most 1
+        // The union of contexts in status Generating and Pre-Activation should have size at most 1
         $.generatingContextId = 0;
     }
 
     /**
+     * @notice Initializes the context as active.
+     * If the active context is not set, it means that it is the very first context to be initialized.
+     * In this very specific case, we allow the context to be set as active directly for convenience.
+     * @dev There should only be one active context at a time.
+     * @param contextId The ID of the context to set as active.
+     */
+    function initializeActive(
+        ContextLifecycleStorage storage $,
+        uint256 contextId
+    ) internal onlyNonNullContextId(contextId) {
+        // This function should only be called if there is no active context yet
+        if ($.activeContextId != 0) {
+            revert ContextIsActive($.activeContextId);
+        }
+
+        $.contextStatuses[contextId] = ContextStatus.Active;
+        $.activeContextId = contextId;
+    }
+
+    /**
      * @notice Sets the context as active.
-     * @dev There can only be one active context at a time.
+     * @dev There should only be one active context at a time.
      * @param contextId The ID of the context to set as active.
      */
     function setActive(ContextLifecycleStorage storage $, uint256 contextId) internal onlyNonNullContextId(contextId) {
-        // Only a pre-activated can be set as active
-        // In a normal situation, a suspended context should not be set back as active. However, we also
-        // allow this to happen in case of emergency. This pattern should be used with caution and should
-        // remain exceptional.
-        // Additionally, if the active context is not set, it means that it is the very first context
-        // to be initialized. In this very specific case, we allow the context to be set as active directly.
-        if (!isPreActivation($, contextId) && !isSuspended($, contextId) && $.activeContextId != 0) {
-            revert ContextNotPreActivatedOrSuspended(contextId);
+        // Only a pre-activated context can be set as active
+        if (!isPreActivation($, contextId)) {
+            revert ContextNotPreActivated(contextId);
         }
 
         $.contextStatuses[contextId] = ContextStatus.Active;
@@ -180,6 +197,10 @@ library ContextLifecycle {
 
     /**
      * @notice Sets the context as suspended.
+     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
+     * used correctly. ⚠️
+     * A suspended context is expected to always be followed by a context activation in order to
+     * avoid having a state where no active context is available, which should never happen.
      * @dev There can only be one suspended context at a time.
      * @param contextId The ID of the context to set as suspended.
      */
@@ -208,22 +229,15 @@ library ContextLifecycle {
         ContextLifecycleStorage storage $,
         uint256 contextId
     ) internal onlyNonNullContextId(contextId) {
-        // Only an active or suspended context ID can be set as deactivated
-        if (!isActive($, contextId) && !isSuspended($, contextId)) {
-            revert ContextNotActiveOrSuspended(contextId);
+        // Only a suspended context ID can be deactivated
+        if (!isSuspended($, contextId)) {
+            revert ContextNotSuspended(contextId);
         }
 
         $.contextStatuses[contextId] = ContextStatus.Deactivated;
 
-        // Reset the active context ID if it is the one being deactivated
-        if ($.activeContextId == contextId) {
-            $.activeContextId = 0;
-        }
-
-        // Reset the suspended context ID if it is the one being deactivated
-        if ($.suspendedContextId == contextId) {
-            $.suspendedContextId = 0;
-        }
+        // Reset the suspended context ID as it is now deactivated
+        $.suspendedContextId = 0;
     }
 
     /**
@@ -250,11 +264,6 @@ library ContextLifecycle {
         // Reset the pre-activation context ID if it is the one being compromised
         if ($.preActivationContextId == contextId) {
             $.preActivationContextId = 0;
-        }
-
-        // Reset the active context ID if it is the one being compromised
-        if ($.activeContextId == contextId) {
-            $.activeContextId = 0;
         }
 
         // Reset the suspended context ID if it is the one being compromised
@@ -290,15 +299,49 @@ library ContextLifecycle {
             $.preActivationContextId = 0;
         }
 
-        // Reset the active context ID if it is the one being destroyed
-        if ($.activeContextId == contextId) {
-            $.activeContextId = 0;
-        }
-
         // Reset the suspended context ID if it is the one being destroyed
         if ($.suspendedContextId == contextId) {
             $.suspendedContextId = 0;
         }
+    }
+
+    /**
+     * @notice Re-activates a suspended context and deactivates an active context.
+     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
+     * used correctly. ⚠️
+     * This should only be used in case of emergency (ex: if a software update failed). We provide
+     * this specific function in order to avoid having a state where no active context is available,
+     * which should never happen. This is the only function that allows to:
+     * - re-activate a suspended context
+     * - deactivate an active context
+     * Other functions do not allow to do so as these are forbidden by the lifecycle rules.
+     * @param suspendedContextId The ID of the context to re-activate.
+     * @param activeContextId The ID of the context to deactivate.
+     */
+    function reActivateSuspendedAndDeactivateActive(
+        ContextLifecycleStorage storage $,
+        uint256 suspendedContextId,
+        uint256 activeContextId
+    ) internal {
+        // Only accept re-activating a suspended context ID
+        if (!isSuspended($, suspendedContextId)) {
+            revert ContextNotSuspended(suspendedContextId);
+        }
+
+        // Only accept deactivating an active context ID
+        if (!isActive($, activeContextId)) {
+            revert ContextNotActive(activeContextId);
+        }
+
+        // Deactivate the active context
+        $.contextStatuses[activeContextId] = ContextStatus.Deactivated;
+
+        // Re-activate the suspended context
+        $.contextStatuses[suspendedContextId] = ContextStatus.Active;
+        $.activeContextId = suspendedContextId;
+
+        // Reset the suspended context ID as it is now active
+        $.suspendedContextId = 0;
     }
 
     /**

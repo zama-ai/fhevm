@@ -140,9 +140,11 @@ contract MultichainAcl is
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         // Get the context ID from the allow public decryption context ID mapping
+        // This ID may be 0 (invalid) if this is the first allowPublicDecrypt call for this
+        // addCiphertextHash (see right below)
         uint256 contextId = $.allowPublicDecryptContextId[ctHandle];
 
-        // If the context ID is not set, get the active coprocessor context's ID and associate it to
+        // If the context ID is null, get the active coprocessor context's ID and associate it to
         // this public decryption allow
         if (contextId == 0) {
             contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
@@ -196,9 +198,11 @@ contract MultichainAcl is
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
         // Get the context ID from the allow account context ID mapping
+        // This ID may be 0 (invalid) if this is the first allowAccount call for this
+        // addCiphertextHash (see right below)
         uint256 contextId = $.allowAccountContextId[ctHandle][accountAddress];
 
-        // If the context ID is not set, get the active coprocessor context's ID and associate it to
+        // If the context ID is null, get the active coprocessor context's ID and associate it to
         // this account allow
         if (contextId == 0) {
             contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
@@ -263,9 +267,11 @@ contract MultichainAcl is
         bytes32 delegateAccountHash = _getDelegateAccountHash(chainId, delegationAccounts, contractAddresses);
 
         // Get the context ID from the delegate account context ID mapping
+        // This ID may be 0 (invalid) if this is the first delegateAccount call for this
+        // addCiphertextHash (see right below)
         uint256 contextId = $.delegateAccountContextId[delegateAccountHash];
 
-        // If the context ID is not set, get the active coprocessor context's ID and associate it to
+        // If the context ID is null, get the active coprocessor context's ID and associate it to
         // this account delegation
         if (contextId == 0) {
             contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();

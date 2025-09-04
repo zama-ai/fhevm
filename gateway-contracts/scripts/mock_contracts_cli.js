@@ -437,7 +437,26 @@ function findEmitStatements(statements) {
 
       case "IfStatement":
         // Concat inner Emit statements in the If's statements
-        emitStatements.push(...findEmitStatements(statement.trueBody?.statements || []));
+        // If it's a Block with statements
+        if (statement.trueBody.statements) {
+          emitStatements.push(...findEmitStatements(statement.trueBody.statements));
+
+          // Else, it can be another statement itself (like another IfStatement)
+        } else if (statement.trueBody.type) {
+          emitStatements.push(...findEmitStatements([statement.trueBody]));
+        }
+
+        // Handle the false body (else/else if block)
+        if (statement.falseBody) {
+          // If it's a Block with statements
+          if (statement.falseBody.statements) {
+            emitStatements.push(...findEmitStatements(statement.falseBody.statements));
+
+            // Else, it can be another statement itself (like another IfStatement)
+          } else if (statement.falseBody.type) {
+            emitStatements.push(...findEmitStatements([statement.falseBody]));
+          }
+        }
         break;
 
       case "Block":

@@ -5,8 +5,8 @@ import { ICoprocessorContexts } from "./interfaces/ICoprocessorContexts.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { Pausable } from "./shared/Pausable.sol";
 import { ContextLifecycle } from "./libraries/ContextLifecycle.sol";
+import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { CoprocessorV2, CoprocessorContext, CoprocessorContextTimePeriods } from "./shared/Structs.sol";
 import { ContextStatus } from "./shared/Enums.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
@@ -15,7 +15,12 @@ import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.so
  * @title CoprocessorContexts contract
  * @dev See {ICoprocessorContexts}.
  */
-contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy, Pausable {
+contract CoprocessorContexts is
+    ICoprocessorContexts,
+    Ownable2StepUpgradeable,
+    UUPSUpgradeableEmptyProxy,
+    GatewayConfigChecks
+{
     // The following constants are used for versioning the contract. They are made private
     // in order to force derived contracts to consider a different version. Note that
     // they can still define their own private constants with the same name.
@@ -92,7 +97,6 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         CoprocessorV2[] calldata initialCoprocessors
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
-        __Pausable_init();
 
         // The first coprocessor context is the initial coprocessor context and thus does not have a
         // previous context (indicated by a null context ID)
@@ -106,7 +110,7 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
 
         // It is exceptionally allowed to set the active context directly at initialization. In other
         // cases, the context must go through the pre-activation state first.
-        ContextLifecycle.setActive($.coprocessorContextLifecycle, newCoprocessorContext.contextId);
+        ContextLifecycle.initializeActive($.coprocessorContextLifecycle, newCoprocessorContext.contextId);
 
         emit InitializeCoprocessorContexts(initialFeatureSet, initialCoprocessors);
     }
@@ -167,7 +171,7 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
         uint256 featureSet,
         CoprocessorV2[] calldata coprocessors,
         CoprocessorContextTimePeriods calldata timePeriods
-    ) external virtual onlyOwner {
+    ) external virtual onlyGatewayOwner {
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
         // This will revert if there is no active coprocessor context. Although this should never
         // happen, it acts as a safeguard to prevent any unexpected behaviors. If such scenario
@@ -214,7 +218,7 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
     /**
      * @dev See {ICoprocessorContexts-refreshCoprocessorContextStatuses}.
      */
-    function refreshCoprocessorContextStatuses() external virtual whenNotPaused {
+    function refreshCoprocessorContextStatuses() external virtual {
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
 
         // Check if there is a pre-activation coprocessor context and if it is time to activate it
@@ -236,6 +240,9 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
             emit SuspendCoprocessorContext(activeContextId, deactivatedBlockTimestamp);
 
             // Set the new active coprocessor context
+            // It is mandatory to directly set the new active coprocessor context right after suspending
+            // the current one in order to avoid having a state where no active context is available,
+            // which should never happen.
             ContextLifecycle.setActive($.coprocessorContextLifecycle, preActivationContextId);
             emit ActivateCoprocessorContext(preActivationContextId);
         }
@@ -252,53 +259,64 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
     }
 
     /**
-     * @dev See {ICoprocessorContexts-compromiseCoprocessorContext}.
+     * @dev See {ICoprocessorContexts-forceUpdateContextToStatus}.
+     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
+     * used correctly. See the interface documentation for more details. ⚠️
      */
-    function compromiseCoprocessorContext(
-        uint256 contextId
-    ) external virtual onlyOwner ensureContextInitialized(contextId) {
+    function forceUpdateContextToStatus(
+        uint256 contextId,
+        ContextStatus status
+    ) external virtual onlyGatewayOwner ensureContextInitialized(contextId) {
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
+        if (status == ContextStatus.Active) {
+            ContextLifecycle.setActive($.coprocessorContextLifecycle, contextId);
+            emit ActivateCoprocessorContext(contextId);
 
-        // This will revert if the context is active in order to ensure that the gateway can
-        // always provide an active coprocessor context
-        // If too many parties are compromised for this coprocessor context, then the relevant functions
-        // should be paused instead
-        ContextLifecycle.setCompromised($.coprocessorContextLifecycle, contextId);
-        emit CompromiseCoprocessorContext(contextId);
-    }
-
-    /**
-     * @dev See {ICoprocessorContexts-destroyCoprocessorContext}.
-     */
-    function destroyCoprocessorContext(
-        uint256 contextId
-    ) external virtual onlyOwner ensureContextInitialized(contextId) {
-        CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
-
-        // This will revert if the context is active in order to ensure that the gateway can
-        // always provide an active coprocessor context
-        ContextLifecycle.setDestroyed($.coprocessorContextLifecycle, contextId);
-        emit DestroyCoprocessorContext(contextId);
+            // Set the suspended block timestamp to the current block timestamp (i.e., the status update
+            // is immediate)
+            // ⚠️ This should be used with caution as it will create a state where no context is active,
+            // which should never happen. Please make sure to activate a context right after. ⚠️
+        } else if (status == ContextStatus.Suspended) {
+            ContextLifecycle.setSuspended($.coprocessorContextLifecycle, contextId);
+            emit SuspendCoprocessorContext(contextId, block.timestamp);
+        } else if (status == ContextStatus.Deactivated) {
+            ContextLifecycle.setDeactivated($.coprocessorContextLifecycle, contextId);
+            emit DeactivateCoprocessorContext(contextId);
+        } else if (status == ContextStatus.Compromised) {
+            ContextLifecycle.setCompromised($.coprocessorContextLifecycle, contextId);
+            emit CompromiseCoprocessorContext(contextId);
+        } else if (status == ContextStatus.Destroyed) {
+            ContextLifecycle.setDestroyed($.coprocessorContextLifecycle, contextId);
+            emit DestroyCoprocessorContext(contextId);
+        } else {
+            revert InvalidContextStatusForceUpdate(contextId, status);
+        }
     }
 
     /**
      * @dev See {ICoprocessorContexts-moveSuspendedCoprocessorContextToActive}.
+     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
+     * used correctly. ⚠️
      */
-    function moveSuspendedCoprocessorContextToActive() external virtual onlyOwner {
+    function moveSuspendedCoprocessorContextToActive() external virtual onlyGatewayOwner {
         // This will revert if there is no suspended coprocessor context
         uint256 suspendedContextId = getSuspendedCoprocessorContextId();
 
+        // This will NOT revert if there is no active coprocessor context. Although this should
+        // never happen, we want to avoid blocking the execution of the function in case of emergency
+        // or unexpected behaviors
+        uint256 activeContextId = _getActiveCoprocessorContextId();
+
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
 
-        // Deactivate the (problematic) active coprocessor context
-        // This will not revert if there is no active coprocessor context (something that should never
-        // happen), as this function is only meant to be used in case of emergency.
-        uint256 activeContextId = _getActiveCoprocessorContextId();
-        ContextLifecycle.setDeactivated($.coprocessorContextLifecycle, activeContextId);
-        emit DeactivateCoprocessorContext(activeContextId);
+        // Deactivate the (problematic) active coprocessor context and replace it with the suspended one
+        ContextLifecycle.reActivateSuspendedAndDeactivateActive(
+            $.coprocessorContextLifecycle,
+            suspendedContextId,
+            activeContextId
+        );
 
-        // Set the new active coprocessor context
-        ContextLifecycle.setActive($.coprocessorContextLifecycle, suspendedContextId);
+        emit DeactivateCoprocessorContext(activeContextId);
         emit ActivateCoprocessorContext(suspendedContextId);
     }
 
@@ -499,7 +517,7 @@ contract CoprocessorContexts is ICoprocessorContexts, Ownable2StepUpgradeable, U
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
     // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
     /**
      * @dev Get the ID of the pre-activation coprocessor context, without reverting if it does not exist.

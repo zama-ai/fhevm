@@ -11,7 +11,7 @@ import {
   KmsManagementMock,
   MultichainAclMock,
 } from "../../typechain-types";
-import { toValues } from "../utils";
+import { ContextStatus, toValues } from "../utils";
 
 describe("Mock contracts", function () {
   // Mock contracts
@@ -171,14 +171,32 @@ describe("Mock contracts", function () {
         .withArgs(DefaultUint256);
     });
 
-    it("Should emit compromiseCoprocessorContext event on compromise coprocessor context call", async function () {
-      await expect(coprocessorContextsMock.compromiseCoprocessorContext(DefaultUint256))
+    it("Should emit ActivateCoprocessorContext event on force update context to active", async function () {
+      await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Active))
+        .to.emit(coprocessorContextsMock, "ActivateCoprocessorContext")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit SuspendCoprocessorContext event on force update context to suspended", async function () {
+      await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Suspended))
+        .to.emit(coprocessorContextsMock, "SuspendCoprocessorContext")
+        .withArgs(DefaultUint256, DefaultUint256);
+    });
+
+    it("Should emit DeactivateCoprocessorContext event on force update context to deactivated", async function () {
+      await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Deactivated))
+        .to.emit(coprocessorContextsMock, "DeactivateCoprocessorContext")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit CompromiseCoprocessorContext event on force update context to compromised", async function () {
+      await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Compromised))
         .to.emit(coprocessorContextsMock, "CompromiseCoprocessorContext")
         .withArgs(DefaultUint256);
     });
 
-    it("Should emit destroyCoprocessorContext event on destroy coprocessor context call", async function () {
-      await expect(coprocessorContextsMock.destroyCoprocessorContext(DefaultUint256))
+    it("Should emit DestroyCoprocessorContext event on force update context to destroyed", async function () {
+      await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Destroyed))
         .to.emit(coprocessorContextsMock, "DestroyCoprocessorContext")
         .withArgs(DefaultUint256);
     });

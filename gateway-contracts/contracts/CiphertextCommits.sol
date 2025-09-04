@@ -134,9 +134,11 @@ contract CiphertextCommits is
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
 
         // Get the context ID from the input verification context ID mapping
+        // This ID may be 0 (invalid) if this is the first addCiphertextMaterial call for this
+        // addCiphertextHash (see right below)
         uint256 contextId = $.addCiphertextContextId[addCiphertextHash];
 
-        // If the context ID is not set, get the active coprocessor context's ID and associate it to
+        // If the context ID is null, get the active coprocessor context's ID and associate it to
         // this ciphertext material addition
         if (contextId == 0) {
             contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();

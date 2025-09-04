@@ -25,6 +25,7 @@ interface ICoprocessorContexts {
     error CoprocessorSignerAddressesNotUnique(address signerAddress, uint256 coprocessorIndex, CoprocessorV2[] coprocessors);
     error CoprocessorTxSenderAddressesNotUnique(address txSenderAddress, uint256 coprocessorIndex, CoprocessorV2[] coprocessors);
     error EmptyCoprocessors();
+    error InvalidContextStatusForceUpdate(uint256 contextId, ContextStatus status);
     error NoActiveCoprocessorContext();
     error NoPreActivationCoprocessorContext();
     error NoSuspendedCoprocessorContext();
@@ -46,8 +47,7 @@ interface ICoprocessorContexts {
     function addCoprocessorContext(uint256 featureSet, CoprocessorV2[] memory coprocessors, CoprocessorContextTimePeriods memory timePeriods) external;
     function checkIsCoprocessorSignerFromContext(uint256 contextId, address signerAddress) external view;
     function checkIsCoprocessorTxSenderFromContext(uint256 contextId, address txSenderAddress) external view;
-    function compromiseCoprocessorContext(uint256 contextId) external;
-    function destroyCoprocessorContext(uint256 contextId) external;
+    function forceUpdateContextToStatus(uint256 contextId, ContextStatus status) external;
     function getActiveCoprocessorContext() external view returns (CoprocessorContext memory);
     function getActiveCoprocessorContextId() external view returns (uint256);
     function getCoprocessorActivationBlockTimestampFromContext(uint256 contextId) external view returns (uint256);
@@ -164,25 +164,17 @@ interface ICoprocessorContexts {
   },
   {
     "type": "function",
-    "name": "compromiseCoprocessorContext",
+    "name": "forceUpdateContextToStatus",
     "inputs": [
       {
         "name": "contextId",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "destroyCoprocessorContext",
-    "inputs": [
+      },
       {
-        "name": "contextId",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "status",
+        "type": "uint8",
+        "internalType": "enum ContextStatus"
       }
     ],
     "outputs": [],
@@ -891,6 +883,22 @@ interface ICoprocessorContexts {
     "type": "error",
     "name": "EmptyCoprocessors",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidContextStatusForceUpdate",
+    "inputs": [
+      {
+        "name": "contextId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "status",
+        "type": "uint8",
+        "internalType": "enum ContextStatus"
+      }
+    ]
   },
   {
     "type": "error",
@@ -2354,6 +2362,100 @@ error EmptyCoprocessors();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `InvalidContextStatusForceUpdate(uint256,uint8)` and selector `0xf0bed68f`.
+```solidity
+error InvalidContextStatusForceUpdate(uint256 contextId, ContextStatus status);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct InvalidContextStatusForceUpdate {
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub status: <ContextStatus as alloy::sol_types::SolType>::RustType,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Uint<256>,
+            ContextStatus,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::primitives::aliases::U256,
+            <ContextStatus as alloy::sol_types::SolType>::RustType,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<InvalidContextStatusForceUpdate>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: InvalidContextStatusForceUpdate) -> Self {
+                (value.contextId, value.status)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for InvalidContextStatusForceUpdate {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    contextId: tuple.0,
+                    status: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for InvalidContextStatusForceUpdate {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "InvalidContextStatusForceUpdate(uint256,uint8)";
+            const SELECTOR: [u8; 4] = [240u8, 190u8, 214u8, 143u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                    <ContextStatus as alloy_sol_types::SolType>::tokenize(&self.status),
+                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -4498,20 +4600,22 @@ function checkIsCoprocessorTxSenderFromContext(uint256 contextId, address txSend
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `compromiseCoprocessorContext(uint256)` and selector `0xeec168fb`.
+    /**Function with signature `forceUpdateContextToStatus(uint256,uint8)` and selector `0x3112a555`.
 ```solidity
-function compromiseCoprocessorContext(uint256 contextId) external;
+function forceUpdateContextToStatus(uint256 contextId, ContextStatus status) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct compromiseCoprocessorContextCall {
+    pub struct forceUpdateContextToStatusCall {
         #[allow(missing_docs)]
         pub contextId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub status: <ContextStatus as alloy::sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the [`compromiseCoprocessorContext(uint256)`](compromiseCoprocessorContextCall) function.
+    ///Container type for the return parameters of the [`forceUpdateContextToStatus(uint256,uint8)`](forceUpdateContextToStatusCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct compromiseCoprocessorContextReturn {}
+    pub struct forceUpdateContextToStatusReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -4522,10 +4626,14 @@ function compromiseCoprocessorContext(uint256 contextId) external;
         use alloy::sol_types as alloy_sol_types;
         {
             #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                ContextStatus,
+            );
             #[doc(hidden)]
             type UnderlyingRustTuple<'a> = (
                 alloy::sol_types::private::primitives::aliases::U256,
+                <ContextStatus as alloy::sol_types::SolType>::RustType,
             );
             #[cfg(test)]
             #[allow(dead_code, unreachable_patterns)]
@@ -4540,18 +4648,21 @@ function compromiseCoprocessorContext(uint256 contextId) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<compromiseCoprocessorContextCall>
+            impl ::core::convert::From<forceUpdateContextToStatusCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: compromiseCoprocessorContextCall) -> Self {
-                    (value.contextId,)
+                fn from(value: forceUpdateContextToStatusCall) -> Self {
+                    (value.contextId, value.status)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for compromiseCoprocessorContextCall {
+            for forceUpdateContextToStatusCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { contextId: tuple.0 }
+                    Self {
+                        contextId: tuple.0,
+                        status: tuple.1,
+                    }
                 }
             }
         }
@@ -4573,43 +4684,43 @@ function compromiseCoprocessorContext(uint256 contextId) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<compromiseCoprocessorContextReturn>
+            impl ::core::convert::From<forceUpdateContextToStatusReturn>
             for UnderlyingRustTuple<'_> {
-                fn from(value: compromiseCoprocessorContextReturn) -> Self {
+                fn from(value: forceUpdateContextToStatusReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for compromiseCoprocessorContextReturn {
+            for forceUpdateContextToStatusReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
             }
         }
-        impl compromiseCoprocessorContextReturn {
+        impl forceUpdateContextToStatusReturn {
             fn _tokenize(
                 &self,
-            ) -> <compromiseCoprocessorContextCall as alloy_sol_types::SolCall>::ReturnToken<
+            ) -> <forceUpdateContextToStatusCall as alloy_sol_types::SolCall>::ReturnToken<
                 '_,
             > {
                 ()
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for compromiseCoprocessorContextCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+        impl alloy_sol_types::SolCall for forceUpdateContextToStatusCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>, ContextStatus);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = compromiseCoprocessorContextReturn;
+            type Return = forceUpdateContextToStatusReturn;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "compromiseCoprocessorContext(uint256)";
-            const SELECTOR: [u8; 4] = [238u8, 193u8, 104u8, 251u8];
+            const SIGNATURE: &'static str = "forceUpdateContextToStatus(uint256,uint8)";
+            const SELECTOR: [u8; 4] = [49u8, 18u8, 165u8, 85u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4622,161 +4733,12 @@ function compromiseCoprocessorContext(uint256 contextId) external;
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.contextId),
+                    <ContextStatus as alloy_sol_types::SolType>::tokenize(&self.status),
                 )
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                compromiseCoprocessorContextReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `destroyCoprocessorContext(uint256)` and selector `0xd740e402`.
-```solidity
-function destroyCoprocessorContext(uint256 contextId) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct destroyCoprocessorContextCall {
-        #[allow(missing_docs)]
-        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
-    }
-    ///Container type for the return parameters of the [`destroyCoprocessorContext(uint256)`](destroyCoprocessorContextCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct destroyCoprocessorContextReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<destroyCoprocessorContextCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: destroyCoprocessorContextCall) -> Self {
-                    (value.contextId,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for destroyCoprocessorContextCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { contextId: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<destroyCoprocessorContextReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: destroyCoprocessorContextReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for destroyCoprocessorContextReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl destroyCoprocessorContextReturn {
-            fn _tokenize(
-                &self,
-            ) -> <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for destroyCoprocessorContextCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = destroyCoprocessorContextReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "destroyCoprocessorContext(uint256)";
-            const SELECTOR: [u8; 4] = [215u8, 64u8, 228u8, 2u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                destroyCoprocessorContextReturn::_tokenize(ret)
+                forceUpdateContextToStatusReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -7128,9 +7090,7 @@ function refreshCoprocessorContextStatuses() external;
         #[allow(missing_docs)]
         checkIsCoprocessorTxSenderFromContext(checkIsCoprocessorTxSenderFromContextCall),
         #[allow(missing_docs)]
-        compromiseCoprocessorContext(compromiseCoprocessorContextCall),
-        #[allow(missing_docs)]
-        destroyCoprocessorContext(destroyCoprocessorContextCall),
+        forceUpdateContextToStatus(forceUpdateContextToStatusCall),
         #[allow(missing_docs)]
         getActiveCoprocessorContext(getActiveCoprocessorContextCall),
         #[allow(missing_docs)]
@@ -7182,6 +7142,7 @@ function refreshCoprocessorContextStatuses() external;
             [8u8, 110u8, 78u8, 28u8],
             [13u8, 142u8, 110u8, 44u8],
             [24u8, 183u8, 33u8, 77u8],
+            [49u8, 18u8, 165u8, 85u8],
             [58u8, 81u8, 98u8, 230u8],
             [96u8, 178u8, 84u8, 101u8],
             [107u8, 49u8, 116u8, 229u8],
@@ -7195,8 +7156,6 @@ function refreshCoprocessorContextStatuses() external;
             [169u8, 74u8, 2u8, 173u8],
             [190u8, 145u8, 24u8, 123u8],
             [209u8, 132u8, 29u8, 211u8],
-            [215u8, 64u8, 228u8, 2u8],
-            [238u8, 193u8, 104u8, 251u8],
             [241u8, 146u8, 207u8, 104u8],
             [254u8, 217u8, 113u8, 107u8],
         ];
@@ -7205,7 +7164,7 @@ function refreshCoprocessorContextStatuses() external;
     impl alloy_sol_types::SolInterface for ICoprocessorContextsCalls {
         const NAME: &'static str = "ICoprocessorContextsCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 20usize;
+        const COUNT: usize = 19usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -7218,11 +7177,8 @@ function refreshCoprocessorContextStatuses() external;
                 Self::checkIsCoprocessorTxSenderFromContext(_) => {
                     <checkIsCoprocessorTxSenderFromContextCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::compromiseCoprocessorContext(_) => {
-                    <compromiseCoprocessorContextCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::destroyCoprocessorContext(_) => {
-                    <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::forceUpdateContextToStatus(_) => {
+                    <forceUpdateContextToStatusCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getActiveCoprocessorContext(_) => {
                     <getActiveCoprocessorContextCall as alloy_sol_types::SolCall>::SELECTOR
@@ -7324,6 +7280,17 @@ function refreshCoprocessorContextStatuses() external;
                             )
                     }
                     getCoprocessorTxSendersFromContext
+                },
+                {
+                    fn forceUpdateContextToStatus(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
+                        <forceUpdateContextToStatusCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(ICoprocessorContextsCalls::forceUpdateContextToStatus)
+                    }
+                    forceUpdateContextToStatus
                 },
                 {
                     fn refreshCoprocessorContextStatuses(
@@ -7489,28 +7456,6 @@ function refreshCoprocessorContextStatuses() external;
                     getCoprocessorFromContext
                 },
                 {
-                    fn destroyCoprocessorContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
-                        <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ICoprocessorContextsCalls::destroyCoprocessorContext)
-                    }
-                    destroyCoprocessorContext
-                },
-                {
-                    fn compromiseCoprocessorContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
-                        <compromiseCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ICoprocessorContextsCalls::compromiseCoprocessorContext)
-                    }
-                    compromiseCoprocessorContext
-                },
-                {
                     fn checkIsCoprocessorTxSenderFromContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
@@ -7590,6 +7535,17 @@ function refreshCoprocessorContextStatuses() external;
                             )
                     }
                     getCoprocessorTxSendersFromContext
+                },
+                {
+                    fn forceUpdateContextToStatus(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
+                        <forceUpdateContextToStatusCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(ICoprocessorContextsCalls::forceUpdateContextToStatus)
+                    }
+                    forceUpdateContextToStatus
                 },
                 {
                     fn refreshCoprocessorContextStatuses(
@@ -7755,28 +7711,6 @@ function refreshCoprocessorContextStatuses() external;
                     getCoprocessorFromContext
                 },
                 {
-                    fn destroyCoprocessorContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
-                        <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICoprocessorContextsCalls::destroyCoprocessorContext)
-                    }
-                    destroyCoprocessorContext
-                },
-                {
-                    fn compromiseCoprocessorContext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
-                        <compromiseCoprocessorContextCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICoprocessorContextsCalls::compromiseCoprocessorContext)
-                    }
-                    compromiseCoprocessorContext
-                },
-                {
                     fn checkIsCoprocessorTxSenderFromContext(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
@@ -7829,13 +7763,8 @@ function refreshCoprocessorContextStatuses() external;
                         inner,
                     )
                 }
-                Self::compromiseCoprocessorContext(inner) => {
-                    <compromiseCoprocessorContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::destroyCoprocessorContext(inner) => {
-                    <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::forceUpdateContextToStatus(inner) => {
+                    <forceUpdateContextToStatusCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -7935,14 +7864,8 @@ function refreshCoprocessorContextStatuses() external;
                         out,
                     )
                 }
-                Self::compromiseCoprocessorContext(inner) => {
-                    <compromiseCoprocessorContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::destroyCoprocessorContext(inner) => {
-                    <destroyCoprocessorContextCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::forceUpdateContextToStatus(inner) => {
+                    <forceUpdateContextToStatusCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -8053,6 +7976,8 @@ function refreshCoprocessorContextStatuses() external;
         #[allow(missing_docs)]
         EmptyCoprocessors(EmptyCoprocessors),
         #[allow(missing_docs)]
+        InvalidContextStatusForceUpdate(InvalidContextStatusForceUpdate),
+        #[allow(missing_docs)]
         NoActiveCoprocessorContext(NoActiveCoprocessorContext),
         #[allow(missing_docs)]
         NoPreActivationCoprocessorContext(NoPreActivationCoprocessorContext),
@@ -8090,13 +8015,14 @@ function refreshCoprocessorContextStatuses() external;
             [185u8, 232u8, 97u8, 178u8],
             [195u8, 18u8, 231u8, 62u8],
             [200u8, 38u8, 225u8, 162u8],
+            [240u8, 190u8, 214u8, 143u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for ICoprocessorContextsErrors {
         const NAME: &'static str = "ICoprocessorContextsErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 12usize;
+        const COUNT: usize = 13usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -8111,6 +8037,9 @@ function refreshCoprocessorContextStatuses() external;
                 }
                 Self::EmptyCoprocessors(_) => {
                     <EmptyCoprocessors as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::InvalidContextStatusForceUpdate(_) => {
+                    <InvalidContextStatusForceUpdate as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NoActiveCoprocessorContext(_) => {
                     <NoActiveCoprocessorContext as alloy_sol_types::SolError>::SELECTOR
@@ -8305,6 +8234,19 @@ function refreshCoprocessorContextStatuses() external;
                     }
                     CoprocessorSignerAddressesNotUnique
                 },
+                {
+                    fn InvalidContextStatusForceUpdate(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICoprocessorContextsErrors> {
+                        <InvalidContextStatusForceUpdate as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                ICoprocessorContextsErrors::InvalidContextStatusForceUpdate,
+                            )
+                    }
+                    InvalidContextStatusForceUpdate
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -8475,6 +8417,19 @@ function refreshCoprocessorContextStatuses() external;
                     }
                     CoprocessorSignerAddressesNotUnique
                 },
+                {
+                    fn InvalidContextStatusForceUpdate(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICoprocessorContextsErrors> {
+                        <InvalidContextStatusForceUpdate as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                ICoprocessorContextsErrors::InvalidContextStatusForceUpdate,
+                            )
+                    }
+                    InvalidContextStatusForceUpdate
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -8506,6 +8461,11 @@ function refreshCoprocessorContextStatuses() external;
                 }
                 Self::EmptyCoprocessors(inner) => {
                     <EmptyCoprocessors as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::InvalidContextStatusForceUpdate(inner) => {
+                    <InvalidContextStatusForceUpdate as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -8574,6 +8534,12 @@ function refreshCoprocessorContextStatuses() external;
                 }
                 Self::EmptyCoprocessors(inner) => {
                     <EmptyCoprocessors as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::InvalidContextStatusForceUpdate(inner) => {
+                    <InvalidContextStatusForceUpdate as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -9065,25 +9031,16 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`compromiseCoprocessorContext`] function.
-        pub fn compromiseCoprocessorContext(
+        ///Creates a new call builder for the [`forceUpdateContextToStatus`] function.
+        pub fn forceUpdateContextToStatus(
             &self,
             contextId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, compromiseCoprocessorContextCall, N> {
+            status: <ContextStatus as alloy::sol_types::SolType>::RustType,
+        ) -> alloy_contract::SolCallBuilder<&P, forceUpdateContextToStatusCall, N> {
             self.call_builder(
-                &compromiseCoprocessorContextCall {
+                &forceUpdateContextToStatusCall {
                     contextId,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`destroyCoprocessorContext`] function.
-        pub fn destroyCoprocessorContext(
-            &self,
-            contextId: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, destroyCoprocessorContextCall, N> {
-            self.call_builder(
-                &destroyCoprocessorContextCall {
-                    contextId,
+                    status,
                 },
             )
         }

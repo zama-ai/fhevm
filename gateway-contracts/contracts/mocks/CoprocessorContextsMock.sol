@@ -58,11 +58,17 @@ contract CoprocessorContextsMock {
         emit DeactivateCoprocessorContext(contextId);
     }
 
-    function compromiseCoprocessorContext(uint256 contextId) external {
-        emit CompromiseCoprocessorContext(contextId);
-    }
+    function forceUpdateContextToStatus(uint256 contextId, ContextStatus status) external {
+        uint256 deactivatedBlockTimestamp;
 
-    function destroyCoprocessorContext(uint256 contextId) external {
+        emit ActivateCoprocessorContext(contextId);
+
+        emit SuspendCoprocessorContext(contextId, deactivatedBlockTimestamp);
+
+        emit DeactivateCoprocessorContext(contextId);
+
+        emit CompromiseCoprocessorContext(contextId);
+
         emit DestroyCoprocessorContext(contextId);
     }
 
