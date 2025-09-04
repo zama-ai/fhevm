@@ -198,7 +198,7 @@ contract KMSManagement is
     /**
      * @dev See {IKmsManagement-keygen}.
      */
-    function keygenRequest(ParamsType paramsType) external virtual onlyGatewayOwner {
+    function keygen(ParamsType paramsType) external virtual onlyGatewayOwner {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         // Generate a globally unique prepKeygenId for the key generation preprocessing
