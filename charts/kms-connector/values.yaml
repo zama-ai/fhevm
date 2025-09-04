@@ -31,7 +31,7 @@ kmsConnectorDbMigration:
   annotations:
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration
-    tag: v0.8.0-1
+    tag: v0.8.0
   command:
     - "sqlx"
     - "migrate"
@@ -59,7 +59,7 @@ kmsConnectorGwListener:
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener
-    tag: v0.8.0-1
+    tag: v0.8.0
   replicas: 1
   env: {}
   tracing:
@@ -105,7 +105,7 @@ kmsConnectorKmsWorker:
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker
-    tag: v0.8.0-1
+    tag: v0.8.0
   replicas: 1
   config:
     kmsCoreEndpoints: "http://kms-core:50051"
@@ -153,7 +153,7 @@ kmsConnectorTxSender:
   nameOverride:
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender
-    tag: v0.8.0-1
+    tag: v0.8.0
   replicas: 1
   env:
   wallet:
