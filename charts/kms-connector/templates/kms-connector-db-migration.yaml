@@ -1,0 +1,54 @@
+{{- if .Values.kmsConnectorDbMigration.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-kms-connector-db-migration-{{ .Release.Revision }}
+  labels:
+    app: kms-connector-db-migration
+    app.kubernetes.io/name: {{ .Release.Name }}-kms-connector-db-migration
+  namespace: {{ .Release.Namespace }}
+  {{- with .Values.kmsConnectorDbMigration.annotations }}
+  annotations:
+  {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: kms-connector-db-migration
+        app.kubernetes.io/name: {{ .Release.Name }}-kms-connector-db-migration
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Never
+      {{- if and .Values.kmsConnectorDbMigration.affinity .Values.kmsConnectorDbMigration.affinity.enabled }}
+      affinity:
+{{ toYaml (omit .Values.kmsConnectorDbMigration.affinity "enabled") | indent 8 }}
+      {{- end }}
+      {{- if and .Values.kmsConnectorDbMigration.tolerations .Values.kmsConnectorDbMigration.tolerations.enabled }}
+      tolerations:
+{{ toYaml .Values.kmsConnectorDbMigration.tolerations.items | indent 8 }}
+      {{- end }}
+      {{- if .Values.kmsConnectorDbMigration.serviceAccountName }}
+      serviceAccountName: {{ .Values.kmsConnectorDbMigration.serviceAccountName }}
+      {{- end }}
+      containers:
+      - name: kms-connector-db-migration
+        image: {{ .Values.kmsConnectorDbMigration.image.name }}:{{ .Values.kmsConnectorDbMigration.image.tag }}
+        command:
+          {{- toYaml .Values.kmsConnectorDbMigration.command | nindent 10 }}
+        env:
+{{- toYaml .Values.kmsConnectorDbMigration.env | nindent 12 }}
+        resources:
+          requests:
+            cpu: {{ .Values.kmsConnectorDbMigration.resources.requests.cpu | default "100m" }}
+            memory: {{ .Values.kmsConnectorDbMigration.resources.requests.memory | default "256Mi" }}
+          limits:
+            cpu: {{ .Values.kmsConnectorDbMigration.resources.limits.cpu | default "500m" }}
+            memory: {{ .Values.kmsConnectorDbMigration.resources.limits.memory | default "512Mi" }}
+      volumes:
+        - name: cache-volume
+          emptyDir:
+            sizeLimit: {{ .Values.kmsConnectorDbMigration.storage.size }}
+{{- end -}}

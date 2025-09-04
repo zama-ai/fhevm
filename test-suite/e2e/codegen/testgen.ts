@@ -440,9 +440,9 @@ export function generateSolidityUnitTestContracts(os: OverloadShard): string {
         pragma solidity ^0.8.24;
 
         import "@fhevm/solidity/lib/FHE.sol";
-        import {E2EFHEVMConfig} from "../E2EFHEVMConfigLocal.sol";
+        import {E2ECoprocessorConfig} from "../E2ECoprocessorConfigLocal.sol";
 
-        contract FHEVMTestSuite${os.shardNumber} is E2EFHEVMConfig {
+        contract FHEVMTestSuite${os.shardNumber} is E2ECoprocessorConfig {
           ebool public resEbool;
           euint8 public resEuint8;
           euint16 public resEuint16;

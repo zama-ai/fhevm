@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 
 import "../lib/FHE.sol";
 import "../addresses/DecryptionOracleAddress.sol";
-import "../lib/FHEVMConfig.sol";
+import {CoprocessorSetup} from "../lib/CoprocessorSetup.sol";
 
 contract TestInput {
     ebool xBool;
@@ -17,8 +17,7 @@ contract TestInput {
     address public yAddress;
 
     constructor() {
-        FHE.setCoprocessor(FHEVMConfig.defaultConfig());
-        FHE.setDecryptionOracle(DECRYPTION_ORACLE_ADDRESS);
+        FHE.setCoprocessor(CoprocessorSetup.defaultConfig());
     }
 
     function requestUint64NonTrivial(externalEuint64 inputHandle, bytes calldata inputProof) public {
@@ -28,8 +27,9 @@ contract TestInput {
         FHE.requestDecryption(cts, this.callbackUint64.selector);
     }
 
-    function callbackUint64(uint256 requestID, uint64 decryptedInput, bytes[] memory signatures) public {
-        FHE.checkSignatures(requestID, signatures);
+    function callbackUint64(uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) public {
+        FHE.checkSignatures(requestID, cleartexts, decryptionProof);
+        uint64 decryptedInput = abi.decode(cleartexts, (uint64));
         yUint64 = decryptedInput;
     }
 
@@ -49,14 +49,12 @@ contract TestInput {
         FHE.requestDecryption(cts, this.callbackMixed.selector);
     }
 
-    function callbackMixed(
-        uint256 requestID,
-        bool decryptedBool,
-        uint8 decryptedUint8,
-        address decryptedAddress,
-        bytes[] memory signatures
-    ) public {
-        FHE.checkSignatures(requestID, signatures);
+    function callbackMixed(uint256 requestID, bytes memory cleartexts, bytes memory decryptionProof) public {
+        FHE.checkSignatures(requestID, cleartexts, decryptionProof);
+        (bool decryptedBool, uint8 decryptedUint8, address decryptedAddress) = abi.decode(
+            cleartexts,
+            (bool, uint8, address)
+        );
         yBool = decryptedBool;
         yUint8 = decryptedUint8;
         yAddress = decryptedAddress;

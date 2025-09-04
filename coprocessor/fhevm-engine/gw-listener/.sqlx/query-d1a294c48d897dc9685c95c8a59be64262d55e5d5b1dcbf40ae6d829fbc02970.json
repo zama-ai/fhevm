@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "WITH ins AS (\n                            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data)\n                            VALUES ($1, $2, $3, $4, $5, $6)\n                            ON CONFLICT(zk_proof_id) DO NOTHING\n                        )\n                        SELECT pg_notify($7, '')",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pg_notify",
+        "type_info": "Void"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Text",
+        "Bytea",
+        "Bytea",
+        "Text"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "d1a294c48d897dc9685c95c8a59be64262d55e5d5b1dcbf40ae6d829fbc02970"
+}

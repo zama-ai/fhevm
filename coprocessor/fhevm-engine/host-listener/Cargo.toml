@@ -1,0 +1,42 @@
+[package]
+name = "host-listener"
+version = "0.7.0"
+edition = "2021"
+license.workspace = true
+
+[[bin]]
+path = "src/bin/main.rs"
+name = "host_listener"
+test = false
+bench = false
+
+[dependencies]
+# workspace dependencies
+anyhow = { workspace = true }
+alloy = { workspace = true }
+alloy-primitives = { workspace = true }
+clap = { workspace = true }
+futures-util = { workspace = true }
+lru = { workspace = true }
+rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# local dependencies
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+
+[dev-dependencies]
+alloy = { workspace = true, features = ["node-bindings"] }
+anyhow = { workspace = true }
+serial_test = { workspace = true }
+test-harness = { path = "../test-harness" }
+
+[build-dependencies]
+foundry-compilers = { workspace = true }
+foundry-compilers-artifacts = "0.13"
+semver = { workspace = true }

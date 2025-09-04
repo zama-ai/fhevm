@@ -1,4 +1,4 @@
-FROM cgr.dev/chainguard/glibc-dynamic:latest-dev AS builder
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS builder
 
 ARG RUST_IMAGE_VERSION=1.85.0
 
@@ -51,7 +51,7 @@ ENV RUSTFLAGS="-C target-feature=-crt-static"
 ENV OPENSSL_DIR=/usr
 
 
-FROM cgr.dev/chainguard/glibc-dynamic:latest-dev AS prod
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS prod
 
 # Runtime base
 COPY --from=builder /lib/ /lib/

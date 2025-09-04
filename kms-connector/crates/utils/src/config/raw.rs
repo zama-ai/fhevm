@@ -17,10 +17,6 @@ pub trait DeserializeRawConfig {
 
         // If path is provided, add it as a config source
         if let Some(path) = path {
-            info!(
-                "Loading configuration from file: {}",
-                path.as_ref().display()
-            );
             builder = builder.add_source(
                 File::with_name(path.as_ref().to_str().unwrap()).format(FileFormat::Toml),
             );

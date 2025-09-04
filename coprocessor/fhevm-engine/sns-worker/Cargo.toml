@@ -1,0 +1,62 @@
+[package]
+name = "sns-worker"
+version = "0.7.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+# workspace dependencies
+aws-config = { workspace = true }
+bincode = { workspace = true }
+clap = { workspace = true }
+hex = { workspace = true }
+prometheus = { workspace = true }
+prost = { workspace = true }
+rayon = { workspace = true }
+serde_json = { workspace = true }
+sha3 = { workspace = true }
+thiserror = { workspace = true }
+tfhe = { workspace = true}
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+sqlx = { workspace = true }
+tfhe-versionable = { workspace = true }
+tokio-util = { workspace = true }
+# opentelemetry support
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-semantic-conventions = { workspace = true }
+humantime = { workspace = true }
+bytesize = { workspace = true}
+aws-sdk-s3 = { workspace = true }
+
+# crates.io dependencies
+aligned-vec = "0.6.4"
+num-traits = "0.2.19"
+futures = "0.3.31"
+
+# local dependencies
+fhevm-engine-common = { path = "../fhevm-engine-common" }
+
+[[bin]]
+name = "sns_worker"
+path = "src/bin/sns_worker.rs"
+
+[features]
+test_decrypt_128 = []
+test_s3_use_handle_as_key = []
+
+[dev-dependencies]
+test-harness = { path = "../test-harness" }
+
+
+[dev-dependencies.sns-worker]
+path = "."
+features = ["test_decrypt_128", "test_s3_use_handle_as_key"]
+

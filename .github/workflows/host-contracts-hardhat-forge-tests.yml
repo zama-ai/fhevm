@@ -3,6 +3,8 @@ name: host-contracts-hardhat-forge-tests
 on:
   pull_request:
 
+permissions: {}
+
 jobs:
   check-changes:
     name: host-contracts-hardhat-forge-tests/check-changes

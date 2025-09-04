@@ -10,8 +10,7 @@ on:
     branches:
       - main
 
-permissions:
-  contents: 'read'
+permissions: {}
 
 concurrency:
   group: contract-integrity-checks-${{ github.ref }}
@@ -20,6 +19,8 @@ concurrency:
 jobs:
   check-changes:
     name: gateway-contracts-integrity-checks/check-changes
+    permissions:
+      contents: 'read'
     runs-on: ubuntu-latest
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
@@ -38,6 +39,8 @@ jobs:
     name: gateway-contracts-integrity-checks/contract-integrity-checks (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
+    permissions:
+      contents: 'read'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout project
@@ -54,7 +57,7 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@de808b1eea699e761c404bda44ba8f21aba30b2c # v1.3.1
         with:
-          version: v1.2.3
+          version: v1.3.1
 
       - name: Install dependencies
         working-directory: gateway-contracts

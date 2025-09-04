@@ -37,14 +37,16 @@ pub async fn insert_ciphertext64(
     tenant_id: i32,
     handle: &Vec<u8>,
     ciphertext: &Vec<u8>,
+    ciphertext128: &[u8],
 ) -> anyhow::Result<()> {
     let _ = query!(
-        "INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type) 
-         VALUES ($1, $2, $3, $4, $5)
+        "INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext128, ciphertext_version, ciphertext_type) 
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT DO NOTHING;",
          tenant_id,
         handle,
         ciphertext,
+        ciphertext128,
         0,
         0,
     )
@@ -73,6 +75,31 @@ pub async fn insert_into_pbs_computations(
     Ok(())
 }
 
+pub async fn insert_ciphertext_digest(
+    pool: &PgPool,
+    tenant_id: i32,
+    handle: &[u8; 32],
+    ciphertext: &[u8],
+    ciphertext128: &[u8],
+    txn_limited_retries_count: i32,
+) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+        r#"
+        INSERT INTO ciphertext_digest (tenant_id, handle, ciphertext, ciphertext128, txn_limited_retries_count)
+        VALUES ($1, $2, $3, $4, $5)
+        "#,
+        tenant_id,
+        handle,
+        ciphertext,
+        ciphertext128,
+        txn_limited_retries_count,
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 // Poll database until ciphertext128 of the specified handle is available
 pub async fn wait_for_ciphertext(
     pool: &sqlx::PgPool,
@@ -89,22 +116,30 @@ pub async fn wait_for_ciphertext(
         .fetch_one(pool)
         .await;
 
-        if let Result::Ok(record) = record {
-            if let Some(ciphertext128) = record.ciphertext128 {
-                return anyhow::Ok(ciphertext128);
+        if let Ok(record) = record {
+            if let Some(ciphertext128) = record.ciphertext128.filter(|c| !c.is_empty()) {
+                return Ok(ciphertext128);
             }
         }
 
         println!("wait for ciphertext, retry: {}", retry);
 
         // Wait before retrying
-        sleep(Duration::from_millis(500)).await;
+        sleep(Duration::from_millis(300)).await;
     }
 
     Err(sqlx::Error::RowNotFound.into())
 }
 
-pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::error::Error>> {
+/// Inserts a new tenant into the database with the specified ACL contract address
+///
+/// # Arguments
+/// * `pool` - The database connection pool
+/// * `with_sns_pk` - Enables the importing of SNS sks key which usually is 1.5GB in size
+pub async fn setup_test_user(
+    pool: &sqlx::PgPool,
+    with_sns_pk: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let (sks, cks, pks, pp, sns_pk) = if !cfg!(feature = "gpu") {
         (
             "../fhevm-keys/sks",
@@ -127,7 +162,12 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
     let cks = tokio::fs::read(cks).await.expect("can't read cks key");
     let public_params = tokio::fs::read(pp).await.expect("can't read public params");
 
-    let sns_pk_oid = import_file_into_db(pool, sns_pk).await?;
+    let sns_pk_oid = if with_sns_pk {
+        import_file_into_db(pool, sns_pk).await?
+    } else {
+        Oid::default()
+    };
+
     info!("Uploaded sns_pk with Oid: {:?}", sns_pk_oid);
 
     sqlx::query!(
@@ -159,7 +199,7 @@ pub async fn setup_test_user(pool: &sqlx::PgPool) -> Result<(), Box<dyn std::err
 }
 
 pub async fn insert_random_tenant(pool: &PgPool) -> Result<i32, sqlx::Error> {
-    let chain_id: i32 = rand::rng().random_range(1..10000);
+    let chain_id: i64 = rand::rng().random_range(1..10000);
     let key_id_i32: i32 = rand::rng().random_range(1..10000);
 
     let verifying_contract_address: String = rand::rng()
@@ -204,4 +244,12 @@ pub async fn insert_random_tenant(pool: &PgPool) -> Result<i32, sqlx::Error> {
     .await?;
 
     Ok(row.tenant_id)
+}
+
+pub async fn truncate_tables(db_pool: &sqlx::PgPool, tables: Vec<&str>) -> Result<(), sqlx::Error> {
+    for table in tables {
+        let query = format!("TRUNCATE {}", table);
+        sqlx::query(&query).execute(db_pool).await?;
+    }
+    Ok(())
 }

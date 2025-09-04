@@ -9,38 +9,12 @@ use common::SignerType;
 use rand::{random, Rng};
 use rstest::*;
 use serial_test::serial;
-use sqlx::PgPool;
 use std::time::Duration;
-use test_harness::db_utils::insert_random_tenant;
+use test_harness::db_utils::{insert_ciphertext_digest, insert_random_tenant};
 use tokio::time::sleep;
 use transaction_sender::{
     ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
-
-async fn insert_ciphertext_digest(
-    pool: &PgPool,
-    tenant_id: i32,
-    handle: &[u8; 32],
-    ciphertext: &[u8],
-    ciphertext128: &[u8],
-    txn_limited_retries_count: i32,
-) -> Result<(), sqlx::Error> {
-    sqlx::query!(
-        r#"
-        INSERT INTO ciphertext_digest (tenant_id, handle, ciphertext, ciphertext128, txn_limited_retries_count)
-        VALUES ($1, $2, $3, $4, $5)
-        "#,
-        tenant_id,
-        handle,
-        ciphertext,
-        ciphertext128,
-        txn_limited_retries_count,
-    )
-    .execute(pool)
-    .await?;
-
-    Ok(())
-}
 
 #[rstest]
 #[case::private_key(SignerType::PrivateKey)]
@@ -48,6 +22,8 @@ async fn insert_ciphertext_digest(
 #[tokio::test]
 #[serial(db)]
 async fn add_ciphertext_digests(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+    use test_harness::db_utils::insert_ciphertext_digest;
+
     let env = TestEnvironment::new(signer_type).await?;
     let provider_deploy = ProviderBuilder::new()
         .wallet(env.wallet.clone())

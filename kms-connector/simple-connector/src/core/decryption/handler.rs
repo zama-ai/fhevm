@@ -16,7 +16,7 @@ use crate::{
         config::Config,
         types::fhe_types::{
             abi_encode_plaintexts, extract_fhe_type_from_handle, fhe_type_to_string,
-            format_request_id, log_and_extract_result,
+            log_and_extract_result,
         },
         utils::eip712::{alloy_to_protobuf_domain, verify_user_decryption_eip712},
     },
@@ -57,12 +57,10 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
         client_addr: Option<Address>,
         public_key: Option<Bytes>,
     ) -> Result<()> {
-        let request_id_hex = format_request_id(request_id);
-
         let request_type = if client_addr.is_some() {
-            "user"
+            "User"
         } else {
-            "public"
+            "Public"
         };
 
         // Extract and log FHE types for all ciphertexts
@@ -75,17 +73,39 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
             .collect();
 
         info!(
-            "Processing {} decryption request {} with {} ciphertexts, key_id: {}, FHE types: [{}]",
+            "⚙️ Processing {}DecryptionRequest-{} with {} ciphertexts, key_id: {}, FHE types: [{}]",
             request_type,
-            request_id_hex,
+            request_id.to_string(),
             sns_ciphertext_materials.len(),
             key_id_hex,
             fhe_types.join(", ")
         );
 
+        // Convert request_id to proper 32-byte format for KMS-Core
+        let request_id_bytes = request_id.to_be_bytes::<32>();
         let request_id_obj = RequestId {
-            request_id: request_id_hex.clone(),
+            request_id: hex::encode(request_id_bytes),
         };
+
+        // Validate key_id format according to protobuf spec:
+        // Must be 32-byte/256-bit lowercase hex string without 0x prefix (exactly 64 chars)
+        if key_id_hex.len() != 64 {
+            error!(
+                "CRITICAL: key_id_hex has invalid length {} (expected 64 chars for 32-byte hex). Value: '{}'",
+                key_id_hex.len(),
+                key_id_hex
+            );
+        }
+
+        if key_id_hex
+            .chars()
+            .any(|c| !c.is_ascii_hexdigit() || c.is_ascii_uppercase())
+        {
+            error!(
+                "CRITICAL: key_id_hex contains invalid characters (must be lowercase hex). Value: '{}'",
+                key_id_hex
+            );
+        }
 
         let key_id_obj = RequestId {
             request_id: key_id_hex.clone(),
@@ -131,6 +151,13 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                     })
                     .collect();
 
+                info!(
+                    "Sending PublicDecryptionRequest-{}, key_id={}, domain.chain_id={}",
+                    request_id.to_string(),
+                    key_id_obj.request_id.to_string(),
+                    alloy::primitives::U256::from_be_slice(&domain_msg.chain_id).to_string()
+                );
+
                 let request = Request::new(PublicDecryptionRequest {
                     ciphertexts,
                     key_id: Some(key_id_obj.clone()),
@@ -140,8 +167,8 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
 
                 let response = self.kms_client.request_public_decryption(request).await?;
                 info!(
-                    "[IN] 📡 PublicDecryptionResponse({}) received",
-                    request_id_hex
+                    "[IN] 📡 PublicDecryptionResponse-{} received",
+                    request_id.to_string()
                 );
                 let decryption_response = response.into_inner();
 
@@ -164,7 +191,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
 
                     // Send response back to the Gateway
                     info!(
-                        "Sending public decryption response for request {} with {} plaintexts",
+                        "Sending PublicDecryptionResponse-{} with {} plaintexts",
                         request_id,
                         payload.plaintexts.len()
                     );
@@ -173,7 +200,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                         .await?;
                 } else {
                     error!(
-                        "Received empty payload for public decryption request {}",
+                        "Received empty payload for PublicDecryptionRequest-{}",
                         request_id
                     );
                     return Err(crate::error::Error::Contract(
@@ -192,10 +219,10 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                         let hexed_handle = hex::encode(handle);
                         let fhe_type = extract_fhe_type_from_handle(handle);
                         info!(
-                            "Handle: {}\nRetrieved S3 ciphertext of length: {}, FHE Type: {}",
+                            "UserDecryptionRequest handle: {}, retrieved S3 ciphertext of length: {}, FHE Type: {}",
                             hexed_handle,
                             ciphertext.len(),
-                            fhe_type
+                            fhe_type_to_string(fhe_type)
                         );
                         TypedCiphertext {
                             ciphertext: ciphertext.clone(),
@@ -231,7 +258,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                 let user_decryption_request = UserDecryptionRequest {
                     request_id: Some(request_id_obj.clone()),
                     client_address: client_address_str.clone(),
-                    key_id: Some(key_id_obj.clone()),
+                    key_id: Some(key_id_obj.clone()), // Use key_id_obj wrapped in Some
                     domain: Some(domain_msg),
                     enc_key: public_key
                         .expect("Couldn't parse public_key aka enc_key")
@@ -243,15 +270,9 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
 
                 let request = Request::new(user_decryption_request.clone());
 
-                // Log a more concise version of the request with hex representations
                 info!(
-                    "UserDecryptionRequest constructed with: request_id={}, client_address={}, key_id={}, typed_ciphertexts.len={}, domain.chain_id={}",
-                    request
-                        .get_ref()
-                        .request_id
-                        .as_ref()
-                        .map(|id| id.request_id.to_string())
-                        .unwrap_or_else(|| "unknown".to_string()),
+                    "Sending UserDecryptionRequest-{}, client_address={}, key_id={}, typed_ciphertexts.len={}, domain.chain_id={}",
+                    request_id.to_string(),
                     request.get_ref().client_address,
                     request
                         .get_ref()
@@ -285,7 +306,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                         debug!(
                             "Ciphertext[{}]: fhe_type={}, handle_len={}, ct_len={}",
                             i,
-                            ct.fhe_type,
+                            fhe_type_to_string(ct.fhe_type),
                             ct.external_handle.len(),
                             ct.ciphertext.len()
                         );
@@ -294,8 +315,8 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
 
                 let response = self.kms_client.request_user_decryption(request).await?;
                 info!(
-                    "[IN] 📡 UserDecryptionResponse({}) received",
-                    request_id_hex
+                    "[IN] 📡 UserDecryptionResponse-{} received",
+                    request_id.to_string()
                 );
                 let user_decryption_response = response.into_inner();
 
@@ -322,7 +343,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                     }
 
                     // Send response back to the Gateway
-                    info!("Sending UserDecryptionResponse for request {}", request_id);
+                    info!("Sending UserDecryptionResponse-{}", request_id);
                     self.decryption
                         .send_user_decryption_response(
                             request_id,
@@ -332,7 +353,7 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                         .await?;
                 } else {
                     error!(
-                        "Received empty payload for user decryption request {}",
+                        "Received empty payload for UserDecryptionRequest-{}",
                         request_id
                     );
                     return Err(crate::error::Error::Contract(

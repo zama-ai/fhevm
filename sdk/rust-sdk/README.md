@@ -34,7 +34,7 @@ use std::path::PathBuf;
 
 fn main() -> Result<()> {
     // Initialize SDK
-    let mut sdk = FhevmSdkBuilder::new()
+    let sdk = FhevmSdkBuilder::new()
         .with_keys_directory(PathBuf::from("./keys"))
         .with_gateway_chain_id(43113)
         .with_host_chain_id(11155111)
@@ -56,11 +56,11 @@ fn main() -> Result<()> {
     // Generate EIP-712 signature for user decryption
     let signature_result = sdk
         .eip712_builder()
-        .public_key("2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331")
-        .add_contract("0x7777777777777777777777777777777777777777")?
-        .validity_period(1748252823, 30)
-        .sign_with("7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f")
-        .verify(true)
+        .with_public_key("2000000000000000a554e431f47ef7b1dd1b72a43432b06213a959953ec93785f2c699af9bc6f331")
+        .with_contract("0x7777777777777777777777777777777777777777")?
+        .with_validity_period(1748252823, 30)
+        .with_private_key("7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f")
+        .with_verification(true)
         .generate_and_sign()?; // ← Recommended method
     
     println!("Encrypted {} values", encrypted.handles.len());
@@ -74,10 +74,10 @@ fn main() -> Result<()> {
 Run the minimal examples to understand core functionality:
 
 ```bash
-cargo run --example minimal-sdk-setup
-cargo run --example minimal-users-key-generation  
-cargo run --example minimal-encrypted-input
 cargo run --example minimal-eip712-signing
+cargo run --example minimal-encrypted-input
+cargo run --example minimal-sdk-setup
+cargo run --example minimal-user-keys-generation  
 cargo run --example minimal-user-decryption-request
 cargo run --example minimal-user-decryption-response
 cargo run --example minimal-public-decryption-request
@@ -96,7 +96,7 @@ cargo run --example minimal-public-decryption-response
 | Public Decrypt Request | ✅ | Full builder pattern support |
 | Public Decrypt Response | ✅ | Full builder pattern support with EIP-712 signatures verification |
 | User Decrypt Request | ✅ | With EIP-712 signatures generation |
-| User Decrypt Response | ❌ | Response construction is working but issue using kms client response signature verification |
+| User Decrypt Response | ✅ | Response construction is working, signature verification is fixed |
 | Delegated Decrypt | ❌ | Not yet implemented |
 | **Key Management** | | |
 | Generation/Loading | ✅ | Automatic key management |
@@ -129,17 +129,17 @@ let encrypted = builder.encrypt_and_prove_for(contract_address, user_address)?;
 ```rust
 // Create request
 let calldata = sdk.create_public_decrypt_request_builder()
-    .add_handles_from_bytes(&handles)?
+    .with_handles_from_bytes(&handles)?
     .build_and_generate_calldata()?;
 
 // Process response
 let results = sdk.create_public_decrypt_response_builder()
-    .kms_signers(signers)
-    .threshold(2)
-    .gateway_chain_id(54321)
-    .verifying_contract_address("0x...")
-    .ct_handles(handles)
-    .json_response(&response)
+    .with_kms_signers(signers)
+    .with_threshold(2)
+    .with_gateway_chain_id(54321)
+    .with_verifying_contract_address("0x...")
+    .with_ct_handles(handles)
+    .with_json_response(&response)
     .process()?;
 ```
 
@@ -148,20 +148,20 @@ let results = sdk.create_public_decrypt_response_builder()
 // Generate EIP-712 signature with builder pattern
 let eip712_result = sdk
     .eip712_builder()
-    .public_key(&public_key)
-    .add_contract("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1")?
-    .validity_period(start_timestamp, duration_days)
-    .sign_with(&private_key)
-    .verify(true)
+    .with_public_key(&public_key)
+    .with_contract("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1")?
+    .with_validity_period(start_timestamp, duration_days)
+    .with_private_key(&private_key)
+    .with_verification(true)
     .generate_and_sign()?; // ← Primary recommended method
 
 // Create decrypt request
 let request = sdk.create_user_decrypt_request_builder()
-    .add_handles_from_bytes(&handles, &contracts)?
-    .user_address_from_str("0x...")?
-    .signature_from_hex(&eip712_result.require_signature()?)?
-    .public_key_from_hex(&public_key)?
-    .validity(timestamp, duration)?
+    .with_handles_from_bytes(&handles, &contracts)?
+    .with_user_address_from_str("0x...")?
+    .with_signature_from_hex(&eip712_result.require_signature()?)?
+    .with_public_key_from_hex(&public_key)?
+    .with_validity(timestamp, duration)?
     .build_and_generate_calldata()?;
 ```
 
@@ -175,28 +175,28 @@ let keypair = sdk.generate_keypair()?;
 // Method 1: Just generate hash (for manual signing)
 let hash = sdk
     .eip712_builder()
-    .public_key(&keypair.public_key)
-    .add_contract("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1")?
-    .validity_period(timestamp, 30)
+    .with_public_key(&keypair.public_key)
+    .with_contract("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1")?
+    .with_validity_period(timestamp, 30)
     .generate_hash()?;
 
 // Method 2: Sign without verification (fast)
 let signed_result = sdk
     .eip712_builder()
-    .public_key(&keypair.public_key)
-    .add_contract("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1")?
-    .validity_period(timestamp, 30)
-    .sign_with(&private_key)
+    .with_public_key(&keypair.public_key)
+    .with_contract("0x742d35Cc6634C0532925a3b8D8d8E4C9B4c5D2B1")?
+    .with_validity_period(timestamp, 30)
+    .with_private_key(&private_key)
     .generate_and_sign()?; // ← Recommended for most use cases
 
 // Method 3: Sign with verification (production recommended)
 let verified_result = sdk
     .eip712_builder()
-    .public_key(&keypair.public_key)
-    .add_contracts(&["0x742d...", "0x853d..."])? // Multiple contracts
-    .validity_period(timestamp, 30)
-    .sign_with(&private_key)
-    .verify(true)
+    .with_public_key(&keypair.public_key)
+    .with_contracts(&["0x742d...", "0x853d..."])? // Multiple contracts
+    .with_validity_period(timestamp, 30)
+    .with_private_key(&private_key)
+    .with_verification(true)
     .generate_and_sign()?; // ← Same method, verification enabled
 
 if verified_result.is_verified() {
@@ -208,14 +208,14 @@ if verified_result.is_verified() {
 
 | Method | Description |
 |--------|-------------|
-| `public_key(key)` | Set user's public key for decryption |
-| `add_contract(address)` | Add single contract address (accepts &str or Address) |
-| `add_contracts(addresses)` | Add multiple contract addresses |
-| `validity_period(start, days)` | Set validity period explicitly |
-| `starts_now()` | Set start time to current timestamp |
-| `valid_for_days(days)` | Set duration with automatic start time |
-| `sign_with(private_key)` | Add private key for signing |
-| `verify(bool)` | Enable/disable signature verification |
+| `with_public_key(key)` | Set user's public key for decryption |
+| `with_contract(address)` | Add single contract address (accepts &str or Address) |
+| `with_contracts(addresses)` | Add multiple contract addresses |
+| `with_validity_period(start, days)` | Set validity period explicitly |
+| `with_start_now()` | Set start time to current timestamp |
+| `with_duration_days(days)` | Set duration with automatic start time |
+| `with_private_key(private_key)` | Add private key for signing |
+| `with_verification(bool)` | Enable/disable signature verification |
 | `generate_hash()` | Generate hash only (for external signing) |
 | `generate_and_sign()` | **Recommended**: Generate and sign (respects verification setting) |
 | `build()` | Advanced: Build with full control (same as generate_and_sign) |
@@ -292,22 +292,53 @@ generate_fhe_keyset(Path::new("./keys"))?;
 #### UserDecryptRequestBuilder
 | Method | Description |
 |--------|-------------|
-| `add_handles_from_bytes(handles, contracts)` | Add encrypted handles |
-| `user_address_from_str(address)` | Set user address |
-| `signature_from_hex(signature)` | Set EIP-712 signature |
-| `public_key_from_hex(key)` | Set public key |
-| `validity(timestamp, days)` | Set validity period |
+| `with_handles_from_bytes(handles, contracts)` | Add encrypted handles |
+| `with_user_address_from_str(address)` | Set user address |
+| `with_signature_from_hex(signature)` | Set EIP-712 signature |
+| `with_public_key_from_hex(key)` | Set public key |
+| `with_validity(timestamp, days)` | Set validity period |
 | `build_and_generate_calldata()` | Generate transaction calldata |
 
 #### UserDecryptionResponseBuilder
 | Method | Description |
 |--------|-------------|
-| `kms_signers(signers)` | Set KMS signer addresses |
-| `user_address(address)` | Set user address |
-| `gateway_chain_id(id)` | Set gateway chain ID |
-| `verifying_contract_address(addr)` | Set verifying contract |
-| `json_response(response)` | Set gateway response |
+| `with_kms_signers(signers)` | Set KMS signer addresses |
+| `with_user_address(address)` | Set user address |
+| `with_gateway_chain_id(id)` | Set gateway chain ID |
+| `with_verifying_contract_address(addr)` | Set verifying contract |
+| `with_public_key(key)` | Set user public key |
+| `with_private_key(key)` | Set user private key |
+| `with_handle_contract_pairs(handle_pairs)` | Set handle pairs |
+| `with_verification(bool)` | Set verification |
+| `with_json_response(response)` | Set gateway response |
 | `process()` | Process and decrypt response |
+
+
+### Public Decryption Builders
+
+#### PublicDecryptRequestBuilder
+| Method | Description |
+|--------|-------------|
+| `with_handles_from_bytes(handles)` | Add encrypted handles from byte arrays |
+| `with_handles_from_hex(hex_handles)` | Add encrypted handles from hex strings |
+| `with_handle(handle)` | Add single encrypted handle |
+| `with_handles_cleared()` | Clear all handles (for builder reuse) |
+| `handle_count()` | Get number of handles currently added |
+| `build()` | Create PublicDecryptRequest with validation |
+| `build_and_generate_calldata()` | Generate transaction calldata directly |
+
+#### PublicDecryptionResponseBuilder
+| Method | Description |
+|--------|-------------|
+| `with_kms_signers(signers)` | Set KMS signer addresses |
+| `with_threshold(threshold)` | Set minimum number of required KMS signatures |
+| `with_kms_signer(signer)` | Add single KMS signer (convenience method) |
+| `with_gateway_chain_id(id)` | Set gateway chain ID |
+| `with_verifying_contract_address(addr)` | Set verifying contract address |
+| `with_ct_handles(handles)` | Set ciphertext handles as hex strings |
+| `with_ct_handles_from_fixed_bytes(handles)` | Set handles from FixedBytes array |
+| `with_json_response(response)` | Set gateway response JSON |
+| `process()` | Process and decrypt response with signature verification |
 
 ## Error Handling
 

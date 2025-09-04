@@ -9,6 +9,8 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
+import {HANDLE_VERSION} from "./shared/Constants.sol";
+import {ACLChecks} from "./shared/ACLChecks.sol";
 
 /**
  * @title    InputVerifier.
@@ -16,7 +18,7 @@ import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.
  *           This contract is called by the FHEVMExecutor inside verifyCiphertext function
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
-contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
+contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain, ACLChecks {
     /// @notice         Emitted when a signer is added.
     /// @param signer   The address of the signer that was added.
     event SignerAdded(address indexed signer);
@@ -83,17 +85,16 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         address contractAddress;
         /// @notice The chainId of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
+        bytes extraData;
     }
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string public constant EIP712_INPUT_VERIFICATION_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
 
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 public constant EIP712_INPUT_VERIFICATION_TYPEHASH = keccak256(bytes(EIP712_INPUT_VERIFICATION_TYPE));
-
-    /// @notice Handle version.
-    uint8 public constant HANDLE_VERSION = 0;
 
     /// @notice Name of the contract.
     string private constant CONTRACT_NAME = "InputVerifier";
@@ -105,7 +106,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -117,9 +118,9 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
     }
 
-    /// Constant used for making sure the version number using in the `reinitializer` modifier is
-    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    /// Constant used for making sure the version number used in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant InputVerifierStorageLocation =
@@ -152,6 +153,13 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
             addSigner(initialSigners[i]);
         }
     }
+
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @dev This function removes the transient allowances, which could be useful for
@@ -204,7 +212,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         if (!isProofCached) {
             /// @dev bundleCiphertext is compressedPackedCT+ZKPOK
             ///      inputHandle is keccak256(keccak256(bundleCiphertext)+index)[0:20] + index[21] + chainId[22:29] + type[30] + version[31]
-            ///      and inputProof is len(list_handles) + numSigners + list_handles + signatureCoprocessorSigners (1+1+NUM_HANDLES*32+65*numSigners)
+            ///      and inputProof is numHandles + numSigners + handles + coprocessorSignatures (1 + 1 + 32*numHandles + 65*numSigners + extraData bytes)
 
             uint256 inputProofLen = inputProof.length;
             if (inputProofLen == 0) revert EmptyInputProof();
@@ -213,7 +221,12 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
             /// @dev This checks in particular that the list is non-empty.
             if (numHandles <= indexHandle || indexHandle > 254) revert InvalidIndex();
-            if (inputProofLen != 2 + 32 * numHandles + 65 * numSigners) revert DeserializingInputProofFail();
+
+            /// @dev The extraData is the rest of the inputProof bytes after the numHandles + numSigners + handles + coprocessorSignatures.
+            uint256 extraDataOffset = 2 + 32 * numHandles + 65 * numSigners;
+
+            /// @dev Check that the inputProof is long enough to contain at least the numHandles + numSigners + handles + coprocessorSignatures
+            if (inputProofLen < extraDataOffset) revert DeserializingInputProofFail();
 
             /// @dev Deserialize handle and check that they are from the correct version.
             bytes32[] memory listHandles = new bytes32[](numHandles);
@@ -234,10 +247,21 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
                     signatures[j][i] = inputProof[2 + 32 * numHandles + 65 * j + i];
                 }
             }
+
             CiphertextVerification memory ctVerif;
             ctVerif.ctHandles = listHandles;
             ctVerif.userAddress = context.userAddress;
             ctVerif.contractAddress = context.contractAddress;
+            ctVerif.contractChainId = block.chainid;
+
+            /// @dev Extract the extraData from the inputProof.
+            uint256 extraDataSize = inputProof.length - extraDataOffset;
+            ctVerif.extraData = new bytes(extraDataSize);
+
+            for (uint i = 0; i < extraDataSize; i++) {
+                ctVerif.extraData[i] = inputProof[extraDataOffset + i];
+            }
+
             _verifyEIP712(ctVerif, signatures);
 
             _cacheProof(cacheKey);
@@ -261,7 +285,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
      * @dev             Only the owner can add a signer.
      * @param signer    The address to be added as a signer.
      */
-    function addSigner(address signer) public virtual onlyOwner {
+    function addSigner(address signer) public virtual onlyACLOwner {
         if (signer == address(0)) {
             revert SignerNull();
         }
@@ -282,7 +306,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
      * @dev             Only the owner can remove a signer.
      * @param signer    The signer address to remove.
      */
-    function removeSigner(address signer) public virtual onlyOwner {
+    function removeSigner(address signer) public virtual onlyACLOwner {
         InputVerifierStorage storage $ = _getInputVerifierStorage();
         if (!$.isSigner[signer]) {
             revert NotASigner();
@@ -330,6 +354,14 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     function isSigner(address account) public view virtual returns (bool) {
         InputVerifierStorage storage $ = _getInputVerifierStorage();
         return $.isSigner[account];
+    }
+
+    /**
+     * @notice        Getter for the handle version.
+     * @return uint8 The current version for new handles.
+     */
+    function getHandleVersion() external pure virtual returns (uint8) {
+        return HANDLE_VERSION;
     }
 
     /**
@@ -388,7 +420,8 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
-                        block.chainid
+                        ctVerification.contractChainId,
+                        keccak256(abi.encodePacked(ctVerification.extraData))
                     )
                 )
             );
@@ -515,5 +548,5 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     /**
      * @dev Should revert when msg.sender is not authorized to upgrade the contract.
      */
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
 }

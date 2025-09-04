@@ -50,6 +50,23 @@ pub enum KmsCoreEvent {
     KskgenResponse(KmsManagement::KskgenResponse),
 }
 
+/// Event with block timestamp for coordinated sending
+#[derive(Clone, Debug)]
+pub struct TimestampedEvent {
+    pub event: KmsCoreEvent,
+    pub block_timestamp: u64, // Unix timestamp in seconds
+}
+
+impl KmsCoreEvent {
+    /// Wrap event with block timestamp for coordinated sending
+    pub fn with_timestamp(self, block_timestamp: u64) -> TimestampedEvent {
+        TimestampedEvent {
+            event: self,
+            block_timestamp,
+        }
+    }
+}
+
 /// Adapter for handling Gateway events
 #[derive(Debug)]
 pub struct EventsAdapter<P> {
@@ -161,7 +178,11 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
                             for task in &tasks {
                                 task.abort();
                             }
-                            return error!("Task {} failed: {}", idx, e);
+                            error!("Task {} failed: {}", idx, e);
+                            if &e.to_string() == "backend connection task has stopped" {
+                                std::process::exit(1); // Crash if Gateway connection is lost
+                            }
+                            return;
                         }
                         Err(e) => {
                             // Abort other tasks

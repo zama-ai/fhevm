@@ -20,10 +20,10 @@ describe('InputVerifier', function () {
     if (process.env.HARDHAT_PARALLEL !== '1') {
       // to avoid messing up other tests if used on the real node, in parallel testing
 
-      const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+      const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
       const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
       const inputVerifier = await this.inputVerifierFactory.attach(origIVAdd);
-      expect(await inputVerifier.getVersion()).to.equal('InputVerifier v0.1.0');
+      expect(await inputVerifier.getVersion()).to.equal('InputVerifier v0.2.0');
 
       const addressSigner = process.env['COPROCESSOR_SIGNER_ADDRESS_1']!;
       const tx = await inputVerifier.connect(deployer).addSigner(addressSigner);
@@ -120,7 +120,7 @@ describe('InputVerifier', function () {
     if (process.env.HARDHAT_PARALLEL !== '1') {
       // to avoid messing up other tests if used on the real node, in parallel testing
 
-      const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+      const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
       const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
       const inputVerifier = await this.inputVerifierFactory.attach(origIVAdd);
       expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(1);
@@ -183,18 +183,18 @@ describe('InputVerifier', function () {
   });
 
   it('cannot add/remove signers if not the owner', async function () {
-    const origInputAdd = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+    const origInputAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
     const inputVerifier = await this.inputVerifierFactory.attach(origInputAdd);
     const randomAccount = this.signers.carol;
 
     await expect(inputVerifier.connect(randomAccount).addSigner(randomAccount)).to.be.revertedWithCustomError(
       inputVerifier,
-      'OwnableUnauthorizedAccount',
+      'NotHostOwner',
     );
 
     await expect(inputVerifier.connect(randomAccount).removeSigner(randomAccount)).to.be.revertedWithCustomError(
       inputVerifier,
-      'OwnableUnauthorizedAccount',
+      'NotHostOwner',
     );
   });
 });

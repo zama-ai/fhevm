@@ -1,9 +1,7 @@
-import { HardhatUpgrades } from '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
 import { Wallet } from 'ethers';
-import fs from 'fs';
 import { task, types } from 'hardhat/config';
-import { HardhatRuntimeEnvironment, RunTaskFunction, TaskArguments } from 'hardhat/types';
+import { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
 import { getRequiredEnvVar } from './utils/loadVariables';
 
@@ -137,13 +135,10 @@ task('task:upgradeACL')
 
     await checkImplementationArtifacts('ACL', currentImplementation, newImplementation, hre);
 
-    let proxyAddress: string;
     if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.acl'));
-      proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
-    } else {
-      proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
+    const proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
 
     const pauserAddress = getRequiredEnvVar('PAUSER_ADDRESS');
 
@@ -181,13 +176,10 @@ task('task:upgradeFHEVMExecutor')
 
     await checkImplementationArtifacts('FHEVMExecutor', currentImplementation, newImplementation, hre);
 
-    let proxyAddress: string;
     if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.exec'));
-      proxyAddress = parsedEnv.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
-    } else {
-      proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
+    const proxyAddress = getRequiredEnvVar('FHEVM_EXECUTOR_CONTRACT_ADDRESS');
 
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
@@ -221,13 +213,10 @@ task('task:upgradeKMSVerifier')
 
     await checkImplementationArtifacts('KMSVerifier', currentImplementation, newImplementation, hre);
 
-    let proxyAddress: string;
     if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier'));
-      proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
-    } else {
-      proxyAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
+    const proxyAddress = getRequiredEnvVar('KMS_VERIFIER_CONTRACT_ADDRESS');
 
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
@@ -261,13 +250,10 @@ task('task:upgradeInputVerifier')
 
     await checkImplementationArtifacts('InputVerifier', currentImplementation, newImplementation, hre);
 
-    let proxyAddress: string;
     if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.inputverifier'));
-      proxyAddress = parsedEnv.INPUT_VERIFIER_CONTRACT_ADDRESS;
-    } else {
-      proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
+    const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
 
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
@@ -301,13 +287,10 @@ task('task:upgradeHCULimit')
 
     await checkImplementationArtifacts('HCULimit', currentImplementation, newImplementation, hre);
 
-    let proxyAddress: string;
     if (useInternalProxyAddress) {
-      const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.hculimit'));
-      proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
-    } else {
-      proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
+      dotenv.config({ path: 'addresses/.env.host', override: true });
     }
+    const proxyAddress = getRequiredEnvVar('HCU_LIMIT_CONTRACT_ADDRESS');
 
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });

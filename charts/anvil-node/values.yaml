@@ -5,16 +5,16 @@ image:
   tag: stable
 
 network:
-  blockTime: 0.1
-  host: 0.0.0.0
-  chainId: 12345
-  accounts: 15
-  mnemonic: "adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer"
+  blockTime: "0.5"
+  host: "0.0.0.0"
+  chainId: "12345"
+  accounts: "10"
+  mnemonic: ""
 
 port: 8545
 
 storage:
-  size: 5Gi
+  size: 1Gi
 
 resources:
   requests:
@@ -23,3 +23,25 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
+
+# Uncomment to use a specific node selector
+# nodeSelector:
+#   karpenter.sh/nodepool: zws-pool
+
+# Uncomment to add tolerations
+# tolerations:
+#   - key: "karpenter.sh/nodepool"
+#     operator: "Equal"
+#     value: "zws-pool"
+#     effect: "NoSchedule"
+
+# Uncomment to add affinity rules
+# affinity:
+#   nodeAffinity:
+#     requiredDuringSchedulingIgnoredDuringExecution:
+#       nodeSelectorTerms:
+#       - matchExpressions:
+#         - key: karpenter.sh/nodepool
+#           operator: In
+#           values:
+#           - zws-pool

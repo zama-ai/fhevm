@@ -131,7 +131,7 @@ Solidity support (pick one only):
 - [Solidity by Juan Blanco](https://marketplace.visualstudio.com/items?itemName=JuanBlanco.solidity) — ID:`juanblanco.solidity`
 - [Solidity by Nomic Foundation](https://marketplace.visualstudio.com/items?itemName=NomicFoundation.hardhat-solidity) — ID:`nomicfoundation.hardhat-solidity`
 
-### Rest set the Hardhat project
+### Reset the Hardhat project
 
 If you'd like to start from a clean slate, you can reset your FHEVM Hardhat project by removing all example code and generated files.
 

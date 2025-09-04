@@ -8,6 +8,8 @@ on:
     branches:
       - main
 
+permissions: {}
+
 concurrency:
   group: ci-hardhat-tests-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -53,3 +55,7 @@ jobs:
       - name: Run hardhat tests
         working-directory: gateway-contracts
         run: make test
+
+      - name: Run coverage
+        working-directory: gateway-contracts
+        run: make coverage

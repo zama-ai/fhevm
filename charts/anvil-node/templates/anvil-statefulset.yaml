@@ -13,6 +13,18 @@ spec:
       labels:
         app: {{ .Release.Name }}-anvil-node
     spec:
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: anvil-node
           image: {{ .Values.image.name }}:{{ .Values.image.tag }}

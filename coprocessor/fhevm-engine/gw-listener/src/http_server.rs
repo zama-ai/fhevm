@@ -68,7 +68,7 @@ impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
             .with_state(self.listener.clone());
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
-        info!("Starting HTTP server on {}", addr);
+        info!(address = %addr, "Starting HTTP server");
 
         // Create a shutdown future that owns the token
         let cancel_token = self.cancel_token.clone();
@@ -81,7 +81,7 @@ impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
             axum::serve(listener, app.into_make_service()).with_graceful_shutdown(shutdown);
 
         if let Err(err) = server.await {
-            error!("HTTP server error: {}", err);
+            error!(error = %err, "HTTP server error");
             return Err(anyhow::anyhow!("HTTP server error: {}", err));
         }
 

@@ -1,5 +1,6 @@
 pub mod config;
 pub mod http_server;
+mod metrics;
 mod nonce_managed_provider;
 mod ops;
 pub mod overprovision_gas_limit;
@@ -85,8 +86,10 @@ pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
             Ok(provider) => provider,
             Err(e) => {
                 error!(
-                    "Failed to connect to Gateway at {}: {}, retrying in {:?}",
-                    ws_url, e, retry_interval
+                    ws_url = %ws_url,
+                    error = %e,
+                    retry_interval = ?retry_interval,
+                    "Failed to connect to Gateway, retrying"
                 );
                 tokio::time::sleep(retry_interval).await;
                 continue;
@@ -100,8 +103,10 @@ pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
             }
             Err(e) => {
                 error!(
-                    "Failed to get chain ID from Gateway at {}: {}, retrying in {:?}",
-                    ws_url, e, retry_interval
+                    ws_url = %ws_url,
+                    error = %e,
+                    retry_interval = ?retry_interval,
+                    "Failed to get chain ID from Gateway, retrying"
                 );
                 tokio::time::sleep(retry_interval).await;
             }

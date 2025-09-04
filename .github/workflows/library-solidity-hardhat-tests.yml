@@ -3,6 +3,8 @@ name: library-solidity-hardhat-tests
 on:
   pull_request:
 
+permissions: {}
+
 jobs:
   check-changes:
     name: library-solidity-hardhat-tests/check-changes
@@ -22,8 +24,9 @@ jobs:
         with:
           filters: |
             library-solidity:
-              - .github/workflows/library-solidity-npm-tests.yml
+              - .github/workflows/library-solidity-hardhat-tests.yml
               - library-solidity/**
+              - host-contracts/**
   build:
     name: library-solidity-hardhat-tests/build (bpr)
     needs: check-changes
@@ -44,6 +47,6 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - run: cp ./library-solidity/.env.example ./library-solidity/.env
-      - run: npm --prefix ./library-solidity ci --include=optional
+      - run: npm ci --include=optional
       - name: "Run JS/TS tests"
         run: npm --prefix ./library-solidity run test:mock

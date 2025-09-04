@@ -5,12 +5,6 @@ inputs:
   cuda-version:
     description: Version of Cuda to use
     required: true
-  gcc-version:
-    description: Version of GCC to use
-    required: true
-  cmake-version:
-    description: Version of cmake to use
-    default: 3.29.6
   github-instance:
     description: Instance is hosted on GitHub
     default: 'false'
@@ -32,31 +26,14 @@ runs:
     - name: Install CUDA
       if: inputs.github-instance == 'true'
       shell: bash
+      env:
+        CUDA_VERSION: ${{ inputs.cuda-version }}
       run: |
-        TOOLKIT_VERSION="$(echo ${{ inputs.cuda-version }} | sed 's/\(.*\)\.\(.*\)/\1-\2/')"
+        TOOLKIT_VERSION="$(echo ${CUDA_VERSION} | sed 's/\(.*\)\.\(.*\)/\1-\2/')"
         wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb
         sudo dpkg -i cuda-keyring_1.1-1_all.deb
         sudo apt update
         sudo apt -y install cuda-toolkit-${TOOLKIT_VERSION}
-
-    - name: Export CUDA variables
-      shell: bash
-      run: |
-        CUDA_PATH=/usr/local/cuda-${{ inputs.cuda-version }}
-        echo "CUDA_PATH=$CUDA_PATH" >> "${GITHUB_ENV}"
-        echo "PATH=$PATH:$CUDA_PATH/bin" >> "${GITHUB_PATH}"
-        echo "LD_LIBRARY_PATH=$CUDA_PATH/lib64:$LD_LIBRARY_PATH" >> "${GITHUB_ENV}"
-        echo "CUDA_MODULE_LOADER=EAGER" >> "${GITHUB_ENV}"
-
-    # Specify the correct host compilers
-    - name: Export gcc and g++ variables
-      shell: bash
-      run: |
-        {
-          echo "CC=/usr/bin/gcc-${{ inputs.gcc-version }}";
-          echo "CXX=/usr/bin/g++-${{ inputs.gcc-version }}";
-          echo "CUDAHOSTCXX=/usr/bin/g++-${{ inputs.gcc-version }}";
-        } >> "${GITHUB_ENV}"
 
     - name: Check device is detected
       shell: bash

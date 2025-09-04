@@ -1,4 +1,4 @@
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
 use alloy::{
     network::Ethereum,
@@ -68,17 +68,6 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> NonceManagedProv
     }
 
     pub fn inner(&self) -> &P {
-        &self.provider
-    }
-}
-
-impl<P> Deref for NonceManagedProvider<P>
-where
-    P: alloy::providers::Provider<Ethereum> + Clone + 'static,
-{
-    type Target = P;
-
-    fn deref(&self) -> &Self::Target {
         &self.provider
     }
 }

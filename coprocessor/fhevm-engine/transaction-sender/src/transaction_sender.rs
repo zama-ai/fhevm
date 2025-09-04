@@ -77,8 +77,13 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
     }
 
     pub async fn run(&self) -> anyhow::Result<()> {
-        info!( "Starting Transaction Sender with: {:?}, InputVerification: {}, CiphertextCommits: {}, MultichainAcl: {}",
-            self.conf, self.input_verification_address, self.ciphertext_commits_address, self.multichain_acl_address);
+        info!(
+            conf = ?self.conf,
+            input_verification_address = %self.input_verification_address,
+            ciphertext_commits_address = %self.ciphertext_commits_address,
+            multichain_acl_address = %self.multichain_acl_address,
+            "Starting Transaction Sender"
+        );
 
         let mut join_set = JoinSet::new();
 
@@ -88,22 +93,25 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             let db_polling_interval_secs = self.conf.db_polling_interval_secs;
             join_set.spawn({
                 let sender = self.clone();
-                info!( "Spawning operation loop {}", op_channel);
+                info!(channel = op_channel, "Spawning operation loop");
                 async move {
                     let mut sleep_duration = sender.conf.error_sleep_initial_secs as u64;
                     let mut listener = PgListener::connect_with(&sender.db_pool).await?;
                     listener.listen(&op_channel).await?;
                     loop {
                         if token.is_cancelled() {
-                            info!( "Operation {} stopping", op_channel);
+                            info!(channel = op_channel, "Operation stopping");
                             break;
                         }
 
                         match op.execute().await {
                             Err(e) => {
                                 error!(
-                                    "Operation {} error: {}. Retrying after {} seconds",
-                                    op_channel, e, sleep_duration);
+                                    channel = op_channel,
+                                    error = %e,
+                                    sleep_duration = sleep_duration,
+                                    "Operation error, retrying after sleep"
+                                );
                                 sender.sleep_with_backoff(&mut sleep_duration).await;
                                 continue;
                             }
@@ -120,32 +128,41 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                                 let notification = listener.try_recv().fuse();
                                 tokio::select! {
                                     _ = token.cancelled() => {
-                                        info!( "Operation {} stopping", op_channel);
+                                        info!(channel = op_channel, "Operation stopping");
                                         break;
                                     }
                                     n = notification => {
                                         match n {
                                             Ok(Some(_)) => {
                                                 debug!(
-                                                    "Operation {} received notification, rechecking for work", op_channel);
+                                                    channel = op_channel,
+                                                    "Received notification, rechecking for work"
+                                                );
                                             },
                                             Ok(None) => {
                                                 debug!(
-                                                    "Operation {} received empty notification, sleeping for {} seconds",
-                                                    op_channel, sleep_duration);
+                                                    channel = op_channel,
+                                                    sleep_duration = sleep_duration,
+                                                    "Received empty notification, sleeping"
+                                                );
                                                 sender.sleep_with_backoff(&mut sleep_duration).await;
                                             }
                                             Err(e) => {
                                                 error!(
-                                                    "Operation {} notification error: {}, sleeping for {} seconds",
-                                                    op_channel, e, sleep_duration);
+                                                    channel = op_channel,
+                                                    error = %e,
+                                                    sleep_duration = sleep_duration,
+                                                    "Notification error, sleeping"
+                                                );
                                                 sender.sleep_with_backoff(&mut sleep_duration).await;
                                             }
                                         }
                                     }
                                     _ = tokio::time::sleep(Duration::from_secs(db_polling_interval_secs.into())) => {
                                         debug!(
-                                            "Operation {} timeout reached, rechecking for work", op_channel);
+                                            channel = op_channel,
+                                            "Timeout reached, rechecking for work"
+                                        );
                                     }
                                 }
                             }

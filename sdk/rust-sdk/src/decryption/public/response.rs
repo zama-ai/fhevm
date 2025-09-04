@@ -27,16 +27,16 @@ use tracing::{debug, info};
 /// # fn example() -> Result<DecryptedResults, FhevmError> {
 /// // Process a public decryption response from the gateway
 /// let results = process_public_decryption_response()
-///     .kms_signers(vec![
+///     .with_kms_signers(vec![
 ///         "0xF7a67027C94d141e5ebC7AeEE03FDF5fa8E0580C".to_string()
 ///     ])
-///     .threshold(1)
-///     .gateway_chain_id(54321)
-///     .verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
-///     .ct_handles(vec![
+///     .with_threshold(1)
+///     .with_gateway_chain_id(54321)
+///     .with_verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
+///     .with_ct_handles(vec![
 ///         "0xf94fd2cead277005511f811497a185db1b81598f2aff00000000000030390400".to_string()
 ///     ])
-///     .json_response(r#"{
+///     .with_json_response(r#"{
 ///         "response": [{
 ///             "decrypted_value": "00000000000000000000000000000000000000000000000000000000000000f20000000000000000000000000000000000000000000000000000000000000060",
 ///             "signatures": ["1a320a79075486da76ba3e9009200d298e35b7b4f0cd17364830a6793d74609a5862922b0e4af639e34de9dc40a5a48b390fb5c27fa8523d402e9a167c3444d61c"]
@@ -70,19 +70,19 @@ impl PublicDecryptionResponseBuilder {
     }
 
     /// Set KMS signers (required)
-    pub fn kms_signers(mut self, signers: Vec<String>) -> Self {
+    pub fn with_kms_signers(mut self, signers: Vec<String>) -> Self {
         self.config.kms_signers = Some(signers);
         self
     }
 
     /// Set threshold for KMS signers (required)
-    pub fn threshold(mut self, threshold: usize) -> Self {
+    pub fn with_threshold(mut self, threshold: usize) -> Self {
         self.config.threshold = Some(threshold);
         self
     }
 
     /// Add a single KMS signer (convenience method)
-    pub fn add_kms_signer(mut self, signer: String) -> Self {
+    pub fn with_kms_signer(mut self, signer: String) -> Self {
         self.config
             .kms_signers
             .get_or_insert_with(Vec::new)
@@ -91,25 +91,25 @@ impl PublicDecryptionResponseBuilder {
     }
 
     /// Set gateway chain ID (required)
-    pub fn gateway_chain_id(mut self, chain_id: u64) -> Self {
+    pub fn with_gateway_chain_id(mut self, chain_id: u64) -> Self {
         self.config.gateway_chain_id = Some(chain_id);
         self
     }
 
     /// Set verifying contract address (required)
-    pub fn verifying_contract_address(mut self, address: &str) -> Self {
+    pub fn with_verifying_contract_address(mut self, address: &str) -> Self {
         self.config.verifying_contract_address = Some(address.to_string());
         self
     }
 
     /// Set ciphertext handles as hex strings (required)
-    pub fn ct_handles(mut self, handles: Vec<String>) -> Self {
+    pub fn with_ct_handles(mut self, handles: Vec<String>) -> Self {
         self.config.ct_handles = Some(handles);
         self
     }
 
     /// Set ciphertext handles from FixedBytes
-    pub fn ct_handles_from_fixed_bytes(mut self, handles: &[FixedBytes<32>]) -> Self {
+    pub fn with_ct_handles_from_fixed_bytes(mut self, handles: &[FixedBytes<32>]) -> Self {
         let hex_handles = handles
             .iter()
             .map(|h| format!("0x{}", hex::encode(h)))
@@ -119,7 +119,7 @@ impl PublicDecryptionResponseBuilder {
     }
 
     /// Set JSON response (required)
-    pub fn json_response(mut self, response: &str) -> Self {
+    pub fn with_json_response(mut self, response: &str) -> Self {
         self.config.json_response = Some(response.to_string());
         self
     }
@@ -228,7 +228,7 @@ impl ResponseProcessor {
 
 fn parse_json_response(json_response: &str) -> Result<serde_json::Value> {
     serde_json::from_str(json_response)
-        .map_err(|e| FhevmError::DecryptionError(format!("JSON parse error: {}", e)))
+        .map_err(|e| FhevmError::DecryptionError(format!("JSON parse error: {e}")))
 }
 
 fn extract_response_data(response_data: &serde_json::Value) -> Result<(String, Vec<String>)> {
@@ -265,7 +265,7 @@ fn extract_response_data(response_data: &serde_json::Value) -> Result<(String, V
         .map(|(i, v)| {
             v.as_str()
                 .ok_or_else(|| {
-                    FhevmError::DecryptionError(format!("Signature {} is not a string", i))
+                    FhevmError::DecryptionError(format!("Signature {i} is not a string"))
                 })
                 .map(|s| s.to_string())
         })
@@ -281,7 +281,7 @@ fn extract_response_data(response_data: &serde_json::Value) -> Result<(String, V
     let decrypted_result = if decrypted_value.starts_with("0x") {
         decrypted_value.to_string()
     } else {
-        format!("0x{}", decrypted_value)
+        format!("0x{decrypted_value}")
     };
 
     debug!(
@@ -294,7 +294,7 @@ fn extract_response_data(response_data: &serde_json::Value) -> Result<(String, V
 }
 
 fn validate_config(config: &ResponseConfig) -> Result<()> {
-    if config.kms_signers.as_ref().map_or(true, |s| s.is_empty()) {
+    if config.kms_signers.as_ref().is_none_or(|s| s.is_empty()) {
         return Err(FhevmError::InvalidParams(
             "❌ Missing KMS signers: Call `kms_signers()` or `add_kms_signer()` first.\n\
              💡 Tip: Add at least one KMS signer address that participates in the decryption."
@@ -326,7 +326,7 @@ fn validate_config(config: &ResponseConfig) -> Result<()> {
         ));
     }
 
-    if config.ct_handles.as_ref().map_or(true, |h| h.is_empty()) {
+    if config.ct_handles.as_ref().is_none_or(|h| h.is_empty()) {
         return Err(FhevmError::InvalidParams(
             "❌ Missing ciphertext handles: Call `ct_handles()` or `ct_handles_from_fixed_bytes()` first.\n\
              💡 Tip: Add the handles you want to decrypt publicly."
@@ -385,12 +385,12 @@ mod tests {
         let handle = "0xf94fd2cead277005511f811497a185db1b81598f2aff00000000000030390400"; // uint32
 
         let builder = PublicDecryptionResponseBuilder::new()
-            .kms_signers(kms_signers)
-            .threshold(1)
-            .gateway_chain_id(54321)
-            .verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
-            .ct_handles(vec![handle.to_string()])
-            .json_response(&json_response);
+            .with_kms_signers(kms_signers)
+            .with_threshold(1)
+            .with_gateway_chain_id(54321)
+            .with_verifying_contract_address("0xc9bAE822fE6793e3B456144AdB776D5A318CB71e")
+            .with_ct_handles(vec![handle.to_string()])
+            .with_json_response(&json_response);
 
         let result = builder.process();
 
@@ -412,12 +412,12 @@ mod tests {
         .to_string();
 
         let builder = PublicDecryptionResponseBuilder::new()
-            .kms_signers(vec!["0xtest".to_string()])
-            .threshold(1)
-            .gateway_chain_id(1)
-            .verifying_contract_address("0x1234567890123456789012345678901234567890")
-            .ct_handles(vec!["0xhandle".to_string()])
-            .json_response(&json_response);
+            .with_kms_signers(vec!["0xtest".to_string()])
+            .with_threshold(1)
+            .with_gateway_chain_id(1)
+            .with_verifying_contract_address("0x1234567890123456789012345678901234567890")
+            .with_ct_handles(vec!["0xhandle".to_string()])
+            .with_json_response(&json_response);
 
         let result = builder.process();
         assert!(result.is_err());
