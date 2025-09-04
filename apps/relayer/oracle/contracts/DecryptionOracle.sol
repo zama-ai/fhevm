@@ -5,8 +5,18 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "./libraries/FheTypesBitSizes.sol";
+import "./libraries/HandleOps.sol";
 
 contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
+    /**
+     * @notice Error indicating that the total bit size of the decryption request exceeds
+     * the maximum allowed.
+     * @param maxBitSize The maximum allowed bit size.
+     * @param totalBitSize The total bit size of the decryption request.
+     */
+    error MaxDecryptionRequestBitSizeExceeded(uint256 maxBitSize, uint256 totalBitSize);
+
     /// @notice Name of the contract
     string private constant CONTRACT_NAME = "DecryptionOracle";
 
@@ -18,6 +28,9 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
+
+    /// @notice Max number of decryption bits (users or public).
+    uint256 internal constant MAX_DECRYPTION_REQUEST_BITS = 2048;
 
     /**
      * @dev Event emitted during each decryption request. The off-chain gateway service is listening to it.
@@ -82,9 +95,35 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
         bytes32[] calldata ctsHandles,
         bytes4 callbackSelector
     ) external virtual {
+        _checkCtHandlesConformancePublic(ctsHandles);
         DecryptionOracleStorage storage $ = _getDecryptionOracleStorage();
         emit DecryptionRequest($.counter, requestID, ctsHandles, msg.sender, callbackSelector);
         $.counter++;
+    }
+
+    /// @notice Check the handles' conformance for public decryption requests.
+    /// @dev Checks include:
+    /// @dev - Total bit size for each handle
+    /// @dev - FHE type validity for each handle
+    /// @dev - Handles are allowed for public decryption
+    /// @param ctHandles The list of ciphertext handles
+    function _checkCtHandlesConformancePublic(bytes32[] memory ctHandles) internal view virtual {
+        uint256 totalBitSize = 0;
+        for (uint256 i = 0; i < ctHandles.length; i++) {
+            bytes32 ctHandle = ctHandles[i];
+
+            /// @dev Extract the FHE type from the ciphertext handle
+            FheType fheType = HandleOps.extractFheType(ctHandle);
+
+            /// @dev Add the bit size of the FHE type to the total bit size
+            /// @dev This reverts if the FHE type is invalid or not supported.
+            totalBitSize += FHETypeBitSizes.getBitSize(fheType);
+        }
+
+        /// @dev Revert if the total bit size exceeds the maximum allowed.
+        if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
+            revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
+        }
     }
 
     /**

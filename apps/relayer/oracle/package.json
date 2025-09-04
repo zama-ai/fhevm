@@ -27,6 +27,7 @@
     "hardhat-ignore-warnings": "^0.2.11",
     "@openzeppelin/contracts-upgradeable": "5.1.0",
     "@openzeppelin/foundry-upgrades": "^0.3.6",
-    "@openzeppelin/hardhat-upgrades": "3.5.0"
+    "@openzeppelin/hardhat-upgrades": "3.5.0",
+    "@fhevm/solidity": "^0.8.0"
   }
 }

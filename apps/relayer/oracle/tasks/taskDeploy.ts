@@ -21,7 +21,7 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
   return UUPSEmptyAddress;
 }
 
-task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+task('task:deployEmptyUUPSProxies').setAction(async function(taskArguments: TaskArguments, { ethers, upgrades, run }) {
   // Compile the EmptyUUPS proxy contract
   await run('compile:specific', { contract: 'contracts/emptyProxy' });
 
@@ -37,7 +37,7 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
   });
 });
 
-task('task:deployDecryptionOracle').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+task('task:deployDecryptionOracle').setAction(async function(taskArguments: TaskArguments, { ethers, upgrades, run }) {
   await run('compile:specific', { contract: 'contracts' });
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
@@ -54,7 +54,7 @@ task('task:deployDecryptionOracle').setAction(async function (taskArguments: Tas
 
 task('task:setDecryptionOracleAddress')
   .addParam('address', 'The address of the contract')
-  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+  .setAction(async function(taskArguments: TaskArguments, { ethers }) {
     const envFilePath = path.join(__dirname, '../addresses/.env.decryptionoracle');
     const content = `DECRYPTION_ORACLE_ADDRESS=${taskArguments.address}`;
     try {
@@ -82,7 +82,7 @@ address constant DECRYPTION_ORACLE_ADDRESS = ${taskArguments.address};
     }
   });
 
-task('task:deployAllContracts').setAction(async function (_, hre) {
+task('task:deployAllContracts').setAction(async function(_, hre) {
   if (process.env.SOLIDITY_COVERAGE !== 'true') {
     await hre.run('clean');
   }
