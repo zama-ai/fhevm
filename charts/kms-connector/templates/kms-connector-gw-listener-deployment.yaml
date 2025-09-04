@@ -31,14 +31,12 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Always
-      {{- if and .Values.kmsConnectorGwListener.affinity .Values.kmsConnectorGwListener.affinity.enabled }}
+      nodeSelector:
+        {{- toYaml .Values.kmsConnectorGwListener.nodeSelector | nindent 8 }}
       affinity:
-{{ toYaml (omit .Values.kmsConnectorGwListener.affinity "enabled") | indent 8 }}
-      {{- end }}
-      {{- if and .Values.kmsConnectorGwListener.tolerations .Values.kmsConnectorGwListener.tolerations.enabled }}
+        {{- toYaml .Values.kmsConnectorGwListener.affinity | nindent 8 }}
       tolerations:
-{{ toYaml .Values.kmsConnectorGwListener.tolerations.items | indent 8 }}
-      {{- end }}
+        {{- toYaml .Values.kmsConnectorGwListener.tolerations | nindent 8 }}
       {{- if .Values.kmsConnectorGwListener.serviceAccountName }}
       serviceAccountName: {{ .Values.kmsConnectorGwListener.serviceAccountName }}
       {{- end }}

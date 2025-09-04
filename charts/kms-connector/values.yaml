@@ -60,11 +60,9 @@ kmsConnectorDbMigration:
     limits:
       cpu: 500m
       memory: 512Mi
+  nodeSelector:
   affinity:
-    enabled: false
   tolerations:
-    enabled: false
-    items: []
 
 kmsConnectorGwListener:
   enabled: true
@@ -118,11 +116,9 @@ kmsConnectorGwListener:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
+  nodeSelector:
   affinity:
-    enabled: false
   tolerations:
-    enabled: false
-    items: []
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -196,11 +192,9 @@ kmsConnectorKmsWorker:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
+  nodeSelector:
   affinity:
-    enabled: false
   tolerations:
-    enabled: false
-    items: []
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -276,11 +270,9 @@ kmsConnectorTxSender:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
+  nodeSelector:
   affinity:
-    enabled: false
   tolerations:
-    enabled: false
-    items: []
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
