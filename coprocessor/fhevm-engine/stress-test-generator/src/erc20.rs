@@ -4,6 +4,7 @@ use host_listener::database::tfhe_event_propagate::{
     Database as ListenerDatabase, Handle, ScalarByte,
 };
 use sqlx::Postgres;
+use tracing::{error, info};
 
 use crate::utils::{
     allow_handle, next_random_handle, tfhe_event, ERCTransferVariant, FheType, DEF_TYPE,
@@ -24,12 +25,24 @@ pub async fn erc20_transaction(
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     let transaction_id = transaction_id.unwrap_or(next_random_handle(DEF_TYPE));
+
+    info!("ERC20 Transaction: tx_id: {:?}", transaction_id);
+
     let source =
         generate_random_handle_amount_if_none(source, contract_address, user_address).await?;
+
+    info!(source = %source, "ERC20 Transfer");
+
     let destination =
         generate_random_handle_amount_if_none(destination, contract_address, user_address).await?;
+
+    info!(destination = %destination, "ERC20 Transfer");
+
     let amount =
         generate_random_handle_amount_if_none(amount, contract_address, user_address).await?;
+
+    info!("ERC20 Transfer: {} -> {}: {}", source, destination, amount);
+
     let has_enough_funds = next_random_handle(FheType::FheBool);
     let log = alloy::rpc::types::Log {
         inner: tfhe_event(TfheContractEvents::FheGe(TfheContract::FheGe {
@@ -227,7 +240,7 @@ pub async fn erc20_transaction(
             .await?;
         }
         ERCTransferVariant::NA => {
-            panic!("ERC should have a variant");
+            error!("ERC should have a variant");
         }
     }
     Ok((new_source, new_destination))

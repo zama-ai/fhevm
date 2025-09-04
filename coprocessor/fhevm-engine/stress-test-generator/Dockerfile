@@ -41,6 +41,6 @@ COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/stress_generator /usr/local/bin/stress_generator
 USER fhevm:fhevm
 
-CMD ["/usr/local/bin/stress_generator", "--run-server", "--listen-address", "0.0.0.0:3030"]
+CMD ["/usr/local/bin/stress_generator"]
 
 FROM prod AS dev
