@@ -57,11 +57,11 @@ spec:
             {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.kmsConnectorTxSender.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.kmsConnectorTxSender.resources.requests.memory | default "256Mi" }}
+              cpu: {{ .Values.kmsConnectorTxSender.resources.requests.cpu }}
+              memory: {{ .Values.kmsConnectorTxSender.resources.requests.memory }}
             limits:
-              cpu: {{ .Values.kmsConnectorTxSender.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.kmsConnectorTxSender.resources.limits.memory | default "512Mi" }}
+              cpu: {{ .Values.kmsConnectorTxSender.resources.limits.cpu }}
+              memory: {{ .Values.kmsConnectorTxSender.resources.limits.memory }}
           {{- if and .Values.kmsConnectorTxSender.probes .Values.kmsConnectorTxSender.probes.liveness.enabled }}
           livenessProbe:
 {{ toYaml (omit .Values.kmsConnectorTxSender.probes.liveness "enabled") | nindent 12 }}

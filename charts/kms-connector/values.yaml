@@ -51,6 +51,7 @@ kmsConnectorDbMigration:
     - name: DATABASE_URL
       value: "postgresql://postgres:postgres@fhevm-db:5432/kms-connector"
   serviceAccountName:
+  # Size of the non-persistent volume.
   storage:
     size: 2Gi
   resources:

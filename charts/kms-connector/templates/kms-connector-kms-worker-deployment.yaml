@@ -57,11 +57,11 @@ spec:
             {{- end }}
           resources:
             requests:
-              cpu: {{ .Values.kmsConnectorKmsWorker.resources.requests.cpu | default "100m" }}
-              memory: {{ .Values.kmsConnectorKmsWorker.resources.requests.memory | default "256Mi" }}
+              cpu: {{ .Values.kmsConnectorKmsWorker.resources.requests.cpu }}
+              memory: {{ .Values.kmsConnectorKmsWorker.resources.requests.memory }}
             limits:
-              cpu: {{ .Values.kmsConnectorKmsWorker.resources.limits.cpu | default "500m" }}
-              memory: {{ .Values.kmsConnectorKmsWorker.resources.limits.memory | default "512Mi" }}
+              cpu: {{ .Values.kmsConnectorKmsWorker.resources.limits.cpu }}
+              memory: {{ .Values.kmsConnectorKmsWorker.resources.limits.memory }}
           {{- if and .Values.kmsConnectorKmsWorker.probes .Values.kmsConnectorKmsWorker.probes.liveness.enabled }}
           livenessProbe:
 {{ toYaml (omit .Values.kmsConnectorKmsWorker.probes.liveness "enabled") | nindent 12 }}

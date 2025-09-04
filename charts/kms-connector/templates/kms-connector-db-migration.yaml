@@ -42,11 +42,11 @@ spec:
 {{- toYaml .Values.kmsConnectorDbMigration.env | nindent 12 }}
         resources:
           requests:
-            cpu: {{ .Values.kmsConnectorDbMigration.resources.requests.cpu | default "100m" }}
-            memory: {{ .Values.kmsConnectorDbMigration.resources.requests.memory | default "256Mi" }}
+            cpu: {{ .Values.kmsConnectorDbMigration.resources.requests.cpu }}
+            memory: {{ .Values.kmsConnectorDbMigration.resources.requests.memory }}
           limits:
-            cpu: {{ .Values.kmsConnectorDbMigration.resources.limits.cpu | default "500m" }}
-            memory: {{ .Values.kmsConnectorDbMigration.resources.limits.memory | default "512Mi" }}
+            cpu: {{ .Values.kmsConnectorDbMigration.resources.limits.cpu }}
+            memory: {{ .Values.kmsConnectorDbMigration.resources.limits.memory }}
       volumes:
         - name: cache-volume
           emptyDir:
