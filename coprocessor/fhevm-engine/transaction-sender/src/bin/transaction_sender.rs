@@ -122,9 +122,6 @@ struct Conf {
 
     #[arg(long, default_value = "120", value_parser = clap::value_parser!(u32).range(100..))]
     gas_limit_overprovision_percent: u32,
-
-    #[arg(long, default_value = "16s", value_parser = parse_duration)]
-    graceful_shutdown_timeout: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -183,10 +180,6 @@ async fn main() -> anyhow::Result<()> {
     let cancel_token = CancellationToken::new();
 
     let provider = loop {
-        if cancel_token.is_cancelled() {
-            info!("Cancellation requested before provider was created on startup, exiting");
-            return Ok(());
-        }
         match ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet.clone())
@@ -241,7 +234,6 @@ async fn main() -> anyhow::Result<()> {
         http_server_port: conf.http_server_port,
         health_check_timeout: conf.health_check_timeout,
         gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
-        graceful_shutdown_timeout: conf.graceful_shutdown_timeout,
     };
 
     let transaction_sender = std::sync::Arc::new(
@@ -272,11 +264,20 @@ async fn main() -> anyhow::Result<()> {
         "Transaction sender and HTTP server starting"
     );
 
-    // Run both services concurrently. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
-    tokio::spawn(async move { transaction_sender.run().await }).await??;
-    tokio::spawn(async move { http_server.start().await }).await??;
+    // Run both services concurrently
+    let (sender_result, http_result) = tokio::join!(transaction_sender.run(), http_server.start());
+
+    // Check results
+    if let Err(e) = sender_result {
+        error!(error = %e, "Transaction sender error");
+        return Err(e);
+    }
+
+    if let Err(e) = http_result {
+        error!(error = %e, "HTTP server error");
+        return Err(e);
+    }
 
     info!("Transaction sender and HTTP server stopped gracefully");
-
     Ok(())
 }

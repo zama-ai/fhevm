@@ -2,7 +2,7 @@ use alloy::{network::Ethereum, primitives::Address, providers::Provider};
 use futures_util::FutureExt;
 use sqlx::{postgres::PgListener, Pool, Postgres};
 use std::{sync::Arc, time::Duration};
-use tokio::{task::JoinSet, time::timeout};
+use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info};
 
@@ -19,7 +19,6 @@ pub struct TransactionSender<P: Provider<Ethereum> + Clone + 'static> {
     ciphertext_commits_address: Address,
     multichain_acl_address: Address,
     db_pool: Pool<Postgres>,
-    provider: NonceManagedProvider<P>,
 }
 
 impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
@@ -74,7 +73,6 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             ciphertext_commits_address,
             multichain_acl_address,
             db_pool,
-            provider,
         })
     }
 
@@ -175,16 +173,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
             });
         }
 
-        self.cancel_token.cancelled().await;
-        info!("Cancellation requested, waiting for operations to stop");
-        // Make sure we don't wait indefinitely.
-        timeout(self.conf.graceful_shutdown_timeout, async {
-            while let Some(res) = join_set.join_next().await {
-                res??;
-            }
-            Ok::<(), anyhow::Error>(())
-        })
-        .await??;
+        while let Some(res) = join_set.join_next().await {
+            res??;
+        }
         Ok(())
     }
 
@@ -212,24 +203,27 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                 error_details.push(format!("Database query error: {}", e));
             }
         }
-
-        // Check blockchain connection by getting the last block number.
-        // The provider internal retry may last a long time, so we set a timeout.
-        match tokio::time::timeout(
-            self.conf.health_check_timeout,
-            self.provider.get_block_number(),
-        )
-        .await
-        {
-            Ok(Ok(_)) => {
-                blockchain_connected = true;
+        // Check blockchain connection for at least one operation
+        if let Some(op) = self.operations.first() {
+            // The provider internal retry may last a long time, so we set a timeout
+            match tokio::time::timeout(
+                self.conf.health_check_timeout,
+                op.check_provider_connection(),
+            )
+            .await
+            {
+                Ok(Ok(_)) => {
+                    blockchain_connected = true;
+                }
+                Ok(Err(e)) => {
+                    error_details.push(format!("Blockchain connection error: {}", e));
+                }
+                Err(_) => {
+                    error_details.push("Blockchain connection timeout".to_string());
+                }
             }
-            Ok(Err(e)) => {
-                error_details.push(format!("Blockchain connection error: {}", e));
-            }
-            Err(_) => {
-                error_details.push("Blockchain connection timeout".to_string());
-            }
+        } else {
+            error_details.push("No operations configured".to_string());
         }
 
         // Determine overall health status
