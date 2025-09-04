@@ -99,14 +99,14 @@ kmsConnectorGwListener:
       memory: 512Mi
   probes:
     liveness:
-      enabled: false
+      enabled: true
       httpGet:
         path: /liveness
         port: monitoring
       initialDelaySeconds: 10
       periodSeconds: 10
     readiness:
-      enabled: false
+      enabled: true
       httpGet:
         path: /healthz
         port: monitoring
@@ -175,14 +175,14 @@ kmsConnectorKmsWorker:
       memory: 512Mi
   probes:
     liveness:
-      enabled: false
+      enabled: true
       httpGet:
         path: /liveness
         port: monitoring
       initialDelaySeconds: 10
       periodSeconds: 10
     readiness:
-      enabled: false
+      enabled: true
       httpGet:
         path: /healthz
         port: monitoring
@@ -253,14 +253,14 @@ kmsConnectorTxSender:
       memory: 512Mi
   probes:
     liveness:
-      enabled: false
+      enabled: true
       httpGet:
         path: /liveness
         port: monitoring
       initialDelaySeconds: 10
       periodSeconds: 10
     readiness:
-      enabled: false
+      enabled: true
       httpGet:
         path: /healthz
         port: monitoring
