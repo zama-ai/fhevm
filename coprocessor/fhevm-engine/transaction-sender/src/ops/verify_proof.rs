@@ -366,8 +366,4 @@ where
         }
         Ok(maybe_has_more_work)
     }
-
-    fn provider(&self) -> &P {
-        self.provider.inner()
-    }
 }

@@ -119,10 +119,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                     current_unlimited_retries_count,
                 )
                 .await?;
-                bail!(
-                    "Transaction sending failed with unlimited retry error: {}",
-                    e
-                );
+                bail!(e);
             }
             Err(e) => {
                 ALLOW_HANDLE_FAIL_COUNTER.inc();
@@ -138,7 +135,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                     current_limited_retries_count,
                 )
                 .await?;
-                bail!("Transaction sending failed with error: {}", e);
+                bail!(e);
             }
         };
 
@@ -485,9 +482,5 @@ where
         }
 
         Ok(maybe_has_more_work)
-    }
-
-    fn provider(&self) -> &P {
-        self.provider.inner()
     }
 }
