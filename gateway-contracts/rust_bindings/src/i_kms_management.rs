@@ -32,7 +32,7 @@ interface IKmsManagement {
     function getKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
     function getKeyParamsType(uint256 keyId) external view returns (ParamsType);
     function getVersion() external pure returns (string memory);
-    function keygenRequest(ParamsType paramsType) external;
+    function keygen(ParamsType paramsType) external;
     function keygenResponse(uint256 keyId, KeyDigest[] memory keyDigests, bytes memory signature) external;
     function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) external;
 }
@@ -240,7 +240,7 @@ interface IKmsManagement {
   },
   {
     "type": "function",
-    "name": "keygenRequest",
+    "name": "keygen",
     "inputs": [
       {
         "name": "paramsType",
@@ -3668,20 +3668,20 @@ function getVersion() external pure returns (string memory);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `keygenRequest(uint8)` and selector `0x87438048`.
+    /**Function with signature `keygen(uint8)` and selector `0xcaa367db`.
 ```solidity
-function keygenRequest(ParamsType paramsType) external;
+function keygen(ParamsType paramsType) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct keygenRequestCall {
+    pub struct keygenCall {
         #[allow(missing_docs)]
         pub paramsType: <ParamsType as alloy::sol_types::SolType>::RustType,
     }
-    ///Container type for the return parameters of the [`keygenRequest(uint8)`](keygenRequestCall) function.
+    ///Container type for the return parameters of the [`keygen(uint8)`](keygenCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct keygenRequestReturn {}
+    pub struct keygenReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3710,14 +3710,14 @@ function keygenRequest(ParamsType paramsType) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<keygenRequestCall> for UnderlyingRustTuple<'_> {
-                fn from(value: keygenRequestCall) -> Self {
+            impl ::core::convert::From<keygenCall> for UnderlyingRustTuple<'_> {
+                fn from(value: keygenCall) -> Self {
                     (value.paramsType,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for keygenRequestCall {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for keygenCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { paramsType: tuple.0 }
                 }
@@ -3741,39 +3741,39 @@ function keygenRequest(ParamsType paramsType) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<keygenRequestReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: keygenRequestReturn) -> Self {
+            impl ::core::convert::From<keygenReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: keygenReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for keygenRequestReturn {
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for keygenReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
             }
         }
-        impl keygenRequestReturn {
+        impl keygenReturn {
             fn _tokenize(
                 &self,
-            ) -> <keygenRequestCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
+            ) -> <keygenCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
                 ()
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for keygenRequestCall {
+        impl alloy_sol_types::SolCall for keygenCall {
             type Parameters<'a> = (ParamsType,);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = keygenRequestReturn;
+            type Return = keygenReturn;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "keygenRequest(uint8)";
-            const SELECTOR: [u8; 4] = [135u8, 67u8, 128u8, 72u8];
+            const SIGNATURE: &'static str = "keygen(uint8)";
+            const SELECTOR: [u8; 4] = [202u8, 163u8, 103u8, 219u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -3786,7 +3786,7 @@ function keygenRequest(ParamsType paramsType) external;
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                keygenRequestReturn::_tokenize(ret)
+                keygenReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -4168,7 +4168,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
         #[allow(missing_docs)]
         getVersion(getVersionCall),
         #[allow(missing_docs)]
-        keygenRequest(keygenRequestCall),
+        keygen(keygenCall),
         #[allow(missing_docs)]
         keygenResponse(keygenResponseCall),
         #[allow(missing_docs)]
@@ -4191,10 +4191,10 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
             [70u8, 16u8, 255u8, 232u8],
             [88u8, 154u8, 219u8, 14u8],
             [98u8, 151u8, 135u8, 135u8],
-            [135u8, 67u8, 128u8, 72u8],
             [147u8, 102u8, 8u8, 174u8],
             [186u8, 255u8, 33u8, 30u8],
             [197u8, 91u8, 135u8, 36u8],
+            [202u8, 163u8, 103u8, 219u8],
             [213u8, 47u8, 16u8, 235u8],
         ];
     }
@@ -4236,9 +4236,7 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::keygenRequest(_) => {
-                    <keygenRequestCall as alloy_sol_types::SolCall>::SELECTOR
-                }
+                Self::keygen(_) => <keygenCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::keygenResponse(_) => {
                     <keygenResponseCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -4353,17 +4351,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     crsgenResponse
                 },
                 {
-                    fn keygenRequest(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKmsManagementCalls> {
-                        <keygenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IKmsManagementCalls::keygenRequest)
-                    }
-                    keygenRequest
-                },
-                {
                     fn getKeyMaterials(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKmsManagementCalls> {
@@ -4395,6 +4382,15 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                             .map(IKmsManagementCalls::getCrsMaterials)
                     }
                     getCrsMaterials
+                },
+                {
+                    fn keygen(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKmsManagementCalls> {
+                        <keygenCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(IKmsManagementCalls::keygen)
+                    }
+                    keygen
                 },
                 {
                     fn getActiveKeyId(
@@ -4516,17 +4512,6 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                     crsgenResponse
                 },
                 {
-                    fn keygenRequest(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IKmsManagementCalls> {
-                        <keygenRequestCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IKmsManagementCalls::keygenRequest)
-                    }
-                    keygenRequest
-                },
-                {
                     fn getKeyMaterials(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IKmsManagementCalls> {
@@ -4558,6 +4543,17 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                             .map(IKmsManagementCalls::getCrsMaterials)
                     }
                     getCrsMaterials
+                },
+                {
+                    fn keygen(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IKmsManagementCalls> {
+                        <keygenCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IKmsManagementCalls::keygen)
+                    }
+                    keygen
                 },
                 {
                     fn getActiveKeyId(
@@ -4632,10 +4628,8 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
-                Self::keygenRequest(inner) => {
-                    <keygenRequestCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
+                Self::keygen(inner) => {
+                    <keygenCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
                 Self::keygenResponse(inner) => {
                     <keygenResponseCall as alloy_sol_types::SolCall>::abi_encoded_size(
@@ -4712,11 +4706,8 @@ function prepKeygenResponse(uint256 prepKeygenId, bytes memory signature) extern
                         out,
                     )
                 }
-                Self::keygenRequest(inner) => {
-                    <keygenRequestCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
+                Self::keygen(inner) => {
+                    <keygenCall as alloy_sol_types::SolCall>::abi_encode_raw(inner, out)
                 }
                 Self::keygenResponse(inner) => {
                     <keygenResponseCall as alloy_sol_types::SolCall>::abi_encode_raw(
@@ -5410,12 +5401,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
             self.call_builder(&getVersionCall)
         }
-        ///Creates a new call builder for the [`keygenRequest`] function.
-        pub fn keygenRequest(
+        ///Creates a new call builder for the [`keygen`] function.
+        pub fn keygen(
             &self,
             paramsType: <ParamsType as alloy::sol_types::SolType>::RustType,
-        ) -> alloy_contract::SolCallBuilder<&P, keygenRequestCall, N> {
-            self.call_builder(&keygenRequestCall { paramsType })
+        ) -> alloy_contract::SolCallBuilder<&P, keygenCall, N> {
+            self.call_builder(&keygenCall { paramsType })
         }
         ///Creates a new call builder for the [`keygenResponse`] function.
         pub fn keygenResponse(

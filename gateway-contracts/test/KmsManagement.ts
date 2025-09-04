@@ -33,7 +33,7 @@ async function generateKey(
 ) {
   // Start a keygen with test parameters
   // This first triggers a preprocessing keygen request
-  const txRequestPrepKeygen = await kmsManagement.connect(owner).keygenRequest(ParamsTypeEnum.Test);
+  const txRequestPrepKeygen = await kmsManagement.connect(owner).keygen(ParamsTypeEnum.Test);
 
   // Get the prepKeygenId from the event in the transaction receipt
   const receiptPrepKeygen = await txRequestPrepKeygen.wait();
@@ -208,7 +208,7 @@ describe("KmsManagement", function () {
       const { gatewayConfig, kmsManagement } = await loadFixture(loadTestVariablesFixture);
 
       // Check that only the owner can trigger a keygen request.
-      await expect(kmsManagement.connect(fakeOwner).keygenRequest(ParamsTypeEnum.Default))
+      await expect(kmsManagement.connect(fakeOwner).keygen(ParamsTypeEnum.Default))
         .to.be.revertedWithCustomError(kmsManagement, "NotGatewayOwner")
         .withArgs(fakeOwner.address);
 
@@ -231,7 +231,7 @@ describe("KmsManagement", function () {
       const kmsManagementAddress = await kmsManagement.getAddress();
 
       // Trigger a keygen request.
-      const txRequest = await kmsManagement.connect(owner).keygenRequest(paramsType);
+      const txRequest = await kmsManagement.connect(owner).keygen(paramsType);
 
       // Check for the PrepKeygenRequest event.
       const prepKeygenId = getPrepKeygenId(1);

@@ -110,7 +110,7 @@ interface IKmsManagement {
      * @notice Trigger an FHE key generation.
      * @param paramsType The type of FHE parameters to use.
      */
-    function keygenRequest(ParamsType paramsType) external;
+    function keygen(ParamsType paramsType) external;
 
     /**
      * @notice Handle the response of a preprocessing keygen request.
