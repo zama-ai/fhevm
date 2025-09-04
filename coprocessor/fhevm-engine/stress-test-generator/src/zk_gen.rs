@@ -3,8 +3,10 @@ use host_listener::database::tfhe_event_propagate::Handle;
 use rand::Rng;
 use std::collections::HashMap;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
+use tracing::{error, info};
 
 const SIZE: usize = 92;
 
@@ -18,6 +20,9 @@ lazy_static::lazy_static! {
 
 
     pub static ref CONTRACT_INPUTS: ContractInputs = RwLock::new(HashMap::new());
+
+    pub static ref KEYS: RwLock<Option<(tfhe::CompactPublicKey, Arc<tfhe::zk::CompactPkeCrs>)>> = RwLock::new(None);
+
 }
 
 #[derive(Debug, Clone)]
@@ -87,10 +92,11 @@ async fn wait_for_verification_and_handle(
         match result.verified {
             Some(verified) => {
                 if !verified {
-                    panic!("ZK verification failed")
+                    error!(zk_proof_id, "ZK verification failed")
                 }
                 let Some(handle) = result.handles else {
-                    panic!("No handle generated")
+                    error!(zk_proof_id, "No handle generated");
+                    return Err(sqlx::Error::RowNotFound);
                 };
                 assert!(handle.len() % 32 == 0);
                 return Ok(handle
@@ -101,7 +107,11 @@ async fn wait_for_verification_and_handle(
             None => tokio::time::sleep(Duration::from_millis(100)).await,
         }
     }
-    panic!("Couldn't verify the ZK");
+    error!(
+        zk_proof_id,
+        max_retries, "Couldn't verify the ZK, timeout reached"
+    );
+    Err(sqlx::Error::RowNotFound)
 }
 
 pub async fn generate_random_handle_amount_if_none(
@@ -149,7 +159,10 @@ pub async fn generate_random_handle_vec(
     let zk_pok = fhevm_engine_common::utils::safe_serialize(&the_list);
     let zk_id = ZK_PROOF_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     insert_proof(&pool, zk_id, &zk_pok, &zk_data).await?;
+
+    info!(zk_id, count, "waiting for verification...");
     let handles = wait_for_verification_and_handle(&pool, zk_id, 5000).await?;
+    info!(handles = ?handles.iter().map(hex::encode), count = handles.len(), "received handles");
 
     Ok(handles)
 }
@@ -165,22 +178,32 @@ pub async fn get_inputs_vector(
     if in_type == Inputs::NewInputs {
         return Ok(vec![None; 16]);
     }
-    if let Some(contract_inputs) = CONTRACT_INPUTS
+
+    let contract_inputs = CONTRACT_INPUTS
         .read()
         .await
         .get(&(contract_address.to_owned(), user_address.to_owned()))
-    {
+        .cloned();
+
+    if let Some(contract_inputs) = contract_inputs {
         Ok(contract_inputs.to_owned())
     } else {
-        let inputs = generate_random_handle_vec(16, contract_address, user_address)
+        let count = 16;
+        info!(count, "No cached inputs found, generating new ones");
+
+        let inputs = generate_random_handle_vec(count, contract_address, user_address)
             .await?
             .into_iter()
             .map(Some)
             .collect::<Vec<Option<Handle>>>();
+
+        info!(contract_address = %contract_address, user_address = %user_address, "Inserting new contract inputs into cache");
         CONTRACT_INPUTS.write().await.insert(
             (contract_address.to_owned(), user_address.to_owned()),
             inputs.to_owned(),
         );
+
+        info!(inputs = ?inputs, "Generated new contract inputs");
         Ok(inputs)
     }
 }
