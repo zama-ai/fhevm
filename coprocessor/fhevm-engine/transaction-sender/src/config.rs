@@ -35,8 +35,6 @@ pub struct ConfigSettings {
     pub health_check_timeout: Duration,
 
     pub gas_limit_overprovision_percent: u32,
-
-    pub graceful_shutdown_timeout: Duration,
 }
 
 impl Default for ConfigSettings {
@@ -64,7 +62,6 @@ impl Default for ConfigSettings {
             http_server_port: 8080,
             health_check_timeout: Duration::from_secs(4),
             gas_limit_overprovision_percent: 120,
-            graceful_shutdown_timeout: Duration::from_secs(16),
         }
     }
 }
