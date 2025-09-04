@@ -122,6 +122,9 @@ struct Conf {
 
     #[arg(long, default_value = "120", value_parser = clap::value_parser!(u32).range(100..))]
     gas_limit_overprovision_percent: u32,
+
+    #[arg(long, default_value = "8s", value_parser = parse_duration)]
+    graceful_shutdown_timeout: Duration,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -129,10 +132,11 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
     let mut sigterm = signal(SignalKind::terminate())?;
     tokio::spawn(async move {
         tokio::select! {
-            _ = sigint.recv() => (),
-            _ = sigterm.recv() => ()
+            _ = sigint.recv() => { info!("received SIGINT"); },
+            _ = sigterm.recv() => { info!("received SIGTERM"); },
         }
         cancel_token.cancel();
+        info!("Cancellation signal sent over the token");
     });
     Ok(())
 }
@@ -149,7 +153,19 @@ async fn main() -> anyhow::Result<()> {
         .with_max_level(conf.log_level)
         .init();
 
-    let chain_id = get_chain_id(conf.gateway_url.clone(), conf.provider_retry_interval).await;
+    let cancel_token = CancellationToken::new();
+    install_signal_handlers(cancel_token.clone())?;
+
+    let chain_id = get_chain_id(
+        conf.gateway_url.clone(),
+        conf.graceful_shutdown_timeout,
+        cancel_token.clone(),
+    )
+    .await;
+    if chain_id.is_none() {
+        info!("Cancellation requested before getting chain ID during startup, exiting");
+        return Ok(());
+    }
     let abstract_signer: AbstractSigner;
     match conf.signer_type {
         SignerType::PrivateKey => {
@@ -160,7 +176,7 @@ async fn main() -> anyhow::Result<()> {
                 ));
             }
             let mut signer = PrivateKeySigner::from_str(conf.private_key.unwrap().trim())?;
-            signer.set_chain_id(Some(chain_id));
+            signer.set_chain_id(chain_id);
             abstract_signer = make_abstract_signer(signer);
         }
         SignerType::AwsKms => {
@@ -168,7 +184,7 @@ async fn main() -> anyhow::Result<()> {
                 .context("AWS_KEY_ID environment variable is required for AwsKms signer")?;
             let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
             let aws_kms_client = aws_sdk_kms::Client::new(&aws_conf);
-            let signer = AwsSigner::new(aws_kms_client, key_id, Some(chain_id)).await?;
+            let signer = AwsSigner::new(aws_kms_client, key_id, chain_id).await?;
             abstract_signer = make_abstract_signer(signer);
         }
     }
@@ -177,13 +193,19 @@ async fn main() -> anyhow::Result<()> {
         Some(url) => url,
         None => std::env::var("DATABASE_URL").context("DATABASE_URL is undefined")?,
     };
-    let cancel_token = CancellationToken::new();
 
     let provider = loop {
+        if cancel_token.is_cancelled() {
+            info!("Cancellation requested before provider was created on startup, exiting");
+            return Ok(());
+        }
         match ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet.clone())
             .connect_ws(
+                // Note here that max_retries and retry_interval apply to sending requests, not to initial connection.
+                // We assume they are set to big values such that when they are reached, the following `BackendGone` error
+                // means we can't move on and we would exit the whole sender.
                 WsConnect::new(conf.gateway_url.clone())
                     .with_max_retries(conf.provider_max_retries)
                     .with_retry_interval(conf.provider_retry_interval),
@@ -234,6 +256,7 @@ async fn main() -> anyhow::Result<()> {
         http_server_port: conf.http_server_port,
         health_check_timeout: conf.health_check_timeout,
         gas_limit_overprovision_percent: conf.gas_limit_overprovision_percent,
+        graceful_shutdown_timeout: conf.graceful_shutdown_timeout,
     };
 
     let transaction_sender = std::sync::Arc::new(
@@ -256,28 +279,29 @@ async fn main() -> anyhow::Result<()> {
         cancel_token.clone(),
     );
 
-    install_signal_handlers(cancel_token.clone())?;
-
     info!(
         http_server_port = conf.http_server_port,
         conf = ?config,
         "Transaction sender and HTTP server starting"
     );
 
-    // Run both services concurrently
-    let (sender_result, http_result) = tokio::join!(transaction_sender.run(), http_server.start());
+    // Run both services concurrently. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
+    let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
+    let http_server_fut = tokio::spawn(async move { http_server.start().await });
 
-    // Check results
-    if let Err(e) = sender_result {
-        error!(error = %e, "Transaction sender error");
-        return Err(e);
-    }
+    let transaction_sender_res = transaction_sender_fut.await;
+    let http_server_res = http_server_fut.await;
 
-    if let Err(e) = http_result {
-        error!(error = %e, "HTTP server error");
-        return Err(e);
-    }
+    info!(
+        transaction_sender_res = ?transaction_sender_res,
+        http_server_res = ?http_server_res,
+        "Transaction sender and HTTP server tasks have stopped"
+    );
+
+    transaction_sender_res??;
+    http_server_res??;
 
     info!("Transaction sender and HTTP server stopped gracefully");
+
     Ok(())
 }
