@@ -91,15 +91,19 @@ impl TestEnvironment {
         .await?;
 
         let anvil = Self::new_anvil()?;
-        let chain_id =
-            get_chain_id(anvil.ws_endpoint_url(), std::time::Duration::from_secs(1)).await;
+        let chain_id = get_chain_id(
+            anvil.ws_endpoint_url(),
+            std::time::Duration::from_secs(1),
+            CancellationToken::new(),
+        )
+        .await;
         let abstract_signer;
         let localstack;
         match signer_type {
             SignerType::PrivateKey => {
                 localstack = None;
                 let mut signer = PrivateKeySigner::from_signing_key(anvil.keys()[0].clone().into());
-                signer.set_chain_id(Some(chain_id));
+                signer.set_chain_id(chain_id);
                 abstract_signer = make_abstract_signer(signer);
             }
             SignerType::AwsKms => {
@@ -119,7 +123,7 @@ impl TestEnvironment {
                 let key_id =
                     create_localstack_kms_signing_key(&aws_kms_client, &anvil.keys()[0].to_bytes())
                         .await?;
-                let signer = AwsSigner::new(aws_kms_client, key_id, Some(chain_id)).await?;
+                let signer = AwsSigner::new(aws_kms_client, key_id, chain_id).await?;
                 abstract_signer = make_abstract_signer(signer);
             }
         }

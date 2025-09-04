@@ -12,6 +12,7 @@ use sqlx::PgPool;
 use std::time::Duration;
 use test_harness::db_utils::insert_random_tenant;
 use tokio::time::sleep;
+use transaction_sender::is_backend_gone;
 use transaction_sender::{
     ConfigSettings, FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
@@ -192,9 +193,10 @@ async fn allow_call(
 #[case::aws_kms(SignerType::AwsKms)]
 #[tokio::test]
 #[serial(db)]
-async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Result<()> {
+async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result<()> {
     let conf = ConfigSettings {
         allow_handle_max_retries: 2,
+        graceful_shutdown_timeout: Duration::from_secs(2),
         ..Default::default()
     };
 
@@ -207,15 +209,20 @@ async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Re
         .connect_ws(
             // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
             WsConnect::new(env.ws_endpoint_url())
-                .with_max_retries(2)
-                .with_retry_interval(Duration::from_millis(100)),
+                .with_max_retries(1)
+                .with_retry_interval(Duration::from_millis(200)),
         )
         .await?;
     let provider = NonceManagedProvider::new(
         ProviderBuilder::default()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(env.wallet.clone())
-            .connect_ws(WsConnect::new(env.ws_endpoint_url()))
+            .connect_ws(
+                // Reduce the retries count and the interval for alloy's internal retry to make this test faster.
+                WsConnect::new(env.ws_endpoint_url())
+                    .with_max_retries(1)
+                    .with_retry_interval(Duration::from_millis(200)),
+            )
             .await?,
         Some(env.wallet.default_signer().address()),
     );
@@ -259,7 +266,7 @@ async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Re
     .execute(&env.db_pool)
     .await?;
 
-    // Make sure the digest is not sent, the retry count is 0 and the unlimited retry count is greater than the txn max retry count.
+    // Make sure the digest is not sent, the retry count is 0 and the unlimited retry count is 1.
     loop {
         let rows = sqlx::query!(
             "SELECT txn_is_sent, txn_limited_retries_count, txn_unlimited_retries_count
@@ -271,7 +278,7 @@ async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Re
         .await?;
         if !rows.txn_is_sent
             && rows.txn_limited_retries_count == 0
-            && rows.txn_unlimited_retries_count > conf.allow_handle_max_retries as i32
+            && rows.txn_unlimited_retries_count == 1
         {
             break;
         }
@@ -286,9 +293,9 @@ async fn retry_on_transport_error(#[case] signer_type: SignerType) -> anyhow::Re
     .execute(&env.db_pool)
     .await?;
 
-    env.cancel_token.cancel();
-    run_handle.await??;
-
+    // Expect that the sender will stop on its own due to BackendGone.
+    let err = run_handle.await?.err().unwrap();
+    assert!(is_backend_gone(&err));
     Ok(())
 }
 

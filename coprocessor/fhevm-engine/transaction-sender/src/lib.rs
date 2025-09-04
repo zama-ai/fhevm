@@ -16,10 +16,15 @@ use alloy::providers::WsConnect;
 use alloy::signers::Signature;
 use alloy::signers::Signer;
 use alloy::transports::http::reqwest::Url;
+use alloy::transports::TransportError;
+use alloy::transports::TransportErrorKind;
+use anyhow::Error;
 pub use config::ConfigSettings;
 pub use nonce_managed_provider::FillersWithoutNonceManagement;
 pub use nonce_managed_provider::NonceManagedProvider;
+use tokio_util::sync::CancellationToken;
 use tracing::error;
+use tracing::info;
 pub use transaction_sender::TransactionSender;
 
 pub const REVIEW: &str = "review";
@@ -76,11 +81,24 @@ impl HealthStatus {
 }
 
 // Gets the chain ID from the given WebSocket URL.
-// This is a utility function that will try to connect until it succeeds.
-pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
+// This is a utility function that will try to connect until it succeeds or cancellation is requested.
+// Will return None only if cancellation is requested.
+pub async fn get_chain_id(
+    ws_url: Url,
+    retry_interval: Duration,
+    cancel_token: CancellationToken,
+) -> Option<u64> {
     loop {
+        if cancel_token.is_cancelled() {
+            info!("Cancellation requested before getting chain ID");
+            return None;
+        }
         let provider = match ProviderBuilder::new()
-            .connect_ws(WsConnect::new(ws_url.clone()))
+            .connect_ws(
+                WsConnect::new(ws_url.clone())
+                    .with_max_retries(1)
+                    .with_retry_interval(retry_interval),
+            )
             .await
         {
             Ok(provider) => provider,
@@ -99,7 +117,7 @@ pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
         match provider.get_chain_id().await {
             Ok(chain_id) => {
                 tracing::info!(chain_id = chain_id, "Found chain ID");
-                return chain_id;
+                return Some(chain_id);
             }
             Err(e) => {
                 error!(
@@ -112,4 +130,17 @@ pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
             }
         }
     }
+}
+
+pub fn is_backend_gone(err: &Error) -> bool {
+    err.chain().any(|cause| {
+        if let Some(t) = cause.downcast_ref::<TransportError>() {
+            matches!(
+                t,
+                TransportError::Transport(TransportErrorKind::BackendGone)
+            )
+        } else {
+            false
+        }
+    })
 }
