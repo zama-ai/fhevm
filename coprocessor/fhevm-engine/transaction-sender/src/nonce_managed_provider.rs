@@ -67,6 +67,10 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> NonceManagedProv
         self.provider.get_transaction_count(address).await
     }
 
+    pub async fn get_block_number(&self) -> TransportResult<u64> {
+        self.provider.get_block_number().await
+    }
+
     pub fn inner(&self) -> &P {
         &self.provider
     }
