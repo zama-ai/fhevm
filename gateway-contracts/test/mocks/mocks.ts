@@ -326,7 +326,7 @@ describe("Mock contracts", function () {
     const epochId = 0;
 
     it("Should emit PrepKeygenRequest event on keygen request", async function () {
-      await expect(kmsManagementMock.keygenRequest(DefaultParamsType))
+      await expect(kmsManagementMock.keygen(DefaultParamsType))
         .to.emit(kmsManagementMock, "PrepKeygenRequest")
         .withArgs(prepKeygenId, epochId, DefaultParamsType);
     });

@@ -31,7 +31,7 @@ contract KmsManagementMock {
     uint256 keyCounter = 4 << 248;
     uint256 crsCounter = 5 << 248;
 
-    function keygenRequest(ParamsType paramsType) external {
+    function keygen(ParamsType paramsType) external {
         prepKeygenCounter++;
         uint256 prepKeygenId = prepKeygenCounter;
         uint256 epochId;
