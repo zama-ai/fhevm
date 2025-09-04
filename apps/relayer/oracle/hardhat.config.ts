@@ -50,10 +50,6 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 });
 
 task('test', async (taskArgs, hre, runSuper) => {
-  // Run modified test task
-  if (hre.network.name === 'hardhat') {
-    await hre.run('task:deployAllHostContracts');
-  }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
 });
