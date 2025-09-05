@@ -8871,6 +8871,38 @@ library FHE {
      * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
      * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
      */
+    function requestDecryptionWithoutSavingHandles(
+        bytes32[] memory ctsHandles,
+        bytes4 callbackSelector
+    ) internal returns (uint256 requestID) {
+        requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, 0);
+    }
+
+    /**
+     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles, with a custom msgValue.
+     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
+     */
+    function requestDecryptionWithoutSavingHandles(
+        bytes32[] memory ctsHandles,
+        bytes4 callbackSelector,
+        uint256 msgValue
+    ) internal returns (uint256 requestID) {
+        DecryptionRequests storage $ = Impl.getDecryptionRequests();
+        requestID = $.counterRequest;
+        CoprocessorConfig storage $$ = Impl.getCoprocessorConfig();
+        IACL($$.ACLAddress).allowForDecryption(ctsHandles);
+        IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption{value: msgValue}(
+            requestID,
+            ctsHandles,
+            callbackSelector
+        );
+        $.counterRequest++;
+    }
+
+    /**
+     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
+     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
+     */
     function requestDecryption(
         bytes32[] memory ctsHandles,
         bytes4 callbackSelector
@@ -8887,17 +8919,8 @@ library FHE {
         bytes4 callbackSelector,
         uint256 msgValue
     ) internal returns (uint256 requestID) {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        requestID = $.counterRequest;
-        CoprocessorConfig storage $$ = Impl.getCoprocessorConfig();
-        IACL($$.ACLAddress).allowForDecryption(ctsHandles);
-        IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption{value: msgValue}(
-            requestID,
-            ctsHandles,
-            callbackSelector
-        );
+        requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, 0);
         saveRequestedHandles(requestID, ctsHandles);
-        $.counterRequest++;
     }
 
     /**
@@ -8947,7 +8970,7 @@ library FHE {
         bytes32[] memory handlesList,
         bytes memory cleartexts,
         bytes memory decryptionProof
-    ) private returns (bool) {
+    ) internal returns (bool) {
         // Compute the signature offset
         // This offset is computed by considering the format encoded by the KMS when creating the
         // "decryptedResult" bytes array (see comment below), which is the following:
