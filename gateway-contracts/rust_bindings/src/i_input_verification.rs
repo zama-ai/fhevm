@@ -15,7 +15,7 @@ interface IInputVerification {
 
     event RejectProofResponse(uint256 indexed zkProofId);
     event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChainId, address contractAddress, address userAddress, bytes ciphertextWithZKProof, bytes extraData);
-    event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+    event VerifyProofResponse(uint256 indexed zkProofId, uint256 indexed coprocessorContextId, bytes32[] ctHandles, bytes[] signatures);
 
     function checkProofRejected(uint256 zkProofId) external view;
     function checkProofVerified(uint256 zkProofId) external view;
@@ -249,6 +249,12 @@ interface IInputVerification {
     "inputs": [
       {
         "name": "zkProofId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "coprocessorContextId",
         "type": "uint256",
         "indexed": true,
         "internalType": "uint256"
@@ -1476,9 +1482,9 @@ event VerifyProofRequest(uint256 indexed zkProofId, uint256 indexed contractChai
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `VerifyProofResponse(uint256,bytes32[],bytes[])` and selector `0xfe2c43585786a5a658d2ec5df5dea3fb3385b77c94f60f724ff810896f419835`.
+    /**Event with signature `VerifyProofResponse(uint256,uint256,bytes32[],bytes[])` and selector `0x19401970ee0dcc15dd170f6abb8af5f5c413ebb441faedf88367d2c51228c66e`.
 ```solidity
-event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+event VerifyProofResponse(uint256 indexed zkProofId, uint256 indexed coprocessorContextId, bytes32[] ctHandles, bytes[] signatures);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -1490,6 +1496,8 @@ event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[
     pub struct VerifyProofResponse {
         #[allow(missing_docs)]
         pub zkProofId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub coprocessorContextId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub ctHandles: alloy::sol_types::private::Vec<
             alloy::sol_types::private::FixedBytes<32>,
@@ -1519,12 +1527,13 @@ event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[
             type TopicList = (
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "VerifyProofResponse(uint256,bytes32[],bytes[])";
+            const SIGNATURE: &'static str = "VerifyProofResponse(uint256,uint256,bytes32[],bytes[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                254u8, 44u8, 67u8, 88u8, 87u8, 134u8, 165u8, 166u8, 88u8, 210u8, 236u8,
-                93u8, 245u8, 222u8, 163u8, 251u8, 51u8, 133u8, 183u8, 124u8, 148u8,
-                246u8, 15u8, 114u8, 79u8, 248u8, 16u8, 137u8, 111u8, 65u8, 152u8, 53u8,
+                25u8, 64u8, 25u8, 112u8, 238u8, 13u8, 204u8, 21u8, 221u8, 23u8, 15u8,
+                106u8, 187u8, 138u8, 245u8, 245u8, 196u8, 19u8, 235u8, 180u8, 65u8,
+                250u8, 237u8, 248u8, 131u8, 103u8, 210u8, 197u8, 18u8, 40u8, 198u8, 110u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -1535,6 +1544,7 @@ event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[
             ) -> Self {
                 Self {
                     zkProofId: topics.1,
+                    coprocessorContextId: topics.2,
                     ctHandles: data.0,
                     signatures: data.1,
                 }
@@ -1567,7 +1577,11 @@ event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[
             }
             #[inline]
             fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(), self.zkProofId.clone())
+                (
+                    Self::SIGNATURE_HASH.into(),
+                    self.zkProofId.clone(),
+                    self.coprocessorContextId.clone(),
+                )
             }
             #[inline]
             fn encode_topics_raw(
@@ -1583,6 +1597,11 @@ event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[
                 out[1usize] = <alloy::sol_types::sol_data::Uint<
                     256,
                 > as alloy_sol_types::EventTopic>::encode_topic(&self.zkProofId);
+                out[2usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(
+                    &self.coprocessorContextId,
+                );
                 Ok(())
             }
         }
@@ -3710,6 +3729,11 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
+                25u8, 64u8, 25u8, 112u8, 238u8, 13u8, 204u8, 21u8, 221u8, 23u8, 15u8,
+                106u8, 187u8, 138u8, 245u8, 245u8, 196u8, 19u8, 235u8, 180u8, 65u8,
+                250u8, 237u8, 248u8, 131u8, 103u8, 210u8, 197u8, 18u8, 40u8, 198u8, 110u8,
+            ],
+            [
                 74u8, 229u8, 79u8, 106u8, 110u8, 144u8, 13u8, 128u8, 111u8, 250u8, 91u8,
                 180u8, 110u8, 217u8, 20u8, 89u8, 82u8, 61u8, 47u8, 106u8, 201u8, 181u8,
                 214u8, 36u8, 4u8, 254u8, 171u8, 136u8, 118u8, 134u8, 208u8, 5u8,
@@ -3718,11 +3742,6 @@ function verifyProofResponse(uint256 zkProofId, bytes32[] memory ctHandles, byte
                 228u8, 101u8, 225u8, 65u8, 250u8, 138u8, 189u8, 149u8, 171u8, 126u8, 8u8,
                 85u8, 84u8, 51u8, 7u8, 248u8, 80u8, 106u8, 176u8, 23u8, 14u8, 246u8,
                 100u8, 66u8, 15u8, 183u8, 26u8, 183u8, 222u8, 1u8, 131u8, 222u8,
-            ],
-            [
-                254u8, 44u8, 67u8, 88u8, 87u8, 134u8, 165u8, 166u8, 88u8, 210u8, 236u8,
-                93u8, 245u8, 222u8, 163u8, 251u8, 51u8, 133u8, 183u8, 124u8, 148u8,
-                246u8, 15u8, 114u8, 79u8, 248u8, 16u8, 137u8, 111u8, 65u8, 152u8, 53u8,
             ],
         ];
     }

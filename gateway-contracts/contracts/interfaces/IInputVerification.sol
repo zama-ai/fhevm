@@ -29,10 +29,16 @@ interface IInputVerification {
     /**
      * @notice Emitted once a correct ZK Proof verification is completed.
      * @param zkProofId The ID of the ZK Proof.
+     * @param coprocessorContextId The ID of the coprocessor context.
      * @param ctHandles The coprocessor's computed ciphertext handles.
      * @param signatures The coprocessor's signature.
      */
-    event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+    event VerifyProofResponse(
+        uint256 indexed zkProofId,
+        uint256 indexed coprocessorContextId,
+        bytes32[] ctHandles,
+        bytes[] signatures
+    );
 
     /**
      * @notice Error indicating that the coprocessor context is no longer valid for verifying the ZK Proof.

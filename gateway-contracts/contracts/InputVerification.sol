@@ -239,7 +239,7 @@ contract InputVerification is
             // verification request.
             $.verifyProofConsensusDigest[zkProofId] = digest;
 
-            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+            emit VerifyProofResponse(zkProofId, contextId, ctHandles, currentSignatures);
         }
     }
 

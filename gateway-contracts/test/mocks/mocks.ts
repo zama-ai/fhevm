@@ -356,7 +356,7 @@ describe("Mock contracts", function () {
         inputVerificationMock.verifyProofResponse(zkProofCounterId, [DefaultBytes32], DefaultBytes, DefaultBytes),
       )
         .to.emit(inputVerificationMock, "VerifyProofResponse")
-        .withArgs(zkProofCounterId, [DefaultBytes32], [DefaultBytes]);
+        .withArgs(zkProofCounterId, DefaultUint256, [DefaultBytes32], [DefaultBytes]);
     });
 
     it("Should emit RejectProofResponse event on reject proof response", async function () {
