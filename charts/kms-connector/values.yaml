@@ -1,5 +1,3 @@
-# Commented env variables means they are optional. Their default value is the commented one.
-
 commonConfig:
   databaseUrl: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/connector"
   gatewayUrl: "ws://gateway-anvil-node:8546"
@@ -8,6 +6,9 @@ commonConfig:
     decryption: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
     gatewayConfig: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
     kmsManagement: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+  tracing:
+    enabled: false
+    endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
   env: {}
 # E.g. Database configuration from secret
 #    - name: DATABASE_ENDPOINT
@@ -210,6 +211,3 @@ kmsConnectorTxSender:
 podAnnotations: {}
 # Set Pod Labels, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 podLabels: {}
-
-tracing:
-  endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"

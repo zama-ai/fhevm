@@ -67,9 +67,9 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.kmsConnectorTxSender.wallet.secret.name | quote }}
                   key: {{ .Values.kmsConnectorTxSender.wallet.key | quote }}
-          {{- if .Values.kmsConnectorTxSender.tracing.enabled }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorTxSender.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.tracing.endpoint }}
+              value: {{ .Values.commonConfig.tracing.endpoint }}
             - name: KMS_CONNECTOR_SERVICE_NAME
               valueFrom:
                 fieldRef:

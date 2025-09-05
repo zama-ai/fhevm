@@ -56,9 +56,9 @@ spec:
               value: {{ default .Values.commonConfig.gatewayUrl .Values.kmsConnectorKmsWorker.config.gatewayUrl | quote }}
             - name: KMS_CONNECTOR_CHAIN_ID
               value: {{ .Values.commonConfig.chainId | quote }}
-          {{- if .Values.kmsConnectorKmsWorker.tracing.enabled }}
+          {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorKmsWorker.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: {{ .Values.tracing.endpoint }}
+              value: {{ .Values.commonConfig.tracing.endpoint }}
             - name: KMS_CONNECTOR_SERVICE_NAME
               valueFrom:
                 fieldRef:
