@@ -9,7 +9,7 @@ interface ContextLifecycle {
     error ContextIsGenerating(uint256 contextId);
     error ContextNotActive(uint256 contextId);
     error ContextNotGenerated(uint256 contextId);
-    error ContextNotPreActivated(uint256 contextId);
+    error ContextNotPreActivatedOrSuspended(uint256 contextId);
     error ContextNotSuspended(uint256 contextId);
     error InvalidNullContextId();
     error PreActivationContextOngoing(uint256 preActivationContextId);
@@ -88,7 +88,7 @@ interface ContextLifecycle {
   },
   {
     "type": "error",
-    "name": "ContextNotPreActivated",
+    "name": "ContextNotPreActivatedOrSuspended",
     "inputs": [
       {
         "name": "contextId",
@@ -661,13 +661,13 @@ error ContextNotGenerated(uint256 contextId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `ContextNotPreActivated(uint256)` and selector `0x73b1e61e`.
+    /**Custom error with signature `ContextNotPreActivatedOrSuspended(uint256)` and selector `0x12b49e3d`.
 ```solidity
-error ContextNotPreActivated(uint256 contextId);
+error ContextNotPreActivatedOrSuspended(uint256 contextId);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct ContextNotPreActivated {
+    pub struct ContextNotPreActivatedOrSuspended {
         #[allow(missing_docs)]
         pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -698,26 +698,28 @@ error ContextNotPreActivated(uint256 contextId);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<ContextNotPreActivated> for UnderlyingRustTuple<'_> {
-            fn from(value: ContextNotPreActivated) -> Self {
+        impl ::core::convert::From<ContextNotPreActivatedOrSuspended>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: ContextNotPreActivatedOrSuspended) -> Self {
                 (value.contextId,)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for ContextNotPreActivated {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for ContextNotPreActivatedOrSuspended {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self { contextId: tuple.0 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for ContextNotPreActivated {
+        impl alloy_sol_types::SolError for ContextNotPreActivatedOrSuspended {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "ContextNotPreActivated(uint256)";
-            const SELECTOR: [u8; 4] = [115u8, 177u8, 230u8, 30u8];
+            const SIGNATURE: &'static str = "ContextNotPreActivatedOrSuspended(uint256)";
+            const SELECTOR: [u8; 4] = [18u8, 180u8, 158u8, 61u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -1085,7 +1087,7 @@ error SuspendedContextOngoing(uint256 suspendedContextId);
         #[allow(missing_docs)]
         ContextNotGenerated(ContextNotGenerated),
         #[allow(missing_docs)]
-        ContextNotPreActivated(ContextNotPreActivated),
+        ContextNotPreActivatedOrSuspended(ContextNotPreActivatedOrSuspended),
         #[allow(missing_docs)]
         ContextNotSuspended(ContextNotSuspended),
         #[allow(missing_docs)]
@@ -1105,11 +1107,11 @@ error SuspendedContextOngoing(uint256 suspendedContextId);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [13u8, 221u8, 20u8, 202u8],
+            [18u8, 180u8, 158u8, 61u8],
             [51u8, 20u8, 134u8, 179u8],
             [97u8, 84u8, 76u8, 252u8],
             [102u8, 83u8, 246u8, 215u8],
             [112u8, 34u8, 236u8, 65u8],
-            [115u8, 177u8, 230u8, 30u8],
             [119u8, 191u8, 88u8, 70u8],
             [192u8, 181u8, 238u8, 102u8],
             [196u8, 112u8, 192u8, 34u8],
@@ -1143,8 +1145,8 @@ error SuspendedContextOngoing(uint256 suspendedContextId);
                 Self::ContextNotGenerated(_) => {
                     <ContextNotGenerated as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::ContextNotPreActivated(_) => {
-                    <ContextNotPreActivated as alloy_sol_types::SolError>::SELECTOR
+                Self::ContextNotPreActivatedOrSuspended(_) => {
+                    <ContextNotPreActivatedOrSuspended as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::ContextNotSuspended(_) => {
                     <ContextNotSuspended as alloy_sol_types::SolError>::SELECTOR
@@ -1189,6 +1191,19 @@ error SuspendedContextOngoing(uint256 suspendedContextId);
                     ContextIsGenerating
                 },
                 {
+                    fn ContextNotPreActivatedOrSuspended(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ContextLifecycleErrors> {
+                        <ContextNotPreActivatedOrSuspended as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                ContextLifecycleErrors::ContextNotPreActivatedOrSuspended,
+                            )
+                    }
+                    ContextNotPreActivatedOrSuspended
+                },
+                {
                     fn ContextNotActive(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ContextLifecycleErrors> {
@@ -1231,17 +1246,6 @@ error SuspendedContextOngoing(uint256 suspendedContextId);
                             .map(ContextLifecycleErrors::SuspendedContextOngoing)
                     }
                     SuspendedContextOngoing
-                },
-                {
-                    fn ContextNotPreActivated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ContextLifecycleErrors> {
-                        <ContextNotPreActivated as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ContextLifecycleErrors::ContextNotPreActivated)
-                    }
-                    ContextNotPreActivated
                 },
                 {
                     fn ContextNotSuspended(
@@ -1330,6 +1334,19 @@ error SuspendedContextOngoing(uint256 suspendedContextId);
                     ContextIsGenerating
                 },
                 {
+                    fn ContextNotPreActivatedOrSuspended(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ContextLifecycleErrors> {
+                        <ContextNotPreActivatedOrSuspended as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                ContextLifecycleErrors::ContextNotPreActivatedOrSuspended,
+                            )
+                    }
+                    ContextNotPreActivatedOrSuspended
+                },
+                {
                     fn ContextNotActive(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ContextLifecycleErrors> {
@@ -1372,17 +1389,6 @@ error SuspendedContextOngoing(uint256 suspendedContextId);
                             .map(ContextLifecycleErrors::SuspendedContextOngoing)
                     }
                     SuspendedContextOngoing
-                },
-                {
-                    fn ContextNotPreActivated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ContextLifecycleErrors> {
-                        <ContextNotPreActivated as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ContextLifecycleErrors::ContextNotPreActivated)
-                    }
-                    ContextNotPreActivated
                 },
                 {
                     fn ContextNotSuspended(
@@ -1483,8 +1489,8 @@ error SuspendedContextOngoing(uint256 suspendedContextId);
                         inner,
                     )
                 }
-                Self::ContextNotPreActivated(inner) => {
-                    <ContextNotPreActivated as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::ContextNotPreActivatedOrSuspended(inner) => {
+                    <ContextNotPreActivatedOrSuspended as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -1549,8 +1555,8 @@ error SuspendedContextOngoing(uint256 suspendedContextId);
                         out,
                     )
                 }
-                Self::ContextNotPreActivated(inner) => {
-                    <ContextNotPreActivated as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::ContextNotPreActivatedOrSuspended(inner) => {
+                    <ContextNotPreActivatedOrSuspended as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

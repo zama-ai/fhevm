@@ -202,9 +202,9 @@ describe("Mock contracts", function () {
     });
 
     it("Should emit several events on move suspended coprocessor context to active call", async function () {
-      await expect(coprocessorContextsMock.moveSuspendedCoprocessorContextToActive())
-        .to.emit(coprocessorContextsMock, "DeactivateCoprocessorContext")
-        .withArgs(DefaultUint256)
+      await expect(coprocessorContextsMock.swapSuspendedCoprocessorContextWithActive(DefaultUint256))
+        .to.emit(coprocessorContextsMock, "SuspendCoprocessorContext")
+        .withArgs(DefaultUint256, DefaultUint256)
         .and.emit(coprocessorContextsMock, "ActivateCoprocessorContext")
         .withArgs(DefaultUint256);
     });

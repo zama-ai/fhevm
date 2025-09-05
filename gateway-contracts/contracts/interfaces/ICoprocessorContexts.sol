@@ -251,12 +251,11 @@ interface ICoprocessorContexts {
     function forceUpdateContextToStatus(uint256 contextId, ContextStatus status) external;
 
     /**
-     * @notice Move a suspended coprocessor context to active.
-     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
-     * used correctly. ⚠️
-     * It is provided in case of emergency (ex: if a software update failed)
+     * @notice Swap a suspended coprocessor context with the current active one.
+     * This function is provided in case of emergency (ex: if a software update failed)
+     * @param suspendedTimePeriod The suspended time period for the active coprocessor context
      */
-    function moveSuspendedCoprocessorContextToActive() external;
+    function swapSuspendedCoprocessorContextWithActive(uint256 suspendedTimePeriod) external;
 
     /**
      * @notice Check if an address is a registered coprocessor transaction sender from a context.

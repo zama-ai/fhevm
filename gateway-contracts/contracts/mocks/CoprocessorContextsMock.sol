@@ -72,10 +72,11 @@ contract CoprocessorContextsMock {
         emit DestroyCoprocessorContext(contextId);
     }
 
-    function moveSuspendedCoprocessorContextToActive() external {
+    function swapSuspendedCoprocessorContextWithActive(uint256 suspendedTimePeriod) external {
         uint256 contextId;
+        uint256 deactivatedBlockTimestamp;
 
-        emit DeactivateCoprocessorContext(contextId);
+        emit SuspendCoprocessorContext(contextId, deactivatedBlockTimestamp);
 
         emit ActivateCoprocessorContext(contextId);
     }

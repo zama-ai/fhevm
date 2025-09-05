@@ -294,11 +294,9 @@ contract CoprocessorContexts is
     }
 
     /**
-     * @dev See {ICoprocessorContexts-moveSuspendedCoprocessorContextToActive}.
-     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
-     * used correctly. ⚠️
+     * @dev See {ICoprocessorContexts-swapSuspendedCoprocessorContextWithActive}.
      */
-    function moveSuspendedCoprocessorContextToActive() external virtual onlyGatewayOwner {
+    function swapSuspendedCoprocessorContextWithActive(uint256 suspendedTimePeriod) external virtual onlyGatewayOwner {
         // This will revert if there is no suspended coprocessor context
         uint256 suspendedContextId = getSuspendedCoprocessorContextId();
 
@@ -309,14 +307,17 @@ contract CoprocessorContexts is
 
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
 
-        // Deactivate the (problematic) active coprocessor context and replace it with the suspended one
-        ContextLifecycle.reActivateSuspendedAndDeactivateActive(
-            $.coprocessorContextLifecycle,
-            suspendedContextId,
-            activeContextId
-        );
+        // Suspend the (problematic) active coprocessor context
+        ContextLifecycle.setSuspended($.coprocessorContextLifecycle, activeContextId);
 
-        emit DeactivateCoprocessorContext(activeContextId);
+        // Define the deactivation block timestamp for the current active coprocessor context
+        uint256 deactivatedBlockTimestamp = block.timestamp + suspendedTimePeriod;
+        $.coprocessorContextDeactivatedBlockTimestamp[activeContextId] = deactivatedBlockTimestamp;
+
+        emit SuspendCoprocessorContext(activeContextId, deactivatedBlockTimestamp);
+
+        // Re-activate the suspended coprocessor context
+        ContextLifecycle.setActive($.coprocessorContextLifecycle, suspendedContextId);
         emit ActivateCoprocessorContext(suspendedContextId);
     }
 

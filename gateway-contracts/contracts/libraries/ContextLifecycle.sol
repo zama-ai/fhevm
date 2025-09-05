@@ -59,9 +59,9 @@ library ContextLifecycle {
     error ContextNotGenerated(uint256 contextId);
 
     /**
-     * @notice Error indicating that the context is not pre-activated.
+     * @notice Error indicating that the context is not pre-activated or suspended.
      */
-    error ContextNotPreActivated(uint256 contextId);
+    error ContextNotPreActivatedOrSuspended(uint256 contextId);
 
     /**
      * @notice Error indicating that the context is not active.
@@ -183,16 +183,23 @@ library ContextLifecycle {
      * @param contextId The ID of the context to set as active.
      */
     function setActive(ContextLifecycleStorage storage $, uint256 contextId) internal onlyNonNullContextId(contextId) {
-        // Only a pre-activated context can be set as active
-        if (!isPreActivation($, contextId)) {
-            revert ContextNotPreActivated(contextId);
+        // Only a pre-activated or suspended context can be set as active
+        if (!isPreActivation($, contextId) && !isSuspended($, contextId)) {
+            revert ContextNotPreActivatedOrSuspended(contextId);
         }
 
         $.contextStatuses[contextId] = ContextStatus.Active;
         $.activeContextId = contextId;
 
-        // Reset the pre-activation context ID as it is now active
-        $.preActivationContextId = 0;
+        // Reset the pre-activation context ID if it is the one being activated
+        if ($.preActivationContextId == contextId) {
+            $.preActivationContextId = 0;
+        }
+
+        // Reset the suspended context ID if it is the one being activated
+        if ($.suspendedContextId == contextId) {
+            $.suspendedContextId = 0;
+        }
     }
 
     /**
@@ -303,45 +310,6 @@ library ContextLifecycle {
         if ($.suspendedContextId == contextId) {
             $.suspendedContextId = 0;
         }
-    }
-
-    /**
-     * @notice Re-activates a suspended context and deactivates an active context.
-     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
-     * used correctly. ⚠️
-     * This should only be used in case of emergency (ex: if a software update failed). We provide
-     * this specific function in order to avoid having a state where no active context is available,
-     * which should never happen. This is the only function that allows to:
-     * - re-activate a suspended context
-     * - deactivate an active context
-     * Other functions do not allow to do so as these are forbidden by the lifecycle rules.
-     * @param suspendedContextId The ID of the context to re-activate.
-     * @param activeContextId The ID of the context to deactivate.
-     */
-    function reActivateSuspendedAndDeactivateActive(
-        ContextLifecycleStorage storage $,
-        uint256 suspendedContextId,
-        uint256 activeContextId
-    ) internal {
-        // Only accept re-activating a suspended context ID
-        if (!isSuspended($, suspendedContextId)) {
-            revert ContextNotSuspended(suspendedContextId);
-        }
-
-        // Only accept deactivating an active context ID
-        if (!isActive($, activeContextId)) {
-            revert ContextNotActive(activeContextId);
-        }
-
-        // Deactivate the active context
-        $.contextStatuses[activeContextId] = ContextStatus.Deactivated;
-
-        // Re-activate the suspended context
-        $.contextStatuses[suspendedContextId] = ContextStatus.Active;
-        $.activeContextId = suspendedContextId;
-
-        // Reset the suspended context ID as it is now active
-        $.suspendedContextId = 0;
     }
 
     /**

@@ -61,8 +61,8 @@ interface ICoprocessorContexts {
     function getSuspendedCoprocessorContextId() external view returns (uint256);
     function getVersion() external pure returns (string memory);
     function isCoprocessorContextActiveOrSuspended(uint256 contextId) external view returns (bool);
-    function moveSuspendedCoprocessorContextToActive() external;
     function refreshCoprocessorContextStatuses() external;
+    function swapSuspendedCoprocessorContextWithActive(uint256 suspendedTimePeriod) external;
 }
 ```
 
@@ -470,15 +470,21 @@ interface ICoprocessorContexts {
   },
   {
     "type": "function",
-    "name": "moveSuspendedCoprocessorContextToActive",
+    "name": "refreshCoprocessorContextStatuses",
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
     "type": "function",
-    "name": "refreshCoprocessorContextStatuses",
-    "inputs": [],
+    "name": "swapSuspendedCoprocessorContextWithActive",
+    "inputs": [
+      {
+        "name": "suspendedTimePeriod",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
     "outputs": [],
     "stateMutability": "nonpayable"
   },
@@ -6799,147 +6805,6 @@ function isCoprocessorContextActiveOrSuspended(uint256 contextId) external view 
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `moveSuspendedCoprocessorContextToActive()` and selector `0x957b2abe`.
-```solidity
-function moveSuspendedCoprocessorContextToActive() external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct moveSuspendedCoprocessorContextToActiveCall;
-    ///Container type for the return parameters of the [`moveSuspendedCoprocessorContextToActive()`](moveSuspendedCoprocessorContextToActiveCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct moveSuspendedCoprocessorContextToActiveReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<moveSuspendedCoprocessorContextToActiveCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: moveSuspendedCoprocessorContextToActiveCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for moveSuspendedCoprocessorContextToActiveCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<moveSuspendedCoprocessorContextToActiveReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: moveSuspendedCoprocessorContextToActiveReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for moveSuspendedCoprocessorContextToActiveReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl moveSuspendedCoprocessorContextToActiveReturn {
-            fn _tokenize(
-                &self,
-            ) -> <moveSuspendedCoprocessorContextToActiveCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for moveSuspendedCoprocessorContextToActiveCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = moveSuspendedCoprocessorContextToActiveReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "moveSuspendedCoprocessorContextToActive()";
-            const SELECTOR: [u8; 4] = [149u8, 123u8, 42u8, 190u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                moveSuspendedCoprocessorContextToActiveReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `refreshCoprocessorContextStatuses()` and selector `0x3a5162e6`.
 ```solidity
 function refreshCoprocessorContextStatuses() external;
@@ -7079,6 +6944,158 @@ function refreshCoprocessorContextStatuses() external;
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `swapSuspendedCoprocessorContextWithActive(uint256)` and selector `0x86dfc7de`.
+```solidity
+function swapSuspendedCoprocessorContextWithActive(uint256 suspendedTimePeriod) external;
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct swapSuspendedCoprocessorContextWithActiveCall {
+        #[allow(missing_docs)]
+        pub suspendedTimePeriod: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    ///Container type for the return parameters of the [`swapSuspendedCoprocessorContextWithActive(uint256)`](swapSuspendedCoprocessorContextWithActiveCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct swapSuspendedCoprocessorContextWithActiveReturn {}
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<swapSuspendedCoprocessorContextWithActiveCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: swapSuspendedCoprocessorContextWithActiveCall) -> Self {
+                    (value.suspendedTimePeriod,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for swapSuspendedCoprocessorContextWithActiveCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        suspendedTimePeriod: tuple.0,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = ();
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = ();
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<swapSuspendedCoprocessorContextWithActiveReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: swapSuspendedCoprocessorContextWithActiveReturn) -> Self {
+                    ()
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for swapSuspendedCoprocessorContextWithActiveReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {}
+                }
+            }
+        }
+        impl swapSuspendedCoprocessorContextWithActiveReturn {
+            fn _tokenize(
+                &self,
+            ) -> <swapSuspendedCoprocessorContextWithActiveCall as alloy_sol_types::SolCall>::ReturnToken<
+                '_,
+            > {
+                ()
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for swapSuspendedCoprocessorContextWithActiveCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = swapSuspendedCoprocessorContextWithActiveReturn;
+            type ReturnTuple<'a> = ();
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "swapSuspendedCoprocessorContextWithActive(uint256)";
+            const SELECTOR: [u8; 4] = [134u8, 223u8, 199u8, 222u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.suspendedTimePeriod),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                swapSuspendedCoprocessorContextWithActiveReturn::_tokenize(ret)
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(Into::into)
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Into::into)
+            }
+        }
+    };
     ///Container for all the [`ICoprocessorContexts`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
@@ -7124,11 +7141,11 @@ function refreshCoprocessorContextStatuses() external;
         #[allow(missing_docs)]
         isCoprocessorContextActiveOrSuspended(isCoprocessorContextActiveOrSuspendedCall),
         #[allow(missing_docs)]
-        moveSuspendedCoprocessorContextToActive(
-            moveSuspendedCoprocessorContextToActiveCall,
-        ),
-        #[allow(missing_docs)]
         refreshCoprocessorContextStatuses(refreshCoprocessorContextStatusesCall),
+        #[allow(missing_docs)]
+        swapSuspendedCoprocessorContextWithActive(
+            swapSuspendedCoprocessorContextWithActiveCall,
+        ),
     }
     #[automatically_derived]
     impl ICoprocessorContextsCalls {
@@ -7148,9 +7165,9 @@ function refreshCoprocessorContextStatuses() external;
             [107u8, 49u8, 116u8, 229u8],
             [107u8, 168u8, 24u8, 225u8],
             [132u8, 202u8, 225u8, 135u8],
+            [134u8, 223u8, 199u8, 222u8],
             [136u8, 139u8, 153u8, 224u8],
             [144u8, 33u8, 135u8, 72u8],
-            [149u8, 123u8, 42u8, 190u8],
             [153u8, 29u8, 195u8, 109u8],
             [158u8, 251u8, 72u8, 78u8],
             [169u8, 74u8, 2u8, 173u8],
@@ -7219,11 +7236,11 @@ function refreshCoprocessorContextStatuses() external;
                 Self::isCoprocessorContextActiveOrSuspended(_) => {
                     <isCoprocessorContextActiveOrSuspendedCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::moveSuspendedCoprocessorContextToActive(_) => {
-                    <moveSuspendedCoprocessorContextToActiveCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::refreshCoprocessorContextStatuses(_) => {
                     <refreshCoprocessorContextStatusesCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::swapSuspendedCoprocessorContextWithActive(_) => {
+                    <swapSuspendedCoprocessorContextWithActiveCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -7356,6 +7373,19 @@ function refreshCoprocessorContextStatuses() external;
                     addCoprocessorContext
                 },
                 {
+                    fn swapSuspendedCoprocessorContextWithActive(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
+                        <swapSuspendedCoprocessorContextWithActiveCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                ICoprocessorContextsCalls::swapSuspendedCoprocessorContextWithActive,
+                            )
+                    }
+                    swapSuspendedCoprocessorContextWithActive
+                },
+                {
                     fn getCoprocessorContextStatus(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
@@ -7378,19 +7408,6 @@ function refreshCoprocessorContextStatuses() external;
                             )
                     }
                     getCoprocessorDeactivatedBlockTimestampFromContext
-                },
-                {
-                    fn moveSuspendedCoprocessorContextToActive(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
-                        <moveSuspendedCoprocessorContextToActiveCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(
-                                ICoprocessorContextsCalls::moveSuspendedCoprocessorContextToActive,
-                            )
-                    }
-                    moveSuspendedCoprocessorContextToActive
                 },
                 {
                     fn getActiveCoprocessorContextId(
@@ -7611,6 +7628,19 @@ function refreshCoprocessorContextStatuses() external;
                     addCoprocessorContext
                 },
                 {
+                    fn swapSuspendedCoprocessorContextWithActive(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
+                        <swapSuspendedCoprocessorContextWithActiveCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                ICoprocessorContextsCalls::swapSuspendedCoprocessorContextWithActive,
+                            )
+                    }
+                    swapSuspendedCoprocessorContextWithActive
+                },
+                {
                     fn getCoprocessorContextStatus(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
@@ -7633,19 +7663,6 @@ function refreshCoprocessorContextStatuses() external;
                             )
                     }
                     getCoprocessorDeactivatedBlockTimestampFromContext
-                },
-                {
-                    fn moveSuspendedCoprocessorContextToActive(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICoprocessorContextsCalls> {
-                        <moveSuspendedCoprocessorContextToActiveCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(
-                                ICoprocessorContextsCalls::moveSuspendedCoprocessorContextToActive,
-                            )
-                    }
-                    moveSuspendedCoprocessorContextToActive
                 },
                 {
                     fn getActiveCoprocessorContextId(
@@ -7831,13 +7848,13 @@ function refreshCoprocessorContextStatuses() external;
                         inner,
                     )
                 }
-                Self::moveSuspendedCoprocessorContextToActive(inner) => {
-                    <moveSuspendedCoprocessorContextToActiveCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::refreshCoprocessorContextStatuses(inner) => {
+                    <refreshCoprocessorContextStatusesCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
-                Self::refreshCoprocessorContextStatuses(inner) => {
-                    <refreshCoprocessorContextStatusesCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::swapSuspendedCoprocessorContextWithActive(inner) => {
+                    <swapSuspendedCoprocessorContextWithActiveCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -7948,14 +7965,14 @@ function refreshCoprocessorContextStatuses() external;
                         out,
                     )
                 }
-                Self::moveSuspendedCoprocessorContextToActive(inner) => {
-                    <moveSuspendedCoprocessorContextToActiveCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::refreshCoprocessorContextStatuses(inner) => {
+                    <refreshCoprocessorContextStatusesCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
                 }
-                Self::refreshCoprocessorContextStatuses(inner) => {
-                    <refreshCoprocessorContextStatusesCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::swapSuspendedCoprocessorContextWithActive(inner) => {
+                    <swapSuspendedCoprocessorContextWithActiveCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -9196,16 +9213,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`moveSuspendedCoprocessorContextToActive`] function.
-        pub fn moveSuspendedCoprocessorContextToActive(
-            &self,
-        ) -> alloy_contract::SolCallBuilder<
-            &P,
-            moveSuspendedCoprocessorContextToActiveCall,
-            N,
-        > {
-            self.call_builder(&moveSuspendedCoprocessorContextToActiveCall)
-        }
         ///Creates a new call builder for the [`refreshCoprocessorContextStatuses`] function.
         pub fn refreshCoprocessorContextStatuses(
             &self,
@@ -9215,6 +9222,21 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             N,
         > {
             self.call_builder(&refreshCoprocessorContextStatusesCall)
+        }
+        ///Creates a new call builder for the [`swapSuspendedCoprocessorContextWithActive`] function.
+        pub fn swapSuspendedCoprocessorContextWithActive(
+            &self,
+            suspendedTimePeriod: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<
+            &P,
+            swapSuspendedCoprocessorContextWithActiveCall,
+            N,
+        > {
+            self.call_builder(
+                &swapSuspendedCoprocessorContextWithActiveCall {
+                    suspendedTimePeriod,
+                },
+            )
         }
     }
     /// Event filters.

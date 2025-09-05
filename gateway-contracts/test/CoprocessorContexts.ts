@@ -599,6 +599,9 @@ describe("CoprocessorContexts", function () {
       });
 
       describe("Manual force update context to status", function () {
+        // Define a suspended time period (in seconds)
+        const suspendedTimePeriod = 10;
+
         it("Should move the suspended context to the active context", async function () {
           // Increase the block timestamp to reach the end of the pre-activation period
           await time.increase(newTimePeriods.preActivationTimePeriod);
@@ -606,11 +609,19 @@ describe("CoprocessorContexts", function () {
           // Refresh the statuses of the coprocessor contexts: this suspends the old context
           await coprocessorContexts.refreshCoprocessorContextStatuses();
 
-          const txResult = await coprocessorContexts.connect(owner).moveSuspendedCoprocessorContextToActive();
+          // Get the latest block timestamp
+          const latestBlockTimestamp = await time.latest();
+
+          // Expected timestamp for the next block
+          const expectedSuspendedBlockTimestamp = BigInt(latestBlockTimestamp) + BigInt(suspendedTimePeriod);
+
+          const txResult = await coprocessorContexts
+            .connect(owner)
+            .swapSuspendedCoprocessorContextWithActive(suspendedTimePeriod);
 
           expect(txResult)
-            .to.emit(coprocessorContexts, "DeactivateCoprocessorContext")
-            .withArgs(newContextId)
+            .to.emit(coprocessorContexts, "SuspendCoprocessorContext")
+            .withArgs(newContextId, expectedSuspendedBlockTimestamp)
             .to.emit(coprocessorContexts, "ActivateCoprocessorContext")
             .withArgs(contextId);
 
@@ -618,14 +629,12 @@ describe("CoprocessorContexts", function () {
           expect(await coprocessorContexts.getCoprocessorContextStatus(contextId)).to.equal(ContextStatus.Active);
 
           // Make sure the new context has been deactivated
-          expect(await coprocessorContexts.getCoprocessorContextStatus(newContextId)).to.equal(
-            ContextStatus.Deactivated,
-          );
+          expect(await coprocessorContexts.getCoprocessorContextStatus(newContextId)).to.equal(ContextStatus.Suspended);
         });
 
         it("Should revert because there is no suspended context to move to active", async function () {
           await expect(
-            coprocessorContexts.connect(owner).moveSuspendedCoprocessorContextToActive(),
+            coprocessorContexts.connect(owner).swapSuspendedCoprocessorContextWithActive(suspendedTimePeriod),
           ).to.be.revertedWithCustomError(coprocessorContexts, "NoSuspendedCoprocessorContext");
         });
 
@@ -835,19 +844,6 @@ describe("CoprocessorContexts", function () {
             });
           });
 
-          describe("Update suspended context", function () {
-            it("Should revert because a suspended context cannot be activated again", async function () {
-              // Suspend the context
-              await suspendAndActivateContext(contextId, newContextId, coprocessorContexts, owner);
-
-              await expect(
-                coprocessorContexts.connect(owner).forceUpdateContextToStatus(contextId, ContextStatus.Active),
-              )
-                .to.be.revertedWithCustomError(coprocessorContexts, "ContextNotPreActivated")
-                .withArgs(contextId);
-            });
-          });
-
           describe("Update deactivated context", function () {
             it("Should revert because a deactivated context cannot be suspended again", async function () {
               // Deactivate the context
@@ -867,7 +863,7 @@ describe("CoprocessorContexts", function () {
               await expect(
                 coprocessorContexts.connect(owner).forceUpdateContextToStatus(contextId, ContextStatus.Active),
               )
-                .to.be.revertedWithCustomError(coprocessorContexts, "ContextNotPreActivated")
+                .to.be.revertedWithCustomError(coprocessorContexts, "ContextNotPreActivatedOrSuspended")
                 .withArgs(contextId);
             });
           });
@@ -895,7 +891,7 @@ describe("CoprocessorContexts", function () {
               await expect(
                 coprocessorContexts.connect(owner).forceUpdateContextToStatus(newContextId, ContextStatus.Active),
               )
-                .to.be.revertedWithCustomError(coprocessorContexts, "ContextNotPreActivated")
+                .to.be.revertedWithCustomError(coprocessorContexts, "ContextNotPreActivatedOrSuspended")
                 .withArgs(newContextId);
             });
 
