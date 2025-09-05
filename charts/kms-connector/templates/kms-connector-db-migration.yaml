@@ -24,12 +24,18 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Never
+      {{- with .Values.kmsConnectorDbMigration.nodeSelector }}
       nodeSelector:
-        {{- toYaml .Values.kmsConnectorDbMigration.nodeSelector | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorDbMigration.affinity }}
       affinity:
-        {{- toYaml .Values.kmsConnectorDbMigration.affinity | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorDbMigration.tolerations }}
       tolerations:
-        {{- toYaml .Values.kmsConnectorDbMigration.tolerations | nindent 8 }}
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.kmsConnectorDbMigration.serviceAccountName }}
       serviceAccountName: {{ .Values.kmsConnectorDbMigration.serviceAccountName }}
       {{- end }}
@@ -42,10 +48,10 @@ spec:
           - name: DATABASE_URL
             value: {{ .Values.commonConfig.databaseUrl | quote }}
           {{- with .Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- toYaml . | nindent 10 }}
           {{- end }}
           {{- with .Values.kmsConnectorDbMigration.env }}
-            {{- toYaml . | nindent 12 }}
+            {{- toYaml . | nindent 10 }}
           {{- end }}
         resources:
           requests:
