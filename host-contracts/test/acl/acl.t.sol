@@ -21,7 +21,7 @@ contract ACLTest is Test {
     address internal fhevmExecutor;
 
     /**
-     * @dev Grants permissions for a hnadle for an account for testing purposes.
+     * @dev Grants permissions for a handle for an account for testing purposes.
      *
      * @param handle The handle identifier.
      * @param account The account to grant permissions to.
