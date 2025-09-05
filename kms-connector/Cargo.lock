@@ -310,6 +310,7 @@ dependencies = [
  "alloy-core 1.1.2",
  "alloy-eips 1.0.9",
  "alloy-genesis 1.0.9",
+ "alloy-json-rpc 1.0.9",
  "alloy-network 1.0.9",
  "alloy-node-bindings",
  "alloy-provider 1.0.9",

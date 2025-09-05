@@ -387,10 +387,11 @@ mod tests {
     use alloy::{
         primitives::{Address, TxHash},
         providers::{ProviderBuilder, mock::Asserter},
-        rpc::types::trace::geth::GethTrace,
+        rpc::{json_rpc::ErrorPayload, types::trace::geth::GethTrace},
     };
     use connector_utils::tests::rand::{rand_signature, rand_u256};
     use serde::de::DeserializeOwned;
+    use serde_json::value::RawValue;
     use std::fs::File;
 
     #[tokio::test]
@@ -471,6 +472,147 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(result.contains("Reverted transaction tracing is disabled"));
+    }
+
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn test_error_decryption_not_requested() -> anyhow::Result<()> {
+        // Create a mocked `alloy::Provider`
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+
+        // Used to mock all RPC responses of transaction sending operation
+        let estimate_gas: usize = 21000;
+        let send_tx_failure = ErrorPayload {
+            code: 3,
+            message: "execution reverted: custom error 0xd48af942: 77cb0955e69416cf320fcdf8186e8b3951fb40b84cb7f2a356d0e8af207b0046".into(),
+            data: Some(RawValue::from_string(String::from(
+                "\"0xd48af94277cb0955e69416cf320fcdf8186e8b3951fb40b84cb7f2a356d0e8af207b0046\"",
+            ))?),
+        };
+        asserter.push_success(&estimate_gas);
+        asserter.push_failure(send_tx_failure);
+
+        let inner_sender = TransactionSenderInner::new(
+            mock_provider.clone(),
+            DecryptionInstance::new(Address::default(), mock_provider),
+            TransactionSenderInnerConfig {
+                tx_retries: 1,
+                ..Default::default()
+            },
+        );
+        let error = inner_sender
+            .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
+                decryption_id: rand_u256(),
+                user_decrypted_shares: vec![],
+                signature: rand_signature(),
+                extra_data: vec![],
+            }))
+            .await
+            .unwrap_err();
+        match error {
+            Error::Irrecoverable(error_msg) => {
+                assert!(error_msg.to_string().contains("DecryptionNotRequested"));
+            }
+            _ => panic!("Unexpected error type"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn test_error_not_kms_tx_sender() -> anyhow::Result<()> {
+        // Create a mocked `alloy::Provider`
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+
+        // Used to mock all RPC responses of transaction sending operation
+        let estimate_gas: usize = 21000;
+        let send_tx_failure = ErrorPayload {
+            code: 3,
+            message: "execution reverted: custom error 0xaee86323: 00000000000000000000000031de9c8ac5ecd5eaceddddee531e9bad8ac9c2a5".into(),
+            data: Some(RawValue::from_string(String::from(
+                "\"0xaee8632300000000000000000000000031de9c8ac5ecd5eaceddddee531e9bad8ac9c2a5\"",
+            ))?),
+        };
+        asserter.push_success(&estimate_gas);
+        asserter.push_failure(send_tx_failure);
+
+        let inner_sender = TransactionSenderInner::new(
+            mock_provider.clone(),
+            DecryptionInstance::new(Address::default(), mock_provider),
+            TransactionSenderInnerConfig {
+                tx_retries: 1,
+                ..Default::default()
+            },
+        );
+        let error = inner_sender
+            .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
+                decryption_id: rand_u256(),
+                user_decrypted_shares: vec![],
+                signature: rand_signature(),
+                extra_data: vec![],
+            }))
+            .await
+            .unwrap_err();
+        match error {
+            Error::Irrecoverable(error_msg) => {
+                assert!(error_msg.to_string().contains("NotKmsTxSender"));
+            }
+            _ => panic!("Unexpected error type"),
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[tracing_test::traced_test]
+    async fn test_error_not_kms_signer() -> anyhow::Result<()> {
+        // Create a mocked `alloy::Provider`
+        let asserter = Asserter::new();
+        let mock_provider = ProviderBuilder::new()
+            .disable_recommended_fillers()
+            .connect_mocked_client(asserter.clone());
+
+        // Used to mock all RPC responses of transaction sending operation
+        let estimate_gas: usize = 21000;
+        let send_tx_failure = ErrorPayload {
+            code: 3,
+            message: "execution reverted: custom error 0x2a7c6ef6: 000000000000000000000000c5c5b98cb42800738f51b48b97b8d7998cfb3d68".into(),
+            data: Some(RawValue::from_string(String::from(
+                "\"0x2a7c6ef6000000000000000000000000c5c5b98cb42800738f51b48b97b8d7998cfb3d68\"",
+            ))?),
+        };
+        asserter.push_success(&estimate_gas);
+        asserter.push_failure(send_tx_failure);
+
+        let inner_sender = TransactionSenderInner::new(
+            mock_provider.clone(),
+            DecryptionInstance::new(Address::default(), mock_provider),
+            TransactionSenderInnerConfig {
+                tx_retries: 1,
+                ..Default::default()
+            },
+        );
+        let error = inner_sender
+            .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
+                decryption_id: rand_u256(),
+                user_decrypted_shares: vec![],
+                signature: rand_signature(),
+                extra_data: vec![],
+            }))
+            .await
+            .unwrap_err();
+        match error {
+            Error::Irrecoverable(error_msg) => {
+                assert!(error_msg.to_string().contains("NotKmsSigner"));
+            }
+            _ => panic!("Unexpected error type"),
+        }
+        Ok(())
     }
 
     fn parse_mock<T: DeserializeOwned>(path: &str) -> anyhow::Result<T> {

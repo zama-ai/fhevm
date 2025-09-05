@@ -22,6 +22,7 @@ tokio-util.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+alloy = { workspace = true, features = ["json-rpc"] }
 connector-utils = { workspace = true, features = ["tests"] }
 rstest.workspace = true
 serial_test.workspace = true
