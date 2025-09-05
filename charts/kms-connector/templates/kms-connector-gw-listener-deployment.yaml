@@ -85,10 +85,10 @@ spec:
               memory: {{ .Values.kmsConnectorGwListener.resources.limits.memory }}
           {{- if and .Values.kmsConnectorGwListener.probes .Values.kmsConnectorGwListener.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml .Values.kmsConnectorGwListener.probes.liveness | nindent 12 }}
+            {{- toYaml (omit .Values.kmsConnectorGwListener.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.kmsConnectorGwListener.probes .Values.kmsConnectorGwListener.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml .Values.kmsConnectorGwListener.probes.readiness | nindent 12 }}
+            {{- toYaml (omit .Values.kmsConnectorGwListener.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}

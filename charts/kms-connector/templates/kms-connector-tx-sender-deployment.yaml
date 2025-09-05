@@ -96,10 +96,10 @@ spec:
               memory: {{ .Values.kmsConnectorTxSender.resources.limits.memory }}
           {{- if and .Values.kmsConnectorTxSender.probes .Values.kmsConnectorTxSender.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml .Values.kmsConnectorTxSender.probes.liveness | nindent 12 }}
+            {{- toYaml (omit .Values.kmsConnectorTxSender.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.kmsConnectorTxSender.probes .Values.kmsConnectorTxSender.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml .Values.kmsConnectorTxSender.probes.readiness | nindent 12 }}
+            {{- toYaml (omit .Values.kmsConnectorTxSender.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}

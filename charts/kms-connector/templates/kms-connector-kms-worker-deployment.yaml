@@ -87,10 +87,10 @@ spec:
               memory: {{ .Values.kmsConnectorKmsWorker.resources.limits.memory }}
           {{- if and .Values.kmsConnectorKmsWorker.probes .Values.kmsConnectorKmsWorker.probes.liveness.enabled }}
           livenessProbe:
-            {{- toYaml .Values.kmsConnectorKmsWorker.probes.liveness | nindent 12 }}
+            {{- toYaml (omit .Values.kmsConnectorKmsWorker.probes.liveness "enabled") | nindent 12 }}
           {{- end }}
           {{- if and .Values.kmsConnectorKmsWorker.probes .Values.kmsConnectorKmsWorker.probes.readiness.enabled }}
           readinessProbe:
-            {{- toYaml .Values.kmsConnectorKmsWorker.probes.readiness | nindent 12 }}
+            {{- toYaml (omit .Values.kmsConnectorKmsWorker.probes.readiness "enabled") | nindent 12 }}
           {{- end }}
 {{- end -}}
