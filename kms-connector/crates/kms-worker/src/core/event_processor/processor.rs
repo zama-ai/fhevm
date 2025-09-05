@@ -17,7 +17,7 @@ pub trait EventProcessor: Send {
     fn process(
         &mut self,
         event: &Self::Event,
-    ) -> impl Future<Output = anyhow::Result<KmsResponse>> + Send;
+    ) -> impl Future<Output = Result<KmsResponse, ProcessingError>> + Send;
 }
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
@@ -37,7 +37,7 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
-    async fn process(&mut self, event: &Self::Event) -> anyhow::Result<KmsResponse> {
+    async fn process(&mut self, event: &Self::Event) -> Result<KmsResponse, ProcessingError> {
         info!("Starting to process {:?}...", event);
         match self.inner_process(event).await {
             Ok(response) => {
@@ -46,11 +46,11 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
             }
             Err(ProcessingError::Recoverable(e)) => {
                 event.mark_as_pending(&self.db_pool).await;
-                Err(e)
+                Err(ProcessingError::Recoverable(e))
             }
             Err(ProcessingError::Irrecoverable(e)) => {
                 event.delete_from_db(&self.db_pool).await;
-                Err(e)
+                Err(ProcessingError::Irrecoverable(e))
             }
         }
     }
@@ -60,7 +60,7 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
 pub enum ProcessingError {
     #[error("Processing failed with irrecoverable error : {0}")]
     Irrecoverable(anyhow::Error),
-    #[error("{0}")]
+    #[error("Processing failed: {0}")]
     Recoverable(anyhow::Error),
 }
 
