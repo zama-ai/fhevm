@@ -1,18 +1,58 @@
 use crate::config::settings::KeyUrl;
 use crate::core::event::{ApiCategory, ApiVersion, RelayerEvent};
 use crate::http::health::{health_handler, liveness_handler, version_handler, HealthChecker};
-use crate::http::input_http_listener::{InputProofHandler, InputProofRequestJson};
+use crate::http::input_http_listener::{
+    InputProofErrorResponseJson, InputProofHandler, InputProofRequestJson, InputProofResponseJson,
+};
 use crate::http::keyurl_http_listener::KeyUrlResponseJson;
-use crate::http::public_decrypt_http_listener::{PublicDecryptHandler, PublicDecryptRequestJson};
-use crate::http::userdecrypt_http_listener::{UserDecryptHandler, UserDecryptRequestJson};
+use crate::http::public_decrypt_http_listener::{
+    PublicDecryptErrorResponseJson, PublicDecryptHandler, PublicDecryptRequestJson,
+    PublicDecryptResponseJson,
+};
+use crate::http::userdecrypt_http_listener::{
+    UserDecryptErrorResponseJson, UserDecryptHandler, UserDecryptRequestJson,
+    UserDecryptResponseJson,
+};
 use crate::metrics::http::{self as http_metrics, HttpEndpoint, HttpMethod};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
-use axum::handler::{get, post};
-use axum::Json;
-use axum::Router;
+use serde::{Deserialize, Serialize};
+
+use std::str::FromStr;
+
+use axum::{
+    extract::Path,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{get, post},
+    Extension, Json, Router,
+};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use utoipa::{OpenApi, ToSchema};
+use utoipa_swagger_ui::SwaggerUi;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum HTTPApiVersion {
+    V1,
+}
+
+/// Represents the error response from the endpoint for input proof.
+#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
+pub struct VersionErrorResponseJson {
+    pub message: String,
+}
+
+impl FromStr for HTTPApiVersion {
+    type Err = ();
+
+    fn from_str(input: &str) -> Result<HTTPApiVersion, Self::Err> {
+        match input {
+            "v1" => Ok(HTTPApiVersion::V1),
+            _ => Err(()),
+        }
+    }
+}
 
 pub async fn run_http_server<D>(
     http_endpoint: SocketAddr,
@@ -30,11 +70,193 @@ pub async fn run_http_server<D>(
 
     // Build our application with the POST endpoint '/input-proof'
     let input_proof_handler = Arc::new(InputProofHandler::new(orchestrator.clone(), api_version));
+    #[utoipa::path(
+    post,
+    path = "/{api_version}/input-proof",
+    request_body = InputProofRequestJson,
+    responses(
+        (status = 200, description = "Successfully proved ciphertexts", body = InputProofResponseJson),
+        (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
+        (status = 400, description = "Bad request", body = InputProofErrorResponseJson),
+        (status = 422, description = "Failed to deserialize the JSON body"),
+        (status = 500, description = "Internal server error", body = InputProofErrorResponseJson),
+    ),
+    params(
+        ("api_version" = String, Path, description = "API version")
+    )
+)]
+    async fn input_proof_documented<D>(
+        Path(api_version): Path<String>,
+        Extension(input_proof_handler): Extension<Arc<InputProofHandler<D>>>,
+        Json(payload): Json<InputProofRequestJson>,
+    ) -> impl IntoResponse
+    where
+        D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
+    {
+        if let Ok(version) = HTTPApiVersion::from_str(api_version.as_str()) {
+            match version {
+                HTTPApiVersion::V1 => http_metrics::with_http_metrics(
+                    HttpEndpoint::InputProof,
+                    HttpMethod::Post,
+                    async move { input_proof_handler.handle(Json(payload)).await },
+                )
+                .await
+                .into_response(),
+            }
+        } else {
+            let error_response = VersionErrorResponseJson {
+                message: format!("Unsupported version: {api_version}, only v1 supported"),
+            };
+            (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
+        }
+    }
+
     let user_decrypt_handler = Arc::new(UserDecryptHandler::new(
         Arc::clone(&orchestrator),
         api_version,
     ));
+    #[utoipa::path(
+    post,
+    path = "/{api_version}/user-decrypt",
+    request_body = UserDecryptRequestJson,
+    responses(
+        (status = 200, description = "Successfully decrypted", body = UserDecryptResponseJson),
+        (status = 500, description = "Internal server error", body = UserDecryptErrorResponseJson),
+        (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
+        (status = 400, description = "Bad request", body = UserDecryptErrorResponseJson),
+        (status = 422, description = "Failed to deserialize the JSON body"),
+    ),
+    params(
+        ("api_version" = String, Path, description = "API version")
+    )
+)]
+    async fn user_decrypt_documented<D>(
+        Path(api_version): Path<String>,
+        Extension(user_decrypt_handler): Extension<Arc<UserDecryptHandler<D>>>,
+        Json(payload): Json<UserDecryptRequestJson>,
+    ) -> impl IntoResponse
+    where
+        D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
+    {
+        if let Ok(version) = HTTPApiVersion::from_str(api_version.as_str()) {
+            match version {
+                HTTPApiVersion::V1 => http_metrics::with_http_metrics(
+                    HttpEndpoint::UserDecrypt,
+                    HttpMethod::Post,
+                    async move { user_decrypt_handler.handle(Json(payload)).await },
+                )
+                .await
+                .into_response(),
+            }
+        } else {
+            let error_response = VersionErrorResponseJson {
+                message: format!("Unsupported version: {api_version}, only v1 supported"),
+            };
+            (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
+        }
+    }
+
+    // Public decryption
     let public_decrypt_handler = Arc::new(PublicDecryptHandler::new(orchestrator, api_version));
+    #[utoipa::path(
+    post,
+    path = "/{api_version}/public-decrypt",
+    request_body = PublicDecryptRequestJson,
+    responses(
+        (status = 200, description = "Successfully decrypted", body = PublicDecryptResponseJson),
+        (status = 500, description = "Internal server error", body = PublicDecryptErrorResponseJson),
+        (status = 400, description = "Bad request", body = PublicDecryptErrorResponseJson),
+        (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
+        (status = 422, description = "Failed to deserialize the JSON body"),
+    ),
+    params(
+        ("api_version" = String, Path, description = "API version")
+    )
+)]
+    async fn public_decrypt_documented<D>(
+        Path(api_version): Path<String>,
+        Extension(public_decrypt_handler): Extension<Arc<PublicDecryptHandler<D>>>,
+        Json(payload): Json<PublicDecryptRequestJson>,
+    ) -> impl IntoResponse
+    where
+        D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent> + 'static,
+    {
+        if let Ok(version) = HTTPApiVersion::from_str(api_version.as_str()) {
+            match version {
+                HTTPApiVersion::V1 => http_metrics::with_http_metrics(
+                    HttpEndpoint::PublicDecrypt,
+                    HttpMethod::Post,
+                    async move { public_decrypt_handler.handle(Json(payload)).await },
+                )
+                .await
+                .into_response(),
+            }
+        } else {
+            let error_response = VersionErrorResponseJson {
+                message: format!("Unsupported version: {api_version}, only v1 supported"),
+            };
+            (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
+        }
+    }
+
+    #[utoipa::path(
+    post,
+    path = "/{api_version}/keyurl",
+    responses(
+        (status = 200, description = "Key URL", body = KeyUrlResponseJson),
+        (status = 400, description = "Bad request (non-existing version)", body = VersionErrorResponseJson),
+    ),
+    params(
+        ("api_version" = String, Path, description = "API version")
+    )
+)]
+    async fn keyurl_documented(
+        Path(api_version): Path<String>,
+        Extension(keyurl): Extension<KeyUrl>,
+    ) -> impl IntoResponse {
+        if let Ok(version) = HTTPApiVersion::from_str(api_version.as_str()) {
+            match version {
+                HTTPApiVersion::V1 => http_metrics::with_http_metrics(
+                    HttpEndpoint::KeyUrl,
+                    HttpMethod::Get,
+                    async move {
+                        let keyurl_response = KeyUrlResponseJson::from(keyurl);
+                        Json(keyurl_response)
+                    },
+                )
+                .await
+                .into_response(),
+            }
+        } else {
+            let error_response = VersionErrorResponseJson {
+                message: format!("Unsupported version: {api_version}, only v1 supported"),
+            };
+            (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
+        }
+    }
+
+    // OpenAPI documentation
+    #[derive(OpenApi)]
+    #[openapi(
+    paths(
+        public_decrypt_documented,
+        user_decrypt_documented,
+        input_proof_documented,
+        keyurl_documented,
+    ),
+    components(
+        schemas(PublicDecryptRequestJson, PublicDecryptResponseJson, PublicDecryptErrorResponseJson),
+        schemas(UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptErrorResponseJson),
+        schemas(InputProofRequestJson, InputProofResponseJson, InputProofErrorResponseJson),
+        schemas(KeyUrlResponseJson),
+        schemas(VersionErrorResponseJson),
+    ),
+    tags(
+        (name = "FHEVM Relayer API", description = "FHEVM Relayer API")
+    )
+)]
+    struct ApiDoc;
+
     let app = Router::new()
         .route("/liveness", get(liveness_handler))
         .route(
@@ -43,79 +265,28 @@ pub async fn run_http_server<D>(
         )
         .route("/version", get(version_handler))
         .route(
-            format!("/{api_version}/input-proof").as_str(),
-            post({
-                let handler = Arc::clone(&input_proof_handler);
-                move |payload: Json<InputProofRequestJson>| {
-                    let handler = Arc::clone(&handler);
-                    async move {
-                        http_metrics::with_http_metrics(
-                            HttpEndpoint::InputProof,
-                            HttpMethod::Post,
-                            async move { handler.handle(payload).await },
-                        )
-                        .await
-                    }
-                }
-            }),
+            "/{api_version}/input-proof",
+            post(input_proof_documented::<D>),
         )
+        .layer(Extension(input_proof_handler))
         .route(
-            format!("/{api_version}/public-decrypt").as_str(),
-            post({
-                let handler = Arc::new(public_decrypt_handler);
-                move |payload: Json<PublicDecryptRequestJson>| {
-                    let handler = Arc::clone(&handler);
-                    async move {
-                        http_metrics::with_http_metrics(
-                            HttpEndpoint::PublicDecrypt,
-                            HttpMethod::Post,
-                            async move { handler.handle(payload).await },
-                        )
-                        .await
-                    }
-                }
-            }),
+            "/{api_version}/public-decrypt",
+            post(public_decrypt_documented::<D>),
         )
+        .layer(Extension(public_decrypt_handler))
         .route(
-            format!("/{api_version}/user-decrypt").as_str(),
-            post({
-                let handler = Arc::clone(&user_decrypt_handler);
-                move |payload: Json<UserDecryptRequestJson>| {
-                    let handler = Arc::clone(&handler);
-                    async move {
-                        http_metrics::with_http_metrics(
-                            HttpEndpoint::UserDecrypt,
-                            HttpMethod::Post,
-                            async move { handler.handle(payload).await },
-                        )
-                        .await
-                    }
-                }
-            }),
+            "/{api_version}/user-decrypt",
+            post(user_decrypt_documented::<D>),
         )
-        .route(
-            format!("/{api_version}/keyurl").as_str(),
-            get({
-                let key_url_clone = key_url.clone();
-                move || async {
-                    http_metrics::with_http_metrics(
-                        HttpEndpoint::KeyUrl,
-                        HttpMethod::Get,
-                        async move {
-                            let keyurl_response = KeyUrlResponseJson::from(key_url_clone);
-                            Json(keyurl_response)
-                        },
-                    )
-                    .await
-                }
-            }),
-        );
+        .layer(Extension(user_decrypt_handler))
+        .route("/{api_version}/keyurl", get(keyurl_documented))
+        .layer(Extension(key_url))
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()));
 
     println!("Server listening on http://{http_endpoint}");
 
     // Start the server with hyper underneath.
-    axum::Server::bind(&http_endpoint)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+
+    let listener = tokio::net::TcpListener::bind(http_endpoint).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
 }

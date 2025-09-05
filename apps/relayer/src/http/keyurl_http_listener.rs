@@ -1,24 +1,25 @@
 use crate::config::settings::KeyUrl;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use utoipa::ToSchema;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct KeyUrlResponseJson {
     pub response: Response,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct Response {
     pub fhe_key_info: Vec<FheKeyInfo>,
     pub crs: HashMap<String, KeyData>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct FheKeyInfo {
     pub fhe_public_key: KeyData,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, ToSchema)]
 pub struct KeyData {
     pub data_id: String,
     pub urls: Vec<String>,

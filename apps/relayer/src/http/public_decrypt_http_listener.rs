@@ -12,12 +12,14 @@ use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::info;
 use tracing::{error, instrument, span, Level};
+use utoipa::ToSchema;
 
 /// Represents the payload coming into the '/input-proof' endpoint.
-#[derive(Debug, Deserialize, Clone, Serialize)]
+#[derive(Debug, Deserialize, Clone, Serialize, ToSchema)]
 #[allow(non_snake_case)]
 pub struct PublicDecryptRequestJson {
     pub ciphertextHandles: Vec<String>,
+    #[schema(value_type = String)]
     pub extraData: Bytes,
 }
 
@@ -29,20 +31,23 @@ impl PublicDecryptRequestJson {
 }
 
 /// Represents the response from the '/input-proof' endpoint.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct PublicDecryptResponseJson {
     pub response: Vec<PublicDecryptResponsePayloadJson>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone, ToSchema)]
 pub struct PublicDecryptResponsePayloadJson {
+    #[schema(value_type = String)]
     pub decrypted_value: Bytes,
+    #[schema(value_type = Vec<String>)]
     pub signatures: Vec<Bytes>,
+    #[schema(value_type = String)]
     pub extra_data: Bytes,
 }
 
 /// Represents the error response from the '/input-proof' endpoint.
-#[derive(Debug, Serialize, Clone, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct PublicDecryptErrorResponseJson {
     pub message: String,
 }

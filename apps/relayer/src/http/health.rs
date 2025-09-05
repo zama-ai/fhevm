@@ -5,21 +5,22 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
+use utoipa::ToSchema;
 
 // Response structures for reliability endpoints
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct LivenessResponse {
     status: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct HealthResponse {
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     dependencies: Option<HashMap<String, String>>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, ToSchema)]
 pub struct VersionResponse {
     name: String,
     version: String,
@@ -110,6 +111,14 @@ impl HealthChecker {
 }
 
 // Handler functions
+// Liveness
+#[utoipa::path(
+    get,
+    path = "/liveness",
+    responses(
+        (status = 200, description = "Alive", body = LivenessResponse),
+    ),
+)]
 pub async fn liveness_handler() -> impl IntoResponse {
     // Simple check - if we can respond, we're alive
     (
@@ -121,6 +130,15 @@ pub async fn liveness_handler() -> impl IntoResponse {
         .into_response()
 }
 
+// Health
+#[utoipa::path(
+    get,
+    path = "/healthz",
+    responses(
+        (status = 200, description = "Healthy", body = HealthResponse),
+        (status = 503, description = "Not healthy", body = HealthResponse),
+    ),
+)]
 pub async fn health_handler(health_checker: Arc<HealthChecker>) -> impl IntoResponse {
     let (is_healthy, dependencies) = health_checker.check_all().await;
 
@@ -150,6 +168,14 @@ pub mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
+// Health
+#[utoipa::path(
+    get,
+    path = "/version",
+    responses(
+        (status = 200, description = "Version", body = VersionResponse),
+    ),
+)]
 pub async fn version_handler() -> impl IntoResponse {
     // These values should be injected at build time via environment variables
     let app_name = std::env::var("APP_NAME").unwrap_or_else(|_| "relayer-service".to_string());

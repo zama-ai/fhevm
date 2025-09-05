@@ -14,9 +14,10 @@ use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::info;
 use tracing::{error, instrument, span, Level};
+use utoipa::ToSchema;
 
 /// Represents the payload coming into the endpoint for user decrypt.
-#[derive(Debug, Deserialize, Clone, Serialize)]
+#[derive(Debug, Deserialize, Clone, Serialize, ToSchema)]
 #[allow(non_snake_case)]
 pub struct UserDecryptRequestJson {
     pub handleContractPairs: Vec<HandleContractPairJson>,
@@ -30,7 +31,7 @@ pub struct UserDecryptRequestJson {
     pub extraData: String,
 }
 
-#[derive(Debug, Deserialize, Clone, Serialize, Hash)]
+#[derive(Debug, Deserialize, Clone, Serialize, Hash, ToSchema)]
 #[allow(non_snake_case)]
 pub struct HandleContractPairJson {
     pub handle: String,
@@ -47,7 +48,7 @@ impl Display for HandleContractPairJson {
     }
 }
 
-#[derive(Debug, Deserialize, Clone, Serialize)]
+#[derive(Debug, Deserialize, Clone, Serialize, ToSchema)]
 #[allow(non_snake_case)]
 pub struct RequestValidityJson {
     pub startTimestamp: String,
@@ -62,20 +63,23 @@ impl UserDecryptRequestJson {
 }
 
 /// Represents the response from the endpoint for user decrypt.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct UserDecryptResponseJson {
     pub response: Vec<UserDecryptResponsePayloadJson>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, ToSchema)]
 pub struct UserDecryptResponsePayloadJson {
+    #[schema(value_type = String)]
     pub payload: Bytes,
+    #[schema(value_type = String)]
     pub signature: Bytes,
+    #[schema(value_type = String)]
     pub extra_data: Bytes,
 }
 
 /// Represents the error response from the endpoint for user decrypt.
-#[derive(Debug, Serialize, Clone, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct UserDecryptErrorResponseJson {
     pub message: String,
 }

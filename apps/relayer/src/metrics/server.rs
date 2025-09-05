@@ -1,4 +1,4 @@
-use axum::{handler::get, response::IntoResponse, Router};
+use axum::{response::IntoResponse, routing::get, Router};
 use prometheus::{Registry, TextEncoder};
 use std::net::SocketAddr;
 use tracing::info;
@@ -34,8 +34,9 @@ pub async fn run_metrics_server(registry: Registry, endpoint: String) {
         )
         .route("/health", get(health_handler));
 
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+
+    axum::serve(listener, app)
         .await
         .expect("metrics server failed");
 }

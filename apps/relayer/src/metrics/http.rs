@@ -1,12 +1,12 @@
 use std::future::Future;
 
 use axum::response::IntoResponse;
-use http::StatusCode;
 use once_cell::sync::OnceCell;
 use prometheus::{
     register_counter_vec_with_registry, register_histogram_vec_with_registry, CounterVec,
     HistogramOpts, HistogramVec, Opts, Registry,
 };
+use reqwest::StatusCode;
 use tokio::time::Instant;
 
 use crate::config::settings::HttpMetricsConfig;

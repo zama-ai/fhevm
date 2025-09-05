@@ -10,9 +10,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tracing::{info, instrument, span, Level};
+use utoipa::ToSchema;
 
 /// Represents the payload coming into the endpoint for input proof.
-#[derive(Debug, Deserialize, Clone, Serialize)]
+#[derive(Debug, Deserialize, Clone, Serialize, ToSchema)]
 #[allow(non_snake_case)]
 pub struct InputProofRequestJson {
     #[serde(deserialize_with = "de_string_or_number")]
@@ -35,19 +36,19 @@ impl InputProofRequestJson {
 }
 
 /// Represents the response from the endpoint for input proof.
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct InputProofResponseJson {
     pub response: InputProofResponsePayloadJson,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
 pub struct InputProofResponsePayloadJson {
     pub handles: Vec<String>, // Ordered List of hex encoded handles with 0x prefix.
     pub signatures: Vec<String>, // Attestation signatures for Input verification for the ordered list of handles.
 }
 
 /// Represents the error response from the endpoint for input proof.
-#[derive(Debug, Serialize, Clone, Deserialize)]
+#[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
 pub struct InputProofErrorResponseJson {
     pub message: String,
 }
