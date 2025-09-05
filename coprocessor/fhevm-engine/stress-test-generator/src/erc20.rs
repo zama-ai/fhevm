@@ -7,12 +7,13 @@ use sqlx::Postgres;
 use tracing::{error, info};
 
 use crate::utils::{
-    allow_handle, next_random_handle, tfhe_event, ERCTransferVariant, FheType, DEF_TYPE,
+    allow_handle, next_random_handle, tfhe_event, Context, ERCTransferVariant, FheType, DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn erc20_transaction(
+    ctx: &Context,
     source: Option<Handle>,
     destination: Option<Handle>,
     amount: Option<Handle>,
@@ -26,22 +27,23 @@ pub async fn erc20_transaction(
     let caller = user_address.parse().unwrap();
     let transaction_id = transaction_id.unwrap_or(next_random_handle(DEF_TYPE));
 
-    info!("ERC20 Transaction: tx_id: {:?}", transaction_id);
+    info!(target: "tool", "ERC20 Transaction: tx_id: {:?}", transaction_id);
 
     let source =
-        generate_random_handle_amount_if_none(source, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, source, contract_address, user_address).await?;
 
-    info!(source = %source, "ERC20 Transfer");
+    info!(target: "tool", source = %source, "ERC20 Transfer");
 
     let destination =
-        generate_random_handle_amount_if_none(destination, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, destination, contract_address, user_address)
+            .await?;
 
-    info!(destination = %destination, "ERC20 Transfer");
+    info!(target: "tool", destination = %destination, "ERC20 Transfer");
 
     let amount =
-        generate_random_handle_amount_if_none(amount, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, amount, contract_address, user_address).await?;
 
-    info!("ERC20 Transfer: {} -> {}: {}", source, destination, amount);
+    info!(target: "tool", "ERC20 Transfer: {} -> {}: {}", source, destination, amount);
 
     let has_enough_funds = next_random_handle(FheType::FheBool);
     let log = alloy::rpc::types::Log {
@@ -82,7 +84,9 @@ pub async fn erc20_transaction(
                 log_index: None,
                 removed: false,
             };
-            listener_event_to_db.insert_tfhe_event(&log).await?;
+
+            insert_tfhe_event(listener_event_to_db, &log).await?;
+
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::FheIfThenElse(
                     TfheContract::FheIfThenElse {
@@ -108,7 +112,8 @@ pub async fn erc20_transaction(
                 pool,
             )
             .await?;
-            listener_event_to_db.insert_tfhe_event(&log).await?;
+            insert_tfhe_event(listener_event_to_db, &log).await?;
+
             let new_source_target = next_random_handle(DEF_TYPE);
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
@@ -126,7 +131,7 @@ pub async fn erc20_transaction(
                 log_index: None,
                 removed: false,
             };
-            listener_event_to_db.insert_tfhe_event(&log).await?;
+            insert_tfhe_event(listener_event_to_db, &log).await?;
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::FheIfThenElse(
                     TfheContract::FheIfThenElse {
@@ -152,7 +157,7 @@ pub async fn erc20_transaction(
                 pool,
             )
             .await?;
-            listener_event_to_db.insert_tfhe_event(&log).await?;
+            insert_tfhe_event(listener_event_to_db, &log).await?;
         }
         ERCTransferVariant::NoCMUX => {
             let cast_has_enough_funds = next_random_handle(DEF_TYPE);
@@ -171,7 +176,8 @@ pub async fn erc20_transaction(
                 log_index: None,
                 removed: false,
             };
-            listener_event_to_db.insert_tfhe_event(&log).await?;
+            insert_tfhe_event(listener_event_to_db, &log).await?;
+
             let select_amount = next_random_handle(DEF_TYPE);
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
@@ -189,7 +195,9 @@ pub async fn erc20_transaction(
                 log_index: None,
                 removed: false,
             };
-            listener_event_to_db.insert_tfhe_event(&log).await?;
+
+            insert_tfhe_event(listener_event_to_db, &log).await?;
+
             let log = alloy::rpc::types::Log {
                 inner: tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
                     caller,
@@ -206,7 +214,9 @@ pub async fn erc20_transaction(
                 log_index: None,
                 removed: false,
             };
-            listener_event_to_db.insert_tfhe_event(&log).await?;
+
+            insert_tfhe_event(listener_event_to_db, &log).await?;
+
             allow_handle(
                 &new_destination.to_vec(),
                 AllowEvents::AllowedForDecryption,
@@ -230,7 +240,9 @@ pub async fn erc20_transaction(
                 log_index: None,
                 removed: false,
             };
-            listener_event_to_db.insert_tfhe_event(&log).await?;
+
+            insert_tfhe_event(listener_event_to_db, &log).await?;
+
             allow_handle(
                 &new_source.to_vec(),
                 AllowEvents::AllowedForDecryption,
@@ -244,4 +256,14 @@ pub async fn erc20_transaction(
         }
     }
     Ok((new_source, new_destination))
+}
+
+pub async fn insert_tfhe_event(
+    db: &mut ListenerDatabase,
+    log: &alloy::rpc::types::Log<TfheContractEvents>,
+) -> Result<(), sqlx::Error> {
+    let started_at = tokio::time::Instant::now();
+    db.insert_tfhe_event(log).await?;
+    tracing::debug!(target: "tool", duration = ?started_at.elapsed(), "TFHE event, db_query");
+    Ok(())
 }

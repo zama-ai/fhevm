@@ -124,6 +124,12 @@ pub struct Job {
     pub scenarios: Vec<Scenario>,
 }
 
+#[derive(Clone)]
+pub struct Context {
+    pub args: Args,
+    pub ecfg: EnvConfig,
+}
+
 #[allow(dead_code)]
 pub async fn allow_handle(
     handle: &Vec<u8>,
@@ -131,6 +137,8 @@ pub async fn allow_handle(
     account_address: String,
     pool: &sqlx::Pool<Postgres>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let started_at = std::time::Instant::now();
+
     let ecfg = EnvConfig::new();
     let _query =
             sqlx::query!(
@@ -149,6 +157,8 @@ pub async fn allow_handle(
     )
     .execute(pool)
     .await?;
+
+    tracing::debug!(target: "tool", duration = ?started_at.elapsed(), "Handle allowed, db_query");
     Ok(())
 }
 
@@ -260,7 +270,7 @@ pub async fn query_and_save_pks(
 }
 
 /// User configuration in which benchmarks must be run.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct EnvConfig {
     #[allow(dead_code)]
     pub evgen_scenario: String,
@@ -288,6 +298,7 @@ pub struct EnvConfig {
 
 use std::env;
 
+use crate::args::Args;
 use crate::zk_gen::KEYS;
 impl EnvConfig {
     #[allow(dead_code)]

@@ -8,13 +8,14 @@ use sqlx::Postgres;
 
 use crate::erc20::erc20_transaction;
 use crate::utils::{
-    allow_handle, generate_trivial_encrypt, next_random_handle, tfhe_event, ERCTransferVariant,
-    DEF_TYPE,
+    allow_handle, generate_trivial_encrypt, next_random_handle, tfhe_event, Context,
+    ERCTransferVariant, DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 
 #[allow(clippy::too_many_arguments)]
 async fn dex_swap_request_update_dex_balance(
+    ctx: &Context,
     from_balance: Option<Handle>,
     current_dex_balance: Option<Handle>,
     amount: Option<Handle>,
@@ -27,13 +28,19 @@ async fn dex_swap_request_update_dex_balance(
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let caller: Address = user_address.parse().unwrap();
     let from_balance =
-        generate_random_handle_amount_if_none(from_balance, contract_address, user_address).await?;
-    let current_dex_balance =
-        generate_random_handle_amount_if_none(current_dex_balance, contract_address, user_address)
+        generate_random_handle_amount_if_none(ctx, from_balance, contract_address, user_address)
             .await?;
+    let current_dex_balance = generate_random_handle_amount_if_none(
+        ctx,
+        current_dex_balance,
+        contract_address,
+        user_address,
+    )
+    .await?;
     let amount =
-        generate_random_handle_amount_if_none(amount, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, amount, contract_address, user_address).await?;
     let (_, new_current_balance) = erc20_transaction(
+        ctx,
         Some(from_balance),
         Some(current_dex_balance),
         Some(amount),
@@ -68,6 +75,7 @@ async fn dex_swap_request_update_dex_balance(
 
 #[allow(clippy::too_many_arguments)]
 async fn dex_swap_request_finalize(
+    ctx: &Context,
     to_balance: Option<Handle>,
     total_dex_token_in: Option<Handle>,
     sent: Option<Handle>,
@@ -79,11 +87,17 @@ async fn dex_swap_request_finalize(
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let caller: Address = user_address.parse().unwrap();
     let to_balance =
-        generate_random_handle_amount_if_none(to_balance, contract_address, user_address).await?;
-    let total_dex_token_in =
-        generate_random_handle_amount_if_none(total_dex_token_in, contract_address, user_address)
+        generate_random_handle_amount_if_none(ctx, to_balance, contract_address, user_address)
             .await?;
-    let sent = generate_random_handle_amount_if_none(sent, contract_address, user_address).await?;
+    let total_dex_token_in = generate_random_handle_amount_if_none(
+        ctx,
+        total_dex_token_in,
+        contract_address,
+        user_address,
+    )
+    .await?;
+    let sent =
+        generate_random_handle_amount_if_none(ctx, sent, contract_address, user_address).await?;
     let pending_in = next_random_handle(DEF_TYPE);
     let log = alloy::rpc::types::Log {
         inner: tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
@@ -125,6 +139,7 @@ async fn dex_swap_request_finalize(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn dex_swap_request_transaction(
+    ctx: &Context,
     from_balance_0: Option<Handle>,
     from_balance_1: Option<Handle>,
     current_balance_0: Option<Handle>,
@@ -143,33 +158,46 @@ pub async fn dex_swap_request_transaction(
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let transaction_id = next_random_handle(DEF_TYPE);
     let from_balance_0 =
-        generate_random_handle_amount_if_none(from_balance_0, contract_address, user_address)
+        generate_random_handle_amount_if_none(ctx, from_balance_0, contract_address, user_address)
             .await?;
     let from_balance_1 =
-        generate_random_handle_amount_if_none(from_balance_1, contract_address, user_address)
+        generate_random_handle_amount_if_none(ctx, from_balance_1, contract_address, user_address)
             .await?;
-    let current_balance_0 =
-        generate_random_handle_amount_if_none(current_balance_0, contract_address, user_address)
-            .await?;
-    let current_balance_1 =
-        generate_random_handle_amount_if_none(current_balance_1, contract_address, user_address)
-            .await?;
+    let current_balance_0 = generate_random_handle_amount_if_none(
+        ctx,
+        current_balance_0,
+        contract_address,
+        user_address,
+    )
+    .await?;
+    let current_balance_1 = generate_random_handle_amount_if_none(
+        ctx,
+        current_balance_1,
+        contract_address,
+        user_address,
+    )
+    .await?;
     let to_balance_0 =
-        generate_random_handle_amount_if_none(to_balance_0, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, to_balance_0, contract_address, user_address)
+            .await?;
     let to_balance_1 =
-        generate_random_handle_amount_if_none(to_balance_1, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, to_balance_1, contract_address, user_address)
+            .await?;
     let total_token_0 =
-        generate_random_handle_amount_if_none(total_token_0, contract_address, user_address)
+        generate_random_handle_amount_if_none(ctx, total_token_0, contract_address, user_address)
             .await?;
     let total_token_1 =
-        generate_random_handle_amount_if_none(total_token_1, contract_address, user_address)
+        generate_random_handle_amount_if_none(ctx, total_token_1, contract_address, user_address)
             .await?;
     let amount_0 =
-        generate_random_handle_amount_if_none(amount_0, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, amount_0, contract_address, user_address)
+            .await?;
     let amount_1 =
-        generate_random_handle_amount_if_none(amount_1, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, amount_1, contract_address, user_address)
+            .await?;
 
     let (sent_0, new_current_balance_0) = dex_swap_request_update_dex_balance(
+        ctx,
         Some(from_balance_0),
         Some(current_balance_0),
         Some(amount_0),
@@ -182,6 +210,7 @@ pub async fn dex_swap_request_transaction(
     )
     .await?;
     let (sent_1, new_current_balance_1) = dex_swap_request_update_dex_balance(
+        ctx,
         Some(from_balance_1),
         Some(current_balance_1),
         Some(amount_1),
@@ -195,6 +224,7 @@ pub async fn dex_swap_request_transaction(
     .await?;
 
     let (pending_in_0, pending_total_token_in_0) = dex_swap_request_finalize(
+        ctx,
         Some(to_balance_0),
         Some(total_token_0),
         Some(sent_0),
@@ -206,6 +236,7 @@ pub async fn dex_swap_request_transaction(
     )
     .await?;
     let (pending_in_1, pending_total_token_in_1) = dex_swap_request_finalize(
+        ctx,
         Some(to_balance_1),
         Some(total_token_1),
         Some(sent_1),
@@ -263,6 +294,7 @@ pub async fn dex_swap_request_transaction(
 
 #[allow(clippy::too_many_arguments)]
 async fn dex_swap_claim_prepare(
+    ctx: &Context,
     pending_0_in: Option<Handle>,
     pending_1_in: Option<Handle>,
     total_dex_token_0_in: u64,
@@ -278,9 +310,11 @@ async fn dex_swap_claim_prepare(
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let caller: Address = user_address.parse().unwrap();
     let pending_0_in =
-        generate_random_handle_amount_if_none(pending_0_in, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, pending_0_in, contract_address, user_address)
+            .await?;
     let pending_1_in =
-        generate_random_handle_amount_if_none(pending_1_in, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, pending_1_in, contract_address, user_address)
+            .await?;
     let mut amount_0_out = pending_1_in;
     let mut amount_1_out = pending_0_in;
     if total_dex_token_1_in != 0 {
@@ -468,6 +502,7 @@ async fn dex_swap_claim_prepare(
 
 #[allow(clippy::too_many_arguments)]
 async fn dex_swap_claim_update_dex_balance(
+    ctx: &Context,
     amount_out: Option<Handle>,
     total_dex_other_token_in: u64,
     old_balance: Option<Handle>,
@@ -480,16 +515,23 @@ async fn dex_swap_claim_update_dex_balance(
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let amount_out =
-        generate_random_handle_amount_if_none(amount_out, contract_address, user_address).await?;
-    let old_balance =
-        generate_random_handle_amount_if_none(old_balance, contract_address, user_address).await?;
-    let current_dex_balance =
-        generate_random_handle_amount_if_none(current_dex_balance, contract_address, user_address)
+        generate_random_handle_amount_if_none(ctx, amount_out, contract_address, user_address)
             .await?;
+    let old_balance =
+        generate_random_handle_amount_if_none(ctx, old_balance, contract_address, user_address)
+            .await?;
+    let current_dex_balance = generate_random_handle_amount_if_none(
+        ctx,
+        current_dex_balance,
+        contract_address,
+        user_address,
+    )
+    .await?;
     let mut new_balance = old_balance;
     let mut new_dex_balance = current_dex_balance;
     if total_dex_other_token_in != 0 {
         (new_dex_balance, new_balance) = erc20_transaction(
+            ctx,
             Some(current_dex_balance),
             Some(old_balance),
             Some(amount_out),
@@ -507,6 +549,7 @@ async fn dex_swap_claim_update_dex_balance(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn dex_swap_claim_transaction(
+    ctx: &Context,
     pending_0_in: Option<Handle>,
     pending_1_in: Option<Handle>,
     total_token_0_in: u64,
@@ -525,23 +568,34 @@ pub async fn dex_swap_claim_transaction(
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let transaction_id = next_random_handle(DEF_TYPE);
     let pending_0_in =
-        generate_random_handle_amount_if_none(pending_0_in, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, pending_0_in, contract_address, user_address)
+            .await?;
     let pending_1_in =
-        generate_random_handle_amount_if_none(pending_1_in, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, pending_1_in, contract_address, user_address)
+            .await?;
     let old_balance_0 =
-        generate_random_handle_amount_if_none(old_balance_0, contract_address, user_address)
+        generate_random_handle_amount_if_none(ctx, old_balance_0, contract_address, user_address)
             .await?;
     let old_balance_1 =
-        generate_random_handle_amount_if_none(old_balance_1, contract_address, user_address)
+        generate_random_handle_amount_if_none(ctx, old_balance_1, contract_address, user_address)
             .await?;
-    let current_balance_0 =
-        generate_random_handle_amount_if_none(current_balance_0, contract_address, user_address)
-            .await?;
-    let current_balance_1 =
-        generate_random_handle_amount_if_none(current_balance_1, contract_address, user_address)
-            .await?;
+    let current_balance_0 = generate_random_handle_amount_if_none(
+        ctx,
+        current_balance_0,
+        contract_address,
+        user_address,
+    )
+    .await?;
+    let current_balance_1 = generate_random_handle_amount_if_none(
+        ctx,
+        current_balance_1,
+        contract_address,
+        user_address,
+    )
+    .await?;
 
     let (amount_0_out, amount_1_out) = dex_swap_claim_prepare(
+        ctx,
         Some(pending_0_in),
         Some(pending_1_in),
         total_token_0_in,
@@ -558,6 +612,7 @@ pub async fn dex_swap_claim_transaction(
     .await?;
 
     let (new_dex_balance_0, new_balance_0) = dex_swap_claim_update_dex_balance(
+        ctx,
         Some(amount_0_out),
         total_token_1_in,
         Some(old_balance_0),
@@ -571,6 +626,7 @@ pub async fn dex_swap_claim_transaction(
     )
     .await?;
     let (new_dex_balance_1, new_balance_1) = dex_swap_claim_update_dex_balance(
+        ctx,
         Some(amount_1_out),
         total_token_0_in,
         Some(old_balance_1),
