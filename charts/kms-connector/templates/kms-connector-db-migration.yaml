@@ -45,14 +45,14 @@ spec:
         command:
           {{- toYaml .Values.kmsConnectorDbMigration.command | nindent 10 }}
         env:
-          - name: DATABASE_URL
-            value: {{ .Values.commonConfig.databaseUrl | quote }}
           {{- with .Values.commonConfig.env }}
             {{- toYaml . | nindent 10 }}
           {{- end }}
           {{- with .Values.kmsConnectorDbMigration.env }}
             {{- toYaml . | nindent 10 }}
           {{- end }}
+          - name: DATABASE_URL
+            value: {{ .Values.commonConfig.databaseUrl | quote }}
         resources:
           requests:
             cpu: {{ .Values.kmsConnectorDbMigration.resources.requests.cpu }}

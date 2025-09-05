@@ -50,6 +50,12 @@ spec:
         - name: kms-connector-tx-sender
           image: {{ .Values.kmsConnectorTxSender.image.name }}:{{ .Values.kmsConnectorTxSender.image.tag }}
           env:
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.kmsConnectorTxSender.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
             - name: KMS_CONNECTOR_DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
             - name: KMS_CONNECTOR_GATEWAY_URL
@@ -74,12 +80,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-          {{- end }}
-          {{- with .Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.kmsConnectorTxSender.env }}
-            {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorTxSender.ports }}

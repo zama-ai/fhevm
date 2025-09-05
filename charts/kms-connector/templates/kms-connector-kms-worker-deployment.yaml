@@ -50,6 +50,12 @@ spec:
         - name: kms-connector-kms-worker
           image: {{ .Values.kmsConnectorKmsWorker.image.name }}:{{ .Values.kmsConnectorKmsWorker.image.tag }}
           env:
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.kmsConnectorKmsWorker.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
             - name: KMS_CONNECTOR_DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
             - name: KMS_CONNECTOR_GATEWAY_URL
@@ -64,14 +70,8 @@ spec:
                 fieldRef:
                   fieldPath: metadata.name
           {{- end }}
-          {{- with .Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
             - name: KMS_CONNECTOR_KMS_CORE_ENDPOINTS
               value: {{ .Values.kmsConnectorKmsWorker.config.kmsCoreEndpoints | quote }}
-          {{- with .Values.kmsConnectorKmsWorker.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorKmsWorker.ports }}
             - name: {{ $portName }}

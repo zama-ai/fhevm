@@ -50,6 +50,12 @@ spec:
         - name: kms-connector-gw-listener
           image: {{ .Values.kmsConnectorGwListener.image.name }}:{{ .Values.kmsConnectorGwListener.image.tag }}
           env:
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.kmsConnectorGwListener.env }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
             - name: KMS_CONNECTOR_DATABASE_URL
               value: {{ .Values.commonConfig.databaseUrl | quote }}
             - name: KMS_CONNECTOR_GATEWAY_URL
@@ -69,12 +75,6 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
-          {{- end }}
-          {{- with .Values.commonConfig.env }}
-            {{- toYaml . | nindent 12 }}
-          {{- end }}
-          {{- with .Values.kmsConnectorGwListener.env }}
-            {{- toYaml . | nindent 12 }}
           {{- end }}
           ports:
             {{- range $portName, $portValue := .Values.kmsConnectorGwListener.ports }}
