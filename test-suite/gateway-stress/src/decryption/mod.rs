@@ -42,9 +42,8 @@ where
     Err(anyhow!("Event not found in logs"))
 }
 
-const TX_RETRIES: usize = 5;
-const TX_RETRY_INTERVAL: Duration = Duration::from_millis(500);
-const TX_GAS_INCREASE_PERCENT: u128 = 300;
+const TX_RETRIES: usize = 50;
+const TX_GAS_INCREASE_PERCENT: u128 = 105;
 
 async fn send_tx_with_retries<F, P>(
     provider: &P,
@@ -60,6 +59,7 @@ where
     for i in 1..=TX_RETRIES {
         overprovision_gas(provider, &mut decryption_call).await;
 
+        trace!("Sending transaction to the Gateway");
         match provider.send_transaction(decryption_call.clone()).await {
             Ok(decryption_tx) => {
                 debug!("Transaction has been sent to the Gateway");
@@ -73,12 +73,8 @@ where
                 return Ok(());
             }
             Err(e) => {
-                debug!(
-                    "WARN: Transaction attempt #{i}/{TX_RETRIES} failed: {e}. Retrying in {}ms...",
-                    TX_RETRY_INTERVAL.as_millis()
-                );
+                debug!("WARN: Transaction attempt #{i}/{TX_RETRIES} failed: {e}",);
                 last_error = e.to_string();
-                tokio::time::sleep(TX_RETRY_INTERVAL).await;
             }
         }
     }
