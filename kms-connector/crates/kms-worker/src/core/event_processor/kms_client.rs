@@ -1,5 +1,8 @@
 use crate::{
-    core::{Config, event_processor::eip712::verify_user_decryption_eip712},
+    core::{
+        Config,
+        event_processor::{eip712::verify_user_decryption_eip712, processor::ProcessingError},
+    },
     monitoring::metrics::{
         CORE_REQUEST_SENT_COUNTER, CORE_REQUEST_SENT_ERRORS, CORE_RESPONSE_COUNTER,
         CORE_RESPONSE_ERRORS,
@@ -107,7 +110,7 @@ impl KmsClient {
     pub async fn send_request(
         &mut self,
         request: KmsGrpcRequest,
-    ) -> anyhow::Result<KmsGrpcResponse> {
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
         match request {
             KmsGrpcRequest::PublicDecryption(request) => {
                 self.request_public_decryption(request).await
@@ -119,7 +122,7 @@ impl KmsClient {
     async fn request_public_decryption(
         &mut self,
         request: PublicDecryptionRequest,
-    ) -> anyhow::Result<KmsGrpcResponse> {
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
         let request_id = request
             .request_id
             .clone()
@@ -157,12 +160,13 @@ impl KmsClient {
         .await?;
 
         KmsGrpcResponse::try_from((request_id, grpc_response))
+            .map_err(ProcessingError::Irrecoverable)
     }
 
     async fn request_user_decryption(
         &mut self,
         request: UserDecryptionRequest,
-    ) -> anyhow::Result<KmsGrpcResponse> {
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
         let request_id = request
             .request_id
             .clone()
@@ -208,6 +212,7 @@ impl KmsClient {
         .await?;
 
         KmsGrpcResponse::try_from((request_id, grpc_response))
+            .map_err(ProcessingError::Irrecoverable)
     }
 
     fn choose_client(&self, request_id: RequestId) -> CoreServiceEndpointClient<Channel> {
@@ -221,19 +226,28 @@ impl KmsClient {
 }
 
 #[tracing::instrument(skip_all)]
-async fn send_request_with_retry<F, Fut>(retries: u8, mut request_fn: F) -> anyhow::Result<()>
+async fn send_request_with_retry<F, Fut>(
+    retries: u8,
+    mut request_fn: F,
+) -> Result<(), ProcessingError>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<Response<Empty>, Status>>,
 {
     for i in 1..=retries {
-        match request_fn().await {
+        match request_fn().await.map_err(ProcessingError::from) {
             Ok(_) => break,
-            Err(e) => {
+            Err(ProcessingError::Irrecoverable(e)) => {
+                CORE_REQUEST_SENT_ERRORS.inc();
+                return Err(ProcessingError::Irrecoverable(e));
+            }
+            Err(ProcessingError::Recoverable(e)) => {
                 CORE_REQUEST_SENT_ERRORS.inc();
                 warn!("#{}/{} GRPC request attempt failed: {}", i, retries, e);
                 if i == retries {
-                    return Err(anyhow!("All GRPC requests failed!"));
+                    return Err(ProcessingError::Recoverable(anyhow!(
+                        "All GRPC requests failed!"
+                    )));
                 }
             }
         }

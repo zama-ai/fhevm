@@ -3,8 +3,11 @@ use crate::core::event_processor::{
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
 };
 use alloy::providers::Provider;
+use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, KmsGrpcRequest, KmsResponse};
 use sqlx::{Pool, Postgres};
+use thiserror::Error;
+use tonic::Code;
 use tracing::info;
 
 /// Interface used to process Gateway's events.
@@ -41,12 +44,24 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
                 info!("Event successfully processed!");
                 Ok(response)
             }
-            Err(e) => {
+            Err(ProcessingError::Recoverable(e)) => {
                 event.mark_as_pending(&self.db_pool).await;
+                Err(e)
+            }
+            Err(ProcessingError::Irrecoverable(e)) => {
+                event.delete_from_db(&self.db_pool).await;
                 Err(e)
             }
         }
     }
+}
+
+#[derive(Debug, Error)]
+pub enum ProcessingError {
+    #[error("Processing failed with irrecoverable error : {0}")]
+    Irrecoverable(anyhow::Error),
+    #[error("{0}")]
+    Recoverable(anyhow::Error),
 }
 
 impl<P: Provider> DbEventProcessor<P> {
@@ -64,7 +79,10 @@ impl<P: Provider> DbEventProcessor<P> {
 
     /// Prepares the GRPC request associated to the received `event`.
     #[tracing::instrument(skip_all)]
-    async fn prepare_request(&self, event: GatewayEvent) -> anyhow::Result<KmsGrpcRequest> {
+    async fn prepare_request(
+        &self,
+        event: GatewayEvent,
+    ) -> Result<KmsGrpcRequest, ProcessingError> {
         match event {
             GatewayEvent::PublicDecryption(req) => {
                 self.decryption_processor
@@ -88,12 +106,28 @@ impl<P: Provider> DbEventProcessor<P> {
             }
             _ => unimplemented!(),
         }
+        .map_err(ProcessingError::Recoverable)
     }
 
     /// Core event processing logic function.
-    async fn inner_process(&mut self, event: &GatewayEvent) -> anyhow::Result<KmsResponse> {
+    async fn inner_process(
+        &mut self,
+        event: &GatewayEvent,
+    ) -> Result<KmsResponse, ProcessingError> {
         let request = self.prepare_request(event.clone()).await?;
         let grpc_response = self.kms_client.send_request(request).await?;
-        KmsResponse::process(grpc_response)
+        KmsResponse::process(grpc_response).map_err(ProcessingError::Irrecoverable)
+    }
+}
+
+impl From<tonic::Status> for ProcessingError {
+    fn from(value: tonic::Status) -> Self {
+        let anyhow_error = anyhow!("KMS GRPC error: {value}");
+        match value.code() {
+            Code::NotFound | Code::Unavailable | Code::ResourceExhausted => {
+                Self::Recoverable(anyhow_error)
+            }
+            _ => Self::Irrecoverable(anyhow_error),
+        }
     }
 }

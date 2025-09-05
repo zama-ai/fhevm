@@ -10,11 +10,12 @@ use crate::{
 use alloy::{
     hex,
     network::Ethereum,
-    providers::{PendingTransactionBuilder, Provider, ext::DebugApi},
+    providers::{PendingTransactionBuilder, PendingTransactionError, Provider, ext::DebugApi},
     rpc::types::{
         TransactionReceipt, TransactionRequest,
         trace::geth::{CallConfig, GethDebugTracingOptions},
     },
+    transports::{RpcError, TransportErrorKind},
 };
 use anyhow::anyhow;
 use connector_utils::{
@@ -22,8 +23,13 @@ use connector_utils::{
     tasks::spawn_with_limit,
     types::{KmsResponse, PublicDecryptionResponse, UserDecryptionResponse},
 };
-use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
+use fhevm_gateway_bindings::{
+    decryption::Decryption::{self, DecryptionErrors, DecryptionInstance},
+    gateway_config::GatewayConfig::GatewayConfigErrors,
+    kms_management::KmsManagement::KmsManagementErrors,
+};
 use std::time::Duration;
+use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -93,10 +99,13 @@ where
         response_remover: R,
         response: KmsResponse,
     ) {
-        if inner.send_to_gateway(response.clone()).await.is_err() {
-            response_remover.mark_response_as_pending(response).await;
-        } else if let Err(e) = response_remover.remove_response(&response).await {
-            error!("Failed to remove response: {e}");
+        match inner.send_to_gateway(response.clone()).await {
+            Err(Error::Recoverable(_)) => response_remover.mark_response_as_pending(response).await,
+            Err(Error::Irrecoverable(_)) | Ok(()) => {
+                if let Err(e) = response_remover.remove_response(&response).await {
+                    error!("Failed to remove response: {e}");
+                }
+            }
         }
     }
 }
@@ -160,7 +169,7 @@ impl<P: Provider> TransactionSenderInner<P> {
     }
 
     #[tracing::instrument(skip_all)]
-    async fn send_to_gateway(&self, response: KmsResponse) -> anyhow::Result<()> {
+    async fn send_to_gateway(&self, response: KmsResponse) -> Result<(), Error> {
         info!("Sending response to the Gateway: {response:?}");
         let tx_result = match response {
             KmsResponse::PublicDecryption(response) => {
@@ -195,9 +204,9 @@ impl<P: Provider> TransactionSenderInner<P> {
                 tx_hash = hex::encode(receipt.transaction_hash),
                 "Failed to send response to the Gateway: {revert_reason}"
             );
-            Err(anyhow!(
+            Err(Error::Recoverable(anyhow!(
                 "Failed to send response to the Gateway: {revert_reason}"
-            ))
+            )))
         }
     }
 
@@ -205,7 +214,7 @@ impl<P: Provider> TransactionSenderInner<P> {
     pub async fn send_public_decryption_response(
         &self,
         response: PublicDecryptionResponse,
-    ) -> anyhow::Result<TransactionReceipt> {
+    ) -> Result<TransactionReceipt, Error> {
         info!("Sending public decryption response to the Gateway...");
         let call_builder = self.decryption_contract.publicDecryptionResponse(
             response.decryption_id,
@@ -217,14 +226,14 @@ impl<P: Provider> TransactionSenderInner<P> {
 
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
-        tx.get_receipt().await.map_err(anyhow::Error::from)
+        tx.get_receipt().await.map_err(Error::from)
     }
 
     /// Sends a UserDecryptionResponse to the Gateway.
     pub async fn send_user_decryption_response(
         &self,
         response: UserDecryptionResponse,
-    ) -> anyhow::Result<TransactionReceipt> {
+    ) -> Result<TransactionReceipt, Error> {
         info!("Sending user decryption response to the Gateway...");
         let call_builder = self.decryption_contract.userDecryptionResponse(
             response.decryption_id,
@@ -236,27 +245,25 @@ impl<P: Provider> TransactionSenderInner<P> {
 
         let call = call_builder.into_transaction_request();
         let tx = self.send_tx_with_retry(call).await?;
-        tx.get_receipt().await.map_err(anyhow::Error::from)
+        tx.get_receipt().await.map_err(Error::from)
     }
 
     /// Increases the `gas_limit` for the upcoming transaction.
-    async fn overprovision_gas(&self, call: &mut TransactionRequest) {
+    async fn overprovision_gas(&self, call: &mut TransactionRequest) -> Result<(), Error> {
         let current_gas = match call.gas {
             Some(gas) => gas,
-            None => match self
+            None => self
                 .decryption_contract
                 .provider()
                 .estimate_gas(call.clone())
                 .await
-            {
-                Ok(estimation) => estimation,
-                Err(e) => return warn!("Failed to estimate gas for the tx: {e}"),
-            },
+                .map_err(Error::from)?,
         };
         let new_gas =
             (current_gas as u128 * self.config.gas_multiplier_percent as u128 / 100) as u64;
         call.gas = Some(new_gas);
         info!("Initial gas estimation for the tx: {current_gas}. Increased to {new_gas}");
+        Ok(())
     }
 
     /// Sends the requested transaction with retries.
@@ -264,14 +271,11 @@ impl<P: Provider> TransactionSenderInner<P> {
     /// The `gas_limit` is increased at each attempts.
     async fn send_tx_with_retry(
         &self,
-        mut call: TransactionRequest,
-    ) -> anyhow::Result<PendingTransactionBuilder<Ethereum>> {
+        call: TransactionRequest,
+    ) -> Result<PendingTransactionBuilder<Ethereum>, Error> {
         for i in 1..=self.config.tx_retries {
-            self.overprovision_gas(&mut call).await;
-
-            match self.provider.send_transaction(call.clone()).await {
-                Ok(tx) => return Ok(tx),
-                Err(e) => {
+            match self.send_tx_with_increased_gas_limit(call.clone()).await {
+                Err(Error::Recoverable(e)) => {
                     warn!(
                         "Transaction attempt #{}/{} failed: {}. Retrying in {}ms...",
                         i,
@@ -279,11 +283,24 @@ impl<P: Provider> TransactionSenderInner<P> {
                         e,
                         self.config.tx_retry_interval.as_millis()
                     );
-                    tokio::time::sleep(self.config.tx_retry_interval).await;
+                    if i < self.config.tx_retries {
+                        tokio::time::sleep(self.config.tx_retry_interval).await;
+                    }
                 }
+                result => return result,
             }
         }
-        Err(anyhow!("All transactions attempt failed"))
+        Err(Error::Recoverable(anyhow!(
+            "All transactions attempt failed"
+        )))
+    }
+
+    async fn send_tx_with_increased_gas_limit(
+        &self,
+        mut call: TransactionRequest,
+    ) -> Result<PendingTransactionBuilder<Ethereum>, Error> {
+        self.overprovision_gas(&mut call).await?;
+        Ok(self.provider.send_transaction(call.clone()).await?)
     }
 
     /// Tries to use the `debug_trace_transaction` RPC call to find the cause of a reverted tx.
@@ -323,6 +340,44 @@ impl<P: Provider + Clone> Clone for TransactionSenderInner<P> {
             decryption_contract: self.decryption_contract.clone(),
             config: self.config.clone(),
         }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Encountered irrecoverable error: {0}")]
+    Irrecoverable(anyhow::Error),
+    #[error("{0}")]
+    Recoverable(anyhow::Error),
+}
+
+impl From<RpcError<TransportErrorKind>> for Error {
+    fn from(value: RpcError<TransportErrorKind>) -> Self {
+        if let Some(decryption_error) = value
+            .as_error_resp()
+            .and_then(|e| e.as_decoded_interface_error::<DecryptionErrors>())
+        {
+            return Self::Irrecoverable(anyhow!("{decryption_error:?}"));
+        }
+        if let Some(kms_management_error) = value
+            .as_error_resp()
+            .and_then(|e| e.as_decoded_interface_error::<KmsManagementErrors>())
+        {
+            return Self::Irrecoverable(anyhow!("{kms_management_error:?}"));
+        }
+        if let Some(gw_config_error) = value
+            .as_error_resp()
+            .and_then(|e| e.as_decoded_interface_error::<GatewayConfigErrors>())
+        {
+            return Self::Irrecoverable(anyhow!("{gw_config_error:?}"));
+        }
+        Self::Recoverable(value.into())
+    }
+}
+
+impl From<PendingTransactionError> for Error {
+    fn from(value: PendingTransactionError) -> Self {
+        Self::Recoverable(value.into())
     }
 }
 
@@ -371,7 +426,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        let result = inner_sender
+        let error = inner_sender
             .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
@@ -379,9 +434,17 @@ mod tests {
                 extra_data: vec![],
             }))
             .await
-            .unwrap_err()
-            .to_string();
-        assert!(result.contains("Failed to send response to the Gateway: out of gas"));
+            .unwrap_err();
+        match error {
+            Error::Recoverable(error_msg) => {
+                assert!(
+                    error_msg
+                        .to_string()
+                        .contains("Failed to send response to the Gateway: out of gas")
+                );
+            }
+            _ => panic!("Unexpected error type"),
+        }
         Ok(())
     }
 
