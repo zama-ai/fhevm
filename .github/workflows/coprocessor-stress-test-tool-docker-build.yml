@@ -1,0 +1,66 @@
+name: coprocessor-stress-test-tool-docker-build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  release:
+    types:
+      - published
+
+permissions: {}
+
+concurrency:
+  group: fhevm-coprocessor-stress-test-tool-${{ github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check-changes:
+    name: coprocessor-stress-test-tool-docker-build/check-changes
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      changes-coprocessor-stress-test-tool: ${{ steps.filter.outputs.coprocessor-stress-test-tool }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            coprocessor-stress-test-tool:
+              - .github/workflows/coprocessor-docker-build-stress-test-tool.yml
+              - coprocessor/fhevm-engine/stress-test-generator/**
+              - coprocessor/fhevm-engine/Cargo.toml
+              - coprocessor/fhevm-engine/Cargo.lock
+  build:
+    name: coprocessor-stress-test-tool-docker-build/build
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-coprocessor-stress-test-tool == 'true' || github.event_name == 'release' }}
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@e666182756172bc747d2be6e4eb9b4ed80a00a0e
+    secrets:
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
+      attestations: 'write'
+      packages: 'write'
+      id-token: 'write'
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      docker-context: "."
+      push_image: true
+      image-name: "fhevm/coprocessor/stress-test-tool"
+      docker-file: "coprocessor/fhevm-engine/stress-test-generator/Dockerfile"
+      app-cache-dir: "fhevm-coprocessor-stress-test-tool"

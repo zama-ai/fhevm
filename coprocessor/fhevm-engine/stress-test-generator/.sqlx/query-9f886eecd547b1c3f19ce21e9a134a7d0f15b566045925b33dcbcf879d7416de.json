@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO pbs_computations(tenant_id, handle)\n                 SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[]) \n                 ON CONFLICT DO NOTHING;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4Array",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "9f886eecd547b1c3f19ce21e9a134a7d0f15b566045925b33dcbcf879d7416de"
+}

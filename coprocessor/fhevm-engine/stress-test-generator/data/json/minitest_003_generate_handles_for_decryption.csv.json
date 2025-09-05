@@ -1,0 +1,32 @@
+[
+    {
+        "transaction": "GenPubDecHandles",
+        "variant": "NA",
+        "kind": "Count",
+        "inputs": "NA",
+        "is_dependent": "NA",
+        "contract_address": "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08",
+        "user_address": "0x31De9c8ac5ECD5EacEddDdEE531e9BaD8AC9c2A5",
+        "scenario": [
+            [
+                1.0,
+                1
+            ]
+        ]
+    },
+    {
+        "transaction": "GenUsrDecHandles",
+        "variant": "NA",
+        "kind": "Count",
+        "inputs": "NA",
+        "is_dependent": "NA",
+        "contract_address": "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08",
+        "user_address": "0x31De9c8ac5ECD5EacEddDdEE531e9BaD8AC9c2A5",
+        "scenario": [
+            [
+                1.0,
+                1
+            ]
+        ]
+    }
+]

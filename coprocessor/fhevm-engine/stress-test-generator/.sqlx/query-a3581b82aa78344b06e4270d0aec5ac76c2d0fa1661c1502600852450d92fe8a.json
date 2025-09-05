@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DROP DATABASE IF EXISTS coprocessor;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "a3581b82aa78344b06e4270d0aec5ac76c2d0fa1661c1502600852450d92fe8a"
+}
