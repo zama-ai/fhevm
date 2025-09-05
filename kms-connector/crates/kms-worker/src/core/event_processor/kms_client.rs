@@ -126,7 +126,7 @@ impl KmsClient {
         let request_id = request
             .request_id
             .clone()
-            .ok_or_else(|| Status::invalid_argument("Missing request ID"))?;
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("Missing request ID")))?;
 
         // Log the FHE types being processed in this request
         if let Some(ciphertexts) = request.ciphertexts.as_slice().first() {
@@ -157,7 +157,8 @@ impl KmsClient {
                 async move { client.get_public_decryption_result(request).await }
             },
         )
-        .await?;
+        .await
+        .map_err(ProcessingError::from_response_status)?;
 
         KmsGrpcResponse::try_from((request_id, grpc_response))
             .map_err(ProcessingError::Irrecoverable)
@@ -170,7 +171,7 @@ impl KmsClient {
         let request_id = request
             .request_id
             .clone()
-            .ok_or_else(|| Status::invalid_argument("Missing request ID"))?;
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("Missing request ID")))?;
 
         // Verify the EIP-712 signature for the user decryption request
         if let Err(e) = verify_user_decryption_eip712(&request) {
@@ -209,7 +210,8 @@ impl KmsClient {
                 async move { client.get_user_decryption_result(request).await }
             },
         )
-        .await?;
+        .await
+        .map_err(ProcessingError::from_response_status)?;
 
         KmsGrpcResponse::try_from((request_id, grpc_response))
             .map_err(ProcessingError::Irrecoverable)
@@ -235,7 +237,10 @@ where
     Fut: Future<Output = Result<Response<Empty>, Status>>,
 {
     for i in 1..=retries {
-        match request_fn().await.map_err(ProcessingError::from) {
+        match request_fn()
+            .await
+            .map_err(ProcessingError::from_request_status)
+        {
             Ok(_) => break,
             Err(ProcessingError::Irrecoverable(e)) => {
                 CORE_REQUEST_SENT_ERRORS.inc();
@@ -277,7 +282,7 @@ where
                 return Ok(response);
             }
             Err(status) => {
-                if status.code() == Code::NotFound {
+                if status.code() == Code::Unavailable {
                     // Check if we've exceeded the timeout
                     if start.elapsed() >= timeout {
                         CORE_RESPONSE_ERRORS.inc();
