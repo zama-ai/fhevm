@@ -61,6 +61,9 @@ kmsConnectorGwListener:
     name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener
     tag: v0.8.0
   replicas: 1
+  config:
+    # Override commonConfig.gatewayUrl
+    gatewayUrl:
   env: {}
   tracing:
     enabled: false
@@ -109,6 +112,8 @@ kmsConnectorKmsWorker:
   replicas: 1
   config:
     kmsCoreEndpoints: "http://kms-core:50051"
+    # Override commonConfig.gatewayUrl
+    gatewayUrl:
   env: {}
   tracing:
     enabled: false
@@ -155,6 +160,9 @@ kmsConnectorTxSender:
     name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender
     tag: v0.8.0
   replicas: 1
+  config:
+    # Override commonConfig.gatewayUrl
+    gatewayUrl:
   env:
   wallet:
     secret:
