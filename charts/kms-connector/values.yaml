@@ -9,7 +9,7 @@ commonConfig:
   tracing:
     enabled: false
     endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
-  env: {}
+  env:
 # E.g. Database configuration from secret
 #    - name: DATABASE_ENDPOINT
 #      valueFrom:
@@ -39,7 +39,7 @@ kmsConnectorDbMigration:
     - "run"
     - "--source"
     - "/migrations"
-  env: {}
+  env:
   serviceAccountName:
   # Size of the non-persistent volume.
   storage:
@@ -65,7 +65,7 @@ kmsConnectorGwListener:
   config:
     # Override commonConfig.gatewayUrl
     gatewayUrl:
-  env: {}
+  env:
   tracing:
     enabled: false
   ports:
@@ -115,7 +115,7 @@ kmsConnectorKmsWorker:
     kmsCoreEndpoints: "http://kms-core:50051"
     # Override commonConfig.gatewayUrl
     gatewayUrl:
-  env: {}
+  env:
   tracing:
     enabled: false
   ports:
