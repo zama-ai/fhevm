@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
+import { gatewayConfigAddress, coprocessorContextsAddress } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IInputVerification.sol";
-import "./interfaces/IGatewayConfig.sol";
+import { ICoprocessorContexts } from "./interfaces/ICoprocessorContexts.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
+import { ContextChecks } from "./shared/ContextChecks.sol";
 
 /**
  * @title InputVerification smart contract
@@ -22,26 +23,9 @@ contract InputVerification is
     Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
-    Pausable
+    Pausable,
+    ContextChecks
 {
-    /**
-     * @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
-     * @dev The name of this struct is not relevant for the signature validation, only the one defined
-     * @dev EIP712_ZKPOK_TYPE is, but we keep it the same for clarity.
-     */
-    struct CiphertextVerification {
-        /// @notice The coprocessor's computed ciphertext handles.
-        bytes32[] ctHandles;
-        /// @notice The address of the user that has provided the input in the ZK Proof verification request.
-        address userAddress;
-        /// @notice The address of the dapp requiring the ZK Proof verification.
-        address contractAddress;
-        /// @notice The host chain's chain ID of the contract requiring the ZK Proof verification.
-        uint256 contractChainId;
-        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
-        bytes extraData;
-    }
-
     /// @notice The stored structure for the received ZK Proof verification request inputs.
     struct ZKProofInput {
         /// @notice The chain ID of the contract address.
@@ -52,10 +36,24 @@ contract InputVerification is
         address userAddress;
     }
 
-    /// @notice The address of the GatewayConfig contract for protocol state calls.
-    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
+    /// @notice The address of the CoprocessorContexts contract, used for fetching information about coprocessors.
+    ICoprocessorContexts private constant COPROCESSOR_CONTEXTS = ICoprocessorContexts(coprocessorContextsAddress);
 
-    /// @notice The definition of the CiphertextVerification structure typed data.
+    /// @notice The version number of the extra data for the input verification request event.
+    uint256 private constant EXTRA_DATA_VERSION_REQUEST_EVENT = 1;
+
+    /// @notice The version number of the extra data for the ciphertext verification struct.
+    uint256 private constant EXTRA_DATA_VERSION_CIPHERTEXT_VERIFICATION_STRUCT = 1;
+
+    /**
+     * @notice The typed data structure for the EIP712 signature to validate in ZK Proof verification responses.
+     * @dev ctHandles: The coprocessor's computed ciphertext handles.
+     * @dev userAddress: The address of the user that has provided the input in the ZK Proof verification request.
+     * @dev contractAddress: The address of the dapp requiring the ZK Proof verification.
+     * @dev contractChainId: The host chain's chain ID of the contract requiring the ZK Proof verification.
+     * @dev extraData: Generic bytes metadata for versioned payloads. First byte is for the version.
+     * @dev contextId: The coprocessor context ID associated to the input verification request.
+     */
     string private constant EIP712_ZKPOK_TYPE =
         "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
 
@@ -67,12 +65,12 @@ contract InputVerification is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "InputVerification";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.InputVerification
@@ -105,6 +103,11 @@ contract InputVerification is
         mapping(uint256 zkProofId => bytes32 verifyProofConsensusDigest) verifyProofConsensusDigest;
         /// @notice The coprocessor transaction senders involved in a consensus for a proof rejection.
         mapping(uint256 zkProofId => address[] coprocessorTxSenderAddresses) rejectProofConsensusTxSenders;
+        // ----------------------------------------------------------------------------------------------
+        // Context state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The coprocessor context ID associated to the input verification request
+        mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -129,11 +132,11 @@ contract InputVerification is
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IInputVerification-verifyProofRequest}.
     function verifyProofRequest(
@@ -141,8 +144,8 @@ contract InputVerification is
         address contractAddress,
         address userAddress,
         bytes calldata ciphertextWithZKProof,
-        bytes calldata extraData
-    ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused {
+        bytes calldata /* extraData */
+    ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused refreshCoprocessorContextStatuses {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         $.zkProofIdCounter++;
@@ -151,13 +154,20 @@ contract InputVerification is
         /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
         $._zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
 
+        // Get the current active coprocessor context's ID and associate it to this request
+        uint256 contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
+        $.inputVerificationContextId[zkProofId] = contextId;
+
+        // Build the extra data for the input verification request event.
+        bytes memory extraDataV1 = _buildExtraDataV1RequestEvent(contextId);
+
         emit VerifyProofRequest(
             zkProofId,
             contractChainId,
             contractAddress,
             userAddress,
             ciphertextWithZKProof,
-            extraData
+            extraDataV1
         );
     }
 
@@ -170,8 +180,8 @@ contract InputVerification is
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature,
-        bytes calldata extraData
-    ) external virtual onlyCoprocessorTxSender {
+        bytes calldata /* extraData */
+    ) external virtual refreshCoprocessorContextStatuses {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
@@ -179,27 +189,33 @@ contract InputVerification is
             revert VerifyProofNotRequested(zkProofId);
         }
 
-        /// @dev Retrieve stored ZK Proof verification request inputs.
-        ZKProofInput memory zkProofInput = $._zkProofInputs[zkProofId];
+        // Get the coprocessor context ID associated with the input verification request
+        uint256 contextId = $.inputVerificationContextId[zkProofId];
 
-        /// @dev Initialize the CiphertextVerification structure for the signature validation.
-        CiphertextVerification memory ciphertextVerification = CiphertextVerification(
-            ctHandles,
-            zkProofInput.userAddress,
-            zkProofInput.contractAddress,
-            zkProofInput.contractChainId,
-            extraData
-        );
+        // Only accept coprocessor transaction senders from this context
+        COPROCESSOR_CONTEXTS.checkIsCoprocessorTxSenderFromContext(contextId, msg.sender);
 
-        /// @dev Compute the digest of the CiphertextVerification structure.
-        bytes32 digest = _hashCiphertextVerification(ciphertextVerification);
+        // Check that the context is still valid (active or suspended)
+        if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
+            ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
+            revert InvalidCoprocessorContextProofVerification(zkProofId, contextId, contextStatus);
+        }
 
-        /// @dev Recover the signer address from the signature,
+        // Build the extra data for the CiphertextVerification struct.
+        bytes memory extraDataV1 = _buildExtraDataV1CiphertextVerificationStruct(contextId);
+
+        // Compute the digest of the CiphertextVerification struct.
+        bytes32 digest = _hashCiphertextVerification(zkProofId, ctHandles, extraDataV1);
+
+        // Recover the signer address from the signature,
         address signerAddress = ECDSA.recover(digest, signature);
 
-        GATEWAY_CONFIG.checkIsCoprocessorSigner(signerAddress);
+        // Check that the signer address is a coprocessor of the context
+        COPROCESSOR_CONTEXTS.checkIsCoprocessorSignerFromContext(contextId, signerAddress);
 
-        /// @dev Check that the coprocessor has not already responded to the ZKPoK verification request.
+        /// Check that the coprocessor has not already responded to the ZKPoK verification request.
+        // There is no need to consider the contextId here because there is only one associated to
+        // each zkProofId (through the `inputVerificationContextId` mapping)
         _checkCoprocessorAlreadyResponded(zkProofId, msg.sender, signerAddress);
 
         bytes[] storage currentSignatures = $.zkProofSignatures[zkProofId][digest];
@@ -213,7 +229,8 @@ contract InputVerification is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(currentSignatures.length)) {
+        // Besides, consensus only considers the coprocessors of the same context
+        if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(contextId, currentSignatures.length)) {
             $.verifiedZKProofs[zkProofId] = true;
 
             // A "late" valid coprocessor could still see its transaction sender address be added to
@@ -222,7 +239,7 @@ contract InputVerification is
             // verification request.
             $.verifyProofConsensusDigest[zkProofId] = digest;
 
-            emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
+            emit VerifyProofResponse(zkProofId, contextId, ctHandles, currentSignatures);
         }
     }
 
@@ -230,7 +247,7 @@ contract InputVerification is
     function rejectProofResponse(
         uint256 zkProofId,
         bytes calldata /* extraData */
-    ) external virtual onlyCoprocessorTxSender {
+    ) external virtual refreshCoprocessorContextStatuses {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
@@ -238,17 +255,31 @@ contract InputVerification is
             revert VerifyProofNotRequested(zkProofId);
         }
 
+        // Get the coprocessor context ID associated with the input verification request
+        uint256 contextId = $.inputVerificationContextId[zkProofId];
+
+        // Only accept coprocessor transaction senders from this context
+        COPROCESSOR_CONTEXTS.checkIsCoprocessorTxSenderFromContext(contextId, msg.sender);
+
+        // Check that the context is still valid (active or suspended)
+        if (!COPROCESSOR_CONTEXTS.isCoprocessorContextActiveOrSuspended(contextId)) {
+            ContextStatus contextStatus = COPROCESSOR_CONTEXTS.getCoprocessorContextStatus(contextId);
+            revert InvalidCoprocessorContextProofRejection(zkProofId, contextId, contextStatus);
+        }
+
         /**
-         * @dev Retrieve the coprocessor signer address from the GatewayConfig contract using the
-         * coprocessor transaction sender address.
+         * @dev Retrieve the coprocessor signer address from the context using the coprocessor
+         * transaction sender address.
          * Extracting the signer address is important in order to prevent potential issues with re-org, as this could
          * lead to situations where a coprocessor can both verify and reject a proof, which is forbidden. This check
          * is directly done within `_checkCoprocessorAlreadyResponded` below.
          */
-        Coprocessor memory coprocessor = GATEWAY_CONFIG.getCoprocessor(msg.sender);
+        CoprocessorV2 memory coprocessor = COPROCESSOR_CONTEXTS.getCoprocessorFromContext(contextId, msg.sender);
         address coprocessorSignerAddress = coprocessor.signerAddress;
 
-        /// @dev Check that the coprocessor has not already responded to the ZKPoK verification request.
+        // Check that the coprocessor has not already responded to the ZKPoK verification request.
+        // There is no need to consider the contextId here because there is only one associated to
+        // zkProofId
         _checkCoprocessorAlreadyResponded(zkProofId, msg.sender, coprocessorSignerAddress);
 
         $.rejectedProofResponseCounter[zkProofId]++;
@@ -261,7 +292,10 @@ contract InputVerification is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.rejectedZKProofs[zkProofId] && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
+        // Besides, consensus only considers the coprocessors of the same context
+        if (
+            !$.rejectedZKProofs[zkProofId] && _isConsensusReached(contextId, $.rejectedProofResponseCounter[zkProofId])
+        ) {
             $.rejectedZKProofs[zkProofId] = true;
 
             emit RejectProofResponse(zkProofId);
@@ -353,34 +387,68 @@ contract InputVerification is
 
     /**
      * @notice Computes the hash of a given CiphertextVerification structured data
-     * @param ctVerification The CiphertextVerification structure
+     * @param zkProofId The ID of the ZK Proof.
+     * @param ctHandles The coprocessor's computed ciphertext handles.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      * @return The hash of the CiphertextVerification structure
      */
     function _hashCiphertextVerification(
-        CiphertextVerification memory ctVerification
+        uint256 zkProofId,
+        bytes32[] memory ctHandles,
+        bytes memory extraData
     ) internal view virtual returns (bytes32) {
+        InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        // Retrieve stored ZK Proof verification request inputs.
+        ZKProofInput memory zkProofInput = $._zkProofInputs[zkProofId];
+
         return
             _hashTypedDataV4(
                 keccak256(
                     abi.encode(
                         EIP712_ZKPOK_TYPE_HASH,
-                        keccak256(abi.encodePacked(ctVerification.ctHandles)),
-                        ctVerification.userAddress,
-                        ctVerification.contractAddress,
-                        ctVerification.contractChainId,
-                        keccak256(abi.encodePacked(ctVerification.extraData))
+                        keccak256(abi.encodePacked(ctHandles)),
+                        zkProofInput.userAddress,
+                        zkProofInput.contractAddress,
+                        zkProofInput.contractChainId,
+                        keccak256(abi.encodePacked(extraData))
                     )
                 )
             );
     }
 
+    /// @notice Builds the extra data V1 for the input verification request event.
+    /// @param contextId The coprocessor context ID associated to the input verification request.
+    /// @return The extra data for the input verification request event
+    function _buildExtraDataV1RequestEvent(uint256 contextId) internal view virtual returns (bytes memory) {
+        // Insert the coprocessor context ID in the extra data.
+        // Version 1 of the extra data is of byte format [version_0..31 | contextId_32..63]:
+        // - byte 0..31: this extra data's version number
+        // - bytes 32..63: the coprocessor context ID
+        return abi.encode(EXTRA_DATA_VERSION_REQUEST_EVENT, contextId);
+    }
+
+    /// @notice Builds the extra data V1 for the input verification request event.
+    /// @param contextId The coprocessor context ID associated to the input verification request.
+    /// @return The extra data for the input verification request event
+    function _buildExtraDataV1CiphertextVerificationStruct(
+        uint256 contextId
+    ) internal view virtual returns (bytes memory) {
+        // Insert the coprocessor context ID in the extra data.
+        // Version 1 of the extra data is of byte format [version_0..31 | contextId_32..63]:
+        // - byte 0..31: this extra data's version number
+        // - bytes 32..63: the coprocessor context ID
+        return abi.encode(EXTRA_DATA_VERSION_CIPHERTEXT_VERIFICATION_STRUCT, contextId);
+    }
+
     /**
-     * @notice Checks if the consensus is reached among the coprocessors.
+     * @notice Checks if the consensus is reached among the coprocessors from the same context.
+     * @param contextId The coprocessor context ID
      * @param coprocessorCounter The number of coprocessors that agreed
      * @return Whether the consensus is reached
      */
-    function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
+    function _isConsensusReached(uint256 contextId, uint256 coprocessorCounter) internal view virtual returns (bool) {
+        uint256 consensusThreshold = COPROCESSOR_CONTEXTS.getCoprocessorMajorityThresholdFromContext(contextId);
         return coprocessorCounter >= consensusThreshold;
     }
 

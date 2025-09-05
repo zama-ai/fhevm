@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
+import "../shared/Enums.sol";
 
 contract InputVerificationMock {
     event VerifyProofRequest(
@@ -11,7 +12,12 @@ contract InputVerificationMock {
         bytes extraData
     );
 
-    event VerifyProofResponse(uint256 indexed zkProofId, bytes32[] ctHandles, bytes[] signatures);
+    event VerifyProofResponse(
+        uint256 indexed zkProofId,
+        uint256 indexed coprocessorContextId,
+        bytes32[] ctHandles,
+        bytes[] signatures
+    );
 
     event RejectProofResponse(uint256 indexed zkProofId);
 
@@ -22,10 +28,11 @@ contract InputVerificationMock {
         address contractAddress,
         address userAddress,
         bytes calldata ciphertextWithZKProof,
-        bytes calldata extraData
+        bytes calldata /* unusedVariable */
     ) external {
         zkProofIdCounter++;
         uint256 zkProofId = zkProofIdCounter;
+        bytes memory extraData;
 
         emit VerifyProofRequest(
             zkProofId,
@@ -41,11 +48,12 @@ contract InputVerificationMock {
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature,
-        bytes calldata extraData
+        bytes calldata /* unusedVariable */
     ) external {
+        uint256 coprocessorContextId;
         bytes[] memory signatures = new bytes[](1);
 
-        emit VerifyProofResponse(zkProofId, ctHandles, signatures);
+        emit VerifyProofResponse(zkProofId, coprocessorContextId, ctHandles, signatures);
     }
 
     function rejectProofResponse(uint256 zkProofId, bytes calldata /* unusedVariable */) external {
