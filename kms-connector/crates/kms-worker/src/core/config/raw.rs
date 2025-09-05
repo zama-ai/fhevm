@@ -37,6 +37,7 @@ pub struct RawConfig {
     pub chain_id: u64,
     pub decryption_contract: RawContractConfig,
     pub gateway_config_contract: RawContractConfig,
+    pub kms_management_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
     #[serde(default = "default_events_batch_size")]
@@ -149,6 +150,11 @@ impl Default for RawConfig {
             gateway_config_contract: RawContractConfig {
                 address: "0x0000000000000000000000000000000000000000".to_string(),
                 domain_name: Some("GatewayConfig".to_string()),
+                domain_version: Some("1".to_string()),
+            },
+            kms_management_contract: RawContractConfig {
+                address: "0x0000000000000000000000000000000000000000".to_string(),
+                domain_name: Some("KmsManagement".to_string()),
                 domain_version: Some("1".to_string()),
             },
             service_name: "kms-connector".to_string(),
