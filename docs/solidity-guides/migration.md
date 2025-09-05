@@ -1,6 +1,36 @@
 # Migration
 
-This document provides instructions on migrating from FHEVM v0.6 to v0.7.
+This document provides instructions on migrating from a previous version of FHEVM.
+
+## From 0.7.x
+
+### Decryption Oracle
+
+Callbacks are now implemented using an ABI-encoded bytes value, which includes all cleartexts.
+
+```solidity
+function myCustomCallback(uint256 requestId, bytes memory cleartexts, bytes memory decryptionProof) public returns (bool) {
+    /// @dev This check is used to verify that the request id is the expected one.
+    require(requestId == latestRequestId, "Invalid requestId");
+    FHE.checkSignatures(requestId, cleartexts, decryptionProof);
+
+    (bool decryptedInput) = abi.decode(cleartexts, (bool));
+    yBool = decryptedInput;
+    isDecryptionPending = false;
+    return yBool;
+  }
+}
+```
+
+`function setDecryptionOracle(address decryptionOracle)` is now deprecated. The decryption oracle address is now configured through function `setCoprocessor(CoprocessorConfig memory coprocessorConfig)`. For example:
+```solidity
+  CoprocessorConfig({
+      ACLAddress: 0x687820221192C5B662b25367F70076A37bc79b6c,
+      CoprocessorAddress: 0x848B0066793BcC60346Da1F49049357399B8D595,
+      DecryptionOracleAddress: 0xa02Cda4Ca3a71D7C46997716F4283aa851C28812,
+      KMSVerifierAddress: 0x1364cBBf2cDF5032C47d8226a6f6FBD2AFCDacAC
+  });
+```
 
 ## From 0.6.x
 
@@ -40,6 +70,22 @@ function requestBoolInfinite() public {
   bytes32[] memory cts = new bytes32[](1);
   cts[0] = FHE.toBytes32(myEncryptedValue);
   FHE.requestDecryption(cts, this.myCallback.selector);
+}
+```
+
+Callbacks are now implemented using an ABI-encoded bytes value, which includes all cleartexts.
+
+```solidity
+function myCustomCallback(uint256 requestId, bytes memory cleartexts, bytes memory decryptionProof) public returns (bool) {
+    /// @dev This check is used to verify that the request id is the expected one.
+    require(requestId == latestRequestId, "Invalid requestId");
+    FHE.checkSignatures(requestId, cleartexts, decryptionProof);
+
+    (bool decryptedInput) = abi.decode(cleartexts, (bool));
+    yBool = decryptedInput;
+    isDecryptionPending = false;
+    return yBool;
+  }
 }
 ```
 
