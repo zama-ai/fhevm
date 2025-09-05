@@ -118,12 +118,6 @@ contract CiphertextCommits is
             revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }
 
-        // Check if the received key ID is the latest activated.
-        // TODO: Revisit the following line accordingly with key life-cycles issue
-        // See: https://github.com/zama-ai/fhevm-gateway/issues/90
-        // TODO: Re-enable this check once keys are generated through the Gateway
-        // KMS_MANAGEMENT.checkCurrentKeyId(keyId);
-
         // The addCiphertextHash is the hash of all received input arguments which means that multiple
         // Coprocessors can only have a consensus on a ciphertext material with the same information.
         // This hash is used to differentiate different calls to the function, in particular when

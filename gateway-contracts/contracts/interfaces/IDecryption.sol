@@ -35,12 +35,12 @@ interface IDecryption {
 
     /**
      * @notice Emitted when an public decryption request is made.
-     * @param decryptionId The decryption request ID.
+     * @param publicDecryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event PublicDecryptionRequest(
-        uint256 indexed decryptionId,
+        uint256 indexed publicDecryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         bytes extraData
     );
@@ -61,14 +61,14 @@ interface IDecryption {
 
     /**
      * @notice Emitted when a user decryption request is made.
-     * @param decryptionId The decryption request ID.
+     * @param userDecryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
      * @param userAddress The user's address.
      * @param publicKey The user's public key for used reencryption.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event UserDecryptionRequest(
-        uint256 indexed decryptionId,
+        uint256 indexed userDecryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
         address userAddress,
         bytes publicKey,
@@ -178,8 +178,8 @@ interface IDecryption {
      * @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same.
      * @param firstSnsCtMaterial The first SNS ciphertext material in the list with the expected key ID.
      * @param invalidSnsCtMaterial The SNS ciphertext material found with a different key ID.
-     * @dev This will be removed in the future as multiple keyIds processing is implemented.
-     * See https://github.com/zama-ai/fhevm-gateway/issues/104.
+     * @dev This should be removed once batched decryption requests with different keys is support by the KMS
+     * See https://github.com/zama-ai/fhevm-internal/issues/376
      */
     error DifferentKeyIdsNotAllowed(
         SnsCiphertextMaterial firstSnsCtMaterial,

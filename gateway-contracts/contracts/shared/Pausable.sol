@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "../interfaces/IGatewayConfig.sol";
+import { IGatewayConfig } from "../interfaces/IGatewayConfig.sol";
 
 /**
  * @title Pausable.
