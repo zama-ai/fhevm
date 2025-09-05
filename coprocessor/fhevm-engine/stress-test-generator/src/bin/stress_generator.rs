@@ -23,16 +23,16 @@ use stress_test_generator::utils::{
 use stress_test_generator::zk_gen::{generate_input_verification_transaction, get_inputs_vector};
 use stress_test_generator::{args::parse_args, dex::dex_swap_claim_transaction};
 use stress_test_generator::{
-    args::Args,
+    dex::dex_swap_request_transaction,
+    erc20::erc20_transaction,
+    utils::{EnvConfig, Job, Scenario},
+};
+use stress_test_generator::{
     synthetics::{
         add_chain_transaction, generate_pub_decrypt_handles_types,
         generate_user_decrypt_handles_types, mul_chain_transaction,
     },
-};
-use stress_test_generator::{
-    dex::dex_swap_request_transaction,
-    erc20::erc20_transaction,
-    utils::{EnvConfig, Job, Scenario},
+    utils::Context,
 };
 use tokio::sync::{mpsc, RwLock};
 use tracing::{error, info};
@@ -40,17 +40,27 @@ use tracing::{error, info};
 #[tokio::main]
 async fn main() {
     let args = parse_args();
-    tracing_subscriber::fmt::init();
+
+    tracing_subscriber::fmt()
+        .json()
+        .with_level(true)
+        .with_max_level(args.log_level.parse().unwrap_or(tracing::Level::INFO))
+        .init();
+
+    let ctx = Context {
+        args: args.clone(),
+        ecfg: EnvConfig::new(),
+    };
 
     if args.run_server {
         info!(target: "tool", args = ?args, "Initializing API server");
-        match run_service(&args).await {
+        match run_service(ctx).await {
             Ok(_) => info!(target: "tool", "API server stopped"),
             Err(e) => error!("Error running API server: {}", e),
         }
     } else {
         info!(target: "tool", "Parsing and executing scenarios");
-        parse_and_execute().await.unwrap();
+        parse_and_execute(ctx).await.unwrap();
         info!(target: "tool", "Done");
     }
 }
@@ -94,17 +104,18 @@ impl fmt::Debug for JobStatus {
     }
 }
 
-async fn run_service(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
+async fn run_service(ctx: Context) -> Result<(), Box<dyn std::error::Error>> {
     let (sender, mut rx) = mpsc::channel::<Job>(100);
     let state = AppState::new(sender);
     let s = state.clone();
+    let c = ctx.clone();
     tokio::spawn(async move {
         while let Some(job) = rx.recv().await {
             info!(target: "tool", job_id = job.id, "Processing job");
             let started_at = SystemTime::now();
             s.set_status(job.id, JobStatus::Running(Utc::now())).await;
 
-            if let Err(e) = spawn_and_wait_all(job.scenarios).await {
+            if let Err(e) = spawn_and_wait_all(c.clone(), job.scenarios).await {
                 error!(target: "tool", job_id = job.id, "Error processing job: {}", e);
             }
 
@@ -121,7 +132,7 @@ async fn run_service(args: &Args) -> Result<(), Box<dyn std::error::Error>> {
         .route("/status/queued", get(get_queued_job))
         .with_state(Arc::new(state));
 
-    let listener = tokio::net::TcpListener::bind(args.listen_address.as_str())
+    let listener = tokio::net::TcpListener::bind(ctx.args.listen_address.as_str())
         .await
         .unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -230,8 +241,8 @@ async fn get_queued_job(
 }
 
 /// Parse the input CSV file and create and spawn transaction scenarios
-async fn parse_and_execute() -> Result<(), Box<dyn std::error::Error>> {
-    let ecfg = EnvConfig::new();
+async fn parse_and_execute(ctx: Context) -> Result<(), Box<dyn std::error::Error>> {
+    let ecfg = ctx.ecfg.clone();
     let mut rdr = csv::ReaderBuilder::new()
         .delimiter(b';')
         .trim(csv::Trim::All)
@@ -244,24 +255,28 @@ async fn parse_and_execute() -> Result<(), Box<dyn std::error::Error>> {
         .map(|res| res.as_ref().expect("Incorrect scenario file").clone())
         .collect();
 
-    spawn_and_wait_all(generators).await?;
+    spawn_and_wait_all(ctx, generators).await?;
 
     Ok(())
 }
 
-async fn spawn_and_wait_all(scenarios: Vec<Scenario>) -> Result<(), Box<dyn std::error::Error>> {
+async fn spawn_and_wait_all(
+    ctx: Context,
+    scenarios: Vec<Scenario>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut handles = vec![];
     for scenario in scenarios {
+        let ctx = ctx.clone();
         let handle = tokio::spawn(async move {
             info!(target: "tool", scenario = ?scenario, "Execute scenario");
             match scenario.kind {
                 GeneratorKind::Count => {
-                    if let Err(err) = generate_transactions_count(&scenario).await {
+                    if let Err(err) = generate_transactions_count(&ctx, &scenario).await {
                         error!(scenario = ?scenario, err, "Generating transactions with count failed");
                     }
                 }
                 GeneratorKind::Rate => {
-                    if let Err(err) = generate_transactions_at_rate(&scenario).await {
+                    if let Err(err) = generate_transactions_at_rate(&ctx, &scenario).await {
                         error!(scenario = ?scenario, err, "Generating transactions at rate failed");
                     }
                 }
@@ -274,6 +289,7 @@ async fn spawn_and_wait_all(scenarios: Vec<Scenario>) -> Result<(), Box<dyn std:
 }
 
 async fn generate_transactions_at_rate(
+    ctx: &Context,
     scenario: &Scenario,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
@@ -300,15 +316,25 @@ async fn generate_transactions_at_rate(
         let start_time = SystemTime::now();
         let mut last_transaction_time = SystemTime::now();
         let end_target = start_time.add(std::time::Duration::from_secs(*duration_seconds));
+
+        let end_target_utc: DateTime<Utc> = end_target.into();
+
         let time_between_transactions = std::time::Duration::from_secs_f64(1.0 / target_throughput);
+
+        info!(target: "tool", target_throughput, duration_seconds, 
+        time_between_transactions = ?time_between_transactions, end_target_utc = ?end_target_utc, "Starting transactions at rate");
+
+        let mut txn_counter = 0;
         loop {
             let transaction_start = SystemTime::now();
             if transaction_start > end_target {
+                info!(target: "tool", txn_counter, "Finished transactions");
                 break;
             }
             info!(target: "tool" , "Generating new transaction at rate");
 
             let (dep1, dep2) = generate_transaction(
+                ctx,
                 scenario,
                 dependence_handle1,
                 dependence_handle2,
@@ -316,6 +342,9 @@ async fn generate_transactions_at_rate(
                 &pool,
             )
             .await?;
+
+            txn_counter += 1;
+
             if scenario.is_dependent == Dependence::Dependent {
                 dependence_handle1 = Some(dep1);
                 dependence_handle2 = Some(dep2);
@@ -337,9 +366,10 @@ async fn generate_transactions_at_rate(
 }
 
 async fn generate_transactions_count(
+    ctx: &Context,
     scenario: &Scenario,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let ecfg = EnvConfig::new();
+    let ecfg = ctx.ecfg.clone();
     let coprocessor_api_key = sqlx::types::Uuid::parse_str(&ecfg.api_key).unwrap();
     let mut listener_event_to_db = ListenerDatabase::new(
         &ecfg.evgen_db_url,
@@ -361,6 +391,7 @@ async fn generate_transactions_count(
             info!(target: "tool", iter , "Generating new transaction");
 
             let (dep1, dep2) = generate_transaction(
+                ctx,
                 scenario,
                 dependence_handle1,
                 dependence_handle2,
@@ -378,6 +409,7 @@ async fn generate_transactions_count(
 }
 
 async fn generate_transaction(
+    ctx: &Context,
     scenario: &Scenario,
     dependence1: Option<Handle>,
     dependence2: Option<Handle>,
@@ -386,14 +418,33 @@ async fn generate_transaction(
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     let ecfg = EnvConfig::new();
     let inputs = get_inputs_vector(
+        ctx,
         scenario.inputs.to_owned(),
         &scenario.contract_address,
         &scenario.user_address,
     )
     .await?;
+
+    let dependence1 = match dependence1 {
+        Some(dep) => Some(dep),
+        None => match inputs.first().and_then(|v| *v) {
+            Some(dep) => Some(dep),
+            None => return Err("inputs[0] is None and no dependence1 provided".into()),
+        },
+    };
+
+    let dependence2 = match dependence2 {
+        Some(dep) => Some(dep),
+        None => match inputs.get(1).and_then(|v| *v) {
+            Some(dep) => Some(dep),
+            None => return Err("inputs[1] is None and no dependence2 provided".into()),
+        },
+    };
+
     match scenario.transaction {
         Transaction::ERC20Transfer => {
             let (_, output_dependence) = erc20_transaction(
+                ctx,
                 inputs[0],
                 dependence1,
                 inputs[1],
@@ -409,6 +460,7 @@ async fn generate_transaction(
         }
         Transaction::DEXSwapRequest => {
             let (new_current_balance_0, new_current_balance_1) = dex_swap_request_transaction(
+                ctx,
                 inputs[0],
                 inputs[1],
                 dependence1,
@@ -430,6 +482,7 @@ async fn generate_transaction(
         }
         Transaction::DEXSwapClaim => {
             let (new_current_balance_0, new_current_balance_1) = dex_swap_claim_transaction(
+                ctx,
                 inputs[0],
                 inputs[1],
                 rand::random::<u64>(),
@@ -451,6 +504,7 @@ async fn generate_transaction(
         }
         Transaction::ADDChain => {
             let (output_dependence1, output_dependence2) = add_chain_transaction(
+                ctx,
                 dependence1,
                 inputs[1],
                 ecfg.synthetic_chain_length,
@@ -465,6 +519,7 @@ async fn generate_transaction(
         }
         Transaction::MULChain => {
             let (output_dependence1, output_dependence2) = mul_chain_transaction(
+                ctx,
                 dependence1,
                 inputs[1],
                 ecfg.synthetic_chain_length,
@@ -479,6 +534,7 @@ async fn generate_transaction(
         }
         Transaction::InputVerif => {
             let (output_dependence1, output_dependence2) = generate_input_verification_transaction(
+                ctx,
                 ecfg.synthetic_chain_length,
                 16u8,
                 &scenario.contract_address,
