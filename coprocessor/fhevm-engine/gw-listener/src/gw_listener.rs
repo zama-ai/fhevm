@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use alloy::{
-    eips::BlockNumberOrTag, network::Ethereum, primitives::Address, providers::Provider, sol,
+    eips::BlockNumberOrTag, network::Ethereum, primitives::Address, providers::Provider,
+    rpc::types::Log, sol,
 };
 use futures_util::StreamExt;
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
@@ -89,73 +90,89 @@ impl<P: Provider<Ethereum> + Clone + 'static> GatewayListener<P> {
         // That might lead to skipped events, but that is acceptable for input verification requests as the client will eventually retry.
         // Furthermore, replaying old input verification requests is unnecessary as input verification is a synchronous request/response interaction on the client side.
         // Finally, no data on the GW will be left in an inconsistent state.
-        let filter = input_verification
+        let mut verify_proof_request = input_verification
             .VerifyProofRequest_filter()
             .from_block(from_block)
             .subscribe()
-            .await?;
+            .await?
+            .into_stream()
+            .fuse();
         info!("Subscribed to InputVerification.VerifyProofRequest events");
-        let mut stream = filter.into_stream().fuse();
         loop {
             tokio::select! {
                 _ = self.cancel_token.cancelled() => {
                     break;
                 }
-                item = stream.next() => {
-                    if item.is_none() {
-                        error!("Event stream closed");
-                        return Err(anyhow::anyhow!("Event stream closed"))
-                    }
-                    let (request, log) = item.unwrap()?;
-                    info!(zk_proof_id = %request.zkProofId, "Received ZK proof request event");
-                    match log.block_number {
-                        Some(event_block_num) => {
-                            match from_block {
-                                BlockNumberOrTag::Latest => {
-                                    info!(event_block_num = event_block_num, "Updating from block");
-                                    from_block = BlockNumberOrTag::Number(event_block_num);
-                                    self.update_last_block_num(db_pool, Some(event_block_num)).await?;
-                                }
-                                BlockNumberOrTag::Number(from_block_num) => {
-                                    if from_block_num < event_block_num {
-                                        info!(from_block_num = from_block_num, event_block_num = event_block_num, "Updating from block");
-                                        from_block = BlockNumberOrTag::Number(event_block_num);
-                                        self.update_last_block_num(db_pool, Some(event_block_num)).await?;
-                                    }
-                                }
-                                _ => unreachable!("Unexpected from block type"),
-                            }
-                        }
-                        None => {
-                            error!("Received an event without a block number, updating from block to latest");
-                            from_block = BlockNumberOrTag::Latest;
-                            self.update_last_block_num(db_pool, None).await?;
-                        }
-                    }
-
-                    // TODO: check if we can avoid the cast from u256 to i64
-                    sqlx::query!(
-                        "WITH ins AS (
-                            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data)
-                            VALUES ($1, $2, $3, $4, $5, $6)
-                            ON CONFLICT(zk_proof_id) DO NOTHING
-                        )
-                        SELECT pg_notify($7, '')",
-                        request.zkProofId.to::<i64>(),
-                        request.contractChainId.to::<i64>(),
-                        request.contractAddress.to_string(),
-                        request.userAddress.to_string(),
-                        Some(request.ciphertextWithZKProof.as_ref()),
-                        request.extraData.as_ref(),
-                        self.conf.verify_proof_req_db_channel
-                    )
-                    .execute(db_pool)
-                    .await?;
+                item = verify_proof_request.next() => {
+                    let Some(item) = item else {
+                        error!("Block stream closed");
+                        return Err(anyhow::anyhow!("Block stream closed"));
+                    };
+                    let (request, log) = item?;
+                    self.verify_proof_request(db_pool, &mut from_block, request, log).await?;
                 }
             }
             // Reset sleep duration on successful iteration.
             self.reset_sleep_duration(sleep_duration);
         }
+        Ok(())
+    }
+
+    async fn verify_proof_request(
+        &self,
+        db_pool: &Pool<Postgres>,
+        from_block: &mut BlockNumberOrTag,
+        request: InputVerification::VerifyProofRequest,
+        log: Log,
+    ) -> anyhow::Result<()> {
+        info!(zk_proof_id = %request.zkProofId, "Received ZK proof request event");
+        match log.block_number {
+            Some(event_block_num) => match *from_block {
+                BlockNumberOrTag::Latest => {
+                    info!(event_block_num = event_block_num, "Updating from block");
+                    *from_block = BlockNumberOrTag::Number(event_block_num);
+                    self.update_last_block_num(db_pool, Some(event_block_num))
+                        .await?;
+                }
+                BlockNumberOrTag::Number(from_block_num) => {
+                    if from_block_num < event_block_num {
+                        info!(
+                            from_block_num = from_block_num,
+                            event_block_num = event_block_num,
+                            "Updating from block"
+                        );
+                        *from_block = BlockNumberOrTag::Number(event_block_num);
+                        self.update_last_block_num(db_pool, Some(event_block_num))
+                            .await?;
+                    }
+                }
+                _ => unreachable!("Unexpected from block type"),
+            },
+            None => {
+                error!("Received an event without a block number, updating from block to latest");
+                *from_block = BlockNumberOrTag::Latest;
+                self.update_last_block_num(db_pool, None).await?;
+            }
+        }
+
+        // TODO: check if we can avoid the cast from u256 to i64
+        sqlx::query!(
+            "WITH ins AS (
+                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT(zk_proof_id) DO NOTHING
+            )
+            SELECT pg_notify($7, '')",
+            request.zkProofId.to::<i64>(),
+            request.contractChainId.to::<i64>(),
+            request.contractAddress.to_string(),
+            request.userAddress.to_string(),
+            Some(request.ciphertextWithZKProof.as_ref()),
+            request.extraData.as_ref(),
+            self.conf.verify_proof_req_db_channel
+        )
+        .execute(db_pool)
+        .await?;
         Ok(())
     }
 
