@@ -517,31 +517,42 @@ impl SupportedFheCiphertexts {
 
     pub fn compress(&self) -> (i16, Vec<u8>) {
         let type_num = self.type_num();
-        let mut builder = CompressedCiphertextListBuilder::new();
         match self {
-            SupportedFheCiphertexts::FheBool(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheUint4(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheUint8(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheUint16(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheUint32(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheUint64(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheUint128(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheUint160(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheUint256(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheBytes64(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheBytes128(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::FheBytes256(c) => builder.push(c.clone()),
-            SupportedFheCiphertexts::Scalar(_) => {
-                // TODO: Need to fix that, scalars are not ciphertexts.
-                panic!("cannot compress a scalar");
+            SupportedFheCiphertexts::Scalar(v) => {
+                // Scalars are not ciphertexts, so we just serialize them directly
+                (type_num, safe_serialize(v))
             }
-        };
-        let list = builder.build().expect("ciphertext compression");
-        (type_num, safe_serialize(&list))
+            _ => {
+                let mut builder = CompressedCiphertextListBuilder::new();
+                match self {
+                    SupportedFheCiphertexts::FheBool(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheUint4(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheUint8(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheUint16(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheUint32(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheUint64(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheUint128(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheUint160(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheUint256(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheBytes64(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheBytes128(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::FheBytes256(c) => builder.push(c.clone()),
+                    SupportedFheCiphertexts::Scalar(_) => unreachable!(), // Handled above
+                };
+                let list = builder.build().expect("ciphertext compression");
+                (type_num, safe_serialize(&list))
+            }
+        }
     }
 
     #[cfg(feature = "gpu")]
     pub fn decompress(ct_type: i16, list: &[u8], gpu_idx: usize) -> Result<Self> {
+        // Handle scalar decompression separately
+        if ct_type == 200 {
+            let scalar_data: Vec<u8> = safe_deserialize(list)?;
+            return Ok(SupportedFheCiphertexts::Scalar(scalar_data));
+        }
+        
         use crate::gpu_memory::{release_memory_on_gpu, reserve_memory_on_gpu};
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         let mut reserved_mem = 0;
@@ -556,6 +567,12 @@ impl SupportedFheCiphertexts {
 
     #[cfg(not(feature = "gpu"))]
     pub fn decompress(ct_type: i16, list: &[u8], _: usize) -> Result<Self> {
+        // Handle scalar decompression separately
+        if ct_type == 200 {
+            let scalar_data: Vec<u8> = safe_deserialize(list)?;
+            return Ok(SupportedFheCiphertexts::Scalar(scalar_data));
+        }
+        
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         Self::decompress_impl(ct_type, &ctlist)
     }
@@ -563,6 +580,12 @@ impl SupportedFheCiphertexts {
     // Decompress without checking if enough GPU memory is available -
     // used when GPU featre is active, but decompressing on CPU
     pub fn decompress_no_memcheck(ct_type: i16, list: &[u8]) -> Result<Self> {
+        // Handle scalar decompression separately
+        if ct_type == 200 {
+            let scalar_data: Vec<u8> = safe_deserialize(list)?;
+            return Ok(SupportedFheCiphertexts::Scalar(scalar_data));
+        }
+        
         let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
         Self::decompress_impl(ct_type, &ctlist)
     }
