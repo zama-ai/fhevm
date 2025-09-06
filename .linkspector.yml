@@ -1,8 +1,0 @@
-dirs:
-  - ./
-aliveStatusCodes:
-  - 200
-ignorePatterns:
-  - pattern: '^https?://localhost.*$'
-  - pattern: '^https://stackoverflow.com/.*$'
-useGitIgnore: true

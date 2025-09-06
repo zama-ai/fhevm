@@ -46,7 +46,7 @@ It consists of the following components:
 
 Multiple ISCs are deployed on the blockchain, typically one for each application (e.g. FHEVM blockchain) or application type (e.g. EVM blockchain). Each of these can keep application-specific state in order to verify requests from the application. For instance, an ISC for an FHEVM blockchain holds the identity of the current set of validators, so that access controls lists (ACLs) in decryption and reencryption requests can be validated by checking state inclusion proofs against the state roof of the FHEVM blockchain.
 
-All decryption and reencryption requests are submitted as transactions to an ASC. The ASC performs universal validation and forwards ACL validation to the appropriate ISC. If all validations are ok then the ASC calls the backend by emitting an event that will trigger the backend to actually fulfill the request. Once the request has been fulfilled, the backend submits a fulfillment transaction back to the ASC.
+All decryption and reencryption requests are submitted as transactions to an ASC. The ASC performs universal validation and forwards ACL validation to the appropriate ISC. If all validations are ok then the ASC calls the backend by emitting an event that will trigger the backend to actually fulfil the request. Once the request has been fulfilled, the backend submits a fulfilment transaction back to the ASC.
 
 All payments to the KMS is also handled through the ASC to which the transaction is submitted. These payments are used to incentivize the KMS operators.
 
@@ -58,7 +58,7 @@ The backend consists of the KMS core.
 It is the most security critical component of the entire system and a compromise of this could lead to breakage of both correctness, confidentiality and robustness.
 Because of this we have designed it to support threshold security and Enclave support, along with isolation of the security critical _Engine_ from the general Internet.
 
-The backend fulfills the requests as determined by the frontend. It comes in two flavors:
+The backend fulfils the requests as determined by the frontend. It comes in two flavors:
 
 - [Centralized](centralized.md) where sensitive material is kept in its typical form.
 - [Threshold](threshold.md) where sensitive material is secret shared
@@ -74,14 +74,14 @@ Each backend type is further described in their own document but each _logical_ 
   - The part of the system responsible for cryptographic tasks in relation to requests. This includes the FHE operations (which is handled by a sub-component called the `Engine`), along with request validation and signcryption.
   Observe that the `Engine` and `Core` are _not_ connected through a network, but that the `Engine` code is simply imported and called from `Core`.
 
-More specifically the coordinator listens for events from the ASC (received through the Connector) and triggers the Core to fulfill operations. This means that the blockchain is the ground truth of which requests are processed, and each backend instance can independently authenticate these. The backend make use of a vault to keep and share sensitive material.
+More specifically the coordinator listens for events from the ASC (received through the Connector) and triggers the Core to fulfil operations. This means that the blockchain is the ground truth of which requests are processed, and each backend instance can independently authenticate these. The backend make use of a vault to keep and share sensitive material.
 
 The design of the backend consisting of multiple components is done to make it possible to isolate the cryptographic _Engine_ from the public Internet and make it completely agnostic to the FHEVM and even the KMS blockchain.
 It will simply only communicate with the Core Service and trust its requests blindly.
 However, this does not pose a security risk as the Core Service and Connector _must_ be executed on the same machine and will only issue commands if signed and finalized by the KMS blockchain.
 
 Each Core Service holds a signature key which is used to validate the authenticity of the operations which will eventually get passed back down to the FHEVM.
-More specifically this key is used to sign fulfillment transactions and fingerprints of public material.
+More specifically this key is used to sign fulfilment transactions and fingerprints of public material.
 
 The Core Service and Engine is also AWS-friendly, in the sense that it can take advantage of AWS Nitro and AWS KMS to offer additional security. However, they can also be operated in a "developer mode" where the use of AWS components is bypassed, and the sensitive material is simply kept in clear-text on disc. This mode is useful for developers to run a KMS on for instance their laptops.
 
@@ -91,7 +91,7 @@ In case of a horizontal scaling multiple Cores may be launched and managed by th
 This _may_ be realized based on the underlying event, where the hash value of the event payload is used to determine which Core should process it.
 This means that the Coordinator only has relevance in the system when each party has multiple Cores. If there is only a single Core per party, then the Coordinator can be excluded from the system and requests from the Connector goes directly to the Core.
 
-Each logical backend party also holds a signature key but may be shared between each Core in the case of horizontal scaling. This key is used to sign fulfillment transactions and fingerprints of public material.
+Each logical backend party also holds a signature key but may be shared between each Core in the case of horizontal scaling. This key is used to sign fulfilment transactions and fingerprints of public material.
 
 Note that backends may choose to batch operations across request transactions in order to e.g. optimize the overall network load.
 
@@ -114,7 +114,7 @@ Alternatively the large data could be stored on S3, a file-system or a webserver
 
 ### Storage
 
-The storage component is used to make available public material that is not suitable for storing in the frontend fulfillment transactions. This includes public FHE keys and CRSs. Instead, only URIs and signed fingerprints of this material is stored in the fulfillment transactions. The fingerprint is computed using a cryptographic hash function.
+The storage component is used to make available public material that is not suitable for storing in the frontend fulfilment transactions. This includes public FHE keys and CRSs. Instead, only URIs and signed fingerprints of this material is stored in the fulfilment transactions. The fingerprint is computed using a cryptographic hash function.
 
 The storage component can be entirely untrusted from a security perspective, and comes in two flavors with different availability properties:
 
