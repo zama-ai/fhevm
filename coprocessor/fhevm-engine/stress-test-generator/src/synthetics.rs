@@ -1,6 +1,6 @@
 use crate::utils::{
-    allow_handle, generate_trivial_encrypt, next_random_handle, tfhe_event, EnvConfig, FheType,
-    DEF_TYPE,
+    allow_handle, generate_trivial_encrypt, next_random_handle, tfhe_event, Context, EnvConfig,
+    FheType, DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 use fhevm_engine_common::types::AllowEvents;
@@ -13,6 +13,7 @@ use std::io::prelude::*;
 
 #[allow(clippy::too_many_arguments)]
 pub async fn add_chain_transaction(
+    ctx: &Context,
     counter: Option<Handle>,
     amount: Option<Handle>,
     length: u32,
@@ -25,7 +26,7 @@ pub async fn add_chain_transaction(
     let caller = user_address.parse().unwrap();
     let transaction_id = transaction_id.unwrap_or_else(|| next_random_handle(DEF_TYPE));
     let mut counter =
-        generate_random_handle_amount_if_none(counter, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, counter, contract_address, user_address).await?;
 
     let amount = match amount {
         Some(amount) => amount,
@@ -75,6 +76,7 @@ pub async fn add_chain_transaction(
 
 #[allow(clippy::too_many_arguments)]
 pub async fn mul_chain_transaction(
+    ctx: &Context,
     counter: Option<Handle>,
     amount: Option<Handle>,
     length: u32,
@@ -87,7 +89,7 @@ pub async fn mul_chain_transaction(
     let caller = user_address.parse().unwrap();
     let transaction_id = transaction_id.unwrap_or_else(|| next_random_handle(DEF_TYPE));
     let mut counter =
-        generate_random_handle_amount_if_none(counter, contract_address, user_address).await?;
+        generate_random_handle_amount_if_none(ctx, counter, contract_address, user_address).await?;
 
     let amount = match amount {
         Some(amount) => amount,

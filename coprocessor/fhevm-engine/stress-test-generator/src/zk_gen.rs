@@ -8,7 +8,10 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
+use crate::utils::Context;
+
 const SIZE: usize = 92;
+const CACHED_INPUTS_COUNT: u8 = 16;
 
 type ContractKey = (String, String);
 type ContractValues = Vec<Option<Handle>>;
@@ -58,6 +61,7 @@ async fn insert_proof(
     request_id: i64,
     zk_pok: &[u8],
     aux: &ZkData,
+    db_notify_channel: &str,
 ) -> Result<(), sqlx::Error> {
     //  Insert ZkPok into database
     sqlx::query(
@@ -70,7 +74,7 @@ async fn insert_proof(
         .bind(aux.user_address.clone())
         .execute(pool).await?;
     sqlx::query("SELECT pg_notify($1, '')")
-        .bind("fhevm")
+        .bind(db_notify_channel)
         .execute(pool)
         .await
         .unwrap();
@@ -115,6 +119,7 @@ async fn wait_for_verification_and_handle(
 }
 
 pub async fn generate_random_handle_amount_if_none(
+    ctx: &Context,
     result: Option<Handle>,
     contract_address: &String,
     user_address: &String,
@@ -122,10 +127,11 @@ pub async fn generate_random_handle_amount_if_none(
     if let Some(res) = result {
         return Ok(res);
     }
-    Ok(generate_random_handle_vec(1, contract_address, user_address).await?[0])
+    Ok(generate_random_handle_vec(ctx, 1, contract_address, user_address).await?[0])
 }
 
 pub async fn generate_random_handle_vec(
+    ctx: &Context,
     count: u8,
     contract_address: &String,
     user_address: &String,
@@ -158,7 +164,14 @@ pub async fn generate_random_handle_vec(
         .unwrap();
     let zk_pok = fhevm_engine_common::utils::safe_serialize(&the_list);
     let zk_id = ZK_PROOF_ID.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    insert_proof(&pool, zk_id, &zk_pok, &zk_data).await?;
+    insert_proof(
+        &pool,
+        zk_id,
+        &zk_pok,
+        &zk_data,
+        &ctx.args.zkproof_notify_channel,
+    )
+    .await?;
 
     info!(zk_id, count, "waiting for verification...");
     let handles = wait_for_verification_and_handle(&pool, zk_id, 5000).await?;
@@ -168,6 +181,7 @@ pub async fn generate_random_handle_vec(
 }
 
 pub async fn get_inputs_vector(
+    ctx: &Context,
     in_type: Inputs,
     contract_address: &String,
     user_address: &String,
@@ -176,7 +190,7 @@ pub async fn get_inputs_vector(
         return Ok(vec![]);
     }
     if in_type == Inputs::NewInputs {
-        return Ok(vec![None; 16]);
+        return Ok(vec![None; CACHED_INPUTS_COUNT as usize]);
     }
 
     let contract_inputs = CONTRACT_INPUTS
@@ -188,10 +202,10 @@ pub async fn get_inputs_vector(
     if let Some(contract_inputs) = contract_inputs {
         Ok(contract_inputs.to_owned())
     } else {
-        let count = 16;
+        let count = CACHED_INPUTS_COUNT;
         info!(count, "No cached inputs found, generating new ones");
 
-        let inputs = generate_random_handle_vec(count, contract_address, user_address)
+        let inputs = generate_random_handle_vec(ctx, count, contract_address, user_address)
             .await?
             .into_iter()
             .map(Some)
@@ -209,13 +223,14 @@ pub async fn get_inputs_vector(
 }
 
 pub async fn generate_input_verification_transaction(
+    ctx: &Context,
     count: u32,
     batch_size: u8,
     contract_address: &String,
     user_address: &String,
 ) -> Result<(Handle, Handle), Box<dyn std::error::Error>> {
     for _ in 0..count {
-        generate_random_handle_vec(batch_size, contract_address, user_address).await?;
+        generate_random_handle_vec(ctx, batch_size, contract_address, user_address).await?;
     }
     Ok((next_random_handle(DEF_TYPE), next_random_handle(DEF_TYPE)))
 }
