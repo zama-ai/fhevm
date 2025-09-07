@@ -1,0 +1,17 @@
+[
+  {
+    "transaction": "InputVerif",
+    "variant": "NA",
+    "kind": "Rate",
+    "inputs": "NewInputs",
+    "is_dependent": "Dependent",
+    "contract_address": "0xffff001ff86F081E8D3868A8C4732C8f65dfdB0d",
+    "user_address": "0xa0534e99d86F081E8D3868A8C4732C8f65dfdB07",
+    "scenario": [
+      [
+        1.0,
+        10
+      ]
+    ]
+  }
+]
