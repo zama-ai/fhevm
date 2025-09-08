@@ -10,7 +10,7 @@ import {
   EmptyUUPSProxy,
   GatewayConfig,
   InputVerification,
-  KmsManagement,
+  KMSManagement,
   MultichainAcl,
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
@@ -959,7 +959,7 @@ describe("GatewayConfig", function () {
       let ciphertextCommits: CiphertextCommits;
       let decryption: Decryption;
       let inputVerification: InputVerification;
-      let kmsManagement: KmsManagement;
+      let kmsManagement: KMSManagement;
       let multichainAcl: MultichainAcl;
 
       before(async function () {
@@ -994,7 +994,7 @@ describe("GatewayConfig", function () {
         // - CiphertextCommits
         // - MultichainAcl
         // - GatewayConfig
-        // In addition, the `KmsManagement` contract is not used yet, so we don't need to pause it for now.
+        // In addition, the `KMSManagement` contract is not used yet, so we don't need to pause it for now.
         // See https://github.com/zama-ai/fhevm-internal/issues/180
         expect(await ciphertextCommits.paused()).to.be.false;
         expect(await multichainAcl.paused()).to.be.false;

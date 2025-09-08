@@ -5,7 +5,7 @@ import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/acc
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
-import "./interfaces/IKmsManagement.sol";
+import "./interfaces/IKMSManagement.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./libraries/HandleOps.sol";
@@ -26,7 +26,7 @@ contract CiphertextCommits is
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /// @notice The address of the KmsManagement contract, used for fetching information about the current key.
-    IKmsManagement private constant KMS_MANAGEMENT = IKmsManagement(kmsManagementAddress);
+    IKMSManagement private constant KMS_MANAGEMENT = IKMSManagement(kmsManagementAddress);
 
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that
