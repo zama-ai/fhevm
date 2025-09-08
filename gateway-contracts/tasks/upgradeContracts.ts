@@ -255,6 +255,7 @@ task("task:upgradeGatewayConfig")
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
     // Get upgrade data for V3 from environment variables
+    const keygenThreshold = parseInt(getRequiredEnvVar("KEYGEN_THRESHOLD"));
     const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
     const v3UpgradeInputs = [];
     for (let idx = 0; idx < numKmsNodes; idx++) {
@@ -266,6 +267,7 @@ task("task:upgradeGatewayConfig")
 
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
       v3UpgradeInputs,
+      keygenThreshold,
     ]);
   });
 
