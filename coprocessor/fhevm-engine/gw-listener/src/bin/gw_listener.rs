@@ -3,6 +3,7 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
+use gw_listener::aws_s3::default_aws_s3_client;
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
 use gw_listener::ConfigSettings;
@@ -28,6 +29,9 @@ struct Conf {
 
     #[arg(short, long)]
     input_verification_address: Address,
+
+    #[arg(long)]
+    kms_management_address: Address,
 
     #[arg(long, default_value = "1")]
     error_sleep_initial_secs: u16,
@@ -112,6 +116,8 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let aws_s3_client = default_aws_s3_client().await;
+
     let cancel_token = CancellationToken::new();
 
     let config = ConfigSettings {
@@ -127,9 +133,11 @@ async fn main() -> anyhow::Result<()> {
 
     let gw_listener = GatewayListener::new(
         conf.input_verification_address,
+        conf.kms_management_address,
         config.clone(),
         cancel_token.clone(),
         provider.clone(),
+        aws_s3_client.clone(),
     );
 
     // Wrap the GatewayListener in an Arc

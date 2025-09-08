@@ -17,7 +17,9 @@ fn main() {
         .unwrap();
 
     let output = project.compile().unwrap();
-    assert!(!output.has_compiler_errors());
+    if output.has_compiler_errors() {
+        panic!("Solidity compilation error: {}", output);
+    }
 
     project.rerun_if_sources_changed();
 }

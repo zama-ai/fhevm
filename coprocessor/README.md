@@ -145,19 +145,17 @@ Options:
 
 ```bash
 $ gw_listener --help
-Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --input-verification-address <INPUT_VERIFICATION_ADDRESS>
+Usage: gw_listener [OPTIONS] --gw-url <GW_URL> --input-verification-address <INPUT_VERIFICATION_ADDRESS> --kms-management-address <KMS_MANAGEMENT_ADDRESS>
 
 Options:
       --database-url <DATABASE_URL>
-          
       --database-pool-size <DATABASE_POOL_SIZE>
           [default: 16]
       --verify-proof-req-database-channel <VERIFY_PROOF_REQ_DATABASE_CHANNEL>
           [default: verify_proof_requests]
       --gw-url <GW_URL>
-          
   -i, --input-verification-address <INPUT_VERIFICATION_ADDRESS>
-          
+      --kms-management-address <KMS_MANAGEMENT_ADDRESS>
       --error-sleep-initial-secs <ERROR_SLEEP_INITIAL_SECS>
           [default: 1]
       --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>
