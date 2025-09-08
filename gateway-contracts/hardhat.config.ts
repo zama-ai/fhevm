@@ -18,6 +18,7 @@ import "./tasks/deployment";
 import "./tasks/getters";
 import "./tasks/pauseContracts";
 import "./tasks/safeSmartAccounts";
+import "./tasks/triggerKeygen";
 import "./tasks/upgradeContracts";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
