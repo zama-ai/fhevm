@@ -8,10 +8,11 @@ use crate::{
         CORE_RESPONSE_ERRORS,
     },
 };
+use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
     conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
-    types::{KmsGrpcRequest, KmsGrpcResponse},
+    types::{KmsGrpcRequest, KmsGrpcResponse, decode_request_id, u256_to_u32},
 };
 use kms_grpc::{
     kms::v1::{Empty, PublicDecryptionRequest, RequestId, UserDecryptionRequest},
@@ -218,12 +219,16 @@ impl KmsClient {
     }
 
     fn choose_client(&self, request_id: RequestId) -> CoreServiceEndpointClient<Channel> {
-        let request_id = request_id.request_id.parse::<usize>().unwrap_or_else(|_| {
-            warn!("Failed to parse request ID. Sending request to shard 0 by default");
+        let request_id = decode_request_id(request_id).unwrap_or_else(|e| {
+            warn!("Failed to parse request ID: {e}. Sending request to shard 0 by default");
+            U256::ZERO
+        });
+        let client_index = u256_to_u32(request_id % U256::from(self.inners.len())).unwrap_or_else(|e| {
+            warn!("Failed to convert request ID from U256 to u32: {e}. Sending request to shard 0 by default");
             0
         });
-        let client_index = request_id % self.inners.len();
-        self.inners[client_index].clone()
+        info!("Sending GRPC request to KMS shard #{client_index}");
+        self.inners[client_index as usize].clone()
     }
 }
 
