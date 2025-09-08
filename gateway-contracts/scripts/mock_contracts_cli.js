@@ -11,6 +11,13 @@ const INTERFACES_DIR = path.join(CONTRACTS_DIR, "/interfaces");
 const MOCKS_DIR = path.join(CONTRACTS_DIR, "/mocks");
 const SHARED_STRUCTS_FILE = "shared/Structs.sol";
 
+const RequestIdCounters = {
+  decryptionId: {
+    publicDecryptionId: "publicDecryptionCounter",
+    userDecryptionId: "userDecryptionCounter",
+  },
+};
+
 // Define the mapping of request types to their corresponding IDs
 // The names should match the start of their associated counter state variables in the contracts
 const KMS_REQUEST_TYPES_MAPPING = {
@@ -409,7 +416,17 @@ function generateMockFunctions(functionDefinitions, eventDefinitions, structDefi
             const parameterType = getParameterType(parameter.typeName);
 
             let declaration;
-            const idCounterAssignment = idCounterAssignments.find((assignment) => assignment.idVar === parameterName);
+            const idCounterAssignment = idCounterAssignments.find((assignment) => {
+              // Check first if the parameter is part of a defined request ID counter mapping, e.g. decryptionId
+              // which same event parameter name is used from either PublicDecryptionRequest or UserDecryptionRequest.
+              const requestIdCounter = RequestIdCounters[parameterName];
+              if (requestIdCounter) {
+                const functionIdCounters = findCounterOperators(functionDef.body.statements);
+                return functionIdCounters.some((counter) => requestIdCounter[assignment.idVar] === counter);
+              } else {
+                return parameterName == assignment.idVar;
+              }
+            });
 
             // Check if the parameter is a counter ID assignation variable and declare it
             if (idCounterAssignment) {
