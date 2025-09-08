@@ -1,0 +1,1 @@
+../../../../../gateway-contracts/contracts/interfaces/IKMSManagement.sol
