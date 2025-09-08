@@ -47,6 +47,7 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
         mapping(address custodianTxSenderAddress => bool isCustodianTxSender) _isCustodianTxSender;
         mapping(address custodianSignerAddress => bool isCustodianSigner) _isCustodianSigner;
         mapping(address kmsTxSenderAddress => KmsNodeV2 kmsNodeV2) kmsNodesV2;
+        uint256 keygenThreshold;
         // New state variables added in the upgraded version
         ProtocolMetadataV2 protocolMetadataV2;
     }

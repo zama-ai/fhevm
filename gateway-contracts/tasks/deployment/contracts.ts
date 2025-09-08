@@ -80,6 +80,9 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   const publicDecryptionThreshold = getRequiredEnvVar("PUBLIC_DECRYPTION_THRESHOLD");
   const userDecryptionThreshold = getRequiredEnvVar("USER_DECRYPTION_THRESHOLD");
 
+  // Parse the key and CRS generation threshold
+  const keygenThreshold = getRequiredEnvVar("KEYGEN_THRESHOLD");
+
   // Parse the KMS nodes
   const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
   const kmsNodes = [];
@@ -129,6 +132,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     mpcThreshold,
     publicDecryptionThreshold,
     userDecryptionThreshold,
+    keygenThreshold,
     kmsNodes,
     coprocessors,
     custodians,

@@ -69,6 +69,12 @@ interface IGatewayConfig {
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
     /**
+     * @notice Emitted when the key and CRS generation threshold has been updated.
+     * @param newKeygenThreshold The new key and CRS generation threshold.
+     */
+    event UpdateKeygenThreshold(uint256 newKeygenThreshold);
+
+    /**
      * @notice Emitted when a new host chain has been registered.
      * @param hostChain The new host chain metadata.
      */
@@ -108,6 +114,12 @@ interface IGatewayConfig {
     /// @param userDecryptionThreshold The user decryption threshold.
     /// @param nKmsNodes The number of KMS nodes.
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
+
+    /// @notice Error emitted when the key and CRS generation threshold is null.
+    error InvalidNullKeygenThreshold();
+
+    /// @notice Error emitted when the key and CRS generation threshold is strictly greater than the number of KMS nodes.
+    error InvalidHighKeygenThreshold(uint256 keygenThreshold, uint256 nKmsNodes);
 
     /**
      * @notice Emitted when all the pausable gateway contracts are paused.
@@ -220,6 +232,13 @@ interface IGatewayConfig {
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
 
     /**
+     * @notice Update the key and CRS generation threshold.
+     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes currently registered.
+     * @param newKeygenThreshold The new key and CRS generation threshold.
+     */
+    function updateKeygenThreshold(uint256 newKeygenThreshold) external;
+
+    /**
      * @notice Pause all pausable gateway contracts.
      */
     function pauseAllGatewayContracts() external;
@@ -302,10 +321,10 @@ interface IGatewayConfig {
     function getUserDecryptionThreshold() external view returns (uint256);
 
     /**
-     * @notice Get the KMS strong majority threshold
-     * @return The KMS strong majority threshold.
+     * @notice Get the key and CRS generation threshold
+     * @return The key and CRS generation threshold.
      */
-    function getKmsStrongMajorityThreshold() external view returns (uint256);
+    function getKeygenThreshold() external view returns (uint256);
 
     /**
      * @notice Get the coprocessor majority threshold

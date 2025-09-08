@@ -43,6 +43,8 @@ contract KmsManagement is
 
     /**
      * @notice The EIP-712 type definition for the KeyDigest struct.
+     * @dev keyType: The type of the generated key.
+     * @dev digest: The digest of the generated key.
      * @dev Required because EIP-712 mandates that each nested struct type
      *      used in a primary type (e.g. KeygenVerification) must be explicitly
      *      declared with its own type string and type hash.
@@ -107,7 +109,7 @@ contract KmsManagement is
      * @dev Constant used for making sure the version number using in the `reinitializer` modifier
      * is identical between `initializeFromEmptyProxy` and the reinitializeVX` method
      */
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     // ----------------------------------------------------------------------------------------------
     // Contract storage:
@@ -118,82 +120,6 @@ contract KmsManagement is
      */
     /// @custom:storage-location erc7201:fhevm_gateway.storage.KmsManagement
     struct KmsManagementStorage {
-        /// @notice DEPRECATED
-        mapping(string fheParamsName => bytes32 paramsDigest) fheParamsDigests; // DEPRECATED
-        /// @notice DEPRECATED: use prepKeygenCounter instead
-        uint256 _preKeygenRequestCounter; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKeygenRequestId => uint256 counter) _preKeygenResponseCounter; // DEPRECATED
-        /// @notice DEPRECATED: use isPrepKeygenDone instead
-        mapping(uint256 preKeyId => bool isDone) _isPreKeygenDone; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKeyId => mapping(address kmsConnector => bool hasResponded)) _preKeygenResponses; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKeyId => bool isOngoing) _isKeygenOngoing; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 keyId => mapping(address kmsConnector => bool hasResponded)) _keygenResponses; // DEPRECATED
-        /// @notice DEPRECATED: use keygenResponseCounter instead
-        mapping(uint256 keyId => uint256 responseCounter) _keygenResponseCounter; // DEPRECATED
-        /// @notice DEPRECATED: use isRequestDone instead
-        mapping(uint256 keyId => bool isGenerated) _isKeyGenerated; // DEPRECATED
-        /// @notice DEPRECATED
-        uint256 _preKskgenRequestCounter; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKskgenRequestId => uint256 counter) _preKskgenResponseCounter; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKskId => bool isDone) _isPreKskgenDone; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKskId => mapping(address kmsConnector => bool hasResponded)) _preKskgenResponses; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKskId => bool isOngoing) _isKskgenOngoing; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKskId => uint256 sourceKeyId) _kskgenSourceKeyIds; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKskId => uint256 destKeyId) _kskgenDestKeyIds; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 kskId => mapping(address kmsConnector => bool hasResponded)) _kskgenResponses; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 kskId => uint256 responseCounter) _kskgenResponseCounter; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 kskId => bool isGenerated) _isKskGenerated; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 sourceKeyId => mapping(uint256 destKeyId => uint256 kskId)) _kskgenIds; // DEPRECATED
-        /// @notice DEPRECATED: use crsCounter instead
-        uint256 _crsgenRequestCounter; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 crsgenRequestId => uint256 counter) _crsgenResponseCounter; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 crsId => mapping(address kmsConnector => bool hasResponded)) _crsgenResponses; // DEPRECATED
-        /// @notice DEPRECATED: use isRequestDone instead
-        mapping(uint256 crsId => bool isGenerated) _isCrsGenerated; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 keyId => bool isOngoing) _activateKeyOngoing; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 keyId => mapping(address coprocessorConnector => bool hasResponded)) _activateKeyResponses; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 keyId => uint256 responseCounter) _activateKeyResponseCounter; // DEPRECATED
-        /// @notice DEPRECATED: use activeKeyId instead
-        uint256 currentKeyId; // DEPRECATED
-        /// @notice DEPRECATED
-        uint256[] activatedKeyIds; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 keyId => bytes32 paramsDigest) keyFheParamsDigests; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 kskId => bytes32 paramsDigest) kskFheParamsDigests; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 crsId => bytes32 paramsDigest) crsFheParamsDigests; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKeyId => bytes32 paramsDigest) _preKeyFheParamsDigests; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKeygenRequestId => bytes32 paramsDigest) _preKeygenFheParamsDigests; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKskId => bytes32 paramsDigest) _preKskFheParamsDigests; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 preKskgenRequestId => bytes32 paramsDigest) _preKskgenFheParamsDigests; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(uint256 crsgenRequestId => bytes32 paramsDigest) _crsgenFheParamsDigests; // DEPRECATED
-        /// @notice DEPRECATED
-        mapping(string fheParamsName => bool isInitialized) _fheParamsInitialized; // DEPRECATED
         // ----------------------------------------------------------------------------------------------
         // Pre-processing keygen state variables:
         // ----------------------------------------------------------------------------------------------
@@ -261,20 +187,6 @@ contract KmsManagement is
         __Ownable_init(owner());
         __Pausable_init();
 
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
-
-        // Initialize the counters in order to generate globally unique requestIds per request type
-        $.prepKeygenCounter = PREP_KEYGEN_COUNTER_BASE;
-        $.keyCounter = KEY_COUNTER_BASE;
-        $.crsCounter = CRS_COUNTER_BASE;
-    }
-
-    /**
-     * @notice Re-initializes the contract from V1.
-     */
-    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
-    /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
         // Initialize the counters in order to generate globally unique requestIds per request type
@@ -649,7 +561,7 @@ contract KmsManagement is
      * @return Whether the consensus is reached
      */
     function _isKmsConsensusReached(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getKmsStrongMajorityThreshold();
+        uint256 consensusThreshold = GATEWAY_CONFIG.getKeygenThreshold();
         return kmsCounter >= consensusThreshold;
     }
 
