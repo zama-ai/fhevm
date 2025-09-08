@@ -19,7 +19,7 @@ import "./shared/GatewayConfigChecks.sol";
 import "./shared/FheType.sol";
 import "./shared/Pausable.sol";
 import "./libraries/FHETypeBitSizes.sol";
-import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KmsRequestCounters.sol";
+import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
 /// @title Decryption contract
 /// @dev See {IDecryption}.
