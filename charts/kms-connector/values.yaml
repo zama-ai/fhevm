@@ -84,7 +84,7 @@ kmsConnectorGwListener:
     liveness:
       enabled: true
       httpGet:
-        path: /liveness
+        path: /healthz
         port: monitoring
       initialDelaySeconds: 10
       periodSeconds: 10
@@ -134,7 +134,7 @@ kmsConnectorKmsWorker:
     liveness:
       enabled: true
       httpGet:
-        path: /liveness
+        path: /healthz
         port: monitoring
       initialDelaySeconds: 10
       periodSeconds: 10
@@ -187,7 +187,7 @@ kmsConnectorTxSender:
     liveness:
       enabled: true
       httpGet:
-        path: /liveness
+        path: /healthz
         port: monitoring
       initialDelaySeconds: 10
       periodSeconds: 10
