@@ -173,6 +173,7 @@ contract Decryption is
     struct DecryptionStorage {
         /// @notice The number of (public, user, delegated user) decryption requests, used to
         /// @notice generate request IDs (`decryptionId`).
+        /// @notice TODO: remove this variable for mainnet
         uint256 _decryptionRequestCounter;
         /// @notice Whether a (public, user, delegated user) decryption is done
         mapping(uint256 decryptionId => bool decryptionDone) decryptionDone;
@@ -323,6 +324,7 @@ contract Decryption is
         // TODO: The 2nd condition is a temporary check to support on-going consensus when the
         // contract is upgraded. We should remove it in the next version
         // See https://github.com/zama-ai/fhevm-internal/issues/377
+        // TODO: remove the "_decryptionRequestCounter" from validation for mainnet.
         if (
             decryptionId == 0 ||
             (decryptionId > $._decryptionRequestCounter && decryptionId <= PUBLIC_DECRYPT_COUNTER_BASE) ||
@@ -560,6 +562,7 @@ contract Decryption is
         // TODO: The 2nd condition is a temporary check to support on-going consensus when the
         // contract is upgraded. We should remove it in the next version
         // See https://github.com/zama-ai/fhevm-internal/issues/377
+        // TODO: remove the "_decryptionRequestCounter" from validation for mainnet.
         if (
             decryptionId == 0 ||
             (decryptionId > $._decryptionRequestCounter && decryptionId <= USER_DECRYPT_COUNTER_BASE) ||
