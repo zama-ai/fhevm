@@ -4,7 +4,7 @@ use sqlx::{
     postgres::{types::Oid, PgRow},
     PgPool, Row,
 };
-use std::sync::Arc;
+use std::{ops::DerefMut, sync::Arc};
 use tracing::info;
 
 pub struct TfheTenantKeys {
@@ -320,13 +320,22 @@ pub async fn write_large_object_in_chunks(
     data: &[u8],
     chunk_size: usize,
 ) -> anyhow::Result<Oid> {
-    const INV_WRITE: i32 = 131072;
-
     let mut tx: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
+    let oid = write_large_object_in_chunks_tx(&mut tx, data, chunk_size).await?;
+    tx.commit().await?;
+    Ok(oid)
+}
+
+pub async fn write_large_object_in_chunks_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    data: &[u8],
+    chunk_size: usize,
+) -> anyhow::Result<Oid> {
+    const INV_WRITE: i32 = 131072;
 
     // Create new LO
     let row = sqlx::query("SELECT lo_create(0)")
-        .fetch_one(&mut *tx)
+        .fetch_one(tx.deref_mut())
         .await?;
     let oid: Oid = row.try_get(0)?;
 
@@ -336,7 +345,7 @@ pub async fn write_large_object_in_chunks(
     let row = sqlx::query("SELECT lo_open($1, $2)")
         .bind(oid)
         .bind(INV_WRITE)
-        .fetch_one(&mut *tx)
+        .fetch_one(tx.deref_mut())
         .await?;
     let fd: i32 = row.try_get(0)?;
 
@@ -350,7 +359,7 @@ pub async fn write_large_object_in_chunks(
         sqlx::query("SELECT lowrite($1, $2)")
             .bind(fd)
             .bind(chunk)
-            .execute(&mut *tx)
+            .execute(tx.deref_mut())
             .await?;
     }
 
@@ -363,9 +372,8 @@ pub async fn write_large_object_in_chunks(
     // Close LO
     let _ = sqlx::query("SELECT lo_close($1)")
         .bind(fd)
-        .fetch_one(&mut *tx)
+        .fetch_one(tx.deref_mut())
         .await?;
 
-    tx.commit().await?;
     Ok(oid)
 }

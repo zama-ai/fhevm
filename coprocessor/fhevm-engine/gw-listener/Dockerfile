@@ -1,3 +1,16 @@
+# Stage 0: Build contracts
+FROM ghcr.io/zama-ai/fhevm/gci/nodejs:22.14.0-alpine3.21 AS contract_builder
+
+USER root
+
+WORKDIR /app
+
+COPY gateway-contracts ./gateway-contracts
+
+# Compiled gateway-contracts for gw-listener
+WORKDIR /app/gateway-contracts
+RUN npm install && DEPLOYER_PRIVATE_KEY="0x7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f" npx hardhat task:deployEmptyUUPSProxies && npx hardhat compile
+
 # Stage 1: Build GW Listener
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.90.0 AS builder
 
@@ -6,13 +19,18 @@ USER root
 WORKDIR /app
 
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
+COPY coprocessor/proto ./coprocessor/proto
+COPY gateway-contracts/contracts/ ./gateway-contracts/contracts/
+COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
+COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
+
 
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build gw_listener binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch && \
-    SQLX_OFFLINE=true cargo build --release -p gw-listener
+    SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --release -p gw-listener
 
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
