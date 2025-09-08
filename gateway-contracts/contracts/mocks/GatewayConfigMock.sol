@@ -27,6 +27,8 @@ contract GatewayConfigMock {
 
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
+    event UpdateKeygenThreshold(uint256 newKeygenThreshold);
+
     event AddHostChain(HostChain hostChain);
 
     event PauseAllGatewayContracts();
@@ -39,6 +41,7 @@ contract GatewayConfigMock {
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
+        uint256 initialKeygenThreshold,
         KmsNodeV2[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
@@ -53,7 +56,7 @@ contract GatewayConfigMock {
         emit InitializeGatewayConfig(pauser, metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
     }
 
-    function reinitializeV3(V3UpgradeInput[] memory v3UpgradeInputs) public {
+    function reinitializeV3(V3UpgradeInput[] memory v3UpgradeInputs, uint256 keygenThreshold) public {
         KmsNodeV1[] memory kmsNodesV1 = new KmsNodeV1[](1);
         KmsNodeV2[] memory kmsNodesV2 = new KmsNodeV2[](1);
 
@@ -74,6 +77,10 @@ contract GatewayConfigMock {
 
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external {
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
+    }
+
+    function updateKeygenThreshold(uint256 newKeygenThreshold) external {
+        emit UpdateKeygenThreshold(newKeygenThreshold);
     }
 
     function addHostChain(HostChain calldata hostChain) external {

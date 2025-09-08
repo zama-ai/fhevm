@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { IKmsManagement } from "./interfaces/IKmsManagement.sol";
+import { IKMSManagement } from "./interfaces/IKMSManagement.sol";
 import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -15,11 +15,11 @@ import { Pausable } from "./shared/Pausable.sol";
 import { PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE } from "./shared/KmsRequestCounters.sol";
 
 /**
- * @title KMS Management contract
- * @dev See {IKmsManagement}.
+ * @title KMSManagement contract
+ * @dev See {IKMSManagement}.
  */
-contract KmsManagement is
-    IKmsManagement,
+contract KMSManagement is
+    IKMSManagement,
     EIP712Upgradeable,
     Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
@@ -100,7 +100,7 @@ contract KmsManagement is
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
-    string private constant CONTRACT_NAME = "KmsManagement";
+    string private constant CONTRACT_NAME = "KMSManagement";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
@@ -166,11 +166,11 @@ contract KmsManagement is
 
     /**
      * @dev Storage location has been computed using the following command:
-     * keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.KmsManagement")) - 1))
+     * keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.KMSManagement")) - 1))
      * & ~bytes32(uint256(0xff))
      */
     bytes32 private constant KMS_MANAGEMENT_STORAGE_LOCATION =
-        0xa48b77331ab977c487fc73c0afbe86f1a3a130c068453f497d376ab9fac7e000;
+        0x52e3d903674697c366245bdc532b6735f22bb42391635b8e0488806aba29452b;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
