@@ -114,6 +114,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address custodianSignerAddress => bool isCustodianSigner) _isCustodianSigner;
         /// @notice The KMS nodes' metadata (V2)
         mapping(address kmsTxSenderAddress => KmsNodeV2 kmsNodeV2) kmsNodesV2;
+        /// @notice The threshold to consider for key and CRS generation consensus.
+        uint256 keygenThreshold;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -144,6 +146,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
+        uint256 initialKeygenThreshold,
         KmsNodeV2[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
@@ -187,6 +190,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         _setMpcThreshold(initialMpcThreshold);
         _setPublicDecryptionThreshold(initialPublicDecryptionThreshold);
         _setUserDecryptionThreshold(initialUserDecryptionThreshold);
+        _setKeygenThreshold(initialKeygenThreshold);
 
         /// @dev Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
@@ -222,7 +226,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV3(
-        V3UpgradeInput[] memory v3UpgradeInputs
+        V3UpgradeInput[] memory v3UpgradeInputs,
+        uint256 keygenThreshold
     ) public virtual reinitializer(REINITIALIZER_VERSION) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
@@ -257,6 +262,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             kmsNodesV2[i] = kmsNodeV2;
         }
 
+        /// @dev Setting the threshold should be done after the KMS nodes have been registered as the functions
+        /// @dev reading the `kmsSignerAddresses` array.
+        _setKeygenThreshold(keygenThreshold);
+
         emit ReinitializeGatewayConfigV3(kmsNodesV1, kmsNodesV2);
     }
 
@@ -286,6 +295,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external virtual onlyOwner {
         _setUserDecryptionThreshold(newUserDecryptionThreshold);
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
+    }
+
+    /// @dev See {IGatewayConfig-updateKeygenThreshold}.
+    function updateKeygenThreshold(uint256 newKeygenThreshold) external virtual onlyOwner {
+        _setKeygenThreshold(newKeygenThreshold);
+        emit UpdateKeygenThreshold(newKeygenThreshold);
     }
 
     /// @dev See {IGatewayConfig-addHostChain}.
@@ -414,10 +429,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         return $.userDecryptionThreshold;
     }
 
-    /// @dev See {IGatewayConfig-getKmsStrongMajorityThreshold}.
-    function getKmsStrongMajorityThreshold() external view virtual returns (uint256) {
+    /// @dev See {IGatewayConfig-getKeygenThreshold}.
+    function getKeygenThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return ($.kmsSignerAddresses.length * 2) / 3 + 1;
+        return $.keygenThreshold;
     }
 
     /// @dev See {IGatewayConfig-getCoprocessorMajorityThreshold}.
@@ -566,6 +581,27 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
 
         $.userDecryptionThreshold = newUserDecryptionThreshold;
+    }
+
+    /**
+     * @dev Sets the key and CRS generation threshold.
+     * @param newKeygenThreshold The new key and CRS generation threshold.
+     */
+    function _setKeygenThreshold(uint256 newKeygenThreshold) internal virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        uint256 nKmsNodes = $.kmsSignerAddresses.length;
+
+        /// @dev Check that the key and CRS generation threshold `t` is valid. It must verify:
+        /// @dev - `t >= 1` : the key and CRS generation consensus should require at least one vote
+        /// @dev - `t <= n` : it should be less than the number of registered KMS nodes
+        if (newKeygenThreshold == 0) {
+            revert InvalidNullKeygenThreshold();
+        }
+        if (newKeygenThreshold > nKmsNodes) {
+            revert InvalidHighKeygenThreshold(newKeygenThreshold, nKmsNodes);
+        }
+
+        $.keygenThreshold = newKeygenThreshold;
     }
 
     /**

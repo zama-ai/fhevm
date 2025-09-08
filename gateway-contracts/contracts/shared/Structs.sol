@@ -10,6 +10,7 @@ struct ProtocolMetadata {
 }
 
 /// @notice Struct that represents a KMS (Key Management Service) node
+// TODO: rename this struct to "KmsNode" for mainnet.
 struct KmsNodeV2 {
     /// @notice Address of the KMS node's transaction sender (also called KMS connector)
     address txSenderAddress;
@@ -101,6 +102,7 @@ struct DelegationAccounts {
 // ----------------------------------------------------------------------------------------------
 // Deprecated structs:
 // ----------------------------------------------------------------------------------------------
+// TODO: remove this struct for mainnet in favor of "KmsNode" above.
 struct KmsNodeV1 {
     address txSenderAddress;
     address signerAddress;
