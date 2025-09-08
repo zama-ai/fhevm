@@ -3690,6 +3690,8 @@ version = "0.7.0"
 dependencies = [
  "alloy",
  "anyhow",
+ "aws-config",
+ "aws-sdk-s3",
  "axum",
  "clap",
  "foundry-compilers",
@@ -3700,6 +3702,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serial_test",
+ "sha3",
  "sqlx",
  "tokio",
  "tokio-util",

@@ -29,6 +29,9 @@ struct Conf {
     #[arg(short, long)]
     input_verification_address: Address,
 
+    #[arg(long)]
+    kms_management_address: Address,
+
     #[arg(long, default_value = "1")]
     error_sleep_initial_secs: u16,
 
@@ -127,6 +130,7 @@ async fn main() -> anyhow::Result<()> {
 
     let gw_listener = GatewayListener::new(
         conf.input_verification_address,
+        conf.kms_management_address,
         config.clone(),
         cancel_token.clone(),
         provider.clone(),
