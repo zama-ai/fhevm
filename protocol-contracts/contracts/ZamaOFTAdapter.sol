@@ -5,8 +5,8 @@ import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { OFTAdapter } from "@layerzerolabs/oft-evm/contracts/OFTAdapter.sol";
 
 /**
- * @title OFTAdapter Contract
- * @dev OFTAdapter is a contract that adapts an ERC-20 token to the OFT functionality.
+ * @title ZamaOFTAdapter Contract
+ * @dev ZamaOFTAdapter is a contract that adapts an ERC-20 token to the OFT functionality.
  *
  * @dev For existing ERC20 tokens, this can be used to convert the token to crosschain compatibility.
  * @dev WARNING: ONLY 1 of these should exist for a given global mesh,
