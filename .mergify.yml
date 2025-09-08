@@ -1,0 +1,38 @@
+queue_rules:
+  - name: main
+    batch_size: 3
+    batch_max_wait_time: 4h
+    checks_timeout: 12h
+    merge_method: squash
+    update_method: rebase
+    merge_conditions:
+      - check-success = test-suite-e2e-tests/fhevm-e2e-test (bpr)
+    queue_conditions:
+      - base = main
+      - "#approved-reviews-by >= 1"
+      - label!=do-not-merge
+      - status-success = coprocessor-db-migration-docker-build/build (bpr)
+pull_request_rules:
+  - name: Auto-queue PRs
+    description: Queue a PR when developer comments `@mergify queue`
+    conditions:
+      - base = main
+      - "#approved-reviews-by >= 1"
+    actions:
+      queue:
+
+  - name: Add a queue label when PR is queued
+    description: Toggle the `merge-queued` label when a pull request is (un)queued.
+    conditions:
+      - queue-position > 0
+    actions:
+      label:
+        toggle:
+          - merge-queued
+  - name: autoqueue
+    description: put PR in queue as soon as it matches the queue conditions
+    conditions:
+      - label=ready-to-merge
+    actions:
+      queue:
+        name: main
