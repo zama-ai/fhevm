@@ -7,7 +7,7 @@ import {
   DecryptionMock,
   GatewayConfigMock,
   InputVerificationMock,
-  KmsManagementMock,
+  KMSManagementMock,
   MultichainAclMock,
 } from "../../typechain-types";
 import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getPrepKeygenId, toValues } from "../utils";
@@ -17,7 +17,7 @@ describe("Mock contracts", function () {
   let ciphertextCommitsMock: CiphertextCommitsMock;
   let decryptionMock: DecryptionMock;
   let gatewayConfigMock: GatewayConfigMock;
-  let kmsManagementMock: KmsManagementMock;
+  let kmsManagementMock: KMSManagementMock;
   let inputVerificationMock: InputVerificationMock;
   let multichainAclMock: MultichainAclMock;
 
@@ -106,7 +106,7 @@ describe("Mock contracts", function () {
     const inputVerificationFactory = await ethers.getContractFactory("InputVerificationMock");
     const inputVerificationMock = await inputVerificationFactory.deploy();
 
-    const kmsManagementFactory = await ethers.getContractFactory("KmsManagementMock");
+    const kmsManagementFactory = await ethers.getContractFactory("KMSManagementMock");
     const kmsManagementMock = await kmsManagementFactory.deploy();
 
     const multichainAclFactory = await ethers.getContractFactory("MultichainAclMock");
@@ -234,6 +234,7 @@ describe("Mock contracts", function () {
           DefaultUint256,
           DefaultUint256,
           DefaultUint256,
+          DefaultUint256,
           [DefaultKmsNodeV2],
           [DefaultCoprocessor],
           [DefaultCustodian],
@@ -251,7 +252,7 @@ describe("Mock contracts", function () {
     });
 
     it("Should emit Reinitialization event on reinitialization", async function () {
-      await expect(gatewayConfigMock.reinitializeV3(DefaultV3UpgradeInputs))
+      await expect(gatewayConfigMock.reinitializeV3(DefaultV3UpgradeInputs, DefaultUint256))
         .to.emit(gatewayConfigMock, "ReinitializeGatewayConfigV3")
         .withArgs(toValues([DefaultKmsNodeV1]), toValues([DefaultKmsNodeV2]));
     });
@@ -319,7 +320,7 @@ describe("Mock contracts", function () {
     });
   });
 
-  describe("KmsManagementMock", async function () {
+  describe("KMSManagementMock", async function () {
     const prepKeygenId = getPrepKeygenId(1);
     const keyId = getKeyId(1);
     const crsgenId = getCrsId(1);

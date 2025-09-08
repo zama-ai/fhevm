@@ -144,9 +144,9 @@ task("task:deployInputVerification").setAction(async function (_, hre) {
   await deployContractImplementation("InputVerification", hre);
 });
 
-// Deploy the KmsManagement contract
-task("task:deployKmsManagement").setAction(async function (_, hre) {
-  await deployContractImplementation("KmsManagement", hre);
+// Deploy the KMSManagement contract
+task("task:deployKMSManagement").setAction(async function (_, hre) {
+  await deployContractImplementation("KMSManagement", hre);
 });
 
 // Deploy the CiphertextCommits contract
@@ -182,8 +182,8 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   console.log("Deploy InputVerification contract:");
   await hre.run("task:deployInputVerification");
 
-  console.log("Deploy KmsManagement contract:");
-  await hre.run("task:deployKmsManagement");
+  console.log("Deploy KMSManagement contract:");
+  await hre.run("task:deployKMSManagement");
 
   console.log("Deploy CiphertextCommits contract:");
   await hre.run("task:deployCiphertextCommits");

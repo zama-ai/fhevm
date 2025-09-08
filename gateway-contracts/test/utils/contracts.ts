@@ -156,8 +156,8 @@ export async function loadTestVariablesFixture() {
     getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS"),
   );
 
-  // Load the KmsManagement contract
-  const kmsManagement = await hre.ethers.getContractAt("KmsManagement", getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS"));
+  // Load the KMSManagement contract
+  const kmsManagement = await hre.ethers.getContractAt("KMSManagement", getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS"));
 
   // Load the CiphertextCommits contract
   const ciphertextCommits = await hre.ethers.getContractAt(

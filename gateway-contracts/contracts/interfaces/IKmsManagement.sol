@@ -7,7 +7,7 @@ pragma solidity ^0.8.24;
  * within the fhevm protocol. These materials include FHE keys (logical, physical), KSKs (Key Switching Keys)
  * and CRS (Common Reference String).
  */
-interface IKmsManagement {
+interface IKMSManagement {
     /**
      * @notice The type of the parameters to use for the generation requests.
      */

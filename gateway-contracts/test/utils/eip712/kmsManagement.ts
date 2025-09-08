@@ -25,7 +25,7 @@ export function createEIP712ResponsePrepKeygen(
     },
     primaryType: "PrepKeygenVerification",
     domain: {
-      name: "KmsManagement",
+      name: "KMSManagement",
       version: "1",
       chainId: gatewayChainId,
       verifyingContract,
@@ -71,7 +71,7 @@ export function createEIP712ResponseKeygen(
     },
     primaryType: "KeygenVerification",
     domain: {
-      name: "KmsManagement",
+      name: "KMSManagement",
       version: "1",
       chainId: gatewayChainId,
       verifyingContract,
@@ -125,7 +125,7 @@ export function createEIP712ResponseCrsgen(
     },
     primaryType: "CrsgenVerification",
     domain: {
-      name: "KmsManagement",
+      name: "KMSManagement",
       version: "1",
       chainId: gatewayChainId,
       verifyingContract,

@@ -50,7 +50,7 @@ export function createCtHandles(length: number, chainId: number = 0, fheType: nu
   return Array.from({ length }, () => createCtHandle(chainId, fheType));
 }
 
-// Defined in IKmsManagement.sol
+// Defined in IKMSManagement.sol
 export enum ParamsTypeEnum {
   Default = 0,
   Test = 1,

@@ -12,21 +12,21 @@ import { pascalCaseToSnakeCase } from "./utils/stringOps";
 task("task:triggerKeygen")
   .addParam("paramsType", "The type of the parameters to use for the key generation.")
   .addOptionalParam(
-    "useInternalKmsManagementAddress",
+    "useInternalKMSManagementAddress",
     "If proxy address from the /addresses directory should be used.",
     false,
     types.boolean,
   )
-  .setAction(async function ({ paramsType, useInternalKmsManagementAddress }, hre) {
+  .setAction(async function ({ paramsType, useInternalKMSManagementAddress }, hre) {
     await hre.run("compile:specific", { contract: "contracts" });
-    console.log("Trigger key generation in KmsManagement contract.");
+    console.log("Trigger key generation in KMSManagement contract.");
 
     // Get the deployer wallet
     const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
     const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
 
     // Get contract factories
-    if (useInternalKmsManagementAddress) {
+    if (useInternalKMSManagementAddress) {
       const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
 
       if (!fs.existsSync(envFilePath)) {
@@ -39,9 +39,9 @@ task("task:triggerKeygen")
     const proxyAddress = getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS");
 
     // Add host chains
-    const kmsManagement = await hre.ethers.getContractAt("KmsManagement", proxyAddress, deployer);
+    const kmsManagement = await hre.ethers.getContractAt("KMSManagement", proxyAddress, deployer);
     await kmsManagement.keygen(paramsType);
 
-    console.log("In KmsManagement contract:", proxyAddress, "\n");
+    console.log("In KMSManagement contract:", proxyAddress, "\n");
     console.log("Keygen triggering done!");
   });

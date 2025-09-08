@@ -4,7 +4,7 @@ import { expect } from "chai";
 import { EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
-import { IKmsManagement, KmsManagement, KmsManagement__factory } from "../typechain-types";
+import { IKMSManagement, KMSManagement, KMSManagement__factory } from "../typechain-types";
 import {
   KeyTypeEnum,
   ParamsTypeEnum,
@@ -23,9 +23,9 @@ import {
   toValues,
 } from "./utils";
 
-// Trigger a key generation in KmsManagement contract
+// Trigger a key generation in KMSManagement contract
 async function generateKey(
-  kmsManagement: KmsManagement,
+  kmsManagement: KMSManagement,
   owner: Wallet,
   gatewayChainId: number,
   kmsTxSenders: HardhatEthersSigner[],
@@ -64,8 +64,8 @@ async function generateKey(
   }
 
   // Create the key digests
-  const serverKeyDigest: IKmsManagement.KeyDigestStruct = { keyType: KeyTypeEnum.Server, digest: createByteInput() };
-  const publicKeyDigest: IKmsManagement.KeyDigestStruct = { keyType: KeyTypeEnum.Public, digest: createByteInput() };
+  const serverKeyDigest: IKMSManagement.KeyDigestStruct = { keyType: KeyTypeEnum.Server, digest: createByteInput() };
+  const publicKeyDigest: IKMSManagement.KeyDigestStruct = { keyType: KeyTypeEnum.Public, digest: createByteInput() };
 
   const keyDigests = [serverKeyDigest, publicKeyDigest];
 
@@ -92,9 +92,9 @@ async function generateKey(
   };
 }
 
-// Trigger a CRS generation in KmsManagement contract.
+// Trigger a CRS generation in KMSManagement contract.
 async function generateCrs(
-  kmsManagement: KmsManagement,
+  kmsManagement: KMSManagement,
   owner: Wallet,
   gatewayChainId: number,
   kmsTxSenders: HardhatEthersSigner[],
@@ -135,12 +135,12 @@ async function generateCrs(
   };
 }
 
-describe("KmsManagement", function () {
+describe("KMSManagement", function () {
   const fakeOwner = createRandomWallet();
   const maxBitLength = 256;
 
   // Fixture running a key generation.
-  async function prepareKmsManagementKeygenFixture() {
+  async function prepareKMSManagementKeygenFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
 
     const { kmsManagement, owner, kmsTxSenders, kmsSigners } = fixtureData;
@@ -155,7 +155,7 @@ describe("KmsManagement", function () {
   }
 
   // Fixture running a CRS generation.
-  async function prepareKmsManagementCrsgenFixture() {
+  async function prepareKMSManagementCrsgenFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
 
     const { kmsManagement, owner, kmsTxSenders, kmsSigners } = fixtureData;
@@ -181,8 +181,8 @@ describe("KmsManagement", function () {
   }
 
   describe("Deployment", function () {
-    let kmsManagementFactory: KmsManagement__factory;
-    let kmsManagement: KmsManagement;
+    let kmsManagementFactory: KMSManagement__factory;
+    let kmsManagement: KMSManagement;
     let owner: Wallet;
 
     beforeEach(async function () {
@@ -190,8 +190,8 @@ describe("KmsManagement", function () {
       kmsManagement = fixtureData.kmsManagement;
       owner = fixtureData.owner;
 
-      // Get the KmsManagement contract factory
-      kmsManagementFactory = await hre.ethers.getContractFactory("KmsManagement", owner);
+      // Get the KMSManagement contract factory
+      kmsManagementFactory = await hre.ethers.getContractFactory("KMSManagement", owner);
     });
 
     it("Should revert because initialization is not from an empty proxy", async function () {
@@ -284,11 +284,11 @@ describe("KmsManagement", function () {
       await expect(txPrepKeygenResponse4).to.not.emit(kmsManagement, "KeygenRequest");
 
       // Prepare the keygen responses materials.
-      const serverKeyDigest: IKmsManagement.KeyDigestStruct = {
+      const serverKeyDigest: IKMSManagement.KeyDigestStruct = {
         keyType: KeyTypeEnum.Server,
         digest: createByteInput(),
       };
-      const publicKeyDigest: IKmsManagement.KeyDigestStruct = {
+      const publicKeyDigest: IKMSManagement.KeyDigestStruct = {
         keyType: KeyTypeEnum.Public,
         digest: createByteInput(),
       };
@@ -353,7 +353,7 @@ describe("KmsManagement", function () {
     });
 
     it("Should get params type associated to the key", async function () {
-      const { kmsManagement, keyId } = await loadFixture(prepareKmsManagementKeygenFixture);
+      const { kmsManagement, keyId } = await loadFixture(prepareKMSManagementKeygenFixture);
 
       // Check that the params type associated to the key is correct.
       expect(await kmsManagement.getKeyParamsType(keyId)).to.equal(ParamsTypeEnum.Test);
@@ -372,7 +372,7 @@ describe("KmsManagement", function () {
 
     it("Should get materials associated to the key", async function () {
       const { kmsManagement, keyId, keyDigests, kmsNodeS3BucketUrls } = await loadFixture(
-        prepareKmsManagementKeygenFixture,
+        prepareKMSManagementKeygenFixture,
       );
 
       // Check that the materials associated to the key are correct.
@@ -380,14 +380,14 @@ describe("KmsManagement", function () {
     });
 
     it("Should get the current active key", async function () {
-      const { kmsManagement, keyId } = await loadFixture(prepareKmsManagementKeygenFixture);
+      const { kmsManagement, keyId } = await loadFixture(prepareKMSManagementKeygenFixture);
 
       // Check that the current active key is correct.
       expect(await kmsManagement.getActiveKeyId()).to.equal(keyId);
     });
 
     it("Should get the list of KMS transaction senders associated to the key", async function () {
-      const { kmsManagement, keyId, kmsTxSenders } = await loadFixture(prepareKmsManagementKeygenFixture);
+      const { kmsManagement, keyId, kmsTxSenders } = await loadFixture(prepareKMSManagementKeygenFixture);
 
       // Check that the KMS transaction senders associated to the key are correct.
       const kmsTxSenderAddresses = kmsTxSenders.map((s) => s.address);
@@ -485,7 +485,7 @@ describe("KmsManagement", function () {
     });
 
     it("Should get params type associated to the CRS", async function () {
-      const { kmsManagement, crsId } = await loadFixture(prepareKmsManagementCrsgenFixture);
+      const { kmsManagement, crsId } = await loadFixture(prepareKMSManagementCrsgenFixture);
 
       // Check that the params type associated to the CRS is correct.
       expect(await kmsManagement.getCrsParamsType(crsId)).to.equal(ParamsTypeEnum.Test);
@@ -504,7 +504,7 @@ describe("KmsManagement", function () {
 
     it("Should get materials associated to the CRS", async function () {
       const { kmsManagement, crsId, crsDigest, kmsNodeS3BucketUrls } = await loadFixture(
-        prepareKmsManagementCrsgenFixture,
+        prepareKMSManagementCrsgenFixture,
       );
 
       // Check that the materials associated to the CRS are correct.
@@ -512,14 +512,14 @@ describe("KmsManagement", function () {
     });
 
     it("Should get the current active CRS", async function () {
-      const { kmsManagement, crsId } = await loadFixture(prepareKmsManagementCrsgenFixture);
+      const { kmsManagement, crsId } = await loadFixture(prepareKMSManagementCrsgenFixture);
 
       // Check that the current active CRS is correct.
       expect(await kmsManagement.getActiveCrsId()).to.equal(crsId);
     });
 
     it("Should get the list of KMS transaction senders associated to the CRS", async function () {
-      const { kmsManagement, crsId, kmsTxSenders } = await loadFixture(prepareKmsManagementCrsgenFixture);
+      const { kmsManagement, crsId, kmsTxSenders } = await loadFixture(prepareKMSManagementCrsgenFixture);
 
       // Check that the KMS transaction senders associated to the CRS are correct.
       const kmsTxSenderAddresses = kmsTxSenders.map((s) => s.address);
@@ -530,7 +530,7 @@ describe("KmsManagement", function () {
   describe("FHE parameters", async function () {});
 
   describe("Pause", async function () {
-    let kmsManagement: KmsManagement;
+    let kmsManagement: KMSManagement;
     let owner: Wallet;
     let pauser: SignerWithAddress;
 
