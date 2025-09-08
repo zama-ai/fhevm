@@ -61,7 +61,7 @@ Finally, third deployment step is to deploy the `ZamaOFT` contract on the Arbitr
 npx hardhat lz:deploy
 ```
 
-You can still select either both networks or alternatively uniquely the `arbitrum-testnet` network this time. Now enter `ZamaOFT` when requested for the deploy script tag. This will deploy the `ArbitrumOFT` contract on Arbitrum Sepolia testnet.
+You can still select either both networks or alternatively uniquely the `arbitrum-testnet` network this time. Now enter `ZamaOFT` when requested for the deploy script tag. This will deploy the `ZamaOFT` contract on Arbitrum Sepolia testnet.
 
 ## Step 5 : Etherscan verification (Optional)
 
