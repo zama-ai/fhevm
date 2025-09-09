@@ -121,11 +121,11 @@ fn generate_user_decrypt_signature(
     // Generate EIP-712 signature with verification
     let eip712_result = sdk
         .create_eip712_signature_builder()
-        .public_key(public_key)
-        .with_contract_addresses(contract_addresses)
-        .validity_period(start_timestamp, duration_days)
-        .sign_with(wallet_private_key)
-        .verify(true) // Enable verification
+        .with_public_key(public_key)
+        .with_contract_addresses_vec(contract_addresses)
+        .with_validity_period(start_timestamp, duration_days)
+        .with_private_key(wallet_private_key)
+        .with_verification(true) // Enable verification
         .generate_and_sign()?;
 
     // Validate the result
@@ -179,11 +179,11 @@ fn generate_user_decrypt_calldata(
     let duration_days = 10u64;
     match sdk
         .create_user_decrypt_request_builder()
-        .add_handles_from_bytes(&handles, &contract_addresses)?
-        .user_address_from_str(&user_address.to_string())?
-        .signature_from_hex(&signature_hex)?
-        .public_key_from_hex(&public_key_hex)?
-        .validity(start_timestamp, duration_days)?
+        .with_handles_from_bytes(handles, &contract_addresses)?
+        .with_user_address_from_str(user_address)?
+        .with_signature_from_hex(&signature_hex)?
+        .with_public_key_from_hex(public_key_hex)?
+        .with_validity(start_timestamp, duration_days)?
         .build_and_generate_calldata()
     {
         Ok(calldata) => {
@@ -192,11 +192,11 @@ fn generate_user_decrypt_calldata(
                 "   First 32 bytes: 0x{}",
                 hex::encode(&calldata[..32.min(calldata.len())])
             );
-            return Ok(calldata);
+            Ok(calldata)
         }
         Err(e) => {
             error!("❌ Calldata generation error: {}", e);
-            return Err(e);
+            Err(e)
         }
     }
 }
@@ -248,12 +248,11 @@ fn prepare_relayer_curl_command(
     // Also show compact version
     let compact_payload = serde_json::to_string(&payload).unwrap();
     let compact_curl = format!(
-        r#"curl -X POST 'http://localhost:3000/v1/user-decrypt' -H 'Content-Type: application/json' -d '{}'"#,
-        compact_payload
+        r#"curl -X POST 'http://localhost:3000/v1/user-decrypt' -H 'Content-Type: application/json' -d '{compact_payload}'"#
     );
 
     info!("📋 Compact version:");
-    println!("{}", compact_curl);
+    println!("{compact_curl}");
     info!("");
 
     // Show payload details
@@ -307,10 +306,10 @@ fn demonstrate_error_scenarios(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     info!("Testing verification without wallet key...");
     match sdk
         .create_eip712_signature_builder()
-        .public_key(public_key)
-        .with_contract_addresses(contracts)
-        .validity_period(1748252823, 10)
-        .verify(true)
+        .with_public_key(public_key)
+        .with_contract_addresses_vec(contracts)
+        .with_validity_period(1748252823, 10)
+        .with_verification(true)
         .generate_and_sign()
     {
         Ok(_) => error!("❌ Should have failed"),
@@ -337,9 +336,9 @@ fn performance_comparison(sdk: &FhevmSdk) -> Result<(), FhevmError> {
 
     let _ = sdk
         .create_eip712_signature_builder()
-        .public_key(public_key)
-        .with_contract_addresses(contracts.clone())
-        .validity_period(1748252823, 10)
+        .with_public_key(public_key)
+        .with_contract_addresses_vec(contracts.clone())
+        .with_validity_period(1748252823, 10)
         .generate_hash()?;
     let hash_time = start.elapsed();
 
@@ -347,11 +346,11 @@ fn performance_comparison(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     let start = std::time::Instant::now();
     let _ = sdk
         .create_eip712_signature_builder()
-        .public_key(public_key)
-        .with_contract_addresses(contracts.clone())
-        .validity_period(1748252823, 10)
-        .sign_with(wallet_key)
-        .verify(false)
+        .with_public_key(public_key)
+        .with_contract_addresses_vec(contracts.clone())
+        .with_validity_period(1748252823, 10)
+        .with_private_key(wallet_key)
+        .with_verification(false)
         .generate_and_sign()?;
 
     let sign_time = start.elapsed();
@@ -360,10 +359,10 @@ fn performance_comparison(sdk: &FhevmSdk) -> Result<(), FhevmError> {
     let start = std::time::Instant::now();
     let _ = sdk
         .create_eip712_signature_builder()
-        .public_key(public_key)
-        .with_contract_addresses(contracts)
-        .validity_period(1748252823, 10)
-        .verify(true)
+        .with_public_key(public_key)
+        .with_contract_addresses_vec(contracts)
+        .with_validity_period(1748252823, 10)
+        .with_verification(true)
         .generate_and_sign()?;
 
     let verify_time = start.elapsed();

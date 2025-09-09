@@ -1,6 +1,6 @@
 # Architecture
 
-The following diagram shows an fhEVM-coprocessor that is integrated alongside an existing host blockchain.
+The following diagram shows an FHEVM-coprocessor that is integrated alongside an existing host blockchain.
 
 ```mermaid
 graph LR;

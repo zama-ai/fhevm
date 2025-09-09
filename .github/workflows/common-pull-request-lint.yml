@@ -6,20 +6,24 @@ on:
 env:
   ACTIONLINT_VERSION: 1.6.27
 
-permissions:
-  contents: 'read'
+permissions: {}
 
 jobs:
   lint:
     name: common-pull-request/lint (bpr)
+    permissions:
+      contents: 'read'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: 'false'
           fetch-depth: 0
+
       - name: actionlint
         uses: raven-actions/actionlint@01fce4f43a270a612932cb1c64d40505a029f821 # v2.0.0
+        with:
+            flags: "-ignore SC2001"
 
       - name: Ensure SHA pinned actions
         uses: zgosalvez/github-actions-ensure-sha-pinned-actions@64418826697dcd77c93a8e4a1f7601a1942e57b5 # v3.0.18
@@ -28,9 +32,22 @@ jobs:
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2
         with:
           node-version: 20.x
+
       - name: Install commitlint
         run: |
-          npm install @commitlint/config-conventional@^18 conventional-changelog-atom @commitlint/types@^18
+          npm install @commitlint/config-conventional@^18 conventional-changelog-conventionalcommits @commitlint/types@^18
           npm install -g @commitlint/cli@^18
+
       - name: Validate all commits from PR
-        run: npx commitlint --config .github/config/commitlint.config.js --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: npx commitlint --config .github/config/commitlint.config.js --from "${BASE_SHA}" --to "${HEAD_SHA}" --verbose
+
+  zizmor-sast-check:
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    name: Zizmor SAST Check
+    uses: zama-ai/ci-templates/.github/workflows/sast-zizmor.yml@7dafeba7efe0df52da9fb9dc0e8a84277a7dd34a

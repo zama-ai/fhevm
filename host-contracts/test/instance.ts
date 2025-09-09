@@ -23,8 +23,8 @@ let clientKey: Uint8Array | undefined;
 
 const abiKmsVerifier = ['function getKmsSigners() view returns (address[])'];
 
-const kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
-const aclAdd = dotenv.parse(fs.readFileSync('addresses/.env.acl')).ACL_CONTRACT_ADDRESS;
+const kmsAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).KMS_VERIFIER_CONTRACT_ADDRESS;
+const aclAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
 const gatewayChainID = +process.env.CHAIN_ID_GATEWAY!;
 const hostChainId = Number(network.config.chainId);
 const verifyingContract = process.env.DECRYPTION_ADDRESS!;

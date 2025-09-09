@@ -64,10 +64,11 @@ impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
         let app = Router::new()
             .route("/healthz", get(health_handler))
             .route("/liveness", get(liveness_handler))
+            .route("/metrics", get(metrics_handler))
             .with_state(self.sender.clone());
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
-        info!("Starting HTTP server on {}", addr);
+        info!(address = %addr, "Starting HTTP server");
 
         // Create a shutdown future that owns the token
         let cancel_token = self.cancel_token.clone();
@@ -80,7 +81,7 @@ impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
             axum::serve(listener, app.into_make_service()).with_graceful_shutdown(shutdown);
 
         if let Err(err) = server.await {
-            error!("HTTP server error: {}", err);
+            error!(error = %err, "HTTP server error");
             return Err(anyhow::anyhow!("HTTP server error: {}", err));
         }
 
@@ -113,4 +114,13 @@ async fn liveness_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>
             "status": "alive"
         })),
     )
+}
+
+async fn metrics_handler() -> impl IntoResponse {
+    let encoder = prometheus::TextEncoder::new();
+    let metric_families = prometheus::gather();
+    match encoder.encode_to_string(&metric_families) {
+        Ok(encoded_metrics) => (StatusCode::OK, encoded_metrics),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
 }

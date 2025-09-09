@@ -24,10 +24,6 @@
   <a href="https://slsa.dev"><img alt="SLSA 3" src="https://slsa.dev/images/gh-badge-level3.svg" /></a>
 </p>
 
-> [!NOTE]
->
-> The Zama Confidential Blockchain Protocol Public Testnet is live.
-> Read the litepaper [here](https://docs.zama.ai/protocol/zama-protocol-litepaper).
 
 ## About
 

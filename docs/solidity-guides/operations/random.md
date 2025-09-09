@@ -45,7 +45,7 @@ euint16 r16 = FHE.randEuint16(1000);  // Random number between 0-999
 euint32 r32 = FHE.randEuint32(1000000); // Random number between 0-999999
 ```
 
-### **Example: Random bumber with upper bound**
+### **Example: Random number with upper bound**
 
 ```solidity
 function randomBoundedNumber(uint16 upperBound) public returns (euint16) {

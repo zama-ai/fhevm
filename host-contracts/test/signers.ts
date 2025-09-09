@@ -17,7 +17,7 @@ export interface Signers {
 
 let signers: Signers;
 
-const keys: (keyof Signers)[] = ['alice', 'bob', 'carol', 'dave', 'eve'];
+const keys: (keyof Signers)[] = ['alice', 'bob', 'carol', 'dave', 'eve', 'fred'];
 
 const getCoin = async (address: string) => {
   const containerName = process.env['TEST_CONTAINER_NAME'] || 'zama-dev-fhevm-validator-1';
@@ -43,6 +43,7 @@ export const initSigners = async (quantity: number): Promise<void> => {
         carol: ethers.Wallet.createRandom().connect(ethers.provider),
         dave: ethers.Wallet.createRandom().connect(ethers.provider),
         eve: ethers.Wallet.createRandom().connect(ethers.provider),
+        fred: ethers.Wallet.createRandom().connect(ethers.provider),
       };
     } else if (!process.env.HARDHAT_PARALLEL) {
       const eSigners = await ethers.getSigners();
@@ -52,6 +53,7 @@ export const initSigners = async (quantity: number): Promise<void> => {
         carol: eSigners[2],
         dave: eSigners[3],
         eve: eSigners[4],
+        fred: eSigners[5],
       };
     } else {
       throw new Error("Can't run parallel mode if network is not 'local'");

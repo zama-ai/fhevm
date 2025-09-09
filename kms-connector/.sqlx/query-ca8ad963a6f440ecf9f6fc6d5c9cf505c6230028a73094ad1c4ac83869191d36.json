@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE user_decryption_requests SET under_process = FALSE WHERE decryption_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ca8ad963a6f440ecf9f6fc6d5c9cf505c6230028a73094ad1c4ac83869191d36"
+}

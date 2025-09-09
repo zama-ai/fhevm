@@ -58,8 +58,7 @@ impl EncryptionType {
             160 => Ok(Self::Bit160),
             256 => Ok(Self::Bit256),
             _ => Err(FhevmError::InvalidParams(format!(
-                "Unsupported bit width: {}",
-                bit_width
+                "Unsupported bit width: {bit_width}"
             ))),
         }
     }
@@ -79,10 +78,10 @@ pub fn verify_expand(
             serialized_proven_compact_list.as_slice(),
             1 << 20,
         )
-        .map_err(|e| FhevmError::DecryptionError(format!("Failed to deserialize: {}", e)))?;
+        .map_err(|e| FhevmError::DecryptionError(format!("Failed to deserialize: {e}")))?;
     let expander = deserialized_proven_compact_list
         .verify_and_expand(crs, public_key, aux_data)
-        .map_err(|e| FhevmError::DecryptionError(format!("Failed to verify: {}", e)))?;
+        .map_err(|e| FhevmError::DecryptionError(format!("Failed to verify: {e}")))?;
     Ok(expander)
 }
 
@@ -124,7 +123,7 @@ pub fn create_encryption_parameters(
     // First, ensure the directory exists
     if !keys_path.exists() {
         std::fs::create_dir_all(keys_path)
-            .map_err(|e| FhevmError::FileError(format!("Failed to create directory: {}", e)))?;
+            .map_err(|e| FhevmError::FileError(format!("Failed to create directory: {e}")))?;
     }
 
     // Generate the keys and save them

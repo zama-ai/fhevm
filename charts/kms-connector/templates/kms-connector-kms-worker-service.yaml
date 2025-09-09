@@ -1,0 +1,18 @@
+{{- if .Values.kmsConnectorKmsWorker.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kms-connector-kms-worker
+    app.kubernetes.io/name: {{ include "kmsConnectorKmsWorkerName" . }}
+  name: {{ include "kmsConnectorKmsWorkerName" . }}
+spec:
+  ports:
+    - name: monitoring
+      port: {{ .Values.kmsConnectorKmsWorker.ports.monitoring }}
+      targetPort: monitoring
+  selector:
+    app: kms-connector-kms-worker
+    app.kubernetes.io/name: {{ include "kmsConnectorKmsWorkerName" . }}
+  type: ClusterIP
+{{- end }}

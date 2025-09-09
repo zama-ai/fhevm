@@ -31,6 +31,7 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 nightly-avx512 = ["tfhe/nightly-avx512"]
 
 [dev-dependencies]
+serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
 
 [[bin]]

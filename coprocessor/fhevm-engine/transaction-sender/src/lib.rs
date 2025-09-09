@@ -1,5 +1,6 @@
 pub mod config;
 pub mod http_server;
+mod metrics;
 mod nonce_managed_provider;
 mod ops;
 pub mod overprovision_gas_limit;
@@ -15,6 +16,9 @@ use alloy::providers::WsConnect;
 use alloy::signers::Signature;
 use alloy::signers::Signer;
 use alloy::transports::http::reqwest::Url;
+use alloy::transports::TransportError;
+use alloy::transports::TransportErrorKind;
+use anyhow::Error;
 pub use config::ConfigSettings;
 pub use nonce_managed_provider::FillersWithoutNonceManagement;
 pub use nonce_managed_provider::NonceManagedProvider;
@@ -79,14 +83,20 @@ impl HealthStatus {
 pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
     loop {
         let provider = match ProviderBuilder::new()
-            .connect_ws(WsConnect::new(ws_url.clone()))
+            .connect_ws(
+                WsConnect::new(ws_url.clone())
+                    .with_max_retries(1)
+                    .with_retry_interval(retry_interval),
+            )
             .await
         {
             Ok(provider) => provider,
             Err(e) => {
                 error!(
-                    "Failed to connect to Gateway at {}: {}, retrying in {:?}",
-                    ws_url, e, retry_interval
+                    ws_url = %ws_url,
+                    error = %e,
+                    retry_interval = ?retry_interval,
+                    "Failed to connect to Gateway, retrying"
                 );
                 tokio::time::sleep(retry_interval).await;
                 continue;
@@ -100,11 +110,26 @@ pub async fn get_chain_id(ws_url: Url, retry_interval: Duration) -> u64 {
             }
             Err(e) => {
                 error!(
-                    "Failed to get chain ID from Gateway at {}: {}, retrying in {:?}",
-                    ws_url, e, retry_interval
+                    ws_url = %ws_url,
+                    error = %e,
+                    retry_interval = ?retry_interval,
+                    "Failed to get chain ID from Gateway, retrying"
                 );
                 tokio::time::sleep(retry_interval).await;
             }
         }
     }
+}
+
+pub fn is_backend_gone(err: &Error) -> bool {
+    err.chain().any(|cause| {
+        if let Some(t) = cause.downcast_ref::<TransportError>() {
+            matches!(
+                t,
+                TransportError::Transport(TransportErrorKind::BackendGone)
+            )
+        } else {
+            false
+        }
+    })
 }

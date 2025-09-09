@@ -1,0 +1,124 @@
+# KMS Connector Configuration - Local Testing Environment
+# Optimized for local development with Docker containers and test blockchain
+#
+# Environment Variable Mapping:
+# All config values can be overridden with environment variables prefixed with KMS_CONNECTOR_
+# Example: service_name -> KMS_CONNECTOR_SERVICE_NAME
+
+# Service identification
+# ENV: KMS_CONNECTOR_SERVICE_NAME
+service_name = "kms-connector"
+
+# KMS Core gRPC endpoint (local development)
+# ENV: KMS_CONNECTOR_KMS_CORE_ENDPOINT
+kms_core_endpoint = "http://localhost:50051"
+
+# Primary Gateway WebSocket URL (local node)
+# ENV: KMS_CONNECTOR_GATEWAY_URL
+gateway_url = "ws://localhost:8546"
+
+# Local testing chain ID
+# ENV: KMS_CONNECTOR_CHAIN_ID
+chain_id = 54321
+
+# Contract addresses (local testing)
+# ENV: KMS_CONNECTOR_DECRYPTION_ADDRESS
+decryption_address = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
+
+# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS
+gateway_config_address = "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
+
+# Local testing wallet private key
+# ENV: KMS_CONNECTOR_PRIVATE_KEY
+private_key = "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
+
+# EIP-712 domain configuration
+# ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_NAME
+decryption_domain_name = "Decryption"
+
+# ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
+decryption_domain_version = "1"
+
+# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_DOMAIN_NAME
+gateway_config_domain_name = "GatewayConfig"
+
+# ENV: KMS_CONNECTOR_GATEWAY_CONFIG_DOMAIN_VERSION
+gateway_config_domain_version = "1"
+
+# Channel buffer size (optimized for local testing)
+# ENV: KMS_CONNECTOR_CHANNEL_SIZE
+channel_size = 2000
+
+# Timeout configurations (5 minutes for reliable processing)
+# ENV: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
+public_decryption_timeout_secs = 300
+
+# ENV: KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS
+user_decryption_timeout_secs = 300
+
+# Connection retry interval (faster recovery)
+# ENV: KMS_CONNECTOR_RETRY_INTERVAL_SECS
+retry_interval_secs = 3
+
+# Coprocessor verification disabled for local testing
+# ENV: KMS_CONNECTOR_VERIFY_COPROCESSORS
+verify_coprocessors = false
+
+# Coordinated message sending configuration (enabled by default)
+# ENV: KMS_CONNECTOR_ENABLE_COORDINATED_SENDING
+enable_coordinated_sending = true
+
+# Delay after block timestamp before sending messages
+# ENV: KMS_CONNECTOR_MESSAGE_SEND_DELTA_MS
+message_send_delta_ms = 1000
+
+# Fixed interval sending disabled (use block-time-based)
+# ENV: KMS_CONNECTOR_FIXED_SEND_INTERVAL_MS
+fixed_send_interval_ms = 0
+
+# Spacing between messages from the same block
+# ENV: KMS_CONNECTOR_MESSAGE_SPACING_MS
+message_spacing_ms = 50
+
+# Maximum pending events before backpressure
+# ENV: KMS_CONNECTOR_MAX_PENDING_EVENTS
+max_pending_events = 10000
+
+# Queue capacity threshold (0.0-1.0) at which to slow down processing
+# ENV: KMS_CONNECTOR_PENDING_EVENTS_QUEUE_SLOWDOWN_THRESHOLD
+pending_events_queue_slowdown_threshold = 0.8
+
+# Use polling mode for reliable event intake
+# ENV: KMS_CONNECTOR_USE_POLLING_MODE
+use_polling_mode = true
+
+# Base polling interval when caught up
+# ENV: KMS_CONNECTOR_BASE_POLL_INTERVAL_SECS
+base_poll_interval_secs = 1
+
+# Fast polling interval during catch-up
+# ENV: KMS_CONNECTOR_CATCH_UP_POLL_INTERVAL_MS
+catch_up_poll_interval_ms = 200
+
+# Maximum blocks per batch
+# ENV: KMS_CONNECTOR_MAX_BLOCKS_PER_BATCH
+max_blocks_per_batch = 10
+
+# Blocks behind latest to consider "caught up"
+# ENV: KMS_CONNECTOR_CATCH_UP_THRESHOLD
+catch_up_threshold = 3
+
+# Optional scheduled start time (ISO 8601 format)
+# ENV: KMS_CONNECTOR_SCHEDULED_START_TIME
+# scheduled_start_time = "2024-01-01T00:00:00Z"
+
+# Starting block number for historical parsing
+# ENV: KMS_CONNECTOR_STARTING_BLOCK_NUMBER
+# starting_block_number = 8651  # Start from block 8651
+
+# S3 configuration for local testing (MinIO)
+# ENV: KMS_CONNECTOR_S3_CONFIG__REGION, KMS_CONNECTOR_S3_CONFIG__BUCKET, KMS_CONNECTOR_S3_CONFIG__ENDPOINT
+[s3_config]
+region = "eu-west-1"
+bucket = "kms-public"
+endpoint = "http://localhost:9000"
