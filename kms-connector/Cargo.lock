@@ -2943,7 +2943,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?rev=22fbcfdb52fe5bc4fc5c73f4c490a99cf9c664df#22fbcfdb52fe5bc4fc5c73f4c490a99cf9c664df"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=ecb96aaac7bd816864cd65a5d502a5787633d95d#ecb96aaac7bd816864cd65a5d502a5787633d95d"
 dependencies = [
  "alloy",
  "serde",

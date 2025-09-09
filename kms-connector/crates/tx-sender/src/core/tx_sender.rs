@@ -29,7 +29,7 @@ use connector_utils::{
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionErrors, DecryptionInstance},
     gateway_config::GatewayConfig::GatewayConfigErrors,
-    kms_management::KmsManagement::{self, KmsManagementErrors, KmsManagementInstance},
+    kms_management::KMSManagement::{self, KMSManagementErrors, KMSManagementInstance},
 };
 use std::time::Duration;
 use thiserror::Error;
@@ -137,7 +137,7 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponse
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
         let kms_management_contract =
-            KmsManagement::new(config.kms_management_contract.address, provider.clone());
+            KMSManagement::new(config.kms_management_contract.address, provider.clone());
 
         let inner = TransactionSenderInner::new(
             provider.clone(),
@@ -164,7 +164,7 @@ pub const EIP712_SIGNATURE_LENGTH: usize = 65;
 pub struct TransactionSenderInner<P: Provider> {
     provider: P,
     decryption_contract: DecryptionInstance<P>,
-    kms_management_contract: KmsManagementInstance<P>,
+    kms_management_contract: KMSManagementInstance<P>,
     config: TransactionSenderInnerConfig,
 }
 
@@ -180,7 +180,7 @@ impl<P: Provider> TransactionSenderInner<P> {
     pub fn new(
         provider: P,
         decryption_contract: DecryptionInstance<P>,
-        kms_management_contract: KmsManagementInstance<P>,
+        kms_management_contract: KMSManagementInstance<P>,
         inner_config: TransactionSenderInnerConfig,
     ) -> Self {
         Self {
@@ -435,7 +435,7 @@ impl From<RpcError<TransportErrorKind>> for Error {
         }
         if let Some(kms_management_error) = value
             .as_error_resp()
-            .and_then(|e| e.as_decoded_interface_error::<KmsManagementErrors>())
+            .and_then(|e| e.as_decoded_interface_error::<KMSManagementErrors>())
         {
             return Self::Irrecoverable(anyhow!("{kms_management_error:?}"));
         }
@@ -495,7 +495,7 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KmsManagementInstance::new(Address::default(), mock_provider),
+            KMSManagementInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 trace_reverted_tx: true,
@@ -531,7 +531,7 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KmsManagementInstance::new(Address::default(), mock_provider),
+            KMSManagementInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 trace_reverted_tx: false,
                 ..Default::default()
@@ -574,7 +574,7 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KmsManagementInstance::new(Address::default(), mock_provider),
+            KMSManagementInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 ..Default::default()
@@ -622,7 +622,7 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KmsManagementInstance::new(Address::default(), mock_provider),
+            KMSManagementInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 ..Default::default()
@@ -670,7 +670,7 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KmsManagementInstance::new(Address::default(), mock_provider),
+            KMSManagementInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 ..Default::default()

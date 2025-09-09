@@ -4,7 +4,7 @@ use fhevm_gateway_bindings::{
     decryption::Decryption::{
         PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
     },
-    kms_management::KmsManagement::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    kms_management::KMSManagement::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
 };
 use sqlx::{
     Pool, Postgres, Row,
