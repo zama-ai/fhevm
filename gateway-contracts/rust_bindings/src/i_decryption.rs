@@ -47,7 +47,8 @@ interface IDecryption {
     event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, bytes extraData);
     event PublicDecryptionResponse(uint256 indexed decryptionId, bytes decryptedResult, bytes[] signatures, bytes extraData);
     event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey, bytes extraData);
-    event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecryptedShares, bytes[] signatures, bytes extraData);
+    event UserDecryptionResponse(uint256 indexed decryptionId, uint256 indexShare, bytes userDecryptedShare, bytes signature, bytes extraData);
+    event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
 
     function checkDecryptionDone(uint256 decryptionId) external view;
     function checkDelegatedUserDecryptionReady(uint256 contractsChainId, DelegationAccounts memory delegationAccounts, CtHandleContractPair[] memory ctHandleContractPairs, address[] memory contractAddresses, bytes memory extraData) external view;
@@ -613,22 +614,41 @@ interface IDecryption {
         "internalType": "uint256"
       },
       {
-        "name": "userDecryptedShares",
-        "type": "bytes[]",
+        "name": "indexShare",
+        "type": "uint256",
         "indexed": false,
-        "internalType": "bytes[]"
+        "internalType": "uint256"
       },
       {
-        "name": "signatures",
-        "type": "bytes[]",
+        "name": "userDecryptedShare",
+        "type": "bytes",
         "indexed": false,
-        "internalType": "bytes[]"
+        "internalType": "bytes"
+      },
+      {
+        "name": "signature",
+        "type": "bytes",
+        "indexed": false,
+        "internalType": "bytes"
       },
       {
         "name": "extraData",
         "type": "bytes",
         "indexed": false,
         "internalType": "bytes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "UserDecryptionResponseThresholdReached",
+    "inputs": [
+      {
+        "name": "decryptionId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -4024,9 +4044,9 @@ event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UserDecryptionResponse(uint256,bytes[],bytes[],bytes)` and selector `0x1cbf1c6e9ea3dbcfd49b9690d93cd4b93b3cb22913f99b71d3aecae60b25fc56`.
+    /**Event with signature `UserDecryptionResponse(uint256,uint256,bytes,bytes,bytes)` and selector `0x7fcdfb5381917f554a717d0a5470a33f5a49ba6445f05ec43c74c0bc2cc608b2`.
 ```solidity
-event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecryptedShares, bytes[] signatures, bytes extraData);
+event UserDecryptionResponse(uint256 indexed decryptionId, uint256 indexShare, bytes userDecryptedShare, bytes signature, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4039,11 +4059,11 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecrypted
         #[allow(missing_docs)]
         pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub userDecryptedShares: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::Bytes,
-        >,
+        pub indexShare: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub signatures: alloy::sol_types::private::Vec<alloy::sol_types::private::Bytes>,
+        pub userDecryptedShare: alloy::sol_types::private::Bytes,
+        #[allow(missing_docs)]
+        pub signature: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
         pub extraData: alloy::sol_types::private::Bytes,
     }
@@ -4058,8 +4078,9 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecrypted
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for UserDecryptionResponse {
             type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Bytes>,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Bytes>,
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Bytes,
+                alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
             );
             type DataToken<'a> = <Self::DataTuple<
@@ -4069,11 +4090,11 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecrypted
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "UserDecryptionResponse(uint256,bytes[],bytes[],bytes)";
+            const SIGNATURE: &'static str = "UserDecryptionResponse(uint256,uint256,bytes,bytes,bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                28u8, 191u8, 28u8, 110u8, 158u8, 163u8, 219u8, 207u8, 212u8, 155u8,
-                150u8, 144u8, 217u8, 60u8, 212u8, 185u8, 59u8, 60u8, 178u8, 41u8, 19u8,
-                249u8, 155u8, 113u8, 211u8, 174u8, 202u8, 230u8, 11u8, 37u8, 252u8, 86u8,
+                127u8, 205u8, 251u8, 83u8, 129u8, 145u8, 127u8, 85u8, 74u8, 113u8, 125u8,
+                10u8, 84u8, 112u8, 163u8, 63u8, 90u8, 73u8, 186u8, 100u8, 69u8, 240u8,
+                94u8, 196u8, 60u8, 116u8, 192u8, 188u8, 44u8, 198u8, 8u8, 178u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4084,9 +4105,10 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecrypted
             ) -> Self {
                 Self {
                     decryptionId: topics.1,
-                    userDecryptedShares: data.0,
-                    signatures: data.1,
-                    extraData: data.2,
+                    indexShare: data.0,
+                    userDecryptedShare: data.1,
+                    signature: data.2,
+                    extraData: data.3,
                 }
             }
             #[inline]
@@ -4107,12 +4129,15 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecrypted
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::Bytes,
-                    > as alloy_sol_types::SolType>::tokenize(&self.userDecryptedShares),
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::Bytes,
-                    > as alloy_sol_types::SolType>::tokenize(&self.signatures),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.indexShare),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.userDecryptedShare,
+                    ),
+                    <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
+                        &self.signature,
+                    ),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.extraData,
                     ),
@@ -4152,6 +4177,117 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes[] userDecrypted
         impl From<&UserDecryptionResponse> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &UserDecryptionResponse) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `UserDecryptionResponseThresholdReached(uint256)` and selector `0xe89752be0ecdb68b2a6eb5ef1a891039e0e92ae3c8a62274c5881e48eea1ed25`.
+```solidity
+event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct UserDecryptionResponseThresholdReached {
+        #[allow(missing_docs)]
+        pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for UserDecryptionResponseThresholdReached {
+            type DataTuple<'a> = ();
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (
+                alloy_sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
+            const SIGNATURE: &'static str = "UserDecryptionResponseThresholdReached(uint256)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                232u8, 151u8, 82u8, 190u8, 14u8, 205u8, 182u8, 139u8, 42u8, 110u8, 181u8,
+                239u8, 26u8, 137u8, 16u8, 57u8, 224u8, 233u8, 42u8, 227u8, 200u8, 166u8,
+                34u8, 116u8, 197u8, 136u8, 30u8, 72u8, 238u8, 161u8, 237u8, 37u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self { decryptionId: topics.1 }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                ()
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(), self.decryptionId.clone())
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                out[1usize] = <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic(&self.decryptionId);
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData
+        for UserDecryptionResponseThresholdReached {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&UserDecryptionResponseThresholdReached>
+        for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(
+                this: &UserDecryptionResponseThresholdReached,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -7439,6 +7575,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         UserDecryptionRequest(UserDecryptionRequest),
         #[allow(missing_docs)]
         UserDecryptionResponse(UserDecryptionResponse),
+        #[allow(missing_docs)]
+        UserDecryptionResponseThresholdReached(UserDecryptionResponseThresholdReached),
     }
     #[automatically_derived]
     impl IDecryptionEvents {
@@ -7450,19 +7588,24 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                28u8, 191u8, 28u8, 110u8, 158u8, 163u8, 219u8, 207u8, 212u8, 155u8,
-                150u8, 144u8, 217u8, 60u8, 212u8, 185u8, 59u8, 60u8, 178u8, 41u8, 19u8,
-                249u8, 155u8, 113u8, 211u8, 174u8, 202u8, 230u8, 11u8, 37u8, 252u8, 86u8,
-            ],
-            [
                 34u8, 219u8, 72u8, 10u8, 57u8, 189u8, 114u8, 85u8, 100u8, 56u8, 170u8,
                 219u8, 74u8, 50u8, 163u8, 210u8, 166u8, 99u8, 139u8, 135u8, 192u8, 59u8,
                 190u8, 197u8, 254u8, 246u8, 153u8, 126u8, 16u8, 149u8, 135u8, 255u8,
             ],
             [
+                127u8, 205u8, 251u8, 83u8, 129u8, 145u8, 127u8, 85u8, 74u8, 113u8, 125u8,
+                10u8, 84u8, 112u8, 163u8, 63u8, 90u8, 73u8, 186u8, 100u8, 69u8, 240u8,
+                94u8, 196u8, 60u8, 116u8, 192u8, 188u8, 44u8, 198u8, 8u8, 178u8,
+            ],
+            [
                 215u8, 229u8, 138u8, 54u8, 122u8, 10u8, 108u8, 41u8, 142u8, 118u8, 173u8,
                 93u8, 36u8, 0u8, 4u8, 227u8, 39u8, 170u8, 20u8, 35u8, 203u8, 228u8,
                 189u8, 127u8, 248u8, 93u8, 76u8, 113u8, 94u8, 248u8, 209u8, 95u8,
+            ],
+            [
+                232u8, 151u8, 82u8, 190u8, 14u8, 205u8, 182u8, 139u8, 42u8, 110u8, 181u8,
+                239u8, 26u8, 137u8, 16u8, 57u8, 224u8, 233u8, 42u8, 227u8, 200u8, 166u8,
+                34u8, 116u8, 197u8, 136u8, 30u8, 72u8, 238u8, 161u8, 237u8, 37u8,
             ],
             [
                 249u8, 1u8, 27u8, 214u8, 186u8, 13u8, 166u8, 4u8, 156u8, 82u8, 13u8,
@@ -7474,7 +7617,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IDecryptionEvents {
         const NAME: &'static str = "IDecryptionEvents";
-        const COUNT: usize = 4usize;
+        const COUNT: usize = 5usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -7516,6 +7659,15 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                         )
                         .map(Self::UserDecryptionResponse)
                 }
+                Some(
+                    <UserDecryptionResponseThresholdReached as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                ) => {
+                    <UserDecryptionResponseThresholdReached as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::UserDecryptionResponseThresholdReached)
+                }
                 _ => {
                     alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
                         name: <Self as alloy_sol_types::SolEventInterface>::NAME,
@@ -7546,6 +7698,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 Self::UserDecryptionResponse(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::UserDecryptionResponseThresholdReached(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
             }
         }
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
@@ -7560,6 +7715,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UserDecryptionResponse(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::UserDecryptionResponseThresholdReached(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
             }
@@ -7949,6 +8107,12 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, UserDecryptionResponse, N> {
             self.event_filter::<UserDecryptionResponse>()
+        }
+        ///Creates a new event filter for the [`UserDecryptionResponseThresholdReached`] event.
+        pub fn UserDecryptionResponseThresholdReached_filter(
+            &self,
+        ) -> alloy_contract::Event<&P, UserDecryptionResponseThresholdReached, N> {
+            self.event_filter::<UserDecryptionResponseThresholdReached>()
         }
     }
 }
