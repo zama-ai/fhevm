@@ -83,7 +83,7 @@ where
     async fn handle_event(mut event_processor: Proc, response_publisher: Publ, event: T) {
         let response = match event_processor.process(&event).await {
             Ok(response) => response,
-            Err(e) => return error!("Failed to process event: {e}"),
+            Err(e) => return error!("{e}"),
         };
 
         if let Err(e) = response_publisher.publish(response.clone()).await {
@@ -122,6 +122,7 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::event_processor::ProcessingError;
     use connector_utils::{
         tests::rand::{rand_signature, rand_u256},
         types::{GatewayEvent, KmsResponse, UserDecryptionResponse},
@@ -179,7 +180,7 @@ mod tests {
 
     impl EventProcessor for MockEventProcessor {
         type Event = GatewayEvent;
-        async fn process(&mut self, _event: &Self::Event) -> anyhow::Result<KmsResponse> {
+        async fn process(&mut self, _event: &Self::Event) -> Result<KmsResponse, ProcessingError> {
             Ok(KmsResponse::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],

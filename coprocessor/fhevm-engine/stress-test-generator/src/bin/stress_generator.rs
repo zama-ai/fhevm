@@ -298,7 +298,6 @@ async fn generate_transactions_at_rate(
             continue;
         }
         let start_time = SystemTime::now();
-        let mut last_transaction_time = SystemTime::now();
         let end_target = start_time.add(std::time::Duration::from_secs(*duration_seconds));
         let time_between_transactions = std::time::Duration::from_secs_f64(1.0 / target_throughput);
         loop {
@@ -321,7 +320,7 @@ async fn generate_transactions_at_rate(
                 dependence_handle2 = Some(dep2);
             }
             let elapsed = SystemTime::now()
-                .duration_since(last_transaction_time)
+                .duration_since(transaction_start)
                 .unwrap_or(Duration::new(0, 10));
             // Either we can keep up with target throughput and we
             // sleep the balance of time or we just do best effort and
@@ -329,7 +328,6 @@ async fn generate_transactions_at_rate(
             // target rate if it's set too high).
             if time_between_transactions > elapsed {
                 tokio::time::sleep(time_between_transactions.sub(elapsed)).await;
-                last_transaction_time = SystemTime::now();
             }
         }
     }
