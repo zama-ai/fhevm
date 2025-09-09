@@ -101,3 +101,40 @@ jobs:
     #   AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
     #   AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
 
+
+  # Fake jobs to simulate a run of a Given Ci when there is no change
+  js-no-changes:
+    name: ci/js (bpr)
+    needs:
+      - check-changes
+    if: >-
+      (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && needs.check-changes.outputs.js == 'false') ||
+      (github.event_name == 'pull_request' && needs.check-changes.outputs.ci == 'false')
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "No test required"'
+
+  oracle-no-changes:
+    name: ci/oracle (bpr)
+    needs:
+      - check-changes
+    if: >-
+      (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && needs.check-changes.outputs.oracle == 'false') ||
+      (github.event_name == 'pull_request' && needs.check-changes.outputs.ci == 'false')
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "No test required"'
+
+  rust-no-changes:
+    name: ci/rust (bpr)
+    needs:
+      - check-changes
+    if: >-
+      (startsWith(github.ref, 'refs/heads/release/') || github.ref == 'refs/heads/main') ||
+      (github.event_name == 'pull_request' && needs.check-changes.outputs.rust == 'false') ||
+      (github.event_name == 'pull_request' && needs.check-changes.outputs.ci == 'false')
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "No test required"'
