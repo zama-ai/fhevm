@@ -156,16 +156,19 @@ async fn main() -> anyhow::Result<()> {
     let cancel_token = CancellationToken::new();
     install_signal_handlers(cancel_token.clone())?;
 
-    let chain_id = get_chain_id(
-        conf.gateway_url.clone(),
-        conf.graceful_shutdown_timeout,
-        cancel_token.clone(),
-    )
-    .await;
-    if chain_id.is_none() {
-        info!("Cancellation requested before getting chain ID during startup, exiting");
-        return Ok(());
-    }
+    // Try to get the chain ID until cancelled.
+    let chain_id = tokio::select! {
+        chain_id = get_chain_id(
+            conf.gateway_url.clone(),
+            conf.graceful_shutdown_timeout,
+        ) => chain_id,
+
+        _ = cancel_token.cancelled() => {
+            info!("Cancellation requested before getting chain ID during startup, exiting");
+            return Ok(());
+        }
+    };
+
     let abstract_signer: AbstractSigner;
     match conf.signer_type {
         SignerType::PrivateKey => {
@@ -176,7 +179,7 @@ async fn main() -> anyhow::Result<()> {
                 ));
             }
             let mut signer = PrivateKeySigner::from_str(conf.private_key.unwrap().trim())?;
-            signer.set_chain_id(chain_id);
+            signer.set_chain_id(Some(chain_id));
             abstract_signer = make_abstract_signer(signer);
         }
         SignerType::AwsKms => {
@@ -184,7 +187,7 @@ async fn main() -> anyhow::Result<()> {
                 .context("AWS_KEY_ID environment variable is required for AwsKms signer")?;
             let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
             let aws_kms_client = aws_sdk_kms::Client::new(&aws_conf);
-            let signer = AwsSigner::new(aws_kms_client, key_id, chain_id).await?;
+            let signer = AwsSigner::new(aws_kms_client, key_id, Some(chain_id)).await?;
             abstract_signer = make_abstract_signer(signer);
         }
     }
