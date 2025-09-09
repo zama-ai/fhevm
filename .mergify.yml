@@ -84,26 +84,22 @@ queue_rules:
       - check-neutral = test-suite-docker-build/docker-e2e-image (bpr)
       - check-skipped = test-suite-docker-build/docker-e2e-image (bpr)
 pull_request_rules:
-  - name: Auto-queue PRs
-    description: Queue a PR when developer comments `@mergify queue`
+  - name: autoqueue-to-main
+    description: Queue a PR for main when it matches the queue conditions
     conditions:
       - base = main
       - "#approved-reviews-by >= 1"
+      - label=ready-to-merge
+      - label!=do-not-merge
     actions:
       queue:
 
-  - name: Add a queue label when PR is queued
-    description: Toggle the `merge-queued` label when a pull request is (un)queued.
+  - name: merge-queued-label
+    description: Toggle the `merge-queued` label when a pull request is queued
     conditions:
       - queue-position > 0
     actions:
       label:
         toggle:
           - merge-queued
-  - name: autoqueue
-    description: put PR in queue as soon as it matches the queue conditions
-    conditions:
-      - label=ready-to-merge
-    actions:
-      queue:
-        name: main
+
