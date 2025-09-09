@@ -194,7 +194,7 @@ contract Decryption is
         // User decryption state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice Verified signatures for a user decryption.
-        mapping(uint256 decryptionId => bytes[] verifiedSignatures) _verifiedUserDecryptSignatures;
+        mapping(uint256 decryptionId => uint256 verifiedSignatures) _verifiedUserDecryptSignatures;
         /// @notice The decryption payloads stored during user decryption requests.
         mapping(uint256 decryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
         /// @notice Whether a user decryption has been done
@@ -543,11 +543,10 @@ contract Decryption is
         /// @dev This list is then used to check the consensus. Important: the mapping should not
         /// @dev consider the digest (contrary to the public decryption case) as shares are expected
         /// @dev to be different for each KMS node.
-        bytes[] storage verifiedSignatures = $._verifiedUserDecryptSignatures[decryptionId];
-        verifiedSignatures.push(signature);
+        $._verifiedUserDecryptSignatures[decryptionId] += 1;
 
         /// @dev Store the user decrypted share for the user decryption response.
-        $.userDecryptedShares[decryptionId].push(userDecryptedShare);
+        emit UserDecryptionResponse(decryptionId, userDecryptedShare, signature, extraData);
 
         // Store the KMS transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus
@@ -556,20 +555,16 @@ contract Decryption is
         // list later independently of the decryption response type (public or user).
         $.consensusTxSenderAddresses[decryptionId][0].push(msg.sender);
 
+        uint256 numSignatures = $._verifiedUserDecryptSignatures[decryptionId];
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
+        if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(numSignatures)) {
             $.decryptionDone[decryptionId] = true;
 
             // Since we use the default value for `bytes32`, this means we do not need to store the
             // digest in `decryptionConsensusDigest` here like we do for the public decryption case.
 
-            emit UserDecryptionResponse(
-                decryptionId,
-                $.userDecryptedShares[decryptionId],
-                verifiedSignatures,
-                extraData
-            );
+            emit UserDecryptionResponseConsensusReached(decryptionId);
         }
     }
 
