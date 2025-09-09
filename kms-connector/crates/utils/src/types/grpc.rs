@@ -1,4 +1,5 @@
-use alloy::{hex, primitives::U256};
+use crate::types::decode_request_id;
+use alloy::primitives::U256;
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
     PublicDecryptionRequest, PublicDecryptionResponse, RequestId, UserDecryptionRequest,
@@ -44,8 +45,8 @@ impl TryFrom<(RequestId, Response<PublicDecryptionResponse>)> for KmsGrpcRespons
     fn try_from(
         value: (RequestId, Response<PublicDecryptionResponse>),
     ) -> Result<Self, Self::Error> {
-        let decryption_id = U256::try_from_be_slice(&hex::decode(value.0.request_id)?)
-            .ok_or_else(|| anyhow!("Failed to parse decryption_id"))?;
+        let decryption_id = decode_request_id(value.0)
+            .map_err(|e| anyhow!("Failed to parse decryption_id: {e}"))?;
 
         Ok(Self::PublicDecryption {
             decryption_id,
@@ -58,8 +59,8 @@ impl TryFrom<(RequestId, Response<UserDecryptionResponse>)> for KmsGrpcResponse 
     type Error = anyhow::Error;
 
     fn try_from(value: (RequestId, Response<UserDecryptionResponse>)) -> Result<Self, Self::Error> {
-        let decryption_id = U256::try_from_be_slice(&hex::decode(value.0.request_id)?)
-            .ok_or_else(|| anyhow!("Failed to parse decryption_id"))?;
+        let decryption_id = decode_request_id(value.0)
+            .map_err(|e| anyhow!("Failed to parse decryption_id: {e}"))?;
 
         Ok(Self::UserDecryption {
             decryption_id,
