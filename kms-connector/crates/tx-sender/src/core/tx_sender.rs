@@ -65,39 +65,48 @@ where
         info!("Starting TransactionSender");
         tokio::select! {
             _ = cancel_token.cancelled() => info!("TransactionSender cancelled..."),
-            _ = self.run() => (),
+            _ = self.run(&cancel_token) => (),
         }
         info!("TransactionSender stopped successfully!");
     }
 
     /// Runs the KMS Core's responses processing loop.
-    async fn run(mut self) {
+    async fn run(mut self, cancel_token: &CancellationToken) {
         loop {
             match self.response_picker.pick_responses().await {
-                Ok(responses) => self.spawn_response_handling_tasks(responses).await,
+                Ok(responses) => {
+                    self.spawn_response_handling_tasks(responses, cancel_token)
+                        .await
+                }
                 Err(e) => warn!("Error while picking responses: {e}"),
             };
         }
     }
 
     /// Spawns a new task to handle each response.
-    async fn spawn_response_handling_tasks(&self, responses: Vec<KmsResponse>) {
+    async fn spawn_response_handling_tasks(
+        &self,
+        responses: Vec<KmsResponse>,
+        cancel_token: &CancellationToken,
+    ) {
         for response in responses {
             let inner = self.inner.clone();
             let response_remover = self.response_remover.clone();
+            let cloned_cancel_token = cancel_token.clone();
             spawn_with_limit(async move {
-                Self::handle_response(inner, response_remover, response).await
+                Self::handle_response(inner, response_remover, response, cloned_cancel_token).await
             })
             .await;
         }
     }
 
     /// Handles a response coming from the  KMS Core.
-    #[tracing::instrument(skip(inner, response_remover), fields(response = %response))]
+    #[tracing::instrument(skip(inner, response_remover, cancel_token), fields(response = %response))]
     async fn handle_response(
         inner: TransactionSenderInner<P>,
         response_remover: R,
         response: KmsResponse,
+        cancel_token: CancellationToken,
     ) {
         match inner.send_to_gateway(response.clone()).await {
             Err(Error::Recoverable(_)) => response_remover.mark_response_as_pending(response).await,
@@ -105,6 +114,10 @@ where
                 if let Err(e) = response_remover.remove_response(&response).await {
                     error!("Failed to remove response: {e}");
                 }
+            }
+            Err(Error::AlloyBackendGone) => {
+                response_remover.mark_response_as_pending(response).await;
+                cancel_token.cancel();
             }
         }
     }
@@ -349,10 +362,15 @@ pub enum Error {
     Irrecoverable(anyhow::Error),
     #[error("{0}")]
     Recoverable(anyhow::Error),
+    #[error("Connection to the Gateway has been lost")]
+    AlloyBackendGone,
 }
 
 impl From<RpcError<TransportErrorKind>> for Error {
     fn from(value: RpcError<TransportErrorKind>) -> Self {
+        if matches!(value, RpcError::Transport(TransportErrorKind::BackendGone)) {
+            return Self::AlloyBackendGone;
+        }
         if let Some(decryption_error) = value
             .as_error_resp()
             .and_then(|e| e.as_decoded_interface_error::<DecryptionErrors>())
