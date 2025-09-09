@@ -78,16 +78,18 @@ interface IDecryption {
     /**
      * @notice Emitted when an public decryption response is made.
      * @param decryptionId The decryption request ID associated with the response.
-     * @param userDecryptedShares The list of decryption shares reencrypted with the user's public key.
-     * @param signatures The signatures of all the KMS connectors that responded.
+     * @param userDecryptedShare The of decryption share reencrypted with the user's public key.
+     * @param signature The signature of the KMS connector that responded.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event UserDecryptionResponse(
         uint256 indexed decryptionId,
-        bytes[] userDecryptedShares,
-        bytes[] signatures,
+        bytes userDecryptedShare,
+        bytes signature,
         bytes extraData
     );
+
+    event UserDecryptionResponseConsensusReached(uint256 indexed decryptionId);
 
     /// @notice Error indicating that the input list of handles is empty.
     error EmptyCtHandles();

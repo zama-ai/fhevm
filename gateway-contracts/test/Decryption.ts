@@ -1416,11 +1416,11 @@ describe("Decryption", function () {
       );
 
       // Trigger three valid user decryption responses using different KMS transaction senders
-      await decryption
+      const responseTx1 = await decryption
         .connect(kmsTxSenders[0])
         .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
 
-      await decryption
+      const responseTx2 = await decryption
         .connect(kmsTxSenders[1])
         .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
 
@@ -1428,11 +1428,22 @@ describe("Decryption", function () {
         .connect(kmsTxSenders[2])
         .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
-      // Consensus should be reached at the third response (reconstruction threshold)
-      // Check 3rd response event: it should only contain 3 valid signatures
+      // Check UserDecryptionResponse events are emitted for each response
+      await expect(responseTx1)
+        .to.emit(decryption, "UserDecryptionResponse")
+        .withArgs(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
+      await expect(responseTx2)
+        .to.emit(decryption, "UserDecryptionResponse")
+        .withArgs(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
       await expect(responseTx3)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, userDecryptedShares.slice(0, 3), kmsSignatures.slice(0, 3), extraDataV0);
+        .withArgs(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
+
+      // Consensus should be reached at the third response (reconstruction threshold)
+      // Check 3rd response event: it should emit the consensus reached event
+      await expect(responseTx3)
+        .to.emit(decryption, "UserDecryptionResponseConsensusReached")
+        .withArgs(decryptionId);
 
       // Check that the user decryption is done
       await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
@@ -1470,9 +1481,9 @@ describe("Decryption", function () {
       // Check that the 1st, 2nd and 4th responses do not emit an event:
       // - 1st and 2nd responses are ignored because consensus is not reached yet
       // - 4th response is ignored (not reverted) even though they are late
-      await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponse");
-      await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponse");
-      await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponse");
+      await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
+      await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
+      await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
     });
 
     // Note: there is no test with "malicious" responses for user decryption because all shares are
@@ -2241,11 +2252,11 @@ describe("Decryption", function () {
       );
 
       // Trigger three valid user decryption responses using different KMS transaction senders
-      await decryption
+      const responseTx1 = await decryption
         .connect(kmsTxSenders[0])
         .userDecryptionResponse(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
 
-      await decryption
+      const responseTx2 = await decryption
         .connect(kmsTxSenders[1])
         .userDecryptionResponse(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
 
@@ -2253,11 +2264,22 @@ describe("Decryption", function () {
         .connect(kmsTxSenders[2])
         .userDecryptionResponse(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
-      // Consensus should be reached at the third response (reconstruction threshold)
-      // Check 3rd response event: it should only contain 3 valid signatures
+      // Check UserDecryptionResponse events are emitted for each response
+      await expect(responseTx1)
+        .to.emit(decryption, "UserDecryptionResponse")
+        .withArgs(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
+      await expect(responseTx2)
+        .to.emit(decryption, "UserDecryptionResponse")
+        .withArgs(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
       await expect(responseTx3)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, userDecryptedShares.slice(0, 3), kmsSignatures.slice(0, 3), extraDataV0);
+        .withArgs(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
+
+      // Consensus should be reached at the third response (reconstruction threshold)
+      // Check 3rd response event: it should emit the consensus reached event
+      await expect(responseTx3)
+        .to.emit(decryption, "UserDecryptionResponseConsensusReached")
+        .withArgs(decryptionId);
 
       // Check that the user decryption is done
       await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
@@ -2295,9 +2317,9 @@ describe("Decryption", function () {
       // Check that the 1st, 2nd and 4th responses do not emit an event:
       // - 1st and 2nd responses are ignored because consensus is not reached yet
       // - 4th response is ignored (not reverted) even though they are late
-      await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponse");
-      await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponse");
-      await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponse");
+      await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
+      await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
+      await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
     });
 
     it("Should revert because the contract is paused", async function () {
