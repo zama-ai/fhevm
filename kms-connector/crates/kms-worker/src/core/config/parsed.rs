@@ -29,7 +29,7 @@ pub struct Config {
     pub decryption_contract: ContractConfig,
     /// The `GatewayConfig` contract configuration.
     pub gateway_config_contract: ContractConfig,
-    /// The `KmsManagement` contract configuration.
+    /// The `KMSManagement` contract configuration.
     pub kms_management_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,

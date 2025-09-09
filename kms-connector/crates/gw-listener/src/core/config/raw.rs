@@ -63,7 +63,7 @@ impl Default for RawConfig {
             },
             kms_management_contract: RawContractConfig {
                 address: "0x0000000000000000000000000000000000000000".to_string(),
-                domain_name: Some("KmsManagement".to_string()),
+                domain_name: Some("KMSManagement".to_string()),
                 domain_version: Some("1".to_string()),
             },
             service_name: default_service_name(),

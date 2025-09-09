@@ -3,7 +3,7 @@ use std::str::FromStr;
 use alloy::primitives::{Address, U256};
 use anyhow::anyhow;
 use fhevm_gateway_bindings::{
-    decryption::Decryption::SnsCiphertextMaterial, kms_management::IKmsManagement::KeyDigest,
+    decryption::Decryption::SnsCiphertextMaterial, kms_management::IKMSManagement::KeyDigest,
 };
 
 /// Struct representing how `SnsCiphertextMaterial` are stored in the database.

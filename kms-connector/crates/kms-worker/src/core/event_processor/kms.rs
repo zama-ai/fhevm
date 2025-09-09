@@ -1,7 +1,7 @@
 use crate::core::{config::Config, event_processor::eip712::alloy_to_protobuf_domain};
 use alloy::{hex, primitives::U256, sol_types::Eip712Domain};
 use connector_utils::types::KmsGrpcRequest;
-use fhevm_gateway_bindings::kms_management::KmsManagement::{
+use fhevm_gateway_bindings::kms_management::KMSManagement::{
     CrsgenRequest, KeygenRequest, PrepKeygenRequest,
 };
 use kms_grpc::kms::v1::{CrsGenRequest, KeyGenPreprocRequest, KeyGenRequest, RequestId};
@@ -10,12 +10,12 @@ use tracing::{error, info};
 
 #[derive(Clone)]
 /// The struct responsible of processing incoming key management requests.
-pub struct KmsManagementProcessor {
-    /// The EIP712 domain of the `KmsManagement` contract.
+pub struct KMSManagementProcessor {
+    /// The EIP712 domain of the `KMSManagement` contract.
     domain: Eip712Domain,
 }
 
-impl KmsManagementProcessor {
+impl KMSManagementProcessor {
     pub fn new(config: &Config) -> Self {
         let domain = Eip712Domain {
             name: Some(Cow::Owned(

@@ -14,7 +14,7 @@ use connector_utils::{
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
-    kms_management::KmsManagement::{self, KmsManagementInstance},
+    kms_management::KMSManagement::{self, KMSManagementInstance},
 };
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -31,8 +31,8 @@ where
     /// The Gateway's `Decryption` contract instance which is monitored.
     decryption_contract: DecryptionInstance<Prov>,
 
-    /// The Gateway's `KmsManagement` contract instance which is monitored.
-    kms_management_contract: KmsManagementInstance<Prov>,
+    /// The Gateway's `KMSManagement` contract instance which is monitored.
+    kms_management_contract: KMSManagementInstance<Prov>,
 
     /// The entity responsible of events publication to some external storage.
     publisher: Publ,
@@ -51,7 +51,7 @@ where
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
         let kms_management_contract =
-            KmsManagement::new(config.kms_management_contract.address, provider);
+            KMSManagement::new(config.kms_management_contract.address, provider);
 
         Self {
             decryption_contract,
@@ -221,7 +221,7 @@ mod tests {
     use anyhow::Result;
     use fhevm_gateway_bindings::{
         decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-        kms_management::KmsManagement::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+        kms_management::KMSManagement::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
     };
     use tracing_test::traced_test;
 

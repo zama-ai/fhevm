@@ -16,7 +16,7 @@ use connector_utils::{
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
-    kms_management::KmsManagement::KmsManagementInstance,
+    kms_management::KMSManagement::KMSManagementInstance,
 };
 use rstest::rstest;
 use std::time::Duration;
@@ -348,7 +348,7 @@ async fn start_test_tx_sender(
     let tx_sender_inner = TransactionSenderInner::new(
         provider.clone(),
         DecryptionInstance::new(DECRYPTION_MOCK_ADDRESS, provider.clone()),
-        KmsManagementInstance::new(KMS_MANAGEMENT_MOCK_ADDRESS, provider),
+        KMSManagementInstance::new(KMS_MANAGEMENT_MOCK_ADDRESS, provider),
         TransactionSenderInnerConfig {
             tx_retries: 3,
             tx_retry_interval: Duration::from_millis(100),
