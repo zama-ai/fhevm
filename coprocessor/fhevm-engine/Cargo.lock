@@ -2373,14 +2373,16 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chrono"
-version = "0.4.40"
+version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a7964611d71df112cb1730f2ee67324fcf4d0fc6606acbbe9bfe06df124637c"
+checksum = "c469d952047f47f91b68d1cba3f10d63c11d73e4636f24f08daf0278abf01c4d"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
+ "js-sys",
  "num-traits",
  "serde",
+ "wasm-bindgen",
  "windows-link",
 ]
 
@@ -2736,6 +2738,27 @@ checksum = "1bfb12502f3fc46cca1bb51ac28df9d618d813cdc3d2f25b9fe775a34af26bb3"
 dependencies = [
  "generic-array",
  "typenum",
+]
+
+[[package]]
+name = "csv"
+version = "1.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "acdc4883a9c96732e4733212c01447ebd805833b7275a73ca3ee080fd77afdaf"
+dependencies = [
+ "csv-core",
+ "itoa",
+ "ryu",
+ "serde",
+]
+
+[[package]]
+name = "csv-core"
+version = "0.1.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d02f3b0da4c6504f86e9cd789d8dbafab48c2321be74e9987593de5a894d93d"
+dependencies = [
+ "memchr",
 ]
 
 [[package]]
@@ -4100,7 +4123,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.0",
  "system-configuration",
  "tokio",
  "tower-service",
@@ -6987,6 +7010,61 @@ name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
+
+[[package]]
+name = "stress-test-generator"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "alloy-primitives 1.3.1",
+ "anyhow",
+ "aws-config",
+ "aws-sdk-kms",
+ "aws-sdk-s3",
+ "axum",
+ "bigdecimal",
+ "bincode",
+ "bytesize",
+ "chrono",
+ "clap",
+ "csv",
+ "fhevm-engine-common",
+ "futures",
+ "futures-util",
+ "hex",
+ "host-listener",
+ "humantime",
+ "itertools 0.13.0",
+ "lazy_static",
+ "lru 0.13.0",
+ "prost",
+ "rand 0.9.1",
+ "rayon",
+ "regex",
+ "rustls 0.23.31",
+ "scheduler",
+ "semver 1.0.26",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha3",
+ "sqlx",
+ "strum 0.26.3",
+ "test-harness",
+ "testcontainers",
+ "tfhe",
+ "tfhe-versionable 0.5.0",
+ "tfhe-worker",
+ "thiserror 2.0.12",
+ "tokio",
+ "tokio-util",
+ "tonic",
+ "tonic-build",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "zkproof-worker",
+]
 
 [[package]]
 name = "stringprep"

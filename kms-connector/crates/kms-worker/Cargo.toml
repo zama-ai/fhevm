@@ -21,6 +21,7 @@ prometheus.workspace = true
 serde.workspace = true
 sha3.workspace = true
 sqlx.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tokio-util.workspace = true
