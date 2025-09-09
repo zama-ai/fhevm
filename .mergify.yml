@@ -87,10 +87,7 @@ pull_request_rules:
   - name: autoqueue-to-main
     description: Queue a PR for main when it matches the queue conditions
     conditions:
-      - base = main
-      - "#approved-reviews-by >= 1"
       - label=ready-to-merge
-      - label!=do-not-merge
     actions:
       queue:
 
