@@ -48,6 +48,9 @@ on:
         default: ""
         type: string
   pull_request:
+  push:
+    branches:
+      - 'mergify/merge-queue/*'
 
 permissions: {}
 
