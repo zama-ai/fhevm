@@ -179,20 +179,12 @@ pub struct Settings {
     pub http_endpoint: Option<String>,
     /// Hard-coded data (from config for keyurl)
     pub keyurl: KeyUrl,
-    /// SQS endpoints
-    pub sqs_endpoint: Option<SQSEndpointConfig>,
     /// Endpoint for metrics server (e.g., "0.0.0.0:9898")
     pub metrics_endpoint: String,
     /// HTTP metrics configuration
     pub http_metrics: HttpMetricsConfig,
     /// Path on disk to store Rocks DB database for crash recovery
     pub db_path_rocksdb: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SQSEndpointConfig {
-    pub inbound_queue: String,
-    pub outbound_queue: String,
 }
 
 // Error type for application-specific configuration errors

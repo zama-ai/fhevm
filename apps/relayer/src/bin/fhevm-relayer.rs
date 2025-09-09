@@ -83,7 +83,6 @@ use fhevm_relayer::{
         traits::{EventHandler, HandlerRegistry, HookRegistry},
         Orchestrator, TokioEventDispatcher,
     },
-    sqs::sqs_listener::run_sqs_server,
     store::{key_value_db::RocksDBKVStore, EventStore},
     transaction::{TransactionService, TxConfig},
 };
@@ -445,17 +444,6 @@ async fn main() -> eyre::Result<()> {
                     settings.networks.fhevm.ws_url,
                 ));
             };
-
-            // SQS endpoint
-            if let Some(sqs_config) = settings.sqs_endpoint {
-                // Start sqs listener
-                info!("Starting Relayer SQS server");
-                task_set.spawn(run_sqs_server(
-                    sqs_config.inbound_queue,
-                    sqs_config.outbound_queue,
-                    Arc::clone(&orchestrator),
-                ));
-            }
 
             // Run metrics server
             task_set.spawn(async move {

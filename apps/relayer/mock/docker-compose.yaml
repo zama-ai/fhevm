@@ -49,7 +49,7 @@ services:
         "--accounts",
         "15",
         "--mnemonic",
-        "${MNEMONIC}"
+        "${MNEMONIC}",
       ]
     ports:
       - "8757:8757"
@@ -68,7 +68,7 @@ services:
         touch /tmp/done &&
         sleep 100
     healthcheck:
-      test: [ "CMD", "test", "-f", "/tmp/done" ]
+      test: ["CMD", "test", "-f", "/tmp/done"]
       interval: 5s
       timeout: 1s
       retries: 240
@@ -77,34 +77,3 @@ services:
     depends_on:
       anvil-gateway:
         condition: service_started
-
-  localstack:
-    image: localstack/localstack:latest
-    container_name: localstack
-    restart: always
-    ports:
-      - "127.0.0.1:4566:4566" # LocalStack Gateway
-      - "127.0.0.1:4510-4559:4510-4559" # external services port range
-    environment:
-      - SERVICES=sqs,iam,sts
-      - DEBUG=${DEBUG:-0}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
-      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-eu-central-1}
-    volumes:
-      - "localstack:/var/lib/localstack"
-      - "/var/run/docker.sock:/var/run/docker.sock"
-      # Here we mount our setup file so it will be executed when
-      # the container start
-      - ./localstack-setup.sh:/etc/localstack/init/ready.d/script.sh
-    healthcheck:
-      test: [ "CMD", "test", "-f", "/tmp/done" ]
-      interval: 5s
-      timeout: 1s
-      retries: 240
-      start_period: 60s
-
-
-volumes:
-  localstack:
-

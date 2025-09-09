@@ -6,7 +6,6 @@ pub mod gateway_processors_mock;
 pub mod http;
 pub mod metrics;
 pub mod orchestrator;
-pub mod sqs;
 pub mod store;
 pub mod transaction;
 
