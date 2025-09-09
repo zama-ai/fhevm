@@ -2,7 +2,7 @@
 
 use alloy::sol;
 
-pub use fhevm_gateway_rust_bindings::{
+pub use fhevm_gateway_bindings::{
     ciphertext_commits::CiphertextCommits,
     decryption::{Decryption, IDecryption},
     input_verification::InputVerification,

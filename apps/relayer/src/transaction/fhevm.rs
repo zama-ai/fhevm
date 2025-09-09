@@ -7,7 +7,7 @@ use crate::blockchain::ethereum::bindings::{
 use alloy::contract::Error;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum FhevmError {
     DecryptionError(DecryptionErrors),
     InputError(InputVerificationErrors),

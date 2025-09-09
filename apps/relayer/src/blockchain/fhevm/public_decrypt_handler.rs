@@ -103,7 +103,9 @@ impl FhevmHandler {
             }
             Err(e) => event.derive_next_event(RelayerEventData::PublicDecrypt(
                 PublicDecryptEventData::Failed {
-                    error: format!("error decoding ethereum event log data: {e:?}"),
+                    error: EventProcessingError::DecodingError(format!(
+                        "Error decoding ethereum event log data: {e:?}"
+                    )),
                 },
             )),
         };
@@ -164,10 +166,7 @@ impl FhevmHandler {
                 info!("unknown request id: {:?}", request_id);
                 let _next_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
                     PublicDecryptEventData::Failed {
-                        error: format!(
-                            "fhevm response received for unknown request id: {:?}",
-                            &request_id
-                        ),
+                        error: EventProcessingError::UnknownId(request_id),
                     },
                 ));
             }
@@ -210,7 +209,9 @@ impl FhevmHandler {
 
         let error_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
             PublicDecryptEventData::Failed {
-                error: format!("Callback transaction failed: {error}"),
+                error: EventProcessingError::TransactionError(format!(
+                    "Callback transaction failed: {error}"
+                )),
             },
         ));
 
@@ -278,6 +279,7 @@ impl EventHandler<RelayerEvent> for FhevmHandler {
                 self.handle_decrypt_response_sent();
             }
             _ => {
+                debug!("Can't handle event: {event:?}");
                 return;
             }
         }

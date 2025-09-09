@@ -163,7 +163,9 @@ impl GatewayHandler {
 
         let error_event =
             event.derive_next_event(RelayerEventData::InputProof(InputProofEventData::Failed {
-                error: format!("Input request failed: {error}"),
+                error: EventProcessingError::TransactionError(format!(
+                    "Input request failed: {error}"
+                )),
             }));
 
         if let Err(e) = self.dispatcher.dispatch_event(error_event).await {
@@ -231,7 +233,7 @@ impl GatewayHandler {
                                 error = ?e,
                                 "Failed to decode VerifyProofRequest event"
                             );
-                            Err(EventProcessingError::DecodingError(e))
+                            Err(EventProcessingError::DecodingError(e.to_string()))
                         }
                     };
                 }
@@ -429,7 +431,9 @@ impl GatewayHandler {
                                         let next_event_data: RelayerEventData =
                                             RelayerEventData::InputProof(
                                                 InputProofEventData::Failed {
-                                                    error: "Rejected".to_string(),
+                                                    error: EventProcessingError::TransactionError(
+                                                        "Rejected".to_string(),
+                                                    ),
                                                 },
                                             );
 

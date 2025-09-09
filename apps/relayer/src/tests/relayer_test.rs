@@ -99,9 +99,12 @@ mod tests {
 
         let status_code = res.status();
         let res_text = res.text().await;
-        assert_eq!(status_code, 500);
+        assert_eq!(status_code, 400);
         if let Ok(ok_text) = res_text {
-            assert_eq!(ok_text, "{\"message\":\"REQUEST FAILED RESPONSE\"}");
+            assert_eq!(
+                ok_text,
+                "{\"message\":\"Transaction rejected: \\\"Rejected\\\"\"}"
+            );
         }
     }
 

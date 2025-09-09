@@ -1,15 +1,24 @@
+use crate::core::errors::EventProcessingError;
 use crate::http::input_http_listener::{
-    InputProofRequestJson, InputProofResponseJson, InputProofResponsePayloadJson,
+    InputProofErrorResponseJson, InputProofRequestJson, InputProofResponseJson,
+    InputProofResponsePayloadJson,
 };
 use crate::http::public_decrypt_http_listener::{
-    PublicDecryptRequestJson, PublicDecryptResponseJson, PublicDecryptResponsePayloadJson,
+    PublicDecryptErrorResponseJson, PublicDecryptRequestJson, PublicDecryptResponseJson,
+    PublicDecryptResponsePayloadJson,
 };
 use crate::http::userdecrypt_http_listener::{
-    UserDecryptRequestJson, UserDecryptResponseJson, UserDecryptResponsePayloadJson,
+    UserDecryptErrorResponseJson, UserDecryptRequestJson, UserDecryptResponseJson,
+    UserDecryptResponsePayloadJson,
 };
 use crate::orchestrator::traits::Event;
 use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::{primitives::U256, rpc::types::Log};
+use axum::{
+    extract::Json,
+    response::{IntoResponse, Response},
+};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use std::hash::Hash;
@@ -40,11 +49,13 @@ impl From<GenericEventId> for u8 {
 #[derive(Debug)]
 /// Event Ids corresponding the events of PublicDecryptEvent type.
 pub enum PublicDecryptEventId {
+    ReqRcvdFromFhevm = 10,
     ReqRcvdFromUser = 11,
     ReqSentToGw = 12,
     RespRcvdFromGw = 13,
     RespSentToFhevm = 14,
     Failed = 15,
+    RespSentToUser = 16,
 }
 
 impl From<PublicDecryptEventId> for u8 {
@@ -138,6 +149,101 @@ impl RelayerEvent {
     }
 }
 
+const BAD_CONVERSION_BODY: &str = "INTERNAL CONVERSION ERROR";
+const BAD_CONVERSION_STATUS_CODE: StatusCode = StatusCode::INTERNAL_SERVER_ERROR;
+
+impl IntoResponse for RelayerEvent {
+    fn into_response(self) -> Response {
+        match &self.data {
+            RelayerEventData::Generic(_) => {
+                (BAD_CONVERSION_STATUS_CODE, BAD_CONVERSION_BODY).into_response()
+            }
+            RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
+                PublicDecryptEventData::RespRcvdFromGw { decrypt_response } => {
+                    let response_json = PublicDecryptResponseJson::from(decrypt_response.clone());
+                    (StatusCode::OK, Json(response_json)).into_response()
+                }
+                PublicDecryptEventData::Failed { error } => match error {
+                    EventProcessingError::RequestReverted(fhevm_error) => (
+                        StatusCode::BAD_REQUEST,
+                        Json(PublicDecryptErrorResponseJson {
+                            message: format!("Request reverted: {fhevm_error:?}"),
+                        }),
+                    )
+                        .into_response(),
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(PublicDecryptErrorResponseJson {
+                            message: format!("{error:?}"),
+                        }),
+                    )
+                        .into_response(),
+                },
+                _ => (BAD_CONVERSION_STATUS_CODE, BAD_CONVERSION_BODY).into_response(),
+            },
+            RelayerEventData::UserDecrypt(decrypt_event) => match decrypt_event {
+                UserDecryptEventData::RespRcvdFromGw { decrypt_response } => {
+                    let response_json = UserDecryptResponseJson::from(decrypt_response.clone());
+                    (StatusCode::OK, Json(response_json)).into_response()
+                }
+                UserDecryptEventData::Failed {
+                    error: EventProcessingError::RequestReverted(fhevm_error),
+                } => {
+                    let error_response = UserDecryptErrorResponseJson {
+                        message: format!("Request reverted on gateway chain: {fhevm_error:?}"),
+                    };
+                    (StatusCode::BAD_REQUEST, Json(error_response)).into_response()
+                }
+                _ => (
+                    BAD_CONVERSION_STATUS_CODE,
+                    Json(UserDecryptErrorResponseJson {
+                        message: BAD_CONVERSION_BODY.to_string(),
+                    }),
+                )
+                    .into_response(),
+            },
+            RelayerEventData::InputProof(input_event) => match input_event {
+                InputProofEventData::RespRcvdFromGw {
+                    input_proof_response,
+                } => {
+                    let response_json = InputProofResponseJson::from(input_proof_response.clone());
+                    (StatusCode::OK, Json(response_json)).into_response()
+                }
+                InputProofEventData::Failed { error } => match error {
+                    EventProcessingError::RequestReverted(fhevm_error) => (
+                        StatusCode::BAD_REQUEST,
+                        Json(InputProofErrorResponseJson {
+                            message: format!("Request reverted: {fhevm_error:?}"),
+                        }),
+                    )
+                        .into_response(),
+                    EventProcessingError::TransactionError(error) => (
+                        StatusCode::BAD_REQUEST,
+                        Json(InputProofErrorResponseJson {
+                            message: format!("Transaction rejected: {error:?}"),
+                        }),
+                    )
+                        .into_response(),
+                    _ => (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(InputProofErrorResponseJson {
+                            message: format!("{error:?}"),
+                        }),
+                    )
+                        .into_response(),
+                },
+                _ => (
+                    BAD_CONVERSION_STATUS_CODE,
+                    Json(InputProofErrorResponseJson {
+                        message: BAD_CONVERSION_BODY.to_string(),
+                    }),
+                )
+                    .into_response(),
+            },
+        }
+    }
+}
+
 impl Event for RelayerEvent {
     fn event_name(&self) -> &str {
         self.data.as_ref()
@@ -155,6 +261,9 @@ impl Event for RelayerEvent {
             },
             RelayerEventData::PublicDecrypt(decrypt_event) => match decrypt_event {
                 PublicDecryptEventData::ReqRcvdFromFhevm { .. } => {
+                    PublicDecryptEventId::ReqRcvdFromFhevm.into()
+                }
+                PublicDecryptEventData::ReqRcvdFromUser { .. } => {
                     PublicDecryptEventId::ReqRcvdFromUser.into()
                 }
                 PublicDecryptEventData::ReqSentToGw { .. } => {
@@ -167,6 +276,9 @@ impl Event for RelayerEvent {
                     PublicDecryptEventId::RespSentToFhevm.into()
                 }
                 PublicDecryptEventData::Failed { .. } => PublicDecryptEventId::Failed.into(),
+                PublicDecryptEventData::RespSentToUser => {
+                    PublicDecryptEventId::RespSentToUser.into()
+                }
             },
             RelayerEventData::UserDecrypt(decrypt_event) => match decrypt_event {
                 UserDecryptEventData::ReqRcvdFromUser { .. } => {
@@ -275,11 +387,10 @@ impl GenericEventData {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PublicDecryptEventData {
-    /// TODO: support this one
     /// Event representing a public decryption request for ciphertexts from user.
-    // ReqRcvdFromUser {
-    //     decrypt_request: PublicDecryptRequest,
-    // },
+    ReqRcvdFromUser {
+        decrypt_request: PublicDecryptRequest,
+    },
 
     /// Event representing a public decryption request for ciphertexts on fhevm.
     ReqRcvdFromFhevm {
@@ -300,17 +411,22 @@ pub enum PublicDecryptEventData {
     /// Event representing the public decryption response sent to fhevm.
     RespSentToFhevm,
 
+    /// Event representing the user decryption response sent to the user.
+    RespSentToUser,
+
     /// Event representing the failure in processing the public decryption request.
-    Failed { error: String },
+    Failed { error: EventProcessingError },
 }
 
 impl PublicDecryptEventData {
     pub fn event_name(&self) -> &'static str {
         match self {
+            PublicDecryptEventData::ReqRcvdFromUser { .. } => "PublicDecrypt::ReqRcvdFromUser",
             PublicDecryptEventData::ReqRcvdFromFhevm { .. } => "PublicDecrypt::ReqRcvdFromFhevm",
             PublicDecryptEventData::ReqSentToGw { .. } => "PublicDecrypt::ReqSentToGw",
             PublicDecryptEventData::RespRcvdFromGw { .. } => "PublicDecrypt::RespRcvdFromGw",
             PublicDecryptEventData::RespSentToFhevm => "PublicDecrypt::RespSentToFhevm",
+            PublicDecryptEventData::RespSentToUser => "PublicDecrypt::RespSentToUser",
             PublicDecryptEventData::Failed { .. } => "PublicDecrypt::Failed",
         }
     }
@@ -336,7 +452,7 @@ pub enum UserDecryptEventData {
     RespSentToUser,
 
     /// Event representing the failure in processing the user decryption request.
-    Failed { error: String },
+    Failed { error: EventProcessingError },
 }
 
 impl UserDecryptEventData {
@@ -583,7 +699,7 @@ pub enum InputProofEventData {
 
     /// Event representing the failure in processing the input proof
     /// verification request.
-    Failed { error: String },
+    Failed { error: EventProcessingError },
 }
 
 impl InputProofEventData {

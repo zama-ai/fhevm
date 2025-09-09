@@ -154,7 +154,7 @@ impl GatewayProcessorsHandler {
                 }
                 Err(e) => {
                     error!(?e, "Failed to decode InputRequest event");
-                    Err(EventProcessingError::DecodingError(e))
+                    Err(EventProcessingError::DecodingError(format!("{e:?}")))
                 }
             }
         } else {

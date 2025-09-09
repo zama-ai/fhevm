@@ -322,18 +322,21 @@ async fn main() -> eyre::Result<()> {
                     settings.networks.gateway.chain_id,
                 ));
 
+            // Register public decryption events
             orchestrator.register_handler(
                 PublicDecryptEventId::ReqRcvdFromUser.into(),
                 Arc::clone(&public_decrypt_gateway_handler),
             );
-
+            orchestrator.register_handler(
+                PublicDecryptEventId::ReqRcvdFromFhevm.into(),
+                Arc::clone(&public_decrypt_gateway_handler),
+            );
             orchestrator.register_handler(
                 PublicDecryptEventId::ReqSentToGw.into(),
                 Arc::clone(&public_decrypt_gateway_handler),
             );
 
             // Register user decryption events
-
             orchestrator.register_handler(
                 UserDecryptEventId::ReqRcvdFromUser.into(),
                 Arc::clone(&user_decrypt_gateway_handler),

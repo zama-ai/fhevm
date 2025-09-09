@@ -185,21 +185,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
                     Ok(event) => {
                         info!("Received user decrypt response event");
                         info!("Response event type {:?}", event.data);
-                        match event.data {
-                            RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
-                                decrypt_response,
-                            }) => {
-                                let response_json = UserDecryptResponseJson::from(decrypt_response);
-                                info!("Sending success reponse to user");
-                                (StatusCode::OK, Json(response_json)).into_response()
-                            },
-                            _ => {
-                                let error_response = UserDecryptErrorResponseJson {
-                                    message: "unexpected error".to_string(),
-                                };
-                                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
-                            }
-                        }
+                        event.into_response()
                     }
                     Err(_) => {
                         info!("Received error while waiting for user decrypt response event");
@@ -212,12 +198,8 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
             }
             res = &mut error_rx => {
                 match res {
-                    Ok(_event) => {
-                        info!("Received error event on error_rx");
-                        let error_response = UserDecryptErrorResponseJson {
-                            message: "REQUEST FAILED RESPONSE".to_string(),
-                        };
-                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    Ok(event) => {
+                        event.into_response()
                     }
                     Err(_) => {
                         info!("Received error while waiting for error event on error_rx");

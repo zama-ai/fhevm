@@ -2354,7 +2354,7 @@ dependencies = [
  "ctor",
  "dashmap",
  "eyre",
- "fhevm_gateway_rust_bindings",
+ "fhevm_gateway_bindings",
  "futures",
  "hex",
  "http 0.2.12",
@@ -2386,9 +2386,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "fhevm_gateway_rust_bindings"
+name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.8.0-3#6c9c11388198ec4da7d3fac6f3d4a1930cff41f6"
+source = "git+https://github.com/zama-ai/fhevm.git?rev=81e0d1594d71b43c6f5f4d3d11d3526aed2c747c#81e0d1594d71b43c6f5f4d3d11d3526aed2c747c"
 dependencies = [
  "alloy",
  "serde",

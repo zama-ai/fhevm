@@ -127,7 +127,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         );
         info!("Registered once handler for error");
 
-        let request_data = PublicDecryptEventData::ReqRcvdFromFhevm {
+        let request_data = PublicDecryptEventData::ReqRcvdFromUser {
             decrypt_request: public_decrypt_request,
         };
         let event = RelayerEvent::new(
@@ -177,12 +177,8 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
             }
             res = &mut error_rx => {
                 match res {
-                    Ok(_event) => {
-                        info!("Received error event on error_rx");
-                        let error_response = PublicDecryptErrorResponseJson {
-                            message: "REQUEST FAILED RESPONSE".to_string(),
-                        };
-                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                    Ok(event) => {
+                        event.into_response()
                     }
                     Err(_) => {
                         info!("Received error while waiting for error event on error_rx");

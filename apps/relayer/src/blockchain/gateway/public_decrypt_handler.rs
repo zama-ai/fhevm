@@ -392,7 +392,9 @@ impl GatewayHandler {
 
         let error_event = event.derive_next_event(RelayerEventData::PublicDecrypt(
             PublicDecryptEventData::Failed {
-                error: format!("Callback transaction failed: {error}"),
+                error: EventProcessingError::TransactionError(format!(
+                    "Callback transaction failed: {error}"
+                )),
             },
         ));
 
@@ -555,7 +557,7 @@ impl GatewayHandler {
                         }
                         Err(e) => {
                             error!(?receipt.transaction_hash, ?e, "Failed to decode event data");
-                            Err(EventProcessingError::DecodingError(e))
+                            Err(EventProcessingError::DecodingError(e.to_string()))
                         }
                     };
                 }
@@ -567,7 +569,9 @@ impl GatewayHandler {
         ))
     }
 
-    async fn noop_handle_decrypt_reponse_event_log(&self, _event: &RelayerEvent) {}
+    async fn noop_handle_decrypt_reponse_event_log(&self, event: &RelayerEvent) {
+        debug!("Gateway hanlding no-op on {event:?}");
+    }
 
     /// Processes a decryption request by sending it to the gateway contract.
     ///
@@ -613,6 +617,10 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
     async fn handle_event(&self, event: RelayerEvent) {
         match event.data {
             RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromFhevm {
+                ref decrypt_request,
+                ..
+            })
+            | RelayerEventData::PublicDecrypt(PublicDecryptEventData::ReqRcvdFromUser {
                 ref decrypt_request,
                 ..
             }) => {

@@ -96,7 +96,7 @@ impl TryFrom<RelayerEventData> for ResponseJson {
             RelayerEventData::InputProof(inner) => match inner {
                 InputProofEventData::Failed { error } => {
                     Ok(ResponseJson::InputProofError(InputProofErrorResponseJson {
-                        message: error,
+                        message: error.to_string(),
                     }))
                 }
                 InputProofEventData::RespRcvdFromGw {
@@ -111,7 +111,9 @@ impl TryFrom<RelayerEventData> for ResponseJson {
             },
             RelayerEventData::UserDecrypt(inner) => match inner {
                 UserDecryptEventData::Failed { error } => Ok(ResponseJson::UserDecryptError(
-                    UserDecryptErrorResponseJson { message: error },
+                    UserDecryptErrorResponseJson {
+                        message: error.to_string(),
+                    },
                 )),
                 UserDecryptEventData::RespRcvdFromGw { decrypt_response } => {
                     Ok(ResponseJson::UserDecryptResponse(decrypt_response.into()))
@@ -123,7 +125,9 @@ impl TryFrom<RelayerEventData> for ResponseJson {
             },
             RelayerEventData::PublicDecrypt(inner) => match inner {
                 PublicDecryptEventData::Failed { error } => Ok(ResponseJson::PublicDecryptError(
-                    PublicDecryptErrorResponseJson { message: error },
+                    PublicDecryptErrorResponseJson {
+                        message: error.to_string(),
+                    },
                 )),
                 PublicDecryptEventData::RespRcvdFromGw { decrypt_response } => {
                     Ok(ResponseJson::PublicDecryptResponse(decrypt_response.into()))

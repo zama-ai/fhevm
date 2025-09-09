@@ -1,5 +1,5 @@
 use alloy::primitives::map::HashMap;
-use config::{Config, ConfigError, Environment, File};
+use config::{Config, Environment, File};
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -94,7 +94,7 @@ impl TransactionConfig {
             Some(fee_str) => fee_str
                 .parse::<u128>()
                 .map(Some)
-                .map_err(|e| AppConfigError::Config(config::ConfigError::Foreign(Box::new(e)))),
+                .map_err(|e| AppConfigError::Config(e.to_string())),
             None => Ok(None),
         }
     }
@@ -196,10 +196,10 @@ pub struct SQSEndpointConfig {
 }
 
 // Error type for application-specific configuration errors
-#[derive(thiserror::Error, Debug)]
+#[derive(thiserror::Error, Debug, Serialize, Deserialize, Clone)]
 pub enum AppConfigError {
     #[error("Configuration error: {0}")]
-    Config(#[from] ConfigError),
+    Config(String),
 
     #[error("Invalid contract address: {0}")]
     InvalidAddress(String),
@@ -230,7 +230,11 @@ impl Settings {
                 .prefix_separator("_"), // Separator between APP and the rest
         );
 
-        let settings: Settings = s.build()?.try_deserialize()?;
+        let settings: Settings = s
+            .build()
+            .map_err(|err| AppConfigError::Config(err.to_string()))?
+            .try_deserialize()
+            .map_err(|err| AppConfigError::Config(err.to_string()))?;
 
         // Validate network configurations
         settings.networks.validate()?;

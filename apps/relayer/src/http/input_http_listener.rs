@@ -151,24 +151,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
                 match res {
                     Ok(event) => {
                         info!("Response event type {:?}", event.data);
-                        match event.data {
-                            RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
-                                input_proof_response,
-                            }) => {
-                                let response_json = InputProofResponseJson::from(input_proof_response);
-                                info!("Sending success reponse to user");
-                                (StatusCode::OK, Json(response_json)).into_response()
-                            },
-                            _ => {
-                                info!(
-                                    "sending error reponse to user as response event is not expected type"
-                                );
-                                let error_response = InputProofErrorResponseJson {
-                                    message: "request could not be completed 3".to_string(),
-                                };
-                                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
-                            }
-                        }
+                        event.into_response()
                     }
                     Err(_) => {
                         info!("received error while waiting for response event");
@@ -181,12 +164,9 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
             }
             res = &mut error_rx => {
                 match res {
-                    Ok(_event) => {
+                    Ok(event) => {
                         info!("received error event on error_rx");
-                        let error_response = InputProofErrorResponseJson {
-                            message: "REQUEST FAILED RESPONSE".to_string(),
-                        };
-                        (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                        event.into_response()
                     }
                     Err(_) => {
                         info!("received error while waiting for error event on error_rx");

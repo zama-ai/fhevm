@@ -240,7 +240,9 @@ impl GatewayHandler {
 
         let error_event = event.derive_next_event(RelayerEventData::UserDecrypt(
             UserDecryptEventData::Failed {
-                error: format!("Callback transaction failed: {error}"),
+                error: EventProcessingError::HandlerError(format!(
+                    "Callback transaction failed: {error}"
+                )),
             },
         ));
 
@@ -401,7 +403,7 @@ impl GatewayHandler {
                         }
                         Err(e) => {
                             error!(?receipt.transaction_hash, ?e, "Failed to decode user decryption event data");
-                            Err(EventProcessingError::DecodingError(e))
+                            Err(EventProcessingError::DecodingError(e.to_string()))
                         }
                     };
                 }
@@ -498,9 +500,7 @@ impl GatewayHandler {
                             "Gateway un-retriable error for {:?} error info: {:?}",
                             user_decrypt_request.user_address, fhevm_error
                         );
-                        return Err(EventProcessingError::HandlerError(format!(
-                            "Non-retryable on-chain error {fhevm_error:?}"
-                        )));
+                        return Err(EventProcessingError::RequestReverted(Box::new(fhevm_error)));
                     } else {
                         info!(
                             "Gateway not ready yet: {:?} error info: {:?}, retry={}",

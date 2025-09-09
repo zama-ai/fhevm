@@ -1,6 +1,8 @@
+use crate::transaction::fhevm::FhevmError;
 use crate::{config::settings::AppConfigError, transaction::sender::TransactionError};
 use alloy::{primitives::Address, transports::TransportError};
-use eyre::Report;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use thiserror::Error;
 
@@ -16,10 +18,10 @@ pub enum Error {
     Config(String),
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Serialize, Deserialize, Clone)]
 pub enum EventProcessingError {
     #[error("Failed to decode event: {0}")]
-    DecodingError(#[from] alloy::sol_types::Error),
+    DecodingError(String),
 
     #[error("Missing event topic")]
     MissingTopic,
@@ -27,14 +29,20 @@ pub enum EventProcessingError {
     #[error("Unknown event type for contract {0}")]
     UnknownEvent(Address),
 
+    #[error("Request reverted: {0:?}")]
+    RequestReverted(Box<FhevmError>),
+
     #[error("No handler registered for contract {contract}")]
     UnregisteredContract { contract: Address },
 
     #[error("Handler failed: {0}")]
     HandlerError(String),
 
+    #[error("Unknown id: {0}")]
+    UnknownId(Uuid),
+
     #[error("Transaction failed: {0}")]
-    TransactionError(#[from] eyre::Report),
+    TransactionError(String),
 
     #[error("Configuration error: {0}")]
     ConfigError(#[from] AppConfigError),
@@ -91,27 +99,27 @@ impl From<TransactionServiceError> for EventProcessingError {
     fn from(e: TransactionServiceError) -> Self {
         match e {
             TransactionServiceError::Failed(msg) => {
-                Self::TransactionError(Report::msg(format!("Transaction failed: {msg}")))
+                Self::TransactionError(format!("Transaction failed: {msg}"))
             }
-            TransactionServiceError::Timeout(secs) => Self::TransactionError(Report::msg(format!(
-                "Transaction timed out after {secs} seconds"
-            ))),
+            TransactionServiceError::Timeout(secs) => {
+                Self::TransactionError(format!("Transaction timed out after {secs} seconds"))
+            }
             TransactionServiceError::GasEstimation(msg) => {
-                Self::TransactionError(Report::msg(format!("Gas estimation failed: {msg}")))
+                Self::TransactionError(format!("Gas estimation failed: {msg}"))
             }
             TransactionServiceError::NonceError(msg) => {
-                Self::TransactionError(Report::msg(format!("Nonce error: {msg}")))
+                Self::TransactionError(format!("Nonce error: {msg}"))
             }
             TransactionServiceError::Network(msg) => {
-                Self::TransactionError(Report::msg(format!("Network error: {msg}")))
+                Self::TransactionError(format!("Network error: {msg}"))
             }
             TransactionServiceError::Config(msg) => {
                 Self::HandlerError(format!("Config error: {msg}"))
             }
             TransactionServiceError::Provider(msg) => {
-                Self::TransactionError(Report::msg(format!("Provider error: {msg}")))
+                Self::TransactionError(format!("Provider error: {msg}"))
             }
-            TransactionServiceError::Other(err) => Self::TransactionError(err),
+            TransactionServiceError::Other(err) => Self::TransactionError(err.to_string()),
         }
     }
 }
@@ -125,39 +133,35 @@ impl From<TransactionError> for EventProcessingError {
             TransactionError::InvalidAddress(msg) => {
                 Self::HandlerError(format!("Invalid address: {msg}"))
             }
-            TransactionError::RpcError(msg) => {
-                Self::TransactionError(Report::msg(format!("RPC error: {msg}")))
-            }
+            TransactionError::RpcError(msg) => Self::TransactionError(format!("RPC error: {msg}")),
             TransactionError::TransactionFailed(msg) => {
-                Self::TransactionError(Report::msg(format!("Transaction failed: {msg}")))
+                Self::TransactionError(format!("Transaction failed: {msg}"))
             }
-            TransactionError::TransactionTimeout(secs) => Self::TransactionError(Report::msg(
-                format!("Transaction timed out after {secs} seconds"),
+            TransactionError::TransactionTimeout(secs) => {
+                Self::TransactionError(format!("Transaction timed out after {secs} seconds"))
+            }
+            TransactionError::MonitoringTimeout(secs) => Self::TransactionError(format!(
+                "Transaction monitoring timed out after {secs} seconds, but may still succeed"
             )),
-            TransactionError::MonitoringTimeout(secs) => {
-                Self::TransactionError(Report::msg(format!(
-                    "Transaction monitoring timed out after {secs} seconds, but may still succeed"
-                )))
-            }
             TransactionError::GasEstimationFailed(msg) => {
-                Self::TransactionError(Report::msg(format!("Gas estimation failed: {msg}")))
+                Self::TransactionError(format!("Gas estimation failed: {msg}"))
             }
-            TransactionError::ReceiptNotFound(attempts) => Self::TransactionError(Report::msg(
-                format!("Receipt not found after {attempts} attempts"),
-            )),
+            TransactionError::ReceiptNotFound(attempts) => {
+                Self::TransactionError(format!("Receipt not found after {attempts} attempts"))
+            }
             TransactionError::InsufficientConfirmations { required, actual } => {
-                Self::TransactionError(Report::msg(format!(
+                Self::TransactionError(format!(
                     "Insufficient confirmations: required {required}, got {actual}"
-                )))
+                ))
             }
             TransactionError::NetworkError(msg) => {
-                Self::TransactionError(Report::msg(format!("Network error: {msg}")))
+                Self::TransactionError(format!("Network error: {msg}"))
             }
             TransactionError::TransportError(e) => {
-                Self::TransactionError(Report::msg(format!("Transport Error: {e}")))
+                Self::TransactionError(format!("Transport Error: {e}"))
             }
             TransactionError::InvalidChainId(msg) => {
-                Self::TransactionError(Report::msg(format!("Chain-id error: {msg}")))
+                Self::TransactionError(format!("Chain-id error: {msg}"))
             }
         }
     }
