@@ -121,54 +121,13 @@ async fn tfhe_worker_cycle(
         let now = std::time::SystemTime::now();
         let the_work = query!(
             "
-WITH selected_computations AS (
-  -- Get all computations from such transactions
-  (
-    SELECT 
-      c.tenant_id, 
-      c.output_handle,
-      c.transaction_id,
-      ah.handle, 
-      ah.is_computed
-    FROM computations c
-    LEFT JOIN allowed_handles ah
-       ON c.output_handle = ah.handle
-      AND c.tenant_id = ah.tenant_id
-    WHERE c.transaction_id IN (
-      -- Select transaction IDs with uncomputed handles
-      -- out of the dependence buckets
-      SELECT DISTINCT transaction_id 
-      FROM computations
-      WHERE is_error = FALSE
-        AND (tenant_id, output_handle) IN (
-          SELECT tenant_id, handle
-          FROM allowed_handles
-          WHERE is_computed = FALSE
-          ORDER BY schedule_order
-          LIMIT $1
-        )
-      LIMIT $2
-    )
-  )
-)
--- Acquire all computations from this transaction set
-SELECT 
-  c.tenant_id, 
-  c.output_handle, 
-  c.dependencies, 
-  c.fhe_operation, 
-  c.is_scalar,
-  sc.handle IS NOT NULL AS is_allowed, 
-  c.dependence_chain_id,
-  COALESCE(sc.is_computed) AS is_computed,
-  c.transaction_id
-FROM computations c
-JOIN selected_computations sc
-  ON c.tenant_id = sc.tenant_id
-  AND c.output_handle = sc.output_handle
-  AND c.transaction_id = sc.transaction_id
-FOR UPDATE SKIP LOCKED            ",
-            args.work_items_batch_size as i32,
+            SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar, TRUE AS is_allowed, FALSE AS is_computed, transaction_id
+            FROM computations
+            WHERE is_completed = false
+            AND is_error = false
+            ORDER BY created_at
+            LIMIT $1
+            FOR UPDATE SKIP LOCKED            ",
             args.dependence_chains_per_batch as i32,
         )
         .fetch_all(trx.as_mut())
