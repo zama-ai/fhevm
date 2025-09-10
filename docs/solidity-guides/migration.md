@@ -6,7 +6,7 @@ This document provides instructions on migrating from FHEVM v0.6 to v0.7.
 
 ### Package and library
 
-The package is now `@fhevm/solidity` instead of `fhevm` and the library name has changed from `TFHE` to `FHE`
+The package is now `@fhevm/solidity` instead of `FHEVM` and the library name has changed from `TFHE` to `FHE`
 
 ```solidity
 import { FHE } from "@fhevm/solidity";
@@ -20,12 +20,12 @@ Configuration has been renamed from `SepoliaZamaConfig` to `SepoliaConfig`.
 import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 ```
 
-Also, the function to define manually the Coprocessor has been renamed from `setFHEVM` to `setCoprocessor`, and the function to define the oracle has been changed to `setDecryptionOracle`.
+Also, the function to define manually the Coprocessor has been renamed from `setFHEVM` to `setCoprocessor`, and the function to define the oracle is now integrated into `setCoprocessor`.
 
 ```solidity
+import { ZamaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 constructor () {
-  FHE.setCoprocessor(0x848B0066793BcC60346Da1F49049357399B8D595);
-  FHE.setDecryptionOracle(0xa02Cda4Ca3a71D7C46997716F4283aa851C28812);
+  FHE.setCoprocessor(ZamaConfig.getSepoliaConfig());
 }
 ```
 

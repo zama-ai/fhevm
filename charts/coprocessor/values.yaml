@@ -260,6 +260,29 @@ tfheWorker:
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        selectPolicy: Max
+        policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        selectPolicy: Min
+        policies:
+        - type: Percent
+          value: 40
+          periodSeconds: 60
 
 zkProofWorker:
   enabled: false
@@ -315,6 +338,29 @@ zkProofWorker:
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        selectPolicy: Max
+        policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        selectPolicy: Min
+        policies:
+        - type: Percent
+          value: 40
+          periodSeconds: 60
 
 snsWorker:
   enabled: false
@@ -380,6 +426,29 @@ snsWorker:
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+  hpa:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 60
+        selectPolicy: Max
+        policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+      scaleDown:
+        stabilizationWindowSeconds: 300
+        selectPolicy: Min
+        policies:
+        - type: Percent
+          value: 40
+          periodSeconds: 60
 
 txSender:
   enabled: false

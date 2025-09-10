@@ -15,6 +15,8 @@ on:
         type: string
   pull_request:
 
+permissions: {}
+
 concurrency:
   group: golden-rust-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -40,27 +42,44 @@ jobs:
             golden-rust:
               - '.github/workflows/golden-container-images-docker-build-rust.yml'
               - 'golden-container-images/rust-glibc/**'
-  set-custom-tag:
+              - toolchain.txt
+  determine-tag:
+    name: golden-container-images-docker-build-rust/determine-tag
     permissions:
       actions: 'read'
       contents: 'read'
       pull-requests: 'read'
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch'
     outputs:
-      DOCKER_TAG_IMAGE: ${{ steps.set-tag.outputs.tag }}
+      tag: ${{ steps.set-tag.outputs.tag }}
     steps:
+      - name: Checkout Project
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
       - id: set-tag
-        run: echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+        env:
+          TAG: ${{ github.event.inputs.tag }}
+          WORKSPACE: ${{ github.workspace }}
+        run: |
+          if [[ -n "${TAG}" ]]; then
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          else
+            if [[ -f "${WORKSPACE}/toolchain.txt" ]]; then
+              echo "tag=$(cat "${WORKSPACE}"/toolchain.txt)" >> "$GITHUB_OUTPUT"
+            fi
+          fi
   build:
     name: golden-container-images-docker-build-rust/build
-    needs: [check-changes]
+    needs: [check-changes, determine-tag]
     if: ${{ needs.check-changes.outputs.changes-golden-rust == 'true' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6323a1e8e260961562b66a9f33a608f86cd6c831
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@e666182756172bc747d2be6e4eb9b4ed80a00a0e
     secrets:
-      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     permissions:
       actions: 'read'
       contents: 'read'
@@ -69,9 +88,11 @@ jobs:
       packages: 'write'
       id-token: 'write'
     with:
+      use-cgr-secrets: true
       working-directory: "."
       push_image: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.push_image == 'true' || github.event_name != 'workflow_dispatch' && true }}
       image-name: "fhevm/gci/rust-glibc"
+      image-tag: ${{ needs.determine-tag.outputs.tag }}
       docker-file: "./golden-container-images/rust-glibc/Dockerfile"
       app-cache-dir: "fhevm-golden-rust"
       ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', github.event.inputs.tag) || '' }}

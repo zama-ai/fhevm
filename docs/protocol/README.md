@@ -17,20 +17,6 @@ layout:
 **Welcome to the Zama Confidential Blockchain Protocol Docs.**\
 The docs aim to guide you to build confidential dApps on top of any L1 or L2 using Fully Homomorphic Encryption (FHE).
 
-{% hint style="info" %}
-
-## Devnet EOL Notice
-
-The **Zama Confidential Protocol Testnet (FHEVM v0.7)** is officially released, featuring a new stack with improved resilience, scalability, and performance. [Read the Litepaper↗](https://docs.zama.ai/protocol/zama-protocol-litepaper).
-
-The previous **Hackathon Devnet (FHEVM v0.6)** will reach its end of life on **August 4th**.
-To ensure the service continuity of your applications, please migrate your projects by following the [migration guide↗](https://docs.zama.ai/protocol/solidity-guides/development-guide/migration).
-Thank you for your support!
-
-{% endhint %}
-
-
-
 ## Where to go next
 
 If you're completely new to FHE or the Zama Protocol, we suggest first checking out the [Litepaper](https://docs.zama.ai/protocol/zama-protocol-litepaper), which offers a thorough overview of the protocol.
@@ -45,7 +31,7 @@ Otherwise:
 
 🟨 Go to [**FHE on Blockchain**](architecture/overview.md) to learn the architecture in depth and understand how encrypted computation flows through both on-chain and off-chain components.
 
-🟨 Go to [**Examples**](https://docs.zama.ai/protocol/examples) to find reference and inspiration from smart contract examples and and dApp examples.
+🟨 Go to [**Examples**](https://docs.zama.ai/protocol/examples) to find reference and inspiration from smart contract examples and dApp examples.
 
 {% hint style="warning" %}
 
@@ -58,4 +44,4 @@ The Zama Protocol Testnet is not audited and is not intended for production use.
 Ask technical questions and discuss with the community.
 
 - [Community forum](https://community.zama.ai/c/fhevm/15)
-- [Discord channel](https://discord.com/invite/fhe-org)
+- [Discord channel](https://discord.com/invite/zama)

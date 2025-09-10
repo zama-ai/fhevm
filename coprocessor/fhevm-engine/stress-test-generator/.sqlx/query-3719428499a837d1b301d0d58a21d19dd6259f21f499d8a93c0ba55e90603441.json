@@ -1,0 +1,77 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\nWITH selected_computations AS (\n  -- Get all computations from such transactions\n  (\n    SELECT \n      c.tenant_id, \n      c.output_handle,\n      c.transaction_id,\n      ah.handle, \n      ah.is_computed\n    FROM computations c\n    LEFT JOIN allowed_handles ah\n      ON c.output_handle = ah.handle\n    WHERE c.transaction_id IN (\n      -- Select transaction IDs with uncomputed handles\n      -- out of the dependence buckets\n      SELECT transaction_id \n      FROM computations\n      WHERE is_completed = FALSE\n        AND is_error = FALSE\n        AND dependence_chain_id IN (\n          WITH dep_chains AS (\n            -- Find oldest uncomputed allowed handles and\n            -- get their dependence buckets\n            SELECT dependence_chain_id\n            FROM computations\n            WHERE (tenant_id, output_handle) IN (\n              SELECT tenant_id, handle\n              FROM allowed_handles\n              WHERE is_computed = FALSE\n              ORDER BY allowed_at\n              LIMIT $2\n            )\n          )\n          SELECT DISTINCT dependence_chain_id FROM dep_chains\n        )\n      -- In case an ACL event is missed and we get a late allow event\n      UNION\n      (\n        SELECT transaction_id\n        FROM computations\n        WHERE (tenant_id, output_handle) IN (\n          SELECT tenant_id, handle\n          FROM allowed_handles\n          WHERE is_computed = FALSE\n          ORDER BY allowed_at\n          LIMIT $2\n        )\n      )\n      LIMIT $1\n    )\n  )\n  -- For legacy reasons (or whenever no transaction ID is\n  -- available) we need to also select unsorted\n  -- computations\n  UNION ALL\n  (\n    SELECT \n      tenant_id, \n      output_handle,\n      transaction_id,\n      NULL AS handle, \n      NULL AS is_computed\n    FROM computations \n    WHERE is_completed = FALSE\n      AND is_error = FALSE\n      AND transaction_id IS NULL  \n    ORDER BY schedule_order\n    LIMIT $1\n  )\n)\n-- Acquire all computations from this transaction set\nSELECT \n  c.tenant_id, \n  c.output_handle, \n  c.dependencies, \n  c.fhe_operation, \n  c.is_scalar,\n  sc.handle IS NOT NULL AS is_allowed, \n  c.dependence_chain_id,\n  COALESCE(c.transaction_id) AS transaction_id, \n  c.is_completed, \n  sc.is_computed\nFROM computations c\nJOIN selected_computations sc\n  ON c.tenant_id = sc.tenant_id\n  AND c.output_handle = sc.output_handle\n  AND (c.transaction_id = sc.transaction_id OR c.transaction_id IS NULL)\nFOR UPDATE SKIP LOCKED            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "output_handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "dependencies",
+        "type_info": "ByteaArray"
+      },
+      {
+        "ordinal": 3,
+        "name": "fhe_operation",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_scalar",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "is_allowed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 6,
+        "name": "dependence_chain_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 7,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 8,
+        "name": "is_completed",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 9,
+        "name": "is_computed",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      true,
+      null,
+      false,
+      null
+    ]
+  },
+  "hash": "3719428499a837d1b301d0d58a21d19dd6259f21f499d8a93c0ba55e90603441"
+}

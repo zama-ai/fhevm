@@ -1,0 +1,89 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT * FROM ciphertext_digest\n                                    WHERE handle = $2 AND tenant_id = $1 AND\n                                    (ciphertext128 IS NULL OR ciphertext IS NULL)\n                                    FOR UPDATE SKIP LOCKED",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "tenant_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "handle",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "ciphertext",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "ciphertext128",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 4,
+        "name": "txn_is_sent",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "txn_limited_retries_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 6,
+        "name": "txn_last_error",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "txn_last_error_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 8,
+        "name": "txn_unlimited_retries_count",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 9,
+        "name": "ciphertext128_format",
+        "type_info": "Int2"
+      },
+      {
+        "ordinal": 10,
+        "name": "txn_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 11,
+        "name": "txn_block_number",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+      true,
+      true
+    ]
+  },
+  "hash": "fd37e7dc679caa21ba22d7724a27409c232cceb719aa41a71e7faf44d2cb8ef9"
+}

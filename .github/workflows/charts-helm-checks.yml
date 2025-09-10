@@ -3,6 +3,8 @@ name: charts-helm-checks
 on:
   pull_request:
 
+permissions: {}
+
 env:
   HELM_VERSION: v3.16.4
 

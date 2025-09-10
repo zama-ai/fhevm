@@ -18,7 +18,7 @@ make get-accounts
 
 ## Summary
 
-Here's the complete list of environment variables used for deploying the fhevm gateway. More detailed information can be found in [this section](#in-details) below. Solidity types are defined in [Solidity's documentation](https://docs.soliditylang.org/en/latest/types.html).
+Here's the complete list of environment variables used for deploying the FHEVM gateway. More detailed information can be found in [this section](#in-details) below. Solidity types are defined in [Solidity's documentation](https://docs.soliditylang.org/en/latest/types.html).
 
 | Environment Variable                | Description                                  | Solidity Type | Default                                                                                             | Comment                                                                       |
 | ----------------------------------- | -------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
@@ -55,7 +55,7 @@ Here's the complete list of environment variables used for deploying the fhevm g
 
 ### GatewayConfig values
 
-These values are crucial for the fhevm Gateway protocol and are set in the `GatewayConfig` contract at deployment for most of them. To understand what each value is used for, please refer to the [GatewayConfig](../contracts/gateway_config.md) documentation.
+These values are crucial for the FHEVM Gateway protocol and are set in the `GatewayConfig` contract at deployment for most of them. To understand what each value is used for, please refer to the [GatewayConfig](../contracts/gateway_config.md) documentation.
 
 #### At deployment
 
@@ -89,7 +89,7 @@ USER_DECRYPTION_THRESHOLD="3" # (uint256)
 
 `PUBLIC_DECRYPTION_THRESHOLD` and `USER_DECRYPTION_THRESHOLD` must be non-null and less or equal to the number of KMS nodes registered below.
 
-In practice in the fhevm protocol, they are set to values using the following formulas:
+In practice in the FHEVM protocol, they are set to values using the following formulas:
 
 - public decryption threshold: `floor(n/2) + 1`
 - user decryption threshold: `2*t + 1`
@@ -128,7 +128,7 @@ COPROCESSOR_S3_BUCKET_URL_0="s3://bucket-1" # (string)
 
 #### After deployment
 
-The following values are set after deployment in a separate script. However, they are still necessary for the fhevm Gateway protocol to be fully functional.
+The following values are set after deployment in a separate script. However, they are still necessary for the FHEVM Gateway protocol to be fully functional.
 
 - Host chains:
 
@@ -209,7 +209,7 @@ This is the mnemonic used to generate the addresses and public keys of the deplo
 RPC_URL="http://127.0.0.1:8757" # (string)
 ```
 
-This is the URL of the RPC node for the fhevm gateway network.
+This is the URL of the RPC node for the FHEVM gateway network.
 
 #### After deploying contracts in production
 

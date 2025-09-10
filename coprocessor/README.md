@@ -22,9 +22,9 @@ _Learn more about FHEVM Coprocessor features in the [documentation](docs)._
     - [Dependencies](#dependences)
     - [Installation](#installation)
     - [Services Configuration](#services-configuration)
-      - [coprocessor](#coprocessor-1)
+      - [tfhe-worker](#tfhe-worker)
       - [cli](#cli)
-      - [fhevm-listener](#fhevm-listener)
+      - [host-listener](#host-listener)
       - [gw-listener](#gw-listener)
       - [sns-worker](#sns-worker)
       - [zkproof-worker](#zkproof-worker)
@@ -65,11 +65,11 @@ $ cargo install --path .
 
 #### Services Configuration
 
-##### coprocessor
+##### tfhe-worker
 
 ```bash
-$ coprocessor --help
-Usage: coprocessor [OPTIONS]
+$ tfhe_worker --help
+Usage: tfhe_worker [OPTIONS]
 
 Options:
       --run-server
@@ -122,11 +122,11 @@ Options:
 
 For more details on configuration, please check [Coprocessor Configuration](docs/getting_started/fhevm/coprocessor/configuration.md)
 
-##### fhevm-listener
+##### host-listener
 
 ```bash
-$ fhevm_listener --help
-Usage: fhevm_listener [OPTIONS]
+$ host_listener --help
+Usage: host_listener [OPTIONS]
 
 Options:
       --url <URL>                                      [default: ws://0.0.0.0:8746]

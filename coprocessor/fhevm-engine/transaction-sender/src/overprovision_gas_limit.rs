@@ -23,11 +23,16 @@ pub async fn try_overprovision_gas_limit<T: Provider<Ethereum>>(
         None => match provider.estimate_gas(txn.clone()).await {
             Ok(estimated_gas) => Some(estimated_gas),
             Err(err) => {
-                warn!(error = %err, gas_limit_overprovision_percent = percent, "Failed to estimate gas for overprovisioning, not setting gas limit for overprovisioning");
+                warn!(
+                    error = %err,
+                    gas_limit_overprovision_percent = percent,
+                    "Failed to estimate gas for overprovisioning, not setting gas limit"
+                );
                 None
             }
         },
-    }.map(overprovision);
+    }
+    .map(overprovision);
 
     if let Some(gas) = new_gas {
         debug!(

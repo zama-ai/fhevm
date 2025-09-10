@@ -179,7 +179,7 @@ impl EncryptedInputBuilder {
         }
 
         let address_bytes = hex::decode(address)
-            .map_err(|e| FhevmError::EncryptionError(format!("Invalid hex in address: {}", e)))?;
+            .map_err(|e| FhevmError::EncryptionError(format!("Invalid hex in address: {e}")))?;
 
         let mut padded_bytes = [0u8; 32];
 
@@ -194,7 +194,7 @@ impl EncryptedInputBuilder {
         self.check_limit(160)?;
         self.builder
             .push_with_num_bits(address_u160, 160)
-            .map_err(|e| FhevmError::EncryptionError(format!("Failed to push address: {}", e)))?;
+            .map_err(|e| FhevmError::EncryptionError(format!("Failed to push address: {e}")))?;
 
         self.bits.push(160);
         Ok(self)
@@ -250,11 +250,11 @@ impl EncryptedInputBuilder {
         let proven_compact_list = self
             .builder
             .build_with_proof_packed(&self.crs, metadata, ZkComputeLoad::Verify)
-            .map_err(|e| FhevmError::EncryptionError(format!("Failed to build proof: {}", e)))?;
+            .map_err(|e| FhevmError::EncryptionError(format!("Failed to build proof: {e}")))?;
 
         let mut buffer = Vec::new();
         safe_serialize(&proven_compact_list, &mut buffer, 1 << 20)
-            .map_err(|e| FhevmError::EncryptionError(format!("Failed to serialize: {}", e)))?;
+            .map_err(|e| FhevmError::EncryptionError(format!("Failed to serialize: {e}")))?;
 
         Ok(buffer)
     }
@@ -337,8 +337,7 @@ impl EncryptedInputBuilder {
                     256 => 8, // euint256
                     _ => {
                         return Err(FhevmError::InvalidParams(format!(
-                            "Unsupported bit width: {}",
-                            bit_width
+                            "Unsupported bit width: {bit_width}"
                         )));
                     }
                 };
@@ -614,8 +613,7 @@ mod tests {
         for (i, handle) in encrypted_input.handles.iter().enumerate() {
             assert_eq!(
                 handle[30], expected_types[i],
-                "Encryption type for value {} is incorrect",
-                i
+                "Encryption type for value {i} is incorrect"
             );
         }
     }

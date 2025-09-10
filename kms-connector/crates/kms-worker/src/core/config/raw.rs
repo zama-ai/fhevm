@@ -2,8 +2,15 @@
 //!
 //! The `RawConfig` can then be parsed into a `Config` in the `parsed` module.
 
-use connector_utils::config::{DeserializeRawConfig, RawContractConfig};
+use config::{Config as ConfigBuilder, Environment, File, FileFormat};
+use connector_utils::{
+    config::{DeserializeRawConfig, RawContractConfig, Result, default_database_pool_size},
+    monitoring::{health::default_healthcheck_timeout_secs, server::default_monitoring_endpoint},
+    tasks::default_task_limit,
+};
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+use tracing::info;
 
 /// Configuration for S3 ciphertext storage.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
@@ -22,8 +29,11 @@ pub struct RawConfig {
     pub database_url: String,
     #[serde(default = "default_database_pool_size")]
     pub database_pool_size: u32,
+    #[serde(default = "default_database_polling_timeout_secs")]
+    pub database_polling_timeout_secs: u64,
     pub gateway_url: String,
-    pub kms_core_endpoint: String,
+    pub kms_core_endpoints: Vec<String>,
+    pub kms_core_endpoint: Option<String>,
     pub chain_id: u64,
     pub decryption_contract: RawContractConfig,
     pub gateway_config_contract: RawContractConfig,
@@ -45,16 +55,20 @@ pub struct RawConfig {
     pub s3_ciphertext_retrieval_retries: u8,
     #[serde(default = "default_s3_connect_timeout")]
     pub s3_connect_timeout: u64,
-    #[serde(default = "default_verify_coprocessors")]
-    pub verify_coprocessors: bool,
+    #[serde(default = "default_task_limit")]
+    pub task_limit: usize,
+    #[serde(default = "default_monitoring_endpoint")]
+    pub monitoring_endpoint: String,
+    #[serde(default = "default_healthcheck_timeout_secs")]
+    pub healthcheck_timeout_secs: u64,
 }
 
 fn default_service_name() -> String {
-    "kms-connector".to_string()
+    "kms-connector-kms-worker".to_string()
 }
 
-fn default_database_pool_size() -> u32 {
-    16
+fn default_database_polling_timeout_secs() -> u64 {
+    5
 }
 
 fn default_events_batch_size() -> u8 {
@@ -85,11 +99,36 @@ fn default_s3_connect_timeout() -> u64 {
     2 // 2 seconds
 }
 
-fn default_verify_coprocessors() -> bool {
-    false
-}
+impl DeserializeRawConfig for RawConfig {
+    fn from_env_and_file<P: AsRef<Path>>(path: Option<P>) -> Result<Self>
+    where
+        for<'a> Self: Sized + Deserialize<'a>,
+    {
+        let mut builder = ConfigBuilder::builder();
 
-impl DeserializeRawConfig for RawConfig {}
+        // If path is provided, add it as a config source
+        if let Some(path) = path {
+            builder = builder.add_source(
+                File::with_name(path.as_ref().to_str().unwrap()).format(FileFormat::Toml),
+            );
+        }
+
+        // Add environment variables last so they take precedence
+        info!("Adding environment variables with prefix KMS_CONNECTOR_");
+        builder = builder.add_source(
+            Environment::with_prefix("KMS_CONNECTOR")
+                .prefix_separator("_")
+                .separator("__")
+                .list_separator(",")
+                .with_list_parse_key("kms_core_endpoints")
+                .try_parsing(true),
+        );
+
+        let settings = builder.build()?;
+        let config = settings.try_deserialize()?;
+        Ok(config)
+    }
+}
 
 // Default implementation for testing purpose
 impl Default for RawConfig {
@@ -97,8 +136,10 @@ impl Default for RawConfig {
         Self {
             database_url: "postgres://postgres:postgres@localhost".to_string(),
             database_pool_size: 16,
+            database_polling_timeout_secs: default_database_polling_timeout_secs(),
             gateway_url: "ws://localhost:8545".to_string(),
-            kms_core_endpoint: "http://localhost:50052".to_string(),
+            kms_core_endpoints: vec!["http://localhost:50052".to_string()],
+            kms_core_endpoint: None,
             chain_id: 1,
             decryption_contract: RawContractConfig {
                 address: "0x0000000000000000000000000000000000000000".to_string(),
@@ -119,7 +160,9 @@ impl Default for RawConfig {
             s3_ciphertext_retrieval_retries: 3,
             s3_connect_timeout: 2,
             s3_config: None,
-            verify_coprocessors: false,
+            task_limit: default_task_limit(),
+            monitoring_endpoint: default_monitoring_endpoint(),
+            healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
         }
     }
 }

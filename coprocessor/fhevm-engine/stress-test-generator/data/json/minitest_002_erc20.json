@@ -1,0 +1,17 @@
+[
+    {
+        "transaction": "ERC20Transfer",
+        "variant": "NoCMUX",
+        "kind": "Count",
+        "inputs": "ReuseInputs",
+        "is_dependent": "Independent",
+        "contract_address": "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08",
+        "user_address": "0xa0534e99d86F081E8D3868A8C4732C8f65dfdB07",
+        "scenario": [
+            [
+                10.0,
+                2
+            ]
+        ]
+    }
+]

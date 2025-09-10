@@ -6,14 +6,21 @@ license.workspace = true
 publish.workspace = true
 version.workspace = true
 
-[dependencies]
-connector-utils.workspace = true
-fhevm_gateway_rust_bindings.workspace = true
+[[test]]
+name = "connector-tests"
+path = "lib.rs"
 
-alloy = { workspace = true, features = ["node-bindings"] }
+[dependencies]
+gw-listener.workspace = true
+kms-worker.workspace = true
+tx-sender.workspace = true
+connector-utils = { workspace = true, features = ["tests"] }
+
+alloy.workspace = true
 anyhow.workspace = true
-rand.workspace = true
-sqlx = { workspace = true, features = ["migrate"] }
-testcontainers.workspace = true
+rstest.workspace = true
+sqlx.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
 tracing.workspace = true
-tracing-subscriber.workspace= true

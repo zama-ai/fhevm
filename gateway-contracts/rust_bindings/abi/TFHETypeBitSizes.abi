@@ -1,1 +1,0 @@
-[{"inputs":[{"internalType":"uint8","name":"tfheType","type":"uint8"}],"name":"InvalidTFHEType","type":"error"}]

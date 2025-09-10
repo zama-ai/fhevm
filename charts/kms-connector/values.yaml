@@ -1,95 +1,213 @@
-# Configuration for the KMS peers
-# This is used to define the number of peers and their IDs
-kmsPeers:
-  # Defines either the peer ID when count=1 or the start ID of a set of peers when count>1
-  id: 1
-  # The number of peers managed by the StatefulSets
-  count: 1
-
-# Configuration for the KMS connector
-# This is used to define the connector configuration
-kmsConnector:
-  # Add the following to enable the connector:
-  enabled: true
-  # Override the name of the connector:
-  nameOverride:
-  # Override the image of the connector:
-  image:
-    name: ghcr.io/zama-ai/kms-connector
-    # Override the tag of the connector:
-    tag: latest
-  kmsCore:
-    name: kms-threshold-staging
-    clientPort: 50100
-    # Optional endpoint URL (replace use of the above variables abovse if set)
-    endpoint: ""
-  # Define all the environment variable needed for the connector:
+commonConfig:
+  databaseUrl: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/connector"
+  gatewayUrl: "ws://gateway-anvil-node:8546"
+  chainId: "54321"
+  gatewayContractAddresses:
+    decryption: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
+    gatewayConfig: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
+    kmsManagement: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+  tracing:
+    enabled: false
+    endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
   env:
-    - name: PROBE
-      value: "true"
-    - name: KMS_CONNECTOR_GATEWAY_URL
-      value: "ws://gateway-node:8546"
-    - name: KMS_CONNECTOR_CHAIN_ID
-      value: "54321"
-    - name: KMS_CONNECTOR_DECRYPTION_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: kms-sc-deploy-kms-sc-addresses
-          key: DECRYPTION_CONTRACT_ADDRESS
-    - name: KMS_CONNECTOR_GATEWAY_CONFIG_ADDRESS
-      valueFrom:
-        configMapKeyRef:
-          name: kms-sc-deploy-kms-sc-addresses
-          key: GATEWAY_CONFIG_CONTRACT_ADDRESS
-    - name: KMS_CONNECTOR_CHANNEL_SIZE
-      value: "1000"
-    - name: KMS_CONNECTOR_SERVICE_NAME
-      value: "kms-connector"
-    - name: KMS_CONNECTOR_PUBLIC_DECRYPTION_TIMEOUT_SECS
-      value: "300"
-    - name: KMS_CONNECTOR_USER_DECRYPTION_TIMEOUT_SECS
-      value: "300"
-    - name: KMS_CONNECTOR_RETRY_INTERVAL_SECS
-      value: "5"
-    - name: KMS_CONNECTOR_S3_CONFIG__REGION
-      value: "us-east-1"
-    - name: KMS_CONNECTOR_S3_CONFIG__BUCKET
-      value: "my-ciphertext-bucket"
-    - name: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
-      value: "http://localhost:9876"
-    - name: KMS_CONNECTOR_VERIFY_COPROCESSORS
-      value: "true"
-    - name: KMS_CONNECTOR_PRIVATE_KEY
-      value: "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
-  # Define the storage for the connector:
+# E.g. Database configuration from secret
+#    - name: DATABASE_ENDPOINT
+#      valueFrom:
+#        secretKeyRef:
+#          name: connector-database
+#          key: endpoint
+#    - name: DATABASE_USERNAME
+#      valueFrom:
+#        secretKeyRef:
+#          name: connector-database
+#          key: username
+#    - name: DATABASE_PASSWORD
+#      valueFrom:
+#        secretKeyRef:
+#          name: connector-database
+#          key: password
+
+kmsConnectorDbMigration:
+  enabled: true
+  annotations:
+  image:
+    name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration
+    tag: v0.8.0
+  command:
+    - "sqlx"
+    - "migrate"
+    - "run"
+    - "--source"
+    - "/migrations"
+  env:
+  serviceAccountName:
+  # Size of the non-persistent volume.
   storage:
-    storageClassName: gp3
-    capacity: 5Gi
-  # Additional labels for the connector:
-  labels: {}
-  # Additional annotations for the connector:
-  annotations: {}
-  # Define the node selector for the connector:
+    size: 2Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   nodeSelector:
-  # Define the affinity for the connector:
   affinity:
-  # Define the tolerations for the connector:
   tolerations:
 
+kmsConnectorGwListener:
+  enabled: true
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener
+    tag: v0.8.0
+  replicas: 1
+  config:
+    # Override commonConfig.gatewayUrl
+    gatewayUrl:
+  env:
+  tracing:
+    enabled: false
+  ports:
+    monitoring: 9100
+  serviceMonitor:
+    enabled: false
+  serviceAccountName:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  probes:
+    liveness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: monitoring
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: monitoring
+      initialDelaySeconds: 5
+      periodSeconds: 10
+  nodeSelector:
+  affinity:
+  tolerations:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
-runMode: dev
+kmsConnectorKmsWorker:
+  enabled: true
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker
+    tag: v0.8.0
+  replicas: 1
+  config:
+    kmsCoreEndpoints: "http://kms-core:50051"
+    # Override commonConfig.gatewayUrl
+    gatewayUrl:
+  env:
+  tracing:
+    enabled: false
+  ports:
+    monitoring: 9100
+  serviceMonitor:
+    enabled: false
+  serviceAccountName:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  probes:
+    liveness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: monitoring
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: monitoring
+      initialDelaySeconds: 5
+      periodSeconds: 10
+  nodeSelector:
+  affinity:
+  tolerations:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
-rustLog: info
+kmsConnectorTxSender:
+  enabled: true
+  nameOverride:
+  image:
+    name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender
+    tag: v0.8.0
+  replicas: 1
+  config:
+    # Override commonConfig.gatewayUrl
+    gatewayUrl:
+  env:
+  wallet:
+    secret:
+      name: kms-connector-tx-sender
+      key: kms-wallet
+  tracing:
+    enabled: true
+  ports:
+    monitoring: 9100
+  serviceMonitor:
+    enabled: false
+  serviceAccountName:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  probes:
+    liveness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: monitoring
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    readiness:
+      enabled: true
+      httpGet:
+        path: /healthz
+        port: monitoring
+      initialDelaySeconds: 5
+      periodSeconds: 10
+  nodeSelector:
+  affinity:
+  tolerations:
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
 
-podSecurityContext:
-  # To set when the image will support non root user
-  #  runAsUser: 1000
-  #  runAsGroup: 1000
-  #  fsGroup: 1000
-  #  runAsNonRoot: true
-  allowPrivilegeEscalation: false
-  readOnlyRootFilesystem: true
-  capabilities:
-    drop:
-      - ALL
-  privileged: false
+# Set Pod Annotations, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+podAnnotations: {}
+# Set Pod Labels, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+podLabels: {}

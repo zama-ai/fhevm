@@ -45,7 +45,7 @@ spec:
       containers:
         - name: coprocessor-host-listener
           image: {{ .Values.hostListener.image.name }}:{{ .Values.hostListener.image.tag }}
-          command: ["fhevm_listener"]
+          command: ["host_listener"]
           args:
 {{ toYaml .Values.hostListener.args | nindent 12 }}
           env:

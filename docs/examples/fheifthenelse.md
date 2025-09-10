@@ -1,4 +1,4 @@
-This example demonstrates how to a simple contract with conditions using FHEVM, in comparison to a simple counter.
+This example demonstrates how to write a simple contract with conditions using FHEVM, in comparison to a simple counter.
 
 {% hint style="info" %}
 To run this example correctly, make sure the files are placed in the following directories:

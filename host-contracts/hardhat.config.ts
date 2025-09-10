@@ -3,14 +3,14 @@ import '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
 import 'hardhat-deploy';
 import 'hardhat-ignore-warnings';
-import type { HardhatUserConfig, extendProvider } from 'hardhat/config';
+import { type HardhatUserConfig, extendProvider } from 'hardhat/config';
 import { task } from 'hardhat/config';
 import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 
 import CustomProvider from './CustomProvider';
 import './tasks/accounts';
-import './tasks/etherscanVerify';
+import './tasks/blockExplorerVerify';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';
@@ -135,21 +135,7 @@ const config: HardhatUserConfig = {
     },
   },
   etherscan: {
-    apiKey: {
-      mainnet: process.env.ETHERSCAN_API_KEY!,
-      sepolia: process.env.ETHERSCAN_API_KEY!,
-      zwsDev: 'empty',
-    },
-    customChains: [
-      {
-        network: 'zwsDev',
-        chainId: 1337,
-        urls: {
-          apiURL: 'http://l1-blockscout-zws-dev-blockscout-stack-blockscout-svc/api',
-          browserURL: 'https://l1-explorer-zws-dev.diplodocus-boa.ts.net',
-        },
-      },
-    ],
+    apiKey: process.env.ETHERSCAN_API_KEY!,
   },
   warnings: {
     '*': {

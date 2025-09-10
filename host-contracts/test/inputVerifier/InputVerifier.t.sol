@@ -7,9 +7,12 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {InputVerifier} from "../../contracts/InputVerifier.sol";
-import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
+import {ACL} from "../../contracts/ACL.sol";
+import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
+import {ACLChecks} from "../../contracts/shared/ACLChecks.sol";
+import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract InputVerifierTest is Test {
     InputVerifier internal inputVerifier;
@@ -64,7 +67,8 @@ contract InputVerifierTest is Test {
         bytes32[] memory handlesList,
         address userAddress,
         address contractAddress,
-        uint256 chainId
+        uint256 chainId,
+        bytes memory extraData
     ) internal view returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
@@ -72,7 +76,8 @@ contract InputVerifierTest is Test {
                 keccak256(abi.encodePacked(handlesList)),
                 userAddress,
                 contractAddress,
-                chainId
+                chainId,
+                keccak256(abi.encodePacked(extraData))
             )
         );
 
@@ -113,6 +118,21 @@ contract InputVerifierTest is Test {
         proxy = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
             abi.encodeCall(EmptyUUPSProxy.initialize, owner)
+        );
+    }
+
+    /**
+     * @dev Internal function to deploy and etch ACL contract at expected constant address.
+     * Also stores `owner` as ACL's owner, this is needed for ownership of core contracts.
+     */
+    function _deployAndEtchACL() internal {
+        address _acl = address(new ACL());
+        bytes memory code = _acl.code;
+        vm.etch(aclAdd, code);
+        vm.store(
+            aclAdd,
+            0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300, // OwnableStorageLocation
+            bytes32(uint256(uint160(owner)))
         );
     }
 
@@ -220,12 +240,14 @@ contract InputVerifierTest is Test {
      */
     function _computeInputProof(
         bytes32[] memory handles,
-        bytes[] memory signatures
+        bytes[] memory signatures,
+        bytes memory extraData
     ) internal pure returns (bytes memory inputProof) {
         inputProof = abi.encodePacked(uint8(handles.length), uint8(signatures.length), handles);
         for (uint256 i = 0; i < signatures.length; i++) {
             inputProof = abi.encodePacked(inputProof, signatures[i]);
         }
+        inputProof = abi.encodePacked(inputProof, extraData);
     }
 
     /**
@@ -235,6 +257,7 @@ contract InputVerifierTest is Test {
      * @param contractAddress Contract's address.
      * @param signers Signers' addresses.
      * @param chainId Blockchain network ID.
+     * @param extraData Generic bytes metadata for versioned payloads.
      * @return signatures Array of generated signatures.
      */
     function _generateSignatures(
@@ -242,13 +265,14 @@ contract InputVerifierTest is Test {
         address userAddress,
         address contractAddress,
         address[] memory signers,
-        uint256 chainId
+        uint256 chainId,
+        bytes memory extraData
     ) internal view returns (bytes[] memory signatures) {
         signatures = new bytes[](signers.length);
         for (uint256 i = 0; i < signers.length; i++) {
             /// @dev The signer address must have its private key in the mapping.
             assert(signerPrivateKeys[signers[i]] != 0);
-            bytes32 digest = _computeDigest(handles, userAddress, contractAddress, chainId);
+            bytes32 digest = _computeDigest(handles, userAddress, contractAddress, chainId, extraData);
             signatures[i] = _computeSignature(signerPrivateKeys[signers[i]], digest);
         }
     }
@@ -261,6 +285,7 @@ contract InputVerifierTest is Test {
      * @param userAddress User's address.
      * @param contractAddress Contract's address.
      * @param chainId Blockchain ID.
+     * @param extraData Generic bytes metadata for versioned payloads.
      * @param handleVersion Handle version.
      * @param signers Signers' addresses.
      *
@@ -276,6 +301,7 @@ contract InputVerifierTest is Test {
         address userAddress,
         address contractAddress,
         uint256 chainId,
+        bytes memory extraData,
         uint8 handleVersion,
         address[] memory signers
     )
@@ -293,8 +319,15 @@ contract InputVerifierTest is Test {
         /// @dev The first handle is used as the input handle for mock purposes.
         mockInputHandle = handles[0];
 
-        bytes[] memory signatures = _generateSignatures(handles, userAddress, contractAddress, signers, chainId);
-        inputProof = _computeInputProof(handles, signatures);
+        bytes[] memory signatures = _generateSignatures(
+            handles,
+            userAddress,
+            contractAddress,
+            signers,
+            chainId,
+            extraData
+        );
+        inputProof = _computeInputProof(handles, signatures, extraData);
 
         context.userAddress = userAddress;
         context.contractAddress = contractAddress;
@@ -332,6 +365,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 chainId,
+                hex"00",
                 handleVersion,
                 signers
             );
@@ -373,6 +407,7 @@ contract InputVerifierTest is Test {
     function setUp() public {
         _deployProxy();
         _initializeSigners();
+        _deployAndEtchACL();
     }
 
     /**
@@ -381,7 +416,7 @@ contract InputVerifierTest is Test {
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxyWithSigners(3);
         assertEq(inputVerifier.owner(), owner);
-        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.1.0")));
+        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.2.0")));
     }
 
     /**
@@ -460,6 +495,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(3);
         address userAddress = address(1111);
         address contractAddress = address(2222);
+        bytes memory extraData = hex"00";
         bytes32[] memory cleartextValues = new bytes32[](1);
         FheType[] memory fheTypes = new FheType[](1);
         fheTypes[0] = FheType.Uint64;
@@ -475,6 +511,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 block.chainid,
+                extraData,
                 HANDLE_VERSION,
                 activeSigners
             );
@@ -490,6 +527,7 @@ contract InputVerifierTest is Test {
 
         address userAddress = address(1111);
         address contractAddress = address(2222);
+        bytes memory extraData = hex"00";
 
         bytes32[] memory cleartextValues = new bytes32[](2);
         FheType[] memory fheTypes = new FheType[](2);
@@ -509,6 +547,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 block.chainid,
+                extraData,
                 HANDLE_VERSION,
                 activeSigners
             );
@@ -569,6 +608,7 @@ contract InputVerifierTest is Test {
         vm.expectRevert(InputVerifier.InvalidIndex.selector);
         inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
     }
+
     /**
      * @dev Tests that the verifyCiphertext function fails if the index is invalid since it is greater than 254.
      */
@@ -635,7 +675,7 @@ contract InputVerifierTest is Test {
     /**
      * @dev Tests that the verifyCiphertext function fails if the length of the input proof is invalid.
      */
-    function test_VerifyCiphertextFailsIfDeserializingInputProofFail(uint256 randomValue) public {
+    function test_VerifyCiphertextFailsIfDeserializingInputProofFail() public {
         _upgradeProxyWithSigners(3);
 
         (
@@ -644,11 +684,14 @@ contract InputVerifierTest is Test {
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
 
-        /// @dev We increase the length of the input proof by adding a random value at the end.
-        inputProof = abi.encodePacked(inputProof, randomValue);
+        /// @dev We truncate the length of the input proof to make it incomplete.
+        bytes memory truncatedInputProof = new bytes(10);
+        for (uint256 i = 0; i < 10; i++) {
+            truncatedInputProof[i] = inputProof[i];
+        }
 
         vm.expectRevert(InputVerifier.DeserializingInputProofFail.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyCiphertext(context, mockInputHandle, truncatedInputProof);
     }
 
     /**
@@ -678,6 +721,7 @@ contract InputVerifierTest is Test {
         address userAddress = address(1111);
         address contractAddress = address(2222);
         uint64 initialCleartextValue = 123456789;
+        bytes memory extraData = hex"00";
 
         FheType[] memory fheTypes = new FheType[](1);
         bytes32[] memory cleartextValues = new bytes32[](1);
@@ -690,6 +734,7 @@ contract InputVerifierTest is Test {
             userAddress,
             contractAddress,
             block.chainid,
+            extraData,
             HANDLE_VERSION,
             activeSigners
         );
@@ -703,6 +748,7 @@ contract InputVerifierTest is Test {
             userAddress,
             contractAddress,
             block.chainid,
+            extraData,
             HANDLE_VERSION,
             activeSigners
         );
@@ -719,6 +765,7 @@ contract InputVerifierTest is Test {
         address userAddress = address(1111);
         address contractAddress = address(2222);
         uint64 initialCleartextValue = 123456789;
+        bytes memory extraData = hex"00";
 
         FheType[] memory fheTypes = new FheType[](1);
         bytes32[] memory cleartextValues = new bytes32[](1);
@@ -735,6 +782,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 block.chainid,
+                extraData,
                 HANDLE_VERSION,
                 activeSigners
             );
@@ -750,6 +798,7 @@ contract InputVerifierTest is Test {
             userAddress,
             contractAddress,
             block.chainid,
+            extraData,
             HANDLE_VERSION,
             activeSigners
         );
@@ -854,7 +903,7 @@ contract InputVerifierTest is Test {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
         this.upgrade(randomAccount);
     }
 
@@ -870,7 +919,7 @@ contract InputVerifierTest is Test {
     function test_OnlyOwnerCanAddSigner(address randomAccount) public {
         _upgradeProxyWithSigners(3);
         vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
         vm.prank(randomAccount);
         inputVerifier.addSigner(randomAccount);
     }
@@ -881,7 +930,7 @@ contract InputVerifierTest is Test {
     function test_OnlyOwnerCanRemoveSigner(address randomAccount) public {
         _upgradeProxyWithSigners(3);
         vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
         vm.prank(randomAccount);
         inputVerifier.removeSigner(randomAccount);
     }

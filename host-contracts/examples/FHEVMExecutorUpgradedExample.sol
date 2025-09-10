@@ -12,7 +12,7 @@ contract FHEVMExecutorUpgradedExample is FHEVMExecutor {
 
     /// @dev Version numbers
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice Returns the full version string of the contract

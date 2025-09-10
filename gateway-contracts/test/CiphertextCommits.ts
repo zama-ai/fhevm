@@ -125,7 +125,7 @@ describe("CiphertextCommits", function () {
         ]);
     });
 
-    it("Should ignore other valid calls", async function () {
+    it("Should add a ciphertext material with 2 valid calls and ignore the other valid one", async function () {
       // Trigger 3 valid add ciphertext material calls
       const resultTx1 = await ciphertextCommits
         .connect(coprocessorTxSenders[0])
@@ -178,6 +178,44 @@ describe("CiphertextCommits", function () {
         ]);
     });
 
+    it("Should get all valid coprocessor transaction senders from add ciphertext material consensus", async function () {
+      // Trigger a valid add ciphertext material call using the first coprocessor transaction sender
+      await ciphertextCommits
+        .connect(coprocessorTxSenders[0])
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+
+      // Check that the coprocessor transaction senders list is empty because consensus is not reached yet
+      const addCiphertextMaterialConsensusTxSenders1 =
+        await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle);
+      expect(addCiphertextMaterialConsensusTxSenders1).to.deep.equal([]);
+
+      // Trigger a valid add ciphertext material call using the second coprocessor transaction sender
+      await ciphertextCommits
+        .connect(coprocessorTxSenders[1])
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+
+      const expectedCoprocessorTxSenders2 = coprocessorTxSenders.slice(0, 2).map((s) => s.address);
+
+      // Check that the coprocessor transaction senders that were involved in the consensus are the
+      // 2 coprocessor transaction senders, at the moment the consensus is reached
+      const addCiphertextMaterialConsensusTxSenders2 =
+        await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle);
+      expect(addCiphertextMaterialConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
+
+      // Trigger a valid add ciphertext material call using the third coprocessor transaction sender
+      await ciphertextCommits
+        .connect(coprocessorTxSenders[2])
+        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
+
+      const expectedCoprocessorTxSenders3 = coprocessorTxSenders.map((s) => s.address);
+
+      // Check that the coprocessor transaction senders that were involved in the consensus are the
+      // 3 coprocessor transaction senders, after the consensus is reached
+      const addCiphertextMaterialConsensusTxSenders3 =
+        await ciphertextCommits.getAddCiphertextMaterialConsensusTxSenders(ctHandle);
+      expect(addCiphertextMaterialConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
+    });
+
     it("Should revert because the transaction sender is not a coprocessor", async function () {
       await expect(
         ciphertextCommits
@@ -202,18 +240,6 @@ describe("CiphertextCommits", function () {
       )
         .revertedWithCustomError(ciphertextCommits, "CoprocessorAlreadyAdded")
         .withArgs(ctHandle, coprocessorTxSenders[0]);
-    });
-
-    it("Should revert because the contract is paused", async function () {
-      // Pause the contract
-      await ciphertextCommits.connect(owner).pause();
-
-      // Try calling paused add ciphertext material
-      await expect(
-        ciphertextCommits
-          .connect(coprocessorTxSenders[0])
-          .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
-      ).to.be.revertedWithCustomError(ciphertextCommits, "EnforcedPause");
     });
 
     // TODO: Add test checking `checkCurrentKeyId` once keys are generated through the Gateway
@@ -325,12 +351,12 @@ describe("CiphertextCommits", function () {
   });
 
   describe("Pause", async function () {
-    it("Should pause and unpause contract with owner address", async function () {
+    it("Should pause the contract with the pauser and unpause with the owner", async function () {
       // Check that the contract is not paused
       expect(await ciphertextCommits.paused()).to.be.false;
 
-      // Pause the contract with the owner address
-      await expect(ciphertextCommits.connect(owner).pause()).to.emit(ciphertextCommits, "Paused").withArgs(owner);
+      // Pause the contract with the pauser address
+      await expect(ciphertextCommits.connect(pauser).pause()).to.emit(ciphertextCommits, "Paused").withArgs(pauser);
       expect(await ciphertextCommits.paused()).to.be.true;
 
       // Unpause the contract with the owner address
@@ -338,21 +364,23 @@ describe("CiphertextCommits", function () {
       expect(await ciphertextCommits.paused()).to.be.false;
     });
 
-    it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
-      expect(await ciphertextCommits.paused()).to.be.false;
+    it("Should revert on pause because sender is not the pauser", async function () {
+      const fakePauser = createRandomWallet();
 
-      // Pause the contract with the pauser address
-      await expect(ciphertextCommits.connect(pauser).pause()).to.emit(ciphertextCommits, "Paused").withArgs(pauser);
-      expect(await ciphertextCommits.paused()).to.be.true;
+      await expect(ciphertextCommits.connect(fakePauser).pause())
+        .to.be.revertedWithCustomError(ciphertextCommits, "NotPauserOrGatewayConfig")
+        .withArgs(fakePauser.address);
     });
 
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
+    it("Should revert on unpause because sender is not the owner", async function () {
+      // Pause the contract with the pauser address
+      await ciphertextCommits.connect(pauser).pause();
 
-      await expect(ciphertextCommits.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(ciphertextCommits, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
+      const fakeOwner = createRandomWallet();
+
+      await expect(ciphertextCommits.connect(fakeOwner).unpause())
+        .to.be.revertedWithCustomError(ciphertextCommits, "NotOwnerOrGatewayConfig")
+        .withArgs(fakeOwner.address);
     });
   });
 });
