@@ -119,72 +119,15 @@ async fn tfhe_worker_cycle(
         let mut s = tracer.start_with_context("query_work_items", &loop_ctx);
         #[cfg(feature = "bench")]
         let now = std::time::SystemTime::now();
-        let transactions_to_query = query!(
-            "
-      SELECT DISTINCT transaction_id 
-      FROM computations
-      WHERE is_error = FALSE
-        AND (tenant_id, output_handle) IN (
-          SELECT tenant_id, handle
-          FROM allowed_handles
-          WHERE is_computed = FALSE
-          ORDER BY schedule_order
-          LIMIT $1
-        )
-            ",
-            args.work_items_batch_size as i32,
-        )
-        .fetch_all(trx.as_mut())
-        .await
-        .map_err(|err| {
-            error!(target: "tfhe_worker", { error = %err }, "error while querying transactions");
-            err
-        })?;
-
         let the_work = query!(
             "
-WITH selected_computations AS (
-  -- Get all computations from such transactions
-  (
-    SELECT 
-      c.tenant_id, 
-      c.output_handle,
-      c.transaction_id,
-      ah.handle, 
-      ah.is_computed
-    FROM computations c
-    LEFT JOIN LATERAL (
-       SELECT ah.handle, ah.is_computed
-       FROM allowed_handles ah
-       WHERE c.output_handle = ah.handle
-         AND c.tenant_id = ah.tenant_id
-       LIMIT 1
-      ) ah ON TRUE
-    WHERE c.transaction_id = ANY($1::BYTEA[])
-    LIMIT $2
-  )
-)
--- Acquire all computations from this transaction set
-SELECT 
-  c.tenant_id, 
-  c.output_handle, 
-  c.dependencies, 
-  c.fhe_operation, 
-  c.is_scalar,
-  sc.handle IS NOT NULL AS is_allowed, 
-  c.dependence_chain_id,
-  COALESCE(sc.is_computed) AS is_computed,
-  c.transaction_id
-FROM computations c
-JOIN selected_computations sc
-  ON c.tenant_id = sc.tenant_id
-  AND c.output_handle = sc.output_handle
-  AND c.transaction_id = sc.transaction_id
-FOR UPDATE SKIP LOCKED            ",
-            &transactions_to_query
-                .into_iter()
-                .map(|t| t.transaction_id)
-                .collect::<Vec<_>>(),
+            SELECT tenant_id, output_handle, dependencies, fhe_operation, is_scalar, TRUE AS is_allowed, FALSE AS is_computed, transaction_id
+            FROM computations
+            WHERE is_completed = false
+            AND is_error = false
+            ORDER BY created_at
+            LIMIT $1
+            FOR UPDATE SKIP LOCKED            ",
             args.dependence_chains_per_batch as i32,
         )
         .fetch_all(trx.as_mut())
