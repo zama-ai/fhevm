@@ -1,4 +1,4 @@
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
 use alloy::{
     network::Ethereum,
@@ -67,18 +67,11 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> NonceManagedProv
         self.provider.get_transaction_count(address).await
     }
 
-    pub fn inner(&self) -> &P {
-        &self.provider
+    pub async fn get_block_number(&self) -> TransportResult<u64> {
+        self.provider.get_block_number().await
     }
-}
 
-impl<P> Deref for NonceManagedProvider<P>
-where
-    P: alloy::providers::Provider<Ethereum> + Clone + 'static,
-{
-    type Target = P;
-
-    fn deref(&self) -> &Self::Target {
+    pub fn inner(&self) -> &P {
         &self.provider
     }
 }

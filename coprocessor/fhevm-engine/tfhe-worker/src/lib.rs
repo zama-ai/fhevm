@@ -1,13 +1,18 @@
 use ::tracing::{error, info};
+use fhevm_engine_common::healthz_server;
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
 use fhevm_engine_common::telemetry;
+use tokio_util::sync::CancellationToken;
+
 use std::sync::Once;
 use tokio::task::JoinSet;
 
 pub mod daemon_cli;
 mod db_queries;
+pub mod health_check;
 pub mod metrics;
 pub mod server;
+
 #[cfg(test)]
 mod tests;
 pub mod tfhe_worker;
@@ -58,11 +63,17 @@ pub async fn async_main(
             .init();
     });
 
-    info!(target: "async_main", "Starting runtime with args: {:?}", args);
+    info!(target: "async_main", args = ?args, "Starting runtime with args");
 
     if let Err(err) = telemetry::setup_otlp(&args.service_name) {
         panic!("Error while initializing tracing: {:?}", err);
     }
+
+    let health_check = health_check::HealthCheck::new(
+        args.database_url
+            .clone()
+            .unwrap_or("no_database_url".to_string()),
+    );
 
     let mut set = JoinSet::new();
     if args.run_server {
@@ -72,7 +83,10 @@ pub async fn async_main(
 
     if args.run_bg_worker {
         info!(target: "async_main", "Initializing background worker");
-        set.spawn(tfhe_worker::run_tfhe_worker(args.clone()));
+        set.spawn(tfhe_worker::run_tfhe_worker(
+            args.clone(),
+            health_check.clone(),
+        ));
     }
 
     if !args.metrics_addr.is_empty() {
@@ -83,6 +97,17 @@ pub async fn async_main(
     if set.is_empty() {
         panic!("No tasks specified to run");
     }
+
+    info!(target: "async_main", "Start health check server");
+    let health_check_cancel_token = CancellationToken::new();
+    let health_check_server = healthz_server::HttpServer::new(
+        std::sync::Arc::new(health_check.clone()),
+        args.health_check_port,
+        health_check_cancel_token,
+    );
+    let Ok(()) = health_check_server.start().await else {
+        panic!("Failed to start health check server");
+    };
 
     while let Some(res) = set.join_next().await {
         if let Err(e) = res {

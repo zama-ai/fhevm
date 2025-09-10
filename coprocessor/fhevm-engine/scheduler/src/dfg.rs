@@ -4,7 +4,7 @@ pub mod types;
 use crate::dfg::types::*;
 use anyhow::Result;
 use daggy::petgraph::{
-    visit::{EdgeRef, IntoEdges, IntoEdgesDirected},
+    visit::{EdgeRef, IntoEdgesDirected},
     Direction,
 };
 use daggy::{petgraph::graph::node_index, Dag, NodeIndex};
@@ -150,7 +150,6 @@ impl DFGraph {
             }
         }
         // Prune graph of all unneeded nodes and edges
-        let edges = self.graph.map(|_, _| (), |_, edge| *edge);
         let mut unneeded_nodes = Vec::new();
         for index in 0..self.graph.node_count() {
             let node_index = NodeIndex::new(index);
@@ -169,9 +168,6 @@ impl DFGraph {
                 continue;
             };
             if !node.is_needed {
-                for edge in edges.edges(node_index) {
-                    self.graph.remove_edge(edge.id());
-                }
                 self.graph.remove_node(node_index);
             }
         }

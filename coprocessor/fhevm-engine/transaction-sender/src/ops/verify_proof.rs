@@ -1,4 +1,5 @@
 use super::TransactionOperation;
+use crate::metrics::{VERIFY_PROOF_FAIL_COUNTER, VERIFY_PROOF_SUCCESS_COUNTER};
 use crate::nonce_managed_provider::NonceManagedProvider;
 use crate::overprovision_gas_limit::try_overprovision_gas_limit;
 use crate::AbstractSigner;
@@ -22,6 +23,7 @@ sol! {
         address userAddress;
         address contractAddress;
         uint256 contractChainId;
+        bytes extraData;
     }
 }
 
@@ -121,7 +123,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         info!(zk_proof_id = txn_request.0, "Processing proof");
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request.1,
-            &*self.provider,
+            self.provider.inner(),
             self.conf.gas_limit_overprovision_percent,
         )
         .await;
@@ -155,6 +157,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                     self.remove_proof_by_id(txn_request.0).await?;
                     return Ok(());
                 } else {
+                    VERIFY_PROOF_FAIL_COUNTER.inc();
                     error!(
                         transaction_request = ?overprovisioned_txn_req,
                         error = %e,
@@ -181,6 +184,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         {
             Ok(receipt) => receipt,
             Err(e) => {
+                VERIFY_PROOF_FAIL_COUNTER.inc();
                 error!(error = %e, "Getting receipt failed");
                 self.update_retry_count_by_proof_id(
                     txn_request.0,
@@ -198,7 +202,9 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
                 "Transaction succeeded"
             );
             self.remove_proof_by_id(txn_request.0).await?;
+            VERIFY_PROOF_SUCCESS_COUNTER.inc();
         } else {
+            VERIFY_PROOF_FAIL_COUNTER.inc();
             error!(
                 transaction_hash = %receipt.transaction_hash,
                 status = receipt.status(),
@@ -236,7 +242,7 @@ where
             self.remove_proofs_by_retry_count().await?;
         }
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count
+            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data
              FROM verify_proofs
              WHERE verified IS NOT NULL AND retry_count < $1
              ORDER BY zk_proof_id
@@ -285,6 +291,7 @@ where
                             .parse()
                             .expect("invalid contract address"),
                         contractChainId: U256::from(row.chain_id),
+                        extraData: row.extra_data.clone().into(),
                     }
                     .eip712_signing_hash(&domain);
                     let signature = self.signer.sign_hash(&signing_hash).await?;
@@ -297,6 +304,7 @@ where
                                     U256::from(row.zk_proof_id),
                                     handles,
                                     signature.as_bytes().into(),
+                                    row.extra_data.into(),
                                 )
                                 .into_transaction_request()
                                 .with_gas_limit(gas),
@@ -309,6 +317,7 @@ where
                                     U256::from(row.zk_proof_id),
                                     handles,
                                     signature.as_bytes().into(),
+                                    row.extra_data.into(),
                                 )
                                 .into_transaction_request(),
                         )
@@ -320,7 +329,10 @@ where
                         (
                             row.zk_proof_id,
                             input_verification
-                                .rejectProofResponse(U256::from(row.zk_proof_id))
+                                .rejectProofResponse(
+                                    U256::from(row.zk_proof_id),
+                                    row.extra_data.into(),
+                                )
                                 .into_transaction_request()
                                 .with_gas_limit(gas),
                         )
@@ -328,7 +340,10 @@ where
                         (
                             row.zk_proof_id,
                             input_verification
-                                .rejectProofResponse(U256::from(row.zk_proof_id))
+                                .rejectProofResponse(
+                                    U256::from(row.zk_proof_id),
+                                    row.extra_data.into(),
+                                )
                                 .into_transaction_request(),
                         )
                     }
@@ -350,15 +365,5 @@ where
             res??;
         }
         Ok(maybe_has_more_work)
-    }
-
-    fn provider(&self) -> &P {
-        self.provider.inner()
-    }
-
-    async fn check_provider_connection(&self) -> anyhow::Result<()> {
-        // Simple check to verify the provider is connected
-        let _ = self.provider.get_block_number().await?;
-        Ok(())
     }
 }

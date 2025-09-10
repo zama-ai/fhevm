@@ -8,23 +8,23 @@ use tracing_subscriber::fmt::MakeWriter;
 ///
 /// Heavily inspired by the `tracing-subscriber::fmt::TestWriter`.
 pub struct CustomTestWriter {
-    log_tx: UnboundedSender<String>,
+    log_tx: UnboundedSender<Vec<u8>>,
 }
 
 impl CustomTestWriter {
-    pub fn new(log_tx: UnboundedSender<String>) -> Self {
+    pub fn new(log_tx: UnboundedSender<Vec<u8>>) -> Self {
         Self { log_tx }
     }
 }
 
 impl io::Write for CustomTestWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.log_tx
+            .send(buf.to_vec())
+            .expect("log channel was closed!");
+
         let out_str = String::from_utf8_lossy(buf);
         print!("{out_str}");
-
-        self.log_tx
-            .send(out_str.to_string())
-            .expect("log channel was closed!");
 
         Ok(buf.len())
     }

@@ -135,21 +135,7 @@ const config: HardhatUserConfig = {
     },
   },
   etherscan: {
-    apiKey: {
-      mainnet: process.env.ETHERSCAN_API_KEY!,
-      sepolia: process.env.ETHERSCAN_API_KEY!,
-      zwsDev: 'empty',
-    },
-    customChains: [
-      {
-        network: 'zwsDev',
-        chainId: 1337,
-        urls: {
-          apiURL: 'http://l1-blockscout-zws-dev-blockscout-stack-blockscout-svc/api',
-          browserURL: 'https://l1-explorer-zws-dev.diplodocus-boa.ts.net',
-        },
-      },
-    ],
+    apiKey: process.env.ETHERSCAN_API_KEY!,
   },
   warnings: {
     '*': {

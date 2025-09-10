@@ -49,8 +49,11 @@ on:
         type: string
   pull_request:
 
+permissions: {}
+
+# Allow to run multiple instances of the same workflow in parallel when triggered manually 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -99,24 +102,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_READ_TOKEN }}
 
+      - name: Login to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
       - name: Set version from release
         if: github.event_name == 'release'
         run: |
           {
-            echo "CONNECTOR_DB_MIGRATION_VERSION"=${{ github.ref_name }}
-            echo "CONNECTOR_GW_LISTENER_VERSION=${{ github.ref_name }}"
-            echo "CONNECTOR_KMS_WORKER_VERSION=${{ github.ref_name }}"
-            echo "CONNECTOR_TX_SENDER_VERSION=${{ github.ref_name }}"
-            echo "DB_MIGRATION_VERSION=${{ github.ref_name }}"
-            echo "GATEWAY_VERSION=${{ github.ref_name }}"
-            echo "HOST_VERSION=${{ github.ref_name }}"
-            echo "HOST_LISTENER_VERSION=${{ github.ref_name }}"
-            echo "GW_LISTENER_VERSION=${{ github.ref_name }}"
-            echo "TX_SENDER_VERSION=${{ github.ref_name }}"
-            echo "TFHE_WORKER_VERSION=${{ github.ref_name }}"
-            echo "SNS_WORKER_VERSION=${{ github.ref_name }}"
-            echo "ZKPROOF_WORKER_VERSION=${{ github.ref_name }}"
+            echo "CONNECTOR_DB_MIGRATION_VERSION=${GH_REF_NAME}"
+            echo "CONNECTOR_GW_LISTENER_VERSION=${GH_REF_NAME}"
+            echo "CONNECTOR_KMS_WORKER_VERSION=${GH_REF_NAME}"
+            echo "CONNECTOR_TX_SENDER_VERSION=${GH_REF_NAME}"
+            echo "DB_MIGRATION_VERSION=${GH_REF_NAME}"
+            echo "GATEWAY_VERSION=${GH_REF_NAME}"
+            echo "HOST_VERSION=${GH_REF_NAME}"
+            echo "HOST_LISTENER_VERSION=${GH_REF_NAME}"
+            echo "GW_LISTENER_VERSION=${GH_REF_NAME}"
+            echo "TX_SENDER_VERSION=${GH_REF_NAME}"
+            echo "TFHE_WORKER_VERSION=${GH_REF_NAME}"
+            echo "SNS_WORKER_VERSION=${GH_REF_NAME}"
+            echo "ZKPROOF_WORKER_VERSION=${GH_REF_NAME}"
           } >> "$GITHUB_ENV"
+        env:
+          GH_REF_NAME: ${{ github.ref_name }}
 
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
@@ -145,7 +157,7 @@ jobs:
       - name: Public Decryption test
         working-directory: test-suite/fhevm
         run: |
-          ./fhevm-cli test public-decryption
+          timeout 5m ./fhevm-cli test public-decryption
 
       - name: User Decryption test
         working-directory: test-suite/fhevm
@@ -179,6 +191,9 @@ jobs:
           echo "::endgroup::"
           echo "::group::Transaction Sender Logs (filtered)"
           ./fhevm-cli logs transaction-sender | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+          echo "::group::Host Listener"
+          ./fhevm-cli logs host-listener
           echo "::endgroup::"
 
       - name: Cleanup

@@ -186,6 +186,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     }
 
     /// @notice Reinitializes the contract with custodians.
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2(Custodian[] memory custodians) public virtual reinitializer(REINITIALIZER_VERSION) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 

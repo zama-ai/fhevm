@@ -4,3 +4,4 @@ cache
 types
 artifacts
 keypair.json
+decryption_cache

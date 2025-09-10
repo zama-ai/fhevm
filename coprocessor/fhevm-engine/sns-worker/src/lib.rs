@@ -14,12 +14,16 @@ use std::{
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
-    healthz_server::HttpServer, telemetry::OtelTracer, types::FhevmError, utils::compact_hex,
+    healthz_server::HttpServer,
+    telemetry::{self, OtelTracer},
+    types::FhevmError,
+    utils::compact_hex,
 };
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
+    spawn,
     sync::mpsc::{self, Sender},
     task,
 };
@@ -86,6 +90,24 @@ pub struct Config {
     pub log_level: Level,
     pub health_checks: HealthCheckConfig,
     pub enable_compression: bool,
+    pub schedule_policy: SchedulePolicy,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum SchedulePolicy {
+    Sequential,
+    #[default]
+    RayonParallel,
+}
+
+impl From<String> for SchedulePolicy {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "sequential" => SchedulePolicy::Sequential,
+            "rayon_parallel" => SchedulePolicy::RayonParallel,
+            _ => SchedulePolicy::default(),
+        }
+    }
 }
 
 /// Implement Display for Config
@@ -300,6 +322,9 @@ pub enum ExecutionError {
 
     #[error("S3 Transient error: {0}")]
     S3TransientError(String),
+
+    #[error("Internal send error: {0}")]
+    InternalSendError(String),
 }
 
 #[derive(Clone)]
@@ -323,7 +348,7 @@ impl UploadJob {
 }
 
 /// Runs the SnS worker loop
-pub async fn compute_128bit_ct(
+pub async fn run_computation_loop(
     conf: Config,
     tx: Sender<UploadJob>,
     token: CancellationToken,
@@ -340,7 +365,8 @@ pub async fn compute_128bit_ct(
         if let Err(err) = http_server.start().await {
             error!(
                 task = "health_check",
-                "Error while running server: {:?}", err
+                error = %err,
+                "Error while running server"
             );
         }
         anyhow::Ok(())
@@ -353,7 +379,7 @@ pub async fn compute_128bit_ct(
 }
 
 /// Runs the uploader loop
-pub async fn process_s3_uploads(
+pub async fn run_uploader_loop(
     conf: &Config,
     rx: mpsc::Receiver<UploadJob>,
     tx: Sender<UploadJob>,
@@ -361,7 +387,7 @@ pub async fn process_s3_uploads(
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!(target: "sns", "Uploader started with {:?}", conf.s3);
+    info!(target: "sns", conf = ?conf.s3, "Uploader started");
 
     aws_upload::process_s3_uploads(conf, rx, tx, token, client, is_ready).await?;
 
@@ -395,8 +421,52 @@ pub async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) 
     let client = Arc::new(Client::from_conf(config));
     let (is_ready, is_connected) = check_is_ready(&client, conf).await;
     if is_connected {
-        info!("Connected to S3, is_ready: {}", is_ready);
+        info!(is_ready = is_ready, "Connected to S3");
     }
 
     (client, is_ready)
+}
+
+/// Run all SNS worker components.
+pub async fn run_all(
+    config: Config,
+    parent_token: CancellationToken,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Queue of tasks to upload ciphertexts is 10 times the number of concurrent uploads
+    // to avoid blocking the worker
+    // and to allow for some burst of uploads
+    let (uploads_tx, uploads_rx) =
+        mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
+
+    if !config.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&config.service_name) {
+            panic!("Error while initializing tracing: {:?}", err);
+        }
+    }
+
+    let conf = config.clone();
+    let token = parent_token.child_token();
+    let tx = uploads_tx.clone();
+    // Initialize the S3 uploader
+    let (client, is_ready) = create_s3_client(&conf).await;
+    let is_ready = Arc::new(AtomicBool::new(is_ready));
+    let s3 = client.clone();
+
+    // Spawns a task to handle S3 uploads
+    spawn(async move {
+        if let Err(err) = run_uploader_loop(&conf, uploads_rx, tx, token, s3, is_ready).await {
+            error!(error = %err, "Failed to run the upload-worker");
+        }
+    });
+
+    // Run the main computation loop
+    // This will handle the PBS computations
+    let conf = config.clone();
+    let token = parent_token.child_token();
+
+    if let Err(err) = run_computation_loop(conf, uploads_tx, token, client).await {
+        error!(error = %err, "SnS worker failed");
+    }
+
+    Ok(())
 }

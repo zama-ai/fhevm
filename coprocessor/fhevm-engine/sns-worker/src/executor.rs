@@ -5,13 +5,15 @@ use crate::BigCiphertext;
 use crate::Ciphertext128Format;
 use crate::HandleItem;
 use crate::KeySet;
+use crate::SchedulePolicy;
 use crate::UploadJob;
-use crate::{Config, DBConfig, ExecutionError};
+use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::compact_hex;
+use rayon::prelude::*;
 use sqlx::postgres::PgListener;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::fmt;
@@ -19,11 +21,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
 use tfhe::set_server_key;
+use tfhe::ClientKey;
 use tokio::select;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
+use tracing::warn;
 use tracing::{debug, error, info};
 
 const RETRY_DB_CONN_INTERVAL: Duration = Duration::from_secs(5);
@@ -79,8 +83,8 @@ impl HealthCheckService for SwitchNSquashService {
             }
         }
 
-        status.set_custom_check("s3_buckets", is_s3_ready);
-        status.set_custom_check("s3_connection", is_s3_connected);
+        status.set_custom_check("s3_buckets", is_s3_ready, true);
+        status.set_custom_check("s3_connection", is_s3_connected, true);
 
         status
     }
@@ -155,14 +159,11 @@ pub(crate) async fn run_loop(
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
     let tenant_api_key = &conf.tenant_api_key;
-    let enable_compression = conf.enable_compression;
-    let conf = &conf.db;
-
     let mut listener = PgListener::connect_with(pool).await?;
     info!(target: "worker", "Connected to PostgresDB");
 
     listener
-        .listen_all(conf.listen_channels.iter().map(|v| v.as_str()))
+        .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
     let t = telemetry::tracer("worker_loop_init");
@@ -171,11 +172,11 @@ pub(crate) async fn run_loop(
     telemetry::end_span(s);
     t.end();
 
-    info!(target: "worker", "Fetched keyset for tenant {}", tenant_api_key);
+    info!(target: "worker", tenant_api_key = tenant_api_key, "Fetched keyset");
 
-    let mut gc_ticker = interval(conf.cleanup_interval);
+    let mut gc_ticker = interval(conf.db.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
-    let mut polling_ticker = interval(Duration::from_secs(conf.polling_interval.into()));
+    let mut polling_ticker = interval(Duration::from_secs(conf.db.polling_interval.into()));
 
     loop {
         // Continue looping until the service is cancelled or a critical error occurs
@@ -186,7 +187,7 @@ pub(crate) async fn run_loop(
             *value = SystemTime::now();
         }
 
-        match fetch_and_execute_sns_tasks(pool, tx, &keys, conf, enable_compression).await {
+        match fetch_and_execute_sns_tasks(pool, tx, &keys, conf, &token).await {
             Ok(maybe_remaining) => {
                 if maybe_remaining {
                     if token.is_cancelled() {
@@ -195,12 +196,12 @@ pub(crate) async fn run_loop(
 
                     info!(target: "worker", "more tasks to process, continuing");
                     if let Ok(elapsed) = gc_timestamp.elapsed() {
-                        if elapsed >= conf.cleanup_interval {
+                        if elapsed >= conf.db.cleanup_interval {
                             info!(target: "worker", "gc interval, cleaning up");
                             gc_ticker.reset();
                             gc_timestamp = SystemTime::now();
-                            if let Err(err) = garbage_collect(pool, conf.gc_batch_limit).await {
-                                error!(target: "worker", "Failed to garbage collect: {}", err);
+                            if let Err(err) = garbage_collect(pool, conf.db.gc_batch_limit).await {
+                                error!(target: "worker", error = %err, "Failed to garbage collect");
                             }
                         }
                     }
@@ -210,21 +211,21 @@ pub(crate) async fn run_loop(
             }
             Err(ExecutionError::DbError(err)) => match err {
                 sqlx::Error::PoolTimedOut | sqlx::Error::Io(_) | sqlx::Error::Tls(_) => {
-                    error!(target: "worker", "Transient DB error occurred: {err}");
+                    error!(target: "worker", error = %err, "Transient DB error occurred");
                 }
                 _ => {
                     tokio::time::sleep(RETRY_DB_CONN_INTERVAL).await;
                 }
             },
             Err(err) => {
-                error!(target: "worker", "Failed to process SnS tasks: {err}");
+                error!(target: "worker", error = %err, "Failed to process SnS tasks");
             }
         }
 
         select! {
             _ = token.cancelled() => return Ok(()),
             n = listener.try_recv() => {
-                info!(target: "worker", "Received notification {:?}", n);
+                info!(target: "worker", notification = ?n, "Received notification");
             },
             _ = polling_ticker.tick() => {
                 debug!(target: "worker", "Polling timeout, rechecking for tasks");
@@ -233,8 +234,8 @@ pub(crate) async fn run_loop(
             _ = gc_ticker.tick() => {
                 info!(target: "worker", "gc tick, on_idle");
                 gc_timestamp = SystemTime::now();
-                if let Err(err) = garbage_collect(pool, conf.gc_batch_limit).await {
-                    error!(target: "worker", "Failed to garbage collect: {}", err);
+                if let Err(err) = garbage_collect(pool, conf.db.gc_batch_limit).await {
+                    error!(target: "worker", error = %err, "Failed to garbage collect");
                 }
             }
         }
@@ -273,7 +274,7 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
     if rows_affected > 0 {
         let _s = telemetry::tracer_with_start_time("cleanup_ct128", start);
-        info!(target: "worker", "Cleaning up old ciphertexts128, rows_affected: {}", rows_affected);
+        info!(target: "worker", rows_affected = rows_affected, "Cleaning up old ciphertexts128");
     }
 
     Ok(())
@@ -284,34 +285,46 @@ async fn fetch_and_execute_sns_tasks(
     pool: &PgPool,
     tx: &Sender<UploadJob>,
     keys: &KeySet,
-    conf: &DBConfig,
-    enable_compression: bool,
+    conf: &Config,
+    token: &CancellationToken,
 ) -> Result<bool, ExecutionError> {
     let mut db_txn = match pool.begin().await {
         Ok(txn) => txn,
         Err(err) => {
-            error!(target: "worker", "Failed to begin transaction: {err}");
+            error!(target: "worker", error = %err, "Failed to begin transaction");
             return Err(err.into());
         }
     };
 
-    let order = if conf.lifo { Order::Desc } else { Order::Asc };
+    let order = if conf.db.lifo {
+        Order::Desc
+    } else {
+        Order::Asc
+    };
 
     let trx = &mut db_txn;
 
     let mut maybe_remaining = false;
-    if let Some(mut tasks) = query_sns_tasks(trx, conf.batch_limit, order).await? {
-        maybe_remaining = conf.batch_limit as usize == tasks.len();
+    if let Some(mut tasks) = query_sns_tasks(trx, conf.db.batch_limit, order).await? {
+        maybe_remaining = conf.db.batch_limit as usize == tasks.len();
 
         let t = telemetry::tracer("batch_execution");
         t.set_attribute("count", tasks.len().to_string());
 
-        process_tasks(&mut tasks, keys, tx, enable_compression)?;
+        process_tasks(
+            &mut tasks,
+            keys,
+            tx,
+            conf.enable_compression,
+            conf.schedule_policy,
+            token.clone(),
+        )?;
+
         update_computations_status(trx, &tasks).await?;
 
         let s = t.child_span("batch_store_ciphertext128");
         update_ciphertext128(trx, &tasks).await?;
-        notify_ciphertext128_ready(trx, &conf.notify_channel).await?;
+        notify_ciphertext128_ready(trx, &conf.db.notify_channel).await?;
 
         // Try to enqueue the tasks for upload in the DB
         // This is a best-effort attempt, as the upload worker might not be available
@@ -395,75 +408,128 @@ async fn enqueue_upload_tasks(
     Ok(())
 }
 
-/// Processes the tasks by decompressing and transforming ciphertexts.
+/// Processes the tasks by decompressing and converting the ciphertexts.
+///
+/// This uses the `rayon` to parallelize the squash_noise_and_serialize.
+///
+/// The computed ciphertexts are sent to the upload worker via the provided channel.
 fn process_tasks(
-    tasks: &mut [HandleItem],
+    batch: &mut [HandleItem],
     keys: &KeySet,
     tx: &Sender<UploadJob>,
     enable_compression: bool,
+    policy: SchedulePolicy,
+    token: CancellationToken,
 ) -> Result<(), ExecutionError> {
-    for task in tasks.iter_mut() {
-        let ct64_compressed = task.ct64_compressed.as_ref();
-        if ct64_compressed.is_empty() {
-            error!(target: "sns", { handle = ?task.handle }, "Empty ciphertext64, skipping task");
-            continue; // Skip empty ciphertexts
+    set_server_key(keys.server_key.clone());
+
+    match policy {
+        SchedulePolicy::Sequential => {
+            for task in batch.iter_mut() {
+                compute_task(
+                    task,
+                    tx,
+                    enable_compression,
+                    token.clone(),
+                    &keys.client_key,
+                );
+            }
         }
+        SchedulePolicy::RayonParallel => {
+            rayon::broadcast(|_| {
+                tfhe::set_server_key(keys.server_key.clone());
+            });
 
-        let s = task.otel.child_span("decompress_ct64");
-        set_server_key(keys.server_key.clone());
-        let ct = decompress_ct(&task.handle, ct64_compressed)?;
-        telemetry::end_span(s);
-
-        let handle = compact_hex(&task.handle);
-        let ct_type = ct.type_name().to_owned();
-        info!(target: "sns",  { handle, ct_type }, "Converting ciphertext");
-
-        let mut span = task.otel.child_span("squash_noise");
-        telemetry::attribute(&mut span, "ct_type", ct_type);
-
-        match ct.squash_noise_and_serialize(enable_compression) {
-            Ok(bytes) => {
-                telemetry::end_span(span);
-                info!(target: "sns", { handle }, "Ciphertext converted, length: {}, compressed: {}", bytes.len(), enable_compression);
-
-                #[cfg(feature = "test_decrypt_128")]
-                decrypt_big_ct(keys, &bytes, &ct, &task.handle, enable_compression);
-
-                let format = if enable_compression {
-                    Ciphertext128Format::CompressedOnCpu
-                } else {
-                    Ciphertext128Format::UncompressedOnCpu
-                };
-
-                task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
-            }
-            Err(err) => {
-                telemetry::end_span_with_err(span, err.to_string());
-                error!(target: "sns", { handle }, "Failed to convert ct: {err}");
-            }
-        };
-
-        // Start uploading the ciphertexts as soon as the ct128 is computed
-        //
-        // The service must continue running the squashed noise algorithm,
-        // regardless of the availability of the upload worker.
-        if let Err(err) = tx.try_send(UploadJob::Normal(task.clone())) {
-            // This could happen if either we are experiencing a burst of tasks
-            // or the upload worker cannot recover the connection to AWS S3
-            //
-            // In this case, we should log the error and rely on the retry mechanism.
-            //
-            // There are three levels of task buffering:
-            // 1. The spawned uploading tasks (size: conf.max_concurrent_uploads)
-            // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
-            // 3. The PostgresDB (size: unlimited)
-
-            error!({target = "worker", action = "review"},  "Failed to send task to upload worker: {err}");
-            telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
+            batch.par_iter_mut().for_each(|task| {
+                compute_task(
+                    task,
+                    tx,
+                    enable_compression,
+                    token.clone(),
+                    &keys.client_key,
+                );
+            });
         }
     }
 
     Ok(())
+}
+
+fn compute_task(
+    task: &mut HandleItem,
+    tx: &Sender<UploadJob>,
+    enable_compression: bool,
+    token: CancellationToken,
+    _client_key: &Option<ClientKey>,
+) {
+    let handle = compact_hex(&task.handle);
+
+    // Check if the task is cancelled
+    if token.is_cancelled() {
+        warn!(target: "sns", { handle }, "Task processing cancelled");
+        return;
+    }
+
+    let ct64_compressed = task.ct64_compressed.as_ref();
+    if ct64_compressed.is_empty() {
+        error!(target: "sns", { handle }, "Empty ciphertext64, skipping task");
+        return; // Skip empty ciphertexts
+    }
+
+    let s = task.otel.child_span("decompress_ct64");
+
+    let ct = decompress_ct(&task.handle, ct64_compressed).unwrap(); // TODO handle error properly
+    telemetry::end_span(s);
+
+    let ct_type = ct.type_name().to_owned();
+    info!(target: "sns",  { handle, ct_type }, "Converting ciphertext");
+
+    let mut span = task.otel.child_span("squash_noise");
+    telemetry::attribute(&mut span, "ct_type", ct_type);
+
+    match ct.squash_noise_and_serialize(enable_compression) {
+        Ok(bytes) => {
+            telemetry::end_span(span);
+            info!(target: "sns", handle = handle, length = bytes.len(), compressed = enable_compression, "Ciphertext converted");
+
+            #[cfg(feature = "test_decrypt_128")]
+            decrypt_big_ct(_client_key, &bytes, &ct, &task.handle, enable_compression);
+
+            let format = if enable_compression {
+                Ciphertext128Format::CompressedOnCpu
+            } else {
+                Ciphertext128Format::UncompressedOnCpu
+            };
+
+            task.ct128 = Arc::new(BigCiphertext::new(bytes, format));
+
+            // Start uploading the ciphertexts as soon as the ct128 is computed
+            //
+            // The service must continue running the squashed noise algorithm,
+            // regardless of the availability of the upload worker.
+            if let Err(err) = tx
+                .try_send(UploadJob::Normal(task.clone()))
+                .map_err(|err| ExecutionError::InternalSendError(err.to_string()))
+            {
+                // This could happen if either we are experiencing a burst of tasks
+                // or the upload worker cannot recover the connection to AWS S3
+                //
+                // In this case, we should log the error and rely on the retry mechanism.
+                //
+                // There are three levels of task buffering:
+                // 1. The spawned uploading tasks (size: conf.max_concurrent_uploads)
+                // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
+                // 3. The PostgresDB (size: unlimited)
+
+                error!({target = "worker", action = "review", error = %err},  "Failed to send task to upload worker");
+                telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
+            }
+        }
+        Err(err) => {
+            telemetry::end_span_with_err(span, err.to_string());
+            error!(target: "sns", handle = handle, error = %err, "Failed to convert ct");
+        }
+    };
 }
 
 /// Updates the database with the computed large ciphertexts.
@@ -504,7 +570,7 @@ async fn update_ciphertext128(
                     telemetry::end_span(s);
                 }
                 Err(err) => {
-                    error!(target: "worker", handle = ?task.handle, "Failed to insert ct128 in DB: {err}");
+                    error!(target: "worker", handle = ?task.handle, error = %err, "Failed to insert ct128 in DB");
                     telemetry::end_span_with_err(s, err.to_string());
                 }
             }
@@ -528,6 +594,20 @@ async fn update_computations_status(
                 "
                 UPDATE pbs_computations
                 SET is_completed = TRUE, completed_at = NOW()
+                WHERE handle = $1;",
+                task.handle
+            )
+            .execute(db_txn.as_mut())
+            .await?;
+            // We need to update the allowed_handles table as well for
+            // the case where an input handle (that is not the output
+            // of a FHE computation) is allowed. This means that the
+            // TFHE worker never sees this handle and therefore cannot
+            // update its computed status.
+            sqlx::query!(
+                "
+                UPDATE allowed_handles
+                SET is_computed = TRUE
                 WHERE handle = $1;",
                 task.handle
             )
@@ -566,22 +646,22 @@ fn decompress_ct(
 /// Decrypts a squashed noise ciphertext and returns the decrypted value.
 /// This function is used for testing purposes only.
 fn decrypt_big_ct(
-    keys: &KeySet,
-    squashed_noise_serialized: &[u8],
+    client_key: &Option<ClientKey>,
+    bytes: &[u8],
     ct: &SupportedFheCiphertexts,
     handle: &[u8],
     is_compressed: bool,
 ) {
     {
-        if let Some(client_key) = &keys.client_key {
-            let ct = if is_compressed {
-                ct.decrypt_squash_noise_compressed(client_key, squashed_noise_serialized)
+        if let Some(client_key) = &client_key {
+            let pt = if is_compressed {
+                ct.decrypt_squash_noise_compressed(client_key, bytes)
             } else {
-                ct.decrypt_squash_noise(client_key, squashed_noise_serialized)
+                ct.decrypt_squash_noise(client_key, bytes)
             }
             .expect("Failed to decrypt");
 
-            info!(target: "sns", "Decrypted plaintext: {:?}, handle: {}", ct, compact_hex(handle));
+            info!(target: "sns", plaintext = pt, handle = compact_hex(handle), "Decrypted");
         }
     }
 }

@@ -49,7 +49,7 @@ pub struct Args {
     pub maximum_handles_per_input: u8,
 
     /// Coprocessor FHE processing threads
-    #[arg(long, default_value_t = 8)]
+    #[arg(long, default_value_t = 32)]
     pub coprocessor_fhe_threads: usize,
 
     /// Tokio Async IO threads
@@ -87,6 +87,9 @@ pub struct Args {
         value_parser = clap::value_parser!(Level),
         default_value_t = Level::INFO)]
     pub log_level: Level,
+
+    #[arg(long, default_value_t = 8080)]
+    pub health_check_port: u16,
 }
 
 pub fn parse_args() -> Args {

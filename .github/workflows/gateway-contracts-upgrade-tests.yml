@@ -1,5 +1,7 @@
 name: gateway-contracts-upgrade-tests
 
+permissions: {}
+
 on:
   pull_request:
 
@@ -32,6 +34,10 @@ jobs:
     name: gateway-contracts-upgrade-tests/sc-upgrade (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
+    permissions:
+      contents: 'read'
+      checks: 'write'
+      packages: 'read'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout previous release code
@@ -39,7 +45,7 @@ jobs:
         with:
           # This version should be updated whenever we release new contract versions or
           # touch a contract upgrade path.
-          ref: v0.7.4
+          ref: v0.8.0-4
           path: previous-fhevm
           persist-credentials: 'false'
 
@@ -107,43 +113,44 @@ jobs:
 
       # Executing task:deployEmptyUUPSProxies is required to generate the proxy contract addresses, which are then used
       # for compiling the current and new implementations during the upgrade task.
-      # The docker cp command is required until previous-contracts uses separated .env and addresses files,
-      # see https://github.com/zama-ai/fhevm-internal/issues/217.
       - name: Prepare and copy previous contract into current directory
         working-directory: current-fhevm/gateway-contracts
         run: |
           cp .env.example .env
           cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
           npx hardhat task:deployEmptyUUPSProxies
-          docker cp deploy-gateway-contracts:/app/addresses ./
 
-      - name: Upgrade GatewayConfig contract
-        working-directory: current-fhevm/gateway-contracts
-        env:
-          DOTENV_CONFIG_PATH: .env
-          HARDHAT_NETWORK: staging
-          CHAIN_ID_GATEWAY: 54321
-          RPC_URL: http://localhost:8546
-        run: |
-          npx hardhat task:upgradeGatewayConfig \
-            --current-implementation previous-contracts/GatewayConfig.sol:GatewayConfig \
-            --new-implementation contracts/GatewayConfig.sol:GatewayConfig \
-            --use-internal-proxy-address true \
-            --verify-contract false
+      # TODO: We should instead automatically detect if the contract needs to be upgraded
+      #  See https://github.com/zama-ai/fhevm-internal/issues/379
+      # - name: Upgrade GatewayConfig contract
+      #   working-directory: current-fhevm/gateway-contracts
+      #   env:
+      #     DOTENV_CONFIG_PATH: .env
+      #     HARDHAT_NETWORK: staging
+      #     CHAIN_ID_GATEWAY: 54321
+      #     RPC_URL: http://localhost:8546
+      #   run: |
+      #     npx hardhat task:upgradeGatewayConfig \
+      #       --current-implementation previous-contracts/GatewayConfig.sol:GatewayConfig \
+      #       --new-implementation contracts/GatewayConfig.sol:GatewayConfig \
+      #       --use-internal-proxy-address true \
+      #       --verify-contract false
 
-      - name: Upgrade Decryption contract
-        working-directory: current-fhevm/gateway-contracts
-        env:
-          DOTENV_CONFIG_PATH: .env
-          HARDHAT_NETWORK: staging
-          CHAIN_ID_GATEWAY: 54321
-          RPC_URL: http://localhost:8546
-        run: |
-          npx hardhat task:upgradeDecryption \
-            --current-implementation previous-contracts/Decryption.sol:Decryption \
-            --new-implementation contracts/Decryption.sol:Decryption \
-            --use-internal-proxy-address true \
-            --verify-contract false
+      # TODO: We should instead automatically detect if the contract needs to be upgraded
+      #  See https://github.com/zama-ai/fhevm-internal/issues/379
+      # - name: Upgrade Decryption contract
+      #   working-directory: current-fhevm/gateway-contracts
+      #   env:
+      #     DOTENV_CONFIG_PATH: .env
+      #     HARDHAT_NETWORK: staging
+      #     CHAIN_ID_GATEWAY: 54321
+      #     RPC_URL: http://localhost:8546
+      #   run: |
+      #     npx hardhat task:upgradeDecryption \
+      #       --current-implementation previous-contracts/Decryption.sol:Decryption \
+      #       --new-implementation contracts/Decryption.sol:Decryption \
+      #       --use-internal-proxy-address true \
+      #       --verify-contract false
 
       - name: Upgrade CiphertextCommits contract
         working-directory: current-fhevm/gateway-contracts
@@ -159,13 +166,56 @@ jobs:
             --use-internal-proxy-address true \
             --verify-contract false
 
+      # TODO: We should instead automatically detect if the contract needs to be upgraded
+      #  See https://github.com/zama-ai/fhevm-internal/issues/379
+      # - name: Upgrade InputVerification contract
+      #   working-directory: current-fhevm/gateway-contracts
+      #   env:
+      #     DOTENV_CONFIG_PATH: .env
+      #     HARDHAT_NETWORK: staging
+      #     CHAIN_ID_GATEWAY: 54321
+      #     RPC_URL: http://localhost:8546
+      #   run: |
+      #     npx hardhat task:upgradeInputVerification \
+      #       --current-implementation previous-contracts/InputVerification.sol:InputVerification \
+      #       --new-implementation contracts/InputVerification.sol:InputVerification \
+      #       --use-internal-proxy-address true \
+      #       --verify-contract false
+
+      # TODO: We should instead automatically detect if the contract needs to be upgraded
+      #  See https://github.com/zama-ai/fhevm-internal/issues/379
+      # - name: Upgrade MultichainAcl contract
+      #   working-directory: current-fhevm/gateway-contracts
+      #   env:
+      #     DOTENV_CONFIG_PATH: .env
+      #     HARDHAT_NETWORK: staging
+      #     CHAIN_ID_GATEWAY: 54321
+      #     RPC_URL: http://localhost:8546
+      #   run: |
+      #     npx hardhat task:upgradeMultichainAcl \
+      #       --current-implementation previous-contracts/MultichainAcl.sol:MultichainAcl \
+      #       --new-implementation contracts/MultichainAcl.sol:MultichainAcl \
+      #       --use-internal-proxy-address true \
+      #       --verify-contract false
+
+      # TODO: We should instead automatically detect if the contract needs to be upgraded
+      #  See https://github.com/zama-ai/fhevm-internal/issues/379
+      # - name: Upgrade KmsManagement contract
+      #   working-directory: current-fhevm/gateway-contracts
+      #   env:
+      #     DOTENV_CONFIG_PATH: .env
+      #     HARDHAT_NETWORK: staging
+      #     CHAIN_ID_GATEWAY: 54321
+      #     RPC_URL: http://localhost:8546
+      #   run: |
+      #     npx hardhat task:upgradeKmsManagement \
+      #       --current-implementation previous-contracts/KmsManagement.sol:KmsManagement \
+      #       --new-implementation contracts/KmsManagement.sol:KmsManagement \
+      #       --use-internal-proxy-address true \
+      #       --verify-contract false
+
       - name: Clean up
         working-directory: previous-fhevm/gateway-contracts
         if: always()
         run: |
           make docker-compose-down
-
-permissions:
-  contents: 'read'
-  checks: 'write'
-  packages: 'read'

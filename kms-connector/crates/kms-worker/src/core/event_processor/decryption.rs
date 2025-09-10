@@ -13,7 +13,7 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::types::KmsGrpcRequest;
-use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
+use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use kms_grpc::kms::v1::{
     PublicDecryptionRequest, RequestId, TypedCiphertext, UserDecryptionRequest,
 };
@@ -53,6 +53,7 @@ where
         &self,
         decryption_id: U256,
         sns_materials: Vec<SnsCiphertextMaterial>,
+        extra_data: Vec<u8>,
         user_decrypt_data: Option<UserDecryptionExtraData>,
     ) -> anyhow::Result<KmsGrpcRequest> {
         // Extract keyId from the first SNS ciphertext material if available
@@ -95,6 +96,7 @@ where
                 domain: Some(domain_msg),
                 enc_key,
                 typed_ciphertexts: ciphertexts,
+                extra_data,
             };
 
             verify_user_decryption_eip712(&user_decryption_request)?;
@@ -105,6 +107,7 @@ where
                 ciphertexts,
                 key_id: Some(RequestId { request_id: key_id }),
                 domain: Some(domain_msg),
+                extra_data,
             };
             Ok(public_decryption_request.into())
         }

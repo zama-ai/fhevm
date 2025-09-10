@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # RUST_IMAGE_VERSION arg can be used to override the default version
-ARG RUST_IMAGE_VERSION=1.87.0
+ARG RUST_IMAGE_VERSION=1.89.0
 
 # Stage 1: Build tx-sender
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     cargo build --profile=${LTO_RELEASE} -p tx-sender
 
 # Stage 2: Runtime image
-FROM cgr.dev/chainguard/glibc-dynamic:latest AS prod
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd

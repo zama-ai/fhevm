@@ -15,11 +15,12 @@ use std::{net::SocketAddr, str::FromStr, time::Duration};
 use tokio_util::sync::CancellationToken;
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(180))]
 #[tokio::test]
 async fn test_healthcheck_endpoints() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::full().await?;
-    let kms_health_client = KmsHealthClient::connect(test_instance.kms_url()).await?;
+    let kms_health_client =
+        KmsHealthClient::connect(&[test_instance.kms_url().to_string()]).await?;
     let state = State::new(
         test_instance.db().clone(),
         test_instance.provider().clone(),
