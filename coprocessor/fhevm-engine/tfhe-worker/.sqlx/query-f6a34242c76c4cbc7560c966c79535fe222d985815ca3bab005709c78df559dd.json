@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n      SELECT DISTINCT transaction_id \n      FROM computations\n      WHERE is_error = FALSE\n        AND (tenant_id, output_handle) IN (\n          SELECT tenant_id, handle\n          FROM allowed_handles\n          WHERE is_computed = FALSE\n          ORDER BY schedule_order\n          LIMIT $1\n        )\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "f6a34242c76c4cbc7560c966c79535fe222d985815ca3bab005709c78df559dd"
+}

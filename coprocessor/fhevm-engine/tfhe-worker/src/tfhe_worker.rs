@@ -119,6 +119,28 @@ async fn tfhe_worker_cycle(
         let mut s = tracer.start_with_context("query_work_items", &loop_ctx);
         #[cfg(feature = "bench")]
         let now = std::time::SystemTime::now();
+        let transactions_to_query = query!(
+            "
+      SELECT DISTINCT transaction_id 
+      FROM computations
+      WHERE is_error = FALSE
+        AND (tenant_id, output_handle) IN (
+          SELECT tenant_id, handle
+          FROM allowed_handles
+          WHERE is_computed = FALSE
+          ORDER BY schedule_order
+          LIMIT $1
+        )
+            ",
+            args.work_items_batch_size as i32,
+        )
+        .fetch_all(trx.as_mut())
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", { error = %err }, "error while querying transactions");
+            err
+        })?;
+
         let the_work = query!(
             "
 WITH selected_computations AS (
@@ -131,24 +153,15 @@ WITH selected_computations AS (
       ah.handle, 
       ah.is_computed
     FROM computations c
-    LEFT JOIN allowed_handles ah
-       ON c.output_handle = ah.handle
-      AND c.tenant_id = ah.tenant_id
-    WHERE c.transaction_id IN (
-      -- Select transaction IDs with uncomputed handles
-      -- out of the dependence buckets
-      SELECT DISTINCT transaction_id 
-      FROM computations
-      WHERE is_error = FALSE
-        AND (tenant_id, output_handle) IN (
-          SELECT tenant_id, handle
-          FROM allowed_handles
-          WHERE is_computed = FALSE
-          ORDER BY schedule_order
-          LIMIT $1
-        )
-      LIMIT $2
-    )
+    LEFT JOIN LATERAL (
+       SELECT ah.handle, ah.is_computed
+       FROM allowed_handles ah
+       WHERE c.output_handle = ah.handle
+         AND c.tenant_id = ah.tenant_id
+       LIMIT 1
+      ) ah ON TRUE
+    WHERE c.transaction_id = ANY($1::BYTEA[])
+    LIMIT $2
   )
 )
 -- Acquire all computations from this transaction set
@@ -168,7 +181,10 @@ JOIN selected_computations sc
   AND c.output_handle = sc.output_handle
   AND c.transaction_id = sc.transaction_id
 FOR UPDATE SKIP LOCKED            ",
-            args.work_items_batch_size as i32,
+            &transactions_to_query
+                .into_iter()
+                .map(|t| t.transaction_id)
+                .collect::<Vec<_>>(),
             args.dependence_chains_per_batch as i32,
         )
         .fetch_all(trx.as_mut())
