@@ -1,5 +1,3 @@
-// TODO: hide behind feature flag if someone wants to launch that manually
-#[cfg(not(feature = "ci"))]
 use ctor::{ctor, dtor};
 use nix::errno::Errno;
 use nix::sys::signal::{self, Signal};

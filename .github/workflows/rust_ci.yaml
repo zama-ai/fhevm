@@ -56,7 +56,7 @@ jobs:
         working-directory: ${{ matrix.folder }}
         run: |
           make start-anvil-nodes
-          
+
       - name: Verify Anvil nodes
         run: |
           docker ps
@@ -76,7 +76,7 @@ jobs:
           export CARGO_INCREMENTAL=0
           export RUSTFLAGS='-Cinstrument-coverage'
           export LLVM_PROFILE_FILE='cargo-test-%p-%m.profraw'
-          RUST_BACKTRACE=full cargo test --workspace --features ci
+          RUST_BACKTRACE=full cargo test --workspace --lib
           cargo install grcov
           mkdir coverage
           ~/.cargo/bin/grcov . --binary-path ./target/debug/deps/ -s . --branch --ignore-not-existing --ignore '../*' --ignore "/*" -o coverage/ -t markdown
@@ -101,7 +101,7 @@ jobs:
           FHEVM_PID=$!
           echo "FHEVM_PID=${FHEVM_PID}" >> "${GITHUB_ENV}"
           sleep 2
-    
+
       - name: Start processors mock
         working-directory: ${{ matrix.folder }}
         run: |
@@ -110,11 +110,11 @@ jobs:
           echo "PROCESSORS_PID=${PROCESSORS_PID}" >> "${GITHUB_ENV}"
           sleep 2
           echo "Processors mock started with PID: ${PROCESSORS_PID}"
-    
+
       - name: Run api test
         working-directory: ${{ matrix.folder }}
         run: make run-test-api
-    
+
       - name: Stop services and nodes
         working-directory: ${{ matrix.folder }}
         if: always()
@@ -127,7 +127,7 @@ jobs:
             echo "No PID found for fhevm-relayer, using pkill -f"
             pkill -f "fhevm-relayer" || true
           fi
-          
+
           if [ -n "${PROCESSORS_PID}" ]; then
             echo "Stopping gateway-processors-mock (PID: ${PROCESSORS_PID})"
             kill "${PROCESSORS_PID}" || true
@@ -135,14 +135,13 @@ jobs:
             echo "No PID found for gateway-processors-mock, using pkill -f"
             pkill -f "gateway-processors-mock" || true
           fi
-          
+
           # Stop anvil nodes
           make stop-anvil-nodes
-          
+
           # Show logs for debugging if needed
           echo "=== fhevm-relayer logs ==="
           cat fhevm-relayer.log || true
-          
+
           echo "=== processors-mock logs ==="
           cat processors-mock.log || true
-

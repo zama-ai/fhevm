@@ -1,5 +1,3 @@
-// These tests aren't launched in CI because the CI currently doesn't run a relayer
-#[cfg(not(feature = "ci"))]
 mod utils;
 
 #[cfg(test)]
