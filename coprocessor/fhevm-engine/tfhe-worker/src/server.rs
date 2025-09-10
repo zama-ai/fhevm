@@ -307,11 +307,11 @@ impl CoprocessorService {
         let tenant_id = check_if_api_key_is_valid(&request, &self.pool, tracer).await?;
 
         let req = request.get_ref();
-        if req.input_ciphertexts.len() > self.args.maximimum_compact_inputs_upload {
+        if req.input_ciphertexts.len() > self.args.maximum_compact_inputs_upload {
             return Err(tonic::Status::from_error(Box::new(
                 CoprocessorError::MoreThanMaximumCompactInputCiphertextsUploaded {
                     input_count: req.input_ciphertexts.len(),
-                    maximum_allowed: self.args.maximimum_compact_inputs_upload,
+                    maximum_allowed: self.args.maximum_compact_inputs_upload,
                 },
             )));
         }
