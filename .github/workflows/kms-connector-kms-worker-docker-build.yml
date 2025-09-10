@@ -13,6 +13,8 @@ concurrency:
   group: fhevm-kms-connector-kms-worker-${{ github.ref_name }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
+permissions: {}
+
 jobs:
   check-changes:
     name: kms-connector-kms-worker-docker-build/check-changes
@@ -32,7 +34,7 @@ jobs:
         with:
           filters: |
             kms-connector-kms-worker:
-              - .github/workflows/kms-connector-docker-build-kms-worker.yml
+              - .github/workflows/kms-connector-kms-worker-docker-build.yml
               - kms-connector/crates/kms-worker/**
               - kms-connector/crates/utils/**
               - kms-connector/Cargo.toml
@@ -42,11 +44,13 @@ jobs:
     name: kms-connector-kms-worker-docker-build/build
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-kms-connector-kms-worker == 'true' || github.event_name == 'release' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@6323a1e8e260961562b66a9f33a608f86cd6c831
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@e666182756172bc747d2be6e4eb9b4ed80a00a0e
     secrets:
-      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     permissions:
       actions: 'read'
       contents: 'read'
@@ -55,6 +59,7 @@ jobs:
       packages: 'write'
       id-token: 'write'
     with:
+      use-cgr-secrets: true
       working-directory: "."
       docker-context: "."
       push_image: true

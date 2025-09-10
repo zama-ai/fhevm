@@ -117,11 +117,14 @@ contract MultichainAcl is
     /**
      * @notice Re-initializes the contract from V1.
      */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IMultichainAcl-allowPublicDecrypt}.
     function allowPublicDecrypt(
-        bytes32 ctHandle
+        bytes32 ctHandle,
+        bytes calldata /* extraData */
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 
@@ -152,7 +155,8 @@ contract MultichainAcl is
     /// @dev See {IMultichainAcl-allowAccount}.
     function allowAccount(
         bytes32 ctHandle,
-        address accountAddress
+        address accountAddress,
+        bytes calldata /* extraData */
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainAclStorage storage $ = _getMultichainAclStorage();
 

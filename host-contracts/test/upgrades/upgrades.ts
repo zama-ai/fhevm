@@ -13,12 +13,6 @@ describe('Upgrades', function () {
     this.emptyUUPSFactory = await ethers.getContractFactory('EmptyUUPSProxy');
     this.aclFactory = await ethers.getContractFactory('ACL');
     this.aclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample');
-    this.kmsFactory = await ethers.getContractFactory('KMSVerifier');
-    this.kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample');
-    this.executorFactory = await ethers.getContractFactory('contracts/FHEVMExecutor.sol:FHEVMExecutor');
-    this.executorFactoryUpgraded = await ethers.getContractFactory('FHEVMExecutorUpgradedExample');
-    this.paymentFactory = await ethers.getContractFactory('HCULimit');
-    this.paymentFactoryUpgraded = await ethers.getContractFactory('HCULimitUpgradedExample');
     this.decryptionOracleFactory = await ethers.getContractFactory(
       'decryptionOracle/DecryptionOracle.sol:DecryptionOracle',
     );
@@ -50,48 +44,55 @@ describe('Upgrades', function () {
   });
 
   it('deploy upgradable KMSVerifier', async function () {
-    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
+    const kmsFactory = await ethers.getContractFactory('KMSVerifier', this.signers.fred);
+    const kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.fred.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
-    const kms = await upgrades.upgradeProxy(emptyUUPS, this.kmsFactory, {
-      unsafeAllow: ['missing-initializer'],
-    });
+    const kms = await upgrades.upgradeProxy(emptyUUPS, kmsFactory, { unsafeAllow: ['missing-initializer'] });
     await kms.waitForDeployment();
-    expect(await kms.getVersion()).to.equal('KMSVerifier v0.1.0');
-    const kms2 = await upgrades.upgradeProxy(kms, this.kmsFactoryUpgraded);
+    expect(await kms.getVersion()).to.equal('KMSVerifier v0.2.0');
+    const kms2 = await upgrades.upgradeProxy(kms, kmsFactoryUpgraded);
     await kms2.waitForDeployment();
-    expect(await kms2.getVersion()).to.equal('KMSVerifier v0.2.0');
+    expect(await kms2.getVersion()).to.equal('KMSVerifier v0.3.0');
   });
 
   it('deploy upgradable FHEVMExecutor', async function () {
-    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
+    const executorFactory = await ethers.getContractFactory(
+      'contracts/FHEVMExecutor.sol:FHEVMExecutor',
+      this.signers.fred,
+    );
+    const executorFactoryUpgraded = await ethers.getContractFactory('FHEVMExecutorUpgradedExample', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.fred.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
-    const executor = await upgrades.upgradeProxy(emptyUUPS, this.executorFactory, {
+    const executor = await upgrades.upgradeProxy(emptyUUPS, executorFactory, {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await executor.waitForDeployment();
-    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.2.0');
-    const executor2 = await upgrades.upgradeProxy(executor, this.executorFactoryUpgraded);
+    expect(await executor.getVersion()).to.equal('FHEVMExecutor v0.3.0');
+    const executor2 = await upgrades.upgradeProxy(executor, executorFactoryUpgraded);
     await executor2.waitForDeployment();
-    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.3.0');
+    expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.4.0');
   });
 
   it('deploy upgradable HCULimit', async function () {
-    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
+    const paymentFactory = await ethers.getContractFactory('HCULimit', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host
+    const paymentFactoryUpgraded = await ethers.getContractFactory('HCULimitUpgradedExample', this.signers.fred);
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.fred.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
-    const payment = await upgrades.upgradeProxy(emptyUUPS, this.paymentFactory, {
+    const payment = await upgrades.upgradeProxy(emptyUUPS, paymentFactory, {
       call: { fn: 'initializeFromEmptyProxy' },
     });
     await payment.waitForDeployment();
-    expect(await payment.getVersion()).to.equal('HCULimit v0.2.0');
-    const payment2 = await upgrades.upgradeProxy(payment, this.paymentFactoryUpgraded);
+    expect(await payment.getVersion()).to.equal('HCULimit v0.3.0');
+    const payment2 = await upgrades.upgradeProxy(payment, paymentFactoryUpgraded);
     await payment2.waitForDeployment();
-    expect(await payment2.getVersion()).to.equal('HCULimit v0.3.0');
+    expect(await payment2.getVersion()).to.equal('HCULimit v0.4.0');
   });
 
   it('deploy upgradable DecryptionOracle', async function () {

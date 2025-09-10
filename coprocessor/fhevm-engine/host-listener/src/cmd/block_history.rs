@@ -30,6 +30,7 @@ pub struct BlockHistory {
 
 const MAXIMUM_NUMBER_OF_COMPETING_CHAIN: usize = 5;
 const MINIMUM_HISTORY_SIZE: usize = 2; // current block + at least old block
+const MINIMUM_BLOCK_TIME_SECONDS: u64 = 1;
 
 impl BlockHistory {
     pub fn new(expected_reorg_duration: usize) -> Self {
@@ -77,5 +78,113 @@ impl BlockHistory {
             self.ordered_blocks.pop_front();
         }
         self.ordered_blocks.push_back(block);
+    }
+
+    pub fn estimated_block_time(&self) -> Option<u64> {
+        if self.ordered_blocks.len() < 2 {
+            return None;
+        };
+        let last = self.ordered_blocks.back()?;
+        let second_last =
+            self.ordered_blocks.get(self.ordered_blocks.len() - 2)?;
+        if last.timestamp <= second_last.timestamp {
+            return None;
+        }
+        if last.number <= second_last.number {
+            return None;
+        }
+        let estimation = (last.timestamp - second_last.timestamp) as f64
+            / (last.number - second_last.number) as f64;
+        Some((estimation.round() as u64).max(MINIMUM_BLOCK_TIME_SECONDS))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{BlockHash, BlockHistory, BlockSummary};
+
+    #[test]
+    fn test_block_history() {
+        let mut history = BlockHistory::new(10);
+        let block1 = BlockSummary {
+            number: 1,
+            hash: BlockHash::with_last_byte(1),
+            parent_hash: BlockHash::with_last_byte(0),
+            timestamp: 0,
+        };
+        let block2 = BlockSummary {
+            number: 2,
+            hash: BlockHash::with_last_byte(2),
+            parent_hash: BlockHash::with_last_byte(1),
+            timestamp: 12,
+        };
+        let block3 = BlockSummary {
+            number: 3,
+            hash: BlockHash::with_last_byte(3),
+            parent_hash: BlockHash::with_last_byte(2),
+            timestamp: 24,
+        };
+        history.add_block(block1);
+        history.add_block(block2);
+        assert_eq!(history.size(), 2);
+        assert!(history.is_ready_to_detect_reorg());
+        assert!(history.is_known(&block1.hash));
+        assert!(history.is_known(&block2.hash));
+        assert!(history.block_has_not_changed(&block2.hash));
+        assert!(!history.block_has_not_changed(&block3.hash));
+        assert!(!history.is_known(&block3.hash));
+        history.add_block(block3);
+        assert_eq!(history.tip().map(|b| b.number), Some(block3.number));
+        assert!(history.block_has_not_changed(&block3.hash));
+        assert!(history.is_known(&block3.hash));
+    }
+
+    #[test]
+    fn test_estimated_block_time() {
+        let mut history = BlockHistory::new(10);
+        let block1 = BlockSummary {
+            number: 1,
+            hash: BlockHash::with_last_byte(1),
+            parent_hash: BlockHash::with_last_byte(0),
+            timestamp: 0,
+        };
+        let block2 = BlockSummary {
+            number: 2,
+            hash: BlockHash::with_last_byte(2),
+            parent_hash: BlockHash::with_last_byte(1),
+            timestamp: 12,
+        };
+        let block3 = BlockSummary {
+            number: 5,
+            hash: BlockHash::with_last_byte(5),
+            parent_hash: BlockHash::with_last_byte(4),
+            timestamp: 14,
+        };
+        let block4 = BlockSummary {
+            number: 15,
+            hash: BlockHash::with_last_byte(5),
+            parent_hash: BlockHash::with_last_byte(4),
+            timestamp: 14 + 10 * 12 + 4,
+        };
+        let block5 = BlockSummary {
+            number: 15,
+            hash: BlockHash::with_last_byte(5),
+            parent_hash: BlockHash::with_last_byte(4),
+            timestamp: 14 + 10 * 12 + 6,
+        };
+        history.add_block(block1);
+        history.add_block(block2);
+        assert_eq!(history.estimated_block_time(), Some(12));
+        history.add_block(block2);
+        history.add_block(block1);
+        assert_eq!(history.estimated_block_time(), None);
+        history.add_block(block2);
+        history.add_block(block3);
+        assert_eq!(history.estimated_block_time(), Some(1));
+        history.add_block(block4);
+        assert_eq!(history.estimated_block_time(), Some(12));
+        history.add_block(block3);
+        history.add_block(block5);
+        assert_eq!(history.estimated_block_time(), Some(13));
     }
 }

@@ -14,8 +14,10 @@ on:
   # WIP: still not working - skipped for now
   # pull_request:
 
+permissions: {}
+
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

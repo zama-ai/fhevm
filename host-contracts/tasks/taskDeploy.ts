@@ -24,7 +24,7 @@ async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUp
 
 task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
   // Compile the EmptyUUPS proxy contract
-  await run('compile:specific', { contract: 'contracts/shared' });
+  await run('compile:specific', { contract: 'contracts/emptyProxy' });
 
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
@@ -33,34 +33,22 @@ task('task:deployEmptyUUPSProxies').setAction(async function (taskArguments: Tas
   fs.mkdirSync(path.join(__dirname, '../addresses'), { recursive: true });
 
   const aclAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setACLAddress', {
-    address: aclAddress,
-  });
+  await run('task:setACLAddress', { address: aclAddress });
 
   const fhevmExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setFHEVMExecutorAddress', {
-    address: fhevmExecutorAddress,
-  });
+  await run('task:setFHEVMExecutorAddress', { address: fhevmExecutorAddress });
 
   const kmsVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setKMSVerifierAddress', {
-    address: kmsVerifierAddress,
-  });
+  await run('task:setKMSVerifierAddress', { address: kmsVerifierAddress });
 
   const inputVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setInputVerifierAddress', {
-    address: inputVerifierAddress,
-  });
+  await run('task:setInputVerifierAddress', { address: inputVerifierAddress });
 
   const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setHCULimitAddress', {
-    address: HCULimitAddress,
-  });
+  await run('task:setHCULimitAddress', { address: HCULimitAddress });
 
   const decryptionOracleAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setDecryptionOracleAddress', {
-    address: decryptionOracleAddress,
-  });
+  await run('task:setDecryptionOracleAddress', { address: decryptionOracleAddress });
 });
 
 task('task:deployDecryptionOracle').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
@@ -71,9 +59,7 @@ task('task:deployDecryptionOracle').setAction(async function (taskArguments: Tas
   const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
   const proxyAddress = parsedEnv.DECRYPTION_ORACLE_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: 'reinitialize' },
-  });
+  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: 'reinitialize' } });
   console.log('DecryptionOracle code set successfully at address:', proxyAddress);
 });
 
@@ -99,9 +85,7 @@ task('task:deployFHEVMExecutor').setAction(async function (taskArguments: TaskAr
   const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
   const proxyAddress = parsedEnv.FHEVM_EXECUTOR_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: 'initializeFromEmptyProxy' },
-  });
+  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: 'initializeFromEmptyProxy' } });
   console.log('FHEVMExecutor code set successfully at address:', proxyAddress);
 });
 
@@ -197,9 +181,7 @@ task('task:deployHCULimit').setAction(async function (taskArguments: TaskArgumen
   const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.host'));
   const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
-  await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: 'initializeFromEmptyProxy' },
-  });
+  await upgrades.upgradeProxy(proxy, newImplem, { call: { fn: 'initializeFromEmptyProxy' } });
   console.log('HCULimit code set successfully at address:', proxyAddress);
 });
 
@@ -249,7 +231,7 @@ task('task:setDecryptionOracleAddress')
     const content = `DECRYPTION_ORACLE_ADDRESS=${taskArguments.address}`;
     try {
       fs.writeFileSync(envFilePath, content, { flag: 'w' });
-      console.log('decryptionOracleAddress written to addresses/.env.decryptionoracle successfully!');
+      console.log('DecryptionOracle address written to addresses/.env.decryptionoracle successfully!');
     } catch (err) {
       console.error('Failed to write to addresses/.env.decryptionoracle:', err);
     }
@@ -258,14 +240,11 @@ task('task:setDecryptionOracleAddress')
 
 pragma solidity ^0.8.24;
 
-address constant DECRYPTION_ORACLE_ADDRESS = ${taskArguments.address};
+address constant decryptionOracleAdd = ${taskArguments.address};
 `;
 
     try {
-      fs.writeFileSync('./addresses/DecryptionOracleAddress.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'w',
-      });
+      fs.writeFileSync('./addresses/DecryptionOracleAddress.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
       console.log('addresses/DecryptionOracleAddress.sol file has been generated successfully.');
     } catch (error) {
       console.error('Failed to write addresses/DecryptionOracleAddress.sol', error);
@@ -291,10 +270,7 @@ pragma solidity ^0.8.24;
 address constant aclAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.writeFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'w',
-      });
+      fs.writeFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'w' });
       console.log('./addresses/FHEVMHostAddresses.sol file generated successfully!');
     } catch (error) {
       console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
@@ -317,10 +293,7 @@ task('task:setFHEVMExecutorAddress')
 address constant fhevmExecutorAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
+      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'a' });
       console.log('./addresses/FHEVMHostAddresses.sol file appended with fhevmExecutorAdd successfully!');
     } catch (error) {
       console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
@@ -343,10 +316,7 @@ task('task:setKMSVerifierAddress')
 address constant kmsVerifierAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
+      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'a' });
       console.log('./addresses/FHEVMHostAddresses.sol file appended with kmsVerifierAdd successfully!');
     } catch (error) {
       console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
@@ -370,10 +340,7 @@ task('task:setInputVerifierAddress')
 address constant inputVerifierAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
+      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'a' });
       console.log('./addresses/FHEVMHostAddresses.sol file appended with inputVerifierAdd successfully!');
     } catch (error) {
       console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
@@ -396,10 +363,7 @@ task('task:setHCULimitAddress')
 address constant hcuLimitAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, {
-        encoding: 'utf8',
-        flag: 'a',
-      });
+      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'a' });
       console.log('./addresses/FHEVMHostAddresses.sol appended with hcuLimitAdd successfully!');
     } catch (error) {
       console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);

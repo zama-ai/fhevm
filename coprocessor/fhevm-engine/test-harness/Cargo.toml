@@ -11,6 +11,7 @@ alloy = { workspace = true }
 anyhow = { workspace = true }
 aws-config = { workspace = true }
 aws-sdk-kms = { workspace = true }
+aws-sdk-s3 = { workspace = true }
 hex = { workspace = true }
 rand = { workspace = true}
 reqwest = { workspace = true}

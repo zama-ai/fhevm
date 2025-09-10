@@ -4,10 +4,10 @@ use crate::{
     conn::WalletGatewayProvider,
     tests::setup::{CustomTestWriter, DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
 };
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
-    gatewayconfig::GatewayConfig::GatewayConfigInstance,
-    kmsmanagement::KmsManagement::KmsManagementInstance,
+    gateway_config::GatewayConfig::GatewayConfigInstance,
+    kms_management::KmsManagement::KmsManagementInstance,
 };
 use sqlx::{Pool, Postgres};
 use testcontainers::{ContainerAsync, GenericImage};
@@ -83,15 +83,15 @@ impl TestInstance {
         &self.gateway().anvil
     }
 
-    pub fn decryption_contract(&self) -> &DecryptionInstance<(), WalletGatewayProvider> {
+    pub fn decryption_contract(&self) -> &DecryptionInstance<WalletGatewayProvider> {
         &self.gateway().decryption_contract
     }
 
-    pub fn gateway_config_contract(&self) -> &GatewayConfigInstance<(), WalletGatewayProvider> {
+    pub fn gateway_config_contract(&self) -> &GatewayConfigInstance<WalletGatewayProvider> {
         &self.gateway().gateway_config_contract
     }
 
-    pub fn kms_management_contract(&self) -> &KmsManagementInstance<(), WalletGatewayProvider> {
+    pub fn kms_management_contract(&self) -> &KmsManagementInstance<WalletGatewayProvider> {
         &self.gateway().kms_management_contract
     }
 

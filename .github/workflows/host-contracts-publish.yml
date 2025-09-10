@@ -9,6 +9,8 @@ on:
         required: false
         default: false
 
+permissions: {}
+
 jobs:
   publish:
     name: host-contracts-publish/publish
