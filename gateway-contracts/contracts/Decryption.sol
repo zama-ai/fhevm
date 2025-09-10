@@ -160,12 +160,12 @@ contract Decryption is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
     uint256 private constant PATCH_VERSION = 0;
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 6;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.Decryption
@@ -194,7 +194,8 @@ contract Decryption is
         // User decryption state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice Verified signatures for a user decryption.
-        mapping(uint256 decryptionId => uint256 verifiedSignatures) _verifiedUserDecryptSignatures;
+        /// TODO: Deprecated, to remove for mainnet
+        mapping(uint256 decryptionId => bytes[] verifiedSignatures) _verifiedUserDecryptSignatures;
         /// @notice The decryption payloads stored during user decryption requests.
         mapping(uint256 decryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
         /// @notice Whether a user decryption has been done
@@ -211,6 +212,8 @@ contract Decryption is
                consensusTxSenderAddresses;
         /// @notice The digest of the decryption response that reached consensus for a decryption request.
         mapping(uint256 decryptionId => bytes32 consensusDigest) decryptionConsensusDigest;
+        /// @notice Number of verified signatures for a user decryption.
+        mapping(uint256 decryptionId => uint256 verifiedSignaturesCounter) _verifiedUserDecryptSignaturesCounter;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -543,7 +546,7 @@ contract Decryption is
         /// @dev This list is then used to check the consensus. Important: the mapping should not
         /// @dev consider the digest (contrary to the public decryption case) as shares are expected
         /// @dev to be different for each KMS node.
-        $._verifiedUserDecryptSignatures[decryptionId] += 1;
+        $._verifiedUserDecryptSignaturesCounter[decryptionId] += 1;
 
         /// @dev Store the user decrypted share for the user decryption response.
         emit UserDecryptionResponse(decryptionId, userDecryptedShare, signature, extraData);
@@ -555,7 +558,7 @@ contract Decryption is
         // list later independently of the decryption response type (public or user).
         $.consensusTxSenderAddresses[decryptionId][0].push(msg.sender);
 
-        uint256 numSignatures = $._verifiedUserDecryptSignatures[decryptionId];
+        uint256 numSignatures = $._verifiedUserDecryptSignaturesCounter[decryptionId];
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(numSignatures)) {
