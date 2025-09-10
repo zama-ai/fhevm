@@ -2351,6 +2351,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.16",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-chrome",
  "tracing-subscriber",
