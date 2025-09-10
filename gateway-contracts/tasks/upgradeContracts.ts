@@ -254,20 +254,7 @@ task("task:upgradeGatewayConfig")
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
-    // Get custodians from environment variables
-    const numCustodians = parseInt(getRequiredEnvVar("NUM_CUSTODIANS"));
-    const custodians = [];
-    for (let idx = 0; idx < numCustodians; idx++) {
-      custodians.push({
-        txSenderAddress: getRequiredEnvVar(`CUSTODIAN_TX_SENDER_ADDRESS_${idx}`),
-        signerAddress: getRequiredEnvVar(`CUSTODIAN_SIGNER_ADDRESS_${idx}`),
-        encryptionKey: getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`),
-      });
-    }
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
-      custodians,
-    ]);
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
 task("task:upgradeKmsManagement")
