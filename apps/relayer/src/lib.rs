@@ -8,7 +8,6 @@ pub mod metrics;
 pub mod orchestrator;
 pub mod sqs;
 pub mod store;
-pub mod tests;
 pub mod transaction;
 
 // Re-export commonly used types
