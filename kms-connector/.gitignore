@@ -1,6 +1,7 @@
 /target*
 
 .cargo/advisory-db
+.cargo/advisory-db..lock
 
 .crates.toml
 .crates2.json

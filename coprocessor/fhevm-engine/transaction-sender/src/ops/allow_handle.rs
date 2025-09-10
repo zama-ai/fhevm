@@ -15,7 +15,7 @@ use crate::{
 use super::TransactionOperation;
 use alloy::{
     network::{Ethereum, TransactionBuilder},
-    primitives::{Address, FixedBytes},
+    primitives::{Address, Bytes, FixedBytes},
     providers::Provider,
     rpc::types::TransactionRequest,
     sol,
@@ -81,7 +81,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
 
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request,
-            &*self.provider,
+            self.provider.inner(),
             self.conf.gas_limit_overprovision_percent,
         )
         .await;
@@ -100,7 +100,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                 self.set_txn_is_sent(key, None, None).await?;
                 return Ok(());
             }
-            // Consider transport errors and local usage errors as something that must be retried infinitely.
+            // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
             // Local usage are included as they might be transient due to external AWS KMS signers.
             Err(e)
                 if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
@@ -119,10 +119,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                     current_unlimited_retries_count,
                 )
                 .await?;
-                bail!(
-                    "Transaction sending failed with unlimited retry error: {}",
-                    e
-                );
+                bail!(e);
             }
             Err(e) => {
                 ALLOW_HANDLE_FAIL_COUNTER.inc();
@@ -138,7 +135,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                     current_limited_retries_count,
                 )
                 .await?;
-                bail!("Transaction sending failed with error: {}", e);
+                bail!(e);
             }
         };
 
@@ -419,17 +416,18 @@ where
             );
 
             let handle_bytes32 = FixedBytes::from(try_into_array::<32>(handle)?);
+            let extra_data = Bytes::new();
 
             let txn_request = match event_type {
                 AllowEvents::AllowedForDecryption => {
                     // Call allowPublicDecrypt when account_address is null
                     match &self.gas {
                         Some(gas_limit) => multichain_acl
-                            .allowPublicDecrypt(handle_bytes32)
+                            .allowPublicDecrypt(handle_bytes32, extra_data)
                             .into_transaction_request()
                             .with_gas_limit(*gas_limit),
                         None => multichain_acl
-                            .allowPublicDecrypt(handle_bytes32)
+                            .allowPublicDecrypt(handle_bytes32, extra_data)
                             .into_transaction_request(),
                     }
                 }
@@ -447,11 +445,11 @@ where
 
                     match &self.gas {
                         Some(gas_limit) => multichain_acl
-                            .allowAccount(handle_bytes32, address)
+                            .allowAccount(handle_bytes32, address, extra_data)
                             .into_transaction_request()
                             .with_gas_limit(*gas_limit),
                         None => multichain_acl
-                            .allowAccount(handle_bytes32, address)
+                            .allowAccount(handle_bytes32, address, extra_data)
                             .into_transaction_request(),
                     }
                 }
@@ -484,9 +482,5 @@ where
         }
 
         Ok(maybe_has_more_work)
-    }
-
-    fn provider(&self) -> &P {
-        self.provider.inner()
     }
 }

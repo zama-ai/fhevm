@@ -1,0 +1,27 @@
+{{- if and .Values.snsWorker.hpa.enabled .Values.snsWorker.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "snsWorkerName" . }}-hpa
+  labels:
+    app: coprocessor-sns-worker
+    app.kubernetes.io/name: {{ include "snsWorkerName" . }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "snsWorkerName" . }}
+  minReplicas: {{ .Values.snsWorker.hpa.minReplicas }}
+  maxReplicas: {{ .Values.snsWorker.hpa.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.snsWorker.hpa.targetCPUUtilizationPercentage }}
+  {{- if .Values.snsWorker.hpa.behavior }}
+  behavior:
+    {{- toYaml .Values.snsWorker.hpa.behavior | nindent 4 }}
+  {{- end }}
+{{- end }}

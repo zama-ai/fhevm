@@ -33,12 +33,12 @@ contract CiphertextCommits is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "CiphertextCommits";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.CiphertextCommits
@@ -50,8 +50,8 @@ contract CiphertextCommits is
         /// @notice The key IDs used for generating the ciphertext.
         /// @dev It's necessary in case new keys are generated: we need to know what key to use for using a ciphertext.
         mapping(bytes32 ctHandle => uint256 keyId) _keyIds;
-        /// @notice The chain IDs associated to the ciphertext handle.
-        mapping(bytes32 ctHandle => uint256 chainId) _chainIds; // deprecated
+        /// @notice DEPRECATED
+        mapping(bytes32 ctHandle => uint256 chainId) _chainIds; // DEPRECATED
         /// @notice The mapping of already added ciphertexts tied to the given handle.
         mapping(bytes32 ctHandle => bool isAdded) _isCiphertextMaterialAdded;
         /// @notice The counter of confirmations received for a ciphertext to be added.
@@ -91,9 +91,11 @@ contract CiphertextCommits is
     }
 
     /**
-     * @notice Re-initializes the contract from V1.
+     * @notice Re-initializes the contract from V2.
      */
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @notice See {ICiphertextCommits-addCiphertextMaterial}.
     /// @dev This function calls the GatewayConfig contract to check that the sender address is a Coprocessor.
@@ -177,17 +179,31 @@ contract CiphertextCommits is
         ctMaterials = new CiphertextMaterial[](ctHandles.length);
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
+            // Check that the consensus has been reached
             checkCiphertextMaterial(ctHandles[i]);
 
             // Get the unique hash associated to the handle in order to retrieve the list of coprocessor
             // transaction sender address that were involved in the consensus
             bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandles[i]];
 
+            // If the consensus has been reached but the hash is 0x0, it means that the handle has been
+            // added in V1: the handle was used to retrieve the list of transaction sender addresses
+            // instead of the hash
+            // We therefore consider this in order to be backward compatible.
+            // To be deprecated
+            // See https://github.com/zama-ai/fhevm-internal/issues/381
+            address[] memory coprocessorTxSenderAddresses;
+            if (addCiphertextHash == bytes32(0)) {
+                coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[ctHandles[i]];
+            } else {
+                coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[addCiphertextHash];
+            }
+
             ctMaterials[i] = CiphertextMaterial(
                 ctHandles[i],
                 $._keyIds[ctHandles[i]],
                 $._ciphertextDigests[ctHandles[i]],
-                $._coprocessorTxSenderAddresses[addCiphertextHash]
+                coprocessorTxSenderAddresses
             );
         }
 
@@ -202,17 +218,31 @@ contract CiphertextCommits is
         snsCtMaterials = new SnsCiphertextMaterial[](ctHandles.length);
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
+            // Check that the consensus has been reached
             checkCiphertextMaterial(ctHandles[i]);
 
             // Get the unique hash associated to the handle in order to retrieve the list of transaction
             // sender address that participated in the consensus
             bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandles[i]];
 
+            // If the consensus has been reached but the hash is 0x0, it means that the handle has been
+            // added in V1: the handle was used to retrieve the list of transaction sender addresses
+            // instead of the hash
+            // We therefore consider this in order to be backward compatible.
+            // To be deprecated
+            // See https://github.com/zama-ai/fhevm-internal/issues/381
+            address[] memory coprocessorTxSenderAddresses;
+            if (addCiphertextHash == bytes32(0)) {
+                coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[ctHandles[i]];
+            } else {
+                coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[addCiphertextHash];
+            }
+
             snsCtMaterials[i] = SnsCiphertextMaterial(
                 ctHandles[i],
                 $._keyIds[ctHandles[i]],
                 $._snsCiphertextDigests[ctHandles[i]],
-                $._coprocessorTxSenderAddresses[addCiphertextHash]
+                coprocessorTxSenderAddresses
             );
         }
 
@@ -232,6 +262,16 @@ contract CiphertextCommits is
         // sender address that participated in the consensus
         // This digest remains the default value (0x0) until the consensus is reached.
         bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandle];
+
+        // If the consensus has been reached but the hash is 0x0, it means that the handle has been
+        // added in V1: the handle was used to retrieve the list of transaction sender addresses
+        // instead of the hash
+        // We therefore consider this in order to be backward compatible.
+        // DEPRECATED: to remove before mainnet
+        // See https://github.com/zama-ai/fhevm-internal/issues/381
+        if (addCiphertextHash == bytes32(0) && $._isCiphertextMaterialAdded[ctHandle]) {
+            return $._coprocessorTxSenderAddresses[ctHandle];
+        }
 
         return $._coprocessorTxSenderAddresses[addCiphertextHash];
     }

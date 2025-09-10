@@ -24,6 +24,7 @@ pub struct Eip712SignatureBuilder {
     private_key: Option<String>,
     verify_signature: bool,
     delegated_account: Option<Address>,
+    extra_data: Vec<u8>,
 
     // Configuration
     config: Eip712Config,
@@ -71,6 +72,7 @@ impl Eip712SignatureBuilder {
             verify_signature: false,
             delegated_account: None,
             config,
+            extra_data: vec![0],
         }
     }
 
@@ -156,6 +158,12 @@ impl Eip712SignatureBuilder {
     /// Sign with a private key
     pub fn with_private_key(mut self, private_key: &str) -> Self {
         self.private_key = Some(private_key.to_string());
+        self
+    }
+
+    /// Set the `extra_data` for decryption
+    pub fn with_extra_data(mut self, extra_data: Vec<u8>) -> Self {
+        self.extra_data = extra_data;
         self
     }
 
@@ -274,10 +282,11 @@ impl Eip712SignatureBuilder {
             let message = super::types::DelegatedUserDecryptRequestVerification {
                 publicKey: Bytes::from(public_key_bytes.to_vec()),
                 contractAddresses: self.contract_addresses.clone(),
+                delegatorAddress: delegated_account,
                 contractsChainId: alloy::primitives::U256::from(self.config.contracts_chain_id),
                 startTimestamp: alloy::primitives::U256::from(start_timestamp),
                 durationDays: alloy::primitives::U256::from(duration_days),
-                delegatedAccount: delegated_account,
+                extraData: self.extra_data.clone().into(),
             };
             message.eip712_signing_hash(&domain)
         } else {
@@ -287,6 +296,7 @@ impl Eip712SignatureBuilder {
                 contractsChainId: alloy::primitives::U256::from(self.config.contracts_chain_id),
                 startTimestamp: alloy::primitives::U256::from(start_timestamp),
                 durationDays: alloy::primitives::U256::from(duration_days),
+                extraData: self.extra_data.clone().into(),
             };
             message.eip712_signing_hash(&domain)
         };

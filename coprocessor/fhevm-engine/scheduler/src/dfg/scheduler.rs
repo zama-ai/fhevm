@@ -109,10 +109,13 @@ impl<'a> Scheduler<'a> {
             },
             // Use overall best strategy as default
             #[cfg(not(feature = "gpu"))]
-            _ => self.schedule_component_loop().await,
+            _ => {
+                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
+                    .await
+            }
             #[cfg(feature = "gpu")]
             _ => {
-                self.schedule_coarse_grain(PartitionStrategy::MaxLocality)
+                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
                     .await
             }
         }

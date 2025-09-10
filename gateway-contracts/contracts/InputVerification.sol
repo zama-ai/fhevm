@@ -38,6 +38,8 @@ contract InputVerification is
         address contractAddress;
         /// @notice The host chain's chain ID of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
+        bytes extraData;
     }
 
     /// @notice The stored structure for the received ZK Proof verification request inputs.
@@ -55,7 +57,7 @@ contract InputVerification is
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
 
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
@@ -129,6 +131,8 @@ contract InputVerification is
     /**
      * @notice Re-initializes the contract from V1.
      */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IInputVerification-verifyProofRequest}.
@@ -136,7 +140,8 @@ contract InputVerification is
         uint256 contractChainId,
         address contractAddress,
         address userAddress,
-        bytes calldata ciphertextWithZKProof
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
     ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
@@ -146,7 +151,14 @@ contract InputVerification is
         /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
         $._zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
 
-        emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
+        emit VerifyProofRequest(
+            zkProofId,
+            contractChainId,
+            contractAddress,
+            userAddress,
+            ciphertextWithZKProof,
+            extraData
+        );
     }
 
     /**
@@ -157,7 +169,8 @@ contract InputVerification is
     function verifyProofResponse(
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
-        bytes calldata signature
+        bytes calldata signature,
+        bytes calldata extraData
     ) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
@@ -174,7 +187,8 @@ contract InputVerification is
             ctHandles,
             zkProofInput.userAddress,
             zkProofInput.contractAddress,
-            zkProofInput.contractChainId
+            zkProofInput.contractChainId,
+            extraData
         );
 
         /// @dev Compute the digest of the CiphertextVerification structure.
@@ -213,7 +227,10 @@ contract InputVerification is
     }
 
     /// @dev See {IInputVerification-rejectProofResponse}.
-    function rejectProofResponse(uint256 zkProofId) external virtual onlyCoprocessorTxSender {
+    function rejectProofResponse(
+        uint256 zkProofId,
+        bytes calldata /* extraData */
+    ) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
         // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
@@ -350,7 +367,8 @@ contract InputVerification is
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
-                        ctVerification.contractChainId
+                        ctVerification.contractChainId,
+                        keccak256(abi.encodePacked(ctVerification.extraData))
                     )
                 )
             );

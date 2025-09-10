@@ -1,9 +1,9 @@
 use crate::monitoring::metrics::EVENT_STORED_COUNTER;
 use anyhow::anyhow;
 use connector_utils::types::{GatewayEvent, db::SnsCiphertextMaterialDbItem};
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kmsmanagement::KmsManagement::{
+    kms_management::KmsManagement::{
         CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
         PreprocessKskgenRequest,
     },
@@ -64,9 +64,10 @@ impl DbEventPublisher {
             .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
         sqlx::query!(
-            "INSERT INTO public_decryption_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             request.decryptionId.as_le_slice(),
             sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
+            request.extraData.as_ref(),
         )
         .execute(&self.db_pool)
         .await
@@ -83,11 +84,12 @@ impl DbEventPublisher {
             .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
         sqlx::query!(
-            "INSERT INTO user_decryption_requests VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            "INSERT INTO user_decryption_requests VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
             request.decryptionId.as_le_slice(),
             sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
             request.userAddress.as_slice(),
             request.publicKey.as_ref(),
+            request.extraData.as_ref(),
         )
         .execute(&self.db_pool)
         .await

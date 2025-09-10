@@ -34,11 +34,11 @@ opentelemetry_sdk = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
 humantime = { workspace = true }
 bytesize = { workspace = true}
+aws-sdk-s3 = { workspace = true }
 
 # crates.io dependencies
 aligned-vec = "0.6.4"
 num-traits = "0.2.19"
-aws-sdk-s3 = "1.78.0"
 futures = "0.3.31"
 
 # local dependencies
@@ -50,6 +50,7 @@ path = "src/bin/sns_worker.rs"
 
 [features]
 test_decrypt_128 = []
+test_s3_use_handle_as_key = []
 
 [dev-dependencies]
 test-harness = { path = "../test-harness" }
@@ -57,5 +58,5 @@ test-harness = { path = "../test-harness" }
 
 [dev-dependencies.sns-worker]
 path = "."
-features = ["test_decrypt_128"]
+features = ["test_decrypt_128", "test_s3_use_handle_as_key"]
 

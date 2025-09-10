@@ -6,6 +6,7 @@ import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol"
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {ACLChecks} from "./shared/ACLChecks.sol";
 
 /**
  * @title   KMSVerifier.
@@ -13,13 +14,19 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  *          signature verification functions.
  * @dev     The contract uses EIP712UpgradeableCrossChain for cryptographic operations and is deployed using an UUPS proxy.
  */
-contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
+contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain, ACLChecks {
     /// @notice Returned if the KMS signer to add is already a signer.
     error KMSAlreadySigner();
 
     /// @notice Returned if the recovered KMS signer is not a valid KMS signer.
     /// @param invalidSigner Address of the invalid signer.
     error KMSInvalidSigner(address invalidSigner);
+
+    /// @notice Returned if the deserializing of the decryption proof fails.
+    error DeserializingDecryptionProofFail();
+
+    /// @notice Returned if the decryption proof is empty.
+    error EmptyDecryptionProof();
 
     /// @notice Returned if the KMS signer to add is the null address.
     error KMSSignerNull();
@@ -53,11 +60,13 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
         bytes32[] ctHandles;
         /// @notice The decrypted result of the public decryption.
         bytes decryptedResult;
+        /// @notice Generic bytes metadata for versioned payloads.
+        bytes extraData;
     }
 
     /// @notice Decryption result type.
     string public constant EIP712_PUBLIC_DECRYPT_TYPE =
-        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult)";
+        "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
 
     /// @notice Decryption result typehash.
     bytes32 public constant DECRYPTION_RESULT_TYPEHASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
@@ -72,7 +81,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -86,7 +95,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant KMSVerifierStorageLocation =
@@ -117,12 +126,19 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
     }
 
     /**
+     * @notice Re-initializes the contract from V1.
+     */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
+    /**
      * @notice          Sets a new context (i.e. new set of unique signers and new threshold).
      * @dev             Only the owner can set a new context.
      * @param newSignersSet   The new set of signers to be set. This array should not be empty and without duplicates nor null values.
      * @param newThreshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
-    function defineNewContext(address[] memory newSignersSet, uint256 newThreshold) public virtual onlyOwner {
+    function defineNewContext(address[] memory newSignersSet, uint256 newThreshold) public virtual onlyACLOwner {
         uint256 newSignersLen = newSignersSet.length;
         if (newSignersLen == 0) {
             revert SignersSetIsEmpty();
@@ -158,7 +174,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
      * @dev             Only the owner can set a threshold.
      * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
-    function setThreshold(uint256 threshold) public virtual onlyOwner {
+    function setThreshold(uint256 threshold) public virtual onlyACLOwner {
         _setThreshold(threshold);
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
         emit NewContextSet($.signers, threshold);
@@ -169,18 +185,51 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
      * @dev                     Calls verifySignaturesDigest internally.
      * @param handlesList       The list of handles, which where requested to be decrypted.
      * @param decryptedResult   A bytes array representing the abi-encoding of all requested decrypted values.
-     * @param signatures        An array of signatures to verify.
+     * @param decryptionProof   Decryption proof containing KMS signatures and extra data.
      * @return isVerified       true if enough provided signatures are valid, false otherwise.
      */
     function verifyDecryptionEIP712KMSSignatures(
         bytes32[] memory handlesList,
         bytes memory decryptedResult,
-        bytes[] memory signatures
+        bytes memory decryptionProof
     ) public virtual returns (bool) {
-        PublicDecryptVerification memory decRes;
-        decRes.ctHandles = handlesList;
-        decRes.decryptedResult = decryptedResult;
-        bytes32 digest = _hashDecryptionResult(decRes);
+        if (decryptionProof.length == 0) {
+            revert EmptyDecryptionProof();
+        }
+
+        /// @dev The decryptionProof is the numSigners + kmsSignatures + extraData (1 + 65*numSigners + extraData bytes)
+        uint256 numSigners = uint256(uint8(decryptionProof[0]));
+
+        /// @dev The extraData is the rest of the decryptionProof bytes after the numSigners + signatures.
+        uint256 extraDataOffset = 1 + 65 * numSigners;
+
+        /// @dev Check that the decryptionProof is long enough to contain at least the numSigners + kmsSignatures.
+        if (decryptionProof.length < extraDataOffset) {
+            revert DeserializingDecryptionProofFail();
+        }
+
+        bytes[] memory signatures = new bytes[](numSigners);
+        for (uint256 j = 0; j < numSigners; j++) {
+            signatures[j] = new bytes(65);
+            for (uint256 i = 0; i < 65; i++) {
+                signatures[j][i] = decryptionProof[1 + 65 * j + i];
+            }
+        }
+
+        /// @dev Extract the extraData from the decryptionProof.
+        uint256 extraDataSize = decryptionProof.length - extraDataOffset;
+        bytes memory extraData = new bytes(extraDataSize);
+        for (uint i = 0; i < extraDataSize; i++) {
+            extraData[i] = decryptionProof[extraDataOffset + i];
+        }
+
+        PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
+            handlesList,
+            decryptedResult,
+            extraData
+        );
+        bytes32 digest = _hashDecryptionResult(publicDecryptVerification);
+
         return _verifySignaturesDigest(digest, signatures);
     }
 
@@ -316,7 +365,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
     /**
      * @dev Should revert when msg.sender is not authorized to upgrade the contract.
      */
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
 
     /**
      * @notice                  Hashes the decryption result.
@@ -330,7 +379,8 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
                     abi.encode(
                         DECRYPTION_RESULT_TYPEHASH,
                         keccak256(abi.encodePacked(decRes.ctHandles)),
-                        keccak256(decRes.decryptedResult)
+                        keccak256(decRes.decryptedResult),
+                        keccak256(abi.encodePacked(decRes.extraData))
                     )
                 )
             );

@@ -12,7 +12,7 @@ use connector_utils::{
     },
     types::KmsResponse,
 };
-use fhevm_gateway_rust_bindings::decryption::Decryption::DecryptionInstance;
+use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use rstest::rstest;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -21,7 +21,7 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tx_sender::core::{
     Config, DbKmsResponsePicker, DbKmsResponseRemover, TransactionSender,
-    tx_sender::TransactionSenderInner,
+    tx_sender::{TransactionSenderInner, TransactionSenderInnerConfig},
 };
 
 #[rstest]
@@ -55,8 +55,8 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
         .await
         .ok_or_else(|| anyhow!("Failed to capture PublicDecryptionResponse"))??;
     match inserted_response {
-        KmsResponse::PublicDecryption { decryption_id, .. } => {
-            assert_eq!(response.decryptionId, decryption_id)
+        KmsResponse::PublicDecryption(r) => {
+            assert_eq!(response.decryptionId, r.decryption_id)
         }
         _ => unreachable!(),
     }
@@ -109,8 +109,8 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
         .await
         .ok_or_else(|| anyhow!("Failed to capture UserDecryptionResponse"))??;
     match inserted_response {
-        KmsResponse::UserDecryption { decryption_id, .. } => {
-            assert_eq!(response.decryptionId, decryption_id)
+        KmsResponse::UserDecryption(r) => {
+            assert_eq!(response.decryptionId, r.decryption_id)
         }
         _ => unreachable!(),
     }
@@ -158,8 +158,8 @@ async fn stress_test() -> anyhow::Result<()> {
     let mut responses_id = Vec::with_capacity(nb_response);
     for _ in 0..nb_response {
         match insert_rand_user_decrypt_response(test_instance.db()).await? {
-            KmsResponse::UserDecryption { decryption_id, .. } => {
-                responses_id.push(decryption_id);
+            KmsResponse::UserDecryption(r) => {
+                responses_id.push(r.decryption_id);
             }
             _ => unreachable!(),
         }
@@ -211,9 +211,12 @@ async fn start_test_tx_sender(
     let tx_sender_inner = TransactionSenderInner::new(
         provider.clone(),
         DecryptionInstance::new(DECRYPTION_MOCK_ADDRESS, provider),
-        10,
-        Duration::from_millis(100),
-        130,
+        TransactionSenderInnerConfig {
+            tx_retries: 3,
+            tx_retry_interval: Duration::from_millis(100),
+            trace_reverted_tx: true,
+            gas_multiplier_percent: 130,
+        },
     );
     let tx_sender = TransactionSender::new(response_picker, tx_sender_inner, response_remover);
 
