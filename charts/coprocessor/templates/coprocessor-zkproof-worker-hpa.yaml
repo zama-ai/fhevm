@@ -1,0 +1,27 @@
+{{- if and .Values.zkProofWorker.hpa.enabled .Values.zkProofWorker.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "zkProofWorkerName" . }}-hpa
+  labels:
+    app: coprocessor-zkproof-worker
+    app.kubernetes.io/name: {{ include "zkProofWorkerName" . }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "zkProofWorkerName" . }}
+  minReplicas: {{ .Values.zkProofWorker.hpa.minReplicas }}
+  maxReplicas: {{ .Values.zkProofWorker.hpa.maxReplicas }}
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: {{ .Values.zkProofWorker.hpa.targetCPUUtilizationPercentage }}
+  {{- if .Values.zkProofWorker.hpa.behavior }}
+  behavior:
+    {{- toYaml .Values.zkProofWorker.hpa.behavior | nindent 4 }}
+  {{- end }}
+{{- end }}

@@ -1,6 +1,6 @@
 {
   "name": "@fhevm/core-contracts",
-  "version": "0.7.0-12",
+  "version": "0.8.0",
   "description": "fhevm backend contracts",
   "repository": {
     "type": "git",

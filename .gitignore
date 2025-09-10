@@ -46,7 +46,8 @@ tmp/
 *.rar
 *.7z
 
-# Local configuration files
+# Local configuration and backup files
+.local/
 *-local.*
 .local
 

@@ -56,7 +56,7 @@ fn default_tx_retries() -> u8 {
 }
 
 fn default_tx_retry_interval_ms() -> u64 {
-    100
+    10
 }
 
 fn default_trace_reverted_tx() -> bool {

@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT verified, handles FROM verify_proofs WHERE zk_proof_id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "verified",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 1,
+        "name": "handles",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      true,
+      true
+    ]
+  },
+  "hash": "5a4711c1d15fd6e9838a38f8c440867372d972a24d8af5fca1a97c2d3a49b1de"
+}
