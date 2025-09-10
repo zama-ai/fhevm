@@ -242,7 +242,7 @@ contract Decryption is
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
     function publicDecryptionRequest(
