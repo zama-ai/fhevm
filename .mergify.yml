@@ -9,7 +9,6 @@ queue_rules:
       - check-success = test-suite-e2e-tests/fhevm-e2e-test (bpr)
     queue_conditions:
       - base = main
-      - "#approved-reviews-by >= 1"
       - label!=do-not-merge
 pull_request_rules:
   - name: autoqueue-to-main
