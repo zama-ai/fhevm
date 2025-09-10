@@ -84,3 +84,59 @@ impl<D: EventDispatcher<E> + HandlerRegistry<E>, E: Event> HandlerRegistry<E>
             .register_once_handler(event_id, request_id, handler);
     }
 }
+
+#[cfg(test)]
+mod tests {
+
+    use crate::core::event::{
+        ApiCategory, ApiVersion, GenericEventData, RelayerEvent, RelayerEventData,
+    };
+    use crate::orchestrator::traits::{Event, EventDispatcher, EventHandler, HandlerRegistry};
+    use crate::orchestrator::{Orchestrator, TokioEventDispatcher};
+    use alloy::rpc::types::Log;
+    use std::sync::Arc;
+
+    #[test]
+    fn test_uuid_generator() {
+        let pubsub = Arc::new(TokioEventDispatcher::<RelayerEvent>::new());
+        let orchestrator = Orchestrator::new(pubsub);
+
+        let id1 = orchestrator.new_request_id();
+        let id2 = orchestrator.new_request_id();
+
+        assert_ne!(id1, id2);
+    }
+
+    struct SimpleEventHandler;
+
+    #[async_trait::async_trait]
+    impl EventHandler<RelayerEvent> for SimpleEventHandler {
+        async fn handle_event(&self, event: RelayerEvent) {
+            println!("Handling event: {:?}", event.event_name());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_orchestrator() {
+        let pubsub = Arc::new(TokioEventDispatcher::<RelayerEvent>::new());
+        let orchestrator = Orchestrator::new(pubsub.clone());
+
+        let id = orchestrator.new_request_id();
+
+        let event = RelayerEvent::new(
+            id,
+            ApiVersion {
+                category: ApiCategory::PRODUCTION,
+                number: 1,
+            },
+            RelayerEventData::Generic(GenericEventData::EventLogFromFhevm {
+                log: Log::default(),
+            }),
+        );
+
+        let handler = Arc::new(SimpleEventHandler);
+        pubsub.register_handler(event.event_id(), handler);
+        _ = orchestrator.dispatch_event(event).await;
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+    }
+}
