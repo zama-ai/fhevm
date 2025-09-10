@@ -48,6 +48,8 @@ on:
         default: ""
         type: string
   pull_request:
+    branches:
+      - main
 
 permissions: {}
 
@@ -79,7 +81,7 @@ jobs:
   fhevm-e2e-test:
     name: test-suite-e2e-tests/fhevm-e2e-test (bpr)
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
+    if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'mergify/merge-queue/') }}
     permissions:
       contents: 'read'
       id-token: 'write'
