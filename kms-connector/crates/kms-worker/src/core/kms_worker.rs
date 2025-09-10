@@ -1,13 +1,19 @@
-use crate::core::{
-    KmsResponsePublisher,
-    config::Config,
-    event_picker::{DbEventPicker, EventPicker},
-    event_processor::{
-        DbEventProcessor, DecryptionProcessor, EventProcessor, KmsClient, s3::S3Service,
+use crate::{
+    core::{
+        KmsResponsePublisher,
+        config::Config,
+        event_picker::{DbEventPicker, EventPicker},
+        event_processor::{
+            DbEventProcessor, DecryptionProcessor, EventProcessor, KmsClient, s3::S3Service,
+        },
+        kms_response_publisher::DbKmsResponsePublisher,
     },
-    kms_response_publisher::DbKmsResponsePublisher,
+    monitoring::health::{KmsHealthClient, State},
 };
-use connector_utils::conn::{GatewayProvider, connect_to_db, connect_to_gateway};
+use connector_utils::{
+    conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    tasks::spawn_with_limit,
+};
 use std::fmt::Display;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -53,29 +59,31 @@ where
     async fn run(mut self) {
         loop {
             match self.event_picker.pick_events().await {
-                Ok(events) => self.spawn_event_handling_tasks(events),
+                Ok(events) => self.spawn_event_handling_tasks(events).await,
                 Err(e) => warn!("Error while picking events: {e}"),
             };
         }
     }
 
-    /// Spawns a new task dedicated to the handling of an event.
-    fn spawn_event_handling_tasks(&self, events: Vec<T>) {
+    /// Spawns a new task to handle each event.
+    async fn spawn_event_handling_tasks(&self, events: Vec<T>) {
         for event in events {
             let event_processor = self.event_processor.clone();
             let response_publisher = self.response_publisher.clone();
 
-            tokio::spawn(async move {
+            spawn_with_limit(async move {
                 Self::handle_event(event_processor, response_publisher, event).await
-            });
+            })
+            .await;
         }
     }
 
     /// Handles an event coming from the Gateway.
+    #[tracing::instrument(skip(event_processor, response_publisher), fields(event = %event))]
     async fn handle_event(mut event_processor: Proc, response_publisher: Publ, event: T) {
         let response = match event_processor.process(&event).await {
             Ok(response) => response,
-            Err(e) => return error!("Failed to process event: {e}"),
+            Err(e) => return error!("{e}"),
         };
 
         if let Err(e) = response_publisher.publish(response.clone()).await {
@@ -86,30 +94,38 @@ where
 
 impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePublisher> {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<Self> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let provider = connect_to_gateway(&config.gateway_url).await?;
         let kms_client = KmsClient::connect(&config).await?;
+        let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
 
-        let event_picker =
-            DbEventPicker::connect(db_pool.clone(), config.events_batch_size).await?;
+        let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
-        let s3_service = S3Service::new(&config, provider);
+        let s3_service = S3Service::new(&config, provider.clone());
         let decryption_processor = DecryptionProcessor::new(&config, s3_service);
         let event_processor =
-            DbEventProcessor::new(kms_client, decryption_processor, db_pool.clone());
-        let response_publisher = DbKmsResponsePublisher::new(db_pool);
+            DbEventProcessor::new(kms_client.clone(), decryption_processor, db_pool.clone());
+        let response_publisher = DbKmsResponsePublisher::new(db_pool.clone());
 
-        Ok(Self::new(event_picker, event_processor, response_publisher))
+        let state = State::new(
+            db_pool,
+            provider,
+            kms_health_client,
+            config.healthcheck_timeout,
+        );
+        let kms_worker = KmsWorker::new(event_picker, event_processor, response_publisher);
+        Ok((kms_worker, state))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::event_processor::ProcessingError;
     use connector_utils::{
         tests::rand::{rand_signature, rand_u256},
-        types::{GatewayEvent, KmsResponse},
+        types::{GatewayEvent, KmsResponse, UserDecryptionResponse},
     };
     use std::time::Duration;
     use tracing_test::traced_test;
@@ -164,12 +180,13 @@ mod tests {
 
     impl EventProcessor for MockEventProcessor {
         type Event = GatewayEvent;
-        async fn process(&mut self, _event: &Self::Event) -> anyhow::Result<KmsResponse> {
-            Ok(KmsResponse::UserDecryption {
+        async fn process(&mut self, _event: &Self::Event) -> Result<KmsResponse, ProcessingError> {
+            Ok(KmsResponse::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
                 signature: rand_signature(),
-            })
+                extra_data: vec![],
+            }))
         }
     }
 

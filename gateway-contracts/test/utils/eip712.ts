@@ -31,6 +31,7 @@ export function createEIP712ResponseZKPoK(
   userAddress: string,
   contractAddress: string,
   contractChainId: number,
+  extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -48,6 +49,7 @@ export function createEIP712ResponseZKPoK(
         { name: "userAddress", type: "address" },
         { name: "contractAddress", type: "address" },
         { name: "contractChainId", type: "uint256" },
+        { name: "extraData", type: "bytes" },
       ],
     },
     primaryType: "CiphertextVerification",
@@ -62,6 +64,7 @@ export function createEIP712ResponseZKPoK(
       userAddress,
       contractAddress,
       contractChainId,
+      extraData,
     },
   };
 }
@@ -88,6 +91,7 @@ export function createEIP712ResponsePublicDecrypt(
   verifyingContract: string,
   ctHandles: string[],
   decryptedResult: string,
+  extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -103,6 +107,7 @@ export function createEIP712ResponsePublicDecrypt(
       PublicDecryptVerification: [
         { name: "ctHandles", type: "bytes32[]" },
         { name: "decryptedResult", type: "bytes" },
+        { name: "extraData", type: "bytes" },
       ],
     },
     primaryType: "PublicDecryptVerification",
@@ -113,8 +118,9 @@ export function createEIP712ResponsePublicDecrypt(
       verifyingContract,
     },
     message: {
-      ctHandles: ctHandles,
-      decryptedResult: decryptedResult,
+      ctHandles,
+      decryptedResult,
+      extraData,
     },
   };
 }
@@ -143,6 +149,7 @@ export function createEIP712RequestUserDecrypt(
   contractsChainId: number,
   startTimestamp: string,
   durationDays: string,
+  extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -161,6 +168,7 @@ export function createEIP712RequestUserDecrypt(
         { name: "contractsChainId", type: "uint256" },
         { name: "startTimestamp", type: "uint256" },
         { name: "durationDays", type: "uint256" },
+        { name: "extraData", type: "bytes" },
       ],
     },
     primaryType: "UserDecryptRequestVerification",
@@ -176,6 +184,7 @@ export function createEIP712RequestUserDecrypt(
       contractsChainId,
       startTimestamp,
       durationDays,
+      extraData,
     },
   };
 }
@@ -205,6 +214,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
   contractsChainId: number,
   startTimestamp: string,
   durationDays: string,
+  extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -224,6 +234,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
         { name: "contractsChainId", type: "uint256" },
         { name: "startTimestamp", type: "uint256" },
         { name: "durationDays", type: "uint256" },
+        { name: "extraData", type: "bytes" },
       ],
     },
     primaryType: "DelegatedUserDecryptRequestVerification",
@@ -240,6 +251,7 @@ export function createEIP712RequestDelegatedUserDecrypt(
       contractsChainId,
       startTimestamp,
       durationDays,
+      extraData,
     },
   };
 }
@@ -267,6 +279,7 @@ export function createEIP712ResponseUserDecrypt(
   publicKey: string,
   ctHandles: string[],
   userDecryptedShare: string,
+  extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
     throw new Error("Invalid verifying contract address.");
@@ -283,6 +296,7 @@ export function createEIP712ResponseUserDecrypt(
         { name: "publicKey", type: "bytes" },
         { name: "ctHandles", type: "bytes32[]" },
         { name: "userDecryptedShare", type: "bytes" },
+        { name: "extraData", type: "bytes" },
       ],
     },
     primaryType: "UserDecryptResponseVerification",
@@ -296,6 +310,7 @@ export function createEIP712ResponseUserDecrypt(
       publicKey,
       ctHandles,
       userDecryptedShare,
+      extraData,
     },
   };
 }

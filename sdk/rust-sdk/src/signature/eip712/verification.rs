@@ -19,12 +19,12 @@ pub fn recover_signer(signature: &[u8], hash: B256) -> Result<Address> {
 
     // Parse the signature from bytes
     let sig = Signature::from_raw(signature)
-        .map_err(|e| FhevmError::SignatureError(format!("Invalid signature: {}", e)))?;
+        .map_err(|e| FhevmError::SignatureError(format!("Invalid signature: {e}")))?;
 
     // Recover the address
     let recovered = sig
         .recover_address_from_prehash(&hash)
-        .map_err(|e| FhevmError::SignatureError(format!("Failed to recover address: {}", e)))?;
+        .map_err(|e| FhevmError::SignatureError(format!("Failed to recover address: {e}")))?;
 
     Ok(recovered)
 }

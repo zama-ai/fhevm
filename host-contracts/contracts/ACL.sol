@@ -39,7 +39,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     error NotDelegatedYet(address delegatee, address contractAddress);
 
     /// @notice Returned if the sender address is not allowed to pause the contract.
-    error NotOwnerOrPauser(address sender);
+    error NotPauser(address sender);
 
     /// @notice Returned if the sender address is not allowed for allow operations.
     /// @param sender Sender address.
@@ -238,8 +238,8 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
      * The contract must not be paused.
      */
     function pause() external virtual {
-        if (msg.sender != owner() && msg.sender != getPauser()) {
-            revert NotOwnerOrPauser(msg.sender);
+        if (msg.sender != getPauser()) {
+            revert NotPauser(msg.sender);
         }
 
         _pause();

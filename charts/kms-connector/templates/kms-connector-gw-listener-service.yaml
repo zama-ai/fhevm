@@ -1,0 +1,18 @@
+{{- if .Values.kmsConnectorGwListener.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: kms-connector-gw-listener
+    app.kubernetes.io/name: {{ include "kmsConnectorGwListenerName" . }}
+  name: {{ include "kmsConnectorGwListenerName" . }}
+spec:
+  ports:
+    - name: monitoring
+      port: {{ .Values.kmsConnectorGwListener.ports.monitoring }}
+      targetPort: monitoring
+  selector:
+    app: kms-connector-gw-listener
+    app.kubernetes.io/name: {{ include "kmsConnectorGwListenerName" . }}
+  type: ClusterIP
+{{- end }}

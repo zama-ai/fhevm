@@ -1,6 +1,7 @@
 services:
   kms-connector-db-migration:
     container_name: kms-connector-db-migration
+    image: ghcr.io/zama-ai/fhevm/kms-connector/db-migration:${CONNECTOR_DB_MIGRATION_VERSION}
     build:
       context: ../../..
       dockerfile: kms-connector/connector-db/Dockerfile

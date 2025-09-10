@@ -45,7 +45,7 @@ spec:
       containers:
         - name: coprocessor-tfhe-worker
           image: {{ .Values.tfheWorker.image.name }}:{{ .Values.tfheWorker.image.tag }}
-          command: ["coprocessor"]
+          command: ["tfhe_worker"]
           args:
 {{ toYaml .Values.tfheWorker.args | nindent 12 }}
           env:

@@ -3,6 +3,8 @@ name: coprocessor-cargo-test
 on:
   pull_request:
 
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -79,9 +81,16 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Login to GitHub Chainguard Registry
+      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+      with:
+        registry: cgr.dev
+        username: ${{ secrets.CGR_USERNAME }}
+        password: ${{ secrets.CGR_PASSWORD }}
+
     - name: Init database
       run: make init_db
-      working-directory: coprocessor/fhevm-engine/coprocessor
+      working-directory: coprocessor/fhevm-engine/tfhe-worker
 
     - name: Use Node.js
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2

@@ -1,6 +1,8 @@
 # Compile and test Coprocessor on a single L40 GPU, on hyperstack
 name: coprocessor-gpu-tests
 
+permissions: {}
+
 env:
   CARGO_TERM_COLOR: always
   ACTION_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -39,12 +41,9 @@ jobs:
           filters: |
             coprocessor-gpu:
               - coprocessor/fhevm-engine/Cargo.toml
-              - coprocessor/fhevm-engine/coprocessor/Cargo.toml
-              - coprocessor/fhevm-engine/coprocessor/build.rs
-              - coprocessor/fhevm-engine/coprocessor/src/**
-              - coprocessor/fhevm-engine/executor/Cargo.toml
-              - coprocessor/fhevm-engine/executor/build.rs
-              - coprocessor/fhevm-engine/executor/src/**
+              - coprocessor/fhevm-engine/tfhe-worker/Cargo.toml
+              - coprocessor/fhevm-engine/tfhe-worker/build.rs
+              - coprocessor/fhevm-engine/tfhe-worker/src/**
               - coprocessor/fhevm-engine/scheduler/src/**
               - coprocessor/fhevm-engine/scheduler/Cargo.toml
               - coprocessor/fhevm-engine/scheduler/build.rs
@@ -94,6 +93,13 @@ jobs:
           - os: ubuntu-22.04
             cuda: "12.2"
             gcc: 11
+    env:
+      CUDA_PATH: "/usr/local/cuda-${{ matrix.cuda }}"
+      CUDA_MODULE_LOADER: "EAGER"
+      CC: "/usr/bin/gcc-${{ matrix.gcc }}"
+      CXX: "/usr/bin/g++-${{ matrix.gcc }}"
+      CUDAHOSTCXX: "/usr/bin/g++-${{ matrix.gcc }}"
+
     steps:
       - name: Install git LFS
         run: |
@@ -114,8 +120,13 @@ jobs:
         uses: ./.github/actions/gpu_setup
         with:
           cuda-version: ${{ matrix.cuda }}
-          gcc-version: ${{ matrix.gcc }}
           github-instance: ${{ env.SECRETS_AVAILABLE == 'false' }}
+
+      - name: Export CUDA variables
+        shell: bash
+        run: |
+          echo "PATH=$PATH:${CUDA_PATH}/bin" >> "${GITHUB_PATH}"
+          echo "LD_LIBRARY_PATH=${CUDA_PATH}/lib64:${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
 
       - name: Install latest stable
         uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
@@ -152,9 +163,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to GitHub Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
       - name: Init database
         run: make init_db
-        working-directory: coprocessor/fhevm-engine/coprocessor
+        working-directory: coprocessor/fhevm-engine/tfhe-worker
 
       - name: Use Node.js
         uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "../../lib/FHE.sol";
-import "../FHEVMConfig.sol";
+import {CoprocessorSetup} from "../CoprocessorSetup.sol";
 
 contract FHEVMTestSuite6 {
     ebool public resEbool;
@@ -14,7 +14,7 @@ contract FHEVMTestSuite6 {
     euint256 public resEuint256;
 
     constructor() {
-        FHE.setCoprocessor(FHEVMConfig.defaultConfig());
+        FHE.setCoprocessor(CoprocessorSetup.defaultConfig());
     }
 
     function eq_uint16_euint16(uint16 a, externalEuint16 b, bytes calldata inputProof) public {

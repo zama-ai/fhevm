@@ -21,7 +21,7 @@ function main(): void {
     const addressesDir = "addresses";
 
     // Get gateway config address env file
-    const gatewayConfigAddressEnv = path.join(addressesDir, ".env.gateway_config");
+    const gatewayConfigAddressEnv = path.join(addressesDir, ".env.gateway");
 
     let shouldGenerateAddresses = false;
 

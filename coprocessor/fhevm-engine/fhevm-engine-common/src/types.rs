@@ -1,3 +1,7 @@
+use alloy::providers::RootProvider;
+use alloy_provider::fillers::{
+    BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller,
+};
 use anyhow::Result;
 use bigdecimal::num_bigint::BigInt;
 use tfhe::integer::bigint::StaticUnsignedBigInt;
@@ -536,8 +540,34 @@ impl SupportedFheCiphertexts {
         (type_num, safe_serialize(&list))
     }
 
-    pub fn decompress(ct_type: i16, list: &[u8]) -> Result<Self> {
-        let list: CompressedCiphertextList = safe_deserialize(list)?;
+    #[cfg(feature = "gpu")]
+    pub fn decompress(ct_type: i16, list: &[u8], gpu_idx: usize) -> Result<Self> {
+        use crate::gpu_memory::{release_memory_on_gpu, reserve_memory_on_gpu};
+        let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
+        let mut reserved_mem = 0;
+        if let Ok(Some(decomp_size)) = ctlist.get_decompression_size_on_gpu(gpu_idx) {
+            reserved_mem = decomp_size;
+        };
+        reserve_memory_on_gpu(reserved_mem, gpu_idx);
+        let res = Self::decompress_impl(ct_type, &ctlist);
+        release_memory_on_gpu(reserved_mem, gpu_idx);
+        res
+    }
+
+    #[cfg(not(feature = "gpu"))]
+    pub fn decompress(ct_type: i16, list: &[u8], _: usize) -> Result<Self> {
+        let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
+        Self::decompress_impl(ct_type, &ctlist)
+    }
+
+    // Decompress without checking if enough GPU memory is available -
+    // used when GPU featre is active, but decompressing on CPU
+    pub fn decompress_no_memcheck(ct_type: i16, list: &[u8]) -> Result<Self> {
+        let ctlist: CompressedCiphertextList = safe_deserialize(list)?;
+        Self::decompress_impl(ct_type, &ctlist)
+    }
+
+    pub fn decompress_impl(ct_type: i16, list: &CompressedCiphertextList) -> Result<Self> {
         match ct_type {
             0 => Ok(SupportedFheCiphertexts::FheBool(
                 list.get(0)?.ok_or(FhevmError::MissingTfheRsData)?,
@@ -800,3 +830,11 @@ impl TryFrom<i16> for AllowEvents {
         }
     }
 }
+
+pub type BlockchainProvider = FillProvider<
+    JoinFill<
+        alloy::providers::Identity,
+        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+    >,
+    RootProvider,
+>;

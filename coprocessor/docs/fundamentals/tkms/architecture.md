@@ -8,9 +8,9 @@ One big usage-case of the KMS system is to facilitate key generation and decrypt
 
 We now briefly outline each of these components along with their constituents:
 
-- *fhEVM validator*: The validator node running the fhEVM blockchain.
+- *FHEVM validator*: The validator node running the FHEVM blockchain.
 
-- *Gateway*: Untrusted service that listens for decryption events on the fhEVM blockchain and propagates these as decryption requests to the KMS, and propagates decryption results back to the fhEVM blockchain. Used in a similar fashion to handle reencryption requests from a user.
+- *Gateway*: Untrusted service that listens for decryption events on the FHEVM blockchain and propagates these as decryption requests to the KMS, and propagates decryption results back to the FHEVM blockchain. Used in a similar fashion to handle reencryption requests from a user.
 
 - *Gateway KMS Connector*: A simple translation service that offers a gRPC interface for the gateway to communicate with the KMS blockchain. Calls from the gateway are submitted as transactions to the KMS blockchain, and result events from the KMS blockchain are returned to the gateway.
 
@@ -40,11 +40,11 @@ The frontend makes up the public interface of the KMS, through which all request
 It consists of the following components:
 
 - Smart contracts: ISC, ASC and Config SC.
-  - Responsible for receiving, validating and processing requests and updates from the fhEVM. Including decryption, reencryption, validator updates, key generation and setup.
+  - Responsible for receiving, validating and processing requests and updates from the FHEVM. Including decryption, reencryption, validator updates, key generation and setup.
 - KMS validators (realized through CometBFT).
   - The entities realizing the KMS blockchain. There may, or may not, be a 1-1 mapping between each validator and a threshold party in the KMS backend.
 
-Multiple ISCs are deployed on the blockchain, typically one for each application (e.g. fhEVM blockchain) or application type (e.g. EVM blockchain). Each of these can keep application-specific state in order to verify requests from the application. For instance, an ISC for an fhEVM blockchain holds the identity of the current set of validators, so that access controls lists (ACLs) in decryption and reencryption requests can be validated by checking state inclusion proofs against the state roof of the fhEVM blockchain.
+Multiple ISCs are deployed on the blockchain, typically one for each application (e.g. FHEVM blockchain) or application type (e.g. EVM blockchain). Each of these can keep application-specific state in order to verify requests from the application. For instance, an ISC for an FHEVM blockchain holds the identity of the current set of validators, so that access controls lists (ACLs) in decryption and reencryption requests can be validated by checking state inclusion proofs against the state roof of the FHEVM blockchain.
 
 All decryption and reencryption requests are submitted as transactions to an ASC. The ASC performs universal validation and forwards ACL validation to the appropriate ISC. If all validations are ok then the ASC calls the backend by emitting an event that will trigger the backend to actually fulfill the request. Once the request has been fulfilled, the backend submits a fulfillment transaction back to the ASC.
 
@@ -76,11 +76,11 @@ Each backend type is further described in their own document but each _logical_ 
 
 More specifically the coordinator listens for events from the ASC (received through the Connector) and triggers the Core to fulfill operations. This means that the blockchain is the ground truth of which requests are processed, and each backend instance can independently authenticate these. The backend make use of a vault to keep and share sensitive material.
 
-The design of the backend consisting of multiple components is done to make it possible to isolate the cryptographic _Engine_ from the public Internet and make it completely agnostic to the fhEVM and even the KMS blockchain.
+The design of the backend consisting of multiple components is done to make it possible to isolate the cryptographic _Engine_ from the public Internet and make it completely agnostic to the FHEVM and even the KMS blockchain.
 It will simply only communicate with the Core Service and trust its requests blindly.
 However, this does not pose a security risk as the Core Service and Connector _must_ be executed on the same machine and will only issue commands if signed and finalized by the KMS blockchain.
 
-Each Core Service holds a signature key which is used to validate the authenticity of the operations which will eventually get passed back down to the fhEVM.
+Each Core Service holds a signature key which is used to validate the authenticity of the operations which will eventually get passed back down to the FHEVM.
 More specifically this key is used to sign fulfillment transactions and fingerprints of public material.
 
 The Core Service and Engine is also AWS-friendly, in the sense that it can take advantage of AWS Nitro and AWS KMS to offer additional security. However, they can also be operated in a "developer mode" where the use of AWS components is bypassed, and the sensitive material is simply kept in clear-text on disc. This mode is useful for developers to run a KMS on for instance their laptops.
@@ -97,7 +97,7 @@ Note that backends may choose to batch operations across request transactions in
 
 Note that two-way attestation should happen between the Coordinator and Core, along with the Coordinator and Connector to ensure e.g. that the Coordinator is not triggering other operations than those approved by the frontend.
 
-Note that while the backend protects secret material, selective failure attacks may allow an adversary to extract secret keys by submitting malformed ciphertexts for decryption and reencryption. The KMS itself has no built in mechanism for protecting against this, so there is an implicit trust assumption that only well-formed ciphertexts are submitted to the KMS for decryption and reencryption. This in turn means that there is an implicit trust assumption that whoever produced the ciphertexts did so "honestly", which must be ensured externally (e.g. by the fhEVM).
+Note that while the backend protects secret material, selective failure attacks may allow an adversary to extract secret keys by submitting malformed ciphertexts for decryption and reencryption. The KMS itself has no built in mechanism for protecting against this, so there is an implicit trust assumption that only well-formed ciphertexts are submitted to the KMS for decryption and reencryption. This in turn means that there is an implicit trust assumption that whoever produced the ciphertexts did so "honestly", which must be ensured externally (e.g. by the FHEVM).
 
 Note also that the threshold assumption used by the threshold backend is not based on PoS but rather on a classic MPC threshold assumption that remains unjustified from an incentive point of view. Future work aims to address this.
 
@@ -127,6 +127,6 @@ The storage component is expected to have high availability, although all materi
 
 Secret material is protected by the KMS either through the use of secure enclaves or through threshold secret sharing (see [Backend](#backend)).
 
-While the KMS protects secret material, selective failure attacks may allow an adversary to extract secret keys by submitting malformed ciphertexts for decryption and reencryption. The KMS itself has no built in mechanism for protecting against this, so there is an implicit trust assumption that only well-formed ciphertexts are submitted to the KMS for decryption and reencryption. This in turn means that there is an implicit trust assumption that whoever produced the ciphertexts did so "honestly", which must be ensured externally (e.g. by the fhEVM).
+While the KMS protects secret material, selective failure attacks may allow an adversary to extract secret keys by submitting malformed ciphertexts for decryption and reencryption. The KMS itself has no built in mechanism for protecting against this, so there is an implicit trust assumption that only well-formed ciphertexts are submitted to the KMS for decryption and reencryption. This in turn means that there is an implicit trust assumption that whoever produced the ciphertexts did so "honestly", which must be ensured externally (e.g. by the FHEVM).
 
 Note also that the threshold assumption used by the threshold backend is not based on PoS but rather on a classic MPC threshold assumption that remains unjustified from an incentive point of view. Future work aims to address this.

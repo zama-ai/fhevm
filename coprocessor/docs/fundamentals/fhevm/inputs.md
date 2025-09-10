@@ -1,6 +1,6 @@
 # Inputs
 
-When we talk about inputs, we refer to encrypted data users send to an fhEVM-native blockchain or an fhEVM-coprocessor. Data is in the form of FHE ciphertexts. An example would be the amount to be transferred when calling an ERC20 transfer function.
+When we talk about inputs, we refer to encrypted data users send to an FHEVM-native blockchain or an FHEVM-coprocessor. Data is in the form of FHE ciphertexts. An example would be the amount to be transferred when calling an ERC20 transfer function.
 
 ## ZKPoK
 
@@ -97,17 +97,17 @@ sequenceDiagram
 
 ### Usage
 
-When the user receives the KMS signature, it means that the ZKPoK has been verified by the KMS and the input could be used within fhEVM.
-This is quite useful because on the fhEVM only the KMS signature will be verified and that is faster than verifying a ZkPoK.
+When the user receives the KMS signature, it means that the ZKPoK has been verified by the KMS and the input could be used within FHEVM.
+This is quite useful because on the FHEVM only the KMS signature will be verified and that is faster than verifying a ZkPoK.
 
 ```mermaid
 sequenceDiagram
     participant User
-    participant fhEVM
+    participant FHEVM
 
-    User->>fhEVM: (eInput, C, KMS_S)
-     Note over fhEVM: Reconstruct CVerificationStructFromKMS
-    Note over fhEVM: Verify KMS_S
+    User->>FHEVM: (eInput, C, KMS_S)
+     Note over FHEVM: Reconstruct CVerificationStructFromKMS
+    Note over FHEVM: Verify KMS_S
 
 
 ```

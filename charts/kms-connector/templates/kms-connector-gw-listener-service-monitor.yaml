@@ -1,0 +1,16 @@
+{{- if .Values.kmsConnectorGwListener.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels:
+    app: kms-connector-gw-listener
+    app.kubernetes.io/name: {{ include "kmsConnectorGwListenerName" . }}
+  name: {{ include "kmsConnectorGwListenerName" . }}
+spec:
+  selector:
+    matchLabels:
+      app: kms-connector-gw-listener
+      app.kubernetes.io/name: {{ include "kmsConnectorGwListenerName" . }}
+  endpoints:
+  - port: monitoring
+{{- end -}}
