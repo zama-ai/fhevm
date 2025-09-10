@@ -92,6 +92,6 @@ describe('Input Flow', function () {
       expect(a, `sender[${i}] must not be zero address`).to.not.equal('0x0000000000000000000000000000000000000000'),
     );
 
-    console.log('Gateway chain consensus senders:', senders);
+    console.log('Gateway chain consensus senders on ciphertext commitment:', senders);
   });
 });
