@@ -1,16 +1,18 @@
 // These tests aren't launched in CI because the CI currently doesn't run a relayer
 #[cfg(not(feature = "ci"))]
+mod utils;
+
 #[cfg(test)]
 mod tests {
 
     use reqwest;
     use serde_json::json;
 
-    use crate::{
+    use aws_credential_types::Credentials;
+    use fhevm_relayer::{
         gateway_processors_mock::handler::PARTIAL_MOCKED_PROCESSING_TIME,
         sqs::sqs_listener::{send_message_to_sqs_queue, wait_for_response_with_id},
     };
-    use aws_credential_types::Credentials;
 
     #[tokio::test]
     async fn test_input_url_sqs_endpoint() {
@@ -70,7 +72,7 @@ mod tests {
                 Ok(sub_value) => {
                     matches!(
                         sub_value,
-                        crate::sqs::sqs_listener::ResponseJson::InputProofResponse { .. }
+                        fhevm_relayer::sqs::sqs_listener::ResponseJson::InputProofResponse { .. }
                     );
                 }
             },

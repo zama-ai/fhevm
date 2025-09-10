@@ -1,11 +1,14 @@
+mod utils;
+
 #[tokio::test]
 async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Error>> {
+    use alloy::network::ReceiptResponse;
+    use alloy::primitives::{Address, Bytes};
+    use alloy::signers::{local::PrivateKeySigner, Signer};
     use fhevm_relayer::blockchain::ethereum::ComputeCalldata;
     use fhevm_relayer::config::settings::Settings;
     use fhevm_relayer::transaction::sender::TransactionManager;
     use fhevm_relayer::transaction::TxConfig;
-    use alloy::primitives::{Address, Bytes};
-    use alloy::signers::{local::PrivateKeySigner, Signer};
     use std::str::FromStr;
     use std::sync::Arc;
 
@@ -152,7 +155,7 @@ async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Err
                 .await
             {
                 Ok(receipt) => {
-                    use alloy::rpc::types::{TransactionReceipt, Log, AnyReceiptEnvelope};
+                    use alloy::rpc::types::{AnyReceiptEnvelope, Log, TransactionReceipt};
                     let receipt: TransactionReceipt<AnyReceiptEnvelope<Log>> = receipt.inner;
                     println!("\n✅ TRANSACTION SUCCESSFUL!");
                     println!("Transaction hash: {:#x}", receipt.transaction_hash);

@@ -679,4 +679,3 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
         }
     }
 }
-

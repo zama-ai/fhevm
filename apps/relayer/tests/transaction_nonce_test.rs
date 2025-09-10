@@ -1,4 +1,5 @@
-use fhevm_relayer::transaction::nonce::CachedNonceManagerWithRefresh;
+mod utils;
+
 use alloy::consensus::Transaction;
 use alloy::primitives::address;
 use alloy::primitives::Address;
@@ -9,6 +10,7 @@ use alloy::providers::Provider;
 use alloy::providers::ProviderBuilder;
 use alloy::providers::WalletProvider;
 use alloy::rpc::types::TransactionRequest;
+use fhevm_relayer::transaction::nonce::CachedNonceManagerWithRefresh;
 use reqwest::Url;
 
 #[test]

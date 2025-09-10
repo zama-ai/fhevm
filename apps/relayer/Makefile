@@ -84,6 +84,16 @@ stop-anvil-nodes:
 run-test-api: ## Run all API tests
 	@bash mock/test-api.sh
 
+test-integration-all: ## Run all integration tests sequentially with shared infrastructure
+	@echo "$(GREEN)Running integration tests sequentially with shared infrastructure...$(RESET)"
+	@echo "$(YELLOW)Note: Docker containers will be set up once and torn down after all tests$(RESET)"
+	@SHUTDOWN_TEST_DOCKER_COMPOSE=false cargo test --test gateway_input_handlers_test
+	@SHUTDOWN_TEST_DOCKER_COMPOSE=false cargo test --test gateway_user_decrypt_handler_test
+	@SHUTDOWN_TEST_DOCKER_COMPOSE=false cargo test --test transaction_helper_test
+	@SHUTDOWN_TEST_DOCKER_COMPOSE=false cargo test --test transaction_nonce_test
+	@SHUTDOWN_TEST_DOCKER_COMPOSE=false cargo test --test transaction_sender_test
+	@SHUTDOWN_TEST_DOCKER_COMPOSE=true cargo test --test relayer_test
+	@echo "$(GREEN)All integration tests completed!$(RESET)"
 
 
 # Help message
@@ -100,6 +110,7 @@ help:
 	@echo '  ${YELLOW}make run-test-user-decrypt${RESET}            - Run user decrypt test from curl (failing at user verififcation)'
 	@echo '  ${YELLOW}make run-test-keyurl${RESET}            		- Run keyurl tests'
 	@echo '  ${YELLOW}make run-test-api${RESET}            		- Run keyurl tests'
+	@echo '  ${YELLOW}make test-integration-all${RESET}            - Run all integration tests sequentially (shared infrastructure)'
 	@echo ''
 
 	@echo 'Run sequence:'

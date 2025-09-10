@@ -1,10 +1,14 @@
+mod utils;
+
+use alloy::network::ReceiptResponse;
+use alloy::primitives::{hex, keccak256, Address, Bytes, U256};
+use alloy::signers::local::PrivateKeySigner;
+use alloy::signers::Signer;
+use fhevm_relayer::transaction::nonce::DebugNonceManager;
+use fhevm_relayer::transaction::sender::TransactionManager;
+use fhevm_relayer::transaction::TxConfig;
 use std::sync::Arc;
 use std::time::Duration;
-use fhevm_relayer::transaction::sender::TransactionManager;
-use fhevm_relayer::transaction::nonce::DebugNonceManager;
-use fhevm_relayer::transaction::TxConfig;
-use alloy::primitives::{hex, keccak256, U256, Address, Bytes};
-use alloy::signers::local::PrivateKeySigner;
 
 #[tokio::test]
 /// For this test having a running node is MANDATORY
@@ -154,8 +158,7 @@ async fn test_counter_contract() {
     );
 
     // Get initial count
-    let get_count_calldata =
-        TransactionManager::encode_function_call(get_count_selector, vec![]);
+    let get_count_calldata = TransactionManager::encode_function_call(get_count_selector, vec![]);
     println!("Calling view function to get initial count...");
     let count_bytes = manager
         .call_view(contract_address, get_count_calldata.clone())
@@ -176,8 +179,7 @@ async fn test_counter_contract() {
     println!("Initial count: {initial_count}");
 
     // Increment count
-    let increment_calldata =
-        TransactionManager::encode_function_call(increment_selector, vec![]);
+    let increment_calldata = TransactionManager::encode_function_call(increment_selector, vec![]);
 
     println!("Estimating gas for increment...");
     let estimated_gas = manager
@@ -249,7 +251,7 @@ async fn test_counter_contract() {
 #[test]
 fn test_encode_function_call() {
     use fhevm_relayer::transaction::sender::TransactionManager;
-    
+
     // Test encoding a simple function call
     let selector = [0xab, 0xcd, 0xef, 0x12];
     let params = vec![

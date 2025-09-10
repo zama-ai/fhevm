@@ -1,15 +1,17 @@
-use std::sync::Arc;
+mod utils;
 
 #[tokio::test]
 async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>> {
+    use alloy::network::ReceiptResponse;
+    use alloy::primitives::{Address, Bytes, U256};
+    use alloy::signers::{local::PrivateKeySigner, Signer};
     use fhevm_relayer::blockchain::ethereum::ComputeCalldata;
     use fhevm_relayer::config::settings::Settings;
     use fhevm_relayer::core::event::{HandleContractPair, RequestValidity};
     use fhevm_relayer::transaction::sender::TransactionManager;
     use fhevm_relayer::transaction::TxConfig;
-    use alloy::primitives::{Address, Bytes, U256};
-    use alloy::signers::{local::PrivateKeySigner, Signer};
     use std::str::FromStr;
+    use std::sync::Arc;
 
     // Load configuration
     let settings = Settings::new(None).expect("Failed to load configuration");
@@ -73,7 +75,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
 
     let extra_data = Bytes::from(vec![0x00]);
 
-    use fhevm_relayer::blockchain::gateway::user_decrypt_handler::UserDecryptRequest;
+    use fhevm_relayer::core::event::UserDecryptRequest;
     let user_decrypt_request: UserDecryptRequest = UserDecryptRequest {
         ct_handle_contract_pairs,
         request_validity,
@@ -101,7 +103,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
         .await
     {
         Ok(receipt) => {
-            use alloy::rpc::types::{TransactionReceipt, Log, AnyReceiptEnvelope};
+            use alloy::rpc::types::{AnyReceiptEnvelope, Log, TransactionReceipt};
             let receipt: TransactionReceipt<AnyReceiptEnvelope<Log>> = receipt.inner;
             println!("Receipt status: {}", receipt.status());
             println!("Gas used: {}", receipt.gas_used);
@@ -126,10 +128,11 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
 /// It works only with mock contracts because original contracts are deployed behind a proxy
 #[tokio::test]
 async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::error::Error>> {
+    use alloy::primitives::{keccak256, Address};
     use fhevm_relayer::config::settings::Settings;
     use fhevm_relayer::transaction::sender::TransactionManager;
-    use alloy::primitives::{keccak256, Address};
     use std::str::FromStr;
+    use std::sync::Arc;
 
     use alloy::signers::{local::PrivateKeySigner, Signer};
 
@@ -162,8 +165,9 @@ async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::erro
 
     println!("Using decryption manager: {decryption_address:?}");
     println!("Sender address: {:?}", manager.sender_address());
-    
-    use fhevm_relayer::blockchain::gateway::user_decrypt_handler::UserDecryptionRequest;
+
+    use alloy::sol_types::SolEvent;
+    use fhevm_gateway_bindings::decryption::Decryption::UserDecryptionRequest;
     println!("Looking for topic: {}", UserDecryptionRequest::SIGNATURE);
 
     // STEP 1: Check if the contract has the expected function
