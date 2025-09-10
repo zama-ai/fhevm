@@ -10,7 +10,7 @@ use opentelemetry::KeyValue;
 use prometheus::{register_int_counter, IntCounter};
 use scheduler::dfg::types::SchedulerError;
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput, DFGraph};
-use sqlx::{postgres::PgListener, query, Acquire};
+use sqlx::{postgres::PgListener, query, Acquire, Executor};
 use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
@@ -111,6 +111,10 @@ async fn tfhe_worker_cycle(
         let loop_ctx = opentelemetry::Context::current_with_span(loop_span);
         let mut s = tracer.start_with_context("acquire_connection", &loop_ctx);
         let mut conn = pool.acquire().await?;
+        if args.disable_nestloop {
+            conn.execute("SET enable_nestloop = off").await?;
+        }
+
         s.end();
         let mut s = tracer.start_with_context("begin_transaction", &loop_ctx);
         let mut trx = conn.begin().await?;
