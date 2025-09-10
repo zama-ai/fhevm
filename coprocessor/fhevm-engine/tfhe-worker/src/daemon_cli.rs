@@ -90,6 +90,11 @@ pub struct Args {
 
     #[arg(long, default_value_t = 8080)]
     pub health_check_port: u16,
+
+    /// Disable nestloop in Postgres connections
+    /// This can help performance in some queries
+    #[arg(long, default_value_t = false)]
+    pub disable_nestloop: bool,
 }
 
 pub fn parse_args() -> Args {
