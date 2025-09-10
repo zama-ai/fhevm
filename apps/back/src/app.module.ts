@@ -4,7 +4,7 @@ import { LoggerModule } from 'nestjs-pino'
 import { randomUUID } from 'crypto'
 
 import configuration from '#config/configuration.js'
-import { WebhooksModule } from '#modules/webhooks/app/webbooks.module.js'
+import { WebhooksModule } from '#modules/webhooks/app/webhooks.module.js'
 
 // Note: I need to override the default behavior of ConfigModule in the tests,
 // and, as we use a dynamic module, we need to store the current instance to

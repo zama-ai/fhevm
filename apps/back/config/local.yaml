@@ -1,32 +1,5 @@
 common:
-  address: '127.0.0.1'
-  logLevel: 'debug'
-  prettify: true
-  graphqlMaxComplexity: 150
-aws:
-  useConfigCredentials: true
-  accessKeyId: 'test'
-  secretAccessKey: 'test'
-  region: 'eu-central-1'
-  endpoint: 'http://localhost:4566'
-  orchestrator:
-    queueUrl: 'http://localhost:4566/000000000000/orchestrator-queue'
-  back:
-    queueUrl: 'http://localhost:4566/000000000000/back-queue'
-chains:
-  - id: 11155111
-    name: 'Sepolia'
-    description: 'Ethereum Sepolia'
-  - id: 123456
-    name: 'Local Testnet'
-db:
-  url: 'postgresql://postgres:postgres@localhost:5434/console?schema=back'
-invitation:
-  secret: 'InvitationSecretPassPhrase'
-jwt:
-  secret: 'JWTSecretPassPhrase'
-redis:
-  host: '127.0.0.1'
-  port: 6379
-flags:
-  invitations: true
+  port: 3000
+  prettify: false
+tyk:
+  endpoint: https://innovative-mosquito-portal.aws-euc1.cloud-ara.tyk.io/portal-api

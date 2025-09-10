@@ -1,28 +1,89 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { DeveloperPortalService } from './developer-portal.service.js'
-import type { UserRegistered } from '../core/webhooks.types.js'
-import { newOrganisationName } from '../core/user-registered.logic.js'
+import type { User } from '../core/types.js'
+import type { ApplicationRegistered, UserRegistered } from './webhooks.types.js'
+import * as ur from '../core/user-registered.machine.js'
+import * as ar from '../core/application-registered.machine.js'
+import { createActor } from 'xstate'
 
-const DEFAULT_ORGANISATION_ID = 1;
 @Injectable()
 export class WebhookService {
+  private readonly logger = new Logger(WebhookService.name)
   constructor(private readonly developerPortal: DeveloperPortalService) {}
 
   async handleUserRegistered(user: UserRegistered) {
-    if (user.orgId === DEFAULT_ORGANISATION_ID) {
-      // Create a new organisation
-      const organisation = await this.developerPortal.createOrganisation(
-        newOrganisationName(user),
-      )
+    return new Promise<void>((resolve, reject) => {
+      const actor = createActor(
+        ur.factory(this.developerPortal, {
+          id: user.ID,
+          name: `${user.First} ${user.Last}`.trim(),
+          email: user.Email,
+          orgId: user.OrgID,
+          // the event contains the user's teams names, not their ids,
+          // so we ignore it
+          teamIds: [],
+        } satisfies User),
+      ).start()
+      actor.subscribe({
+        next: snapshot => {
+          this.logger.debug(
+            `[${snapshot.status}] ${JSON.stringify(snapshot.value)}: ${JSON.stringify(snapshot.context)}`,
+          )
+        },
+        complete: () => {
+          const snapshot = actor.getSnapshot()
 
-      // Assign the user to the new organisation, in the default team
-      const teamIds = Array.isArray(organisation.Teams) && organisation.Teams.length > 0
-        ? [organisation.Teams[0].ID]
-        : [];
-      await this.developerPortal.updateUser(user.id, {
-        OrganisationID: organisation.ID,
-        Teams: teamIds,
+          if (actor.getSnapshot().value === 'failed') {
+            this.logger.warn(
+              `Failed to register user ${user.ID}: ${snapshot.context.error}`,
+            )
+            reject(snapshot.context.error)
+          } else {
+            this.logger.log('actor completed')
+            resolve()
+          }
+        },
+
+        error: err => {
+          this.logger.warn(`actor error: ${err}`)
+          reject(err)
+        },
       })
-    }
+      actor.send({ type: 'START' })
+    })
+  }
+
+  async handleApplicationRegistered(app: ApplicationRegistered) {
+    return new Promise<void>((resolve, reject) => {
+      const actor = createActor(
+        ar.factory(this.developerPortal, app.ID),
+      ).start()
+      actor.subscribe({
+        next: snapshot => {
+          this.logger.debug(
+            `[${snapshot.status}] ${JSON.stringify(snapshot.value)}: ${JSON.stringify(snapshot.context)}`,
+          )
+        },
+        complete: () => {
+          const snapshot = actor.getSnapshot()
+
+          if (actor.getSnapshot().value === 'failed') {
+            this.logger.warn(
+              `Failed to register application ${app.ID}: ${snapshot.context.error}`,
+            )
+            reject(snapshot.context.error)
+          } else {
+            this.logger.log('actor completed')
+            resolve()
+          }
+        },
+
+        error: err => {
+          this.logger.warn(`actor error: ${err}`)
+          reject(err)
+        },
+      })
+      actor.send({ type: 'START' })
+    })
   }
 }

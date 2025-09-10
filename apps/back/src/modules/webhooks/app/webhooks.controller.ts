@@ -7,10 +7,7 @@ import {
   HttpStatus,
   Post,
 } from '@nestjs/common'
-import {
-  type WebhookPayload,
-  WebhookPayloadSchema,
-} from '../core/webhooks.types.js'
+import { type WebhookPayload, WebhookPayloadSchema } from './webhooks.types.js'
 import { WebhookService } from './webhooks.service.js'
 
 @Controller('webhooks')
@@ -26,6 +23,10 @@ export class WebhooksController {
     switch (payload.Event) {
       case 'UserRegistered':
         await this.service.handleUserRegistered(payload.Message)
+        break
+
+      case 'ApplicationRegistered':
+        await this.service.handleApplicationRegistered(payload.Message)
         break
 
       default:
