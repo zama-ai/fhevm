@@ -29,7 +29,7 @@ impl CargoToml {
     pub fn get_gateway_bindings_version(&self) -> String {
         self.workspace
             .dependencies
-            .get("fhevm_gateway_rust_bindings")
+            .get("fhevm_gateway_bindings")
             .unwrap()
             .get_version()
     }

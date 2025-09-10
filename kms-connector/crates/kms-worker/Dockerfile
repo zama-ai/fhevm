@@ -35,7 +35,7 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     cargo build --profile=${LTO_RELEASE} -p kms-worker
 
 # Stage 2: Runtime image
-FROM cgr.dev/chainguard/glibc-dynamic:latest AS prod
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd

@@ -16,7 +16,7 @@ COPY kms-connector/connector-db/migrations ./migrations
 
 
 # Stage 2: Runtime image
-FROM cgr.dev/chainguard/postgres:latest AS prod
+FROM cgr.dev/zama.ai/postgres:17 AS prod
 
 COPY  --from=builder --chown=fhevm:fhevm /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 COPY  --from=builder --chown=fhevm:fhevm /app/init_db.sh /init_db.sh

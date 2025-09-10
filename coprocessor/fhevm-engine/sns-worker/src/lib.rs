@@ -348,7 +348,7 @@ impl UploadJob {
 }
 
 /// Runs the SnS worker loop
-pub async fn compute_128bit_ct(
+pub async fn run_computation_loop(
     conf: Config,
     tx: Sender<UploadJob>,
     token: CancellationToken,
@@ -365,7 +365,8 @@ pub async fn compute_128bit_ct(
         if let Err(err) = http_server.start().await {
             error!(
                 task = "health_check",
-                "Error while running server: {:?}", err
+                error = %err,
+                "Error while running server"
             );
         }
         anyhow::Ok(())
@@ -378,7 +379,7 @@ pub async fn compute_128bit_ct(
 }
 
 /// Runs the uploader loop
-pub async fn process_s3_uploads(
+pub async fn run_uploader_loop(
     conf: &Config,
     rx: mpsc::Receiver<UploadJob>,
     tx: Sender<UploadJob>,
@@ -386,7 +387,7 @@ pub async fn process_s3_uploads(
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!(target: "sns", "Uploader started with {:?}", conf.s3);
+    info!(target: "sns", conf = ?conf.s3, "Uploader started");
 
     aws_upload::process_s3_uploads(conf, rx, tx, token, client, is_ready).await?;
 
@@ -420,7 +421,7 @@ pub async fn create_s3_client(conf: &Config) -> (Arc<aws_sdk_s3::Client>, bool) 
     let client = Arc::new(Client::from_conf(config));
     let (is_ready, is_connected) = check_is_ready(&client, conf).await;
     if is_connected {
-        info!("Connected to S3, is_ready: {}", is_ready);
+        info!(is_ready = is_ready, "Connected to S3");
     }
 
     (client, is_ready)
@@ -437,8 +438,10 @@ pub async fn run_all(
     let (uploads_tx, uploads_rx) =
         mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
 
-    if let Err(err) = telemetry::setup_otlp(&config.service_name) {
-        panic!("Error while initializing tracing: {:?}", err);
+    if !config.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&config.service_name) {
+            panic!("Error while initializing tracing: {:?}", err);
+        }
     }
 
     let conf = config.clone();
@@ -449,17 +452,20 @@ pub async fn run_all(
     let is_ready = Arc::new(AtomicBool::new(is_ready));
     let s3 = client.clone();
 
+    // Spawns a task to handle S3 uploads
     spawn(async move {
-        if let Err(err) = process_s3_uploads(&conf, uploads_rx, tx, token, s3, is_ready).await {
-            error!("Failed to run the upload-worker : {:?}", err);
+        if let Err(err) = run_uploader_loop(&conf, uploads_rx, tx, token, s3, is_ready).await {
+            error!(error = %err, "Failed to run the upload-worker");
         }
     });
 
-    // Start the SnS worker
+    // Run the main computation loop
+    // This will handle the PBS computations
     let conf = config.clone();
     let token = parent_token.child_token();
-    if let Err(err) = compute_128bit_ct(conf, uploads_tx, token, client).await {
-        error!("SnS worker failed: {:?}", err);
+
+    if let Err(err) = run_computation_loop(conf, uploads_tx, token, client).await {
+        error!(error = %err, "SnS worker failed");
     }
 
     Ok(())

@@ -159,8 +159,8 @@ async fn counter_increment(
         input: Some(Input::InputHandle(handle_counter.clone())),
     };
 
+    let transaction_id = next_handle();
     for _ in 0..=(num_samples - 1) as u32 {
-        let transaction_id = next_handle();
         let new_counter = next_handle();
         output_handles.push(new_counter.clone());
 

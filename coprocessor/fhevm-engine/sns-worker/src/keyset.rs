@@ -40,7 +40,7 @@ pub async fn fetch_keys(
         SKS_KEY_WITH_NOISE_SQUASHING_SIZE,
     )
     .await?;
-    info!(target: "sns", "Retrieved sns_pk bytes length: {:?}", blob.len());
+    info!(target: "sns", bytes_len = blob.len(), "Retrieved sns_pk");
 
     let server_key: tfhe::ServerKey = safe_deserialize_sns_key(&blob)?;
 
@@ -56,7 +56,7 @@ pub async fn fetch_keys(
 
     if let Ok(cks) = keys.try_get::<Vec<u8>, _>(0) {
         if !cks.is_empty() {
-            info!(target: "sns", "Retrieved cks bytes length: {:?}", cks.len());
+            info!(target: "sns", bytes_len = cks.len(), "Retrieved cks");
             let client_key: tfhe::ClientKey = safe_deserialize_sns_key(&cks)?;
             return Ok((Some(client_key), server_key));
         }

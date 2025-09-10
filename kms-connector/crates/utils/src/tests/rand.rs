@@ -1,5 +1,5 @@
 use alloy::primitives::{Address, FixedBytes, U256};
-use fhevm_gateway_rust_bindings::decryption::Decryption::SnsCiphertextMaterial;
+use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use rand::Rng;
 
 pub fn rand_u256() -> U256 {

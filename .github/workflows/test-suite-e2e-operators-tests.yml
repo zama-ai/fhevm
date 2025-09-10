@@ -48,8 +48,11 @@ on:
         default: ""
         type: string
 
+permissions: {}
+
+# Allow to run multiple instances of the same workflow in parallel when triggered manually 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:

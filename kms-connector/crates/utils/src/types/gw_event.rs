@@ -1,10 +1,10 @@
 use crate::types::db::SnsCiphertextMaterialDbItem;
 use alloy::primitives::U256;
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::{
         PublicDecryptionRequest, SnsCiphertextMaterial, UserDecryptionRequest,
     },
-    kmsmanagement::KmsManagement::{
+    kms_management::KmsManagement::{
         CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
         PreprocessKskgenRequest,
     },
@@ -15,7 +15,7 @@ use sqlx::{
     query::Query,
 };
 use std::fmt::Display;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 /// The events emitted by the Gateway which are monitored by the KMS Connector.
 #[derive(Clone, Debug, PartialEq)]
@@ -208,6 +208,102 @@ impl GatewayEvent {
         } else {
             warn!(
                 "Unexpected query result while restoring `under_process` field to `FALSE`: {:?}",
+                query_result
+            )
+        }
+    }
+
+    pub async fn delete_from_db(&self, db: &Pool<Postgres>) {
+        match self {
+            GatewayEvent::PublicDecryption(e) => {
+                Self::delete_public_decryption_from_db(db, e.decryptionId).await
+            }
+            GatewayEvent::UserDecryption(e) => {
+                Self::delete_user_decryption_from_db(db, e.decryptionId).await
+            }
+            GatewayEvent::PreprocessKeygen(e) => {
+                Self::delete_pre_keygen_from_db(db, e.preKeygenRequestId).await
+            }
+            GatewayEvent::PreprocessKskgen(e) => {
+                Self::delete_pre_kskgen_from_db(db, e.preKskgenRequestId).await
+            }
+            GatewayEvent::Keygen(e) => Self::delete_keygen_from_db(db, e.preKeyId).await,
+            GatewayEvent::Kskgen(e) => Self::delete_kskgen_from_db(db, e.preKskId).await,
+            GatewayEvent::Crsgen(e) => Self::delete_crsgen_from_db(db, e.crsgenRequestId).await,
+        }
+    }
+
+    pub async fn delete_public_decryption_from_db(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "DELETE FROM public_decryption_requests WHERE decryption_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_delete_event_query(db, query).await;
+    }
+
+    pub async fn delete_user_decryption_from_db(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "DELETE FROM user_decryption_requests WHERE decryption_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_delete_event_query(db, query).await;
+    }
+
+    pub async fn delete_pre_keygen_from_db(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "DELETE FROM preprocess_keygen_requests WHERE pre_keygen_request_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_delete_event_query(db, query).await;
+    }
+
+    pub async fn delete_pre_kskgen_from_db(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "DELETE FROM preprocess_kskgen_requests WHERE pre_kskgen_request_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_delete_event_query(db, query).await;
+    }
+
+    pub async fn delete_keygen_from_db(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "DELETE FROM keygen_requests WHERE pre_key_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_delete_event_query(db, query).await;
+    }
+
+    pub async fn delete_kskgen_from_db(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "DELETE FROM kskgen_requests WHERE pre_ksk_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_delete_event_query(db, query).await;
+    }
+
+    pub async fn delete_crsgen_from_db(db: &Pool<Postgres>, id: U256) {
+        let query = sqlx::query!(
+            "DELETE FROM crsgen_requests WHERE crsgen_request_id = $1",
+            id.as_le_slice()
+        );
+        Self::execute_delete_event_query(db, query).await;
+    }
+
+    async fn execute_delete_event_query(
+        db: &Pool<Postgres>,
+        query: Query<'_, Postgres, PgArguments>,
+    ) {
+        warn!("Removing event from DB...");
+        let query_result = match query.execute(db).await {
+            Ok(result) => result,
+            Err(e) => return error!("Failed to remove event from DB: {e}"),
+        };
+
+        if query_result.rows_affected() == 1 {
+            info!("Successfully deleted event from DB!");
+        } else {
+            warn!(
+                "Unexpected query result while deleting event from DB: {:?}",
                 query_result
             )
         }

@@ -10,6 +10,7 @@ import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol"
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {HANDLE_VERSION} from "./shared/Constants.sol";
+import {ACLChecks} from "./shared/ACLChecks.sol";
 
 /**
  * @title    InputVerifier.
@@ -17,7 +18,7 @@ import {HANDLE_VERSION} from "./shared/Constants.sol";
  *           This contract is called by the FHEVMExecutor inside verifyCiphertext function
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
-contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
+contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain, ACLChecks {
     /// @notice         Emitted when a signer is added.
     /// @param signer   The address of the signer that was added.
     event SignerAdded(address indexed signer);
@@ -105,7 +106,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -119,7 +120,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant InputVerifierStorageLocation =
@@ -152,6 +153,13 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
             addSigner(initialSigners[i]);
         }
     }
+
+    /**
+     * @notice Re-initializes the contract from V1.
+     */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @dev This function removes the transient allowances, which could be useful for
@@ -277,7 +285,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
      * @dev             Only the owner can add a signer.
      * @param signer    The address to be added as a signer.
      */
-    function addSigner(address signer) public virtual onlyOwner {
+    function addSigner(address signer) public virtual onlyACLOwner {
         if (signer == address(0)) {
             revert SignerNull();
         }
@@ -298,7 +306,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
      * @dev             Only the owner can remove a signer.
      * @param signer    The signer address to remove.
      */
-    function removeSigner(address signer) public virtual onlyOwner {
+    function removeSigner(address signer) public virtual onlyACLOwner {
         InputVerifierStorage storage $ = _getInputVerifierStorage();
         if (!$.isSigner[signer]) {
             revert NotASigner();
@@ -540,5 +548,5 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     /**
      * @dev Should revert when msg.sender is not authorized to upgrade the contract.
      */
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
 }

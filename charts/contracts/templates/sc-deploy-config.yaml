@@ -85,10 +85,20 @@ data:
 
     for envfile in /app/addresses/.env.*; do
       echo "---"
-      echo "Updating configmap for ${envfile}"
-      CONTRACT_NAME="$(echo ${envfile} | cut -d'.' -f 3)"
-      CONTRACT_ADDRESS="$(cat ${envfile} | cut -d'=' -f 2)"
-      add_key_to_configmap "${CONFIGMAP_NAME}" "${CONTRACT_NAME}.address" "${CONTRACT_ADDRESS}"
+      echo "Updating configmap: ${CONFIGMAP_NAME} for the following contract addresses:"
+
+      # Parse envfile adding a newline at the end if missing
+      while IFS= read -r line || [[ -n "$line" ]]; do
+        # Use `cut` to split the line at the first `=`
+        # The first part is the key (CONTRACT_NAME) and the second is the value (CONTRACT_ADDRESS)
+        CONTRACT_NAME=$(echo "$line" | cut -d'=' -f1)
+        CONTRACT_ADDRESS=$(echo "$line" | cut -d'=' -f2)
+
+        # Remove the "_ADDRESS" or  "_CONTRACT_ADDRESS" suffix to get the clean contract name
+        CLEAN_NAME=$(echo "${CONTRACT_NAME}" | sed 's/_CONTRACT_ADDRESS\|_ADDRESS//g' | tr '[:upper:]' '[:lower:]')
+        echo "Adding ${CLEAN_NAME}.address=${CONTRACT_ADDRESS}"
+        add_key_to_configmap "${CONFIGMAP_NAME}" "${CLEAN_NAME}.address" "${CONTRACT_ADDRESS}"
+      done < "${envfile}"
     done;
 
     {{- if .Values.scDeploy.verifyContracts }}
@@ -112,4 +122,5 @@ data:
     {{ . | nindent 4 }}
     {{- end }}
     echo "updating the contracts version to the configmap"
+    CONFIGMAP_NAME="{{ .Values.scDeploy.configmap.name }}"
     kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"{{ .Values.scDeploy.image.tag }}\"}}"

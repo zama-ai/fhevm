@@ -131,6 +131,8 @@ contract InputVerification is
     /**
      * @notice Re-initializes the contract from V1.
      */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IInputVerification-verifyProofRequest}.

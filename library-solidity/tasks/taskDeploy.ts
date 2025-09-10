@@ -14,7 +14,7 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   }
 
   // Compile and deploy all host empty proxy contracts
-  await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/shared' });
+  await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxy' });
   await hre.run('task:deployEmptyUUPSProxies');
 
   // Compile and deploy all host contracts
@@ -50,44 +50,29 @@ task('task:deployEmptyUUPSProxies').setAction(async function (
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const aclAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setACLAddress', {
-    address: aclAddress,
-  });
+  await run('task:setACLAddress', { address: aclAddress });
 
   const fhevmExecutorAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setFHEVMExecutorAddress', {
-    address: fhevmExecutorAddress,
-  });
+  await run('task:setFHEVMExecutorAddress', { address: fhevmExecutorAddress });
 
   const kmsVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setKMSVerifierAddress', {
-    address: kmsVerifierAddress,
-  });
+  await run('task:setKMSVerifierAddress', { address: kmsVerifierAddress });
 
   const inputVerifierAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setInputVerifierAddress', {
-    address: inputVerifierAddress,
-  });
+  await run('task:setInputVerifierAddress', { address: inputVerifierAddress });
 
   const HCULimitAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setHCULimitAddress', {
-    address: HCULimitAddress,
-  });
+  await run('task:setHCULimitAddress', { address: HCULimitAddress });
 
   const decryptionOracleAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run('task:setDecryptionOracleAddress', {
-    address: decryptionOracleAddress,
-  });
+  await run('task:setDecryptionOracleAddress', { address: decryptionOracleAddress });
 });
 
 task('task:deployDecryptionOracle').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
 
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory(
-    'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
-    deployer,
-  );
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('DecryptionOracle', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.decryptionoracle'));
   const proxyAddress = parsedEnv.DECRYPTION_ORACLE_ADDRESS;
@@ -99,10 +84,7 @@ task('task:deployDecryptionOracle').setAction(async function (_taskArguments: Ta
 task('task:deployACL').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory(
-    'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
-    deployer,
-  );
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('ACL', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
   const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
@@ -114,10 +96,7 @@ task('task:deployACL').setAction(async function (_taskArguments: TaskArguments, 
 task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory(
-    'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
-    deployer,
-  );
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   let newImplem;
   newImplem = await ethers.getContractFactory('fhevmTemp/contracts/FHEVMExecutor.sol:FHEVMExecutor', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
@@ -130,10 +109,7 @@ task('task:deployFHEVMExecutor').setAction(async function (_taskArguments: TaskA
 task('task:deployKMSVerifier').setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory(
-    'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
-    deployer,
-  );
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/KMSVerifier.sol:KMSVerifier', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
   const proxyAddress = parsedEnv.KMS_VERIFIER_CONTRACT_ADDRESS;
@@ -169,10 +145,7 @@ task('task:deployInputVerifier')
   .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades }) {
     const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
     const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-    const currentImplementation = await ethers.getContractFactory(
-      'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
-      deployer,
-    );
+    const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
     const newImplem = await ethers.getContractFactory('fhevmTemp/contracts/InputVerifier.sol:InputVerifier', deployer);
     const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
 
@@ -203,10 +176,7 @@ task('task:deployInputVerifier')
 task('task:deployHCULimit').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory(
-    'fhevmTemp/contracts/shared/EmptyUUPSProxy.sol:EmptyUUPSProxy',
-    deployer,
-  );
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
   const newImplem = await ethers.getContractFactory('HCULimit', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
   const proxyAddress = parsedEnv.HCU_LIMIT_CONTRACT_ADDRESS;
@@ -365,7 +335,7 @@ task('task:setDecryptionOracleAddress')
 
 pragma solidity ^0.8.24;
 
-address constant DECRYPTION_ORACLE_ADDRESS = ${taskArguments.address};
+address constant decryptionOracleAdd = ${taskArguments.address};
 `;
 
     try {

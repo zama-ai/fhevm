@@ -7,9 +7,12 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {InputVerifier} from "../../contracts/InputVerifier.sol";
-import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
+import {ACL} from "../../contracts/ACL.sol";
+import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
+import {ACLChecks} from "../../contracts/shared/ACLChecks.sol";
+import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract InputVerifierTest is Test {
     InputVerifier internal inputVerifier;
@@ -115,6 +118,21 @@ contract InputVerifierTest is Test {
         proxy = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
             abi.encodeCall(EmptyUUPSProxy.initialize, owner)
+        );
+    }
+
+    /**
+     * @dev Internal function to deploy and etch ACL contract at expected constant address.
+     * Also stores `owner` as ACL's owner, this is needed for ownership of core contracts.
+     */
+    function _deployAndEtchACL() internal {
+        address _acl = address(new ACL());
+        bytes memory code = _acl.code;
+        vm.etch(aclAdd, code);
+        vm.store(
+            aclAdd,
+            0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300, // OwnableStorageLocation
+            bytes32(uint256(uint160(owner)))
         );
     }
 
@@ -389,6 +407,7 @@ contract InputVerifierTest is Test {
     function setUp() public {
         _deployProxy();
         _initializeSigners();
+        _deployAndEtchACL();
     }
 
     /**
@@ -397,7 +416,7 @@ contract InputVerifierTest is Test {
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxyWithSigners(3);
         assertEq(inputVerifier.owner(), owner);
-        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.1.0")));
+        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.2.0")));
     }
 
     /**
@@ -884,7 +903,7 @@ contract InputVerifierTest is Test {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
         this.upgrade(randomAccount);
     }
 
@@ -900,7 +919,7 @@ contract InputVerifierTest is Test {
     function test_OnlyOwnerCanAddSigner(address randomAccount) public {
         _upgradeProxyWithSigners(3);
         vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
         vm.prank(randomAccount);
         inputVerifier.addSigner(randomAccount);
     }
@@ -911,7 +930,7 @@ contract InputVerifierTest is Test {
     function test_OnlyOwnerCanRemoveSigner(address randomAccount) public {
         _upgradeProxyWithSigners(3);
         vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
         vm.prank(randomAccount);
         inputVerifier.removeSigner(randomAccount);
     }

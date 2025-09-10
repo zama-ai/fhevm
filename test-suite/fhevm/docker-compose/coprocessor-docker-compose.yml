@@ -76,6 +76,7 @@ services:
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_URL}
+      - --initial-block-time=1
     depends_on:
       db:
         condition: service_healthy
