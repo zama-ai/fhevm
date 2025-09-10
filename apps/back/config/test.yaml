@@ -1,33 +1,4 @@
 common:
   port: 3000
   prettify: true
-  graphqlMaxComplexity: 150
   logLevel: silent
-aws:
-  useConfigCredentials: true
-  accessKeyId: 'test'
-  secretAccessKey: 'test'
-  region: 'eu-central-1'
-  endpoint: 'http://localhost:4566'
-  orchestrator:
-    queueUrl: 'http://localhost:4566/000000000000/orchestrator-queue'
-  back:
-    queueUrl: 'http://localhost:4566/000000000000/back-queue'
-chains:
-  - id: 11155111
-    name: 'Sepolia'
-    description: 'Ethereum Sepolia'
-httpz:
-  fheKeyInfo:
-    - fhePublicKey:
-        dataId: 'fhe-public-key-data-id'
-        urls: http://0.0.0.0:9000/kms-public/PUB/PublicKey/KEY_GEN_ID
-  crs:
-    2048:
-      dataId: 'crs-data-id'
-      urls: http://0.0.0.0:9000/kms-public/PUB/CRS/CRS_GEN_ID
-jwt:
-  secret: 'JWTSecretPassPhrase'
-  expiresIn: '1minute'
-redis:
-  host: 'localhost'

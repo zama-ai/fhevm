@@ -55,6 +55,8 @@ jobs:
   publish-release:
     name: publish-relayer-release/publish-release
     needs: [package]
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     defaults:
       run:

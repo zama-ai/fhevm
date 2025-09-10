@@ -1,2 +1,0 @@
--- AlterTable
-ALTER TABLE "Dapp" ADD COLUMN IF NOT EXISTS  "chainId" INTEGER;

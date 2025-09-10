@@ -7,7 +7,7 @@ on:
     inputs:
       node-version:
         required: false
-        default: 22
+        default: "22.x"
         type: string
 
 jobs:

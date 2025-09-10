@@ -1,6 +1,5 @@
 import {
   GetQueueAttributesCommand,
-  ReceiveMessageCommand,
   SendMessageCommand,
   type SendMessageCommandInput,
 } from '@aws-sdk/client-sqs'
@@ -50,30 +49,6 @@ export class IntegrationManager {
       }),
     )
     return parseInt(result.Attributes?.ApproximateNumberOfMessages ?? '-1')
-  }
-
-  async getOrchQueueSize() {
-    const result = await this.setup.sqs.send(
-      new GetQueueAttributesCommand({
-        QueueUrl: this.setup.orchQueueUrl,
-        AttributeNames: ['ApproximateNumberOfMessages'],
-      }),
-    )
-    return parseInt(result.Attributes?.ApproximateNumberOfMessages ?? '-1')
-  }
-
-  async getMessageFromOrchQueue() {
-    const result = await this.setup.sqs.send(
-      new ReceiveMessageCommand({
-        QueueUrl: this.setup.orchQueueUrl,
-        MessageAttributeNames: ['All'],
-        MessageSystemAttributeNames: ['All'],
-        MaxNumberOfMessages: 1,
-        WaitTimeSeconds: 1,
-      }),
-    )
-
-    return result.Messages?.[0].Body
   }
 
   async getAllSentEmails(email: string): Promise<SentEmail[]> {

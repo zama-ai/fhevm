@@ -3,18 +3,8 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { LoggerModule } from 'nestjs-pino'
 import { randomUUID } from 'crypto'
 
-import { SqsConsumerModule } from './infra/sqs-consumer/sqs-consumer.module.js'
-import { GraphQLModule } from './infra/graphql/graphql.module.js'
-import { SqsProducerModule } from './infra/sqs-producer/sqs-producer.module.js'
-
-import { MS_NAME } from '#constants.js'
-import { RestModule } from '#infra/rest/rest.module.js'
-import { ChainsModule } from '#chains/infra/chains.module.js'
-import { RedisModule } from '#infra/redis/redis.module.js'
-import { FeatureFlagModule } from '#feature-flag/feature-flag.module.js'
-import { ConfigFeatureFlagHandler } from '#infra/config-feature-flag.handler.js'
-import { DefaultFeatureFlagHandler } from '#infra/default-feature-flag.handler.js'
 import configuration from '#config/configuration.js'
+import { WebhooksModule } from '#modules/webhooks/app/webbooks.module.js'
 
 // Note: I need to override the default behavior of ConfigModule in the tests,
 // and, as we use a dynamic module, we need to store the current instance to
@@ -34,7 +24,7 @@ export const configModule = ConfigModule.forRoot({
         return {
           pinoHttp: {
             level: config.get('common.logLevel', 'info'),
-            customProps: () => ({ service: MS_NAME }),
+            customProps: () => ({ service: 'back' }),
             genReqId: request =>
               request.headers['x-correlation-id'] || randomUUID(),
             transport: {
@@ -47,23 +37,7 @@ export const configModule = ConfigModule.forRoot({
         }
       },
     }),
-    GraphQLModule,
-    RestModule,
-    SqsConsumerModule,
-    SqsProducerModule,
-    ChainsModule,
-    RedisModule,
-    FeatureFlagModule.registerAsync({
-      imports: [configModule],
-      inject: [ConfigService],
-      useFactory: (config: ConfigService) => ({
-        global: true,
-        handlers: [
-          new ConfigFeatureFlagHandler(config),
-          new DefaultFeatureFlagHandler(),
-        ],
-      }),
-    }),
+    WebhooksModule,
   ],
 })
 export class AppModule {}

@@ -1,7 +1,7 @@
 import { Test } from '@nestjs/testing'
 import { afterEach, beforeEach, describe, expect, test } from 'vitest'
 import { configModule } from '#app.module.js'
-import { back, web3 } from 'messages'
+import { back, operationNames, web3 } from 'messages'
 import { faker } from '@faker-js/faker'
 import { mockClient } from 'aws-sdk-client-mock'
 import { SQSProducer } from './sqs.producer.js'
@@ -30,7 +30,7 @@ describe('SqsProducer', () => {
       event: back.addressValidationRequested(
         {
           requestId: faker.string.uuid(),
-          chainId: faker.string.numeric(5),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
           address: faker.string.hexadecimal({ length: 40 }),
         },
         { correlationId: faker.string.uuid() },
@@ -42,7 +42,7 @@ describe('SqsProducer', () => {
         {
           requestId: faker.string.uuid(),
           dAppId: faker.string.uuid(),
-          chainId: faker.string.numeric(5),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
           address: faker.string.hexadecimal({ length: 40 }),
         },
         {
@@ -56,7 +56,7 @@ describe('SqsProducer', () => {
         {
           requestId: faker.string.uuid(),
           dAppId: faker.string.uuid(),
-          chainId: faker.string.numeric(5),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
           address: faker.string.hexadecimal({ length: 40 }),
         },
         { correlationId: faker.string.uuid() },
@@ -67,11 +67,15 @@ describe('SqsProducer', () => {
       event: back.dappStatsAvailable(
         {
           requestId: faker.string.uuid(),
-          chainId: faker.string.numeric(5),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
           address: faker.string.hexadecimal({ length: 40 }),
-          name: faker.string.alphanumeric(10),
-          timestamp: faker.date.past().toISOString(),
-          externalRef: faker.string.alphanumeric(10),
+          events: [
+            {
+              name: faker.helpers.arrayElement(operationNames),
+              timestamp: faker.date.past().toISOString(),
+              externalRef: faker.string.alphanumeric(10),
+            },
+          ],
         },
         { correlationId: faker.string.uuid() },
       ),
@@ -81,7 +85,7 @@ describe('SqsProducer', () => {
       event: web3.fheRequested(
         {
           requestId: faker.string.uuid(),
-          chainId: faker.string.numeric(5),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
           address: faker.string.hexadecimal({ length: 40 }),
         },
         { correlationId: faker.string.uuid() },
@@ -92,11 +96,15 @@ describe('SqsProducer', () => {
       event: web3.fheDetected(
         {
           requestId: faker.string.uuid(),
-          id: faker.string.alphanumeric(10),
-          chainId: faker.string.numeric(5),
+          chainId: faker.number.int({ min: 1, max: 100_000 }),
           address: faker.string.hexadecimal({ length: 40 }),
-          name: faker.string.alphanumeric(10),
-          timestamp: faker.date.past().toISOString(),
+          events: [
+            {
+              id: faker.string.alphanumeric(10),
+              name: faker.helpers.arrayElement(operationNames),
+              timestamp: faker.date.past().toISOString(),
+            },
+          ],
         },
         { correlationId: faker.string.uuid() },
       ),

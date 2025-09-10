@@ -8,10 +8,6 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     root: './',
-    env: {
-      VITE_BACK_HTTP_URL: 'http://localhost:3005/graphql',
-      VITE_BACK_WS_URL: 'ws://localhost:3005/graphql',
-    },
     setupFiles: './test/setup.ts',
   },
   plugins: [tsconfigPaths(), react()],
