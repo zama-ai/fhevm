@@ -122,12 +122,14 @@ pub struct Scenario {
 pub struct Job {
     pub id: u64,
     pub scenarios: Vec<Scenario>,
+    pub cancel_token: tokio_util::sync::CancellationToken,
 }
 
 #[derive(Clone)]
 pub struct Context {
     pub args: Args,
     pub ecfg: EnvConfig,
+    pub cancel_token: tokio_util::sync::CancellationToken,
 }
 
 #[allow(dead_code)]
