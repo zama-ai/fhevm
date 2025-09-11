@@ -1,3 +1,4 @@
+mod docs_utils;
 pub mod health;
 pub mod http_server;
 pub mod input_http_listener;

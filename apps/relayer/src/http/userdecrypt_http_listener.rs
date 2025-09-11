@@ -3,6 +3,7 @@ use crate::core::event::{
     UserDecryptRequest,
 };
 use crate::core::utils::{de_string_or_number, OnceHandler};
+use crate::http::docs_utils::ChainId;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use alloy::primitives::Bytes;
@@ -23,11 +24,17 @@ pub struct UserDecryptRequestJson {
     pub handleContractPairs: Vec<HandleContractPairJson>,
     pub requestValidity: RequestValidityJson,
     #[serde(deserialize_with = "de_string_or_number")]
+    #[schema(value_type = ChainId)]
     pub contractsChainId: String,
+    /// Array of contract addresses
     pub contractAddresses: Vec<String>,
+    /// User's wallet address
     pub userAddress: String,
     pub signature: String,
+    /// Public key
     pub publicKey: String,
+    /// Extra data field, always set to 0x00
+    #[schema(example = "0x00")]
     pub extraData: String,
 }
 

@@ -3,6 +3,7 @@ use crate::core::event::{
     RelayerEventData,
 };
 use crate::core::utils::{de_string_or_number, OnceHandler};
+use crate::http::docs_utils::ChainId;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use axum::{extract::Json, http::StatusCode, response::IntoResponse};
@@ -16,12 +17,18 @@ use utoipa::ToSchema;
 #[derive(Debug, Deserialize, Clone, Serialize, ToSchema)]
 #[allow(non_snake_case)]
 pub struct InputProofRequestJson {
+    /// Contract's chain id
     #[serde(deserialize_with = "de_string_or_number")]
-    pub contractChainId: String, // Hex encoded uint256 string with 0x prefix.
+    #[schema(value_type = ChainId)]
+    pub contractChainId: String,
+    /// Contract's address
     pub contractAddress: String, // Hex encoded address with 0x prefix.
-    pub userAddress: String,     // Hex encoded address with 0x prefix.
-    pub ciphertextWithInputVerification: String, // List of hex encoded binary proof without 0x prefix.
-    pub extraData: String,                       // Hex encoded Bytes array with 0x prefix.
+    /// User's wallet address
+    pub userAddress: String, // Hex encoded address with 0x prefix.
+    pub ciphertextWithInputVerification: String,
+    /// Extra data field, always set to 0x00
+    #[schema(example = "0x00")]
+    pub extraData: String, // Hex encoded Bytes array with 0x prefix.
 }
 
 impl InputProofRequestJson {

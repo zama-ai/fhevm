@@ -24,6 +24,7 @@ target-test/
 
 # Added by cargo
 /target
+/target-debug
 
 # Local config file
 config/local.yaml

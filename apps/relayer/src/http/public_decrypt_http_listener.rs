@@ -19,7 +19,8 @@ use utoipa::ToSchema;
 #[allow(non_snake_case)]
 pub struct PublicDecryptRequestJson {
     pub ciphertextHandles: Vec<String>,
-    #[schema(value_type = String)]
+    /// Extra data field, always set to 0x00
+    #[schema(value_type = String, example = "0x00")]
     pub extraData: Bytes,
 }
 

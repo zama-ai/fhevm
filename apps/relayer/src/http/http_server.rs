@@ -30,7 +30,7 @@ use axum::{
 use std::net::SocketAddr;
 use std::sync::Arc;
 use utoipa::{OpenApi, ToSchema};
-use utoipa_swagger_ui::SwaggerUi;
+use utoipa_redoc::{Redoc, Servable};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum HTTPApiVersion {
@@ -70,9 +70,13 @@ pub async fn run_http_server<D>(
 
     // Build our application with the POST endpoint '/input-proof'
     let input_proof_handler = Arc::new(InputProofHandler::new(orchestrator.clone(), api_version));
+
+    /// Input proof
+    ///
+    /// Requests a Private encryption
     #[utoipa::path(
     post,
-    path = "/{api_version}/input-proof",
+    path = "/input-proof",
     request_body = InputProofRequestJson,
     responses(
         (status = 200, description = "Successfully proved ciphertexts", body = InputProofResponseJson),
@@ -81,9 +85,6 @@ pub async fn run_http_server<D>(
         (status = 422, description = "Failed to deserialize the JSON body"),
         (status = 500, description = "Internal server error", body = InputProofErrorResponseJson),
     ),
-    params(
-        ("api_version" = String, Path, description = "API version")
-    )
 )]
     async fn input_proof_documented<D>(
         Path(api_version): Path<String>,
@@ -115,9 +116,12 @@ pub async fn run_http_server<D>(
         Arc::clone(&orchestrator),
         api_version,
     ));
+    /// User decryption
+    ///
+    /// Requests a Private decryption
     #[utoipa::path(
     post,
-    path = "/{api_version}/user-decrypt",
+    path = "/user-decrypt",
     request_body = UserDecryptRequestJson,
     responses(
         (status = 200, description = "Successfully decrypted", body = UserDecryptResponseJson),
@@ -126,9 +130,6 @@ pub async fn run_http_server<D>(
         (status = 400, description = "Bad request", body = UserDecryptErrorResponseJson),
         (status = 422, description = "Failed to deserialize the JSON body"),
     ),
-    params(
-        ("api_version" = String, Path, description = "API version")
-    )
 )]
     async fn user_decrypt_documented<D>(
         Path(api_version): Path<String>,
@@ -158,9 +159,13 @@ pub async fn run_http_server<D>(
 
     // Public decryption
     let public_decrypt_handler = Arc::new(PublicDecryptHandler::new(orchestrator, api_version));
+
+    /// Public decryption
+    ///
+    /// Requests a Public decryption
     #[utoipa::path(
     post,
-    path = "/{api_version}/public-decrypt",
+    path = "/public-decrypt",
     request_body = PublicDecryptRequestJson,
     responses(
         (status = 200, description = "Successfully decrypted", body = PublicDecryptResponseJson),
@@ -169,9 +174,6 @@ pub async fn run_http_server<D>(
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
         (status = 422, description = "Failed to deserialize the JSON body"),
     ),
-    params(
-        ("api_version" = String, Path, description = "API version")
-    )
 )]
     async fn public_decrypt_documented<D>(
         Path(api_version): Path<String>,
@@ -199,16 +201,16 @@ pub async fn run_http_server<D>(
         }
     }
 
+    /// Key URL
+    ///
+    /// Returns the URLs to retrieve the public keys
     #[utoipa::path(
-    post,
-    path = "/{api_version}/keyurl",
+    get,
+    path = "/keyurl",
     responses(
         (status = 200, description = "Key URL", body = KeyUrlResponseJson),
         (status = 400, description = "Bad request (non-existing version)", body = VersionErrorResponseJson),
     ),
-    params(
-        ("api_version" = String, Path, description = "API version")
-    )
 )]
     async fn keyurl_documented(
         Path(api_version): Path<String>,
@@ -238,6 +240,7 @@ pub async fn run_http_server<D>(
     // OpenAPI documentation
     #[derive(OpenApi)]
     #[openapi(
+        servers((url = "/v1", description = "FHEVM Relayer API v1")),
     paths(
         public_decrypt_documented,
         user_decrypt_documented,
@@ -281,7 +284,7 @@ pub async fn run_http_server<D>(
         .layer(Extension(user_decrypt_handler))
         .route("/{api_version}/keyurl", get(keyurl_documented))
         .layer(Extension(key_url))
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()));
+        .merge(Redoc::with_url("/docs", ApiDoc::openapi()));
 
     println!("Server listening on http://{http_endpoint}");
 
