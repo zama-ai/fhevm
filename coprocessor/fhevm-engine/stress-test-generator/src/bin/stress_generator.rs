@@ -1,7 +1,7 @@
 use axum::{
     extract::{Path, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use chrono::{DateTime, Utc};
@@ -35,6 +35,7 @@ use stress_test_generator::{
     utils::Context,
 };
 use tokio::sync::{mpsc, RwLock};
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
 #[tokio::main]
@@ -50,6 +51,7 @@ async fn main() {
     let ctx = Context {
         args: args.clone(),
         ecfg: EnvConfig::new(),
+        cancel_token: CancellationToken::new(),
     };
 
     if args.run_server {
@@ -70,7 +72,7 @@ pub static GLOBAL_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[derive(Debug, Clone)]
 struct AppState {
     sender: mpsc::Sender<Job>,
-    jobs_status: Arc<RwLock<HashMap<u64, JobStatus>>>,
+    jobs_status: Arc<RwLock<HashMap<u64, (JobStatus, CancellationToken)>>>,
 }
 
 impl AppState {
@@ -81,9 +83,49 @@ impl AppState {
         }
     }
 
-    async fn set_status(&self, job_id: u64, status: JobStatus) {
+    async fn add_job(
+        &self,
+        job_id: u64,
+        queued_at: DateTime<Utc>,
+        cancel_token: CancellationToken,
+    ) {
         let mut jobs_status = self.jobs_status.write().await;
-        jobs_status.insert(job_id, status);
+        jobs_status.insert(job_id, (JobStatus::Queued(queued_at), cancel_token));
+    }
+
+    async fn update_job_status(&self, job_id: u64, new: JobStatus) {
+        let mut jobs_status = self.jobs_status.write().await;
+        if let Some((prev, _)) = jobs_status.get_mut(&job_id) {
+            *prev = new;
+            return;
+        }
+        error!(target: "tool", job_id, "Job not found when setting status");
+    }
+
+    async fn cancel_job(&self, job_id: u64) {
+        let mut jobs_status = self.jobs_status.write().await;
+        if let Some((status, cancel_token)) = jobs_status.get_mut(&job_id) {
+            cancel_token.cancel();
+            match status {
+                JobStatus::Queued(_) => {
+                    info!(target: "tool", job_id, "Cancelled queued job");
+                }
+                JobStatus::Running(_) => {
+                    info!(target: "tool", job_id, "Cancelled running job");
+                }
+                JobStatus::Completed(_) => {
+                    info!(target: "tool", job_id, "Cannot cancel a completed job");
+                }
+                JobStatus::Cancelled(_) => {
+                    info!(target: "tool", job_id, "Job already cancelled");
+                }
+            }
+
+            // Update the status to Cancelled
+            *status = JobStatus::Cancelled(Utc::now());
+        } else {
+            info!(target: "tool", job_id, "Job not found");
+        }
     }
 }
 
@@ -92,6 +134,7 @@ enum JobStatus {
     Queued(DateTime<Utc>),
     Running(DateTime<Utc>),
     Completed(DateTime<Utc>),
+    Cancelled(DateTime<Utc>),
 }
 
 impl fmt::Debug for JobStatus {
@@ -100,6 +143,7 @@ impl fmt::Debug for JobStatus {
             JobStatus::Queued(time) => write!(f, "Queued at {:?}", time),
             JobStatus::Running(time) => write!(f, "Running since {:?}", time),
             JobStatus::Completed(time) => write!(f, "Completed at {:?}", time),
+            JobStatus::Cancelled(time) => write!(f, "Cancelled at {:?}", time),
         }
     }
 }
@@ -108,18 +152,31 @@ async fn run_service(ctx: Context) -> Result<(), Box<dyn std::error::Error>> {
     let (sender, mut rx) = mpsc::channel::<Job>(100);
     let state = AppState::new(sender);
     let s = state.clone();
-    let c = ctx.clone();
+    let listen_addr = ctx.args.listen_address.clone();
+    let mut ctx = ctx.clone();
     tokio::spawn(async move {
         while let Some(job) = rx.recv().await {
             info!(target: "tool", job_id = job.id, "Processing job");
             let started_at = SystemTime::now();
-            s.set_status(job.id, JobStatus::Running(Utc::now())).await;
 
-            if let Err(e) = spawn_and_wait_all(c.clone(), job.scenarios).await {
+            if job.cancel_token.is_cancelled() {
+                info!(target: "tool", job_id = job.id, "Job was cancelled before starting");
+                continue;
+            }
+
+            // Set the cancel token for the current job context
+            // This allows cancellation to be possible when generating transactions
+            ctx.cancel_token = job.cancel_token.clone();
+
+            s.update_job_status(job.id, JobStatus::Running(Utc::now()))
+                .await;
+
+            if let Err(e) = spawn_and_wait_all(ctx.clone(), job.scenarios).await {
                 error!(target: "tool", job_id = job.id, "Error processing job: {}", e);
             }
 
-            s.set_status(job.id, JobStatus::Completed(Utc::now())).await;
+            s.update_job_status(job.id, JobStatus::Completed(Utc::now()))
+                .await;
 
             info!(target: "tool", job_id = job.id, duration = ?started_at.elapsed(), "Job completed");
         }
@@ -130,9 +187,10 @@ async fn run_service(ctx: Context) -> Result<(), Box<dyn std::error::Error>> {
         .route("/job/:id", get(get_job))
         .route("/status/running", get(get_running_job))
         .route("/status/queued", get(get_queued_job))
+        .route("/job/:id", patch(cancel_job))
         .with_state(Arc::new(state));
 
-    let listener = tokio::net::TcpListener::bind(ctx.args.listen_address.as_str())
+    let listener = tokio::net::TcpListener::bind(listen_addr.as_str())
         .await
         .unwrap();
     axum::serve(listener, app).await.unwrap();
@@ -144,7 +202,13 @@ async fn get_job(
     State(state): State<Arc<AppState>>,
     Path(job_id): Path<u64>,
 ) -> (StatusCode, Json<Option<JobStatus>>) {
-    let status = state.jobs_status.read().await.get(&job_id).cloned();
+    let status = state
+        .jobs_status
+        .read()
+        .await
+        .get(&job_id)
+        .map(|(status, _)| status)
+        .cloned();
     info!(target: "tool", status = ?status, "Job status");
 
     (StatusCode::OK, Json(status))
@@ -169,12 +233,14 @@ async fn enqueue_job(
 ) -> (StatusCode, Json<EnqueuedJob>) {
     let job_id = GLOBAL_COUNTER.fetch_add(1, Ordering::SeqCst);
     let len = scenarios.len();
+    let cancel_token = CancellationToken::new();
 
     state
         .sender
         .send(Job {
             id: job_id,
             scenarios,
+            cancel_token: cancel_token.clone(),
         })
         .await
         .unwrap();
@@ -182,7 +248,7 @@ async fn enqueue_job(
     info!(target: "tool", job_id, "Enqueued job");
 
     let now = Utc::now();
-    state.set_status(job_id, JobStatus::Queued(now)).await;
+    state.add_job(job_id, now, cancel_token).await;
 
     (
         StatusCode::CREATED,
@@ -202,8 +268,8 @@ async fn get_running_job(
         .read()
         .await
         .iter()
-        .filter(|(_, v)| matches!(v, JobStatus::Running(_)))
-        .map(|(k, v)| (*k, *v))
+        .filter(|(_, v)| matches!(v.0, JobStatus::Running(_)))
+        .map(|(k, v)| (*k, v.0))
         .collect();
 
     if running.is_empty() {
@@ -229,8 +295,8 @@ async fn get_queued_job(
         .read()
         .await
         .iter()
-        .filter(|(_, v)| matches!(v, JobStatus::Queued(_)))
-        .map(|(k, v)| (*k, *v))
+        .filter(|(_, v)| matches!(v.0, JobStatus::Queued(_)))
+        .map(|(k, v)| (*k, v.0))
         .collect();
 
     if queued.is_empty() {
@@ -238,6 +304,15 @@ async fn get_queued_job(
     }
 
     (StatusCode::OK, Json(Some(queued)))
+}
+
+async fn cancel_job(
+    State(state): State<Arc<AppState>>,
+    Path(job_id): Path<u64>,
+) -> (StatusCode, Json<Option<u64>>) {
+    state.cancel_job(job_id).await;
+
+    (StatusCode::OK, Json(Some(job_id)))
 }
 
 /// Parse the input CSV file and create and spawn transaction scenarios
@@ -330,6 +405,12 @@ async fn generate_transactions_at_rate(
                 info!(target: "tool", txn_counter, "Finished transactions");
                 break;
             }
+
+            if ctx.cancel_token.is_cancelled() {
+                info!(target: "tool", txn_counter, "Scenario cancelled, stopping transaction generation");
+                break;
+            }
+
             info!(target: "tool" , "Generating new transaction at rate");
 
             let (dep1, dep2) = generate_transaction(
@@ -386,6 +467,11 @@ async fn generate_transactions_count(
     for (num_transactions, iter_count) in scenario.scenario.iter() {
         let iters = (*num_transactions * *iter_count as f64) as u64;
         for iter in 0..iters {
+            if ctx.cancel_token.is_cancelled() {
+                info!(target: "tool", iter, "Scenario cancelled, stopping transaction generation");
+                return Ok(());
+            }
+
             info!(target: "tool", iter , "Generating new transaction");
 
             let (dep1, dep2) = generate_transaction(
