@@ -1,4 +1,4 @@
-use crate::dfg::{types::*, OpEdge, OpNode};
+use crate::dfg::{types::*, TxEdge, TxNode};
 use anyhow::Result;
 use daggy::{
     petgraph::{
@@ -14,15 +14,16 @@ use daggy::{
 };
 use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
-use fhevm_engine_common::types::SupportedFheCiphertexts;
-
+use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
-use rayon::prelude::*;
 use std::{
     collections::HashMap,
     sync::{atomic::AtomicUsize, mpsc::channel},
 };
+use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
+
+use super::{DFGraph, DFTxGraph};
 
 struct ExecNode {
     df_nodes: Vec<NodeIndex>,
@@ -51,19 +52,20 @@ impl std::fmt::Debug for ExecNode {
 }
 
 pub struct Scheduler<'a> {
-    graph: &'a mut Dag<OpNode, OpEdge>,
-    edges: Dag<(), OpEdge>,
+    graph: &'a mut DFTxGraph,
+    edges: Dag<(), TxEdge>,
     sks: tfhe::ServerKey,
+    cpk: tfhe::CompactPublicKey,
     #[cfg(feature = "gpu")]
     csks: Vec<tfhe::CudaServerKey>,
     activity_heartbeat: HeartBeat,
 }
 
 impl<'a> Scheduler<'a> {
-    fn is_ready(node: &OpNode) -> bool {
+    fn is_ready(node: &TxNode) -> bool {
         let mut ready = true;
-        for i in node.inputs.iter() {
-            if let DFGTaskInput::Dependence(_) = i {
+        for (_, i) in node.inputs.iter() {
+            if i.is_none() {
                 ready = false;
             }
         }
@@ -75,16 +77,18 @@ impl<'a> Scheduler<'a> {
             == 0
     }
     pub fn new(
-        graph: &'a mut Dag<OpNode, OpEdge>,
+        graph: &'a mut DFTxGraph,
         sks: tfhe::ServerKey,
+        cpk: tfhe::CompactPublicKey,
         #[cfg(feature = "gpu")] csks: Vec<tfhe::CudaServerKey>,
         activity_heartbeat: HeartBeat,
     ) -> Self {
-        let edges = graph.map(|_, _| (), |_, edge| *edge);
+        let edges = graph.graph.map(|_, _| (), |_, edge| *edge);
         Self {
             graph,
             edges,
             sks: sks.clone(),
+            cpk: cpk.clone(),
             #[cfg(feature = "gpu")]
             csks: csks.clone(),
             activity_heartbeat,
@@ -103,8 +107,8 @@ impl<'a> Scheduler<'a> {
                     self.schedule_coarse_grain(PartitionStrategy::MaxLocality)
                         .await
                 }
-                "LOOP" => self.schedule_component_loop().await,
-                "FINE_GRAIN" => self.schedule_fine_grain().await,
+                //"LOOP" => self.schedule_component_loop().await,
+                //"FINE_GRAIN" => self.schedule_fine_grain().await,
                 unhandled => panic!("Scheduling strategy {:?} does not exist", unhandled),
             },
             // Use overall best strategy as default
@@ -121,6 +125,201 @@ impl<'a> Scheduler<'a> {
         }
     }
 
+    async fn schedule_coarse_grain(&mut self, strategy: PartitionStrategy) -> Result<()> {
+        let sks = self.sks.clone();
+        tfhe::set_server_key(sks.clone());
+        let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
+        let _ = match strategy {
+            PartitionStrategy::MaxLocality => {
+                partition_components(&self.graph.graph, &mut execution_graph)?
+            }
+            PartitionStrategy::MaxParallelism => {
+                partition_preserving_parallelism(&self.graph.graph, &mut execution_graph)?
+            }
+        };
+        let task_dependences = execution_graph.map(|_, _| (), |_, edge| *edge);
+
+        // Prime the scheduler with all nodes without dependences
+        let mut set: JoinSet<(HashMap<Handle, TaskResult>, NodeIndex)> = JoinSet::new();
+        for idx in 0..execution_graph.node_count() {
+            let sks = sks.clone();
+            let cpk = self.cpk.clone();
+            let index = NodeIndex::new(idx);
+            let node = execution_graph
+                .node_weight_mut(index)
+                .ok_or(SchedulerError::DataflowGraphError)?;
+            if self.is_ready_task(node) {
+                let mut args = Vec::with_capacity(node.df_nodes.len());
+                for nidx in node.df_nodes.iter() {
+                    let tx = self
+                        .graph
+                        .graph
+                        .node_weight_mut(*nidx)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
+                    args.push((
+                        std::mem::take(&mut tx.graph),
+                        std::mem::take(&mut tx.inputs),
+                        tx.transaction_id.clone(),
+                    ));
+                }
+                set.spawn_blocking(move || {
+                    tfhe::set_server_key(sks.clone());
+                    execute_partition(args, index, 0, cpk)
+                });
+            }
+        }
+        while let Some(result) = set.join_next().await {
+            self.activity_heartbeat.update();
+            // The result contains all outputs (allowed handles)
+            // computed within the finished partition. Now check the
+            // outputs and update the trnsaction inputs of downstream
+            // transactions
+            let result = result?;
+            let task_index = result.1;
+            for (handle, node_result) in result.0.into_iter() {
+                // If this node result is an error, we can't satisfy
+                // any dependences with it, so skip - all dependences
+                // on this will remain unsatisfied and result in
+                // further errors.
+                //if let Ok(ref mut node_result) = node_result {
+                //let mut swap_val = SupportedFheCiphertexts::Scalar(vec![]);
+                //std::mem::swap(&mut node_result.0, &mut swap_val);
+                self.graph.add_output(&handle, node_result, &self.edges)?;
+            }
+            //}
+            for edge in task_dependences.edges_directed(task_index, Direction::Outgoing) {
+                let sks = sks.clone();
+                let cpk = self.cpk.clone();
+                let dependent_task_index = edge.target();
+                let dependent_task = execution_graph
+                    .node_weight_mut(dependent_task_index)
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                dependent_task
+                    .dependence_counter
+                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                if self.is_ready_task(dependent_task) {
+                    let mut args = Vec::with_capacity(dependent_task.df_nodes.len());
+                    for nidx in dependent_task.df_nodes.iter() {
+                        let tx = self
+                            .graph
+                            .graph
+                            .node_weight_mut(*nidx)
+                            .ok_or(SchedulerError::DataflowGraphError)?;
+                        args.push((
+                            std::mem::take(&mut tx.graph),
+                            std::mem::take(&mut tx.inputs),
+                            tx.transaction_id.clone(),
+                        ));
+                    }
+                    set.spawn_blocking(move || {
+                        tfhe::set_server_key(sks.clone());
+                        execute_partition(args, dependent_task_index, 0, cpk)
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+    #[cfg(feature = "gpu")]
+    #[cfg(not(feature = "gpu"))]
+    async fn schedule_coarse_grain(&mut self, strategy: PartitionStrategy) -> Result<()> {
+        tfhe::set_server_key(self.sks.clone());
+        let mut set: JoinSet<(Vec<(usize, TaskResult)>, NodeIndex)> = JoinSet::new();
+        let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
+        let _ = match strategy {
+            PartitionStrategy::MaxLocality => {
+                partition_components(self.graph, &mut execution_graph)
+            }
+            PartitionStrategy::MaxParallelism => {
+                partition_preserving_parallelism(self.graph, &mut execution_graph)
+            }
+        };
+        let task_dependences = execution_graph.map(|_, _| (), |_, edge| *edge);
+
+        // Prime the scheduler with all nodes without dependences
+        for idx in 0..execution_graph.node_count() {
+            let sks = sks.clone();
+            let index = NodeIndex::new(idx);
+            let node = execution_graph
+                .node_weight_mut(index)
+                .ok_or(SchedulerError::DataflowGraphError)?;
+            if self.is_ready_task(node) {
+                let mut args = Vec::with_capacity(node.df_nodes.len());
+                for nidx in node.df_nodes.iter() {
+                    let n = self
+                        .graph
+                        .node_weight_mut(*nidx)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
+                    let opcode = n.opcode;
+                    let is_allowed = n.is_allowed;
+                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
+                }
+                set.spawn_blocking(move || {
+                    tfhe::set_server_key(sks.clone());
+                    execute_partition(args, index, 0)
+                });
+            }
+        }
+
+        // Get results from computations and update dependences of remaining computations
+        while let Some(result) = set.join_next().await {
+            self.activity_heartbeat.update();
+            let mut result = result?;
+            let task_index = result.1;
+            while let Some((node_index, node_result)) = result.0.pop() {
+                let node_index = NodeIndex::new(node_index);
+                // If this node result is an error, we can't satisfy
+                // any dependences with it, so skip - all dependences
+                // on this will remain unsatisfied and result in
+                // further errors.
+                if let Ok(ref node_result) = node_result {
+                    // Satisfy deps from the executed computation in the DFG
+                    for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
+                        let child_index = edge.target();
+                        let child_node = self
+                            .graph
+                            .node_weight_mut(child_index)
+                            .ok_or(SchedulerError::DataflowGraphError)?;
+                        if !child_node.inputs.is_empty() {
+                            // Here cannot be an error
+                            child_node.inputs[*edge.weight() as usize] =
+                                DFGTaskInput::Value(node_result.0.clone());
+                        }
+                    }
+                }
+                self.graph[node_index].result = Some(node_result);
+            }
+            for edge in task_dependences.edges_directed(task_index, Direction::Outgoing) {
+                let sks = sks.clone();
+                let dependent_task_index = edge.target();
+                let dependent_task = execution_graph
+                    .node_weight_mut(dependent_task_index)
+                    .ok_or(SchedulerError::DataflowGraphError)?;
+                dependent_task
+                    .dependence_counter
+                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                if self.is_ready_task(dependent_task) {
+                    let mut args = Vec::with_capacity(dependent_task.df_nodes.len());
+                    for nidx in dependent_task.df_nodes.iter() {
+                        let n = self
+                            .graph
+                            .node_weight_mut(*nidx)
+                            .ok_or(SchedulerError::DataflowGraphError)?;
+                        let opcode = n.opcode;
+                        let is_allowed = n.is_allowed;
+                        args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
+                    }
+                    set.spawn_blocking(move || {
+                        tfhe::set_server_key(sks.clone());
+                        execute_partition(args, dependent_task_index, 0)
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "gpu")]
     #[cfg(not(feature = "gpu"))]
     async fn schedule_fine_grain(&mut self) -> Result<()> {
         let mut set: JoinSet<(usize, TaskResult)> = JoinSet::new();
@@ -198,104 +397,7 @@ impl<'a> Scheduler<'a> {
         Ok(())
     }
 
-    #[cfg(not(feature = "gpu"))]
-    async fn schedule_coarse_grain(&mut self, strategy: PartitionStrategy) -> Result<()> {
-        let sks = self.sks.clone();
-        tfhe::set_server_key(sks.clone());
-        let mut set: JoinSet<(Vec<(usize, TaskResult)>, NodeIndex)> = JoinSet::new();
-        let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
-        let _ = match strategy {
-            PartitionStrategy::MaxLocality => {
-                partition_components(self.graph, &mut execution_graph)
-            }
-            PartitionStrategy::MaxParallelism => {
-                partition_preserving_parallelism(self.graph, &mut execution_graph)
-            }
-        };
-        let task_dependences = execution_graph.map(|_, _| (), |_, edge| *edge);
-
-        // Prime the scheduler with all nodes without dependences
-        for idx in 0..execution_graph.node_count() {
-            let sks = sks.clone();
-            let index = NodeIndex::new(idx);
-            let node = execution_graph
-                .node_weight_mut(index)
-                .ok_or(SchedulerError::DataflowGraphError)?;
-            if self.is_ready_task(node) {
-                let mut args = Vec::with_capacity(node.df_nodes.len());
-                for nidx in node.df_nodes.iter() {
-                    let n = self
-                        .graph
-                        .node_weight_mut(*nidx)
-                        .ok_or(SchedulerError::DataflowGraphError)?;
-                    let opcode = n.opcode;
-                    let is_allowed = n.is_allowed;
-                    args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
-                }
-                set.spawn_blocking(move || {
-                    tfhe::set_server_key(sks.clone());
-                    execute_partition(args, index, 0)
-                });
-            }
-        }
-        // Get results from computations and update dependences of remaining computations
-        while let Some(result) = set.join_next().await {
-            self.activity_heartbeat.update();
-            let mut result = result?;
-            let task_index = result.1;
-            while let Some((node_index, node_result)) = result.0.pop() {
-                let node_index = NodeIndex::new(node_index);
-                // If this node result is an error, we can't satisfy
-                // any dependences with it, so skip - all dependences
-                // on this will remain unsatisfied and result in
-                // further errors.
-                if let Ok(ref node_result) = node_result {
-                    // Satisfy deps from the executed computation in the DFG
-                    for edge in self.edges.edges_directed(node_index, Direction::Outgoing) {
-                        let child_index = edge.target();
-                        let child_node = self
-                            .graph
-                            .node_weight_mut(child_index)
-                            .ok_or(SchedulerError::DataflowGraphError)?;
-                        if !child_node.inputs.is_empty() {
-                            // Here cannot be an error
-                            child_node.inputs[*edge.weight() as usize] =
-                                DFGTaskInput::Value(node_result.0.clone());
-                        }
-                    }
-                }
-                self.graph[node_index].result = Some(node_result);
-            }
-            for edge in task_dependences.edges_directed(task_index, Direction::Outgoing) {
-                let sks = sks.clone();
-                let dependent_task_index = edge.target();
-                let dependent_task = execution_graph
-                    .node_weight_mut(dependent_task_index)
-                    .ok_or(SchedulerError::DataflowGraphError)?;
-                dependent_task
-                    .dependence_counter
-                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
-                if self.is_ready_task(dependent_task) {
-                    let mut args = Vec::with_capacity(dependent_task.df_nodes.len());
-                    for nidx in dependent_task.df_nodes.iter() {
-                        let n = self
-                            .graph
-                            .node_weight_mut(*nidx)
-                            .ok_or(SchedulerError::DataflowGraphError)?;
-                        let opcode = n.opcode;
-                        let is_allowed = n.is_allowed;
-                        args.push((opcode, std::mem::take(&mut n.inputs), *nidx, is_allowed));
-                    }
-                    set.spawn_blocking(move || {
-                        tfhe::set_server_key(sks.clone());
-                        execute_partition(args, dependent_task_index, 0)
-                    });
-                }
-            }
-        }
-        Ok(())
-    }
-
+    #[cfg(feature = "gpu")]
     #[cfg(not(feature = "gpu"))]
     async fn schedule_component_loop(&mut self) -> Result<()> {
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
@@ -645,8 +747,8 @@ impl<'a> Scheduler<'a> {
     }
 }
 
-fn add_execution_depedences(
-    graph: &Dag<OpNode, OpEdge>,
+fn add_execution_depedences<TNode, TEdge>(
+    graph: &Dag<TNode, TEdge>,
     execution_graph: &mut Dag<ExecNode, ()>,
     node_map: HashMap<NodeIndex, NodeIndex>,
 ) -> Result<()> {
@@ -676,8 +778,8 @@ fn add_execution_depedences(
     Ok(())
 }
 
-fn partition_preserving_parallelism(
-    graph: &Dag<OpNode, OpEdge>,
+fn partition_preserving_parallelism<TNode, TEdge>(
+    graph: &Dag<TNode, TEdge>,
     execution_graph: &mut Dag<ExecNode, ()>,
 ) -> Result<()> {
     // First sort the DAG in a schedulable order
@@ -721,7 +823,7 @@ fn partition_preserving_parallelism(
 }
 
 fn partition_components(
-    graph: &Dag<OpNode, OpEdge>,
+    graph: &Dag<TxNode, TxEdge>,
     execution_graph: &mut Dag<ExecNode, ()>,
 ) -> Result<()> {
     // First sort the DAG in a schedulable order
@@ -764,58 +866,175 @@ fn partition_components(
     Ok(())
 }
 
-type TaskResult = Result<(SupportedFheCiphertexts, Option<(i16, Vec<u8>)>)>;
+fn re_randomise_transaction_inputs(
+    inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
+    transaction_id: &Handle,
+    gpu_idx: usize,
+    cpk: tfhe::CompactPublicKey,
+) -> Result<()> {
+    let transaction_rerandomisation_domain_separator = *b"TFHE-w.r";
+    let compact_public_encryption_domain_separator = *b"TFHE.Enc";
 
+    let now = std::time::SystemTime::now();
+
+    let mut re_rand_context = ReRandomizationContext::new(
+        transaction_rerandomisation_domain_separator,
+        // First is the function description, second is a nonce
+        [transaction_id.as_slice()],
+        compact_public_encryption_domain_separator,
+    );
+    for txinput in inputs.values_mut() {
+        match txinput {
+            Some(DFGTxInput::Value(val)) => {
+                val.add_to_re_randomization_context(&mut re_rand_context);
+            }
+            Some(DFGTxInput::Compressed((t, c))) => {
+                let decomp = SupportedFheCiphertexts::decompress(*t, c, gpu_idx);
+                if let Ok(decomp) = decomp {
+                    decomp.add_to_rerandomisation_context(&mut re_rand_context);
+                    *txinput = Some(DFGTxInput::Value(decomp));
+                } else {
+                    // If any input fails, we set the input as empty
+                    *txinput = None;
+                }
+            }
+            None => {}
+        }
+    }
+    let mut seed_gen = re_rand_context.finalize();
+    for txinput in inputs.values_mut() {
+        match txinput {
+            Some(DFGTxInput::Value(val)) => {
+                *txinput = Some(DFGTxInput::Value(
+                    val.re_randomise(&cpk, seed_gen.next_seed())?,
+                ));
+            }
+            Some(DFGTxInput::Compressed(_)) => {
+                panic!("N compressed inputs should remain here");
+            }
+            None => {}
+        }
+    }
+    println!(
+        "Execution time: {} -- {:?}",
+        now.elapsed().unwrap().as_millis(),
+        now
+    );
+    Ok(())
+}
+
+type TaskResult = Result<(SupportedFheCiphertexts, i16, Vec<u8>)>;
 fn execute_partition(
-    computations: Vec<(i32, Vec<DFGTaskInput>, NodeIndex, bool)>,
+    transactions: Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle)>,
     task_id: NodeIndex,
     gpu_idx: usize,
-) -> (Vec<(usize, TaskResult)>, NodeIndex) {
-    let mut res: HashMap<usize, TaskResult> = HashMap::with_capacity(computations.len());
-    'comps: for (opcode, inputs, nidx, is_allowed) in computations {
-        let mut cts = Vec::with_capacity(inputs.len());
-        for i in inputs.iter() {
-            match i {
-                DFGTaskInput::Dependence(d) => {
-                    if let Some(d) = d {
-                        if let Some(Ok(ct)) = res.get(d) {
-                            cts.push(ct.0.clone());
+    cpk: tfhe::CompactPublicKey,
+) -> (HashMap<Handle, TaskResult>, NodeIndex) {
+    let mut res: HashMap<Handle, TaskResult> = HashMap::with_capacity(transactions.len());
+    // Traverse transactions within the partition. The transactions
+    // are topologically sorted so the order is executable
+    'tx: for (ref mut dfg, ref mut tx_inputs, tid) in transactions {
+        // Update the transaction inputs based on allowed handles so
+        // far. If any input is still missing, and we cannot fill it
+        // (e.g., error in the producer transaction) we cannot execute
+        // this transaction and possibly more downstream.
+        for (h, i) in tx_inputs.iter_mut() {
+            if i.is_none() {
+                let Some(Ok(ct)) = res.get(h) else {
+                    continue 'tx;
+                };
+                *i = Some(DFGTxInput::Value(ct.0.clone()));
+            }
+        }
+        // Re-randomise inputs of the transaction
+        if let Err(e) = re_randomise_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
+            res.insert(tid.clone(), Err(e));
+            continue 'tx;
+        }
+        // Sort the transaction's subgraph in an executable order
+        let ts = daggy::petgraph::algo::toposort(&dfg.graph, None)
+            .map_err(|_| SchedulerError::CyclicDependence)
+            .unwrap();
+        // Traverse and execute the transaction's subgraph
+        // TODO: parallelise this
+        'ops: for nidx in ts {
+            let node = dfg.graph.node_weight_mut(nidx).unwrap();
+            let mut cts = Vec::with_capacity(node.inputs.len());
+            for i in node.inputs.iter() {
+                match i {
+                    DFGTaskInput::Dependence(h) => {
+                        if let Some(Some(txinput)) = tx_inputs.get(h) {
+                            match txinput {
+                                DFGTxInput::Value(val) => cts.push(val.clone()),
+                                DFGTxInput::Compressed((t, c)) => {
+                                    let decomp =
+                                        SupportedFheCiphertexts::decompress(*t, c, gpu_idx);
+                                    if let Ok(decomp) = decomp {
+                                        cts.push(decomp);
+                                    } else {
+                                        res.insert(h.clone(), Err(decomp.err().unwrap()));
+                                        continue 'ops;
+                                    }
+                                }
+                            }
                         } else {
+                            // If any of the operation's inputs is
+                            // unavailable, mark it as an error.
+                            println!("MISSING INPUT {:?}", h);
                             res.insert(
-                                nidx.index(),
+                                h.clone(),
                                 Err(SchedulerError::UnsatisfiedDependence.into()),
                             );
-                            continue 'comps;
+                            continue 'ops;
+                        }
+                    }
+                    DFGTaskInput::Value(v) => {
+                        cts.push(v.clone());
+                    }
+                    DFGTaskInput::Compressed((t, c)) => {
+                        let decomp = SupportedFheCiphertexts::decompress(*t, c, gpu_idx);
+                        if let Ok(decomp) = decomp {
+                            cts.push(decomp);
+                        } else {
+                            res.insert(Handle::default(), Err(decomp.err().unwrap()));
+                            continue 'ops;
                         }
                     }
                 }
-                DFGTaskInput::Value(v) => {
-                    cts.push(v.clone());
-                }
-                DFGTaskInput::Compressed((t, c)) => {
-                    let decomp = SupportedFheCiphertexts::decompress(*t, c, gpu_idx);
-                    if let Ok(decomp) = decomp {
-                        cts.push(decomp);
-                    } else {
-                        res.insert(nidx.index(), Err(decomp.err().unwrap()));
-                        continue 'comps;
-                    }
-                }
+            }
+
+            let (_, op_res) =
+                run_computation(node.opcode, cts, nidx.index(), node.is_allowed, gpu_idx);
+            // Update inputs available within the transaction with the
+            // output of this operation
+            tx_inputs.insert(
+                node.result_handle.clone(),
+                if let Ok(ref res) = op_res {
+                    Some(DFGTxInput::Value(res.0.clone()))
+                } else {
+                    None
+                },
+            );
+            // Update partition's outputs (allowed handles)
+            if node.is_allowed {
+                res.insert(
+                    node.result_handle.clone(),
+                    op_res.map(|v| (v.0, v.1.as_ref().unwrap().0, v.1.unwrap().1)),
+                );
             }
         }
-        let (node_index, result) = run_computation(opcode, cts, nidx.index(), is_allowed, gpu_idx);
-        res.insert(node_index, result);
     }
-    (Vec::from_iter(res), task_id)
+    (res, task_id)
 }
 
+type OpResult = Result<(SupportedFheCiphertexts, Option<(i16, Vec<u8>)>)>;
 fn run_computation(
     operation: i32,
     inputs: Vec<SupportedFheCiphertexts>,
     graph_node_index: usize,
     is_allowed: bool,
     gpu_idx: usize,
-) -> (usize, TaskResult) {
+) -> (usize, OpResult) {
     let op = FheOperation::try_from(operation);
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
@@ -827,6 +1046,10 @@ fn run_computation(
         }
         Ok(_) => match perform_fhe_operation(operation as i16, &inputs, gpu_idx) {
             Ok(result) => {
+                println!(
+                    "\t Performed Op {operation} {graph_node_index} {:?}",
+                    is_allowed
+                );
                 if is_allowed {
                     let (ct_type, ct_bytes) = result.compress();
                     (graph_node_index, Ok((result, Some((ct_type, ct_bytes)))))
@@ -836,9 +1059,6 @@ fn run_computation(
             }
             Err(e) => (graph_node_index, Err(e.into())),
         },
-        _ => (
-            graph_node_index,
-            Err(SchedulerError::UnknownOperation(operation).into()),
-        ),
+        Err(e) => (graph_node_index, Err(e.into())),
     }
 }
