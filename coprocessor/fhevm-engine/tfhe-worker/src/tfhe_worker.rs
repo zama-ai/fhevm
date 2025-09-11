@@ -8,8 +8,10 @@ use lazy_static::lazy_static;
 use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use prometheus::{register_int_counter, IntCounter};
-use scheduler::dfg::types::SchedulerError;
-use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput, DFGraph};
+use scheduler::dfg::types::{DFGTxInput, SchedulerError};
+use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput, types::DFGTxResult, DFGraph};
+use scheduler::dfg::{DFGOp, DFTxGraph, TxNode};
+use sqlx::Postgres;
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
     collections::{BTreeSet, HashMap},
@@ -184,6 +186,10 @@ FOR UPDATE SKIP LOCKED            ",
         if the_work.is_empty() {
             health_check.update_activity();
             continue;
+        } else {
+            // We've fetched work, so we'll poll again without waiting
+            // for a notification after this cycle.
+            immedially_poll_more_work = true;
         }
         WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
         info!(target: "tfhe_worker", { count = the_work.len() }, "Processing work items");
@@ -191,378 +197,160 @@ FOR UPDATE SKIP LOCKED            ",
         // Make sure we process each tenant independently to avoid
         // setting different keys from different tenants in the worker
         // threads
-        let mut work_by_tenant = the_work.into_iter().into_group_map_by(|k| k.tenant_id);
-
-        let mut s = tracer.start_with_context("populate_key_cache", &loop_ctx);
-        let mut cts_to_query: BTreeSet<&[u8]> = BTreeSet::new();
-        let mut tenants_to_query: BTreeSet<i32> = BTreeSet::new();
-        let mut keys_to_query: BTreeSet<i32> = BTreeSet::new();
-        let key_cache = tenant_key_cache.read().await;
-        // Clear unneeded work items
-        for (_, work) in work_by_tenant.iter_mut() {
-            let mut work_to_remove: BTreeSet<usize> = BTreeSet::new();
-            let mut transactions: HashMap<&Handle, (bool, Vec<usize>)> = HashMap::new();
-            for (idx, w) in work.iter_mut().enumerate() {
-                transactions
-                    .entry(&w.transaction_id)
-                    .and_modify(|(_needed, ops)| ops.push(idx))
-                    .or_insert((false, vec![idx]));
-                // If this handle is already marked as computed in
-                // allowed_handles, we don't need to re-compute it
-                // (nor any other intermediate handles it depends on,
-                // which will be marked as unneeded during compute
-                // graph finalization).  Remove it from the work set.
-                if w.is_computed.unwrap_or(false) {
-                    work_to_remove.insert(idx);
-                } else if w.is_allowed.unwrap_or(false) {
-                    // If for a given transaction we never set the
-                    // needed flag, we'll remove all of its operations
-                    // from the work set. This happens if there is no
-                    // computable allowed handle present, in which
-                    // case no useful work can be done.
-                    transactions
-                        .entry(&w.transaction_id)
-                        .and_modify(|(needed, _ops)| *needed = true)
-                        .or_insert((true, vec![idx]));
-                }
-            }
-            for (_, (needed, ops)) in transactions {
-                if !needed {
-                    ops.iter().for_each(|idx| {
-                        work_to_remove.insert(*idx);
-                    });
-                }
-            }
-            for idx in work_to_remove.iter().rev() {
-                work.remove(*idx);
-            }
+        let mut s_prep = tracer.start_with_context("prepare_dataflow_graphs", &loop_ctx);
+        s_prep.set_attribute(KeyValue::new("work_items", the_work.len() as i64));
+        // Partition work by tenant
+        let work_by_tenant = the_work.into_iter().into_group_map_by(|k| k.tenant_id);
+        // Partition the work by transaction
+        let mut work_by_tenant_by_transaction: HashMap<i32, HashMap<Handle, Vec<_>>> =
+            HashMap::new();
+        for (tenant_id, work) in work_by_tenant.into_iter() {
+            work_by_tenant_by_transaction.insert(
+                tenant_id,
+                work.into_iter()
+                    .into_group_map_by(|k| k.transaction_id.clone()),
+            );
         }
-        for (tenant_id, work) in work_by_tenant.iter_mut() {
-            let _ = tenants_to_query.insert(*tenant_id);
-            if !key_cache.contains(tenant_id) {
-                let _ = keys_to_query.insert(*tenant_id);
-            }
-            for w in work.iter_mut() {
-                for dh in &w.dependencies {
-                    let _ = cts_to_query.insert(dh);
-                }
-            }
-        }
-        drop(key_cache);
-        let cts_to_query = cts_to_query
-            .into_iter()
-            .map(|i| i.to_vec())
-            .collect::<Vec<_>>();
-        let tenants_to_query = tenants_to_query.into_iter().collect::<Vec<_>>();
-        let keys_to_query = keys_to_query.into_iter().collect::<Vec<_>>();
-        s.set_attribute(KeyValue::new("keys_to_query", keys_to_query.len() as i64));
-        s.set_attribute(KeyValue::new(
-            "tenants_to_query",
-            tenants_to_query.len() as i64,
-        ));
-        populate_cache_with_tenant_keys(keys_to_query, trx.as_mut(), &tenant_key_cache).await?;
-        s.end();
-        let mut s = tracer.start_with_context("query_ciphertext_batch", &loop_ctx);
-        s.set_attribute(KeyValue::new("cts_to_query", cts_to_query.len() as i64));
-        // TODO: select all the ciphertexts where they're contained in the tuples
-        let ciphertexts_rows = query!(
-            "
-                SELECT tenant_id, handle, ciphertext, ciphertext_type
-                FROM ciphertexts
-                WHERE tenant_id = ANY($1::INT[])
-                AND handle = ANY($2::BYTEA[])
-            ",
-            &tenants_to_query,
-            &cts_to_query
-        )
-        .fetch_all(trx.as_mut())
-        .await
-        .map_err(|err| {
-            error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
-            err
-        })?;
-
-        s.end();
-        // index ciphertexts in hashmap
-        let mut ciphertext_map: HashMap<(i32, &[u8]), _> =
-            HashMap::with_capacity(ciphertexts_rows.len());
-        for row in &ciphertexts_rows {
-            let _ = ciphertext_map.insert((row.tenant_id, &row.handle), row);
-        }
-
-        // Process tenants in sequence to avoid switching keys during execution
-        for (tenant_id, work) in work_by_tenant.iter() {
-            let mut s_schedule = tracer.start_with_context("schedule_fhe_work", &loop_ctx);
-            s_schedule.set_attribute(KeyValue::new("work_items", work.len() as i64));
-            s_schedule.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
-            // We need to ensure that no handles are missing from
-            // either DB inputs or values produced within this batch
-            // before this batch is scheduled.
-            let mut produced_handles: HashMap<&Handle, ()> = HashMap::new();
-            for w in work.iter() {
-                produced_handles.insert(&w.output_handle, ());
-            }
-            let mut produced_handles_count = produced_handles.len();
-            loop {
-                'work_items: for w in work.iter() {
+        // Traverse transactions and build transaction nodes
+        let mut transactions: Vec<(i32, Vec<TxNode>)> = vec![];
+        for (tenant_id, work_by_transaction) in work_by_tenant_by_transaction.iter() {
+            let mut tenant_transactions: Vec<TxNode> = vec![];
+            for (transaction_id, txwork) in work_by_transaction.iter() {
+                let mut ops = vec![];
+                for w in txwork {
                     let fhe_op: SupportedFheOperations = w
                         .fhe_operation
                         .try_into()
                         .expect("only valid fhe ops must have been put in db");
+                    let mut inputs: Vec<DFGTaskInput> = Vec::with_capacity(w.dependencies.len());
+                    let mut this_comp_inputs: Vec<Vec<u8>> =
+                        Vec::with_capacity(w.dependencies.len());
+                    let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
                     for (idx, dh) in w.dependencies.iter().enumerate() {
                         let is_operand_scalar =
                             w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
-                        if !is_operand_scalar
-                            && !ciphertext_map.contains_key(&(w.tenant_id, dh))
-                            && !produced_handles.contains_key(dh)
-                        {
-                            // As this operation is not computable, remove
-                            // the output handle from those produced in
-                            // this batch.
-                            produced_handles.remove(&w.output_handle);
-                            continue 'work_items;
+                        is_scalar_op_vec.push(is_operand_scalar);
+                        this_comp_inputs.push(dh.clone());
+                        if is_operand_scalar {
+                            inputs.push(DFGTaskInput::Value(SupportedFheCiphertexts::Scalar(
+                                dh.clone(),
+                            )));
+                        } else {
+                            inputs.push(DFGTaskInput::Dependence(dh.clone()));
                         }
                     }
+                    check_fhe_operand_types(
+                        w.fhe_operation.into(),
+                        &this_comp_inputs,
+                        &is_scalar_op_vec,
+                    )
+                    .map_err(CoprocessorError::FhevmError)?;
+                    ops.push(DFGOp {
+                        output_handle: w.output_handle.clone(),
+                        fhe_op,
+                        inputs,
+                        is_allowed: w.is_allowed.unwrap_or(false),
+                    });
                 }
-                // Test if we've reached the fixpoint
-                if produced_handles_count == produced_handles.len() {
-                    break;
-                }
-                produced_handles_count = produced_handles.len();
+                let mut txn = TxNode::default();
+                txn.build(ops, transaction_id)?;
+                tenant_transactions.push(txn);
             }
+            transactions.push((*tenant_id, tenant_transactions));
+        }
+        s_prep.end();
 
-            // Now build the DF graph for the computations that can
-            // proceed and record those that can't
-            let mut graph = DFGraph::default();
-            let mut uncomputable: HashMap<usize, Handle> = HashMap::new();
-            let mut producer_indexes: HashMap<&Handle, usize> = HashMap::new();
-            let mut consumer_indexes: HashMap<usize, usize> = HashMap::new();
-            'work_items: for (widx, w) in work.iter().enumerate() {
-                let mut s = tracer.start_with_context("tfhe_computation", &loop_ctx);
-                let fhe_op: SupportedFheOperations = w
-                    .fhe_operation
-                    .try_into()
-                    .expect("only valid fhe ops must have been put in db");
-                let mut input_ciphertexts: Vec<DFGTaskInput> =
-                    Vec::with_capacity(w.dependencies.len());
-                let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
-                let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
-                for (idx, dh) in w.dependencies.iter().enumerate() {
-                    let is_operand_scalar =
-                        w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
-                    is_scalar_op_vec.push(is_operand_scalar);
-                    this_comp_inputs.push(dh.clone());
-                    if is_operand_scalar {
-                        input_ciphertexts.push(DFGTaskInput::Value(
-                            SupportedFheCiphertexts::Scalar(dh.clone()),
-                        ));
-                    } else if let Some(ct_map_val) = ciphertext_map.get(&(w.tenant_id, dh)) {
-                        input_ciphertexts.push(DFGTaskInput::Compressed((
-                            ct_map_val.ciphertext_type,
-                            ct_map_val.ciphertext.clone().to_vec(),
-                        )));
-                    } else if produced_handles.contains_key(dh) {
-                        input_ciphertexts.push(DFGTaskInput::Dependence(None));
-                    } else {
-                        // If this cannot be computed, we need to
-                        // exclude it from the DF graph.
-                        uncomputable.insert(widx, w.output_handle.clone());
-                        continue 'work_items;
-                    }
-                }
+        query_tenants_and_keys(
+            &transactions,
+            &tenant_key_cache,
+            &mut trx,
+            &tracer,
+            &loop_ctx,
+        )
+        .await?;
 
-                check_fhe_operand_types(
-                    w.fhe_operation.into(),
-                    &this_comp_inputs,
-                    &is_scalar_op_vec,
-                )
-                .map_err(CoprocessorError::FhevmError)?;
+        // Build dataflow graph of transactions
+        for (tenant_id, ref mut tenant_txs) in transactions.iter_mut() {
+            let mut tx_graph = DFTxGraph::default();
+            tx_graph.build(tenant_txs)?;
 
-                let n = graph.add_node(
-                    w.output_handle.clone(),
-                    w.fhe_operation.into(),
-                    input_ciphertexts.clone(),
-                    w.is_allowed.unwrap_or(true),
-                    widx,
+            let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
+            let ciphertext_map =
+                query_ciphertexts(&cts_to_query, *tenant_id, &mut trx, &tracer, &loop_ctx).await?;
+
+            for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
+                tx_graph.add_input(
+                    &handle,
+                    &DFGTxInput::Compressed((ct_type, std::mem::take(&mut ct))),
                 )?;
-                producer_indexes.insert(&w.output_handle, n.index());
-                consumer_indexes.insert(widx, n.index());
-
-                s.set_attribute(KeyValue::new("fhe_operation", w.fhe_operation as i64));
-                s.set_attribute(KeyValue::new(
-                    "handle",
-                    format!("0x{}", hex::encode(&w.output_handle)),
-                ));
-                let input_types = input_ciphertexts
-                    .iter()
-                    .map(|i| match i {
-                        DFGTaskInput::Value(i) => i.type_num().to_string(),
-                        DFGTaskInput::Compressed(_) => "Compressed value".to_string(),
-                        DFGTaskInput::Dependence(_) => "Temporary value".to_string(),
-                    })
-                    .collect::<Vec<_>>()
-                    .join(",");
-                s.set_attribute(KeyValue::new("input_types", input_types));
-                s.end();
             }
-            s.end();
-            // Traverse computations and add dependences/edges as required
-            for (index, w) in work.iter().enumerate() {
-                if uncomputable.contains_key(&index) {
-                    continue;
-                }
-                for (input_idx, input) in w.dependencies.iter().enumerate() {
-                    let fhe_op: SupportedFheOperations = w
-                        .fhe_operation
-                        .try_into()
-                        .expect("only valid fhe ops must have been put in db");
-                    let is_operand_scalar =
-                        w.is_scalar && input_idx == 1 || fhe_op.does_have_more_than_one_scalar();
-                    if !is_operand_scalar && !ciphertext_map.contains_key(&(w.tenant_id, input)) {
-                        if let Some(producer_index) = producer_indexes.get(input) {
-                            let consumer_index = consumer_indexes.get(&index).unwrap();
-                            graph.add_dependence(*producer_index, *consumer_index, input_idx)?;
-                        }
-                    }
-                }
-            }
-            graph.finalize();
-            s_schedule.end();
+            //println!("CTS queried: {:?}", ciphertext_map);
 
             // Execute the DFG with the current tenant's keys
-            let mut s_outer = tracer.start_with_context("wait_and_update_fhe_work", &loop_ctx);
+            let mut s_compute = tracer.start_with_context("compute_fhe_ops", &loop_ctx);
             {
                 let mut rk = tenant_key_cache.write().await;
                 let keys = rk.get(tenant_id).expect("Can't get tenant key from cache");
-
                 // Schedule computations in parallel as dependences allow
                 tfhe::set_server_key(keys.sks.clone());
                 let mut sched = Scheduler::new(
-                    &mut graph.graph,
+                    &mut tx_graph,
                     keys.sks.clone(),
+                    keys.pks.clone(),
                     #[cfg(feature = "gpu")]
                     keys.gpu_sks.clone(),
                     health_check.activity_heartbeat.clone(),
                 );
                 sched.schedule().await?;
             }
-            // Extract the results from the graph
-            let mut graph_results = graph.get_results();
+            s_compute.end();
+            println!("Graph so far {:?}", tx_graph);
+            // Get computation results
+            let graph_results = tx_graph.get_results();
 
-            // Update uncomputable ops schedule orders
-            {
-                let mut s =
-                    tracer.start_with_context("update_unschedulable_computations", &loop_ctx);
-                s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
-                s.set_attributes(
-                    uncomputable
-                        .values()
-                        .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
-                );
-                let _ = query!(
-                    "
-                            UPDATE allowed_handles
-                            SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
-                                uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
-                            WHERE tenant_id = $1
-                            AND handle = ANY($2::BYTEA[])
-                        ",
-                    *tenant_id,
-                    &uncomputable.into_values().collect::<Vec<_>>()
-                )
-                .execute(trx.as_mut())
-                .await.map_err(|err| {
-                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while marking computations as unschedulable");
-                    err
-                })?;
-                s.end();
-            }
             // Traverse computations that have been scheduled and
             // upload their results/errors
             let mut handles_to_update = vec![];
-            let mut intermediate_handles_to_update = vec![];
+            let intermediate_handles_to_update = tx_graph.get_intermediate_handles();
             let mut cts_to_insert = vec![];
-            for result in graph_results.iter_mut() {
-                let idx = result.work_index;
-                let result = &mut result.result;
-
-                #[allow(clippy::type_complexity)]
-                let finished_work_unit: Result<
-                    _,
-                    (
-                        Box<dyn std::error::Error + Send + Sync>,
-                        i32,
-                        Vec<u8>,
-                        Vec<u8>,
-                    ),
-                > = result
-                    .as_mut()
-                    .map(|rok| {
-                        if let Some((ct_type, ref mut ct_bytes)) = rok {
-                            (&work[idx], Some((ct_type, std::mem::take(ct_bytes))))
-                        } else {
-                            (&work[idx], None)
-                        }
-                    })
-                    .map_err(|rerr| {
-                        if rerr.downcast_ref::<FhevmError>().is_some() {
-                            let mut swap_val = FhevmError::BadInputs;
-                            std::mem::swap(
-                                &mut *rerr.downcast_mut::<FhevmError>().unwrap(),
-                                &mut swap_val,
-                            );
-                            (
-                                CoprocessorError::FhevmError(swap_val).into(),
-                                work[idx].tenant_id,
-                                work[idx].output_handle.clone(),
-                                work[idx].transaction_id.clone(),
-                            )
-                        } else {
-                            (
-                                CoprocessorError::SchedulerError(
-                                    *rerr
-                                        .downcast_ref::<SchedulerError>()
-                                        .unwrap_or(&SchedulerError::SchedulerError),
-                                )
-                                .into(),
-                                work[idx].tenant_id,
-                                work[idx].output_handle.clone(),
-                                work[idx].transaction_id.clone(),
-                            )
-                        }
-                    });
-                match finished_work_unit {
-                    Ok((w, Some((db_type, db_bytes)))) => {
+            for result in graph_results.into_iter() {
+                match result.compressed_ct {
+                    Ok((db_type, db_bytes)) => {
                         cts_to_insert.push((
-                            w.tenant_id,
+                            *tenant_id,
                             (
-                                w.output_handle.clone(),
-                                (db_bytes, (current_ciphertext_version(), *db_type)),
+                                result.handle.clone(),
+                                (db_bytes, (current_ciphertext_version(), db_type)),
                             ),
                         ));
-                        handles_to_update.push((w.output_handle.clone(), w.transaction_id.clone()));
-                        // As we've completed useful computation on an
-                        // allowed handle, we poll for work again
-                        // without waiting for a notification.
-                        immedially_poll_more_work = true;
+                        handles_to_update
+                            .push((result.handle.clone(), result.transaction_id.clone()));
                         WORK_ITEMS_PROCESSED_COUNTER.inc();
                     }
-                    Ok((w, None)) => {
-                        // Non allowed handles are still marked as
-                        // complete but we don't upload the CT
-                        intermediate_handles_to_update
-                            .push((w.output_handle.clone(), w.transaction_id.clone()));
-                        WORK_ITEMS_PROCESSED_COUNTER.inc();
-                    }
-                    Err((err, tenant_id, output_handle, transaction_id)) => {
+                    Err(mut err) => {
+                        let cerr: Box<dyn std::error::Error + Send + Sync> =
+                            if err.downcast_ref::<FhevmError>().is_some() {
+                                let mut swap_val = FhevmError::BadInputs;
+                                std::mem::swap(
+                                    &mut *err.downcast_mut::<FhevmError>().unwrap(),
+                                    &mut swap_val,
+                                );
+                                CoprocessorError::FhevmError(swap_val).into()
+                            } else {
+                                CoprocessorError::SchedulerError(
+                                    *err.downcast_ref::<SchedulerError>()
+                                        .unwrap_or(&SchedulerError::SchedulerError),
+                                )
+                                .into()
+                            };
                         // Downgrade SchedulerError to warning as the
                         // error is not about the operations themselves.
                         // Do not set the error flag in the DB.
-                        if let Some(cerr) = err.downcast_ref::<CoprocessorError>() {
-                            if matches!(cerr, CoprocessorError::SchedulerError(_)) {
+                        if let Some(err) = cerr.downcast_ref::<CoprocessorError>() {
+                            if matches!(err, CoprocessorError::SchedulerError(_)) {
                                 warn!(target: "tfhe_worker",
-                                                  { tenant_id = tenant_id, error = err,
-                                output_handle = format!("0x{}", hex::encode(&output_handle)) },
+                                                  { tenant_id = tenant_id, error = cerr,
+                                output_handle = format!("0x{}", hex::encode(&result.handle)) },
                                                 "scheduler encountered an error while processing work item"
                                             );
                                 continue;
@@ -570,16 +358,16 @@ FOR UPDATE SKIP LOCKED            ",
                         }
                         WORKER_ERRORS_COUNTER.inc();
                         error!(target: "tfhe_worker",
-                                      { tenant_id = tenant_id, error = err,
-                        output_handle = format!("0x{}", hex::encode(&output_handle)) },
+                                      { tenant_id = tenant_id, error = cerr,
+                        output_handle = format!("0x{}", hex::encode(&result.handle)) },
                                    "error while processing work item"
                                );
                         let mut s =
                             tracer.start_with_context("set_computation_error_in_db", &loop_ctx);
-                        s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
+                        s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
                         s.set_attribute(KeyValue::new(
                             "handle",
-                            format!("0x{}", hex::encode(&output_handle)),
+                            format!("0x{}", hex::encode(&result.handle)),
                         ));
                         let err_string = err.to_string();
                         s.set_status(opentelemetry::trace::Status::Error {
@@ -588,16 +376,16 @@ FOR UPDATE SKIP LOCKED            ",
 
                         let _ = query!(
                             "
-                            UPDATE computations
-                            SET is_error = true, error_message = $1
-                            WHERE tenant_id = $2
-                            AND output_handle = $3
-                            AND transaction_id = $4
-                        ",
+                                UPDATE computations
+                                SET is_error = true, error_message = $1
+                                WHERE tenant_id = $2
+                                AND output_handle = $3
+                                AND transaction_id = $4
+                            ",
                             err_string,
-                            tenant_id,
-                            output_handle,
-                            transaction_id
+                            *tenant_id,
+                            result.handle,
+                            result.transaction_id
                         )
                         .execute(trx.as_mut())
                         .await?;
@@ -728,8 +516,6 @@ FOR UPDATE SKIP LOCKED            ",
                     err
                 })?;
             s.end();
-
-            s_outer.end();
         }
         s.end();
 
@@ -747,3 +533,130 @@ FOR UPDATE SKIP LOCKED            ",
         }
     }
 }
+
+async fn query_tenants_and_keys<'a>(
+    transactions: &[(i32, Vec<TxNode>)],
+    tenant_key_cache: &std::sync::Arc<tokio::sync::RwLock<lru::LruCache<i32, TfheTenantKeys>>>,
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+    tracer: &opentelemetry::global::BoxedTracer,
+    loop_ctx: &opentelemetry::Context,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut s = tracer.start_with_context("populate_key_cache", loop_ctx);
+    let mut tenants_to_query: BTreeSet<i32> = BTreeSet::new();
+    let mut keys_to_query: BTreeSet<i32> = BTreeSet::new();
+    let key_cache = tenant_key_cache.read().await;
+    for (tenant_id, _) in transactions.iter() {
+        let _ = tenants_to_query.insert(*tenant_id);
+        if !key_cache.contains(tenant_id) {
+            let _ = keys_to_query.insert(*tenant_id);
+        }
+    }
+    drop(key_cache);
+    let tenants_to_query = tenants_to_query.into_iter().collect::<Vec<_>>();
+    let keys_to_query = keys_to_query.into_iter().collect::<Vec<_>>();
+    s.set_attribute(KeyValue::new("keys_to_query", keys_to_query.len() as i64));
+    s.set_attribute(KeyValue::new(
+        "tenants_to_query",
+        tenants_to_query.len() as i64,
+    ));
+    populate_cache_with_tenant_keys(keys_to_query, trx.as_mut(), tenant_key_cache).await?;
+    s.end();
+    Ok(())
+}
+
+async fn query_ciphertexts<'a>(
+    cts_to_query: &Vec<Vec<u8>>,
+    tenant_id: i32,
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+    tracer: &opentelemetry::global::BoxedTracer,
+    loop_ctx: &opentelemetry::Context,
+) -> Result<HashMap<Vec<u8>, (i16, Vec<u8>)>, Box<dyn std::error::Error + Send + Sync>> {
+    let mut s = tracer.start_with_context("query_ciphertext_batch", &loop_ctx);
+    s.set_attribute(KeyValue::new("cts_to_query", cts_to_query.len() as i64));
+    // TODO: select all the ciphertexts where they're contained in the tuples
+    let ciphertexts_rows = query!(
+        "
+                SELECT tenant_id, handle, ciphertext, ciphertext_type
+                FROM ciphertexts
+                WHERE tenant_id = $1
+                AND handle = ANY($2::BYTEA[])
+            ",
+        &tenant_id,
+        &cts_to_query
+    )
+    .fetch_all(trx.as_mut())
+    .await
+    .map_err(|err| {
+        error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
+        err
+    })?;
+
+    s.end();
+    // index ciphertexts in hashmap
+    let mut ciphertext_map: HashMap<Vec<u8>, (i16, Vec<u8>)> =
+        HashMap::with_capacity(ciphertexts_rows.len());
+    for row in &ciphertexts_rows {
+        let _ = ciphertext_map.insert(
+            row.handle.clone(),
+            (row.ciphertext_type, row.ciphertext.clone()),
+        );
+    }
+    Ok(ciphertext_map)
+}
+
+// Update uncomputable ops schedule orders
+// async fn update_uncomputable_handles<'a>(
+//     execution_results: &mut Vec<DFGTxResult>,
+//     tenant_id: i32,
+//     trx: &mut sqlx::Transaction<'a, Postgres>,
+//     tracer: &opentelemetry::global::BoxedTracer,
+//     loop_ctx: &opentelemetry::Context,
+// ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+//     let mut s = tracer.start_with_context("update_unschedulable_computations", loop_ctx);
+//     // Extract all uncomputable results
+//     let mut uncomputable = vec![];
+//     for res in execution_results.iter_mut() {
+//         if let Some(r) = &res.result {
+//             if r.is_err() {
+//                 uncomputable.push(std::mem::take(&mut res.handle));
+//             }
+//             // Else nothing to do, the result is present and valid
+//         } else {
+//             // There should always be a result, even if it's an error
+//             return Err(Box::new(CoprocessorError::SchedulerError(
+//                 SchedulerError::DataflowGraphError,
+//             )));
+//         }
+//     }
+//     s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
+//     s.set_attributes(
+//         uncomputable
+//             .iter()
+//             .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+//     );
+//     let _ = query!(
+//                     "
+//                             UPDATE allowed_handles
+//                             SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
+//                                 uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
+//                             WHERE tenant_id = $1
+//                             AND handle = ANY($2::BYTEA[])
+//                         ",
+//                     tenant_id,
+//                     &uncomputable
+//                 )
+//                 .execute(trx.as_mut())
+//                 .await.map_err(|err| {
+//                     error!(target: "tfhe_worker", { tenant_id = tenant_id, error = %err }, "error while marking computations as unschedulable");
+//                     err
+//                 })?;
+//     execution_results.retain(|r| {
+//         if let Some(res) = &r.result {
+//             res.is_ok()
+//         } else {
+//             false
+//         }
+//     });
+//     s.end();
+//     Ok(())
+// }
