@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_tx_helper() {
+    let _ = crate::utils::ensure_relayer_started().await;
     use fhevm_relayer::transaction::{TransactionService, TxConfig};
 
     let node_rpc_url = "ws://localhost:8756";

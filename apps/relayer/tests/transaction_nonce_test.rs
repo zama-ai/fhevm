@@ -23,6 +23,7 @@ fn test() {
 // `anvil` being available on the test machine.
 #[tokio::test]
 async fn increments_nonce() {
+    let _ = crate::utils::ensure_relayer_started().await;
     let cnm1 = CachedNonceManagerWithRefresh::default();
     let provider = ProviderBuilder::new()
         .disable_recommended_fillers()
@@ -60,6 +61,7 @@ async fn increments_nonce() {
 
 #[tokio::test]
 async fn cloned_managers() {
+    let _ = crate::utils::ensure_relayer_started().await;
     let cnm1 = CachedNonceManagerWithRefresh::default();
     let cnm2 = cnm1.clone();
 

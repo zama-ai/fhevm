@@ -2,6 +2,7 @@ mod utils;
 
 #[tokio::test]
 async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = crate::utils::ensure_relayer_started().await;
     use alloy::network::ReceiptResponse;
     use alloy::primitives::{Address, Bytes, U256};
     use alloy::signers::{local::PrivateKeySigner, Signer};
@@ -128,6 +129,7 @@ async fn test_user_decryption_request() -> Result<(), Box<dyn std::error::Error>
 /// It works only with mock contracts because original contracts are deployed behind a proxy
 #[tokio::test]
 async fn test_diagnose_user_decryption_request() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = crate::utils::ensure_relayer_started().await;
     use alloy::primitives::{keccak256, Address};
     use fhevm_relayer::config::settings::Settings;
     use fhevm_relayer::transaction::sender::TransactionManager;

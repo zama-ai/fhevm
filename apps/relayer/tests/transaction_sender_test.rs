@@ -17,6 +17,7 @@ use std::time::Duration;
 /// The wallet associated to this private key should have fund:
 /// 7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f
 async fn test_counter_contract() {
+    let _ = crate::utils::ensure_relayer_started().await;
     // Test private key (default)
     let private_key = std::env::var("TEST_PRIVATE_KEY").unwrap_or_else(|_| {
         "34aacca926bab195601bcf5702786d35cab968159b718ae671b226de11b9afee".to_string()

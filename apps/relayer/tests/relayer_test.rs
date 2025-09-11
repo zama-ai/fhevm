@@ -3,7 +3,6 @@ mod utils;
 #[cfg(test)]
 mod tests {
 
-    use reqwest;
     use serde_json::json;
 
     use fhevm_relayer::gateway_processors_mock::handler::PARTIAL_MOCKED_PROCESSING_TIME;
@@ -11,6 +10,7 @@ mod tests {
     // TODO: split in multiple tests
     #[tokio::test]
     async fn test_input_url_endpoint_on_chain_rejection() {
+        let _ = crate::utils::ensure_relayer_started().await;
         let client = reqwest::Client::new();
         let res = client
             .post("http://localhost:3000/v1/input-proof")
@@ -41,6 +41,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_input_url_http_endpoint() {
+        let _ = crate::utils::ensure_relayer_started().await;
         let before_time = tokio::time::Instant::now();
         let client = reqwest::Client::new();
         let res = client
@@ -269,6 +270,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_decrypt_url_endpoint() {
+        let _ = crate::utils::ensure_relayer_started().await;
         tokio::join!(
             test_user_single_request(helpers::random_payload_for_user_decrypt()),
             test_user_sequential_requests(helpers::random_payload_for_user_decrypt()),
@@ -308,6 +310,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_public_decrypt_url_endpoint() {
+        let _ = crate::utils::ensure_relayer_started().await;
         let payload_1 = helpers::random_payload_for_public_decrypt();
         let payload_2 = helpers::random_payload_for_public_decrypt();
         let payload_3 = helpers::random_payload_for_public_decrypt();

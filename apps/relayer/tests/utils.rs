@@ -9,12 +9,58 @@ use std::sync::Mutex;
 use std::sync::Once;
 use std::time::Duration;
 use std::{env, thread};
+use tokio_util::sync::CancellationToken;
 
 static INIT: Once = Once::new();
 static GATEWAY_PROCESSORS_MOCK_SERVICE: Mutex<Option<Child>> = Mutex::new(None);
-static RELAYER_MOCK_SERVICE: Mutex<Option<Child>> = Mutex::new(None);
 
 const DB_PATH: &str = ".test_database";
+
+// Simple lazy relayer management
+static RELAYER_INSTANCE: tokio::sync::OnceCell<(
+    tokio::task::JoinHandle<eyre::Result<()>>,
+    CancellationToken,
+)> = tokio::sync::OnceCell::const_new();
+
+pub async fn ensure_relayer_started(
+) -> &'static (tokio::task::JoinHandle<eyre::Result<()>>, CancellationToken) {
+    let r = RELAYER_INSTANCE
+        .get_or_init(|| async {
+            // Set environment variables
+            env::set_var("APP_TRANSACTION__RETRY__MOCK_MODE", "true");
+
+            // Read default config
+            use fhevm_relayer::config::settings::Settings;
+            let mut settings = Settings::new(None).expect("Failed to load default configuration");
+            settings.db_path_rocksdb = DB_PATH.into();
+
+            let cancellation_token = CancellationToken::new();
+            let task_handle = tokio::spawn(fhevm_relayer::run_fhevm_relayer(
+                settings,
+                cancellation_token.clone(),
+            ));
+
+            (task_handle, cancellation_token)
+        })
+        .await;
+
+    let client = reqwest::Client::new();
+
+    for _ in 0..30 {
+        if client
+            .get("http://localhost:3000/liveness")
+            .timeout(Duration::from_secs(1))
+            .send()
+            .await
+            .is_ok_and(|res| res.status().is_success())
+        {
+            return r;
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await;
+    }
+
+    panic!("Relayer failed to start within 30s");
+}
 
 fn remove_folder_if_exists(path: &str) -> std::io::Result<()> {
     if Path::new(path).exists() {
@@ -170,7 +216,13 @@ pub fn setup() {
         // TODO: add specific target when building and running to avoid conflicts with others
         // local targets
         let mut gateway_mock_build = Command::new("cargo")
-            .args(["build", "--bin", "gateway-processors-mock", "--target-dir", "target-test"])
+            .args([
+                "build",
+                "--bin",
+                "gateway-processors-mock",
+                "--target-dir",
+                "target-test",
+            ])
             .current_dir(&project_root)
             .spawn()
             .expect("Failed to build gateway mock");
@@ -179,17 +231,6 @@ pub fn setup() {
             .expect("failed to wait on config-setup");
         assert!(ecode.success());
 
-        let mut relayer_mock_build = Command::new("cargo")
-            .args(["build", "--bin", "fhevm-relayer", "--target-dir", "target-test"])
-            .current_dir(&project_root)
-            .spawn()
-            .expect("Failed to build relayer");
-        let ecode = relayer_mock_build
-            .wait()
-            .expect("failed to wait on config-setup");
-        assert!(ecode.success());
-
-        // Start the mock service
         println!("Starting mock service...");
 
         // Run gateway-processors-mock
@@ -197,7 +238,13 @@ pub fn setup() {
         let mut mock_service_changer = GATEWAY_PROCESSORS_MOCK_SERVICE.lock().unwrap();
         *mock_service_changer = Some(
             Command::new("cargo")
-                .args(["run", "--bin", "gateway-processors-mock", "--target-dir", "target-test"])
+                .args([
+                    "run",
+                    "--bin",
+                    "gateway-processors-mock",
+                    "--target-dir",
+                    "target-test",
+                ])
                 .env(
                     "RUST_LOG", // NOTE: maybe it would be more appropriate to have a
                     // specific env-var instead of inheriting from `RUST_LOG`
@@ -217,36 +264,6 @@ pub fn setup() {
 
         // TODO: grep contract values from logs of docker container and set values here
 
-        // Run fhevm-relayer
-        // APP_TRANSACTION__RETRY__MOCK_MODE=true cargo run --bin fhevm-relayer
-        let mut mock_service_changer = RELAYER_MOCK_SERVICE.lock().unwrap();
-        *mock_service_changer = Some(
-            Command::new("cargo")
-                .args(["run", "--bin", "fhevm-relayer", "--target-dir", "target-test"])
-                .env("APP_TRANSACTION__RETRY__MOCK_MODE", "true")
-                .env("APP_DB_PATH_ROCKSDB", DB_PATH)
-                .env(
-                    "RUST_LOG",
-                    env::var("RUST_LOG").unwrap_or("info,fhevm_relayer=debug".to_string()),
-                )
-                .env(
-                    "APP_SQS_ENDPOINT__INBOUND_QUEUE",
-                    "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/relayer-queue",
-                )
-                .env(
-                    "APP_SQS_ENDPOINT__OUTBOUND_QUEUE",
-                    "http://sqs.eu-central-1.localhost.localstack.cloud:4566/000000000000/orchestrator-queue",
-                )
-                .env("AWS_ACCESS_KEY_ID", "test")
-                .env("AWS_SECRET_ACCESS_KEY", "test")
-                .env("AWS_DEFAULT_REGION", "eu-central-1")
-                .env("AWS_ENDPOINT_URL", "http://sqs.eu-central-1.localhost.localstack.cloud:4566")
-                .current_dir(&project_root)
-                .spawn()
-                .expect("Failed to start relayer-mock"),
-        );
-        std::mem::drop(mock_service_changer);
-
         // TODO: implement service check instead of relying on this sleep
         // Give the services time to start
         thread::sleep(Duration::from_secs(5));
@@ -258,13 +275,20 @@ pub fn setup() {
 /// Teardown function that cleans up resources after tests finish
 #[dtor]
 pub fn teardown() {
-    // Use mutex to kill long-running processes
-    let mut relayer_service_changer = RELAYER_MOCK_SERVICE.lock().unwrap();
-    if let Some(child) = relayer_service_changer.take() {
-        let _ = kill_gracefully(child);
-    }
-
     let _ = remove_folder_if_exists(DB_PATH);
+
+    // Shutdown relayer if it was started
+    if let Some((task_handle, cancellation_token)) = RELAYER_INSTANCE.get() {
+        cancellation_token.cancel();
+
+        // Wait a bit for the cancellation to be processed
+        let start = std::time::Instant::now();
+        while !cancellation_token.is_cancelled()
+            && start.elapsed() < std::time::Duration::from_secs(1)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+    }
 
     let mut mock_service_changer = GATEWAY_PROCESSORS_MOCK_SERVICE.lock().unwrap();
     if let Some(child) = mock_service_changer.take() {

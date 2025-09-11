@@ -2,6 +2,7 @@ mod utils;
 
 #[tokio::test]
 async fn test_input_verification_request() -> Result<(), Box<dyn std::error::Error>> {
+    let _ = crate::utils::ensure_relayer_started().await;
     use alloy::network::ReceiptResponse;
     use alloy::primitives::{Address, Bytes};
     use alloy::signers::{local::PrivateKeySigner, Signer};
