@@ -121,20 +121,11 @@ impl<P: Provider> DbEventProcessor<P> {
 }
 
 impl ProcessingError {
-    /// Converts GRPC status of a request sent to the KMS into a `ProcessingError`.
-    pub fn from_request_status(value: tonic::Status) -> Self {
-        let anyhow_error = anyhow!("KMS GRPC error: {value}");
-        match value.code() {
-            Code::ResourceExhausted => Self::Recoverable(anyhow_error),
-            _ => Self::Irrecoverable(anyhow_error),
-        }
-    }
-
     /// Converts GRPC status of the polling of a KMS Response into a `ProcessingError`.
     pub fn from_response_status(value: tonic::Status) -> Self {
         let anyhow_error = anyhow!("KMS GRPC error: {value}");
         match value.code() {
-            Code::NotFound | Code::Unavailable | Code::ResourceExhausted => {
+            Code::DeadlineExceeded | Code::Unavailable | Code::ResourceExhausted => {
                 Self::Recoverable(anyhow_error)
             }
             _ => Self::Irrecoverable(anyhow_error),
