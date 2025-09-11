@@ -75,8 +75,8 @@ describe('Input Flow', function () {
     );
 
     let sleepTime = 15000;
-    console.log(`Sleeping ${sleepTime / 1000} seconds before checking consensus for coprocessor senders.`);
-    console.log(`This is needed because the add ciphertext is handled asynchronously by coprocessors.`);
+    console.log(`Sleeping ${sleepTime / 1000} seconds before checking consensus for coprocessor senders`);
+    console.log(`This is needed because the add ciphertext is handled asynchronously by coprocessors`);
     await sleep(sleepTime);
 
     const senders: string[] = await commitsExternal.getAddCiphertextMaterialConsensusTxSenders(ctHandleBytes32);
