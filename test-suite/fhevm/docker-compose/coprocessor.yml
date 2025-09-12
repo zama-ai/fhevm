@@ -62,7 +62,7 @@ services:
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
     build:
       context: ../../..
-      dockerfile: coprocessor/fhevm-engine/fhevm-listener/Dockerfile
+      dockerfile: coprocessor/fhevm-engine/host-listener/Dockerfile
       cache_from:
         - type=gha
       cache_to:
@@ -70,7 +70,7 @@ services:
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
-      - fhevm_listener
+      - host_listener
       - --database-url=${DATABASE_URL}
       - --coprocessor-api-key=${TENANT_API_KEY}
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
@@ -119,7 +119,7 @@ services:
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}
     build:
       context: ../../..
-      dockerfile: coprocessor/fhevm-engine/coprocessor/Dockerfile
+      dockerfile: coprocessor/fhevm-engine/tfhe-worker/Dockerfile
       cache_from:
         - type=gha
       cache_to:
@@ -127,7 +127,7 @@ services:
     env_file:
       - ../env/staging/.env.coprocessor.local
     command:
-      - coprocessor
+      - tfhe_worker
       - --run-bg-worker
       - --database-url=${DATABASE_URL}
       - --pg-pool-max-connections=10
@@ -173,7 +173,7 @@ services:
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${SNS_WORKER_VERSION}
     build:
       context: ../../..
-      dockerfile: coprocessor/fhevm-engine/sns-executor/Dockerfile
+      dockerfile: coprocessor/fhevm-engine/sns-worker/Dockerfile
       cache_from:
         - type=gha
       cache_to:

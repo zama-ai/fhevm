@@ -14,6 +14,8 @@ const relayerUrl = process.env.RELAYER_URL!;
 
 export const createInstances = async (accounts: Signers): Promise<FhevmInstances> => {
   // Create instance
+  console.log('relayer url given to create instance', relayerUrl);
+  console.log('network', network.name, network.config.url);
   const instances: FhevmInstances = {} as FhevmInstances;
   await Promise.all(
     Object.keys(accounts).map(async (k) => {
@@ -24,8 +26,6 @@ export const createInstances = async (accounts: Signers): Promise<FhevmInstances
 };
 
 export const createInstance = async () => {
-  console.log('relayer url given to create instance', relayerUrl);
-  console.log('network', network.name, network.config.url);
   const instance = await createFhevmInstance({
     verifyingContractAddressDecryption: verifyingContractAddressDecryption,
     verifyingContractAddressInputVerification: verifyingContractAddressInputVerification,
