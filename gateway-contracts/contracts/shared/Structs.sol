@@ -10,13 +10,16 @@ struct ProtocolMetadata {
 }
 
 /// @notice Struct that represents a KMS (Key Management Service) node
-struct KmsNode {
+// TODO: rename this struct to "KmsNode" for mainnet.
+struct KmsNodeV2 {
     /// @notice Address of the KMS node's transaction sender (also called KMS connector)
     address txSenderAddress;
     /// @notice Address of the KMS node's signer (used for signing inputs with EIP712 signatures)
     address signerAddress;
     /// @notice IP address of the KMS node
     string ipAddress;
+    /// @notice URL address of the KMS node' S3 bucket where ciphertexts are stored
+    string s3BucketUrl;
 }
 
 /// @notice Struct that represents a coprocessor
@@ -94,4 +97,14 @@ struct DelegationAccounts {
     address delegatorAddress;
     /// @notice The address of the account that receives the delegation.
     address delegatedAddress;
+}
+
+// ----------------------------------------------------------------------------------------------
+// Deprecated structs:
+// ----------------------------------------------------------------------------------------------
+// TODO: remove this struct for mainnet in favor of "KmsNode" above.
+struct KmsNodeV1 {
+    address txSenderAddress;
+    address signerAddress;
+    string ipAddress;
 }

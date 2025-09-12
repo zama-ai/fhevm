@@ -178,8 +178,8 @@ interface IDecryption {
      * @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same.
      * @param firstSnsCtMaterial The first SNS ciphertext material in the list with the expected key ID.
      * @param invalidSnsCtMaterial The SNS ciphertext material found with a different key ID.
-     * @dev This will be removed in the future as multiple keyIds processing is implemented.
-     * See https://github.com/zama-ai/fhevm-gateway/issues/104.
+     * @dev This should be removed once batched decryption requests with different keys is support by the KMS
+     * See https://github.com/zama-ai/fhevm-internal/issues/376
      */
     error DifferentKeyIdsNotAllowed(
         SnsCiphertextMaterial firstSnsCtMaterial,

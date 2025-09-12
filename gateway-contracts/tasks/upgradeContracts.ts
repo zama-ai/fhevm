@@ -254,30 +254,31 @@ task("task:upgradeGatewayConfig")
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
-    // Get custodians from environment variables
-    const numCustodians = parseInt(getRequiredEnvVar("NUM_CUSTODIANS"));
-    const custodians = [];
-    for (let idx = 0; idx < numCustodians; idx++) {
-      custodians.push({
-        txSenderAddress: getRequiredEnvVar(`CUSTODIAN_TX_SENDER_ADDRESS_${idx}`),
-        signerAddress: getRequiredEnvVar(`CUSTODIAN_SIGNER_ADDRESS_${idx}`),
-        encryptionKey: getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`),
+    // Get upgrade data for V3 from environment variables
+    const keygenThreshold = parseInt(getRequiredEnvVar("KEYGEN_THRESHOLD"));
+    const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
+    const v3UpgradeInputs = [];
+    for (let idx = 0; idx < numKmsNodes; idx++) {
+      v3UpgradeInputs.push({
+        txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
+        s3BucketUrl: getRequiredEnvVar(`KMS_NODE_S3_BUCKET_URL_${idx}`),
       });
     }
 
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
-      custodians,
+      v3UpgradeInputs,
+      keygenThreshold,
     ]);
   });
 
-task("task:upgradeKmsManagement")
+task("task:upgradeKMSManagement")
   .addParam(
     "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/KmsManagement.sol:KmsManagement",
+    "The currently deployed implementation solidity contract path and name, eg: contracts/KMSManagement.sol:KMSManagement",
   )
   .addParam(
     "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/KmsManagementUpgradedExample.sol:KmsManagementUpgradedExample",
+    "The new implementation solidity contract path and name, eg: contracts/examples/KMSManagementUpgradedExample.sol:KMSManagementUpgradedExample",
   )
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -297,7 +298,7 @@ task("task:upgradeKmsManagement")
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
 
-    await checkImplementationArtifacts("KmsManagement", currentImplementation, newImplementation, hre);
+    await checkImplementationArtifacts("KMSManagement", currentImplementation, newImplementation, hre);
 
     if (useInternalProxyAddress) {
       dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
