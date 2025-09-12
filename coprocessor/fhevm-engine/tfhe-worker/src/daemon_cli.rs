@@ -42,7 +42,7 @@ pub struct Args {
 
     /// Maximum compact inputs to upload
     #[arg(long, default_value_t = 10)]
-    pub maximimum_compact_inputs_upload: usize,
+    pub maximum_compact_inputs_upload: usize,
 
     /// Maximum compact inputs to upload
     #[arg(long, default_value_t = 255)]
