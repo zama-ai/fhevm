@@ -21,7 +21,6 @@ import "../shared/Structs.sol";
 interface IGatewayConfig {
     /**
      * @notice Emitted when the GatewayConfig initialization is completed.
-     * @param pauser Pauser address.
      * @param metadata Metadata of the protocol.
      * @param mpcThreshold The MPC threshold.
      * @param kmsNodes List of KMS nodes.
@@ -29,25 +28,12 @@ interface IGatewayConfig {
      * @param custodians List of custodians.
      */
     event InitializeGatewayConfig(
-        address pauser,
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes,
         Coprocessor[] coprocessors,
         Custodian[] custodians
     );
-
-    /**
-     * @notice Emitted when the GatewayConfigV2 reinitialization is completed.
-     * @param custodians List of custodians.
-     */
-    event ReinitializeGatewayConfigV2(Custodian[] custodians);
-
-    /**
-     * @notice Emitted when the pauser address has been updated.
-     * @param newPauser The new pauser address.
-     */
-    event UpdatePauser(address newPauser);
 
     /**
      * @notice Emitted when the MPC threshold has been updated.
@@ -72,9 +58,6 @@ interface IGatewayConfig {
      * @param hostChain The new host chain metadata.
      */
     event AddHostChain(HostChain hostChain);
-
-    /// @notice Error emitted when the pauser address is the null address.
-    error InvalidNullPauser();
 
     /// @notice Error emitted when the KMS nodes list is empty.
     error EmptyKmsNodes();
@@ -176,12 +159,6 @@ interface IGatewayConfig {
     error ChainIdNotUint64(uint256 chainId);
 
     /**
-     * @notice Update the pauser address.
-     * @param newPauser The new pauser address.
-     */
-    function updatePauser(address newPauser) external;
-
-    /**
      * @notice Add a new host chain metadata to the GatewayConfig contract.
      * @dev The associated chain ID must be non-zero and representable by a uint64.
      * @param hostChain The new host chain metadata to include.
@@ -262,10 +239,10 @@ interface IGatewayConfig {
     function checkHostChainIsRegistered(uint256 chainId) external view;
 
     /**
-     * @notice Get the pauser's address.
-     * @return The address of the pauser.
+     * @notice Check if the account is a pauser.
+     * @return whether or not the account is a pauser.
      */
-    function getPauser() external view returns (address);
+    function isPauser(address account) external view returns (bool);
 
     /**
      * @notice Get the protocol's metadata.
