@@ -3,7 +3,6 @@ pub mod blockchain;
 pub mod config;
 pub mod core;
 pub mod fhevm_relayer;
-pub mod gateway_processors_mock;
 pub mod http;
 pub mod metrics;
 pub mod orchestrator;
