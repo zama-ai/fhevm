@@ -96,9 +96,9 @@ impl FromStr for KeyType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "server" => Ok(Self::Server),
-            "public" => Ok(Self::Public),
-            _ => Err(anyhow!("Invalid KeyType value")),
+            "ServerKey" => Ok(Self::Server),
+            "PublicKey" => Ok(Self::Public),
+            _ => Err(anyhow!("Invalid KeyType value: {s}")),
         }
     }
 }
