@@ -213,7 +213,6 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
     let args = Args {
         url,
         initial_block_time: 1,
-        no_block_immediate_recheck: false,
         acl_contract_address: acl_contract.address().to_string(),
         tfhe_contract_address: tfhe_contract.address().to_string(),
         database_url: test_instance.db_url().to_string(),

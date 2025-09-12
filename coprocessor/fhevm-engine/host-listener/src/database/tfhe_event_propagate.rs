@@ -10,6 +10,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Uuid;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
+use std::ops::DerefMut;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -17,6 +18,7 @@ use tracing::error;
 use tracing::info;
 use tracing::warn;
 
+use crate::cmd::block_history::BlockSummary;
 use crate::contracts::AclContract::AclContractEvents;
 use crate::contracts::TfheContract;
 use crate::contracts::TfheContract::TfheContractEvents;
@@ -24,6 +26,7 @@ use crate::contracts::TfheContract::TfheContractEvents;
 type CoprocessorApiKey = Uuid;
 type FheOperation = i32;
 pub type Handle = FixedBytes<32>;
+pub type TransactionHash = FixedBytes<32>;
 pub type TenantId = i32;
 pub type ChainId = u64;
 pub type ToType = u8;
@@ -73,6 +76,13 @@ pub struct Database {
     bucket_cache: tokio::sync::RwLock<lru::LruCache<Handle, Handle>>,
     pub tick: HeartBeat,
 }
+
+pub struct LogTfhe {
+    pub event: Log<TfheContractEvents>,
+    pub transaction_hash: Option<TransactionHash>,
+}
+
+pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
 
 impl Database {
     pub async fn new(
@@ -125,7 +135,11 @@ impl Database {
         pool.expect("unreachable")
     }
 
-    async fn reconnect(&mut self) {
+    pub async fn new_transaction(&self) -> Result<Transaction<'_>, SqlxError> {
+        self.pool.read().await.clone().begin().await
+    }
+
+    pub async fn reconnect(&mut self) {
         tokio::time::sleep(RECONNECTION_DELAY).await;
         let old_pool = {
             let new_pool = Self::new_pool(&self.url).await;
@@ -172,6 +186,7 @@ impl Database {
     #[allow(clippy::too_many_arguments)]
     async fn insert_computation_bytes(
         &self,
+        tx: &mut Transaction<'_>,
         tenant_id: TenantId,
         result: &Handle,
         dependencies_handles: &[&Handle],
@@ -179,7 +194,7 @@ impl Database {
                                          * dependencies_handles */
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
-        log: &alloy::rpc::types::Log<TfheContractEvents>,
+        log: &LogTfhe,
     ) -> Result<(), SqlxError> {
         let bucket = self
             .sort_computation_into_bucket(
@@ -194,6 +209,7 @@ impl Database {
             .collect::<Vec<_>>();
         let dependencies = [&dependencies_handles, dependencies_bytes].concat();
         self.insert_computation_inner(
+            tx,
             tenant_id,
             result,
             dependencies,
@@ -205,14 +221,16 @@ impl Database {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn insert_computation(
         &self,
+        tx: &mut Transaction<'_>,
         tenant_id: TenantId,
         result: &Handle,
         dependencies: &[&Handle],
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
-        log: &alloy::rpc::types::Log<TfheContractEvents>,
+        log: &LogTfhe,
     ) -> Result<(), SqlxError> {
         let bucket = self
             .sort_computation_into_bucket(
@@ -224,6 +242,7 @@ impl Database {
         let dependencies =
             dependencies.iter().map(|d| d.to_vec()).collect::<Vec<_>>();
         self.insert_computation_inner(
+            tx,
             tenant_id,
             result,
             dependencies,
@@ -238,12 +257,13 @@ impl Database {
     #[allow(clippy::too_many_arguments)]
     async fn insert_computation_inner(
         &self,
+        tx: &mut Transaction<'_>,
         tenant_id: TenantId,
         result: &Handle,
         dependencies: Vec<Vec<u8>>,
         fhe_operation: FheOperation,
         scalar_byte: &FixedBytes<1>,
-        log: &alloy::rpc::types::Log<TfheContractEvents>,
+        log: &LogTfhe,
         bucket: &Handle,
     ) -> Result<(), SqlxError> {
         let is_scalar = !scalar_byte.is_zero();
@@ -270,8 +290,7 @@ impl Database {
             bucket.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec())
         );
-        let pool = self.pool.read().await.clone();
-        query.execute(&pool).await.map(|_| ())
+        query.execute(tx.deref_mut()).await.map(|_| ())
     }
 
     async fn sort_computation_into_bucket(
@@ -323,29 +342,30 @@ impl Database {
     }
 
     #[rustfmt::skip]
-    async fn insert_tfhe_event_no_retry(
-        &mut self,
-        log: &alloy::rpc::types::Log<TfheContractEvents>,
+    pub async fn insert_tfhe_event(
+        &self,
+        tx: &mut Transaction<'_>,
+        log: &LogTfhe,
     ) -> Result<(), SqlxError> {
         use TfheContract as C;
         use TfheContractEvents as E;
         const HAS_SCALAR : FixedBytes::<1> = FixedBytes([1]); // if any dependency is a scalar.
         const NO_SCALAR : FixedBytes::<1> = FixedBytes([0]); // if all dependencies are handles.
         // ciphertext type
-        let event = &log.inner;
+        let event = &log.event;
         let ty = |to_type: &ToType| vec![*to_type];
         let as_bytes = |x: &ClearConst| x.to_be_bytes_vec();
         let tenant_id = self.tenant_id;
         let fhe_operation = event_to_op_int(event);
-        let insert_computation = |result, dependencies, scalar_byte| {
-            self.insert_computation(tenant_id, result, dependencies, fhe_operation, scalar_byte, log)
+        let insert_computation = |tx, result, dependencies, scalar_byte| {
+            self.insert_computation(tx, tenant_id, result, dependencies, fhe_operation, scalar_byte, log)
         };
-        let insert_computation_bytes = |result, dependencies_handles, dependencies_bytes, scalar_byte| {
-            self.insert_computation_bytes(tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
+        let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
+            self.insert_computation_bytes(tx, tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
         match &event.data {
             E::Cast(C::Cast {ct, toType, result, ..})
-            => insert_computation_bytes(result, &[ct], &[ty(toType)], &HAS_SCALAR).await,
+            => insert_computation_bytes(tx, result, &[ct], &[ty(toType)], &HAS_SCALAR).await,
 
             E::FheAdd(C::FheAdd {lhs, rhs, scalarByte, result, ..})
             | E::FheBitAnd(C::FheBitAnd {lhs, rhs, scalarByte, result, ..})
@@ -361,10 +381,10 @@ impl Database {
             | E::FheShl(C::FheShl {lhs, rhs, scalarByte, result, ..})
             | E::FheShr(C::FheShr {lhs, rhs, scalarByte, result, ..})
             | E::FheSub(C::FheSub {lhs, rhs, scalarByte, result, ..})
-            => insert_computation(result, &[lhs, rhs], scalarByte).await,
+            => insert_computation(tx, result, &[lhs, rhs], scalarByte).await,
 
             E::FheIfThenElse(C::FheIfThenElse {control, ifTrue, ifFalse, result, ..})
-            => insert_computation(result, &[control, ifTrue, ifFalse], &NO_SCALAR).await,
+            => insert_computation(tx, result, &[control, ifTrue, ifFalse], &NO_SCALAR).await,
 
             | E::FheEq(C::FheEq {lhs, rhs, scalarByte, result, ..})
             | E::FheGe(C::FheGe {lhs, rhs, scalarByte, result, ..})
@@ -372,21 +392,21 @@ impl Database {
             | E::FheLe(C::FheLe {lhs, rhs, scalarByte, result, ..})
             | E::FheLt(C::FheLt {lhs, rhs, scalarByte, result, ..})
             | E::FheNe(C::FheNe {lhs, rhs, scalarByte, result, ..})
-            => insert_computation(result, &[lhs, rhs], scalarByte).await,
+            => insert_computation(tx, result, &[lhs, rhs], scalarByte).await,
 
 
             E::FheNeg(C::FheNeg {ct, result, ..})
             | E::FheNot(C::FheNot {ct, result, ..})
-            => insert_computation(result, &[ct], &NO_SCALAR).await,
+            => insert_computation(tx, result, &[ct], &NO_SCALAR).await,
 
             | E::FheRand(C::FheRand {randType, seed, result, ..})
-            => insert_computation_bytes(result, &[], &[seed.to_vec(), ty(randType)], &HAS_SCALAR).await,
+            => insert_computation_bytes(tx, result, &[], &[seed.to_vec(), ty(randType)], &HAS_SCALAR).await,
 
             | E::FheRandBounded(C::FheRandBounded {upperBound, randType, seed, result, ..})
-            => insert_computation_bytes(result, &[], &[seed.to_vec(), as_bytes(upperBound), ty(randType)], &HAS_SCALAR).await,
+            => insert_computation_bytes(tx, result, &[], &[seed.to_vec(), as_bytes(upperBound), ty(randType)], &HAS_SCALAR).await,
 
             | E::TrivialEncrypt(C::TrivialEncrypt {pt, toType, result, ..})
-            => insert_computation_bytes(result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR).await,
+            => insert_computation_bytes(tx, result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR).await,
 
             | E::Initialized(_)
             | E::OwnershipTransferStarted(_)
@@ -397,90 +417,44 @@ impl Database {
         }
     }
 
-    #[rustfmt::skip]
-    pub async fn insert_tfhe_event(
-        &mut self,
-        log: &alloy::rpc::types::Log<TfheContractEvents>,
+    pub async fn mark_block_as_valid(
+        &self,
+        tx: &mut Transaction<'_>,
+        block_summary: &BlockSummary,
     ) -> Result<(), SqlxError> {
-        let mut retry_count = 0;
-        loop {
-            let result = self.insert_tfhe_event_no_retry(log).await;
-            match result {
-                Ok(_) => {
-                    self.tick.update();
-                    return Ok(())
-                }
-                Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
-                    error!(
-                        error = %err,
-                        "Database I/O error, will retry"
-                    );
-                    self.reconnect().await;
-                    continue;
-                }
-                Err(sqlx_err) => {
-                    return Err(sqlx_err);
-                }
-            }
-        }
-    }
-
-    pub async fn mark_prev_block_as_valid(
-        &mut self,
-        opt_event: &Option<alloy::rpc::types::Log>,
-        opt_prev_event: &Option<alloy::rpc::types::Log>,
-    ) -> Option<u64> {
-        let Some(prev_event) = opt_prev_event else {
-            return None;
-        };
-        let Some(event) = opt_event else {
-            return None;
-        };
-        if prev_event.block_number == event.block_number {
-            return None;
-        }
-        let prev_event = if prev_event.block_number < event.block_number {
-            event
-        } else {
-            prev_event
-        };
-        let block_number = prev_event.block_number?;
-        let Some(block_hash) = prev_event.block_hash else {
-            return Some(block_number); // but cannot write to db
-        };
-        let pool = self.pool.read().await.clone();
-        let _ = sqlx::query!(
+        sqlx::query!(
             r#"
-            INSERT INTO blocks_valid (chain_id, block_hash, block_number, listener_tfhe)
-            VALUES ($1, $2, $3, true)
-            ON CONFLICT (chain_id, block_hash) DO UPDATE SET listener_tfhe = true;
+            INSERT INTO host_chain_blocks_valid (chain_id, block_hash, block_number)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (chain_id, block_hash) DO NOTHING;
             "#,
             self.chain_id as i64,
-            block_hash.to_vec(),
-            block_number as i64,
+            block_summary.hash.to_vec(),
+            block_summary.number as i64,
         )
-        .execute(&pool)
-        .await;
-        Some(block_number)
+        .execute(tx.deref_mut())
+        .await?;
+        Ok(())
     }
 
     pub async fn read_last_valid_block(&mut self) -> Option<i64> {
         let query = sqlx::query!(
             r#"
-            SELECT block_number FROM blocks_valid WHERE chain_id = $1 ORDER BY block_number DESC LIMIT 1;
+            SELECT MAX(block_number) FROM host_chain_blocks_valid WHERE chain_id = $1;
             "#,
             self.chain_id as i64,
         );
         let pool = self.pool.read().await.clone();
         match query.fetch_one(&pool).await {
-            Ok(record) => Some(record.block_number),
+            Ok(record) => record.max,
             Err(_err) => None, // table could be empty
         }
     }
 
     /// Handles all types of ACL events
     pub async fn handle_acl_event(
-        &mut self,
+        &self,
+        tx: &mut Transaction<'_>,
         event: &Log<AclContractEvents>,
     ) -> Result<(), SqlxError> {
         let data = &event.data;
@@ -490,13 +464,14 @@ impl Database {
                 let handle = allowed.handle.to_vec();
 
                 self.insert_allowed_handle(
+                    tx,
                     handle.clone(),
                     allowed.account.to_string(),
                     AllowEvents::AllowedAccount,
                 )
                 .await?;
 
-                self.insert_pbs_computations(&vec![handle]).await?;
+                self.insert_pbs_computations(tx, &vec![handle]).await?;
             }
             AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
                 let handles = allowed_for_decryption
@@ -512,6 +487,7 @@ impl Database {
                     );
 
                     self.insert_allowed_handle(
+                        tx,
                         handle,
                         "".to_string(),
                         AllowEvents::AllowedForDecryption,
@@ -519,7 +495,7 @@ impl Database {
                     .await?;
                 }
 
-                self.insert_pbs_computations(&handles).await?;
+                self.insert_pbs_computations(tx, &handles).await?;
             }
             AclContractEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
@@ -582,74 +558,41 @@ impl Database {
     /// Adds handles to the pbs_computations table and alerts the SnS worker
     /// about new of PBS work.
     pub async fn insert_pbs_computations(
-        &mut self,
+        &self,
+        tx: &mut Transaction<'_>,
         handles: &Vec<Vec<u8>>,
     ) -> Result<(), SqlxError> {
         let tenant_id = self.tenant_id;
         for handle in handles {
-            let query = || {
-                sqlx::query!(
-                    "INSERT INTO pbs_computations(tenant_id, handle) VALUES($1, $2) 
-                         ON CONFLICT DO NOTHING;",
-                    tenant_id,
-                    handle,
-                )
-            };
-            let mut retry_count = 0;
-            loop {
-                let pool = self.pool.read().await.clone();
-                match query().execute(&pool).await {
-                    Ok(_) => break,
-                    Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
-                        error!(error = %err, "Database I/O error, will retry");
-                        self.reconnect().await;
-                        continue;
-                    }
-                    Err(sqlx_err) => {
-                        return Err(sqlx_err);
-                    }
-                }
-            }
+            let query = sqlx::query!(
+                "INSERT INTO pbs_computations(tenant_id, handle) VALUES($1, $2)
+                        ON CONFLICT DO NOTHING;",
+                tenant_id,
+                handle,
+            );
+            query.execute(tx.deref_mut()).await?;
         }
-
         Ok(())
     }
 
     /// Add the handle to the allowed_handles table
     pub async fn insert_allowed_handle(
-        &mut self,
+        &self,
+        tx: &mut Transaction<'_>,
         handle: Vec<u8>,
         account_address: String,
         event_type: AllowEvents,
     ) -> Result<(), SqlxError> {
         let tenant_id = self.tenant_id;
-
-        let query = || {
-            sqlx::query!(
-                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
-                     ON CONFLICT DO NOTHING;",
-                tenant_id,
-                handle,
-                account_address,
-                event_type as i16,
-            )
-        };
-        let mut retry_count = 0;
-        loop {
-            let pool = self.pool.read().await.clone();
-            match query().execute(&pool).await {
-                Ok(_) => break,
-                Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
-                    error!(error = %err, "Database I/O error, will retry");
-                    self.reconnect().await;
-                    continue;
-                }
-                Err(sqlx_err) => {
-                    return Err(sqlx_err);
-                }
-            }
-        }
-
+        let query = sqlx::query!(
+            "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+                    ON CONFLICT DO NOTHING;",
+            tenant_id,
+            handle,
+            account_address,
+            event_type as i16,
+        );
+        query.execute(tx.deref_mut()).await?;
         Ok(())
     }
 }

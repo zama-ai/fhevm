@@ -8,8 +8,8 @@ use sqlx::Postgres;
 
 use crate::erc20::erc20_transaction;
 use crate::utils::{
-    allow_handle, generate_trivial_encrypt, next_random_handle, tfhe_event, Context,
-    ERCTransferVariant, DEF_TYPE,
+    allow_handle, generate_trivial_encrypt, insert_tfhe_event, next_random_handle, tfhe_event,
+    Context, ERCTransferVariant, DEF_TYPE,
 };
 use crate::zk_gen::generate_random_handle_amount_if_none;
 
@@ -53,23 +53,14 @@ async fn dex_swap_request_update_dex_balance(
     )
     .await?;
     let sent_amount = next_random_handle(DEF_TYPE);
-    let log = alloy::rpc::types::Log {
-        inner: tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
-            caller,
-            lhs: new_current_balance,
-            rhs: current_dex_balance,
-            result: sent_amount,
-            scalarByte: ScalarByte::from(false as u8),
-        })),
-        block_hash: None,
-        block_number: None,
-        block_timestamp: None,
-        transaction_hash: Some(transaction_id),
-        transaction_index: Some(0),
-        log_index: None,
-        removed: false,
-    };
-    listener_event_to_db.insert_tfhe_event(&log).await?;
+    let event = tfhe_event(TfheContractEvents::FheSub(TfheContract::FheSub {
+        caller,
+        lhs: new_current_balance,
+        rhs: current_dex_balance,
+        result: sent_amount,
+        scalarByte: ScalarByte::from(false as u8),
+    }));
+    insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
     Ok((sent_amount, new_current_balance))
 }
 
@@ -99,41 +90,23 @@ async fn dex_swap_request_finalize(
     let sent =
         generate_random_handle_amount_if_none(ctx, sent, contract_address, user_address).await?;
     let pending_in = next_random_handle(DEF_TYPE);
-    let log = alloy::rpc::types::Log {
-        inner: tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
-            caller,
-            lhs: to_balance,
-            rhs: sent,
-            result: pending_in,
-            scalarByte: ScalarByte::from(false as u8),
-        })),
-        block_hash: None,
-        block_number: None,
-        block_timestamp: None,
-        transaction_hash: Some(transaction_id),
-        transaction_index: Some(0),
-        log_index: None,
-        removed: false,
-    };
-    listener_event_to_db.insert_tfhe_event(&log).await?;
+    let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+        caller,
+        lhs: to_balance,
+        rhs: sent,
+        result: pending_in,
+        scalarByte: ScalarByte::from(false as u8),
+    }));
+    insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
     let pending_total_token_in = next_random_handle(DEF_TYPE);
-    let log = alloy::rpc::types::Log {
-        inner: tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
-            caller,
-            lhs: total_dex_token_in,
-            rhs: sent,
-            result: pending_total_token_in,
-            scalarByte: ScalarByte::from(false as u8),
-        })),
-        block_hash: None,
-        block_number: None,
-        block_timestamp: None,
-        transaction_hash: Some(transaction_id),
-        transaction_index: Some(0),
-        log_index: None,
-        removed: false,
-    };
-    listener_event_to_db.insert_tfhe_event(&log).await?;
+    let event = tfhe_event(TfheContractEvents::FheAdd(TfheContract::FheAdd {
+        caller,
+        lhs: total_dex_token_in,
+        rhs: sent,
+        result: pending_total_token_in,
+        scalarByte: ScalarByte::from(false as u8),
+    }));
+    insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
     Ok((pending_in, pending_total_token_in))
 }
 
@@ -319,22 +292,13 @@ async fn dex_swap_claim_prepare(
     let mut amount_1_out = pending_0_in;
     if total_dex_token_1_in != 0 {
         let big_pending_1_in = next_random_handle(crate::utils::FheType::FheUint128);
-        let log = alloy::rpc::types::Log {
-            inner: tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
-                caller,
-                ct: pending_1_in,
-                toType: crate::utils::FheType::FheUint128 as u8,
-                result: big_pending_1_in,
-            })),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
-            transaction_hash: Some(transaction_id),
-            transaction_index: Some(0),
-            log_index: None,
-            removed: false,
-        };
-        listener_event_to_db.insert_tfhe_event(&log).await?;
+        let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+            caller,
+            ct: pending_1_in,
+            toType: crate::utils::FheType::FheUint128 as u8,
+            result: big_pending_1_in,
+        }));
+        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
         let total_dex_token_0_out_te = generate_trivial_encrypt(
             contract_address,
             user_address,
@@ -345,23 +309,14 @@ async fn dex_swap_claim_prepare(
         )
         .await?;
         let big_amount_0_out_mul = next_random_handle(crate::utils::FheType::FheUint128);
-        let log = alloy::rpc::types::Log {
-            inner: tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
-                caller,
-                lhs: big_pending_1_in,
-                rhs: total_dex_token_0_out_te,
-                result: big_amount_0_out_mul,
-                scalarByte: ScalarByte::from(false as u8),
-            })),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
-            transaction_hash: Some(transaction_id),
-            transaction_index: Some(0),
-            log_index: None,
-            removed: false,
-        };
-        listener_event_to_db.insert_tfhe_event(&log).await?;
+        let event = tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+            caller,
+            lhs: big_pending_1_in,
+            rhs: total_dex_token_0_out_te,
+            result: big_amount_0_out_mul,
+            scalarByte: ScalarByte::from(false as u8),
+        }));
+        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
         let total_dex_token_1_in_te = generate_trivial_encrypt(
             contract_address,
             user_address,
@@ -372,59 +327,32 @@ async fn dex_swap_claim_prepare(
         )
         .await?;
         let big_amount_0_out_div = next_random_handle(crate::utils::FheType::FheUint128);
-        let log = alloy::rpc::types::Log {
-            inner: tfhe_event(TfheContractEvents::FheDiv(TfheContract::FheDiv {
-                caller,
-                lhs: big_amount_0_out_mul,
-                rhs: total_dex_token_1_in_te,
-                result: big_amount_0_out_div,
-                scalarByte: ScalarByte::from(false as u8),
-            })),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
-            transaction_hash: Some(transaction_id),
-            transaction_index: Some(0),
-            log_index: None,
-            removed: false,
-        };
-        listener_event_to_db.insert_tfhe_event(&log).await?;
+        let event = tfhe_event(TfheContractEvents::FheDiv(TfheContract::FheDiv {
+            caller,
+            lhs: big_amount_0_out_mul,
+            rhs: total_dex_token_1_in_te,
+            result: big_amount_0_out_div,
+            scalarByte: ScalarByte::from(false as u8),
+        }));
+        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
         amount_0_out = next_random_handle(crate::utils::FheType::FheUint64);
-        let log = alloy::rpc::types::Log {
-            inner: tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
-                caller,
-                ct: big_amount_0_out_div,
-                toType: crate::utils::FheType::FheUint64 as u8,
-                result: amount_0_out,
-            })),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
-            transaction_hash: Some(transaction_id),
-            transaction_index: Some(0),
-            log_index: None,
-            removed: false,
-        };
-        listener_event_to_db.insert_tfhe_event(&log).await?;
+        let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+            caller,
+            ct: big_amount_0_out_div,
+            toType: crate::utils::FheType::FheUint64 as u8,
+            result: amount_0_out,
+        }));
+        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
     }
     if total_dex_token_0_in != 0 {
         let big_pending_0_in = next_random_handle(crate::utils::FheType::FheUint128);
-        let log = alloy::rpc::types::Log {
-            inner: tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
-                caller,
-                ct: pending_0_in,
-                toType: crate::utils::FheType::FheUint128 as u8,
-                result: big_pending_0_in,
-            })),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
-            transaction_hash: Some(transaction_id),
-            transaction_index: Some(0),
-            log_index: None,
-            removed: false,
-        };
-        listener_event_to_db.insert_tfhe_event(&log).await?;
+        let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+            caller,
+            ct: pending_0_in,
+            toType: crate::utils::FheType::FheUint128 as u8,
+            result: big_pending_0_in,
+        }));
+        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
         let total_dex_token_1_out_te = generate_trivial_encrypt(
             contract_address,
             user_address,
@@ -435,23 +363,14 @@ async fn dex_swap_claim_prepare(
         )
         .await?;
         let big_amount_1_out_mul = next_random_handle(crate::utils::FheType::FheUint128);
-        let log = alloy::rpc::types::Log {
-            inner: tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
-                caller,
-                lhs: big_pending_0_in,
-                rhs: total_dex_token_1_out_te,
-                result: big_amount_1_out_mul,
-                scalarByte: ScalarByte::from(false as u8),
-            })),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
-            transaction_hash: Some(transaction_id),
-            transaction_index: Some(0),
-            log_index: None,
-            removed: false,
-        };
-        listener_event_to_db.insert_tfhe_event(&log).await?;
+        let event = tfhe_event(TfheContractEvents::FheMul(TfheContract::FheMul {
+            caller,
+            lhs: big_pending_0_in,
+            rhs: total_dex_token_1_out_te,
+            result: big_amount_1_out_mul,
+            scalarByte: ScalarByte::from(false as u8),
+        }));
+        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
         let total_dex_token_0_in_te = generate_trivial_encrypt(
             contract_address,
             user_address,
@@ -462,40 +381,22 @@ async fn dex_swap_claim_prepare(
         )
         .await?;
         let big_amount_1_out_div = next_random_handle(crate::utils::FheType::FheUint128);
-        let log = alloy::rpc::types::Log {
-            inner: tfhe_event(TfheContractEvents::FheDiv(TfheContract::FheDiv {
-                caller,
-                lhs: big_amount_1_out_mul,
-                rhs: total_dex_token_0_in_te,
-                result: big_amount_1_out_div,
-                scalarByte: ScalarByte::from(false as u8),
-            })),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
-            transaction_hash: Some(transaction_id),
-            transaction_index: Some(0),
-            log_index: None,
-            removed: false,
-        };
-        listener_event_to_db.insert_tfhe_event(&log).await?;
+        let event = tfhe_event(TfheContractEvents::FheDiv(TfheContract::FheDiv {
+            caller,
+            lhs: big_amount_1_out_mul,
+            rhs: total_dex_token_0_in_te,
+            result: big_amount_1_out_div,
+            scalarByte: ScalarByte::from(false as u8),
+        }));
+        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
         amount_1_out = next_random_handle(crate::utils::FheType::FheUint64);
-        let log = alloy::rpc::types::Log {
-            inner: tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
-                caller,
-                ct: big_amount_1_out_div,
-                toType: crate::utils::FheType::FheUint64 as u8,
-                result: amount_1_out,
-            })),
-            block_hash: None,
-            block_number: None,
-            block_timestamp: None,
-            transaction_hash: Some(transaction_id),
-            transaction_index: Some(0),
-            log_index: None,
-            removed: false,
-        };
-        listener_event_to_db.insert_tfhe_event(&log).await?;
+        let event = tfhe_event(TfheContractEvents::Cast(TfheContract::Cast {
+            caller,
+            ct: big_amount_1_out_div,
+            toType: crate::utils::FheType::FheUint64 as u8,
+            result: amount_1_out,
+        }));
+        insert_tfhe_event(listener_event_to_db, transaction_id, event).await?;
     }
     Ok((amount_0_out, amount_1_out))
 }
