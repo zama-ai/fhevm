@@ -97,18 +97,10 @@ jobs:
         env:
           REF_NAME: ${{ github.ref_name }}
         run: |
-          # Check if ref_name starts with any of the changes
           CHANGES='${{ steps.filter.outputs.changes }}'
           if [[ "${{ github.event_name }}" == "release" ]];
           then
-            TO_RUN=''
-            for change in $(echo $CHANGES | jq -r '.[]'); do
-              if [[ "$REF_NAME" == "$change"* ]]; then
-                TO_RUN="$change,$TO_RUN"
-              fi
-            done
-            # Remove last comma
-            TO_RUN=${TO_RUN/.$//}
+            TO_RUN="${REF_NAME%%@*}"
             TO_RUN="[$TO_RUN]"
           else
             TO_RUN="${CHANGES}"
@@ -187,7 +179,6 @@ jobs:
         id: should-push
         run: |
           SHOULD_PUSH=false
-          
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
             SHOULD_PUSH=true
           elif [[ "${{ github.event_name }}" == "release" ]]; then
@@ -199,7 +190,6 @@ jobs:
           elif [[ "${{ github.event.action }}" == "labeled" && "${{ github.event.label.name }}" == "docker" ]]; then
             SHOULD_PUSH=true
           fi
-          
           echo "push=${SHOULD_PUSH}" >> "$GITHUB_OUTPUT"
           echo "Will push: ${SHOULD_PUSH}"
 
@@ -208,7 +198,6 @@ jobs:
         run: |
           gitsha="$(git rev-parse --short "$GITHUB_SHA")"
           TAGS="ghcr.io/zama-ai/console/${{ matrix.service }}:${gitsha}"
-          
           # Only add latest tag if pushing to main branch
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/main" ]]; then
             TAGS="${TAGS}\nghcr.io/zama-ai/console/${{ matrix.service }}:latest"
