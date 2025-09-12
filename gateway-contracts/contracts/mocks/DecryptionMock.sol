@@ -36,10 +36,12 @@ contract DecryptionMock {
 
     event UserDecryptionResponse(
         uint256 indexed decryptionId,
-        bytes[] userDecryptedShares,
-        bytes[] signatures,
+        bytes userDecryptedShare,
+        bytes signature,
         bytes extraData
     );
+
+    event UserDecryptionResponseConsensusReached(uint256 indexed decryptionId);
 
     uint256 _decryptionRequestCounter;
 
@@ -101,9 +103,8 @@ contract DecryptionMock {
         bytes calldata signature,
         bytes calldata extraData
     ) external {
-        bytes[] memory userDecryptedShares = new bytes[](1);
-        bytes[] memory signatures = new bytes[](1);
+        emit UserDecryptionResponse(decryptionId, userDecryptedShare, signature, extraData);
 
-        emit UserDecryptionResponse(decryptionId, userDecryptedShares, signatures, extraData);
+        emit UserDecryptionResponseConsensusReached(decryptionId);
     }
 }
