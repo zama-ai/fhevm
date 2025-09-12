@@ -101,7 +101,7 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]];
           then
             TO_RUN="${REF_NAME%%@*}"
-            TO_RUN="[$TO_RUN]"
+            TO_RUN="[\"$TO_RUN\"]"
           else
             TO_RUN="${CHANGES}"
           fi
