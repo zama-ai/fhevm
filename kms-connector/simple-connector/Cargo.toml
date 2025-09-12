@@ -19,7 +19,7 @@ aws-sdk-kms.workspace = true
 bincode.workspace = true
 clap.workspace = true
 config.workspace = true
-dashmap.workspace = true
+dashmap = { version = "=6.1.0", default-features = false }
 futures.workspace = true
 serde.workspace = true
 sha3.workspace = true
