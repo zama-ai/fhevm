@@ -21,6 +21,12 @@ sol!(
     "artifacts/InputVerification.sol/InputVerification.json"
 );
 
+sol!(
+    #[sol(rpc)]
+    KmsManagement,
+    "artifacts/KmsManagement.sol/KmsManagement.json"
+);
+
 struct TestEnvironment {
     wallet: EthereumWallet,
     conf: ConfigSettings,
@@ -77,8 +83,10 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
         .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
         .await?;
     let input_verification = InputVerification::deploy(&provider).await?;
+    let kms_management = KmsManagement::deploy(&provider).await?;
     let gw_listener = GatewayListener::new(
         *input_verification.address(),
+        *kms_management.address(),
         env.conf.clone(),
         env.cancel_token.clone(),
         provider.clone(),
