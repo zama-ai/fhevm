@@ -1,6 +1,7 @@
 use crate::core::event_processor::{
     KmsClient,
     decryption::{DecryptionProcessor, UserDecryptionExtraData},
+    kms::KMSManagementProcessor,
 };
 use alloy::providers::Provider;
 use anyhow::anyhow;
@@ -28,6 +29,9 @@ pub struct DbEventProcessor<P: Provider> {
 
     /// The entity used to process decryption requests.
     decryption_processor: DecryptionProcessor<P>,
+
+    /// The entity used to process key management requests.
+    kms_management_processor: KMSManagementProcessor,
 
     /// The DB connection pool used to reset events `under_process` field on error.
     db_pool: Pool<Postgres>,
@@ -68,11 +72,13 @@ impl<P: Provider> DbEventProcessor<P> {
     pub fn new(
         kms_client: KmsClient,
         decryption_processor: DecryptionProcessor<P>,
+        kms_management_processor: KMSManagementProcessor,
         db_pool: Pool<Postgres>,
     ) -> Self {
         Self {
             kms_client,
             decryption_processor,
+            kms_management_processor,
             db_pool,
         }
     }
@@ -104,7 +110,21 @@ impl<P: Provider> DbEventProcessor<P> {
                     )
                     .await
             }
-            _ => unimplemented!(),
+            GatewayEvent::PrepKeygen(req) => {
+                self.kms_management_processor
+                    .prepare_prep_keygen_request(req)
+                    .await
+            }
+            GatewayEvent::Keygen(req) => {
+                self.kms_management_processor
+                    .prepare_keygen_request(req)
+                    .await
+            }
+            GatewayEvent::Crsgen(req) => {
+                self.kms_management_processor
+                    .prepare_crsgen_request(req)
+                    .await
+            }
         }
         .map_err(ProcessingError::Recoverable)
     }

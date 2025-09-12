@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "DELETE FROM keygen_requests WHERE pre_key_id = $1",
+  "query": "DELETE FROM prep_keygen_requests WHERE prep_keygen_id = $1",
   "describe": {
     "columns": [],
     "parameters": {
@@ -10,5 +10,5 @@
     },
     "nullable": []
   },
-  "hash": "c74a7a7446e34b251f56c4f7348bba37dd4b20cabdb91df7ab882f19754714c2"
+  "hash": "9b355f759f69f02cca8a740911cd9a1b55d495c5c7644364bfaca734cb835fc9"
 }

@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM crsgen_responses WHERE crs_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "eb4c0459deb269abd66cd57bba8174a4548b7cba727730db8938be880f9bb748"
+}
