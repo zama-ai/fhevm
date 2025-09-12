@@ -12,6 +12,7 @@ import "solidity-coverage";
 
 import "./tasks/accounts";
 import "./tasks/addHostChains";
+import "./tasks/addPausers";
 import "./tasks/blockExplorerVerify";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
@@ -64,7 +65,7 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
       await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
       // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
       // for local testing
-      await hre.run("task:addPauser", { useInternalGatewayConfigAddress: true });
+      await hre.run("task:addPausers", { useInternalGatewayConfigAddress: true });
     } else {
       console.log("Skipping contracts setup.");
     }
