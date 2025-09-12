@@ -369,6 +369,7 @@ where
                         "All GRPC requests failed!"
                     )));
                 }
+            }
             Err(e) => {
                 error_counter.inc();
                 return Err(ProcessingError::Irrecoverable(e.into()));

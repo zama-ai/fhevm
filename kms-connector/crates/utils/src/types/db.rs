@@ -63,14 +63,14 @@ impl TryFrom<u8> for ParamsTypeDb {
         } else if value == Self::Test as u8 {
             Ok(Self::Test)
         } else {
-            Err(anyhow!("Invalid ParamsType value"))
+            Err(anyhow!("Invalid ParamsType value: {value}"))
         }
     }
 }
 
 #[derive(sqlx::Type, Copy, Clone, Debug, Default, PartialEq)]
 #[sqlx(type_name = "key_type")]
-/// Struct representing the `ParamsType` enum in the database.
+/// Struct representing the `KeyType` enum in the database.
 pub enum KeyType {
     Server,
     #[default]
@@ -86,7 +86,7 @@ impl TryFrom<u8> for KeyType {
         } else if value == Self::Public as u8 {
             Ok(Self::Public)
         } else {
-            Err(anyhow!("Invalid KeyType value"))
+            Err(anyhow!("Invalid KeyType value: {value}"))
         }
     }
 }

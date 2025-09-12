@@ -47,6 +47,8 @@ impl KMSManagementProcessor {
             request_id,
             domain: Some(domain_msg),
             params: prep_keygen_request.paramsType as i32,
+            epoch_id: None,
+            context_id: None,
             // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: None,
         }))
@@ -71,6 +73,8 @@ impl KMSManagementProcessor {
             preproc_id,
             domain: Some(domain_msg),
             params: None,
+            epoch_id: None,
+            context_id: None,
             // Used to generate other types of key, but not planned to be supported by the Gateway
             keyset_config: None,
             keyset_added_info: None,
@@ -103,6 +107,7 @@ impl KMSManagementProcessor {
             domain: Some(domain_msg),
             params: crsgen_request.paramsType as i32,
             max_num_bits,
+            context_id: None,
         }))
     }
 }

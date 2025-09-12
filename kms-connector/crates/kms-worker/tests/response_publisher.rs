@@ -135,8 +135,8 @@ async fn test_publish_keygen_response() -> anyhow::Result<()> {
     let rand_prep_keygen_id = rand_u256();
     let rand_signature = rand_signature();
     let mut rand_key_digests = HashMap::new();
-    rand_key_digests.insert(String::from("server"), rand_digest().to_vec());
-    rand_key_digests.insert(String::from("public"), rand_digest().to_vec());
+    rand_key_digests.insert(String::from("ServerKey"), rand_digest().to_vec());
+    rand_key_digests.insert(String::from("PublicKey"), rand_digest().to_vec());
 
     let grpc_response = KmsGrpcResponse::Keygen(KeyGenResult {
         request_id: Some(RequestId {
@@ -164,8 +164,8 @@ async fn test_publish_keygen_response() -> anyhow::Result<()> {
     assert_eq!(key_id, rand_key_id);
     for kd in key_digests {
         let key_type_str = match kd.key_type {
-            KeyType::Public => "public",
-            KeyType::Server => "server",
+            KeyType::Public => "PublicKey",
+            KeyType::Server => "ServerKey",
         };
         assert_eq!(Some(&kd.digest), rand_key_digests.get(key_type_str));
     }

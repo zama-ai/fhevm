@@ -277,8 +277,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();
-        let tx = self.send_tx_with_retry(call).await?;
-        tx.get_receipt().await.map_err(Error::from)
+        self.send_tx_sync_with_retry(call).await
     }
 
     pub async fn send_keygen_response(
@@ -293,8 +292,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();
-        let tx = self.send_tx_with_retry(call).await?;
-        tx.get_receipt().await.map_err(Error::from)
+        self.send_tx_sync_with_retry(call).await
     }
 
     pub async fn send_crsgen_response(
@@ -309,8 +307,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();
-        let tx = self.send_tx_with_retry(call).await?;
-        tx.get_receipt().await.map_err(Error::from)
+        self.send_tx_sync_with_retry(call).await
     }
 
     /// Increases the `gas_limit` for the upcoming transaction.

@@ -276,38 +276,13 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(PrepKeygenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-<<<<<<< HEAD
-        tokio::spawn(gw_listener.subscribe_to_preprocess_keygen_requests());
+        tokio::spawn(gw_listener.subscribe_to_prep_keygen_requests());
         loop {
-            if logs_contain("PreprocessKeygenRequest published!") {
+            if logs_contain("PrepKeygenRequest published!") {
                 break;
             }
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
-    #[tokio::test]
-    #[traced_test]
-    async fn test_preprocess_kskgen_requests_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(PreprocessKskgenRequest::default());
-        asserter.push_success(&[rpc_event_log]);
-
-        tokio::spawn(gw_listener.subscribe_to_preprocess_kskgen_requests());
-        loop {
-            if logs_contain("PreprocessKskgenRequest published!") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-=======
-        gw_listener.subscribe_to_prep_keygen_requests().await;
-        assert!(logs_contain("PrepKeygenRequest published!"));
->>>>>>> 88186be7 (chore(kms-connector): update keygen events)
     }
 
     #[rstest::rstest]
@@ -334,29 +309,6 @@ mod tests {
     #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
-<<<<<<< HEAD
-    async fn test_kskgen_requests_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(KskgenRequest::default());
-        asserter.push_success(&[rpc_event_log]);
-
-        tokio::spawn(gw_listener.subscribe_to_kskgen_requests());
-        loop {
-            if logs_contain("KskgenRequest published!") {
-                break;
-            }
-            tokio::time::sleep(Duration::from_millis(100)).await;
-        }
-    }
-
-    #[rstest::rstest]
-    #[timeout(Duration::from_secs(5))]
-    #[tokio::test]
-    #[traced_test]
-=======
->>>>>>> 88186be7 (chore(kms-connector): update keygen events)
     async fn test_crsgen_requests_subscription() {
         let (asserter, gw_listener) = test_setup().await;
 
