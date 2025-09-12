@@ -215,7 +215,7 @@ as batched transfers is not yet implemented in this script.
       const transaction = await contract.mint(taskArgs.mintAmount);
       await transaction.wait();
 
-      // Validate mint was succesful
+      // Validate mint was successful
       const encrypted_balance = await contract.balanceOf(signer);
       console.info(`Deciphering cERC-20 balance: ${encrypted_balance}`);
       const balanceAliceResults = await instance.userDecrypt([{ handle: encrypted_balance, contractAddress: contractAddress }], privateKey, publicKey, aliceEIPSignature, [contractAddress], signer.address, taskArgs.eip712Timestamp, durationDays);
