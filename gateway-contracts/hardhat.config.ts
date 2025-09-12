@@ -62,6 +62,9 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
       // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
       // for local testing
       await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
+      // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
+      // for local testing
+      await hre.run("task:addPauser", { useInternalGatewayConfigAddress: true });
     } else {
       console.log("Skipping contracts setup.");
     }

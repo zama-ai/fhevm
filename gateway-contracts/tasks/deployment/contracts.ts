@@ -70,9 +70,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     website: getRequiredEnvVar("PROTOCOL_WEBSITE"),
   };
 
-  // Parse the pauser address
-  const pauserAddress = getRequiredEnvVar(`PAUSER_ADDRESS`);
-
   // Parse the MPC threshold
   const mpcThreshold = getRequiredEnvVar("MPC_THRESHOLD");
 
@@ -112,8 +109,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
       encryptionKey: getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`),
     });
   }
-
-  console.log("Pauser address:", pauserAddress);
   console.log("Protocol metadata:", protocolMetadata);
   console.log("MPC threshold:", mpcThreshold);
   console.log("Public decryption threshold:", publicDecryptionThreshold);
@@ -123,7 +118,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   console.log("Custodians:", custodians);
 
   await deployContractImplementation("GatewayConfig", hre, [
-    pauserAddress,
     protocolMetadata,
     mpcThreshold,
     publicDecryptionThreshold,
@@ -132,6 +126,24 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     coprocessors,
     custodians,
   ]);
+});
+
+// Deploy the PauserSet contract
+task("task:deployPauserSet").setAction(async function (_, hre) {
+  // Get a deployer wallet
+  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+
+  const pauserSetFactory = await hre.ethers.getContractFactory("PauserSet", deployer);
+  const pauserSet = await pauserSetFactory.deploy();
+  const pauserSetAddress = await pauserSet.getAddress();
+
+  console.log("PauserSet contract (immutable) deployed at: ", pauserSetAddress);
+
+  await run("task:setContractAddress", {
+    name: "PauserSet",
+    address: pauserSetAddress,
+  });
 });
 
 // Deploy the InputVerification contract
@@ -169,6 +181,9 @@ task("task:deployDecryption").setAction(async function (_, hre) {
 task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   // Deploy the EmptyUUPS proxy contracts
   await hre.run("task:deployEmptyUUPSProxies");
+
+  await hre.run("compile:specific", { contract: "contracts/immutable" });
+  await hre.run("task:deployPauserSet");
 
   // Compile the implementation contracts
   // The deployEmptyUUPSProxies task has generated the contracts' addresses in `addresses/*.sol`.
