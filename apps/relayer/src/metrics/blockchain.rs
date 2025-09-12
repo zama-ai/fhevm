@@ -130,7 +130,7 @@ pub fn init_metrics(registry: &Registry) {
             gateway_pending_tx,
             gateway_tx_confirmation_seconds,
         })
-        .expect("metrics already initialized");
+        .ok(); // Ignore if already initialized
 }
 
 pub mod fhevm {

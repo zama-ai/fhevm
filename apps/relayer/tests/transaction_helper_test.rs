@@ -7,10 +7,12 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_tx_helper() {
-    let _ = crate::utils::ensure_relayer_started().await;
+    let setup = crate::utils::TestSetup::new()
+        .await
+        .expect("Failed to create test setup");
     use fhevm_relayer::transaction::{TransactionService, TxConfig};
 
-    let node_rpc_url = "ws://localhost:8756";
+    let node_rpc_url = &setup.settings.networks.fhevm.ws_url;
     let private_key = std::env::var("TEST_PRIVATE_KEY").unwrap_or_else(|_| {
         "34aacca926bab195601bcf5702786d35cab968159b718ae671b226de11b9afee".to_string()
     });

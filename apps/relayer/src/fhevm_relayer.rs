@@ -85,9 +85,8 @@ pub async fn run_fhevm_relayer(
     settings: Settings,
     shutdown_token: CancellationToken,
 ) -> eyre::Result<()> {
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .expect("Failed to install AWS-LC crypto provider");
+    // Install AWS-LC crypto provider if not already installed
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     debug!("Starting relayer with configuration: {:?}", settings);
 

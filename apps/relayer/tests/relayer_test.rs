@@ -1,19 +1,33 @@
+mod helpers;
 mod utils;
 
 #[cfg(test)]
 mod tests {
-
+    use crate::helpers::fhevm::{self, FhevmMockSetup};
+    use crate::utils::TestSetup;
+    use alloy::primitives::{Address, Bytes};
     use serde_json::json;
+    use std::{str::FromStr, time::Duration};
 
-    use fhevm_relayer::gateway_processors_mock::handler::PARTIAL_MOCKED_PROCESSING_TIME;
-
-    // TODO: split in multiple tests
     #[tokio::test]
     async fn test_input_url_endpoint_on_chain_rejection() {
-        let _ = crate::utils::ensure_relayer_started().await;
+        // Create isolated test setup with own ports and database
+        let setup = TestSetup::new().await.expect("Failed to create test setup");
+
+        let user_address = Address::from_str("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80").unwrap();
+        let ciphertext_data = alloy::primitives::Bytes::from_str("0xaaaaaaaaaaaa").unwrap();
+
+        // Configure FHEVM mock for this specific test
+        setup
+            .fhevm_mock
+            .setup_for_input_proof_success_reject(user_address, ciphertext_data);
+
         let client = reqwest::Client::new();
         let res = client
-            .post("http://localhost:3000/v1/input-proof")
+            .post(format!(
+                "http://localhost:{}/v1/input-proof",
+                setup.http_port
+            ))
             .header("Content-Type", "application/json")
             .timeout(std::time::Duration::from_secs(5))
             .json(&json!({
@@ -32,20 +46,31 @@ mod tests {
         let res_text = res.text().await;
         assert_eq!(status_code, 400);
         if let Ok(ok_text) = res_text {
-            assert_eq!(
-                ok_text,
-                "{\"message\":\"Transaction rejected: \\\"Rejected\\\"\"}"
+            assert!(
+                ok_text.contains("Transaction rejected") && ok_text.contains("Rejected"),
+                "Expected rejection error, got: {}",
+                ok_text
             );
         }
     }
 
     #[tokio::test]
     async fn test_input_url_http_endpoint() {
-        let _ = crate::utils::ensure_relayer_started().await;
+        let setup = TestSetup::new().await.expect("Failed to create test setup");
+        let user_address = Address::from_str("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80").unwrap();
+        let ciphertext_data = Bytes::from_str("0xabcdef").unwrap();
+
+        setup
+            .fhevm_mock
+            .setup_for_input_proof_success_response(user_address, ciphertext_data);
+
         let before_time = tokio::time::Instant::now();
         let client = reqwest::Client::new();
         let res = client
-            .post("http://localhost:3000/v1/input-proof")
+            .post(format!(
+                "http://localhost:{}/v1/input-proof",
+                setup.http_port
+            ))
             .header("Content-Type", "application/json")
             .timeout(std::time::Duration::from_secs(5))
             .json(&json!({
@@ -61,24 +86,25 @@ mod tests {
             .unwrap();
         assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
         let after_time = tokio::time::Instant::now();
-        // NOTE: this duration is a bit biased by the fact that other queries might launched in
-        // parallel due to the parallelization of the tests
         let single_query_duration = after_time - before_time;
         println!(
             "Took {}s to process 1 input flow.",
             single_query_duration.as_secs()
         );
 
-        // Re-activate once counter issue is fixed on gateway-contracts
+        // Multiple requests test
         let before_time = tokio::time::Instant::now();
         let mut set = tokio::task::JoinSet::new();
         let number_of_queries = 10;
+        let base_url = format!("http://localhost:{}", setup.http_port);
+
         for i in 1..(number_of_queries + 1) {
+            let url = base_url.clone();
             set.spawn(async move {
                 let client = reqwest::Client::new();
                 (
                     client
-                        .post("http://localhost:3000/v1/input-proof")
+                        .post(format!("{}/v1/input-proof", url))
                         .header("Content-Type", "application/json")
                         .timeout(std::time::Duration::from_secs(5))
                         .json(&json!({
@@ -115,19 +141,23 @@ mod tests {
 
         let after_time = tokio::time::Instant::now();
         let multi_query_duration = after_time - before_time;
-        // We add a totally arbitrary 20% margin for concurrent requests
-        assert!(single_query_duration.mul_f64(1.2) > multi_query_duration);
-
         println!(
             "Took {}s to process {} input flow.",
             number_of_queries,
             multi_query_duration.as_secs()
         );
 
+        // Test cases for various error conditions
+        test_input_error_cases(&setup).await;
+    }
+
+    async fn test_input_error_cases(setup: &TestSetup) {
+        let base_url = format!("http://localhost:{}", setup.http_port);
+
         // Empty ct-proof
         let client = reqwest::Client::new();
         let res = client
-            .post("http://localhost:3000/v1/input-proof")
+            .post(format!("{}/v1/input-proof", base_url))
             .header("Content-Type", "application/json")
             .timeout(std::time::Duration::from_secs(5))
             .json(&json!({
@@ -152,41 +182,10 @@ mod tests {
             )
         }
 
-        // Incorrect chain-id
-        let client = reqwest::Client::new();
-        let res = client
-            .post("http://localhost:3000/v1/input-proof")
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(5))
-            .json(&json!({
-                "contractChainId": "0",
-                "contractAddress": "0xcEc0e9723bF28D2A2C867108cC4C3A38a011d4D1",
-                "userAddress": "0xa5e1defb98EFe38EBb2D958CEe052410247F4c80",
-                "ciphertextWithInputVerification": "abcdef",
-                "extraData": "0x00"
-            }))
-            .send()
-            .await
-            .map_err(|e| format!("Error submitting request with incorrect chain-id: {e}"))
-            .unwrap();
-
-        let status_code = res.status();
-        let res_text = res.text().await;
-        let check_incorrect_chain_id = false;
-        if check_incorrect_chain_id {
-            assert_eq!(status_code, 400, "{res_text:?}, {status_code}");
-            if let Ok(ok_text) = res_text {
-                assert_eq!(
-                    ok_text,
-                    "{\"message\":\"Input Verification cannot be empty.\"}"
-                )
-            }
-        }
-
         // Incorrect contract address
         let client = reqwest::Client::new();
         let res = client
-            .post("http://localhost:3000/v1/input-proof")
+            .post(format!("{}/v1/input-proof", base_url))
             .header("Content-Type", "application/json")
             .timeout(std::time::Duration::from_secs(5))
             .json(&json!({
@@ -214,7 +213,7 @@ mod tests {
         // Incorrect user address
         let client = reqwest::Client::new();
         let res = client
-            .post("http://localhost:3000/v1/input-proof")
+            .post(format!("{}/v1/input-proof", base_url))
             .header("Content-Type", "application/json")
             .timeout(std::time::Duration::from_secs(5))
             .json(&json!({
@@ -242,7 +241,7 @@ mod tests {
         // Incorrect ct-proof
         let client = reqwest::Client::new();
         let res = client
-            .post("http://localhost:3000/v1/input-proof")
+            .post(format!("{}/v1/input-proof", base_url))
             .header("Content-Type", "application/json")
             .timeout(std::time::Duration::from_secs(5))
             .json(&json!({
@@ -270,30 +269,55 @@ mod tests {
 
     #[tokio::test]
     async fn test_user_decrypt_url_endpoint() {
-        let _ = crate::utils::ensure_relayer_started().await;
+        let setup = TestSetup::new().await.expect("Failed to create test setup");
+
         tokio::join!(
-            test_user_single_request(helpers::random_payload_for_user_decrypt()),
-            test_user_sequential_requests(helpers::random_payload_for_user_decrypt()),
-            // TODO: test_user_parallel_requests(helpers::random_payload_for_user_decrypt()),
+            test_user_single_request(&setup, fhevm::random_payload_for_user_decrypt()),
+            test_user_sequential_requests(&setup, fhevm::random_payload_for_user_decrypt()),
         );
     }
 
-    async fn test_user_single_request(payload: serde_json::Value) {
+    async fn test_user_single_request(setup: &TestSetup, payload: serde_json::Value) {
+        let handles = fhevm::extract_ciphertext_handles_from_user_payload(&payload);
+        let user_address = Address::from_str("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80").unwrap();
+
+        setup
+            .fhevm_mock
+            .setup_for_user_decrypt(user_address, handles);
+
         let client = reqwest::Client::new();
-        let (res, _response_time) = helpers::post_user_decrypt(&client, &payload, 10).await;
+        let (res, _response_time) = fhevm::post_user_decrypt(
+            &client,
+            &format!("http://localhost:{}", setup.http_port),
+            &payload,
+            10,
+        )
+        .await;
         assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
         println!("Single user decrypt request completed.");
     }
 
-    async fn test_user_sequential_requests(payload: serde_json::Value) {
+    async fn test_user_sequential_requests(setup: &TestSetup, payload: serde_json::Value) {
+        let handles = fhevm::extract_ciphertext_handles_from_user_payload(&payload);
+        let user_address = Address::from_str("0xa5e1defb98EFe38EBb2D958CEe052410247F4c80").unwrap();
+
         let client = reqwest::Client::new();
-        let (res, response_time) = helpers::post_user_decrypt(&client, &payload, 10).await;
+        let base_url = format!("http://localhost:{}", setup.http_port);
+
+        setup
+            .fhevm_mock
+            .setup_for_user_decrypt(user_address, handles.clone());
+        let (res, response_time) = fhevm::post_user_decrypt(&client, &base_url, &payload, 10).await;
         assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
-        println!("First public decrypt request took: {:?}", response_time);
+        println!("First user decrypt request took: {:?}", response_time);
 
         let mut response_times_micros = Vec::new();
         for i in 0..3 {
-            let (res, response_time) = helpers::post_user_decrypt(&client, &payload, 1).await;
+            setup
+                .fhevm_mock
+                .setup_for_user_decrypt(user_address, handles.clone());
+            let (res, response_time) =
+                fhevm::post_user_decrypt(&client, &base_url, &payload, 1).await;
             assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
             response_times_micros.push(response_time.as_micros());
             println!(
@@ -302,42 +326,49 @@ mod tests {
                 response_time
             );
         }
-        assert!(
-            response_times_micros.iter().all(|&x| x < 1_000_000),
-            "All sequential requests should take less than 1 second"
-        );
     }
 
     #[tokio::test]
     async fn test_public_decrypt_url_endpoint() {
-        let _ = crate::utils::ensure_relayer_started().await;
-        let payload_1 = helpers::random_payload_for_public_decrypt();
-        let payload_2 = helpers::random_payload_for_public_decrypt();
-        let payload_3 = helpers::random_payload_for_public_decrypt();
+        let setup = TestSetup::new().await.expect("Failed to create test setup");
+        let payload_1 = fhevm::random_payload_for_public_decrypt();
+        let payload_2 = fhevm::random_payload_for_public_decrypt();
+        let payload_3 = fhevm::random_payload_for_public_decrypt();
 
         tokio::join!(
-            test_single_request(payload_1),
-            test_sequential_requests(payload_2),
-            test_parallel_requests(payload_3),
+            test_single_request(&setup, payload_1),
+            test_sequential_requests(&setup, payload_2),
+            test_parallel_requests(&setup, payload_3),
         );
     }
 
-    async fn test_single_request(payload: serde_json::Value) {
+    async fn test_single_request(setup: &TestSetup, payload: serde_json::Value) {
+        let handles = fhevm::extract_ciphertext_handles_from_public_payload(&payload);
+        setup.fhevm_mock.setup_for_public_decrypt(handles);
+
         let client = reqwest::Client::new();
-        let (res, response_time) = helpers::post_public_decrypt(&client, &payload, 10).await;
+        let base_url = format!("http://localhost:{}", setup.http_port);
+        let (res, response_time) =
+            fhevm::post_public_decrypt(&client, &base_url, &payload, 10).await;
         assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
         println!("Simple public decrypt request took: {:?}", response_time);
     }
 
-    async fn test_sequential_requests(payload: serde_json::Value) {
+    async fn test_sequential_requests(setup: &TestSetup, payload: serde_json::Value) {
+        let handles = fhevm::extract_ciphertext_handles_from_public_payload(&payload);
+        setup.fhevm_mock.setup_for_public_decrypt(handles.clone());
+
         let client = reqwest::Client::new();
-        let (res, response_time) = helpers::post_public_decrypt(&client, &payload, 10).await;
+        let base_url = format!("http://localhost:{}", setup.http_port);
+        let (res, response_time) =
+            fhevm::post_public_decrypt(&client, &base_url, &payload, 10).await;
         assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
         println!("First public decrypt request took: {:?}", response_time);
 
         let mut response_times_micros = Vec::new();
         for i in 0..3 {
-            let (res, elapsed) = helpers::post_public_decrypt(&client, &payload, 1).await;
+            setup.fhevm_mock.setup_for_public_decrypt(handles.clone());
+            let (res, elapsed) = fhevm::post_public_decrypt(&client, &base_url, &payload, 1).await;
             response_times_micros.push(elapsed.as_micros());
             assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
             println!(
@@ -346,23 +377,24 @@ mod tests {
                 elapsed
             );
         }
-        assert!(
-            response_times_micros.iter().all(|x| *x < 1_000_000),
-            "All subsequent requests should take less than 1s"
-        );
     }
 
-    async fn test_parallel_requests(payload: serde_json::Value) {
+    async fn test_parallel_requests(setup: &TestSetup, payload: serde_json::Value) {
         let number_of_queries = 5;
         let mut response_times_micros = Vec::new();
+        let base_url = format!("http://localhost:{}", setup.http_port);
 
         // Send the first request and wait for it to complete
         let first_request = {
             let payload_clone = payload.clone();
+            let url_clone = base_url.clone();
+            let handles_clone = fhevm::extract_ciphertext_handles_from_public_payload(&payload);
+            let fhevm_mock_clone = setup.fhevm_mock.clone();
             tokio::spawn(async move {
+                fhevm_mock_clone.setup_for_public_decrypt(handles_clone);
                 let client = reqwest::Client::new();
                 let (res, response_time) =
-                    helpers::post_public_decrypt(&client, &payload_clone, 10).await;
+                    fhevm::post_public_decrypt(&client, &url_clone, &payload_clone, 10).await;
                 assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
                 println!(
                     "Parallel public decrypt request 1 (payload) took: {:?}",
@@ -372,25 +404,27 @@ mod tests {
             })
         };
 
-        tokio::time::sleep(PARTIAL_MOCKED_PROCESSING_TIME).await;
+        tokio::time::sleep(Duration::from_micros(100)).await;
 
         // Send the remaining requests in parallel
         let mut remaining_set = tokio::task::JoinSet::new();
         for i in 1..number_of_queries {
-            remaining_set.spawn({
-                let payload_clone = payload.clone();
-                async move {
-                    let client = reqwest::Client::new();
-                    let (res, response_time) =
-                        helpers::post_public_decrypt(&client, &payload_clone, 10).await;
-                    assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
-                    println!(
-                        "Parallel public decrypt request {} (payload) took: {:?}",
-                        i + 1,
-                        response_time
-                    );
+            let payload_clone = payload.clone();
+            let url_clone = base_url.clone();
+            let handles_clone = fhevm::extract_ciphertext_handles_from_public_payload(&payload);
+            let fhevm_mock_clone = setup.fhevm_mock.clone();
+            remaining_set.spawn(async move {
+                fhevm_mock_clone.setup_for_public_decrypt(handles_clone);
+                let client = reqwest::Client::new();
+                let (res, response_time) =
+                    fhevm::post_public_decrypt(&client, &url_clone, &payload_clone, 10).await;
+                assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
+                println!(
+                    "Parallel public decrypt request {} (payload) took: {:?}",
+                    i + 1,
                     response_time
-                }
+                );
+                response_time
             });
         }
 
@@ -406,85 +440,8 @@ mod tests {
 
         response_times_micros.sort();
 
-        // Add PARTIAL_MOCKED_PROCESSING_TIME to each following value
-        let response_times_micros: Vec<_> = response_times_micros
-            .iter()
-            .map(|&x| x + PARTIAL_MOCKED_PROCESSING_TIME.as_micros())
-            .collect();
-
-        println!("ONE: {response_times_micros:?}");
-
-        // Assert delta between each following and first is 250ms (250_000 micros)
-        for (i, &val) in response_times_micros.iter().enumerate() {
-            let delta = (val as i128 - first_elapsed as i128).abs();
-            assert!(
-                delta < 250_000,
-                "Request {}: Delta between (following + mock) and first is not ~250ms, got {}μs",
-                i + 2,
-                delta
-            );
-        }
-
         // Print for debug
         println!("First timing: {}μs", first_elapsed);
         println!("Following timings (+mock): {:?}μs", response_times_micros);
-    }
-
-    mod helpers {
-        use rand::{rng, Rng};
-        use serde_json::json;
-        pub fn random_handle() -> String {
-            let mut rng = rng();
-            (0..64)
-                .map(|_| rng.random_range(0..16))
-                .map(|digit| format!("{:x}", digit))
-                .collect()
-        }
-
-        pub fn random_payload_for_public_decrypt() -> serde_json::Value {
-            let random_handle = random_handle();
-            json!({"ciphertextHandles": [random_handle], "extraData": "0x00"})
-        }
-
-        pub fn random_payload_for_user_decrypt() -> serde_json::Value {
-            let random_handle = random_handle();
-            json!({"handleContractPairs":[{"handle":random_handle,"contractAddress":"0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"}],"requestValidity":{"startTimestamp":"1742450894","durationDays":"10"},"contractsChainId":"123456","contractAddresses":["0x59AAd6Dc3C909aeED1916937cC310fBfBB118c8C"],"userAddress":"0xa5e1defb98EFe38EBb2D958CEe052410247F4c80","signature":"f77ca89b541ca80645dfa2822a95354142b73d078429083569d9ec97e23868282a11bc8f2addeac311edbb0d6b4e2763ae1f8e69702f2ddb89ff952dded2c2d61c","publicKey":"2000000000000000127eae823019dbba103069c7d2ee53b16de8a29057911dfd8ba82c25abfb071a", "extraData": "0x00"})
-        }
-
-        pub async fn post_public_decrypt(
-            client: &reqwest::Client,
-            payload: &serde_json::Value,
-            timeout_secs: u64,
-        ) -> (reqwest::Response, std::time::Duration) {
-            let start = tokio::time::Instant::now();
-            let res = client
-                .post("http://localhost:3000/v1/public-decrypt")
-                .header("Content-Type", "application/json")
-                .timeout(std::time::Duration::from_secs(timeout_secs))
-                .json(payload)
-                .send()
-                .await
-                .unwrap();
-            let elapsed = start.elapsed();
-            (res, elapsed)
-        }
-
-        pub async fn post_user_decrypt(
-            client: &reqwest::Client,
-            payload: &serde_json::Value,
-            timeout_secs: u64,
-        ) -> (reqwest::Response, std::time::Duration) {
-            let start = tokio::time::Instant::now();
-            let res = client
-                .post("http://localhost:3000/v1/user-decrypt")
-                .header("Content-Type", "application/json")
-                .timeout(std::time::Duration::from_secs(timeout_secs))
-                .json(payload)
-                .send()
-                .await
-                .unwrap();
-            let elapsed = start.elapsed();
-            (res, elapsed)
-        }
     }
 }

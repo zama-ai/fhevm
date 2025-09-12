@@ -55,7 +55,7 @@ pub fn init_http_metrics(registry: &Registry, config: &HttpMetricsConfig) {
             responses_total,
             request_duration_seconds,
         })
-        .expect("HTTP metrics already initialized");
+        .ok(); // Ignore if already initialized
 }
 
 /// Increment the HTTP requests_total metric.

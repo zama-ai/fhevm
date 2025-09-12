@@ -23,7 +23,9 @@ fn test() {
 // `anvil` being available on the test machine.
 #[tokio::test]
 async fn increments_nonce() {
-    let _ = crate::utils::ensure_relayer_started().await;
+    let _setup = crate::utils::TestSetup::new()
+        .await
+        .expect("Failed to create test setup");
     let cnm1 = CachedNonceManagerWithRefresh::default();
     let provider = ProviderBuilder::new()
         .disable_recommended_fillers()
@@ -61,12 +63,14 @@ async fn increments_nonce() {
 
 #[tokio::test]
 async fn cloned_managers() {
-    let _ = crate::utils::ensure_relayer_started().await;
+    let setup = crate::utils::TestSetup::new()
+        .await
+        .expect("Failed to create test setup");
     let cnm1 = CachedNonceManagerWithRefresh::default();
     let cnm2 = cnm1.clone();
 
-    let provider =
-        ProviderBuilder::new().connect_http(Url::parse("http://localhost:8756").unwrap());
+    let provider = ProviderBuilder::new()
+        .connect_http(Url::parse(&setup.settings.networks.fhevm.http_url).unwrap());
     let address = Address::ZERO;
 
     assert_eq!(cnm1.get_next_nonce(&provider, address).await.unwrap(), 0);
