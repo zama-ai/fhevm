@@ -186,7 +186,7 @@ case $COMMAND in
           ;;
         operators)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] OPERATORS${RESET}"
-          docker_args+=("--parallel" "-g" "test operator|FHEVM manual operations")
+          docker_args+=("-g" "test operator|FHEVM manual operations")
           ;;
         random)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] RANDOM OPERATORS${RESET}"
