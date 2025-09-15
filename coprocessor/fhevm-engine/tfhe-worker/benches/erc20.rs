@@ -1,10 +1,6 @@
 #[path = "./utils.rs"]
 mod utils;
-use crate::utils::{
-    allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle,
-    setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, EnvConfig,
-    OperatorType,
-};
+use crate::utils::{allow_handle, default_api_key, default_tenant_id, query_tenant_keys, random_handle, setup_test_app, wait_until_all_allowed_handles_computed, write_to_json, BenchKeys, EnvConfig, OperatorType, TestInstance};
 use criterion::{
     async_executor::FuturesExecutor, measurement::WallTime, Bencher, Criterion, Throughput,
 };
