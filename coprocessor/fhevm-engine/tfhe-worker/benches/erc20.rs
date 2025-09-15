@@ -7,6 +7,7 @@ use criterion::{
 use fhevm_engine_common::utils::safe_serialize;
 use std::str::FromStr;
 use std::time::SystemTime;
+use sqlx::{Pool, Postgres};
 use tfhe_worker::server::common::FheOperation;
 use tfhe_worker::server::tfhe_worker::{async_computation_input::Input, AsyncComputationInput};
 use tfhe_worker::server::tfhe_worker::{
@@ -366,6 +367,7 @@ async fn schedule_erc20_whitepaper(
 async fn prepare_erc20_no_cmux(
     app: &TestInstance,
     keys: &BenchKeys,
+    pool: &Pool<Postgres>,
     num_tx: usize,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut client = FhevmCoprocessorClient::connect(app.app_url().to_string()).await?;
@@ -528,7 +530,7 @@ async fn schedule_erc20_no_cmux(
         })?;
     let keys = &keys[0];
 
-    prepare_erc20_no_cmux(&app, keys, num_tx).await?;
+    prepare_erc20_no_cmux(&app, keys, pool, num_tx).await?;
 
     let app_ref = &app;
     bencher
