@@ -6,7 +6,7 @@ import path from "path";
 
 import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../../tasks/utils/loadVariables";
-import { CoprocessorStruct } from "../../typechain-types/contracts/interfaces/ICoprocessorContexts";
+import { CoprocessorV2Struct } from "../../typechain-types/contracts/interfaces/ICoprocessorContexts";
 import { fund } from "./wallets";
 
 // Loads the host chains' chain IDs
@@ -70,7 +70,7 @@ async function initTestingWallets(nKmsNodes: number, nCustodians: number) {
   // Load the coprocessors, and their transaction senders and signers
   const coprocessorSigners = [];
   const coprocessorTxSenders = [];
-  const coprocessors: CoprocessorStruct[] = [];
+  const coprocessors: CoprocessorV2Struct[] = [];
   for (let idx = 0; idx < nCoprocessors; idx++) {
     // Load the coprocessor transaction sender
     const txSenderAddress = getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`);
