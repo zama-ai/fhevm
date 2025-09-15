@@ -958,14 +958,14 @@ contract Decryption is
         uint256 version,
         bytes32[] memory ctHandles
     ) internal view virtual returns (bytes memory) {
-        // Fetch the S3 bucket URLs that have reached consensus for the ciphertexts
-        string[][] memory s3BucketUrls = CIPHERTEXT_COMMITS.getConsensusS3BucketUrls(ctHandles);
+        // Fetch the storage URLs that have reached consensus for the ciphertexts
+        string[][] memory storageUrls = CIPHERTEXT_COMMITS.getConsensusStorageUrls(ctHandles);
 
-        // Insert the s3 bucket URLs in the extra data.
-        // Version 1 of the extra data is of byte format [version_0..31 | s3BucketUrls_32..]:
+        // Insert the storage URLs in the extra data.
+        // Version 1 of the extra data is of byte format [version_0..31 | storageUrls_32..]:
         // - byte 0..31: the version number
-        // - bytes 32..: the S3 bucket URLs that have reached consensus for the ciphertexts (ABI encoded)
-        return abi.encode(version, s3BucketUrls);
+        // - bytes 32..: the storage URLs that have reached consensus for the ciphertexts (ABI encoded)
+        return abi.encode(version, storageUrls);
     }
 
     /// @notice Checks if a given contractAddress is included in the contractAddresses list.

@@ -89,15 +89,15 @@ async function initTestingWallets(nKmsNodes: number, nCustodians: number) {
       name: getRequiredEnvVar(`COPROCESSOR_NAME_${idx}`),
       txSenderAddress,
       signerAddress,
-      s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
+      storageUrl: getRequiredEnvVar(`COPROCESSOR_STORAGE_URL_${idx}`),
     });
   }
 
-  // Load the coprocessor S3 buckets
-  const coprocessorS3Buckets = [];
+  // Load the coprocessor storage URLs
+  const coprocessorStorageUrls = [];
   for (let idx = 0; idx < nCoprocessors; idx++) {
-    const coprocessorS3Bucket = getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`);
-    coprocessorS3Buckets.push(coprocessorS3Bucket);
+    const coprocessorStorageUrl = getRequiredEnvVar(`COPROCESSOR_STORAGE_URL_${idx}`);
+    coprocessorStorageUrls.push(coprocessorStorageUrl);
   }
 
   // Load the custodian transaction senders
@@ -132,7 +132,7 @@ async function initTestingWallets(nKmsNodes: number, nCustodians: number) {
     coprocessors,
     coprocessorTxSenders,
     coprocessorSigners,
-    coprocessorS3Buckets,
+    coprocessorStorageUrls,
     custodianTxSenders,
     custodianSigners,
     custodianEncryptionKeys,

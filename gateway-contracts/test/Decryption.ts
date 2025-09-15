@@ -54,15 +54,15 @@ function getDateInSeconds(): number {
 }
 
 // Build the extra data v1 for the decryption request event
-function buildExtraDataV1DecryptionRequestEvent(ctHandles: string[], s3BucketUrlsPerHandle: Record<string, string[]>) {
-  // Retrieve the S3 bucket URLs for each handle
-  const s3BucketUrls = ctHandles.map((handle) => s3BucketUrlsPerHandle[handle]);
+function buildExtraDataV1DecryptionRequestEvent(ctHandles: string[], storageUrlsPerHandle: Record<string, string[]>) {
+  // Retrieve the storage URLs for each handle
+  const storageUrls = ctHandles.map((handle) => storageUrlsPerHandle[handle]);
 
   // For now, there is only one version of the extra data for all decryption request events
   const version = 1;
 
   // Encode the extra data the same way it is done in the Decryption contract
-  return hre.ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "string[][]"], [version, s3BucketUrls]);
+  return hre.ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "string[][]"], [version, storageUrls]);
 }
 
 // Create a new key, rotate it and activate it. It returns the new key ID.
@@ -199,7 +199,7 @@ describe("Decryption", function () {
   let coprocessorTxSenders: HardhatEthersSigner[];
   let keyId1: BigNumberish;
   let fheParamsName: string;
-  let coprocessorS3BucketUrlsPerHandle: Record<string, string[]>;
+  let coprocessorStorageUrlsPerHandle: Record<string, string[]>;
 
   // Trigger a key generation in KmsManagement contract and activate the key
   async function prepareAddCiphertextFixture() {
@@ -259,14 +259,14 @@ describe("Decryption", function () {
       });
     }
 
-    // Create a mapping from handles to their consensus S3 bucket URLs
-    const coprocessorS3BucketUrls = await ciphertextCommits.getConsensusS3BucketUrls(ctHandles);
-    const coprocessorS3BucketUrlsPerHandle: Record<string, string[]> = {};
+    // Create a mapping from handles to their consensus storage URLs
+    const coprocessorStorageUrls = await ciphertextCommits.getConsensusStorageUrls(ctHandles);
+    const coprocessorStorageUrlsPerHandle: Record<string, string[]> = {};
     ctHandles.forEach((handle, idx) => {
-      coprocessorS3BucketUrlsPerHandle[handle] = coprocessorS3BucketUrls[idx];
+      coprocessorStorageUrlsPerHandle[handle] = coprocessorStorageUrls[idx];
     });
 
-    return { ...fixtureData, snsCiphertextMaterials, keyId1, coprocessorS3BucketUrlsPerHandle };
+    return { ...fixtureData, snsCiphertextMaterials, keyId1, coprocessorStorageUrlsPerHandle };
   }
 
   describe("Deployment", function () {
@@ -345,7 +345,7 @@ describe("Decryption", function () {
       eip712Message = fixtureData.eip712Message;
       keyId1 = fixtureData.keyId1;
       fheParamsName = fixtureData.fheParamsName;
-      coprocessorS3BucketUrlsPerHandle = fixtureData.coprocessorS3BucketUrlsPerHandle;
+      coprocessorStorageUrlsPerHandle = fixtureData.coprocessorStorageUrlsPerHandle;
     });
 
     it("Should request a public decryption with multiple ctHandles", async function () {
@@ -353,7 +353,7 @@ describe("Decryption", function () {
       const requestTx = await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorS3BucketUrlsPerHandle);
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
@@ -370,7 +370,7 @@ describe("Decryption", function () {
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
       // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorS3BucketUrlsPerHandle);
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
@@ -903,7 +903,7 @@ describe("Decryption", function () {
       eip712ResponseMessages = fixtureData.eip712ResponseMessages;
       keyId1 = fixtureData.keyId1;
       fheParamsName = fixtureData.fheParamsName;
-      coprocessorS3BucketUrlsPerHandle = fixtureData.coprocessorS3BucketUrlsPerHandle;
+      coprocessorStorageUrlsPerHandle = fixtureData.coprocessorStorageUrlsPerHandle;
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
@@ -919,7 +919,7 @@ describe("Decryption", function () {
       );
 
       // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorS3BucketUrlsPerHandle);
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
@@ -945,7 +945,7 @@ describe("Decryption", function () {
       );
 
       // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorS3BucketUrlsPerHandle);
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
@@ -1778,7 +1778,7 @@ describe("Decryption", function () {
       userDecryptedShares = fixtureData.userDecryptedShares;
       keyId1 = fixtureData.keyId1;
       fheParamsName = fixtureData.fheParamsName;
-      coprocessorS3BucketUrlsPerHandle = fixtureData.coprocessorS3BucketUrlsPerHandle;
+      coprocessorStorageUrlsPerHandle = fixtureData.coprocessorStorageUrlsPerHandle;
     });
 
     it("Should request a delegated user decryption with multiple ctHandleContractPairs", async function () {
@@ -1794,7 +1794,7 @@ describe("Decryption", function () {
       );
 
       // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorS3BucketUrlsPerHandle);
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
@@ -1825,7 +1825,7 @@ describe("Decryption", function () {
       );
 
       // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorS3BucketUrlsPerHandle);
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)

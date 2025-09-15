@@ -228,7 +228,7 @@ describe("CiphertextCommits", function () {
       expect(addCiphertextMaterialConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 
-    it("Should get all valid coprocessor s3 bucket URLs from add ciphertext material at and after consensus", async function () {
+    it("Should get all valid coprocessor storage URLs from add ciphertext material at and after consensus", async function () {
       // Trigger a valid add ciphertext material call using the first and second coprocessor transaction sender
       await ciphertextCommits
         .connect(coprocessorTxSenders[0])
@@ -237,22 +237,22 @@ describe("CiphertextCommits", function () {
         .connect(coprocessorTxSenders[1])
         .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
-      const expectedConsensusS3BucketUrls1 = coprocessors.slice(0, 2).map((coprocessor) => coprocessor.s3BucketUrl);
+      const expectedConsensusStorageUrls1 = coprocessors.slice(0, 2).map((coprocessor) => coprocessor.storageUrl);
 
-      // Check that we get the expected list of S3 bucket URLs at consensus
-      const consensusS3BucketUrls1 = await ciphertextCommits.getConsensusS3BucketUrls([ctHandle]);
-      expect(consensusS3BucketUrls1).to.deep.equal([expectedConsensusS3BucketUrls1]);
+      // Check that we get the expected list of storage URLs at consensus
+      const consensusSStorageUrls1 = await ciphertextCommits.getConsensusStorageUrls([ctHandle]);
+      expect(consensusSStorageUrls1).to.deep.equal([expectedConsensusStorageUrls1]);
 
       // Trigger a valid add ciphertext material call using the third coprocessor transaction sender
       await ciphertextCommits
         .connect(coprocessorTxSenders[2])
         .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
-      const expectedConsensusS3BucketUrls2 = coprocessors.slice(0, 3).map((coprocessor) => coprocessor.s3BucketUrl);
+      const expectedConsensusStorageUrls2 = coprocessors.slice(0, 3).map((coprocessor) => coprocessor.storageUrl);
 
-      // Check that we get the expected list of S3 bucket URLs after consensus
-      const consensusS3BucketUrls2 = await ciphertextCommits.getConsensusS3BucketUrls([ctHandle]);
-      expect(consensusS3BucketUrls2).to.deep.equal([expectedConsensusS3BucketUrls2]);
+      // Check that we get the expected list of storage URLs after consensus
+      const consensusStorageUrls2 = await ciphertextCommits.getConsensusStorageUrls([ctHandle]);
+      expect(consensusStorageUrls2).to.deep.equal([expectedConsensusStorageUrls2]);
     });
 
     it("Should revert because add ciphertext material consensus has not been reached", async function () {
@@ -261,7 +261,7 @@ describe("CiphertextCommits", function () {
         .connect(coprocessorTxSenders[0])
         .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
-      await expect(ciphertextCommits.getConsensusS3BucketUrls([ctHandle]))
+      await expect(ciphertextCommits.getConsensusStorageUrls([ctHandle]))
         .revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
         .withArgs(ctHandle);
     });

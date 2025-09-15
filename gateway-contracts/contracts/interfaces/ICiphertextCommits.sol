@@ -78,11 +78,11 @@ interface ICiphertextCommits {
     ) external view returns (SnsCiphertextMaterial[] memory);
 
     /**
-     * @notice Retrieves the list of S3 bucket URLs associated to the handles for which the consensus was reached.
+     * @notice Retrieves the list of the storage URLs associated to the handles for which the consensus was reached.
      * @param ctHandles The list of handles to retrieve.
-     * @return The list of S3 bucket URLs.
+     * @return The list of storage URLs.
      */
-    function getConsensusS3BucketUrls(bytes32[] calldata ctHandles) external view returns (string[][] memory);
+    function getConsensusStorageUrls(bytes32[] calldata ctHandles) external view returns (string[][] memory);
 
     /**
      * @notice Checks if the ciphertext material represented by the handle has been added in the contract.

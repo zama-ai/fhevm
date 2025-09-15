@@ -268,7 +268,7 @@ contract CiphertextCommits is
         return $._coprocessorTxSenderAddresses[addCiphertextHash];
     }
 
-    function getConsensusS3BucketUrls(bytes32[] calldata ctHandles) external view virtual returns (string[][] memory) {
+    function getConsensusStorageUrls(bytes32[] calldata ctHandles) external view virtual returns (string[][] memory) {
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
         string[][] memory consensusStorageUrls = new string[][](ctHandles.length);
 
@@ -309,7 +309,7 @@ contract CiphertextCommits is
             for (uint256 j = 0; j < coprocessorTxSenderAddresses.length; j++) {
                 coprocessorStorageUrls[j] = COPROCESSOR_CONTEXTS
                     .getCoprocessorFromContext(contextId, coprocessorTxSenderAddresses[j])
-                    .s3BucketUrl;
+                    .storageUrl;
             }
             consensusStorageUrls[i] = coprocessorStorageUrls;
         }

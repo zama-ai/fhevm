@@ -24,7 +24,7 @@ interface ICiphertextCommits {
     function addCiphertextMaterial(bytes32 ctHandle, uint256 keyId, bytes32 ciphertextDigest, bytes32 snsCiphertextDigest) external;
     function checkCiphertextMaterial(bytes32 ctHandle) external view;
     function getCiphertextMaterials(bytes32[] memory ctHandles) external view returns (CiphertextMaterial[] memory);
-    function getConsensusS3BucketUrls(bytes32[] memory ctHandles) external view returns (string[][] memory);
+    function getConsensusStorageUrls(bytes32[] memory ctHandles) external view returns (string[][] memory);
     function getConsensusTxSenders(bytes32 ctHandle) external view returns (address[] memory);
     function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view returns (SnsCiphertextMaterial[] memory);
     function getVersion() external pure returns (string memory);
@@ -113,7 +113,7 @@ interface ICiphertextCommits {
   },
   {
     "type": "function",
-    "name": "getConsensusS3BucketUrls",
+    "name": "getConsensusStorageUrls",
     "inputs": [
       {
         "name": "ctHandles",
@@ -1879,13 +1879,13 @@ function getCiphertextMaterials(bytes32[] memory ctHandles) external view return
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getConsensusS3BucketUrls(bytes32[])` and selector `0xe2c0605b`.
+    /**Function with signature `getConsensusStorageUrls(bytes32[])` and selector `0x5f3c9496`.
 ```solidity
-function getConsensusS3BucketUrls(bytes32[] memory ctHandles) external view returns (string[][] memory);
+function getConsensusStorageUrls(bytes32[] memory ctHandles) external view returns (string[][] memory);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getConsensusS3BucketUrlsCall {
+    pub struct getConsensusStorageUrlsCall {
         #[allow(missing_docs)]
         pub ctHandles: alloy::sol_types::private::Vec<
             alloy::sol_types::private::FixedBytes<32>,
@@ -1893,10 +1893,10 @@ function getConsensusS3BucketUrls(bytes32[] memory ctHandles) external view retu
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getConsensusS3BucketUrls(bytes32[])`](getConsensusS3BucketUrlsCall) function.
+    ///Container type for the return parameters of the [`getConsensusStorageUrls(bytes32[])`](getConsensusStorageUrlsCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getConsensusS3BucketUrlsReturn {
+    pub struct getConsensusStorageUrlsReturn {
         #[allow(missing_docs)]
         pub _0: alloy::sol_types::private::Vec<
             alloy::sol_types::private::Vec<alloy::sol_types::private::String>,
@@ -1936,16 +1936,16 @@ function getConsensusS3BucketUrls(bytes32[] memory ctHandles) external view retu
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getConsensusS3BucketUrlsCall>
+            impl ::core::convert::From<getConsensusStorageUrlsCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: getConsensusS3BucketUrlsCall) -> Self {
+                fn from(value: getConsensusStorageUrlsCall) -> Self {
                     (value.ctHandles,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getConsensusS3BucketUrlsCall {
+            for getConsensusStorageUrlsCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { ctHandles: tuple.0 }
                 }
@@ -1977,23 +1977,23 @@ function getConsensusS3BucketUrls(bytes32[] memory ctHandles) external view retu
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getConsensusS3BucketUrlsReturn>
+            impl ::core::convert::From<getConsensusStorageUrlsReturn>
             for UnderlyingRustTuple<'_> {
-                fn from(value: getConsensusS3BucketUrlsReturn) -> Self {
+                fn from(value: getConsensusStorageUrlsReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getConsensusS3BucketUrlsReturn {
+            for getConsensusStorageUrlsReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for getConsensusS3BucketUrlsCall {
+        impl alloy_sol_types::SolCall for getConsensusStorageUrlsCall {
             type Parameters<'a> = (
                 alloy::sol_types::sol_data::Array<
                     alloy::sol_types::sol_data::FixedBytes<32>,
@@ -2013,8 +2013,8 @@ function getConsensusS3BucketUrls(bytes32[] memory ctHandles) external view retu
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getConsensusS3BucketUrls(bytes32[])";
-            const SELECTOR: [u8; 4] = [226u8, 192u8, 96u8, 91u8];
+            const SIGNATURE: &'static str = "getConsensusStorageUrls(bytes32[])";
+            const SELECTOR: [u8; 4] = [95u8, 60u8, 148u8, 150u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2045,7 +2045,7 @@ function getConsensusS3BucketUrls(bytes32[] memory ctHandles) external view retu
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(|r| {
-                        let r: getConsensusS3BucketUrlsReturn = r.into();
+                        let r: getConsensusStorageUrlsReturn = r.into();
                         r._0
                     })
             }
@@ -2057,7 +2057,7 @@ function getConsensusS3BucketUrls(bytes32[] memory ctHandles) external view retu
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
-                        let r: getConsensusS3BucketUrlsReturn = r.into();
+                        let r: getConsensusStorageUrlsReturn = r.into();
                         r._0
                     })
             }
@@ -2559,7 +2559,7 @@ function getVersion() external pure returns (string memory);
         #[allow(missing_docs)]
         getCiphertextMaterials(getCiphertextMaterialsCall),
         #[allow(missing_docs)]
-        getConsensusS3BucketUrls(getConsensusS3BucketUrlsCall),
+        getConsensusStorageUrls(getConsensusStorageUrlsCall),
         #[allow(missing_docs)]
         getConsensusTxSenders(getConsensusTxSendersCall),
         #[allow(missing_docs)]
@@ -2578,11 +2578,11 @@ function getVersion() external pure returns (string memory);
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [13u8, 142u8, 110u8, 44u8],
             [85u8, 196u8, 217u8, 151u8],
+            [95u8, 60u8, 148u8, 150u8],
             [144u8, 243u8, 3u8, 84u8],
             [161u8, 79u8, 137u8, 113u8],
             [194u8, 161u8, 60u8, 69u8],
             [212u8, 71u8, 111u8, 99u8],
-            [226u8, 192u8, 96u8, 91u8],
         ];
     }
     #[automatically_derived]
@@ -2602,8 +2602,8 @@ function getVersion() external pure returns (string memory);
                 Self::getCiphertextMaterials(_) => {
                     <getCiphertextMaterialsCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getConsensusS3BucketUrls(_) => {
-                    <getConsensusS3BucketUrlsCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::getConsensusStorageUrls(_) => {
+                    <getConsensusStorageUrlsCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getConsensusTxSenders(_) => {
                     <getConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
@@ -2656,6 +2656,17 @@ function getVersion() external pure returns (string memory);
                     getCiphertextMaterials
                 },
                 {
+                    fn getConsensusStorageUrls(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
+                        <getConsensusStorageUrlsCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(ICiphertextCommitsCalls::getConsensusStorageUrls)
+                    }
+                    getConsensusStorageUrls
+                },
+                {
                     fn addCiphertextMaterial(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
@@ -2699,17 +2710,6 @@ function getVersion() external pure returns (string memory);
                     }
                     checkCiphertextMaterial
                 },
-                {
-                    fn getConsensusS3BucketUrls(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <getConsensusS3BucketUrlsCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ICiphertextCommitsCalls::getConsensusS3BucketUrls)
-                    }
-                    getConsensusS3BucketUrls
-                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -2751,6 +2751,17 @@ function getVersion() external pure returns (string memory);
                             .map(ICiphertextCommitsCalls::getCiphertextMaterials)
                     }
                     getCiphertextMaterials
+                },
+                {
+                    fn getConsensusStorageUrls(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
+                        <getConsensusStorageUrlsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(ICiphertextCommitsCalls::getConsensusStorageUrls)
+                    }
+                    getConsensusStorageUrls
                 },
                 {
                     fn addCiphertextMaterial(
@@ -2796,17 +2807,6 @@ function getVersion() external pure returns (string memory);
                     }
                     checkCiphertextMaterial
                 },
-                {
-                    fn getConsensusS3BucketUrls(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <getConsensusS3BucketUrlsCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICiphertextCommitsCalls::getConsensusS3BucketUrls)
-                    }
-                    getConsensusS3BucketUrls
-                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -2836,8 +2836,8 @@ function getVersion() external pure returns (string memory);
                         inner,
                     )
                 }
-                Self::getConsensusS3BucketUrls(inner) => {
-                    <getConsensusS3BucketUrlsCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::getConsensusStorageUrls(inner) => {
+                    <getConsensusStorageUrlsCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -2877,8 +2877,8 @@ function getVersion() external pure returns (string memory);
                         out,
                     )
                 }
-                Self::getConsensusS3BucketUrls(inner) => {
-                    <getConsensusS3BucketUrlsCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::getConsensusStorageUrls(inner) => {
+                    <getConsensusStorageUrlsCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -3382,15 +3382,15 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`getConsensusS3BucketUrls`] function.
-        pub fn getConsensusS3BucketUrls(
+        ///Creates a new call builder for the [`getConsensusStorageUrls`] function.
+        pub fn getConsensusStorageUrls(
             &self,
             ctHandles: alloy::sol_types::private::Vec<
                 alloy::sol_types::private::FixedBytes<32>,
             >,
-        ) -> alloy_contract::SolCallBuilder<&P, getConsensusS3BucketUrlsCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, getConsensusStorageUrlsCall, N> {
             self.call_builder(
-                &getConsensusS3BucketUrlsCall {
+                &getConsensusStorageUrlsCall {
                     ctHandles,
                 },
             )

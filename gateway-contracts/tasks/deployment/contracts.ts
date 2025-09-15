@@ -6,6 +6,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import path from "path";
 
 import { ADDRESSES_DIR } from "../../hardhat.config";
+import { CoprocessorV2Struct } from "../../typechain-types/contracts/CoprocessorContexts";
 import { getRequiredEnvVar } from "../utils/loadVariables";
 import { pascalCaseToSnakeCase } from "../utils/stringOps";
 
@@ -128,13 +129,13 @@ task("task:deployCoprocessorContexts").setAction(async function (_, hre) {
 
   // Parse the coprocessors
   const numCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
-  const coprocessors = [];
+  const coprocessors: CoprocessorV2Struct[] = [];
   for (let idx = 0; idx < numCoprocessors; idx++) {
     coprocessors.push({
       name: getRequiredEnvVar(`COPROCESSOR_NAME_${idx}`),
       txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
       signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
-      s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
+      storageUrl: getRequiredEnvVar(`COPROCESSOR_STORAGE_URL_${idx}`),
     });
   }
   console.log("Coprocessors:", coprocessors);
