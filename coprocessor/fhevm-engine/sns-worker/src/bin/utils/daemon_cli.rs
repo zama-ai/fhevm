@@ -40,6 +40,10 @@ pub struct Args {
     #[arg(long, default_value = "15s", value_parser = parse_duration)]
     pub pg_timeout: Duration,
 
+    /// Postgres diagnostics: enable auto_explain extension
+    #[arg(long, value_parser = parse_duration)]
+    pub pg_auto_explain_with_min_duration: Option<Duration>,
+
     /// Postgres database url. If unspecified DATABASE_URL environment variable
     /// is used
     #[arg(long)]
