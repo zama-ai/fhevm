@@ -64,7 +64,7 @@ pub(crate) async fn process_s3_uploads(
             do_resubmits_loop(client, pool, &conf, jobs_tx, token, is_ready)
                 .await
                 .unwrap_or_else(|err| {
-                    error!("Failed to spawn do_resubmits_loop: {}", err);
+                    error!(error = %err, "Failed to spawn do_resubmits_loop");
                 });
         }
     });
@@ -110,9 +110,9 @@ pub(crate) async fn process_s3_uploads(
                         .await
                         {
                             warn!(
-                                "Failed to lock pending uploads {}, handle: {}",
-                                err,
-                                compact_hex(&item.handle)
+                                error = %err,
+                                handle = compact_hex(&item.handle),
+                                "Failed to lock pending uploads",
                             );
                             trx.rollback().await?;
                             continue;
@@ -122,21 +122,20 @@ pub(crate) async fn process_s3_uploads(
                  };
 
 
-                debug!("Received task, handle: {}", hex::encode(&item.handle));
+                debug!(handle = hex::encode(&item.handle), "Received task, handle");
 
                 // Cleanup completed tasks
                 upload_jobs.retain(|h| !h.is_finished());
 
                 // Check if we have reached the max concurrent uploads
                 if upload_jobs.len() >= max_concurrent_uploads {
-                    warn!({target = "worker", action = "review"},
-                        "Max concurrent uploads reached: {}, waiting for a slot ...",
-                        max_concurrent_uploads
+                    warn!({target = "worker", action = "review", max_concurrent_uploads = max_concurrent_uploads},
+                        "Max concurrent uploads reached, waiting for a slot ...",
                     );
                 } else {
                     debug!(
-                        "Available upload slots: {}",
-                        max_concurrent_uploads - upload_jobs.len(),
+                        available_upload_slots = max_concurrent_uploads - upload_jobs.len(),
+                        "Available upload slots"
                     );
                 }
 
@@ -152,9 +151,9 @@ pub(crate) async fn process_s3_uploads(
                         if let Err(err) = upload_ciphertexts(trx, item, &client, &conf).await {
                             if let ExecutionError::S3TransientError(_) = err {
                                 ready_flag.store(false, Ordering::Release);
-                                info!("S3 setup is not ready, due to transient error: {}", err);
-                            }else {
-                                error!("Failed to upload ciphertexts: {}", err);
+                                info!(error = %err, "S3 setup is not ready, due to transient error");
+                            } else {
+                                error!(error = %err, "Failed to upload ciphertexts");
                             }
 
                             telemetry::end_span_with_err(s, err.to_string());
@@ -171,10 +170,10 @@ pub(crate) async fn process_s3_uploads(
                 // Cleanup completed tasks
                 upload_jobs.retain(|h| !h.is_finished());
 
-                info!("Waiting for all uploads to finish ..");
+                info!("Waiting for all uploads to finish...");
                 for handle in upload_jobs {
                     if let Err(err) = handle.await {
-                        error!("Failed to join upload task: {}", err);
+                        error!(error = %err, "Failed to join upload task");
                     }
                 }
 
@@ -204,7 +203,7 @@ async fn upload_ciphertexts(
     conf: &S3Config,
 ) -> Result<(), ExecutionError> {
     let handle_as_hex: String = compact_hex(&task.handle);
-    info!("Received task, handle: {}", handle_as_hex);
+    info!(handle = handle_as_hex, "Received task");
 
     let mut jobs = vec![];
 
@@ -212,15 +211,21 @@ async fn upload_ciphertexts(
         let ct128_bytes = task.ct128.bytes();
         let ct128_digest = compute_digest(ct128_bytes);
         info!(
-            "Uploading ct128, handle: {}, len: {}, tenant: {}",
-            handle_as_hex,
-            ByteSize::b(ct128_bytes.len() as u64),
-            task.tenant_id,
+            handle = handle_as_hex,
+            len = ?ByteSize::b(ct128_bytes.len() as u64),
+            tenant_id = task.tenant_id,
+            "Uploading ct128"
         );
 
         let format_as_str = task.ct128.format().to_string();
 
-        let key = hex::encode(&ct128_digest);
+        let key = if cfg!(feature = "test_s3_use_handle_as_key") {
+            hex::encode(&task.handle)
+        } else {
+            // Use the digest as the key for the ct128 object
+            // This is the production behavior
+            hex::encode(&ct128_digest)
+        };
 
         let mut s = task.otel.child_span("ct128_check_s3");
         let exists = check_object_exists(client, &conf.bucket_ct128, &key).await?;
@@ -244,9 +249,9 @@ async fn upload_ciphertexts(
             ));
         } else {
             info!(
-                "ct128 already exists in S3, handle: {}, digest: {}",
-                handle_as_hex,
-                hex::encode(&ct128_digest)
+                handle = handle_as_hex,
+                ct128_digest = hex::encode(&ct128_digest),
+                "ct128 already exists in S3",
             );
 
             // In case of a sns-worker failure after uploading to S3,
@@ -258,18 +263,24 @@ async fn upload_ciphertexts(
     if !task.ct64_compressed.is_empty() {
         let ct64_compressed = task.ct64_compressed.as_ref();
         info!(
-            "Uploading ct64, handle: {}, len: {}, tenant: {}",
-            handle_as_hex,
-            ByteSize::b(ct64_compressed.len() as u64),
-            task.tenant_id,
+            handle = handle_as_hex,
+            len = ?ByteSize::b(ct64_compressed.len() as u64),
+            tenant_id = task.tenant_id,
+            "Uploading ct64",
         );
 
         let ct64_digest = compute_digest(ct64_compressed);
 
-        let key = hex::encode(&ct64_digest);
+        let key = if cfg!(feature = "test_s3_use_handle_as_key") {
+            hex::encode(&task.handle)
+        } else {
+            // Use the digest as the key for the ct64 object
+            // This is the production behavior
+            hex::encode(&ct64_digest)
+        };
 
         let mut s = task.otel.child_span("ct64_check_s3");
-        let exists = check_object_exists(client, &conf.bucket_ct128, &key).await?;
+        let exists = check_object_exists(client, &conf.bucket_ct64, &key).await?;
         telemetry::attribute(&mut s, "exists", exists.to_string());
         telemetry::end_span(s);
 
@@ -288,9 +299,9 @@ async fn upload_ciphertexts(
             ));
         } else {
             info!(
-                "ct64 already exists in S3, handle: {}, digest: {}",
-                handle_as_hex,
-                hex::encode(&ct64_digest)
+                handle = handle_as_hex,
+                ct64_digest = hex::encode(&ct64_digest),
+                "ct64 already exists in S3",
             );
 
             // In case of a sns-worker failure after uploading to S3,
@@ -313,8 +324,9 @@ async fn upload_ciphertexts(
             UploadResult::CtType128((digest, span)) => {
                 if let Err(err) = ct_variant {
                     error!(
-                        "Failed to upload ct128, handle: {}, err: {}",
-                        handle_as_hex, err
+                        error = %err,
+                        handle = handle_as_hex,
+                        "Failed to upload ct128",
                     );
 
                     telemetry::end_span_with_err(span, err.to_string());
@@ -327,8 +339,9 @@ async fn upload_ciphertexts(
             UploadResult::CtType64((digest, span)) => {
                 if let Err(err) = ct_variant {
                     error!(
-                        "Failed to upload ct64, handle: {}, err: {}",
-                        handle_as_hex, err
+                        error = %err,
+                        handle = handle_as_hex,
+                        "Failed to upload ct64"
                     );
 
                     telemetry::end_span_with_err(span, err.to_string());
@@ -351,7 +364,7 @@ async fn upload_ciphertexts(
     transient_error.map_or(Ok(()), Err)
 }
 
-fn compute_digest(ct: &[u8]) -> Vec<u8> {
+pub fn compute_digest(ct: &[u8]) -> Vec<u8> {
     let mut hasher = Keccak256::new();
     hasher.update(ct);
     hasher.finalize().to_vec()
@@ -398,7 +411,7 @@ async fn fetch_pending_uploads(
                 if let Some(record) = row {
                     ct64_compressed = Arc::new(record.ciphertext);
                 } else {
-                    error!("Missing ciphertext, handle: {}", hex::encode(&handle));
+                    error!(handle = hex::encode(&handle), "Missing ciphertext");
                 }
             }
         }
@@ -419,11 +432,11 @@ async fn fetch_pending_uploads(
                             ct128 = ct;
                         }
                         _ => {
-                            warn!("Fetched empty ct128, handle: {}", hex::encode(&handle));
+                            warn!(handle = hex::encode(&handle), "Fetched empty ct128");
                         }
                     }
                 } else {
-                    error!("Missing ciphertext128, handle: {}", hex::encode(&handle));
+                    error!(handle = hex::encode(&handle), "Missing ciphertext128");
                 }
             }
         }
@@ -435,9 +448,9 @@ async fn fetch_pending_uploads(
                 Some(ct) => ct,
                 None => {
                     error!(
-                        "Failed to create a BigCiphertext from DB data, handle: {}, format_id: {}",
-                        compact_hex(&handle),
-                        row.ciphertext128_format
+                        handle = compact_hex(&handle),
+                        format_id = row.ciphertext128_format,
+                        "Failed to create a BigCiphertext from DB data",
                     );
                     continue;
                 }
@@ -485,7 +498,7 @@ async fn do_resubmits_loop(
     )
     .await
     .unwrap_or_else(|err| {
-        error!("Failed to resubmit tasks: {}", err);
+        error!(error = %err, "Failed to resubmit tasks");
     });
 
     let retry_conf = &conf.s3.retry_policy;
@@ -508,7 +521,7 @@ async fn do_resubmits_loop(
                         is_ready.store(true, Ordering::Release);
                         try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
                             .unwrap_or_else(|err| {
-                                error!("Failed to resubmit tasks: {}", err);
+                                error!(error = %err, "Failed to resubmit tasks");
                             });
                     }
                 }
@@ -518,7 +531,7 @@ async fn do_resubmits_loop(
                 info!("Retry resubmit ...");
                 try_resubmit(&pool, is_ready.clone(), tasks.clone(), token.clone(), DEFAULT_BATCH_SIZE).await
                     .unwrap_or_else(|err| {
-                        error!("Failed to resubmit tasks: {}", err);
+                        error!(error = %err, "Failed to resubmit tasks");
                 });
             }
         }
@@ -548,15 +561,15 @@ async fn try_resubmit(
                 info!(
                     target: "worker",
                     action = "retry_s3_uploads",
-                    "Fetched {} pending uploads from the database",
-                    jobs.len()
+                    pending_uploads = jobs.len(),
+                    "Fetched pending uploads from the database"
                 );
                 let jobs_count = jobs.len();
                 // Resubmit for uploading ciphertexts
                 for task in jobs {
                     select! {
                         _ = tasks.send(task.clone()) => {
-                            info!("resubmitted, handle: {}", compact_hex(task.handle()));
+                            info!(handle = compact_hex(task.handle()), "resubmitted");
                         },
                         _ = token.cancelled() => {
                             return Ok(());
@@ -574,7 +587,7 @@ async fn try_resubmit(
                 }
             }
             Err(err) => {
-                error!("Failed to fetch pending uploads: {}", err);
+                error!(error = %err, "Failed to fetch pending uploads");
                 return Err(err);
             }
         }
@@ -607,7 +620,7 @@ async fn check_object_exists(
             Ok(false)
         }
         Err(err) => {
-            error!("Failed to check object existence: {}", err);
+            error!(error = %err, "Failed to check object existence");
             Err(ExecutionError::S3TransientError(err.to_string()))
         }
     }
@@ -626,24 +639,24 @@ async fn check_bucket_exists(
                 Ok(false)
             }
             Err(err) => {
-                error!("Failed to check bucket existence: {}", err);
+                error!(error = %err, "Failed to check bucket existence");
                 Err(err)
             }
         };
 
     match res {
         Ok(true) => {
-            info!("Bucket {} exists", bucket);
+            info!(bucket = bucket, "Bucket exists");
             (true, true)
         }
         Ok(false) => {
-            error!({ action = "review" }, "Bucket {} does not exist", bucket);
+            error!({ action = "review", bucket = bucket }, "Bucket does not exist");
             (false, true)
         }
         Err(err) => {
             error!(
-                { action = "review" },
-                "Failed to check bucket existence: {:?}", err
+                { action = "review", error = %err, },
+                "Failed to check bucket existence"
             );
             (false, false)
         }

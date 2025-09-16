@@ -1,6 +1,8 @@
 # Run all fhevm coprocessor benchmarks on a GPU instance on Hyperstack and return parsed results to Slab CI bot.
 name: coprocessor-benchmark-gpu
 
+permissions: {}
+
 on:
   workflow_dispatch:
     inputs:
@@ -65,6 +67,7 @@ env:
   RUST_BACKTRACE: "full"
   RUST_MIN_STACK: "8388608"
   CHECKOUT_TOKEN: ${{ secrets.REPO_CHECKOUT_TOKEN || secrets.GITHUB_TOKEN }}
+  PROFILE: ${{ inputs.profile }}
 
 jobs:
   parse-inputs:
@@ -79,12 +82,12 @@ jobs:
       - name: Parse profile
         id: parse_profile
         run: |
-          echo "profile=$(echo '${{ inputs.profile }}' | sed 's|\(.*\)[[:space:]](.*)|\1|')" >> "${GITHUB_OUTPUT}"
+          echo "profile=$(echo "${PROFILE}" | sed 's|\(.*\)[[:space:]](.*)|\1|')" >> "${GITHUB_OUTPUT}"
 
       - name: Parse hardware name
         id: parse_hardware_name
         run: |
-          echo "name=$(echo '${{ inputs.profile }}' | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
+          echo "name=$(echo "${PROFILE}" | sed 's|.*[[:space:]](\(.*\))|\1|')" >> "${GITHUB_OUTPUT}"
 
   setup-instance:
     name: coprocessor-benchmark-gpu/setup-instance
@@ -123,6 +126,12 @@ jobs:
           - os: ubuntu-22.04
             cuda: "12.2"
             gcc: 11
+    env:
+      CUDA_PATH: "/usr/local/cuda-${{ matrix.cuda }}"
+      CUDA_MODULE_LOADER: "EAGER"
+      CC: "/usr/bin/gcc-${{ matrix.gcc }}"
+      CXX: "/usr/bin/g++-${{ matrix.gcc }}"
+      CUDAHOSTCXX: "/usr/bin/g++-${{ matrix.gcc }}"
 
     steps:
       - name: Install git LFS
@@ -145,14 +154,19 @@ jobs:
         uses: ./.github/actions/gpu_setup
         with:
           cuda-version: ${{ matrix.cuda }}
-          gcc-version: ${{ matrix.gcc }}
           github-instance: ${{ env.SECRETS_AVAILABLE == 'false' }}
+
+      - name: Export CUDA variables
+        shell: bash
+        run: |
+          echo "PATH=$PATH:${CUDA_PATH}/bin" >> "${GITHUB_PATH}"
+          echo "LD_LIBRARY_PATH=${CUDA_PATH}/lib64:${LD_LIBRARY_PATH}" >> "${GITHUB_ENV}"
 
       - name: Get benchmark details
         run: |
           {
             echo "BENCH_DATE=$(date --iso-8601=seconds)";
-            echo "COMMIT_DATE=$(git --no-pager show -s --format=%cd --date=iso8601-strict ${{ github.sha }})";
+            echo "COMMIT_DATE=$(git --no-pager show -s --format=%cd --date=iso8601-strict "${GITHUB_SHA}")";
             echo "COMMIT_HASH=$(git rev-parse HEAD)";
           } >> "${GITHUB_ENV}"
 
@@ -191,6 +205,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
       - name: Init database
         run: make init_db
         working-directory: coprocessor/fhevm-engine/tfhe-worker
@@ -210,22 +231,38 @@ jobs:
 
       - name: Run benchmarks on GPU
         run: |
-          BENCHMARK_BATCH_SIZE="${{ inputs.batch_size }}" FHEVM_DF_SCHEDULE="${{ inputs.scheduling_policy }}" BENCHMARK_TYPE="${{ inputs.benchmark_type }}" OPTIMIZATION_TARGET="${{ inputs.optimization_target }}" make -e "benchmark_${{ inputs.benchmarks }}_gpu"
+          BENCHMARK_BATCH_SIZE="${BATCH_SIZE}" FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" BENCHMARK_TYPE="${BENCHMARK_TYPE}" OPTIMIZATION_TARGET="${OPTIMIZATION_TARGET}" make -e "benchmark_${BENCHMARKS}_gpu"
         working-directory: coprocessor/fhevm-engine/tfhe-worker
+        env:
+          BATCH_SIZE: ${{ inputs.batch_size }}
+          SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
+          BENCHMARKS: ${{ inputs.benchmarks }}
+          BENCHMARK_TYPE: ${{ inputs.benchmark_type }}
+          OPTIMIZATION_TARGET: ${{ inputs.optimization_target }}
 
       - name: Parse results
         run: |
-          python3 ./ci/benchmark_parser.py coprocessor/fhevm-engine/target/criterion ${{ env.RESULTS_FILENAME }} \
+          python3 ./ci/benchmark_parser.py coprocessor/fhevm-engine/target/criterion "${RESULTS_FILENAME}" \
           --database coprocessor \
-          --hardware "${{ needs.parse-inputs.outputs.hardware_name }}" \
+          --hardware "${HW_NAME}" \
           --backend gpu \
-          --project-version "${{ env.COMMIT_HASH }}" \
-          --branch ${{ github.ref_name }} \
-          --commit-date "${{ env.COMMIT_DATE }}" \
-          --bench-date "${{ env.BENCH_DATE }}" \
+          --project-version "${COMMIT_HASH}" \
+          --branch "${GH_REF_NAME}" \
+          --commit-date "${COMMIT_DATE}" \
+          --bench-date "${BENCH_DATE}" \
           --walk-subdirs \
           --crate "coprocessor/fhevm-engine/tfhe-worker" \
-          --name-suffix "operation_batch_size_${{ inputs.batch_size }}-schedule_${{ inputs.scheduling_policy }}-optimization_target_${{ inputs.optimization_target }}"
+          --name-suffix "operation_batch_size_${BATCH_SIZE}-schedule_${SCHEDULING_POLICY}-optimization_target_${OPTIMIZATION_TARGET}"
+        env:
+          RESULTS_FILENAME: ${{ env.results_filename }}
+          HW_NAME: ${{ needs.parse-inputs.outputs.hardware_name }}
+          COMMIT_HASH: ${{ env.COMMIT_HASH }}
+          GH_REF_NAME: ${{ github.ref_name }}
+          COMMIT_DATE: ${{ env.COMMIT_DATE }}
+          BENCH_DATE: ${{ env.BENCH_DATE }}
+          BATCH_SIZE: ${{ inputs.batch_size }}
+          SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
+          OPTIMIZATION_TARGET: ${{ inputs.optimization_target }}
 
       - name: Upload parsed results artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
@@ -244,8 +281,12 @@ jobs:
       - name: Send data to Slab
         shell: bash
         run: |
-          python3 slab/scripts/data_sender.py ${{ env.RESULTS_FILENAME }} "${{ secrets.JOB_SECRET }}" \
-          --slab-url "${{ secrets.SLAB_URL }}"
+          python3 slab/scripts/data_sender.py "${RESULTS_FILENAME}" "${JOB_SECRET}" \
+          --slab-url "${SLAB_URL}"
+        env:
+          JOB_SECRET: ${{ secrets.JOB_SECRET }}
+          RESULTS_FILENAME: ${{ env.results_filename }}
+          SLAB_URL: ${{ secrets.SLAB_URL }}
 
   teardown-instance:
     name: coprocessor-benchmark-gpu/teardown

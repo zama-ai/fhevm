@@ -1123,7 +1123,7 @@ pub fn perform_fhe_operation_impl(
                     SupportedFheCiphertexts::FheBytes64(b),
                 ) => Ok(SupportedFheCiphertexts::FheBytes64(a & b)),
                 (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
-                    Ok(SupportedFheCiphertexts::FheBool(a & (to_be_u4_bit(b) > 0)))
+                    Ok(SupportedFheCiphertexts::FheBool(a & arr_non_zero(b)))
                 }
                 (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint4(a & to_be_u4_bit(b)))
@@ -1211,7 +1211,7 @@ pub fn perform_fhe_operation_impl(
                     SupportedFheCiphertexts::FheBytes256(b),
                 ) => Ok(SupportedFheCiphertexts::FheBytes256(a | b)),
                 (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
-                    Ok(SupportedFheCiphertexts::FheBool(a | (to_be_u4_bit(b) > 0)))
+                    Ok(SupportedFheCiphertexts::FheBool(a | arr_non_zero(b)))
                 }
                 (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint4(a | to_be_u4_bit(b)))
@@ -1299,7 +1299,7 @@ pub fn perform_fhe_operation_impl(
                     SupportedFheCiphertexts::FheBytes256(b),
                 ) => Ok(SupportedFheCiphertexts::FheBytes256(a ^ b)),
                 (SupportedFheCiphertexts::FheBool(a), SupportedFheCiphertexts::Scalar(b)) => {
-                    Ok(SupportedFheCiphertexts::FheBool(a ^ (to_be_u4_bit(b) > 0)))
+                    Ok(SupportedFheCiphertexts::FheBool(a ^ arr_non_zero(b)))
                 }
                 (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => {
                     Ok(SupportedFheCiphertexts::FheUint4(a ^ to_be_u4_bit(b)))
@@ -1556,7 +1556,7 @@ pub fn perform_fhe_operation_impl(
                     SupportedFheCiphertexts::FheBytes256(b),
                 ) => Ok(SupportedFheCiphertexts::FheBytes256(a.rotate_left(b))),
                 (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => Ok(
-                    SupportedFheCiphertexts::FheUint4(a.rotate_left(to_be_u8_bit(b))),
+                    SupportedFheCiphertexts::FheUint4(a.rotate_left(to_be_u4_bit(b))),
                 ),
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => Ok(
                     SupportedFheCiphertexts::FheUint8(a.rotate_left(to_be_u8_bit(b))),
@@ -1642,7 +1642,7 @@ pub fn perform_fhe_operation_impl(
                     SupportedFheCiphertexts::FheBytes256(b),
                 ) => Ok(SupportedFheCiphertexts::FheBytes256(a.rotate_right(b))),
                 (SupportedFheCiphertexts::FheUint4(a), SupportedFheCiphertexts::Scalar(b)) => Ok(
-                    SupportedFheCiphertexts::FheUint4(a.rotate_right(to_be_u8_bit(b))),
+                    SupportedFheCiphertexts::FheUint4(a.rotate_right(to_be_u4_bit(b))),
                 ),
                 (SupportedFheCiphertexts::FheUint8(a), SupportedFheCiphertexts::Scalar(b)) => Ok(
                     SupportedFheCiphertexts::FheUint8(a.rotate_right(to_be_u8_bit(b))),
@@ -3157,20 +3157,29 @@ fn to_constant_size_array<const SIZE: usize>(inp: &[u8]) -> [u8; SIZE] {
     res
 }
 
-macro_rules! to_be_function {
-    ( $x:ty ) => {
-        paste::paste! {
-            pub fn [<to_be_ $x _bit>](inp: &[u8]) -> $x {
-                $x::from_be_bytes(to_constant_size_array::<{ std::mem::size_of::<$x>() }>(inp))
-            }
-        }
-    };
+pub fn to_be_u16_bit(inp: &[u8]) -> u16 {
+    u16::from_be_bytes(to_constant_size_array::<{ std::mem::size_of::<u16>() }>(
+        inp,
+    ))
 }
 
-to_be_function!(u16);
-to_be_function!(u32);
-to_be_function!(u64);
-to_be_function!(u128);
+pub fn to_be_u32_bit(inp: &[u8]) -> u32 {
+    u32::from_be_bytes(to_constant_size_array::<{ std::mem::size_of::<u32>() }>(
+        inp,
+    ))
+}
+
+pub fn to_be_u64_bit(inp: &[u8]) -> u64 {
+    u64::from_be_bytes(to_constant_size_array::<{ std::mem::size_of::<u64>() }>(
+        inp,
+    ))
+}
+
+pub fn to_be_u128_bit(inp: &[u8]) -> u128 {
+    u128::from_be_bytes(to_constant_size_array::<{ std::mem::size_of::<u128>() }>(
+        inp,
+    ))
+}
 
 // return U256 because that's supported from tfhe-rs and will need cast later
 pub fn to_be_u160_bit(inp: &[u8]) -> U256 {

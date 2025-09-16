@@ -1,13 +1,16 @@
+use std::time::Duration;
+
 use crate::{
     conn::WalletGatewayProvider,
     tests::setup::{CustomTestWriter, DbInstance, KmsInstance, S3Instance, gw::GatewayInstance},
 };
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
-    gatewayconfig::GatewayConfig::GatewayConfigInstance,
-    kmsmanagement::KmsManagement::KmsManagementInstance,
+    gateway_config::GatewayConfig::GatewayConfigInstance,
+    kms_management::KmsManagement::KmsManagementInstance,
 };
 use sqlx::{Pool, Postgres};
+use testcontainers::{ContainerAsync, GenericImage};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tracing_subscriber::EnvFilter;
 
@@ -21,7 +24,11 @@ pub struct TestInstance {
     kms: Option<KmsInstance>,
 
     /// Receiver channel to read/check log printed via the `tracing` crate.
-    log_rx: UnboundedReceiver<String>,
+    log_rx: UnboundedReceiver<Vec<u8>>,
+}
+
+fn logs_contain(logs: &[u8], bytes: &[u8]) -> bool {
+    logs.windows(bytes.len()).any(|b| b == bytes)
 }
 
 impl TestInstance {
@@ -31,15 +38,29 @@ impl TestInstance {
 
     /// Consumes the logs of the `log_rx` channel until it finds the expected one.
     pub async fn wait_for_log(&mut self, log: &str) {
-        let mut logs_received = String::new();
-        while !logs_received.contains(log) {
+        let mut logs_received = Vec::<u8>::new();
+        while !logs_contain(&logs_received, log.as_bytes()) {
             let next_log = self.log_rx.recv().await.expect("log channel closed");
-            logs_received.push_str(&next_log);
+            let mut split_log = next_log.split(|b| *b == b'\n');
+            let mut line_end = split_log.next().unwrap().to_vec();
+            logs_received.append(&mut line_end);
+
+            if logs_contain(&logs_received, log.as_bytes()) {
+                break;
+            }
+
+            if let Some(next_line) = split_log.next() {
+                logs_received = next_line.to_vec();
+            }
         }
     }
 
     pub fn db(&self) -> &Pool<Postgres> {
         &self.db.as_ref().expect("DB is not setup").db
+    }
+
+    pub fn db_container(&self) -> &ContainerAsync<GenericImage> {
+        &self.db.as_ref().expect("DB is not setup").db_container
     }
 
     pub fn db_url(&self) -> &str {
@@ -58,15 +79,19 @@ impl TestInstance {
         &self.gateway().provider
     }
 
-    pub fn decryption_contract(&self) -> &DecryptionInstance<(), WalletGatewayProvider> {
+    pub fn anvil_container(&self) -> &ContainerAsync<GenericImage> {
+        &self.gateway().anvil
+    }
+
+    pub fn decryption_contract(&self) -> &DecryptionInstance<WalletGatewayProvider> {
         &self.gateway().decryption_contract
     }
 
-    pub fn gateway_config_contract(&self) -> &GatewayConfigInstance<(), WalletGatewayProvider> {
+    pub fn gateway_config_contract(&self) -> &GatewayConfigInstance<WalletGatewayProvider> {
         &self.gateway().gateway_config_contract
     }
 
-    pub fn kms_management_contract(&self) -> &KmsManagementInstance<(), WalletGatewayProvider> {
+    pub fn kms_management_contract(&self) -> &KmsManagementInstance<WalletGatewayProvider> {
         &self.gateway().kms_management_contract
     }
 
@@ -80,8 +105,16 @@ impl TestInstance {
         &self.s3.as_ref().expect("S3 has not been setup").url
     }
 
+    pub fn anvil_block_time(&self) -> Duration {
+        self.gateway().anvil_block_time()
+    }
+
     pub fn anvil_ws_endpoint(&self) -> String {
         self.gateway().anvil_ws_endpoint()
+    }
+
+    pub fn kms_container(&self) -> &ContainerAsync<GenericImage> {
+        &self.kms.as_ref().expect("KMS has not been setup").container
     }
 }
 
@@ -91,7 +124,7 @@ pub struct TestInstanceBuilder {
     gateway: Option<GatewayInstance>,
     s3: Option<S3Instance>,
     kms: Option<KmsInstance>,
-    log_rx: UnboundedReceiver<String>,
+    log_rx: UnboundedReceiver<Vec<u8>>,
 }
 
 impl Default for TestInstanceBuilder {
@@ -166,5 +199,17 @@ impl TestInstanceBuilder {
         let db = DbInstance::setup().await?;
         let gateway = GatewayInstance::setup().await?;
         Ok(builder.with_db(db).with_gateway(gateway).build())
+    }
+
+    /// Full test setup.
+    pub async fn full() -> anyhow::Result<TestInstance> {
+        let s3_instance = S3Instance::setup().await?;
+        let kms_instance = KmsInstance::setup(&s3_instance.url).await?;
+        let test_instance_builder = TestInstanceBuilder::default()
+            .with_db(DbInstance::setup().await?)
+            .with_gateway(GatewayInstance::setup().await?)
+            .with_s3(s3_instance)
+            .with_kms(kms_instance);
+        Ok(test_instance_builder.build())
     }
 }

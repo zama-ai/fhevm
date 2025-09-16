@@ -17,6 +17,8 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
+    /// The timeout for polling the database for responses.
+    pub database_polling_timeout: Duration,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
     /// The Chain ID of the Gateway.
@@ -33,6 +35,8 @@ pub struct Config {
     pub tx_retries: u8,
     /// The interval between transaction retries.
     pub tx_retry_interval: Duration,
+    /// Enable tracing of reverted transactions.
+    pub trace_reverted_tx: bool,
     /// The batch size for KMS Core response processing.
     pub responses_batch_size: u8,
     /// The gas multiplier percentage after each transaction attempt.
@@ -91,12 +95,15 @@ impl Config {
             ));
         }
 
+        let database_polling_timeout =
+            Duration::from_secs(raw_config.database_polling_timeout_secs);
         let tx_retry_interval = Duration::from_millis(raw_config.tx_retry_interval_ms);
         let healthcheck_timeout = Duration::from_secs(raw_config.healthcheck_timeout_secs);
 
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
+            database_polling_timeout,
             gateway_url: raw_config.gateway_url,
             chain_id: raw_config.chain_id,
             decryption_contract,
@@ -105,6 +112,7 @@ impl Config {
             wallet,
             tx_retries: raw_config.tx_retries,
             tx_retry_interval,
+            trace_reverted_tx: raw_config.trace_reverted_tx,
             responses_batch_size: raw_config.responses_batch_size,
             gas_multiplier_percent: raw_config.gas_multiplier_percent,
             task_limit: raw_config.task_limit,
@@ -159,6 +167,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE");
             env::remove_var("KMS_CONNECTOR_TX_RETRIES");
             env::remove_var("KMS_CONNECTOR_TX_RETRY_INTERVAL_MS");
+            env::remove_var("KMS_CONNECTOR_TRACE_REVERTED_TX");
             env::remove_var("KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT");
         }
     }
@@ -244,6 +253,7 @@ mod tests {
             env::set_var("KMS_CONNECTOR_RESPONSES_BATCH_SIZE", "20");
             env::set_var("KMS_CONNECTOR_TX_RETRIES", "5");
             env::set_var("KMS_CONNECTOR_TX_RETRY_INTERVAL_MS", "200");
+            env::set_var("KMS_CONNECTOR_TRACE_REVERTED_TX", "false");
             env::set_var("KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT", "180");
         }
 
@@ -265,6 +275,7 @@ mod tests {
         assert_eq!(config.responses_batch_size, 20);
         assert_eq!(config.tx_retries, 5);
         assert_eq!(config.tx_retry_interval, Duration::from_millis(200));
+        assert!(!config.trace_reverted_tx);
         assert_eq!(config.gas_multiplier_percent, 180);
 
         cleanup_env_vars();

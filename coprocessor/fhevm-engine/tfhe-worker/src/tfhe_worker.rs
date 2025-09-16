@@ -1,5 +1,6 @@
 use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
+use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
@@ -14,7 +15,7 @@ use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
@@ -55,10 +56,11 @@ lazy_static! {
 
 pub async fn run_tfhe_worker(
     args: crate::daemon_cli::Args,
+    health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     loop {
         // here we log the errors and make sure we retry
-        if let Err(cycle_error) = tfhe_worker_cycle(&args).await {
+        if let Err(cycle_error) = tfhe_worker_cycle(&args, health_check.clone()).await {
             WORKER_ERRORS_COUNTER.inc();
             error!(target: "tfhe_worker", { error = cycle_error }, "Error in background worker, retrying shortly");
         }
@@ -68,6 +70,7 @@ pub async fn run_tfhe_worker(
 
 async fn tfhe_worker_cycle(
     args: &crate::daemon_cli::Args,
+    health_check: crate::health_check::HealthCheck,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tracer = opentelemetry::global::tracer("tfhe_worker");
 
@@ -129,63 +132,23 @@ WITH selected_computations AS (
       ah.is_computed
     FROM computations c
     LEFT JOIN allowed_handles ah
-      ON c.output_handle = ah.handle
+       ON c.output_handle = ah.handle
+      AND c.tenant_id = ah.tenant_id
     WHERE c.transaction_id IN (
       -- Select transaction IDs with uncomputed handles
       -- out of the dependence buckets
-      SELECT transaction_id 
+      SELECT DISTINCT transaction_id 
       FROM computations
-      WHERE is_completed = FALSE
-        AND is_error = FALSE
-        AND dependence_chain_id IN (
-          WITH dep_chains AS (
-            -- Find oldest uncomputed allowed handles and
-            -- get their dependence buckets
-            SELECT dependence_chain_id
-            FROM computations
-            WHERE (tenant_id, output_handle) IN (
-              SELECT tenant_id, handle
-              FROM allowed_handles
-              WHERE is_computed = FALSE
-              ORDER BY allowed_at
-              LIMIT $2
-            )
-          )
-          SELECT DISTINCT dependence_chain_id FROM dep_chains
-        )
-      -- In case an ACL event is missed and we get a late allow event
-      UNION
-      (
-        SELECT transaction_id
-        FROM computations
-        WHERE (tenant_id, output_handle) IN (
+      WHERE is_error = FALSE
+        AND (tenant_id, output_handle) IN (
           SELECT tenant_id, handle
           FROM allowed_handles
           WHERE is_computed = FALSE
-          ORDER BY allowed_at
-          LIMIT $2
+          ORDER BY schedule_order
+          LIMIT $1
         )
-      )
-      LIMIT $1
+      LIMIT $2
     )
-  )
-  -- For legacy reasons (or whenever no transaction ID is
-  -- available) we need to also select unsorted
-  -- computations
-  UNION ALL
-  (
-    SELECT 
-      tenant_id, 
-      output_handle,
-      transaction_id,
-      NULL AS handle, 
-      NULL AS is_computed
-    FROM computations 
-    WHERE is_completed = FALSE
-      AND is_error = FALSE
-      AND transaction_id IS NULL  
-    ORDER BY schedule_order
-    LIMIT $1
   )
 )
 -- Acquire all computations from this transaction set
@@ -197,27 +160,34 @@ SELECT
   c.is_scalar,
   sc.handle IS NOT NULL AS is_allowed, 
   c.dependence_chain_id,
-  COALESCE(c.transaction_id) AS transaction_id, 
-  c.is_completed, 
-  sc.is_computed
+  COALESCE(sc.is_computed) AS is_computed,
+  c.transaction_id
 FROM computations c
 JOIN selected_computations sc
   ON c.tenant_id = sc.tenant_id
   AND c.output_handle = sc.output_handle
-  AND (c.transaction_id = sc.transaction_id OR c.transaction_id IS NULL)
+  AND c.transaction_id = sc.transaction_id
 FOR UPDATE SKIP LOCKED            ",
             args.work_items_batch_size as i32,
             args.dependence_chains_per_batch as i32,
         )
         .fetch_all(trx.as_mut())
-        .await?;
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", { error = %err }, "error while querying work items");
+            err
+        })?;
+
         s.set_attribute(KeyValue::new("count", the_work.len() as i64));
         s.end();
+        health_check.update_db_access();
         if the_work.is_empty() {
+            health_check.update_activity();
             continue;
         }
         WORK_ITEMS_FOUND_COUNTER.inc_by(the_work.len() as u64);
         info!(target: "tfhe_worker", { count = the_work.len() }, "Processing work items");
+
         // Make sure we process each tenant independently to avoid
         // setting different keys from different tenants in the worker
         // threads
@@ -230,15 +200,37 @@ FOR UPDATE SKIP LOCKED            ",
         let key_cache = tenant_key_cache.read().await;
         // Clear unneeded work items
         for (_, work) in work_by_tenant.iter_mut() {
-            let mut work_to_remove = vec![];
+            let mut work_to_remove: BTreeSet<usize> = BTreeSet::new();
+            let mut transactions: HashMap<&Handle, (bool, Vec<usize>)> = HashMap::new();
             for (idx, w) in work.iter_mut().enumerate() {
+                transactions
+                    .entry(&w.transaction_id)
+                    .and_modify(|(_needed, ops)| ops.push(idx))
+                    .or_insert((false, vec![idx]));
                 // If this handle is already marked as computed in
                 // allowed_handles, we don't need to re-compute it
                 // (nor any other intermediate handles it depends on,
                 // which will be marked as unneeded during compute
                 // graph finalization).  Remove it from the work set.
                 if w.is_computed.unwrap_or(false) {
-                    work_to_remove.push(idx);
+                    work_to_remove.insert(idx);
+                } else if w.is_allowed.unwrap_or(false) {
+                    // If for a given transaction we never set the
+                    // needed flag, we'll remove all of its operations
+                    // from the work set. This happens if there is no
+                    // computable allowed handle present, in which
+                    // case no useful work can be done.
+                    transactions
+                        .entry(&w.transaction_id)
+                        .and_modify(|(needed, _ops)| *needed = true)
+                        .or_insert((true, vec![idx]));
+                }
+            }
+            for (_, (needed, ops)) in transactions {
+                if !needed {
+                    ops.iter().for_each(|idx| {
+                        work_to_remove.insert(*idx);
+                    });
                 }
             }
             for idx in work_to_remove.iter().rev() {
@@ -253,16 +245,6 @@ FOR UPDATE SKIP LOCKED            ",
             for w in work.iter_mut() {
                 for dh in &w.dependencies {
                     let _ = cts_to_query.insert(dh);
-                }
-                // If this operation is not part of a labelled
-                // transaction, we need to treat it as if its output
-                // is allowed (meaning that we will consider it needed
-                // and will save its output in the DB) as otherwise we
-                // cannot reasonably keep track of all needed
-                // operations within the set of computations that are
-                // not part of a transaction
-                if w.transaction_id.is_none() {
-                    w.is_allowed = Some(true);
                 }
             }
         }
@@ -294,7 +276,12 @@ FOR UPDATE SKIP LOCKED            ",
             &cts_to_query
         )
         .fetch_all(trx.as_mut())
-        .await?;
+        .await
+        .map_err(|err| {
+            error!(target: "tfhe_worker", { error = %err }, "error while querying ciphertexts");
+            err
+        })?;
+
         s.end();
         // index ciphertexts in hashmap
         let mut ciphertext_map: HashMap<(i32, &[u8]), _> =
@@ -358,9 +345,13 @@ FOR UPDATE SKIP LOCKED            ",
                     .expect("only valid fhe ops must have been put in db");
                 let mut input_ciphertexts: Vec<DFGTaskInput> =
                     Vec::with_capacity(w.dependencies.len());
+                let mut this_comp_inputs: Vec<Vec<u8>> = Vec::with_capacity(w.dependencies.len());
+                let mut is_scalar_op_vec: Vec<bool> = Vec::with_capacity(w.dependencies.len());
                 for (idx, dh) in w.dependencies.iter().enumerate() {
                     let is_operand_scalar =
                         w.is_scalar && idx == 1 || fhe_op.does_have_more_than_one_scalar();
+                    is_scalar_op_vec.push(is_operand_scalar);
+                    this_comp_inputs.push(dh.clone());
                     if is_operand_scalar {
                         input_ciphertexts.push(DFGTaskInput::Value(
                             SupportedFheCiphertexts::Scalar(dh.clone()),
@@ -379,6 +370,13 @@ FOR UPDATE SKIP LOCKED            ",
                         continue 'work_items;
                     }
                 }
+
+                check_fhe_operand_types(
+                    w.fhe_operation.into(),
+                    &this_comp_inputs,
+                    &is_scalar_op_vec,
+                )
+                .map_err(CoprocessorError::FhevmError)?;
 
                 let n = graph.add_node(
                     w.output_handle.clone(),
@@ -444,6 +442,7 @@ FOR UPDATE SKIP LOCKED            ",
                     keys.sks.clone(),
                     #[cfg(feature = "gpu")]
                     keys.gpu_sks.clone(),
+                    health_check.activity_heartbeat.clone(),
                 );
                 sched.schedule().await?;
             }
@@ -462,30 +461,40 @@ FOR UPDATE SKIP LOCKED            ",
                 );
                 let _ = query!(
                     "
-                            UPDATE computations
-                            SET schedule_order = CURRENT_TIMESTAMP
+                            UPDATE allowed_handles
+                            SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
+                                uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
                             WHERE tenant_id = $1
-                            AND output_handle = ANY($2::BYTEA[])
+                            AND handle = ANY($2::BYTEA[])
                         ",
                     *tenant_id,
                     &uncomputable.into_values().collect::<Vec<_>>()
                 )
                 .execute(trx.as_mut())
-                .await?;
+                .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while marking computations as unschedulable");
+                    err
+                })?;
                 s.end();
             }
             // Traverse computations that have been scheduled and
             // upload their results/errors
-            let mut handles_to_udate = vec![];
-            let mut intermediate_handles_to_udate = vec![];
+            let mut handles_to_update = vec![];
+            let mut intermediate_handles_to_update = vec![];
             let mut cts_to_insert = vec![];
             for result in graph_results.iter_mut() {
                 let idx = result.work_index;
                 let result = &mut result.result;
 
+                #[allow(clippy::type_complexity)]
                 let finished_work_unit: Result<
                     _,
-                    (Box<dyn std::error::Error + Send + Sync>, i32, Vec<u8>),
+                    (
+                        Box<dyn std::error::Error + Send + Sync>,
+                        i32,
+                        Vec<u8>,
+                        Vec<u8>,
+                    ),
                 > = result
                     .as_mut()
                     .map(|rok| {
@@ -506,6 +515,7 @@ FOR UPDATE SKIP LOCKED            ",
                                 CoprocessorError::FhevmError(swap_val).into(),
                                 work[idx].tenant_id,
                                 work[idx].output_handle.clone(),
+                                work[idx].transaction_id.clone(),
                             )
                         } else {
                             (
@@ -517,6 +527,7 @@ FOR UPDATE SKIP LOCKED            ",
                                 .into(),
                                 work[idx].tenant_id,
                                 work[idx].output_handle.clone(),
+                                work[idx].transaction_id.clone(),
                             )
                         }
                     });
@@ -529,7 +540,7 @@ FOR UPDATE SKIP LOCKED            ",
                                 (db_bytes, (current_ciphertext_version(), *db_type)),
                             ),
                         ));
-                        handles_to_udate.push(w.output_handle.clone());
+                        handles_to_update.push((w.output_handle.clone(), w.transaction_id.clone()));
                         // As we've completed useful computation on an
                         // allowed handle, we poll for work again
                         // without waiting for a notification.
@@ -539,15 +550,30 @@ FOR UPDATE SKIP LOCKED            ",
                     Ok((w, None)) => {
                         // Non allowed handles are still marked as
                         // complete but we don't upload the CT
-                        intermediate_handles_to_udate.push(w.output_handle.clone());
+                        intermediate_handles_to_update
+                            .push((w.output_handle.clone(), w.transaction_id.clone()));
                         WORK_ITEMS_PROCESSED_COUNTER.inc();
                     }
-                    Err((err, tenant_id, output_handle)) => {
+                    Err((err, tenant_id, output_handle, transaction_id)) => {
+                        // Downgrade SchedulerError to warning as the
+                        // error is not about the operations themselves.
+                        // Do not set the error flag in the DB.
+                        if let Some(cerr) = err.downcast_ref::<CoprocessorError>() {
+                            if matches!(cerr, CoprocessorError::SchedulerError(_)) {
+                                warn!(target: "tfhe_worker",
+                                                  { tenant_id = tenant_id, error = err,
+                                output_handle = format!("0x{}", hex::encode(&output_handle)) },
+                                                "scheduler encountered an error while processing work item"
+                                            );
+                                continue;
+                            }
+                        }
                         WORKER_ERRORS_COUNTER.inc();
                         error!(target: "tfhe_worker",
-                            { tenant_id = tenant_id, error = err, output_handle = format!("0x{}", hex::encode(&output_handle)) },
-                            "error while processing work item"
-                        );
+                                      { tenant_id = tenant_id, error = err,
+                        output_handle = format!("0x{}", hex::encode(&output_handle)) },
+                                   "error while processing work item"
+                               );
                         let mut s =
                             tracer.start_with_context("set_computation_error_in_db", &loop_ctx);
                         s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
@@ -559,16 +585,19 @@ FOR UPDATE SKIP LOCKED            ",
                         s.set_status(opentelemetry::trace::Status::Error {
                             description: err_string.clone().into(),
                         });
+
                         let _ = query!(
                             "
                             UPDATE computations
                             SET is_error = true, error_message = $1
                             WHERE tenant_id = $2
                             AND output_handle = $3
+                            AND transaction_id = $4
                         ",
                             err_string,
                             tenant_id,
-                            output_handle
+                            output_handle,
+                            transaction_id
                         )
                         .execute(trx.as_mut())
                         .await?;
@@ -597,7 +626,10 @@ FOR UPDATE SKIP LOCKED            ",
                     ",
 		&tenant_ids, &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types)
 			.execute(trx.as_mut())
-			.await?;
+			.await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while inserting new ciphertexts");
+                    err
+                })?;
             // Notify all workers that new ciphertext is inserted
             // For now, it's only the SnS workers that are listening for these events
             let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
@@ -608,62 +640,93 @@ FOR UPDATE SKIP LOCKED            ",
             let mut s = tracer.start_with_context("update_computation", &loop_ctx);
             s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
             s.set_attributes(
-                handles_to_udate
+                handles_to_update
                     .iter()
-                    .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+                    .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
             );
+
+            let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) =
+                handles_to_update.iter().cloned().unzip();
+
             let _ = query!(
                 "
                 UPDATE computations
                 SET is_completed = true, completed_at = CURRENT_TIMESTAMP
                 WHERE tenant_id = $1
-                AND output_handle = ANY($2::BYTEA[])
-            ",
+                AND (output_handle, transaction_id) IN (
+                    SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
+                )
+                ",
                 *tenant_id,
-                &handles_to_udate
+                &handles_vec,
+                &txn_ids_vec
             )
             .execute(trx.as_mut())
-            .await?;
+            .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while updating computations as completed");
+                    err
+                })?;
+
             s.end();
             let mut s = tracer.start_with_context("update_allowed_handles_is_computed", &loop_ctx);
             s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
             s.set_attributes(
-                handles_to_udate
+                handles_to_update
                     .iter()
-                    .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+                    .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
             );
             let _ = query!(
                 "
-                UPDATE allowed_handles
-                SET is_computed = TRUE
-                WHERE tenant_id = $1
-                AND handle = ANY($2::BYTEA[])
-            ",
+                    UPDATE allowed_handles
+                    SET is_computed = TRUE
+                    WHERE tenant_id = $1
+                    AND handle = ANY($2::BYTEA[])
+                    ",
                 *tenant_id,
-                &handles_to_udate
+                &handles_to_update
+                    .iter()
+                    .map(|(handle, _)| handle.clone())
+                    .collect::<Vec<_>>()
             )
             .execute(trx.as_mut())
-            .await?;
+            .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while marking allowed handles as computed");
+                    err
+                })?;
+
             s.end();
             let mut s = tracer.start_with_context("update_intermediate_computation", &loop_ctx);
             s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
             s.set_attributes(
-                intermediate_handles_to_udate
+                intermediate_handles_to_update
                     .iter()
-                    .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+                    .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
             );
+
             let _ = query!(
                 "
                 UPDATE computations
                 SET is_completed = true, completed_at = CURRENT_TIMESTAMP
                 WHERE tenant_id = $1
-                AND output_handle = ANY($2::BYTEA[])
+                AND (output_handle, transaction_id) IN (
+                    SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
+                )
             ",
                 *tenant_id,
-                &intermediate_handles_to_udate
+                &intermediate_handles_to_update
+                    .iter()
+                    .map(|(handle, _)| handle.clone())
+                    .collect::<Vec<_>>(),
+                &intermediate_handles_to_update
+                    .iter()
+                    .map(|(_, txn_id)| txn_id.clone())
+                    .collect::<Vec<_>>()
             )
             .execute(trx.as_mut())
-            .await?;
+            .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while updating intermediate computations as completed");
+                    err
+                })?;
             s.end();
 
             s_outer.end();

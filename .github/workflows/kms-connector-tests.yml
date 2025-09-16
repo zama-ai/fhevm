@@ -10,17 +10,18 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-permissions:
-  actions: 'read'
-  contents: 'read'
-  packages: 'read'
-  pull-requests: 'read'
+permissions: {}
 
 jobs:
   # Initial job that determines which components have changed
   # Used by subsequent jobs to decide whether they need to run
   check-changes:
     name: kms-connector-tests/check-changes
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      packages: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       # Each output indicates if files in a specific component were modified
@@ -47,6 +48,11 @@ jobs:
     name: kms-connector-tests/start-runner
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-connector == 'true' }}
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      packages: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
@@ -66,6 +72,11 @@ jobs:
     name: kms-connector-tests/test-connector (bpr)
     needs: start-runner
     timeout-minutes: 50
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      packages: 'read'
+      pull-requests: 'read'
     runs-on: ${{ needs.start-runner.outputs.label }}
     defaults:
       run:
@@ -90,7 +101,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_READ_TOKEN }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@b3b07ba8b418998c39fb20f53e8b695cdcc8de1b
@@ -126,6 +137,11 @@ jobs:
     needs:
       - start-runner
       - test-connector
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      packages: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     if: ${{ always() && needs.start-runner.result != 'skipped' }} # required to stop the runner even if the error happened in the previous jobs, but only if start-runner was not skipped
     steps:

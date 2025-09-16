@@ -1,0 +1,36 @@
+[
+    {
+        "transaction": "ERC20Transfer",
+        "variant": "NoCMUX",
+        "kind": "Rate",
+        "inputs": "NewInputs",
+        "is_dependent": "Independent",
+        "contract_address": "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08",
+        "user_address": "0xa0534e99d86F081E8D3868A8C4732C8f65dfdB07",
+        "scenario": [
+            [
+                1.1,
+                2
+            ],
+            [
+                1.0,
+                1
+            ]
+        ]
+    },
+    {
+        "transaction": "ADDChain",
+        "variant": "NA",
+        "kind": "Count",
+        "inputs": "NewInputs",
+        "is_dependent": "Dependent",
+        "contract_address": "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB09",
+        "user_address": "0xa0534e99d86F081E8D3868A8C4732C8f65dfdB07",
+        "scenario": [
+            [
+                1.1,
+                2
+            ]
+        ]
+    }
+]

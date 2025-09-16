@@ -14,9 +14,9 @@ use connector_utils::{
     tasks::spawn_with_limit,
     types::GatewayEvent,
 };
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
-    kmsmanagement::KmsManagement::{self, KmsManagementInstance},
+    kms_management::KmsManagement::{self, KmsManagementInstance},
 };
 use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
@@ -30,10 +30,10 @@ where
     Prov: Provider,
 {
     /// The Gateway's `Decryption` contract instance which is monitored.
-    decryption_contract: DecryptionInstance<(), Prov>,
+    decryption_contract: DecryptionInstance<Prov>,
 
     /// The Gateway's `KmsManagement` contract instance which is monitored.
-    kms_management_contract: KmsManagementInstance<(), Prov>,
+    kms_management_contract: KmsManagementInstance<Prov>,
 
     /// The entity responsible of events publication to some external storage.
     publisher: Publ,
@@ -93,7 +93,7 @@ where
     async fn subscribe_to_events<'a, E>(
         &'a self,
         event_name: &'static str,
-        mut event_filter: Event<(), &'a Prov, E>,
+        mut event_filter: Event<&'a Prov, E>,
         poll_interval: Duration,
     ) where
         E: Into<GatewayEvent> + SolEvent + Send + Sync + 'static,
@@ -221,7 +221,7 @@ where
 
 impl GatewayListener<GatewayProvider, DbEventPublisher> {
     /// Creates a new `GatewayListener` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let publisher = DbEventPublisher::new(db_pool.clone());
 
@@ -246,9 +246,9 @@ mod tests {
         },
     };
     use anyhow::Result;
-    use fhevm_gateway_rust_bindings::{
+    use fhevm_gateway_bindings::{
         decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-        kmsmanagement::KmsManagement::{
+        kms_management::KmsManagement::{
             CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
             PreprocessKskgenRequest,
         },
@@ -370,7 +370,7 @@ mod tests {
     async fn test_setup() -> (Asserter, GatewayListener<MockProvider, MockPublisher>) {
         // Create a mocked `alloy::Provider`
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new().on_mocked_client(asserter.clone());
+        let mock_provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
 
         // Used to mock response of `filter.watch()` operation
         let mocked_eth_get_filter_changes_result = Address::default();

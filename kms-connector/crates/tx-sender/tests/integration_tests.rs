@@ -5,9 +5,14 @@ use alloy::primitives::U256;
 use anyhow::anyhow;
 use common::insert_rand_public_decrypt_response;
 use connector_utils::{
-    tests::setup::{TestInstance, TestInstanceBuilder},
+    config::KmsWallet,
+    conn::connect_to_gateway_with_wallet,
+    tests::setup::{
+        CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, TestInstance, TestInstanceBuilder,
+    },
     types::KmsResponse,
 };
+use fhevm_gateway_bindings::decryption::Decryption::DecryptionInstance;
 use rstest::rstest;
 use std::time::Duration;
 use tokio::task::JoinHandle;
@@ -15,21 +20,27 @@ use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::info;
 use tx_sender::core::{
-    DbKmsResponsePicker, DbKmsResponseRemover, TransactionSender, tx_sender::TransactionSenderInner,
+    Config, DbKmsResponsePicker, DbKmsResponseRemover, TransactionSender,
+    tx_sender::{TransactionSenderInner, TransactionSenderInnerConfig},
 };
 
 #[rstest]
-#[timeout(Duration::from_secs(20))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn test_process_public_decryption_response() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
-    let mut response_stream = test_instance
+    let mut response_filter = test_instance
         .decryption_contract()
         .PublicDecryptionResponse_filter()
         .watch()
-        .await?
-        .into_stream();
+        .await?;
+    response_filter.poller = response_filter
+        .poller
+        .with_poll_interval(Duration::from_millis(500));
+    let mut response_stream = response_filter.into_stream();
+
+    // Wait for 2 anvil blocks before starting the tx-sender, so event listening is fully ready
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
@@ -44,8 +55,8 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
         .await
         .ok_or_else(|| anyhow!("Failed to capture PublicDecryptionResponse"))??;
     match inserted_response {
-        KmsResponse::PublicDecryption { decryption_id, .. } => {
-            assert_eq!(response.decryptionId, decryption_id)
+        KmsResponse::PublicDecryption(r) => {
+            assert_eq!(response.decryptionId, r.decryption_id)
         }
         _ => unreachable!(),
     }
@@ -68,17 +79,22 @@ async fn test_process_public_decryption_response() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(20))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn test_process_user_decryption_response() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
-    let mut response_stream = test_instance
+    let mut response_filter = test_instance
         .decryption_contract()
         .UserDecryptionResponse_filter()
         .watch()
-        .await?
-        .into_stream();
+        .await?;
+    response_filter.poller = response_filter
+        .poller
+        .with_poll_interval(Duration::from_millis(500));
+    let mut response_stream = response_filter.into_stream();
+
+    // Wait for 2 anvil blocks before starting the tx-sender, so event listening is fully ready
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
@@ -93,8 +109,8 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
         .await
         .ok_or_else(|| anyhow!("Failed to capture UserDecryptionResponse"))??;
     match inserted_response {
-        KmsResponse::UserDecryption { decryption_id, .. } => {
-            assert_eq!(response.decryptionId, decryption_id)
+        KmsResponse::UserDecryption(r) => {
+            assert_eq!(response.decryptionId, r.decryption_id)
         }
         _ => unreachable!(),
     }
@@ -117,17 +133,22 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(30))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn stress_test() -> anyhow::Result<()> {
-    let test_instance = TestInstanceBuilder::db_gw_setup().await?;
-    let response_stream = test_instance
+    let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
+    let mut response_filter = test_instance
         .decryption_contract()
         .UserDecryptionResponse_filter()
         .watch()
-        .await?
-        .into_stream();
+        .await?;
+    response_filter.poller = response_filter
+        .poller
+        .with_poll_interval(Duration::from_millis(500));
+    let response_stream = response_filter.into_stream();
+
+    // Wait for 2 anvil blocks before starting the tx-sender, so event listening is fully ready
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     let cancel_token = CancellationToken::new();
     let tx_sender_task = start_test_tx_sender(&test_instance, cancel_token.clone()).await?;
@@ -137,8 +158,8 @@ async fn stress_test() -> anyhow::Result<()> {
     let mut responses_id = Vec::with_capacity(nb_response);
     for _ in 0..nb_response {
         match insert_rand_user_decrypt_response(test_instance.db()).await? {
-            KmsResponse::UserDecryption { decryption_id, .. } => {
-                responses_id.push(decryption_id);
+            KmsResponse::UserDecryption(r) => {
+                responses_id.push(r.decryption_id);
             }
             _ => unreachable!(),
         }
@@ -157,6 +178,11 @@ async fn stress_test() -> anyhow::Result<()> {
     assert_eq!(responses_id, anvil_responses_id);
     info!("Responses successfully sent to Anvil!");
 
+    for _ in 0..nb_response {
+        test_instance
+            .wait_for_log("Successfully removed response from DB!")
+            .await;
+    }
     info!("Checking responses have been removed from DB...");
     let count: i64 =
         sqlx::query_scalar("SELECT COUNT(decryption_id) FROM user_decryption_responses")
@@ -173,15 +199,24 @@ async fn start_test_tx_sender(
     test_instance: &TestInstance,
     cancel_token: CancellationToken,
 ) -> anyhow::Result<JoinHandle<()>> {
-    let response_picker = DbKmsResponsePicker::connect(test_instance.db().clone(), 10).await?;
+    let response_picker =
+        DbKmsResponsePicker::connect(test_instance.db().clone(), &Config::default().await).await?;
     let response_remover = DbKmsResponseRemover::new(test_instance.db().clone());
+    let provider = connect_to_gateway_with_wallet(
+        &test_instance.anvil_ws_endpoint(),
+        KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?,
+    )
+    .await?;
 
     let tx_sender_inner = TransactionSenderInner::new(
-        test_instance.provider().clone(),
-        test_instance.decryption_contract().clone(),
-        10,
-        Duration::from_millis(100),
-        130,
+        provider.clone(),
+        DecryptionInstance::new(DECRYPTION_MOCK_ADDRESS, provider),
+        TransactionSenderInnerConfig {
+            tx_retries: 3,
+            tx_retry_interval: Duration::from_millis(100),
+            trace_reverted_tx: true,
+            gas_multiplier_percent: 130,
+        },
     );
     let tx_sender = TransactionSender::new(response_picker, tx_sender_inner, response_remover);
 

@@ -1,9 +1,16 @@
-use crate::monitoring::metrics::{RESPONSE_RECEIVED_COUNTER, RESPONSE_RECEIVED_ERRORS};
+use crate::{
+    core::Config,
+    monitoring::metrics::{RESPONSE_RECEIVED_COUNTER, RESPONSE_RECEIVED_ERRORS},
+};
 use anyhow::anyhow;
 use connector_utils::types::KmsResponse;
-use sqlx::{Pool, Postgres, postgres::PgListener};
-use std::future::Future;
-use tracing::{debug, info, warn};
+use sqlx::{
+    Pool, Postgres,
+    postgres::{PgListener, PgNotification},
+};
+use std::{future::Future, time::Duration};
+use tokio::select;
+use tracing::{debug, info};
 
 /// Interface used to pick KMS Core's responses from some storage.
 pub trait KmsResponsePicker {
@@ -24,24 +31,37 @@ pub struct DbKmsResponsePicker {
 
     /// The maximum number of responses to fetch at once.
     responses_batch_size: u8,
+
+    /// The timeout for polling the database for responses.
+    polling_timeout: Duration,
 }
 
 impl DbKmsResponsePicker {
-    pub fn new(db_pool: Pool<Postgres>, db_listener: PgListener, response_batch_size: u8) -> Self {
+    pub fn new(
+        db_pool: Pool<Postgres>,
+        db_listener: PgListener,
+        response_batch_size: u8,
+        polling_timeout: Duration,
+    ) -> Self {
         Self {
             db_pool,
             db_listener,
             responses_batch_size: response_batch_size,
+            polling_timeout,
         }
     }
 
-    pub async fn connect(db_pool: Pool<Postgres>, response_batch_size: u8) -> anyhow::Result<Self> {
+    pub async fn connect(db_pool: Pool<Postgres>, config: &Config) -> anyhow::Result<Self> {
         let db_listener = PgListener::connect_with(&db_pool)
             .await
             .map_err(|e| anyhow!("Failed to init Postgres Listener: {e}"))?;
 
-        let mut response_picker =
-            DbKmsResponsePicker::new(db_pool, db_listener, response_batch_size);
+        let mut response_picker = DbKmsResponsePicker::new(
+            db_pool,
+            db_listener,
+            config.responses_batch_size,
+            config.database_polling_timeout,
+        );
         response_picker
             .listen()
             .await
@@ -59,39 +79,53 @@ impl DbKmsResponsePicker {
 impl KmsResponsePicker for DbKmsResponsePicker {
     async fn pick_responses(&mut self) -> anyhow::Result<Vec<KmsResponse>> {
         loop {
-            // Wait for notification
-            let notification = self.db_listener.recv().await?;
-            info!("Received Postgres notification: {}", notification.channel());
-
-            let query_result = match notification.channel() {
-                PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_responses().await,
-                USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_responses().await,
-                channel => {
-                    warn!("Unexpected notification: {channel}");
-                    continue;
-                }
+            let responses = select! {
+                notification = self.db_listener.recv() => {
+                    let notification = notification?;
+                    info!("Received Postgres notification: {}", notification.channel());
+                    self.pick_notified_responses(notification)
+                        .await
+                        .inspect_err(|_| RESPONSE_RECEIVED_ERRORS.inc())?
+                },
+                _ = tokio::time::sleep(self.polling_timeout) => {
+                    debug!("Polling timeout, rechecking for responses");
+                    self.pick_any_responses().await.inspect_err(|_| RESPONSE_RECEIVED_ERRORS.inc())?
+                },
             };
 
-            match query_result {
-                Ok(responses) => {
-                    if responses.is_empty() {
-                        debug!("Responses have already been picked");
-                        continue;
-                    }
-                    info!("Picked {} responses successfully", responses.len());
-                    RESPONSE_RECEIVED_COUNTER.inc_by(responses.len() as u64);
-                    return Ok(responses);
-                }
-                Err(err) => {
-                    RESPONSE_RECEIVED_ERRORS.inc();
-                    return Err(err.into());
-                }
+            if responses.is_empty() {
+                debug!("Responses have already been picked");
+                continue;
+            } else {
+                info!("Picked {} responses successfully", responses.len());
+                RESPONSE_RECEIVED_COUNTER.inc_by(responses.len() as u64);
+                return Ok(responses);
             }
         }
     }
 }
 
 impl DbKmsResponsePicker {
+    async fn pick_notified_responses(
+        &self,
+        notification: PgNotification,
+    ) -> anyhow::Result<Vec<KmsResponse>> {
+        match notification.channel() {
+            PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_responses().await,
+            USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_responses().await,
+            channel => return Err(anyhow!("Unexpected notification: {channel}")),
+        }
+        .map_err(anyhow::Error::from)
+    }
+
+    async fn pick_any_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
+        Ok([
+            self.pick_public_decryption_responses().await?,
+            self.pick_user_decryption_responses().await?,
+        ]
+        .concat())
+    }
+
     async fn pick_public_decryption_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
         sqlx::query(
             "
@@ -104,7 +138,7 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE public_decryption_responses.decryption_id = resp.decryption_id
-                RETURNING resp.decryption_id, decrypted_result, signature
+                RETURNING resp.decryption_id, decrypted_result, signature, extra_data
             ",
         )
         .bind(self.responses_batch_size as i16)
@@ -127,7 +161,7 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE user_decryption_responses.decryption_id = resp.decryption_id
-                RETURNING resp.decryption_id, user_decrypted_shares, signature
+                RETURNING resp.decryption_id, user_decrypted_shares, signature, extra_data
             ",
         )
         .bind(self.responses_batch_size as i16)

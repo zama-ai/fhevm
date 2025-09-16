@@ -8,7 +8,7 @@ use connector_utils::{
     monitoring::otlp::default_dispatcher,
 };
 use std::{net::SocketAddr, path::Path, time::Duration};
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Configuration of the `KmsWorker`.
 #[derive(Clone, Debug)]
@@ -17,10 +17,12 @@ pub struct Config {
     pub database_url: String,
     /// The size of the database connection pool.
     pub database_pool_size: u32,
+    /// The timeout for polling the database for events.
+    pub database_polling_timeout: Duration,
     /// The Gateway RPC endpoint.
     pub gateway_url: String,
-    /// The KMS Core endpoint.
-    pub kms_core_endpoint: String,
+    /// The KMS Core endpoints.
+    pub kms_core_endpoints: Vec<String>,
     /// The Chain ID of the Gateway.
     pub chain_id: u64,
     /// The `Decryption` contract configuration.
@@ -50,10 +52,6 @@ pub struct Config {
 
     /// The maximum number of tasks that can be executed concurrently.
     pub task_limit: usize,
-
-    // TODO: implement to increase security
-    /// Whether to verify coprocessors against the `GatewayConfig` contract (defaults to false).
-    pub verify_coprocessors: bool,
 
     /// The monitoring server endpoint of the `KmsWorker`.
     pub monitoring_endpoint: SocketAddr,
@@ -94,10 +92,20 @@ impl Config {
             return Err(Error::EmptyField("Gateway URL".to_string()));
         }
 
-        if raw_config.kms_core_endpoint.is_empty() {
-            return Err(Error::EmptyField("KMS Core endpoint".to_string()));
+        let kms_core_endpoints;
+        if raw_config.kms_core_endpoints.is_empty() {
+            if let Some(kms_core_endpoint) = raw_config.kms_core_endpoint {
+                warn!("Using deprecated `kms_core_endpoint` field instead of `kms_core_endpoints`");
+                kms_core_endpoints = vec![kms_core_endpoint];
+            } else {
+                return Err(Error::EmptyField("KMS Core endpoints".to_string()));
+            }
+        } else {
+            kms_core_endpoints = raw_config.kms_core_endpoints;
         }
 
+        let database_polling_timeout =
+            Duration::from_secs(raw_config.database_polling_timeout_secs);
         let public_decryption_timeout =
             Duration::from_secs(raw_config.public_decryption_timeout_secs);
         let user_decryption_timeout = Duration::from_secs(raw_config.user_decryption_timeout_secs);
@@ -108,8 +116,9 @@ impl Config {
         Ok(Self {
             database_url: raw_config.database_url,
             database_pool_size: raw_config.database_pool_size,
+            database_polling_timeout,
             gateway_url: raw_config.gateway_url,
-            kms_core_endpoint: raw_config.kms_core_endpoint,
+            kms_core_endpoints,
             chain_id: raw_config.chain_id,
             decryption_contract,
             gateway_config_contract,
@@ -123,7 +132,6 @@ impl Config {
             s3_ciphertext_retrieval_retries: raw_config.s3_ciphertext_retrieval_retries,
             s3_connect_timeout: s3_ciphertext_retrieval_timeout,
             task_limit: raw_config.task_limit,
-            verify_coprocessors: raw_config.verify_coprocessors,
             monitoring_endpoint,
             healthcheck_timeout,
         })
@@ -150,7 +158,7 @@ mod tests {
         unsafe {
             env::remove_var("KMS_CONNECTOR_DATABASE_URL");
             env::remove_var("KMS_CONNECTOR_GATEWAY_URL");
-            env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT");
+            env::remove_var("KMS_CONNECTOR_KMS_CORE_ENDPOINTS");
             env::remove_var("KMS_CONNECTOR_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
@@ -167,9 +175,9 @@ mod tests {
         }
     }
 
-    #[tokio::test]
+    #[test]
     #[serial(config_tests)]
-    async fn test_load_valid_config_from_file() {
+    fn test_load_valid_config_from_file() {
         cleanup_env_vars();
         let raw_config = RawConfig::default();
 
@@ -179,7 +187,7 @@ mod tests {
 
         // Compare fields
         assert_eq!(raw_config.gateway_url, config.gateway_url);
-        assert_eq!(raw_config.kms_core_endpoint, config.kms_core_endpoint);
+        assert_eq!(raw_config.kms_core_endpoints, config.kms_core_endpoints);
         assert_eq!(raw_config.chain_id, config.chain_id);
         assert_eq!(
             Address::from_str(&raw_config.decryption_contract.address).unwrap(),
@@ -189,7 +197,7 @@ mod tests {
             Address::from_str(&raw_config.gateway_config_contract.address).unwrap(),
             config.gateway_config_contract.address,
         );
-        assert_eq!(raw_config.kms_core_endpoint, config.kms_core_endpoint);
+        assert_eq!(raw_config.kms_core_endpoints, config.kms_core_endpoints);
         assert_eq!(raw_config.service_name, config.service_name);
         assert_eq!(
             raw_config.public_decryption_timeout_secs,
@@ -220,12 +228,11 @@ mod tests {
             config.gateway_config_contract.domain_version,
         );
         assert_eq!(raw_config.s3_config, config.s3_config);
-        assert_eq!(raw_config.verify_coprocessors, config.verify_coprocessors);
     }
 
-    #[tokio::test]
+    #[test]
     #[serial(config_tests)]
-    async fn test_load_from_env() {
+    fn test_load_from_env() {
         cleanup_env_vars();
 
         // Set environment variables
@@ -235,7 +242,10 @@ mod tests {
                 "postgres://postgres:postgres@localhost",
             );
             env::set_var("KMS_CONNECTOR_GATEWAY_URL", "ws://localhost:9545");
-            env::set_var("KMS_CONNECTOR_KMS_CORE_ENDPOINT", "http://localhost:50053");
+            env::set_var(
+                "KMS_CONNECTOR_KMS_CORE_ENDPOINTS",
+                "http://localhost:50053,http://localhost:50054",
+            );
             env::set_var("KMS_CONNECTOR_CHAIN_ID", "31888");
             env::set_var(
                 "KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS",
@@ -260,7 +270,10 @@ mod tests {
 
         // Verify values
         assert_eq!(config.gateway_url, "ws://localhost:9545");
-        assert_eq!(config.kms_core_endpoint, "http://localhost:50053");
+        assert_eq!(
+            config.kms_core_endpoints,
+            vec!["http://localhost:50053", "http://localhost:50054"]
+        );
         assert_eq!(config.chain_id, 31888);
         assert_eq!(
             config.decryption_contract.address,
@@ -282,9 +295,9 @@ mod tests {
         cleanup_env_vars();
     }
 
-    #[tokio::test]
+    #[test]
     #[serial(config_tests)]
-    async fn test_env_overrides_file() {
+    fn test_env_overrides_file() {
         cleanup_env_vars();
 
         // Create a temp config file
@@ -316,9 +329,9 @@ mod tests {
         cleanup_env_vars();
     }
 
-    #[tokio::test]
+    #[test]
     #[serial(config_tests)]
-    async fn test_invalid_address() {
+    fn test_invalid_address() {
         let raw_config = RawConfig {
             decryption_contract: RawContractConfig {
                 address: "0x0000".to_string(),
@@ -334,6 +347,21 @@ mod tests {
             Config::parse(raw_config),
             Err(Error::InvalidConfig(_))
         ));
+    }
+
+    #[test]
+    #[serial(config_tests)]
+    fn test_kms_core_endpoint_fallback() {
+        let raw_config = RawConfig {
+            kms_core_endpoints: vec![],
+            kms_core_endpoint: Some("http://localhost:50053".to_string()),
+            ..Default::default()
+        };
+        let config = Config::parse(raw_config.clone()).unwrap();
+        assert_eq!(
+            config.kms_core_endpoints,
+            vec![raw_config.kms_core_endpoint.unwrap()]
+        )
     }
 
     impl RawConfig {

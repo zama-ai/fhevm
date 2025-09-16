@@ -10,7 +10,7 @@ contract KMSVerifierUpgradedExample is KMSVerifier {
 
     /// @notice Version of the contract
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /// @notice Getter for the name and version of the contract

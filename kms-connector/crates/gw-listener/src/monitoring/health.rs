@@ -1,25 +1,20 @@
 use actix_web::http::StatusCode;
-use connector_utils::{
-    conn::GatewayProvider,
-    monitoring::health::{Healthcheck, database_healthcheck, gateway_healthcheck},
-};
+use alloy::providers::Provider;
+use connector_utils::monitoring::health::{Healthcheck, database_healthcheck, gateway_healthcheck};
+use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 
 #[derive(Clone)]
 /// The struct used to monitor the state of the `GatewayListener`.
-pub struct State {
+pub struct State<P> {
     db_pool: Pool<Postgres>,
-    provider: GatewayProvider,
+    provider: P,
     healthcheck_timeout: Duration,
 }
 
-impl State {
-    pub fn new(
-        db_pool: Pool<Postgres>,
-        provider: GatewayProvider,
-        healthcheck_timeout: Duration,
-    ) -> Self {
+impl<P: Provider> State<P> {
+    pub fn new(db_pool: Pool<Postgres>, provider: P, healthcheck_timeout: Duration) -> Self {
         Self {
             db_pool,
             provider,
@@ -28,7 +23,7 @@ impl State {
     }
 }
 
-impl Healthcheck for State {
+impl<P: Provider> Healthcheck for State<P> {
     async fn healthcheck(&self) -> actix_web::HttpResponse {
         let mut errors = vec![];
         let database_connected =
@@ -51,10 +46,14 @@ impl Healthcheck for State {
 
         actix_web::HttpResponse::build(status_code).json(status)
     }
+
+    fn service_name() -> &'static str {
+        "kms-connector-gw-listener"
+    }
 }
 
 /// Serializable representation of `GatewayListener`'s health status.
-#[derive(serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct HealthStatus {
     /// Overall health of the service.
     pub healthy: bool,

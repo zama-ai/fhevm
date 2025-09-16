@@ -15,6 +15,7 @@ use utils::{
 };
 
 mod errors;
+mod health_check;
 mod inputs;
 mod operators;
 mod operators_from_events;

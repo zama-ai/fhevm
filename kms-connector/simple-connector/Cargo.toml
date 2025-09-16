@@ -7,34 +7,40 @@ license.workspace = true
 version.workspace = true
 
 [dependencies]
-alloy.workspace= true
-anyhow.workspace= true
-aws-sdk-kms.workspace= true
-bincode.workspace= true
-clap.workspace= true
-config.workspace= true
-dashmap.workspace= true
-futures.workspace= true
-serde.workspace= true
-sha3.workspace= true
+alloy = { version = "=0.13.0", default-features = false, features = [
+    "essentials",
+    "reqwest-rustls-tls",
+    "std",
+    "provider-ws",
+    "signer-aws",
+] }
+anyhow.workspace = true
+aws-sdk-kms.workspace = true
+bincode.workspace = true
+clap.workspace = true
+config.workspace = true
+dashmap.workspace = true
+futures.workspace = true
+serde.workspace = true
+sha3.workspace = true
 tfhe.workspace = true
-thiserror.workspace= true
-tokio.workspace= true
-tokio-stream.workspace= true
-toml.workspace= true
-tonic.workspace= true
-tracing.workspace= true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+toml.workspace = true
+tonic.workspace = true
+tracing.workspace = true
 
 # AWS S3 dependencies for ciphertext retrieval
-aws-config.workspace= true
-aws-sdk-s3.workspace= true
+aws-config.workspace = true
+aws-sdk-s3.workspace = true
 
 # TODO: substitute with existing KMS-Core implementation
-tracing-subscriber.workspace= true
+tracing-subscriber.workspace = true
 
 # TODO: replace git submodule and path import by git import when fhevm-gateway and kms-core becomes open-source
-fhevm_gateway_rust_bindings.workspace= true
-kms-grpc.workspace= true
+fhevm_gateway_rust_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.7.12" }
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.11.0-21", default-features = true }
 chrono = { version = "0.4.41", features = ["serde"] }
 
 [dev-dependencies]

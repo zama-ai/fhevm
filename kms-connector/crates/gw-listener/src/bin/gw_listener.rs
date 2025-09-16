@@ -1,8 +1,13 @@
-use gw_listener::core::{Config, GatewayListener};
+use gw_listener::{
+    core::{Config, GatewayListener},
+    monitoring::health::HealthStatus,
+};
 
 use connector_utils::{
     cli::{Cli, Subcommands},
-    monitoring::{otlp::init_otlp_setup, server::start_monitoring_server},
+    monitoring::{
+        health::query_healthcheck_endpoint, otlp::init_otlp_setup, server::start_monitoring_server,
+    },
     signal::install_signal_handlers,
     tasks::set_task_limit,
 };
@@ -24,6 +29,9 @@ async fn run() -> anyhow::Result<()> {
     match subcommand {
         Subcommands::Validate { config } => {
             Config::from_env_and_file(Some(config))?;
+        }
+        Subcommands::Health { endpoint } => {
+            query_healthcheck_endpoint::<HealthStatus>(endpoint).await?;
         }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref())?;

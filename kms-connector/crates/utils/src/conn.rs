@@ -101,7 +101,7 @@ where
         info!("Attempting connection to Gateway... ({i}/{CONNECTION_RETRY_NUMBER})");
 
         let ws_endpoint = WsConnect::new(gateway_url);
-        match provider_builder_new().on_ws(ws_endpoint).await {
+        match provider_builder_new().connect_ws(ws_endpoint).await {
             Ok(provider) => {
                 info!("Connected to Gateway's RPC node successfully");
                 return Ok(provider);

@@ -1,5 +1,7 @@
 name: kms-connector-dependency-analysis
 
+permissions: {}
+
 on:
   pull_request:
 
@@ -32,6 +34,9 @@ jobs:
     name: kms-connector-dependency-analysis/dependencies-check (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions:
+      contents: 'read'
+      checks: 'write'
     runs-on: ubuntu-latest
     steps:
 
@@ -50,7 +55,7 @@ jobs:
       - name: Install cargo tools
         run: |
           cargo binstall --no-confirm --force \
-            cargo-audit@0.21.0 \
+            cargo-audit@0.21.2 \
             cargo-deny@0.16.2
 
       - name: Check that Cargo.lock is the source of truth
@@ -68,6 +73,3 @@ jobs:
           cd kms-connector
           cargo-audit audit
 
-permissions:
-  contents: 'read'
-  checks: 'write'

@@ -7,6 +7,8 @@ on:
         type: string
         required: true
 
+permissions: {}
+
 concurrency:
   group: ci-docker-tests-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -32,9 +34,13 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull docker image pushed by previous workflow
-        run: docker pull "${{ inputs.image-name }}"
+        run: docker pull "${IMAGE_NAME}"
+        env:
+          IMAGE_NAME: ${{ inputs.image-name }}
 
       - name: Run hardhat tests in container
         run: |
           docker run --rm -v "$(pwd)/.env.example:/app/.env" -v "$(pwd)/test:/app/test" \
-            "${{ inputs.image-name }}" npx hardhat test
+            "${IMAGE_NAME}" npx hardhat test
+        env:
+          IMAGE_NAME: ${{ inputs.image-name }}

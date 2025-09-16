@@ -83,7 +83,7 @@ where
     async fn handle_event(mut event_processor: Proc, response_publisher: Publ, event: T) {
         let response = match event_processor.process(&event).await {
             Ok(response) => response,
-            Err(e) => return error!("Failed to process event: {e}"),
+            Err(e) => return error!("{e}"),
         };
 
         if let Err(e) = response_publisher.publish(response.clone()).await {
@@ -94,14 +94,13 @@ where
 
 impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePublisher> {
     /// Creates a new `KmsWorker` instance from a valid `Config`.
-    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
+    pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let provider = connect_to_gateway(&config.gateway_url).await?;
         let kms_client = KmsClient::connect(&config).await?;
-        let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoint).await?;
+        let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
 
-        let event_picker =
-            DbEventPicker::connect(db_pool.clone(), config.events_batch_size).await?;
+        let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
         let s3_service = S3Service::new(&config, provider.clone());
         let decryption_processor = DecryptionProcessor::new(&config, s3_service);
@@ -123,9 +122,10 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::event_processor::ProcessingError;
     use connector_utils::{
         tests::rand::{rand_signature, rand_u256},
-        types::{GatewayEvent, KmsResponse},
+        types::{GatewayEvent, KmsResponse, UserDecryptionResponse},
     };
     use std::time::Duration;
     use tracing_test::traced_test;
@@ -180,12 +180,13 @@ mod tests {
 
     impl EventProcessor for MockEventProcessor {
         type Event = GatewayEvent;
-        async fn process(&mut self, _event: &Self::Event) -> anyhow::Result<KmsResponse> {
-            Ok(KmsResponse::UserDecryption {
+        async fn process(&mut self, _event: &Self::Event) -> Result<KmsResponse, ProcessingError> {
+            Ok(KmsResponse::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
                 signature: rand_signature(),
-            })
+                extra_data: vec![],
+            }))
         }
     }
 

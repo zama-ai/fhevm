@@ -8,7 +8,7 @@ use tokio::time::sleep;
 use crate::auxiliary::ZkData;
 
 pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
-    tracing_subscriber::fmt().json().with_level(true).init();
+    let _ = tracing_subscriber::fmt().json().with_level(true).try_init();
     let test_instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
         .await
         .expect("valid db instance");
@@ -45,6 +45,7 @@ pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
     Ok((pool, test_instance))
 }
 
+/// Checks if the proof is valid by querying the database continuously.
 pub(crate) async fn is_valid(
     pool: &sqlx::PgPool,
     zk_proof_id: i64,
@@ -68,7 +69,20 @@ pub(crate) async fn is_valid(
     Ok(false)
 }
 
-pub(crate) async fn generate_zk_pok(pool: &sqlx::PgPool, aux_data: &[u8]) -> Vec<u8> {
+#[derive(Debug, Clone)]
+pub(crate) enum ZkInput {
+    Bool(bool),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+}
+
+pub(crate) async fn generate_zk_pok_with_inputs(
+    pool: &sqlx::PgPool,
+    aux_data: &[u8],
+    inputs: &[ZkInput],
+) -> Vec<u8> {
     let keys: Vec<tenant_keys::TfheTenantKeys> =
         tenant_keys::query_tenant_keys(vec![1], pool, true)
             .await
@@ -79,15 +93,18 @@ pub(crate) async fn generate_zk_pok(pool: &sqlx::PgPool, aux_data: &[u8]) -> Vec
             .unwrap();
     let keys = &keys[0];
 
-    println!("Building list");
     let mut builder = tfhe::ProvenCompactCiphertextList::builder(&keys.pks);
+    for v in inputs {
+        match *v {
+            ZkInput::Bool(b) => builder.push(b),
+            ZkInput::U8(x) => builder.push(x),
+            ZkInput::U16(x) => builder.push(x),
+            ZkInput::U32(x) => builder.push(x),
+            ZkInput::U64(x) => builder.push(x),
+        };
+    }
+
     let the_list = builder
-        .push(false)
-        .push(1u8)
-        .push(2u16)
-        .push(3u32)
-        .push(4u64)
-        .push(5u64)
         .build_with_proof_packed(
             &keys.public_params,
             aux_data,
@@ -96,6 +113,22 @@ pub(crate) async fn generate_zk_pok(pool: &sqlx::PgPool, aux_data: &[u8]) -> Vec
         .unwrap();
 
     safe_serialize(&the_list)
+}
+
+pub(crate) async fn generate_sample_zk_pok(pool: &sqlx::PgPool, aux_data: &[u8]) -> Vec<u8> {
+    let inputs = vec![
+        ZkInput::Bool(true),
+        ZkInput::U8(42),
+        ZkInput::U16(12345),
+        ZkInput::U32(67890),
+        ZkInput::U64(1234567890),
+    ];
+    generate_zk_pok_with_inputs(pool, aux_data, &inputs).await
+}
+
+pub(crate) async fn generate_empty_input_list(pool: &sqlx::PgPool, aux_data: &[u8]) -> Vec<u8> {
+    let inputs = Vec::new();
+    generate_zk_pok_with_inputs(pool, aux_data, &inputs).await
 }
 
 pub(crate) async fn insert_proof(

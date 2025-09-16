@@ -10,17 +10,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-permissions:
-  actions: 'read'
-  contents: 'read'
-  packages: 'read'
-  pull-requests: 'read'
+permissions: {}
 
 jobs:
   # Initial job that determines which components have changed
   # Used by subsequent jobs to decide whether they need to run
   check-changes:
     name: sdk-rust-sdk-tests/check-changes
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       # Each output indicates if files in a specific component were modified
@@ -45,6 +45,11 @@ jobs:
     name: sdk-rust-sdk-tests/start-runner
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-sdk == 'true' }}
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      packages: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
       label: ${{ steps.start-ec2-runner.outputs.label }}
@@ -64,6 +69,11 @@ jobs:
     name: sdk-rust-sdk-tests/test-rust-sdk (bpr)
     needs: start-runner
     timeout-minutes: 50
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      packages: 'read'
+      pull-requests: 'read'
     runs-on: ${{ needs.start-runner.outputs.label }}
     defaults:
       run:
@@ -108,7 +118,9 @@ jobs:
         uses: foundry-rs/foundry-toolchain@82dee4ba654bd2146511f85f0d013af94670c4de # v1.4.0
 
       - name: Setup usage of private repo
-        run: git config --global url."https://${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}@github.com".insteadOf ssh://git@github.com
+        env:
+          BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+        run: git config --global url."https://${BLOCKCHAIN_ACTIONS_TOKEN}@github.com".insteadOf ssh://git@github.com
 
       - name: Formatting
         run: cargo fmt -- --check
@@ -139,6 +151,11 @@ jobs:
     needs:
       - start-runner
       - test-rust-sdk
+    permissions:
+      actions: 'read'
+      contents: 'read'
+      packages: 'read'
+      pull-requests: 'read'
     runs-on: ubuntu-latest
     if: ${{ always() && needs.start-runner.result != 'skipped' }} # required to stop the runner even if the error happened in the previous jobs, but only if start-runner was not skipped
     steps:

@@ -7,7 +7,7 @@ publish.workspace = true
 version.workspace = true
 
 [dependencies]
-fhevm_gateway_rust_bindings.workspace = true
+fhevm_gateway_bindings.workspace = true
 kms-grpc.workspace = true
 tfhe.workspace = true
 
@@ -21,6 +21,7 @@ bincode.workspace = true
 clap.workspace = true
 config.workspace = true
 futures.workspace = true
+git-version.workspace = true
 opentelemetry.workspace = true
 opentelemetry-otlp.workspace = true
 opentelemetry_sdk.workspace = true
@@ -39,6 +40,7 @@ tracing-subscriber.workspace = true
 
 rand = { workspace = true, optional = true }
 testcontainers = { workspace = true, optional = true }
+toml = { workspace = true, optional = true }
 
 [dev-dependencies]
 serial_test.workspace = true
@@ -50,5 +52,6 @@ tests = [
     "alloy/node-bindings",
     "dep:rand",
     "dep:testcontainers",
+    "dep:toml",
     "sqlx/migrate",
 ]

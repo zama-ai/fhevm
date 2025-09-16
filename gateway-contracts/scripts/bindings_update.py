@@ -16,26 +16,22 @@ GW_CRATE_DIR = GW_ROOT_DIR.joinpath("rust_bindings")
 GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
 GW_MOCKS_DIR = GW_CONTRACTS_DIR.joinpath("mocks")
 
-# To update forge to the latest version locally, run `foundryup` 
-ALLOWED_FORGE_VERSIONS = ["1.2.3-v1.2.3", "1.2.3-stable"]
+# To update forge to the latest version locally, run `foundryup`
+ALLOWED_FORGE_VERSIONS = ["1.3.1-v1.3.1", "1.3.1-stable", "1.3.2-stable"]
 
 
 def init_cli() -> ArgumentParser:
     """Inits the CLI of the tool."""
     parser = ArgumentParser(
         description=(
-            "A tool to check or update the bindings crate of the Gateway "
-            "contracts."
+            "A tool to check or update the bindings crate of the Gateway contracts."
         )
     )
     subparsers = parser.add_subparsers(dest="command", help="Subcommands")
 
     subparsers.add_parser(
         "check",
-        help=(
-            "Check if the binding files or the crate version need to be "
-            "updated."
-        ),
+        help=("Check if the binding files or the crate version need to be updated."),
     )
     subparsers.add_parser(
         "update", help="Update the binding files and the crate version."
@@ -91,6 +87,7 @@ class BindingsUpdater:
     def __del__(self):
         shutil.rmtree(self.tempdir)
 
+    @staticmethod
     def _check_forge_installed():
         """Checks if `forge` is installed with the required version."""
         path = shutil.which("forge")
@@ -100,7 +97,9 @@ class BindingsUpdater:
 
         forge_version = (
             subprocess.run(
-                ["forge", "--version"], capture_output=True, text=True
+                ["forge", "--version"],
+                capture_output=True,
+                text=True,
             )
             .stdout.splitlines()[0]
             .lstrip("forge Version: ")
@@ -115,9 +114,7 @@ class BindingsUpdater:
 
     def check_bindings_up_to_date(self):
         """Checks that the Gateway contracts' bindings are up-to-date."""
-        log_info(
-            "Checking that the Gateway contracts' bindings are up-to-date..."
-        )
+        log_info("Checking that the Gateway contracts' bindings are up-to-date...")
 
         # We need to include the --no-metadata flag to avoid updating many of the contracts' bytecode
         # when only updating one of them (since interfaces are included in many contracts)
@@ -131,9 +128,7 @@ class BindingsUpdater:
 
         if return_code != 0:
             log_error("ERROR: Some binding files are outdated.")
-            log_info(
-                "Run `make update-bindings` to update the bindings."
-            )
+            log_info("Run `make update-bindings` to update the bindings.")
             sys.exit(ExitStatus.BINDINGS_NOT_UP_TO_DATE.value)
 
         log_success("All binding files are up-to-date!")
@@ -159,12 +154,10 @@ class BindingsUpdater:
         """
         Checks that the version of the crate matches the version of the Gateway.
         """
-        log_info(
-            "Checking that the crate's version match the Gateway version..."
-        )
+        log_info("Checking that the crate's version match the Gateway version...")
         with open(f"{GW_CRATE_DIR}/Cargo.toml", "r") as cargo_toml_fd:
             cargo_toml_content = cargo_toml_fd.read()
-            
+
             # Find the version in the Cargo.toml
             # Here, we want to find the version in the [package] section to avoid catching versions
             # from dependencies. The `re.DOTALL` flag is used to allow the dot to match newlines.
@@ -178,7 +171,7 @@ class BindingsUpdater:
             if not matches:
                 log_error("Could not find version in Cargo.toml")
                 sys.exit(1)
-            
+
             # Extract the version from the matches: the first (and only) captured group from the regex.
             cargo_toml_version = matches.group(1)
 
@@ -188,9 +181,7 @@ class BindingsUpdater:
                 f"Gateway version: {self.gateway_repo_version}\n"
                 f"Cargo.toml version: {cargo_toml_version}\n"
             )
-            log_info(
-                "Run `make update-bindings` to update the crate's version."
-            )
+            log_info("Run `make update-bindings` to update the crate's version.")
             sys.exit(ExitStatus.CRATE_VERSION_NOT_UP_TO_DATE.value)
         log_success(
             f"The version of the crate match with the Gateway version: {self.gateway_repo_version}!\n"
@@ -204,7 +195,7 @@ class BindingsUpdater:
             cargo_toml_content = cargo_toml_fd.read()
 
         # Replace the version in the Cargo.toml
-        # Similar to the check_version function, we use a regex to find the version in the [package] 
+        # Similar to the check_version function, we use a regex to find the version in the [package]
         # section to avoid changing the version of any dependency. The `count=1` argument ensures that
         # only the first occurrence is replaced as we only expect one version. The `re.DOTALL` flag is
         # used to allow the dot to match newlines. There are two captured groups:
@@ -217,7 +208,7 @@ class BindingsUpdater:
             lambda m: m.group(1) + self.gateway_repo_version + m.group(2),
             cargo_toml_content,
             count=1,
-            flags=re.DOTALL
+            flags=re.DOTALL,
         )
 
         with open(f"{GW_CRATE_DIR}/Cargo.toml", "w") as cargo_toml_fd:
@@ -227,6 +218,7 @@ class BindingsUpdater:
             f"The crate's version has been successfully updated to "
             f"{self.gateway_repo_version}!\n"
         )
+
 
 BRED = "\033[91m\033[1m"
 BGREEN = "\033[92m\033[1m"

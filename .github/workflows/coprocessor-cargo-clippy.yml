@@ -3,6 +3,8 @@ name: coprocessor-cargo-clippy
 on:
   pull_request:
 
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -50,7 +52,7 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
       with:
-        toolchain: 1.85.0
+        toolchain: 1.89.0
         components: clippy
 
     - name: Install dependencies

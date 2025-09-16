@@ -3,6 +3,7 @@ use connector_utils::{
     conn::WalletGatewayProvider,
     monitoring::health::{Healthcheck, database_healthcheck, gateway_healthcheck},
 };
+use serde::{Deserialize, Serialize};
 use sqlx::{Pool, Postgres};
 use std::time::Duration;
 
@@ -51,10 +52,14 @@ impl Healthcheck for State {
 
         actix_web::HttpResponse::build(status_code).json(status)
     }
+
+    fn service_name() -> &'static str {
+        "kms-connector-tx-sender"
+    }
 }
 
 /// Serializable representation of `TransactionSender`'s health status.
-#[derive(serde::Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct HealthStatus {
     /// Overall health of the service.
     pub healthy: bool,

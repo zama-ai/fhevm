@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use crate::db_utils::setup_test_user;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio_util::sync::CancellationToken;
 
+#[derive(Clone)]
 pub struct DBInstance {
-    _container: Option<testcontainers::ContainerAsync<testcontainers::GenericImage>>,
+    _container: Option<Arc<testcontainers::ContainerAsync<testcontainers::GenericImage>>>,
     db_url: String,
     pub parent_token: CancellationToken,
 }
@@ -52,13 +55,11 @@ async fn setup_test_app_existing_localhost(
     with_reset: bool,
     mode: ImportMode,
 ) -> Result<DBInstance, Box<dyn std::error::Error>> {
-    const LOCALHOST: &str = "127.0.0.1";
-    const LOCAL_PORT: i32 = 5432;
-    let db_url = format!("postgresql://postgres:postgres@{LOCALHOST}:{LOCAL_PORT}/coprocessor");
+    let db_url = "postgresql://postgres:postgres@127.0.0.1:5432/coprocessor";
+    let db_url = std::env::var("DATABASE_URL").unwrap_or(db_url.to_string());
 
     if with_reset {
-        let admin_db_url =
-            format!("postgresql://postgres:postgres@{LOCALHOST}:{LOCAL_PORT}/postgres");
+        let admin_db_url = db_url.replace("coprocessor", "postgres");
         create_database(&admin_db_url, &db_url, mode).await?;
     }
 
@@ -92,7 +93,7 @@ async fn setup_test_app_custom_docker(
     create_database(&admin_db_url, &db_url, mode).await?;
 
     Ok(DBInstance {
-        _container: Some(container),
+        _container: Some(Arc::new(container)),
         db_url,
         parent_token: CancellationToken::new(),
     })

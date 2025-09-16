@@ -1,12 +1,6 @@
-use std::sync::{atomic::AtomicBool, Arc};
+use sns_worker::{Config, DBConfig, HealthCheckConfig, S3Config, S3RetryPolicy};
 
-use fhevm_engine_common::telemetry;
-use sns_worker::{
-    compute_128bit_ct, create_s3_client, process_s3_uploads, Config, DBConfig, HealthCheckConfig,
-    S3Config, S3RetryPolicy, UploadJob,
-};
-
-use tokio::{signal::unix, spawn, sync::mpsc};
+use tokio::signal::unix;
 use tokio_util::sync::CancellationToken;
 use tracing::error;
 mod utils;
@@ -60,6 +54,7 @@ fn construct_config() -> Config {
             port: args.health_check_port,
         },
         enable_compression: args.enable_compression,
+        schedule_policy: args.schedule_policy,
     }
 }
 
@@ -77,35 +72,10 @@ async fn main() {
     // Handle SIGINIT signals
     handle_sigint(parent.clone());
 
-    // Queue of tasks to upload ciphertexts is 10 times the number of concurrent uploads
-    // to avoid blocking the worker
-    // and to allow for some burst of uploads
-    let (uploads_tx, uploads_rx) =
-        mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
-
-    if let Err(err) = telemetry::setup_otlp(&config.service_name) {
-        panic!("Error while initializing tracing: {:?}", err);
-    }
-
-    let conf = config.clone();
-    let token = parent.child_token();
-    let tx = uploads_tx.clone();
-    // Initialize the S3 uploader
-    let (client, is_ready) = create_s3_client(&conf).await;
-    let is_ready = Arc::new(AtomicBool::new(is_ready));
-    let s3 = client.clone();
-
-    spawn(async move {
-        if let Err(err) = process_s3_uploads(&conf, uploads_rx, tx, token, s3, is_ready).await {
-            error!("Failed to run the upload-worker : {:?}", err);
-        }
-    });
-
-    // Start the SnS worker
-
-    let conf = config.clone();
-    let token = parent.child_token();
-    if let Err(err) = compute_128bit_ct(conf, uploads_tx, token, client).await {
-        error!("SnS worker failed: {:?}", err);
-    }
+    sns_worker::run_all(config, parent)
+        .await
+        .unwrap_or_else(|err| {
+            error!(error = %err, "Error running SNS worker");
+            std::process::exit(1);
+        });
 }

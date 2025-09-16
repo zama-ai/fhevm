@@ -6,6 +6,7 @@ import type { NetworkUserConfig } from 'hardhat/types';
 import { resolve } from 'path';
 import './tasks/erc20';
 import './tasks/userDecryptBenchmark';
+import './tasks/publicDecryptBenchmark';
 
 // This value needs to be above the number of accounts used in the tasks
 const NUM_ACCOUNTS = 1001;

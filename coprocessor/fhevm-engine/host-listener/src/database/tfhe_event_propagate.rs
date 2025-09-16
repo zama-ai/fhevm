@@ -1,15 +1,18 @@
 use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
+use anyhow::Result;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
-use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::{compact_hex, HeartBeat};
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Uuid;
 use sqlx::Error as SqlxError;
 use sqlx::{PgPool, Postgres};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 use tracing::error;
 use tracing::info;
 use tracing::warn;
@@ -29,37 +32,57 @@ pub type ClearConst = Uint<256, 4>;
 
 const MINIMUM_BUCKET_CACHE_SIZE: u16 = 16;
 
-pub fn retry_on_sqlx_error(err: &SqlxError) -> bool {
-    match err {
+const MAX_RETRY_FOR_TRANSIENT_ERROR: usize = 20;
+const MAX_RETRY_ON_UNKNOWN_ERROR: usize = 5;
+
+// short wait in case the database had a short issue
+const RECONNECTION_DELAY: Duration = Duration::from_millis(100);
+
+type DbErrorCode = std::borrow::Cow<'static, str>;
+const STATEMENT_CANCELLED: DbErrorCode = DbErrorCode::Borrowed("57014"); // SQLSTATE code for statement cancelled
+
+pub fn retry_on_sqlx_error(err: &SqlxError, retry_count: &mut usize) -> bool {
+    let is_transient = match err {
+        // Transient errors, lots of retries
         SqlxError::Io(_)
         | SqlxError::PoolTimedOut
         | SqlxError::PoolClosed
         | SqlxError::WorkerCrashed
         | SqlxError::Protocol(_) => true,
-        // Other errors should be immdiately propagated up
+        SqlxError::Database(err) if err.code() == Some(STATEMENT_CANCELLED) => {
+            true
+        }
+        // Unknown errors, some retries
         _ => false,
-    }
+    };
+    let will_retry = if is_transient {
+        *retry_count < MAX_RETRY_FOR_TRANSIENT_ERROR
+    } else {
+        *retry_count < MAX_RETRY_ON_UNKNOWN_ERROR
+    };
+    *retry_count += 1;
+    will_retry
 }
 
 // A pool of connection with some cached information and automatic reconnection
 pub struct Database {
     url: String,
-    pool: sqlx::Pool<Postgres>,
-    tenant_id: TenantId,
-    chain_id: ChainId,
+    pub pool: Arc<RwLock<sqlx::Pool<Postgres>>>,
+    pub tenant_id: TenantId,
+    pub chain_id: ChainId,
     bucket_cache: tokio::sync::RwLock<lru::LruCache<Handle, Handle>>,
+    pub tick: HeartBeat,
 }
 
 impl Database {
     pub async fn new(
         url: &str,
         coprocessor_api_key: &CoprocessorApiKey,
-        chain_id: ChainId,
         bucket_cache_size: u16,
-    ) -> Self {
+    ) -> Result<Self> {
         let pool = Self::new_pool(url).await;
-        let tenant_id =
-            Self::find_tenant_id_or_panic(&pool, coprocessor_api_key).await;
+        let (tenant_id, chain_id) =
+            Self::find_tenant_id(&pool, coprocessor_api_key).await?;
         let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
             std::num::NonZeroU16::new(
                 bucket_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
@@ -67,13 +90,14 @@ impl Database {
             .unwrap()
             .into(),
         ));
-        Database {
+        Ok(Database {
             url: url.into(),
             tenant_id,
             chain_id,
-            pool,
+            pool: Arc::new(RwLock::new(pool)),
             bucket_cache,
-        }
+            tick: HeartBeat::default(),
+        })
     }
 
     async fn new_pool(url: &str) -> PgPool {
@@ -86,6 +110,7 @@ impl Database {
                 .min_connections(2)
                 .max_lifetime(Duration::from_secs(10 * 60))
                 .max_connections(8)
+                .acquire_timeout(Duration::from_secs(5))
                 .connect_with(options.clone())
         };
         let mut pool = connect().await;
@@ -101,35 +126,44 @@ impl Database {
     }
 
     async fn reconnect(&mut self) {
-        self.pool.close().await;
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        self.pool = Self::new_pool(&self.url).await;
+        tokio::time::sleep(RECONNECTION_DELAY).await;
+        let old_pool = {
+            let new_pool = Self::new_pool(&self.url).await;
+            let mut pool = self.pool.write().await;
+            std::mem::replace(&mut *pool, new_pool)
+        };
+        // doing the close outside out of lock
+        old_pool.close().await;
     }
 
-    pub async fn find_tenant_id_or_panic(
+    async fn find_tenant_id(
         pool: &sqlx::Pool<Postgres>,
         tenant_api_key: &CoprocessorApiKey,
-    ) -> TenantId {
+    ) -> Result<(TenantId, ChainId)> {
         let query = || {
-            sqlx::query_scalar!(
-                r#"SELECT tenant_id FROM tenants WHERE tenant_api_key = $1"#,
+            sqlx::query!(
+                r#"SELECT tenant_id, chain_id FROM tenants WHERE tenant_api_key = $1"#,
                 tenant_api_key.into()
             )
             .fetch_one(pool)
         };
         // retry mecanism
+        let mut retry_count = 0;
         loop {
             match query().await {
-                Ok(tenant_id) => return tenant_id,
-                Err(err) if retry_on_sqlx_error(&err) => {
-                    error!(error = %err, "Error requesting tenant id, retrying");
-                    tokio::time::sleep(Duration::from_secs(1)).await;
+                Ok(record) => {
+                    return Ok((record.tenant_id, record.chain_id as u64))
                 }
                 Err(SqlxError::RowNotFound) => {
-                    panic!("No tenant found for the provided API key, please check your API key")
+                    anyhow::bail!("No tenant found for the provided API key");
+                }
+                Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
+                    error!(error = %err, "Error requesting tenant id, retrying");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
                 }
                 Err(err) => {
-                    panic!("Error requesting tenant id {err}, aborting")
+                    return Err(err.into());
                 }
             }
         }
@@ -236,7 +270,8 @@ impl Database {
             bucket.to_vec(),
             log.transaction_hash.map(|txh| txh.to_vec())
         );
-        query.execute(&self.pool).await.map(|_| ())
+        let pool = self.pool.read().await.clone();
+        query.execute(&pool).await.map(|_| ())
     }
 
     async fn sort_computation_into_bucket(
@@ -367,14 +402,18 @@ impl Database {
         &mut self,
         log: &alloy::rpc::types::Log<TfheContractEvents>,
     ) -> Result<(), SqlxError> {
+        let mut retry_count = 0;
         loop {
             let result = self.insert_tfhe_event_no_retry(log).await;
             match result {
-                Ok(_) => return Ok(()),
-                Err(err) if retry_on_sqlx_error(&err) => {
+                Ok(_) => {
+                    self.tick.update();
+                    return Ok(())
+                }
+                Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
                     error!(
                         error = %err,
-                        "Database I/O error, will retry indefinitely"
+                        "Database I/O error, will retry"
                     );
                     self.reconnect().await;
                     continue;
@@ -409,6 +448,7 @@ impl Database {
         let Some(block_hash) = prev_event.block_hash else {
             return Some(block_number); // but cannot write to db
         };
+        let pool = self.pool.read().await.clone();
         let _ = sqlx::query!(
             r#"
             INSERT INTO blocks_valid (chain_id, block_hash, block_number, listener_tfhe)
@@ -419,22 +459,20 @@ impl Database {
             block_hash.to_vec(),
             block_number as i64,
         )
-        .execute(&self.pool)
+        .execute(&pool)
         .await;
         Some(block_number)
     }
 
     pub async fn read_last_valid_block(&mut self) -> Option<i64> {
-        let query = || {
-            sqlx::query!(
-                r#"
+        let query = sqlx::query!(
+            r#"
             SELECT block_number FROM blocks_valid WHERE chain_id = $1 ORDER BY block_number DESC LIMIT 1;
             "#,
-                self.chain_id as i64,
-            )
-            .fetch_one(&self.pool)
-        };
-        match query().await {
+            self.chain_id as i64,
+        );
+        let pool = self.pool.read().await.clone();
+        match query.fetch_one(&pool).await {
             Ok(record) => Some(record.block_number),
             Err(_err) => None, // table could be empty
         }
@@ -537,7 +575,7 @@ impl Database {
                 );
             }
         }
-
+        self.tick.update();
         Ok(())
     }
 
@@ -557,13 +595,15 @@ impl Database {
                     handle,
                 )
             };
-
+            let mut retry_count = 0;
             loop {
-                match query().execute(&self.pool).await {
+                let pool = self.pool.read().await.clone();
+                match query().execute(&pool).await {
                     Ok(_) => break,
-                    Err(err) if retry_on_sqlx_error(&err) => {
-                        error!(error = %err, "Database I/O error, will retry indefinitely");
+                    Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
+                        error!(error = %err, "Database I/O error, will retry");
                         self.reconnect().await;
+                        continue;
                     }
                     Err(sqlx_err) => {
                         return Err(sqlx_err);
@@ -594,13 +634,15 @@ impl Database {
                 event_type as i16,
             )
         };
-
+        let mut retry_count = 0;
         loop {
-            match query().execute(&self.pool).await {
+            let pool = self.pool.read().await.clone();
+            match query().execute(&pool).await {
                 Ok(_) => break,
-                Err(err) if retry_on_sqlx_error(&err) => {
-                    error!(error = %err, "Database I/O error, will retry indefinitely");
+                Err(err) if retry_on_sqlx_error(&err, &mut retry_count) => {
+                    error!(error = %err, "Database I/O error, will retry");
                     self.reconnect().await;
+                    continue;
                 }
                 Err(sqlx_err) => {
                     return Err(sqlx_err);

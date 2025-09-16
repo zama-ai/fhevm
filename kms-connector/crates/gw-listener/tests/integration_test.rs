@@ -1,5 +1,5 @@
 use alloy::{
-    primitives::{Address, U256},
+    primitives::{Address, Bytes, U256},
     providers::Provider,
 };
 use connector_utils::tests::{
@@ -9,7 +9,7 @@ use connector_utils::tests::{
     },
 };
 use connector_utils::types::db::SnsCiphertextMaterialDbItem;
-use fhevm_gateway_rust_bindings::decryption::IDecryption::RequestValidity;
+use fhevm_gateway_bindings::decryption::IDecryption::{ContractsInfo, RequestValidity};
 use gw_listener::core::{Config, DbEventPublisher, GatewayListener};
 use rstest::rstest;
 use sqlx::Row;
@@ -19,22 +19,23 @@ use tokio_util::sync::CancellationToken;
 use tracing::info;
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn test_publish_public_decryption() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
 
+    // Wait for gw-listener to be ready + 2 anvil blocks
     test_instance
         .wait_for_log("Waiting for next PublicDecryptionRequest...")
         .await;
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     info!("Mocking PublicDecryptionRequest on Anvil...");
     let pending_tx = test_instance
         .decryption_contract()
-        .publicDecryptionRequest(vec![])
+        .publicDecryptionRequest(vec![], Bytes::new())
         .send()
         .await?;
     let receipt = pending_tx.get_receipt().await?;
@@ -69,17 +70,18 @@ async fn test_publish_public_decryption() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn test_publish_user_decryption() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
 
+    // Wait for gw-listener to be ready + 2 anvil blocks
     test_instance
         .wait_for_log("Waiting for next UserDecryptionRequest...")
         .await;
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     info!("Mocking UserDecryptionRequest on Anvil...");
     let rand_user_addr = rand_address();
@@ -89,10 +91,10 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
         .userDecryptionRequest(
             vec![],
             RequestValidity::default(),
-            U256::default(),
-            vec![],
+            ContractsInfo::default(),
             rand_user_addr,
             rand_pub_key.clone().into(),
+            vec![].into(),
             vec![].into(),
         )
         .send()
@@ -134,17 +136,18 @@ async fn test_publish_user_decryption() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
 
+    // Wait for gw-listener to be ready + 2 anvil blocks
     test_instance
         .wait_for_log("Waiting for next PreprocessKeygenRequest...")
         .await;
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     info!("Mocking PreprocessKeygenRequest on Anvil...");
     let pending_tx = test_instance
@@ -182,17 +185,18 @@ async fn test_publish_preprocess_keygen() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
 
+    // Wait for gw-listener to be ready + 2 anvil blocks
     test_instance
         .wait_for_log("Waiting for next PreprocessKskgenRequest...")
         .await;
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     info!("Mocking PreprocessKskgenRequest on Anvil...");
     let pending_tx = test_instance
@@ -230,17 +234,18 @@ async fn test_publish_preprocess_kskgen() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn test_publish_keygen() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
 
+    // Wait for gw-listener to be ready + 2 anvil blocks
     test_instance
         .wait_for_log("Waiting for next KeygenRequest...")
         .await;
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     info!("Mocking KeygenRequest on Anvil...");
     let rand_id = rand_u256();
@@ -277,17 +282,18 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn test_publish_kskgen() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
 
+    // Wait for gw-listener to be ready + 2 anvil blocks
     test_instance
         .wait_for_log("Waiting for next KskgenRequest...")
         .await;
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     info!("Mocking KskgenRequest on Anvil...");
     let rand_id = rand_u256();
@@ -332,17 +338,18 @@ async fn test_publish_kskgen() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn test_publish_crsgen() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
     let gw_listener_task = start_test_listener(&test_instance, cancel_token.clone(), None);
 
+    // Wait for gw-listener to be ready + 2 anvil blocks
     test_instance
         .wait_for_log("Waiting for next CrsgenRequest...")
         .await;
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     info!("Mocking CrsgenRequest on Anvil...");
     let pending_tx = test_instance
@@ -378,9 +385,8 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
-#[ignore = "flaky tests to be fixed"]
 async fn test_catchup() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let cancel_token = CancellationToken::new();
@@ -388,7 +394,7 @@ async fn test_catchup() -> anyhow::Result<()> {
     info!("Mocking PublicDecryptionRequest on Anvil...");
     let pending_tx1 = test_instance
         .decryption_contract()
-        .publicDecryptionRequest(vec![])
+        .publicDecryptionRequest(vec![], Bytes::new())
         .send()
         .await?;
     let receipt1 = pending_tx1.get_receipt().await?;
@@ -404,7 +410,7 @@ async fn test_catchup() -> anyhow::Result<()> {
 
     let pending_tx2 = test_instance
         .decryption_contract()
-        .publicDecryptionRequest(vec![])
+        .publicDecryptionRequest(vec![], Bytes::new())
         .send()
         .await?;
     let receipt2 = pending_tx2.get_receipt().await?;
@@ -420,6 +426,9 @@ async fn test_catchup() -> anyhow::Result<()> {
 
     // Ensure that the two transactions are in different blocks.
     assert_ne!(tx1.block_number, tx2.block_number);
+
+    // Wait for two more anvil blocks
+    tokio::time::sleep(2 * test_instance.anvil_block_time()).await;
 
     // Start the listener after the transactions are sent.
     let gw_listener_task = start_test_listener(
@@ -477,6 +486,8 @@ fn start_test_listener(
     config.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
     config.kms_management_contract.address = KMS_MANAGEMENT_MOCK_ADDRESS;
     config.from_block_number = from_block_number;
+    config.decryption_polling = Duration::from_millis(300);
+    config.key_management_polling = Duration::from_millis(300);
     let gw_listener = GatewayListener::new(&config, test_instance.provider().clone(), publisher);
 
     Ok(tokio::spawn(gw_listener.start(cancel_token)))

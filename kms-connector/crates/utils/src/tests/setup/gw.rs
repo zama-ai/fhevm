@@ -2,18 +2,19 @@ use crate::{
     config::KmsWallet,
     conn::WalletGatewayProvider,
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
-    tests::setup::pick_free_port,
+    tests::setup::{ROOT_CARGO_TOML, pick_free_port},
+    // tests::setup::{ROOT_CARGO_TOML, pick_free_port},
 };
 use alloy::{
     primitives::{Address, ChainId, FixedBytes},
     providers::{ProviderBuilder, WsConnect},
 };
-use fhevm_gateway_rust_bindings::{
+use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
-    gatewayconfig::GatewayConfig::{self, GatewayConfigInstance},
-    kmsmanagement::KmsManagement::{self, KmsManagementInstance},
+    gateway_config::GatewayConfig::{self, GatewayConfigInstance},
+    kms_management::KmsManagement::{self, KmsManagementInstance},
 };
-use std::sync::LazyLock;
+use std::{sync::LazyLock, time::Duration};
 use testcontainers::{
     ContainerAsync, GenericImage, ImageExt,
     core::{WaitFor, client::docker_client_instance},
@@ -43,11 +44,12 @@ const ANVIL_PORT: u16 = 8545;
 
 pub struct GatewayInstance {
     pub provider: WalletGatewayProvider,
-    pub decryption_contract: DecryptionInstance<(), WalletGatewayProvider>,
-    pub gateway_config_contract: GatewayConfigInstance<(), WalletGatewayProvider>,
-    pub kms_management_contract: KmsManagementInstance<(), WalletGatewayProvider>,
-    _anvil: ContainerAsync<GenericImage>,
+    pub decryption_contract: DecryptionInstance<WalletGatewayProvider>,
+    pub gateway_config_contract: GatewayConfigInstance<WalletGatewayProvider>,
+    pub kms_management_contract: KmsManagementInstance<WalletGatewayProvider>,
+    pub anvil: ContainerAsync<GenericImage>,
     pub anvil_host_port: u16,
+    pub block_time: u64,
 }
 
 impl GatewayInstance {
@@ -55,6 +57,7 @@ impl GatewayInstance {
         anvil: ContainerAsync<GenericImage>,
         anvil_host_port: u16,
         provider: WalletGatewayProvider,
+        block_time: u64,
     ) -> Self {
         let decryption_contract = Decryption::new(DECRYPTION_MOCK_ADDRESS, provider.clone());
         let gateway_config_contract =
@@ -67,14 +70,17 @@ impl GatewayInstance {
             decryption_contract,
             gateway_config_contract,
             kms_management_contract,
-            _anvil: anvil,
+            anvil,
             anvil_host_port,
+            block_time,
         }
     }
 
     pub async fn setup() -> anyhow::Result<Self> {
+        let block_time = 1;
         let anvil_host_port = pick_free_port();
-        let anvil: ContainerAsync<GenericImage> = setup_anvil_gateway(anvil_host_port).await?;
+        let anvil: ContainerAsync<GenericImage> =
+            setup_anvil_gateway(anvil_host_port, block_time).await?;
         let wallet = KmsWallet::from_private_key_str(
             DEPLOYER_PRIVATE_KEY,
             Some(ChainId::from(*CHAIN_ID as u64)),
@@ -85,13 +91,22 @@ impl GatewayInstance {
             .disable_recommended_fillers()
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet)
-            .on_ws(WsConnect::new(Self::anvil_ws_endpoint_impl(
+            .connect_ws(WsConnect::new(Self::anvil_ws_endpoint_impl(
                 anvil_host_port,
             )))
             .await?;
         let provider = NonceManagedProvider::new(inner_provider, wallet_addr);
 
-        Ok(GatewayInstance::new(anvil, anvil_host_port, provider))
+        Ok(GatewayInstance::new(
+            anvil,
+            anvil_host_port,
+            provider,
+            block_time,
+        ))
+    }
+
+    pub fn anvil_block_time(&self) -> Duration {
+        Duration::from_secs(self.block_time)
     }
 
     fn anvil_ws_endpoint_impl(anvil_host_port: u16) -> String {
@@ -103,7 +118,10 @@ impl GatewayInstance {
     }
 }
 
-pub async fn setup_anvil_gateway(host_port: u16) -> anyhow::Result<ContainerAsync<GenericImage>> {
+pub async fn setup_anvil_gateway(
+    host_port: u16,
+    block_time: u64,
+) -> anyhow::Result<ContainerAsync<GenericImage>> {
     info!("Starting Anvil...");
     let anvil = GenericImage::new("ghcr.io/foundry-rs/foundry", "v1.2.3")
         .with_wait_for(WaitFor::message_on_stdout("Listening"))
@@ -118,7 +136,7 @@ pub async fn setup_anvil_gateway(host_port: u16) -> anyhow::Result<ContainerAsyn
             "--mnemonic",
             TEST_MNEMONIC,
             "--block-time",
-            "1",
+            &format!("{block_time}"),
         ])
         .with_mapped_port(host_port, ANVIL_PORT.into())
         .start()
@@ -131,8 +149,9 @@ pub async fn setup_anvil_gateway(host_port: u16) -> anyhow::Result<ContainerAsyn
     let anvil_internal_ip = endpoint_settings.ip_address.clone().unwrap();
 
     info!("Deploying Gateway mock contracts...");
+    let version = ROOT_CARGO_TOML.get_gateway_bindings_version();
     let _deploy_mock_container =
-        GenericImage::new("ghcr.io/zama-ai/fhevm/gateway-contracts", "v0.7.6")
+        GenericImage::new("ghcr.io/zama-ai/fhevm/gateway-contracts", &version)
             .with_wait_for(WaitFor::message_on_stdout("Mock contract deployment done!"))
             .with_env_var("HARDHAT_NETWORK", "staging")
             .with_env_var(
