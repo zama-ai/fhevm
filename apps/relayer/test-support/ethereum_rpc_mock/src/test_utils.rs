@@ -15,7 +15,7 @@ use std::net::TcpListener;
 use crate::{MockConfig, MockServer};
 
 /// Get a free port by binding to port 0
-/// 
+///
 /// # For Testing Only
 /// This function is intended for test usage only.
 pub fn get_free_port() -> Result<u16, std::io::Error> {
@@ -25,7 +25,7 @@ pub fn get_free_port() -> Result<u16, std::io::Error> {
 }
 
 /// Generate n test addresses with fixed seed for reproducibility
-/// 
+///
 /// # For Testing Only  
 /// This function is intended for test usage only.
 pub fn generate_test_addresses(count: usize) -> Vec<Address> {
@@ -39,7 +39,7 @@ pub fn generate_test_addresses(count: usize) -> Vec<Address> {
 }
 
 /// Create a test wallet with deterministic private key
-/// 
+///
 /// # For Testing Only
 /// This function is intended for test usage only.
 pub fn create_test_wallet() -> (PrivateKeySigner, Address) {
@@ -51,7 +51,7 @@ pub fn create_test_wallet() -> (PrivateKeySigner, Address) {
 }
 
 /// Test with both HTTP and WebSocket providers
-/// 
+///
 /// # For Testing Only
 /// This function is intended for test usage only.
 pub async fn test_with_both_transports<F, Fut>(

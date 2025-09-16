@@ -18,6 +18,7 @@ RUN --mount=type=bind,source=apps/relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=apps/relayer/Cargo.lock,target=Cargo.lock \
     --mount=type=bind,source=apps/relayer/build.rs,target=build.rs \
     --mount=type=bind,source=apps/relayer/src,target=src \
+    --mount=type=bind,source=apps/relayer/test-support,target=test-support \
     --mount=type=bind,source=.git/HEAD,target=.git/HEAD \
     --mount=type=bind,source=.git/index,target=.git/index \
     --mount=type=bind,source=.git/objects,target=.git/objects \
