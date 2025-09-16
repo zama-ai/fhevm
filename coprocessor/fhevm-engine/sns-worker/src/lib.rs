@@ -7,7 +7,10 @@ mod squash_noise;
 mod tests;
 
 use std::{
-    sync::{atomic::AtomicBool, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -15,22 +18,30 @@ use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
     healthz_server::HttpServer,
+    pg_pool::{PostgresPoolManager, ServiceError},
     telemetry::{self, OtelTracer},
     types::FhevmError,
     utils::compact_hex,
 };
+use futures::join;
 use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Transaction};
 use thiserror::Error;
 use tokio::{
     spawn,
-    sync::mpsc::{self, Sender},
+    sync::{
+        mpsc::{self, Sender},
+        RwLock,
+    },
     task,
 };
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
 
-use crate::{aws_upload::check_is_ready, executor::SwitchNSquashService};
+use crate::{
+    aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
+    executor::SwitchNSquashService,
+};
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
@@ -91,6 +102,7 @@ pub struct Config {
     pub health_checks: HealthCheckConfig,
     pub enable_compression: bool,
     pub schedule_policy: SchedulePolicy,
+    pub pg_auto_explain_with_min_duration: Option<Duration>,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -282,6 +294,17 @@ impl HandleItem {
     }
 }
 
+impl From<ExecutionError> for ServiceError {
+    fn from(err: ExecutionError) -> Self {
+        match err {
+            ExecutionError::DbError(e) => ServiceError::Database(e),
+
+            // collapse everything else into InternalError
+            other => ServiceError::InternalError(other.to_string()),
+        }
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum ExecutionError {
     #[error("Conversion error: {0}")]
@@ -349,16 +372,18 @@ impl UploadJob {
 
 /// Runs the SnS worker loop
 pub async fn run_computation_loop(
+    pool_mngr: &PostgresPoolManager,
     conf: Config,
     tx: Sender<UploadJob>,
     token: CancellationToken,
     client: Arc<Client>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!(target: "sns", "Worker started with {}", conf);
+    info!("Worker started with {}", conf);
     let port = conf.health_checks.port;
 
-    let service =
-        Arc::new(SwitchNSquashService::create(conf, tx, token.child_token(), client).await?);
+    let service = Arc::new(
+        SwitchNSquashService::create(pool_mngr, conf, tx, token.child_token(), client).await?,
+    );
 
     let http_server = HttpServer::new(service.clone(), port, token.child_token());
     let _http_handle = task::spawn(async move {
@@ -372,26 +397,39 @@ pub async fn run_computation_loop(
         anyhow::Ok(())
     });
 
-    service.run().await?;
+    service.run(pool_mngr).await;
 
-    info!(target: "sns", "Worker stopped");
+    info!("Worker stopped");
     Ok(())
 }
 
 /// Runs the uploader loop
 pub async fn run_uploader_loop(
+    pool_mngr: &PostgresPoolManager,
     conf: &Config,
-    rx: mpsc::Receiver<UploadJob>,
+    rx: Arc<RwLock<mpsc::Receiver<UploadJob>>>,
     tx: Sender<UploadJob>,
-    token: CancellationToken,
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!(target: "sns", conf = ?conf.s3, "Uploader started");
+    info!(conf = ?conf.s3, "Uploader started");
 
-    aws_upload::process_s3_uploads(conf, rx, tx, token, client, is_ready).await?;
+    let (is_ready_res, _) = check_is_ready(&client, conf).await;
+    is_ready.store(is_ready_res, Ordering::Release);
 
-    info!(target: "sns", "Uploader stopped");
+    let handle_resubmit = spawn_resubmit_task(
+        pool_mngr,
+        conf.clone(),
+        tx.clone(),
+        client.clone(),
+        is_ready.clone(),
+    )
+    .await?;
+
+    let handle_uploader = spawn_uploader(pool_mngr, conf.clone(), rx, client, is_ready).await?;
+    let _res = join!(handle_resubmit, handle_uploader);
+
+    info!("Uploader stopped");
     Ok(())
 }
 
@@ -451,10 +489,23 @@ pub async fn run_all(
     let (client, is_ready) = create_s3_client(&conf).await;
     let is_ready = Arc::new(AtomicBool::new(is_ready));
     let s3 = client.clone();
+    let jobs_rx: Arc<RwLock<mpsc::Receiver<UploadJob>>> = Arc::new(RwLock::new(uploads_rx));
+
+    let pool_mngr = PostgresPoolManager::connect_pool(
+        token.child_token(),
+        conf.db.url.as_str(),
+        conf.db.timeout,
+        conf.db.max_connections,
+        Duration::from_secs(2),
+        conf.pg_auto_explain_with_min_duration,
+    )
+    .await;
+
+    let pg_mngr = pool_mngr.clone();
 
     // Spawns a task to handle S3 uploads
     spawn(async move {
-        if let Err(err) = run_uploader_loop(&conf, uploads_rx, tx, token, s3, is_ready).await {
+        if let Err(err) = run_uploader_loop(&pg_mngr, &conf, jobs_rx, tx, s3, is_ready).await {
             error!(error = %err, "Failed to run the upload-worker");
         }
     });
@@ -464,7 +515,7 @@ pub async fn run_all(
     let conf = config.clone();
     let token = parent_token.child_token();
 
-    if let Err(err) = run_computation_loop(conf, uploads_tx, token, client).await {
+    if let Err(err) = run_computation_loop(&pool_mngr, conf, uploads_tx, token, client).await {
         error!(error = %err, "SnS worker failed");
     }
 
