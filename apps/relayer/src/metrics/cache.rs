@@ -24,7 +24,7 @@ pub fn init_cache_metrics(registry: &Registry) {
         .set(CacheMetrics {
             cache_operations_total,
         })
-        .ok(); // Ignore error if already initialized (useful for tests)
+        .expect("Cache metrics already initialized");
 }
 
 /// Cache types in the relayer.

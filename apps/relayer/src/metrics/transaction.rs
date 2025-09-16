@@ -38,7 +38,7 @@ pub fn init_transaction_metrics(registry: &Registry) {
             transactions_counter,
             pending_transactions_gauge,
         })
-        .ok(); // Ignore error if already initialized (useful for tests)
+        .expect("Transaction metrics already initialized");
 }
 
 #[derive(Debug, Clone, Copy)]

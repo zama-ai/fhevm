@@ -70,6 +70,29 @@ use crate::{
     transaction::{TransactionService, TxConfig},
 };
 use prometheus::Registry;
+use std::sync::OnceLock;
+
+// Global singleton registry for metrics
+static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
+
+/// Initialize all global state exactly once
+fn ensure_global_init(settings: &Settings) -> eyre::Result<&'static Registry> {
+    let registry = GLOBAL_REGISTRY.get_or_init(|| {
+        let _ = rustls::crypto::aws_lc_rs::default_provider()
+            .install_default()
+            .expect("Failed to install AWS-LC crypto provider");
+
+        let registry = Registry::new();
+        metrics::init_blockchain_metrics(&registry);
+        metrics::init_http_metrics(&registry, &settings.http_metrics);
+        metrics::init_cache_metrics(&registry);
+        metrics::init_transaction_metrics(&registry);
+
+        registry
+    });
+
+    Ok(registry)
+}
 
 /// Main library function for the FHE Event Relayer service.
 ///
@@ -85,19 +108,14 @@ pub async fn run_fhevm_relayer(
     settings: Settings,
     shutdown_token: CancellationToken,
 ) -> eyre::Result<()> {
-    // Install AWS-LC crypto provider if not already installed
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    // Initialize all global state exactly once
+    let metrics_registry = ensure_global_init(&settings)?;
 
     debug!("Starting relayer with configuration: {:?}", settings);
 
-    // === Initialize Prometheus metrics registry and metrics
-    let registry = Registry::new();
-    metrics::init_metrics(&registry);
-    metrics::init_http_metrics(&registry, &settings.http_metrics);
-    metrics::init_cache_metrics(&registry);
-    metrics::init_transaction_metrics(&registry);
+    // === Use the singleton registry for metrics endpoint
     let metrics_endpoint = settings.metrics_endpoint.clone();
-    let registry_clone = registry.clone();
+    let registry_clone = metrics_registry.clone();
 
     let mut task_set = tokio::task::JoinSet::new();
     let main_span = span!(Level::INFO, "main-span"); // Add other relevant top-level details

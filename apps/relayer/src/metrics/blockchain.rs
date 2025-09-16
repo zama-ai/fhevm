@@ -130,7 +130,7 @@ pub fn init_metrics(registry: &Registry) {
             gateway_pending_tx,
             gateway_tx_confirmation_seconds,
         })
-        .ok(); // Ignore if already initialized
+        .expect("Blockchain metrics already initialized");
 }
 
 pub mod fhevm {
