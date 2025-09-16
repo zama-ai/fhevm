@@ -6,7 +6,7 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
+    "lint": "pnpm run lint:sol && pnpm run lint:ts && pnpm run prettier:check",
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
@@ -28,6 +28,8 @@
     "@openzeppelin/contracts-upgradeable": "5.1.0",
     "@openzeppelin/foundry-upgrades": "^0.3.6",
     "@openzeppelin/hardhat-upgrades": "3.5.0",
-    "@fhevm/solidity": "^0.8.0"
+    "@openzeppelin/contracts": "5.1.0",
+    "@fhevm/solidity": "^0.8.0",
+    "ethers": "6.x"
   }
 }

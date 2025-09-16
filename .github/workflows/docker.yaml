@@ -141,7 +141,7 @@ jobs:
               "web3":           { "context": ".", "cargo_git_cli": "false", "file": "docker/web3/Dockerfile", "target": "runtime"},
               "front":          { "context": ".", "cargo_git_cli": "false", "file": "docker/front/Dockerfile", "target": "runtime"},
               "relayer":        { "context": ".", "cargo_git_cli": "false", "file": "docker/relayer/Dockerfile", "target": "runtime"},
-              "decryption-oracle-contracts": {"context": "apps/oracle/", "cargo_git_cli": "false", "file": "docker/oracle/Dockerfile", "target": "prod"}
+              "decryption-oracle-contracts": {"context": ".", "cargo_git_cli": "false", "file": "docker/oracle/Dockerfile", "target": "prod"}
             }
 
       - name: Checkout Project

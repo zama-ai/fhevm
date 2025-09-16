@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./apps/relayer/oracle
+        working-directory: ./apps/oracle
     steps:
       - name: Checkout Console repository
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
@@ -28,8 +28,8 @@ jobs:
           node-version: ${{ inputs.node-version }}
           cache: "pnpm"
       - name: Install dependencies
-        run: npm ci
+        run: pnpm i --frozen-lockfile
       - name: Test
         run: |
-          npx hardhat compile
-          npx hardhat test --network hardhat
+          pnpm hardhat compile
+          pnpm hardhat test --network hardhat
