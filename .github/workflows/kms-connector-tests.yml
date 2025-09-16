@@ -18,9 +18,13 @@ jobs:
   check-changes:
     name: kms-connector-tests/check-changes
     permissions:
+      # Required to read workflow run information
       actions: 'read'
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read GitHub packages/container registry
       packages: 'read'
+      # Required to read pull request information
       pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
@@ -49,9 +53,13 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-connector == 'true' }}
     permissions:
+      # Required to read workflow run information
       actions: 'read'
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read GitHub packages/container registry
       packages: 'read'
+      # Required to read pull request information
       pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
@@ -73,9 +81,13 @@ jobs:
     needs: start-runner
     timeout-minutes: 50
     permissions:
+      # Required to read workflow run information
       actions: 'read'
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read GitHub packages/container registry
       packages: 'read'
+      # Required to read pull request information
       pull-requests: 'read'
     runs-on: ${{ needs.start-runner.outputs.label }}
     defaults:
@@ -138,9 +150,13 @@ jobs:
       - start-runner
       - test-connector
     permissions:
+      # Required to read workflow run information
       actions: 'read'
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read GitHub packages/container registry
       packages: 'read'
+      # Required to read pull request information
       pull-requests: 'read'
     runs-on: ubuntu-latest
     if: ${{ always() && needs.start-runner.result != 'skipped' }} # required to stop the runner even if the error happened in the previous jobs, but only if start-runner was not skipped

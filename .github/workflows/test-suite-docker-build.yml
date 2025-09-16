@@ -19,8 +19,11 @@ jobs:
   check-changes:
     name: test-suite-docker-build/check-changes
     permissions:
+      # Required to read workflow run information
       actions: 'read'
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read pull request information
       pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
@@ -50,11 +53,17 @@ jobs:
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
     permissions:
+      # Required to read workflow run information
       actions: 'read'
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read pull request information
       pull-requests: 'read'
-      attestations: 'write'
+      # Required to create build attestations
+      attestations: write
+      # Required to publish Docker images
       packages: 'write'
+      # Required for OIDC authentication
       id-token: 'write'
     with:
       working-directory: "."
@@ -73,11 +82,17 @@ jobs:
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
     permissions:
+      # Required to read workflow run information
       actions: 'read'
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read pull request information
       pull-requests: 'read'
-      attestations: 'write'
+      # Required to create build attestations
+      attestations: write
+      # Required to publish Docker images
       packages: 'write'
+      # Required for OIDC authentication
       id-token: 'write'
     with:
       working-directory: "."

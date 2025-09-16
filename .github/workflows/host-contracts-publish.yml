@@ -19,8 +19,11 @@ jobs:
       run:
         working-directory: ./host-contracts
     permissions:
+      # Required to checkout repository code
       contents: 'read'
+      # Required for OIDC authentication
       id-token: 'write'
+      # Required to publish Docker images
       packages: 'write'
     steps:
       - name: Check out repository

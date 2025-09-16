@@ -74,6 +74,7 @@ jobs:
     name: coprocessor-benchmark-gpu/parse-inputs
     runs-on: ubuntu-latest
     permissions:
+      # Required to checkout repository code
       contents: 'read'
     outputs:
       profile: ${{ steps.parse_profile.outputs.profile }}
@@ -94,6 +95,7 @@ jobs:
     needs: parse-inputs
     runs-on: ubuntu-latest
     permissions:
+      # Required to checkout repository code
       contents: 'read'
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
@@ -116,7 +118,9 @@ jobs:
     continue-on-error: true
     timeout-minutes: 720  # 12 hours
     permissions:
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read GitHub packages/container registry
       packages: 'read'
     strategy:
       fail-fast: false
@@ -294,6 +298,7 @@ jobs:
     needs: [ setup-instance, benchmark ]
     runs-on: ubuntu-latest
     permissions:
+      # Required to checkout repository code
       contents: 'read'
     steps:
       - name: Stop remote instance

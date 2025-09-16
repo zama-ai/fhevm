@@ -60,6 +60,7 @@ jobs:
     name: test-suite-e2e-operators-tests/setup-instance
     runs-on: ubuntu-latest
     permissions:
+      # Required to checkout repository code
       contents: 'read'
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
@@ -79,8 +80,11 @@ jobs:
     name: test-suite-e2e-operators-tests/operators-e2e-test
     if: ${{ github.event_name == 'workflow_dispatch' }}
     permissions:
+      # Required to checkout repository code
       contents: 'read'
+      # Required for OIDC authentication
       id-token: 'write'
+      # Required to read GitHub packages/container registry
       packages: 'read'
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     needs: setup-instance
@@ -156,6 +160,7 @@ jobs:
     needs: [ setup-instance, operators-e2e-test]
     runs-on: ubuntu-latest
     permissions:
+      # Required to checkout repository code
       contents: 'read'
     steps:
       - name: Stop remote instance

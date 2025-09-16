@@ -12,6 +12,7 @@ jobs:
   lint:
     name: common-pull-request/lint (bpr)
     permissions:
+      # Required to checkout repository code
       contents: 'read'
     runs-on: ubuntu-latest
     steps:
@@ -46,8 +47,11 @@ jobs:
 
   zizmor-sast-check:
     permissions:
+      # Required to write security events for SAST results
       security-events: write
+      # Required to read workflow run information
       actions: read
+      # Required to checkout repository code
       contents: read
     name: Zizmor SAST Check
     uses: zama-ai/ci-templates/.github/workflows/sast-zizmor.yml@7dafeba7efe0df52da9fb9dc0e8a84277a7dd34a

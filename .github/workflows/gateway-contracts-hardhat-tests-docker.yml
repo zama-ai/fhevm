@@ -18,7 +18,9 @@ jobs:
     name: gateway-contracts-hardhat-tests-docker/test (bpr)
     runs-on: ubuntu-latest
     permissions:
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read GitHub packages/container registry
       packages: 'read'
     steps:
       - name: Checkout project

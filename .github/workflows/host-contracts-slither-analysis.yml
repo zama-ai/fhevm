@@ -12,8 +12,11 @@ jobs:
   check-changes:
     name: host-contracts-slither-analysis/check-changes
     permissions:
+      # Required to read workflow run information
       actions: 'read'
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read pull request information
       pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
@@ -37,8 +40,11 @@ jobs:
     env:
       HARDHAT_NETWORK: hardhat
     permissions:
+      # Required to checkout repository code
       contents: 'read'
+      # Required to create GitHub checks for test results
       checks: 'write'
+      # Required to write security events for SAST results
       security-events: 'write'
     steps:
       - name: Checkout

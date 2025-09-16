@@ -18,8 +18,11 @@ jobs:
   check-changes:
     name: gateway-contracts-hardhat-tests/check-changes
     permissions:
+      # Required to read workflow run information
       actions: 'read'
+      # Required to checkout repository code
       contents: 'read'
+      # Required to read pull request information
       pull-requests: 'read'
     runs-on: ubuntu-latest
     outputs:
@@ -41,6 +44,7 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     runs-on: ubuntu-latest
     permissions:
+      # Required to checkout repository code
       contents: 'read'
     steps:
       - name: Checkout project
