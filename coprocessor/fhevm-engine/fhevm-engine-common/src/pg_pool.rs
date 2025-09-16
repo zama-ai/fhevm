@@ -80,12 +80,14 @@ impl PostgresPoolManager {
     /// ```no_run
     /// use sqlx::{Pool, Postgres};
     /// use std::time::Duration;
-    /// use your_crate::{PostgresPoolManager, ServiceError};
+    /// use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
+    /// use tokio_util::sync::CancellationToken;
     ///
     /// #[tokio::main]
     /// async fn main() -> Result<(), ServiceError> {
     ///     // Initialize the runner with DB params
     ///     let db = PostgresPoolManager::connect_pool(
+    ///         CancellationToken::new(),
     ///         "postgres://postgres:password@localhost/dbname",
     ///         Duration::from_secs(5),   // acquire timeout
     ///         10,                        // max connections
