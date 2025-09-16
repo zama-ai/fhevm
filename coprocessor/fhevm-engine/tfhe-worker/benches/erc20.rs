@@ -60,13 +60,13 @@ async fn run_profile_erc20() {
     println!("{}", serde_json::to_string(&tfhers_params).unwrap());
     println!("***********************************");
 
-    prepare_erc20_no_cmux(&app, keys, num_samples).await;
+    prepare_erc20_no_cmux(&app, keys, &pool, num_samples).await;
 
     let db_url = app.db_url().to_string();
     let _ = tokio::task::spawn_blocking(move || {
         Runtime::new()
             .unwrap()
-            .block_on(async { wait_until_all_ciphertexts_computed(db_url).await.unwrap() });
+            .block_on(async { wait_until_all_allowed_handles_computed(db_url).await.unwrap() });
     })
     .await;
 }
@@ -530,7 +530,7 @@ async fn schedule_erc20_no_cmux(
         })?;
     let keys = &keys[0];
 
-    prepare_erc20_no_cmux(&app, keys, pool, num_tx).await?;
+    prepare_erc20_no_cmux(&app, keys, &pool, num_tx).await?;
 
     let app_ref = &app;
     bencher
