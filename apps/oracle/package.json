@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "compile": "hardhat compile",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "pnpm hardhat compile && pnpm hardhat test --network hardhat",
     "lint": "pnpm run lint:sol && pnpm run lint:ts && pnpm run prettier:check",
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
