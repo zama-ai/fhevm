@@ -25,12 +25,9 @@ jobs:
   check-changes:
     name: coprocessor-gpu-tests/check-changes
     permissions:
-      # Required to read workflow run information
-      actions: 'read'
-      # Required to checkout repository code
-      contents: 'read'
-      # Required to read pull request information
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-coprocessor-gpu: ${{ steps.filter.outputs.coprocessor-gpu }}
@@ -60,8 +57,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || needs.check-changes.outputs.changes-coprocessor-gpu == 'true' }}
     runs-on: ubuntu-latest
     permissions:
-      # Required to checkout repository code
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -87,10 +83,8 @@ jobs:
       cancel-in-progress: true
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     permissions:
-      # Required to checkout repository code
-      contents: 'read'
-      # Required to read GitHub packages/container registry
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to read GitHub packages/container registry
     strategy:
       fail-fast: false
       # explicit include-based build matrix, of known valid options
@@ -203,8 +197,7 @@ jobs:
     needs: [ setup-instance, coprocessor-gpu ]
     runs-on: ubuntu-latest
     permissions:
-      # Required to checkout repository code
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     steps:
       - name: Stop remote instance
         id: stop-instance

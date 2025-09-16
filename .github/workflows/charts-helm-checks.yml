@@ -12,12 +12,9 @@ jobs:
   check-changes:
     name: charts-helm-checks/check-changes
     permissions:
-      # Required to read workflow run information
-      actions: 'read'
-      # Required to checkout repository code
-      contents: 'read'
-      # Required to read pull request information
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-charts: ${{ steps.filter.outputs.charts }}
@@ -38,8 +35,7 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
     runs-on: 'ubuntu-latest'
     permissions:
-      # Required to checkout repository code
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -54,8 +50,7 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
     runs-on: ubuntu-latest
     permissions:
-      # Required to checkout repository code
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

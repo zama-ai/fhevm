@@ -13,12 +13,9 @@ jobs:
   check-changes:
     name: host-contracts-docker-deployment-tests/check-changes
     permissions:
-      # Required to read workflow run information
-      actions: 'read'
-      # Required to checkout repository code
-      contents: 'read'
-      # Required to read pull request information
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
@@ -38,12 +35,9 @@ jobs:
     name: host-contracts-docker-deployment-tests/docker-compose-tests (bpr)
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
     permissions:
-      # Required to checkout repository code
-      contents: 'read'
-      # Required to create GitHub checks for test results
-      checks: 'write'
-      # Required to read GitHub packages/container registry
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      checks: 'write' # Required to create GitHub checks for test results
+      packages: 'read' # Required to read GitHub packages/container registry
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code

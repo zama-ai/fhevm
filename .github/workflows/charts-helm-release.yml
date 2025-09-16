@@ -14,12 +14,9 @@ jobs:
   check-changes:
     name: charts-helm-release/check-changes
     permissions:
-      # Required to read workflow run information
-      actions: 'read'
-      # Required to checkout repository code
-      contents: 'read'
-      # Required to read pull request information
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-charts: ${{ steps.filter.outputs.charts }}
@@ -39,10 +36,8 @@ jobs:
     name: charts-helm-release/release
     if: ${{ needs.check-changes.outputs.changes-charts == 'true' }}
     permissions:
-      # Required to checkout repository code
-      contents: 'read'
-      # Required to publish Docker images
-      packages: 'write'
+      contents: 'read' # Required to checkout repository code
+      packages: 'write' # Required to publish Docker images
     runs-on: ubuntu-latest
     environment: main
     steps:

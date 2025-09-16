@@ -14,8 +14,7 @@ jobs:
     name: gateway-contracts-mock-deployment/check-changes
     runs-on: ubuntu-latest
     permissions:
-      # Required to checkout repository code
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
     steps:
@@ -34,12 +33,9 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     name: gateway-contracts-mock-deployment/deploy (bpr)
     permissions:
-      # Required to checkout repository code
-      contents: 'read'
-      # Required to create GitHub checks for test results
-      checks: 'write'
-      # Required to read GitHub packages/container registry
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      checks: 'write' # Required to create GitHub checks for test results
+      packages: 'read' # Required to read GitHub packages/container registry
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
