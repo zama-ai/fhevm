@@ -10,13 +10,17 @@ use crate::UploadJob;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
+use fhevm_engine_common::pg_pool::PostgresPoolManager;
+use fhevm_engine_common::pg_pool::ServiceError;
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::{get_ct_type, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::compact_hex;
 use rayon::prelude::*;
 use sqlx::postgres::PgListener;
+use sqlx::Pool;
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use std::fmt;
+use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 use std::time::SystemTime;
@@ -27,10 +31,10 @@ use tokio::sync::mpsc::Sender;
 use tokio::sync::RwLock;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
+use tracing::error_span;
 use tracing::warn;
 use tracing::{debug, error, info};
 
-const RETRY_DB_CONN_INTERVAL: Duration = Duration::from_secs(5);
 const S3_HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy)]
@@ -54,7 +58,7 @@ pub struct SwitchNSquashService {
     // Timestamp of the last moment the service was active
     last_active_at: Arc<RwLock<SystemTime>>,
     s3_client: Arc<Client>,
-    token: CancellationToken,
+    _token: CancellationToken,
     tx: Sender<UploadJob>,
 }
 impl HealthCheckService for SwitchNSquashService {
@@ -112,55 +116,56 @@ impl HealthCheckService for SwitchNSquashService {
 
 impl SwitchNSquashService {
     pub async fn create(
+        pool_mngr: &PostgresPoolManager,
         conf: Config,
         tx: Sender<UploadJob>,
         token: CancellationToken,
         s3_client: Arc<Client>,
     ) -> Result<SwitchNSquashService, ExecutionError> {
-        let t = telemetry::tracer("init_service");
-        let s = t.child_span("pg_connect");
-
-        let pool = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(conf.db.max_connections)
-            .acquire_timeout(conf.db.timeout)
-            .connect(&conf.db.url)
-            .await?;
-
-        telemetry::end_span(s);
-
         Ok(SwitchNSquashService {
-            pool,
+            pool: pool_mngr.pool(),
             conf,
             last_active_at: Arc::new(RwLock::new(SystemTime::now())),
-            token,
+            _token: token,
             s3_client,
             tx,
         })
     }
 
-    pub async fn run(&self) -> Result<(), ExecutionError> {
-        run_loop(
-            &self.conf,
-            &self.tx,
-            &self.pool,
-            self.token.clone(),
-            self.last_active_at.clone(),
-        )
-        .await
+    pub async fn run(&self, pool_mngr: &PostgresPoolManager) {
+        let keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>> = Arc::new(RwLock::new(
+            lru::LruCache::new(NonZeroUsize::new(10).unwrap()),
+        ));
+
+        let op = |pool: Pool<Postgres>, token: CancellationToken| {
+            let conf = self.conf.clone();
+            let tx = self.tx.clone();
+            let last_active_at = self.last_active_at.clone();
+            let keys_cache = keys_cache.clone();
+
+            async move {
+                run_loop(conf, tx, pool, token, last_active_at.clone(), keys_cache)
+                    .await
+                    .map_err(ServiceError::from)
+            }
+        };
+
+        let _ = pool_mngr.blocking_with_db_retry(op, "sns").await;
     }
 }
 
 /// Executes the worker logic for the SnS task.
 pub(crate) async fn run_loop(
-    conf: &Config,
-    tx: &Sender<UploadJob>,
-    pool: &PgPool,
+    conf: Config,
+    tx: Sender<UploadJob>,
+    pool: PgPool,
     token: CancellationToken,
     last_active_at: Arc<RwLock<SystemTime>>,
+    keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
 ) -> Result<(), ExecutionError> {
     let tenant_api_key = &conf.tenant_api_key;
-    let mut listener = PgListener::connect_with(pool).await?;
-    info!(target: "worker", "Connected to PostgresDB");
+    let mut listener = PgListener::connect_with(&pool).await?;
+    info!("Connected to PostgresDB");
 
     listener
         .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
@@ -168,11 +173,11 @@ pub(crate) async fn run_loop(
 
     let t = telemetry::tracer("worker_loop_init");
     let s = t.child_span("fetch_keyset");
-    let keys: KeySet = fetch_keyset(pool, tenant_api_key).await?;
+    let keys: KeySet = fetch_keyset(&keys_cache, &pool, tenant_api_key).await?;
     telemetry::end_span(s);
     t.end();
 
-    info!(target: "worker", tenant_api_key = tenant_api_key, "Fetched keyset");
+    info!(tenant_api_key = tenant_api_key, "Fetched keyset");
 
     let mut gc_ticker = interval(conf.db.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
@@ -180,63 +185,43 @@ pub(crate) async fn run_loop(
 
     loop {
         // Continue looping until the service is cancelled or a critical error occurs
-        // If a transient db error is encountered, keep retrying until it recovers
-
         {
             let mut value = last_active_at.write().await;
             *value = SystemTime::now();
         }
 
-        match fetch_and_execute_sns_tasks(pool, tx, &keys, conf, &token).await {
-            Ok(maybe_remaining) => {
-                if maybe_remaining {
-                    if token.is_cancelled() {
-                        return Ok(());
-                    }
+        let maybe_remaining = fetch_and_execute_sns_tasks(&pool, &tx, &keys, &conf, &token).await?;
+        if maybe_remaining {
+            if token.is_cancelled() {
+                return Ok(());
+            }
 
-                    info!(target: "worker", "more tasks to process, continuing");
-                    if let Ok(elapsed) = gc_timestamp.elapsed() {
-                        if elapsed >= conf.db.cleanup_interval {
-                            info!(target: "worker", "gc interval, cleaning up");
-                            gc_ticker.reset();
-                            gc_timestamp = SystemTime::now();
-                            if let Err(err) = garbage_collect(pool, conf.db.gc_batch_limit).await {
-                                error!(target: "worker", error = %err, "Failed to garbage collect");
-                            }
-                        }
-                    }
-
-                    continue;
+            info!("more tasks to process, continuing");
+            if let Ok(elapsed) = gc_timestamp.elapsed() {
+                if elapsed >= conf.db.cleanup_interval {
+                    info!("gc interval, cleaning up");
+                    gc_ticker.reset();
+                    gc_timestamp = SystemTime::now();
+                    garbage_collect(&pool, conf.db.gc_batch_limit).await?;
                 }
             }
-            Err(ExecutionError::DbError(err)) => match err {
-                sqlx::Error::PoolTimedOut | sqlx::Error::Io(_) | sqlx::Error::Tls(_) => {
-                    error!(target: "worker", error = %err, "Transient DB error occurred");
-                }
-                _ => {
-                    tokio::time::sleep(RETRY_DB_CONN_INTERVAL).await;
-                }
-            },
-            Err(err) => {
-                error!(target: "worker", error = %err, "Failed to process SnS tasks");
-            }
+
+            continue;
         }
 
         select! {
             _ = token.cancelled() => return Ok(()),
             n = listener.try_recv() => {
-                info!(target: "worker", notification = ?n, "Received notification");
+                info!( notification = ?n, "Received notification");
             },
             _ = polling_ticker.tick() => {
-                debug!(target: "worker", "Polling timeout, rechecking for tasks");
+                debug!( "Polling timeout, rechecking for tasks");
             },
             // Garbage collecting
             _ = gc_ticker.tick() => {
-                info!(target: "worker", "gc tick, on_idle");
+                info!("gc tick, on_idle");
                 gc_timestamp = SystemTime::now();
-                if let Err(err) = garbage_collect(pool, conf.db.gc_batch_limit).await {
-                    error!(target: "worker", error = %err, "Failed to garbage collect");
-                }
+                garbage_collect(&pool, conf.db.gc_batch_limit).await?;
             }
         }
     }
@@ -274,7 +259,10 @@ pub async fn garbage_collect(pool: &PgPool, limit: u32) -> Result<(), ExecutionE
 
     if rows_affected > 0 {
         let _s = telemetry::tracer_with_start_time("cleanup_ct128", start);
-        info!(target: "worker", rows_affected = rows_affected, "Cleaning up old ciphertexts128");
+        info!(
+            rows_affected = rows_affected,
+            "Cleaning up old ciphertexts128"
+        );
     }
 
     Ok(())
@@ -291,7 +279,7 @@ async fn fetch_and_execute_sns_tasks(
     let mut db_txn = match pool.begin().await {
         Ok(txn) => txn,
         Err(err) => {
-            error!(target: "worker", error = %err, "Failed to begin transaction");
+            error!(error = %err, "Failed to begin transaction");
             return Err(err.into());
         }
     };
@@ -367,7 +355,7 @@ pub async fn query_sns_tasks(
         .fetch_all(db_txn.as_mut())
         .await?;
 
-    info!(target: "sns", { count = records.len(), order = order.to_string() }, "Fetched SnS tasks");
+    info!(target: "worker", { count = records.len(), order = order.to_string() }, "Fetched SnS tasks");
 
     if records.is_empty() {
         return Ok(None);
@@ -462,17 +450,21 @@ fn compute_task(
     token: CancellationToken,
     _client_key: &Option<ClientKey>,
 ) {
+    let thread_id = format!("{:?}", std::thread::current().id());
+    let span = error_span!("compute", thread_id = %thread_id);
+    let _enter = span.enter();
+
     let handle = compact_hex(&task.handle);
 
     // Check if the task is cancelled
     if token.is_cancelled() {
-        warn!(target: "sns", { handle }, "Task processing cancelled");
+        warn!({ handle }, "Task processing cancelled");
         return;
     }
 
     let ct64_compressed = task.ct64_compressed.as_ref();
     if ct64_compressed.is_empty() {
-        error!(target: "sns", { handle }, "Empty ciphertext64, skipping task");
+        error!({ handle }, "Empty ciphertext64, skipping task");
         return; // Skip empty ciphertexts
     }
 
@@ -482,7 +474,7 @@ fn compute_task(
     telemetry::end_span(s);
 
     let ct_type = ct.type_name().to_owned();
-    info!(target: "sns",  { handle, ct_type }, "Converting ciphertext");
+    info!( { handle, ct_type }, "Converting ciphertext");
 
     let mut span = task.otel.child_span("squash_noise");
     telemetry::attribute(&mut span, "ct_type", ct_type);
@@ -490,7 +482,12 @@ fn compute_task(
     match ct.squash_noise_and_serialize(enable_compression) {
         Ok(bytes) => {
             telemetry::end_span(span);
-            info!(target: "sns", handle = handle, length = bytes.len(), compressed = enable_compression, "Ciphertext converted");
+            info!(
+                handle = handle,
+                length = bytes.len(),
+                compressed = enable_compression,
+                "Ciphertext converted"
+            );
 
             #[cfg(feature = "test_decrypt_128")]
             decrypt_big_ct(_client_key, &bytes, &ct, &task.handle, enable_compression);
@@ -521,13 +518,13 @@ fn compute_task(
                 // 2. The input channel of the upload worker (size: conf.max_concurrent_uploads * 10)
                 // 3. The PostgresDB (size: unlimited)
 
-                error!({target = "worker", action = "review", error = %err},  "Failed to send task to upload worker");
+                error!({ action = "review", error = %err }, "Failed to send task to upload worker");
                 telemetry::end_span_with_err(task.otel.child_span("send_task"), err.to_string());
             }
         }
         Err(err) => {
             telemetry::end_span_with_err(span, err.to_string());
-            error!(target: "sns", handle = handle, error = %err, "Failed to convert ct");
+            error!({ handle = handle, error = %err }, "Failed to convert ct");
         }
     };
 }
@@ -565,19 +562,22 @@ async fn update_ciphertext128(
 
             match res {
                 Ok(val) => {
-                    info!(target: "worker", handle = compact_hex(&task.handle),
-                        query_res = format!("{:?}", val),  "Inserted ct128 in DB");
+                    info!(
+                        handle = compact_hex(&task.handle),
+                        query_res = format!("{:?}", val),
+                        "Inserted ct128 in DB"
+                    );
                     telemetry::end_span(s);
                 }
                 Err(err) => {
-                    error!(target: "worker", handle = ?task.handle, error = %err, "Failed to insert ct128 in DB");
+                    error!( handle = ?task.handle, error = %err, "Failed to insert ct128 in DB");
                     telemetry::end_span_with_err(s, err.to_string());
                 }
             }
 
             // Notify add_ciphertexts
         } else {
-            error!(target: "worker", handle = ?task.handle, "Large ciphertext not computed for task");
+            error!( handle = ?task.handle, "Large ciphertext not computed for task");
         }
     }
 
@@ -614,7 +614,7 @@ async fn update_computations_status(
             .execute(db_txn.as_mut())
             .await?;
         } else {
-            error!(target: "worker", handle = ?task.handle, "Large ciphertext not computed for task");
+            error!( handle = ?task.handle, "Large ciphertext not computed for task");
         }
     }
     Ok(())
@@ -661,7 +661,7 @@ fn decrypt_big_ct(
             }
             .expect("Failed to decrypt");
 
-            info!(target: "sns", plaintext = pt, handle = compact_hex(handle), "Decrypted");
+            info!(plaintext = pt, handle = compact_hex(handle), "Decrypted");
         }
     }
 }
