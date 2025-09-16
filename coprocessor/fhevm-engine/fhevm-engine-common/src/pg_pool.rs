@@ -1,5 +1,5 @@
-use sqlx::Executor;
 use sqlx::postgres::PgPoolOptions;
+use sqlx::Executor;
 use sqlx::{Pool, Postgres};
 use std::future::Future;
 use std::time::Duration;
@@ -7,7 +7,7 @@ use thiserror::Error;
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::{Instrument, error, info};
+use tracing::{error, info, Instrument};
 
 const CODE_DEADLOCK_DETECTED: &str = "40P01";
 
@@ -49,8 +49,7 @@ impl PostgresPoolManager {
                     })
                 })
                 .connect(url)
-                .await 
-                {
+                .await {
                     Ok(p) => break p,
                     Err(err) => {
                         error!( error=%err, "Failed to create initial DB pool; retrying...");
