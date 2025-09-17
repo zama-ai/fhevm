@@ -47,10 +47,7 @@ profile_erc20_gpu:
 		  $(DB_URL) \
 		  FHEVM_TEST_NUM_SAMPLES=200 \
 		  nsys profile --trace=cuda,osrt,nvtx \
-		  				-c cudaProfilerApi \
-		  				-d 30 \
-		  				--kill=sigkill \
-		  				cargo +nightly bench --bench erc20 --features=gpu-profile,bench,$(OPTIMIZATION_TARGET) -- --nocapture
+						cargo +nightly bench --bench erc20 --features=gpu-profile,bench,$(OPTIMIZATION_TARGET)
 
 .PHONY: benchmark_erc20_gpu # Run ECR20 transfer benchmarks on GPU
 benchmark_erc20_gpu:
