@@ -28,28 +28,6 @@ services:
       retries: 5
       start_period: 1s
 
-  generate-fhe-keys:
-    container_name: fhevm-generate-fhe-keys
-    image: ghcr.io/zama-ai/kms/core-client:${CORE_VERSION}
-    env_file:
-      - ../env/staging/.env.core.local
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        set -e
-        sleep 10
-        cd /app/kms-core-client
-        bin/kms-core-client -f config.toml insecure-key-gen
-        bin/kms-core-client -f config.toml insecure-crs-gen --max-num-bits 2048
-
-    volumes:
-      - fhevm_minio_secrets:/minio_secrets
-      - ../config/core-client/config.toml:/app/kms-core-client/config.toml
-    depends_on:
-      kms-core:
-        condition: service_started
-
 volumes:
   fhevm_minio_secrets:
     external: true
