@@ -284,6 +284,14 @@ contract CiphertextCommits is
             // Get the context ID from the input verification context ID mapping
             uint256 contextId = $.addCiphertextContextId[addCiphertextHash];
 
+            // If there's not context (`contextId=0`), get the list storage URL for each coprocessor from
+            // the first context (`contextId=1`), as versions < V4 were only using a single context.
+            // DEPRECATED: to remove before mainnet
+            // See https://github.com/zama-ai/fhevm-internal/issues/381
+            if (contextId == 0) {
+                contextId = 1;
+            }
+
             // If the consensus has been reached but the hash is 0x0, it means that the handle has been
             // added in V1: the handle was used to retrieve the list of transaction sender addresses
             // instead of the hash
