@@ -17,13 +17,13 @@ use crate::{ChainId, ConfigSettings, HealthStatus, KeyId, KeyType, TenantId};
 sol!(
     #[sol(rpc)]
     InputVerification,
-    "artifacts/InputVerification.sol/InputVerification.json"
+    "./../../../gateway-contracts/artifacts/contracts/InputVerification.sol/InputVerification.json"
 );
 
 sol!(
     #[sol(rpc)]
     KMSManagement,
-    "artifacts/KMSManagement.sol/KMSManagement.json"
+    "./../../../gateway-contracts/artifacts/contracts/KMSManagement.sol/KMSManagement.json"
 );
 
 struct TenantInfo {
