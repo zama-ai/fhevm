@@ -36,13 +36,13 @@ function randomBoolean() public returns (ebool) {
 
 ## **Bounded random numbers**
 
-To generate random numbers within a specific range, you can specify an **upper bound**. The random number will be in the range `[0, upperBound - 1]`.
+To generate random numbers within a specific range, you can specify an **upper bound**. The specified upper bound must be a power of 2. The random number will be in the range `[0, upperBound - 1]`.
 
 ```solidity
 // Generate random numbers with upper bounds
-euint8 r8 = FHE.randEuint8(100);      // Random number between 0-99
-euint16 r16 = FHE.randEuint16(1000);  // Random number between 0-999
-euint32 r32 = FHE.randEuint32(1000000); // Random number between 0-999999
+euint8 r8 = FHE.randEuint8(32);      // Random number between 0-31
+euint16 r16 = FHE.randEuint16(512);  // Random number between 0-511
+euint32 r32 = FHE.randEuint32(65536); // Random number between 0-65535
 ```
 
 ### **Example: Random number with upper bound**

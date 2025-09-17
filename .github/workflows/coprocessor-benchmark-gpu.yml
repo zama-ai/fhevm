@@ -254,7 +254,7 @@ jobs:
           --crate "coprocessor/fhevm-engine/tfhe-worker" \
           --name-suffix "operation_batch_size_${BATCH_SIZE}-schedule_${SCHEDULING_POLICY}-optimization_target_${OPTIMIZATION_TARGET}"
         env:
-          RESULTS_FILENAME: ${{ env.results_filename }}
+          RESULTS_FILENAME: ${{ env.RESULTS_FILENAME }}
           HW_NAME: ${{ needs.parse-inputs.outputs.hardware_name }}
           COMMIT_HASH: ${{ env.COMMIT_HASH }}
           GH_REF_NAME: ${{ github.ref_name }}
@@ -285,7 +285,7 @@ jobs:
           --slab-url "${SLAB_URL}"
         env:
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
-          RESULTS_FILENAME: ${{ env.results_filename }}
+          RESULTS_FILENAME: ${{ env.RESULTS_FILENAME }}
           SLAB_URL: ${{ secrets.SLAB_URL }}
 
   teardown-instance:
