@@ -77,3 +77,53 @@ task("task:triggerCrsgen")
 
     console.log("Crsgen triggering done!");
   });
+
+task("task:getCrs").setAction(async function (_, hre) {
+  await hre.run("compile:specific", { contract: "contracts" });
+  console.log("Trigger CRS generation in KMSManagement contract.");
+
+  // Get the deployer wallet.
+  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+
+  const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
+  dotenv.config({ path: envFilePath, override: true });
+
+  // Get KMSManagement contract.
+  const proxyAddress = getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS");
+  const kmsManagement = await hre.ethers.getContractAt("KMSManagement", proxyAddress, deployer);
+
+  const crsgenRequestEvents = await kmsManagement.queryFilter(kmsManagement.filters.CrsgenRequest);
+  console.log("CrsgenRequest events:", crsgenRequestEvents);
+
+  const activateCrsEvents = await kmsManagement.queryFilter(kmsManagement.filters.ActivateCrs);
+  console.log("ActivateCrs events:", activateCrsEvents);
+
+  const crsId = await kmsManagement.getActiveCrsId();
+  console.log("active CRS ID", crsId);
+});
+
+task("task:getKey").setAction(async function (_, hre) {
+  await hre.run("compile:specific", { contract: "contracts" });
+  console.log("Trigger Key generation in KMSManagement contract.");
+
+  // Get the deployer wallet.
+  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
+  const deployer = new hre.ethers.Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+
+  const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
+  dotenv.config({ path: envFilePath, override: true });
+
+  // Get KMSManagement contract.
+  const proxyAddress = getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS");
+  const kmsManagement = await hre.ethers.getContractAt("KMSManagement", proxyAddress, deployer);
+
+  const prepKeygenEvents = await kmsManagement.queryFilter(kmsManagement.filters.PrepKeygenRequest);
+  console.log("PrepKeygenRequest events:", prepKeygenEvents);
+
+  const keygenRequestEvents = await kmsManagement.queryFilter(kmsManagement.filters.KeygenRequest);
+  console.log("KeygenRequest events:", keygenRequestEvents);
+
+  const activateKeyEvents = await kmsManagement.queryFilter(kmsManagement.filters.ActivateKey);
+  console.log("ActivateKey events:", activateKeyEvents);
+});
