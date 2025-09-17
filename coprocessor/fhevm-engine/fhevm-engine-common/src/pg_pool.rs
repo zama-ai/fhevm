@@ -30,8 +30,12 @@ impl PostgresPoolManager {
         max_connections: u32,
         retry_db_conn_interval: Duration,
         auto_explain_with_min_duration: Option<Duration>,
-    ) -> Self {
+    ) -> Option<Self> {
         let pool = loop {
+            if cancel_token.is_cancelled() {
+                return None;
+            }
+
             match PgPoolOptions::new()
                 .max_connections(max_connections)
                 .acquire_timeout(acquire_timeout)
@@ -59,7 +63,7 @@ impl PostgresPoolManager {
                 }
         };
 
-        Self {
+        Some(Self {
             params: Params {
                 url: url.to_string(),
                 acquire_timeout,
@@ -69,7 +73,7 @@ impl PostgresPoolManager {
             },
             pool,
             cancel_token,
-        }
+        })
     }
 
     /// Spawn a new task that runs the given operation with a database connection,
@@ -93,7 +97,7 @@ impl PostgresPoolManager {
     ///         10,                        // max connections
     ///         Duration::from_secs(2),    // retry interval
     ///         None,
-    ///     ).await;
+    ///     ).await.unwrap();
     ///
     ///     // Define an operation to run with the database pool
     ///     let op = |pool: Pool<Postgres>, cancel_token: CancellationToken| async move {
@@ -217,6 +221,8 @@ impl PostgresPoolManager {
                         return Err(err);
                     }
                 }
+            } else {
+                return Ok(());
             }
         }
     }
@@ -226,7 +232,7 @@ impl PostgresPoolManager {
     }
 
     fn span(name: &str) -> tracing::Span {
-        tracing::trace_span!("task", target = name)
+        tracing::error_span!("task", target = name)
     }
 }
 
