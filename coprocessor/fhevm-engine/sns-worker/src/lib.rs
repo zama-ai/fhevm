@@ -69,6 +69,17 @@ pub struct DBConfig {
     pub lifo: bool,
 }
 
+impl std::fmt::Debug for DBConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Custom debug impl to avoid printing sensitive information
+        write!(
+            f,
+            "db_listen_channel: {:?}, db_notify_channel: {}, db_batch_limit: {}, db_gc_batch_limit: {}, db_polling_interval: {}, db_cleanup_interval: {:?}, db_max_connections: {}, db_timeout: {:?}, lifo: {}",
+            self.listen_channels, self.notify_channel, self.batch_limit, self.gc_batch_limit, self.polling_interval, self.cleanup_interval, self.max_connections, self.timeout, self.lifo
+        )
+    }
+}
+
 #[derive(Clone, Default, Debug)]
 pub struct S3Config {
     pub bucket_ct128: String,
@@ -92,7 +103,7 @@ pub struct HealthCheckConfig {
     pub port: u16,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub tenant_api_key: String,
     pub service_name: String,
@@ -378,7 +389,6 @@ pub async fn run_computation_loop(
     token: CancellationToken,
     client: Arc<Client>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!("Worker started with {}", conf);
     let port = conf.health_checks.port;
 
     let service = Arc::new(
@@ -412,8 +422,6 @@ pub async fn run_uploader_loop(
     client: Arc<Client>,
     is_ready: Arc<AtomicBool>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    info!(conf = ?conf.s3, "Uploader started");
-
     let (is_ready_res, _) = check_is_ready(&client, conf).await;
     is_ready.store(is_ready_res, Ordering::Release);
 
@@ -476,6 +484,9 @@ pub async fn run_all(
     let (uploads_tx, uploads_rx) =
         mpsc::channel::<UploadJob>(10 * config.s3.max_concurrent_uploads as usize);
 
+    let rayon_threads = rayon::current_num_threads();
+    info!(config = ?config, rayon_threads, "Starting SNS worker");
+
     if !config.service_name.is_empty() {
         if let Err(err) = telemetry::setup_otlp(&config.service_name) {
             panic!("Error while initializing tracing: {:?}", err);
@@ -491,7 +502,7 @@ pub async fn run_all(
     let s3 = client.clone();
     let jobs_rx: Arc<RwLock<mpsc::Receiver<UploadJob>>> = Arc::new(RwLock::new(uploads_rx));
 
-    let pool_mngr = PostgresPoolManager::connect_pool(
+    let Some(pool_mngr) = PostgresPoolManager::connect_pool(
         token.child_token(),
         conf.db.url.as_str(),
         conf.db.timeout,
@@ -499,7 +510,11 @@ pub async fn run_all(
         Duration::from_secs(2),
         conf.pg_auto_explain_with_min_duration,
     )
-    .await;
+    .await
+    else {
+        error!("Service was cancelled during Postgres pool initialization");
+        return Ok(());
+    };
 
     let pg_mngr = pool_mngr.clone();
 
