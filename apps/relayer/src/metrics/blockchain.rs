@@ -40,7 +40,7 @@ struct Metrics {
 static METRICS: OnceCell<Metrics> = OnceCell::new();
 
 /// Initialize all metrics. Call this once at startup.
-pub fn init_metrics(registry: &Registry) {
+pub fn init_blockchain_metrics(registry: &Registry) {
     let fhevm_events_total = register_counter_vec_with_registry!(
         Opts::new(
             "relayer_fhevm_events_total",

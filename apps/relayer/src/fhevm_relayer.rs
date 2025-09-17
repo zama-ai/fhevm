@@ -78,7 +78,7 @@ static GLOBAL_REGISTRY: OnceLock<Registry> = OnceLock::new();
 /// Initialize all global state exactly once
 fn ensure_global_init(settings: &Settings) -> eyre::Result<&'static Registry> {
     let registry = GLOBAL_REGISTRY.get_or_init(|| {
-        let _ = rustls::crypto::aws_lc_rs::default_provider()
+        rustls::crypto::aws_lc_rs::default_provider()
             .install_default()
             .expect("Failed to install AWS-LC crypto provider");
 
