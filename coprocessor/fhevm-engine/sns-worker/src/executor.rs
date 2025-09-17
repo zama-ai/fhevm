@@ -163,6 +163,8 @@ pub(crate) async fn run_loop(
     last_active_at: Arc<RwLock<SystemTime>>,
     keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
 ) -> Result<(), ExecutionError> {
+    update_last_active(last_active_at.clone()).await;
+
     let tenant_api_key = &conf.tenant_api_key;
     let mut listener = PgListener::connect_with(&pool).await?;
     info!("Connected to PostgresDB");
@@ -185,10 +187,7 @@ pub(crate) async fn run_loop(
 
     loop {
         // Continue looping until the service is cancelled or a critical error occurs
-        {
-            let mut value = last_active_at.write().await;
-            *value = SystemTime::now();
-        }
+        update_last_active(last_active_at.clone()).await;
 
         let maybe_remaining = fetch_and_execute_sns_tasks(&pool, &tx, &keys, &conf, &token).await?;
         if maybe_remaining {
@@ -664,4 +663,9 @@ fn decrypt_big_ct(
             info!(plaintext = pt, handle = compact_hex(handle), "Decrypted");
         }
     }
+}
+
+async fn update_last_active(last_active_at: Arc<RwLock<SystemTime>>) {
+    let mut value = last_active_at.write().await;
+    *value = SystemTime::now();
 }
