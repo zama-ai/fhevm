@@ -7647,6 +7647,7 @@ dependencies = [
  "test-harness",
  "testcontainers",
  "tfhe",
+ "tfhe-zk-pok",
  "tokio",
  "tokio-util",
  "tonic",
