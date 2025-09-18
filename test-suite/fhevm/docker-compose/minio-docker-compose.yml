@@ -36,10 +36,14 @@ services:
         cat /minio_secrets/secret_key
         mc mb --with-lock --ignore-existing myminio/kms-public
         mc mb --with-lock --ignore-existing myminio/ct64
-        mc mb --with-lock --ignore-existing myminio/ct128
+        mc mb --with-lock --ignore-existing myminio/ct128-0
+        mc mb --with-lock --ignore-existing myminio/ct128-1
+        mc mb --with-lock --ignore-existing myminio/ct128-2
         mc anonymous set public myminio/kms-public
         mc anonymous set public myminio/ct64
-        mc anonymous set public myminio/ct128
+        mc anonymous set public myminio/ct128-0
+        mc anonymous set public myminio/ct128-1
+        mc anonymous set public myminio/ct128-2
     volumes:
       - minio_secrets:/minio_secrets
     depends_on:
