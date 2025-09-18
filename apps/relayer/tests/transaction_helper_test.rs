@@ -1,4 +1,4 @@
-mod utils;
+mod common;
 
 use alloy::primitives::{Bytes, FixedBytes, U256};
 use alloy::signers::local::PrivateKeySigner;
@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_tx_helper() {
-    let setup = crate::utils::TestSetup::new()
+    let setup = common::utils::TestSetup::new()
         .await
         .expect("Failed to create test setup");
     use fhevm_relayer::transaction::{TransactionService, TxConfig};

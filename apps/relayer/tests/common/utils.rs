@@ -10,8 +10,11 @@ use tokio_util::sync::CancellationToken;
 
 /// Per-test isolated setup with own ports, database, and mock servers
 pub struct TestSetup {
+    #[allow(dead_code)]
     pub fhevm_mock: FhevmMockWrapper,
+    #[allow(dead_code)]
     pub settings: Settings,
+    #[allow(dead_code)]
     pub http_port: u16,
     _host_handle: MockServerHandle,
     _gateway_handle: MockServerHandle,
@@ -21,6 +24,7 @@ pub struct TestSetup {
 
 impl TestSetup {
     /// Create isolated test setup with free ports and temp database
+    #[allow(dead_code)]
     pub async fn new() -> eyre::Result<Self> {
         // Initialize tracing once
         init_tracing_once();
@@ -151,6 +155,7 @@ impl Drop for TestSetup {
 }
 
 /// Get a free port by binding to port 0
+#[allow(dead_code)]
 fn get_free_port() -> eyre::Result<u16> {
     let listener = TcpListener::bind("127.0.0.1:0")
         .map_err(|e| eyre::eyre!("Failed to bind to free port: {}", e))?;
@@ -162,6 +167,7 @@ fn get_free_port() -> eyre::Result<u16> {
 }
 
 /// Initialize tracing once for all tests
+#[allow(dead_code)]
 fn init_tracing_once() {
     use std::sync::Once;
     static INIT: Once = Once::new();

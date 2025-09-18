@@ -1,4 +1,4 @@
-mod utils;
+mod common;
 
 use alloy::consensus::Transaction;
 use alloy::primitives::address;
@@ -23,7 +23,7 @@ fn test() {
 // `anvil` being available on the test machine.
 #[tokio::test]
 async fn increments_nonce() {
-    let _setup = crate::utils::TestSetup::new()
+    let _setup = common::utils::TestSetup::new()
         .await
         .expect("Failed to create test setup");
     let cnm1 = CachedNonceManagerWithRefresh::default();
@@ -63,7 +63,7 @@ async fn increments_nonce() {
 
 #[tokio::test]
 async fn cloned_managers() {
-    let setup = crate::utils::TestSetup::new()
+    let setup = common::utils::TestSetup::new()
         .await
         .expect("Failed to create test setup");
     let cnm1 = CachedNonceManagerWithRefresh::default();

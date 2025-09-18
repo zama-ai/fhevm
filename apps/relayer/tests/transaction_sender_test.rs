@@ -1,4 +1,4 @@
-mod utils;
+mod common;
 
 use fhevm_relayer::transaction::sender::TransactionManager;
 
