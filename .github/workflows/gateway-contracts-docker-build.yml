@@ -19,9 +19,9 @@ jobs:
   check-changes:
     name: gateway-contracts-docker-build/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
@@ -46,12 +46,12 @@ jobs:
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
       BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
-      attestations: 'write'
-      packages: 'write'
-      id-token: 'write'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
     with:
       working-directory: "gateway-contracts"
       docker-context: "gateway-contracts"
@@ -64,8 +64,8 @@ jobs:
     needs: build
     name: gateway-contracts-docker-build/docker-hardhat-test (bpr)
     permissions:
-      contents: 'read'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to read GitHub packages/container registry
     uses: ./.github/workflows/gateway-contracts-hardhat-tests-docker.yml
     with:
       image-name: ${{ needs.build.outputs.image }}

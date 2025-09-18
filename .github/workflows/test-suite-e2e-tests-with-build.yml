@@ -24,9 +24,9 @@ jobs:
   check-changes:
     name: test-suite-e2e-tests-with-build/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-fhevm: ${{ steps.filter.outputs.fhevm }}
@@ -45,9 +45,9 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' }}
     permissions:
-      contents: 'read'
-      id-token: 'write'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC authentication
+      packages: 'read' # Required to read GitHub packages/container registry
 
     runs-on: large_ubuntu_32
     steps:
