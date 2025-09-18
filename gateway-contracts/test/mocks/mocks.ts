@@ -48,7 +48,7 @@ describe("Mock contracts", function () {
     txSenderAddress: DefaultAddress,
     signerAddress: DefaultAddress,
     ipAddress: DefaultString,
-    s3BucketUrl: DefaultString,
+    storageUrl: DefaultString,
   };
 
   const DefaultCoprocessor = {
@@ -222,7 +222,7 @@ describe("Mock contracts", function () {
     const DefaultV3UpgradeInputs = [
       {
         txSenderAddress: DefaultAddress,
-        s3BucketUrl: DefaultString,
+        storageUrl: DefaultString,
       },
     ];
 

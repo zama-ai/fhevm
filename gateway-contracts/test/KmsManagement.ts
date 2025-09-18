@@ -224,7 +224,7 @@ describe("KMSManagement", function () {
     });
 
     it("Should handle a key generation", async function () {
-      const { kmsManagement, owner, kmsTxSenders, kmsSigners, kmsNodeS3BucketUrls } =
+      const { kmsManagement, owner, kmsTxSenders, kmsSigners, kmsNodeStorageUrls } =
         await loadFixture(loadTestVariablesFixture);
       const paramsType = ParamsTypeEnum.Test;
       const gatewayChainId = hre.network.config.chainId!;
@@ -330,7 +330,7 @@ describe("KMSManagement", function () {
       // Check for the ActivateKey event.
       await expect(txKeygenResponse3)
         .to.emit(kmsManagement, "ActivateKey")
-        .withArgs(keyId, kmsNodeS3BucketUrls.slice(0, 3), toValues(keyDigests));
+        .withArgs(keyId, kmsNodeStorageUrls.slice(0, 3), toValues(keyDigests));
 
       // The 4th response should be ignored (not reverted).
       const txKeygenResponse4 = await kmsManagement
@@ -371,12 +371,12 @@ describe("KMSManagement", function () {
     });
 
     it("Should get materials associated to the key", async function () {
-      const { kmsManagement, keyId, keyDigests, kmsNodeS3BucketUrls } = await loadFixture(
+      const { kmsManagement, keyId, keyDigests, kmsNodeStorageUrls } = await loadFixture(
         prepareKMSManagementKeygenFixture,
       );
 
       // Check that the materials associated to the key are correct.
-      expect(await kmsManagement.getKeyMaterials(keyId)).to.deep.equal([kmsNodeS3BucketUrls, toValues(keyDigests)]);
+      expect(await kmsManagement.getKeyMaterials(keyId)).to.deep.equal([kmsNodeStorageUrls, toValues(keyDigests)]);
     });
 
     it("Should get the current active key", async function () {
@@ -411,7 +411,7 @@ describe("KMSManagement", function () {
     });
 
     it("Should handle a CRS generation", async function () {
-      const { kmsManagement, owner, kmsTxSenders, kmsSigners, kmsNodeS3BucketUrls } =
+      const { kmsManagement, owner, kmsTxSenders, kmsSigners, kmsNodeStorageUrls } =
         await loadFixture(loadTestVariablesFixture);
 
       // Define an expected crsId.
@@ -462,7 +462,7 @@ describe("KMSManagement", function () {
       // Check for the ActivateCrs event.
       await expect(txResponse3)
         .to.emit(kmsManagement, "ActivateCrs")
-        .withArgs(crsId, kmsNodeS3BucketUrls.slice(0, 3), crsDigest);
+        .withArgs(crsId, kmsNodeStorageUrls.slice(0, 3), crsDigest);
 
       // The 4th response should be ignored (not reverted) and not emit the ActivateCrs event.
       const txResponse4 = await kmsManagement
@@ -503,12 +503,12 @@ describe("KMSManagement", function () {
     });
 
     it("Should get materials associated to the CRS", async function () {
-      const { kmsManagement, crsId, crsDigest, kmsNodeS3BucketUrls } = await loadFixture(
+      const { kmsManagement, crsId, crsDigest, kmsNodeStorageUrls } = await loadFixture(
         prepareKMSManagementCrsgenFixture,
       );
 
       // Check that the materials associated to the CRS are correct.
-      expect(await kmsManagement.getCrsMaterials(crsId)).to.deep.equal([kmsNodeS3BucketUrls, crsDigest]);
+      expect(await kmsManagement.getCrsMaterials(crsId)).to.deep.equal([kmsNodeStorageUrls, crsDigest]);
     });
 
     it("Should get the current active CRS", async function () {

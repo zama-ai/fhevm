@@ -32,7 +32,7 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | `KMS_TX_SENDER_ADDRESS_{i}`         | Address of the KMS node `i`             | address       | -                                                                                                   | If `i` >= `NUM_KMS_NODES`, the variable is ignored                            |
 | `KMS_SIGNER_ADDRESS_{i}`            | Signer address of the KMS node `i`      | address       | -                                                                                                   | If `i` >= `NUM_KMS_NODES`, the variable is ignored                            |
 | `KMS_NODE_IP_ADDRESS_{i}`           | IP address of the KMS node `i`          | string        | -                                                                                                   | If `i` >= `NUM_KMS_NODES`, the variable is ignored                            |
-| `KMS_NODE_S3_BUCKET_URL_{i}`        | S3 bucket URL of the KMS node `i`       | string        | -                                                                                                   | If `i` >= `NUM_KMS_NODES`, the variable is ignored                            |
+| `KMS_NODE_STORAGE_URL_{i}`          | storage URL of the KMS node `i`         | string        | -                                                                                                   | If `i` >= `NUM_KMS_NODES`, the variable is ignored                            |
 | `NUM_COPROCESSORS`                  | Number of coprocessors to register      | -             | -                                                                                                   | Must be at least the number of coprocessors registered below                  |
 | `COPROCESSOR_TX_SENDER_ADDRESS_{j}` | Address of the coprocessor `j`          | address       | -                                                                                                   | If `j` >= `NUM_COPROCESSORS`, the variable is ignored                         |
 | `COPROCESSOR_SIGNER_ADDRESS_{j}`    | Signer address of the coprocessor `j`   | address       | -                                                                                                   | If `j` >= `NUM_COPROCESSORS`, the variable is ignored                         |
@@ -109,7 +109,7 @@ NUM_KMS_NODES="1" # (number)
 KMS_TX_SENDER_ADDRESS_0="0xc1d91b49A1B3D1324E93F86778C44a03f1063f1b" # (address)
 KMS_SIGNER_ADDRESS_0="0x305F1F471e9baCFF2b3549F9601f9A4BEafc94e1" # (address)
 KMS_NODE_IP_ADDRESS_0="127.0.0.1" # (string)
-KMS_NODE_S3_BUCKET_URL_0="s3://kms-bucket-1" # (string)
+KMS_NODE_STORAGE_URL_0="s3://kms-bucket-1" # (string)
 ```
 
 - Coprocessors:
