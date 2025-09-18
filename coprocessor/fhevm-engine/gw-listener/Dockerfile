@@ -9,7 +9,8 @@ COPY gateway-contracts ./gateway-contracts
 
 # Compiled gateway-contracts for gw-listener
 WORKDIR /app/gateway-contracts
-RUN npm install && DEPLOYER_PRIVATE_KEY="0x7136d8dc72f873124f4eded25f3525a20f6cee4296564c76b44f1d582c57640f" npx hardhat task:deployEmptyUUPSProxies && npx hardhat compile
+RUN npm install && \
+    DOTENV_CONFIG_PATH=.env.example npx hardhat task:deployAllGatewayContracts
 
 # Stage 1: Build GW Listener
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.90.0 AS builder
