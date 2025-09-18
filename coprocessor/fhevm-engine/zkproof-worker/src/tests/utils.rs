@@ -1,3 +1,4 @@
+use fhevm_engine_common::pg_pool::PostgresPoolManager;
 use fhevm_engine_common::{tenant_keys, utils::safe_serialize};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
@@ -7,7 +8,7 @@ use tokio::time::sleep;
 
 use crate::auxiliary::ZkData;
 
-pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
+pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
     let _ = tracing_subscriber::fmt().json().with_level(true).try_init();
     let test_instance = test_harness::instance::setup_test_db(ImportMode::WithKeysNoSns)
         .await
@@ -22,27 +23,35 @@ pub async fn setup() -> anyhow::Result<(sqlx::PgPool, DBInstance)> {
         worker_thread_count: 1,
     };
 
-    let pool = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(10)
-        .connect(&conf.database_url)
-        .await?;
+    let pool_mngr = PostgresPoolManager::connect_pool(
+        test_instance.parent_token.child_token(),
+        conf.database_url.as_str(),
+        Duration::from_secs(15),
+        10,
+        Duration::from_secs(2),
+        None, // TODO: conf.pg_auto_explain_with_min_duration
+    )
+    .await
+    .unwrap();
+
+    let pmngr = pool_mngr.clone();
 
     sqlx::query("TRUNCATE TABLE verify_proofs")
-        .execute(&pool)
+        .execute(&pmngr.pool())
         .await
         .unwrap();
 
     let last_active_at = Arc::new(RwLock::new(SystemTime::now()));
-    let db_pool = pool.clone();
+
     tokio::spawn(async move {
-        crate::verifier::execute_verify_proofs_loop(db_pool, conf.clone(), last_active_at.clone())
+        crate::verifier::execute_verify_proofs_loop(pmngr, conf.clone(), last_active_at.clone())
             .await
             .unwrap();
     });
 
     sleep(Duration::from_secs(2)).await;
 
-    Ok((pool, test_instance))
+    Ok((pool_mngr, test_instance))
 }
 
 /// Checks if the proof is valid by querying the database continuously.
