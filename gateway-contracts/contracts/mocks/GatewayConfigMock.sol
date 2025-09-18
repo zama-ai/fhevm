@@ -5,7 +5,7 @@ import "../shared/Structs.sol";
 contract GatewayConfigMock {
     struct V3UpgradeInput {
         address txSenderAddress;
-        string s3BucketUrl;
+        string storageUrl;
     }
 
     event InitializeGatewayConfig(

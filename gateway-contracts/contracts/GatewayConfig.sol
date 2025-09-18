@@ -27,8 +27,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     struct V3UpgradeInput {
         /// @notice Address of the KMS node's transaction sender registered in V2
         address txSenderAddress;
-        /// @notice URL address of the KMS node' S3 bucket
-        string s3BucketUrl;
+        /// @notice URL address of the KMS node' storage
+        string storageUrl;
     }
 
     // ----------------------------------------------------------------------------------------------
