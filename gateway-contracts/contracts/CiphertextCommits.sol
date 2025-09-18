@@ -79,8 +79,6 @@ contract CiphertextCommits is
         mapping(bytes32 ctHandle => bytes32 addCiphertextHash) _ctHandleConsensusHash;
         /// @notice The coprocessor context ID associated to the add ciphertext
         mapping(bytes32 addCiphertextHash => uint256 contextId) addCiphertextContextId;
-        /// @notice The S3 bucket URLs that have reached consensus for a ciphertext material addition.
-        mapping(bytes32 addCiphertextHash => string[] coprocessorS3BucketUrls) consensusCoprocessorS3BucketUrls;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -180,13 +178,6 @@ contract CiphertextCommits is
         // sender address will still be added in the list
         $._coprocessorTxSenderAddresses[addCiphertextHash].push(msg.sender);
 
-        // Get and store the coprocessor's S3 bucket URL for the ciphertext material addition
-        // The comment above regarding the coprocessor transaction sender addresses also applies here.
-        string memory coprocessorS3BucketUrl = COPROCESSOR_CONTEXTS
-            .getCoprocessorFromContext(contextId, msg.sender)
-            .s3BucketUrl;
-        $.consensusCoprocessorS3BucketUrls[addCiphertextHash].push(coprocessorS3BucketUrl);
-
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         // Besides, consensus only considers the coprocessors of the same context
@@ -279,7 +270,8 @@ contract CiphertextCommits is
 
     function getConsensusS3BucketUrls(bytes32[] calldata ctHandles) external view virtual returns (string[][] memory) {
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
-        string[][] memory s3BucketUrls = new string[][](ctHandles.length);
+        string[][] memory consensusStorageUrls = new string[][](ctHandles.length);
+
         for (uint256 i = 0; i < ctHandles.length; i++) {
             // Check that the consensus has been reached
             checkCiphertextMaterial(ctHandles[i]);
@@ -289,44 +281,40 @@ contract CiphertextCommits is
             // This digest is null (0x0) for version V1.
             bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandles[i]];
 
-            // Get the list of S3 bucket URLs that have reached consensus for the ciphertext
-            // This list is empty for versions < V4.
-            s3BucketUrls[i] = $.consensusCoprocessorS3BucketUrls[addCiphertextHash];
+            // Get the context ID from the input verification context ID mapping
+            uint256 contextId = $.addCiphertextContextId[addCiphertextHash];
 
-            // If the consensus has been reached but the list is empty, it means that the handle has been
-            // added in versions < V4 and s3 bucket URLs were not stored in the contract
+            // If there's not context (`contextId=0`), get the list storage URL for each coprocessor from
+            // the first context (`contextId=1`), as versions < V4 were only using a single context.
+            // DEPRECATED: to remove before mainnet
+            // See https://github.com/zama-ai/fhevm-internal/issues/381
+            if (contextId == 0) {
+                contextId = 1;
+            }
+
+            // If the consensus has been reached but the hash is 0x0, it means that the handle has been
+            // added in V1: the handle was used to retrieve the list of transaction sender addresses
+            // instead of the hash
             // We therefore consider this in order to be backward compatible.
             // DEPRECATED: to remove before mainnet
             // See https://github.com/zama-ai/fhevm-internal/issues/381
-            if (s3BucketUrls[i].length == 0) {
-                // If the consensus has been reached but the hash is 0x0, it means that the handle has been
-                // added in V1: the handle was used to retrieve the list of transaction sender addresses
-                // instead of the hash
-                // We therefore consider this in order to be backward compatible.
-                // DEPRECATED: to remove before mainnet
-                // See https://github.com/zama-ai/fhevm-internal/issues/381
-                address[] memory coprocessorTxSenderAddresses;
-                if (addCiphertextHash == bytes32(0)) {
-                    coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[ctHandles[i]];
-                } else {
-                    coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[addCiphertextHash];
-                }
-
-                // Get the list of S3 bucket URL for each coprocessor from the first context (`contextId=1`),
-                // as versions < V4 were only using a single context.
-                // DEPRECATED: to remove before mainnet
-                // See https://github.com/zama-ai/fhevm-internal/issues/381
-                string[] memory s3BucketUrlsPerCoprocessor = new string[](coprocessorTxSenderAddresses.length);
-                for (uint256 j = 0; j < coprocessorTxSenderAddresses.length; j++) {
-                    string memory s3BucketUrl = COPROCESSOR_CONTEXTS
-                        .getCoprocessorFromContext(1, coprocessorTxSenderAddresses[j])
-                        .s3BucketUrl;
-                    s3BucketUrlsPerCoprocessor[j] = s3BucketUrl;
-                }
-                s3BucketUrls[i] = s3BucketUrlsPerCoprocessor;
+            address[] memory coprocessorTxSenderAddresses;
+            if (addCiphertextHash == bytes32(0)) {
+                coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[ctHandles[i]];
+            } else {
+                coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[addCiphertextHash];
             }
+
+            string[] memory coprocessorStorageUrls = new string[](coprocessorTxSenderAddresses.length);
+            for (uint256 j = 0; j < coprocessorTxSenderAddresses.length; j++) {
+                coprocessorStorageUrls[j] = COPROCESSOR_CONTEXTS
+                    .getCoprocessorFromContext(contextId, coprocessorTxSenderAddresses[j])
+                    .s3BucketUrl;
+            }
+            consensusStorageUrls[i] = coprocessorStorageUrls;
         }
-        return s3BucketUrls;
+
+        return consensusStorageUrls;
     }
 
     /// @notice See {ICiphertextCommits-getVersion}.
