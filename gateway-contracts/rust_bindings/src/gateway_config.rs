@@ -29,7 +29,7 @@ interface GatewayConfig {
         address txSenderAddress;
         address signerAddress;
         string ipAddress;
-        string s3BucketUrl;
+        string storageUrl;
     }
     struct ProtocolMetadata {
         string name;
@@ -37,7 +37,7 @@ interface GatewayConfig {
     }
     struct V3UpgradeInput {
         address txSenderAddress;
-        string s3BucketUrl;
+        string storageUrl;
     }
 
     error AddressEmptyCode(address target);
@@ -575,7 +575,7 @@ interface GatewayConfig {
             "internalType": "string"
           },
           {
-            "name": "s3BucketUrl",
+            "name": "storageUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -767,7 +767,7 @@ interface GatewayConfig {
             "internalType": "string"
           },
           {
-            "name": "s3BucketUrl",
+            "name": "storageUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -902,7 +902,7 @@ interface GatewayConfig {
             "internalType": "address"
           },
           {
-            "name": "s3BucketUrl",
+            "name": "storageUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -1130,7 +1130,7 @@ interface GatewayConfig {
             "internalType": "string"
           },
           {
-            "name": "s3BucketUrl",
+            "name": "storageUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -1304,7 +1304,7 @@ interface GatewayConfig {
             "internalType": "string"
           },
           {
-            "name": "s3BucketUrl",
+            "name": "storageUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -2796,7 +2796,7 @@ struct KmsNodeV1 { address txSenderAddress; address signerAddress; string ipAddr
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct KmsNodeV2 { address txSenderAddress; address signerAddress; string ipAddress; string s3BucketUrl; }
+struct KmsNodeV2 { address txSenderAddress; address signerAddress; string ipAddress; string storageUrl; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -2808,7 +2808,7 @@ struct KmsNodeV2 { address txSenderAddress; address signerAddress; string ipAddr
         #[allow(missing_docs)]
         pub ipAddress: alloy::sol_types::private::String,
         #[allow(missing_docs)]
-        pub s3BucketUrl: alloy::sol_types::private::String,
+        pub storageUrl: alloy::sol_types::private::String,
     }
     #[allow(
         non_camel_case_types,
@@ -2851,7 +2851,7 @@ struct KmsNodeV2 { address txSenderAddress; address signerAddress; string ipAddr
                     value.txSenderAddress,
                     value.signerAddress,
                     value.ipAddress,
-                    value.s3BucketUrl,
+                    value.storageUrl,
                 )
             }
         }
@@ -2863,7 +2863,7 @@ struct KmsNodeV2 { address txSenderAddress; address signerAddress; string ipAddr
                     txSenderAddress: tuple.0,
                     signerAddress: tuple.1,
                     ipAddress: tuple.2,
-                    s3BucketUrl: tuple.3,
+                    storageUrl: tuple.3,
                 }
             }
         }
@@ -2886,7 +2886,7 @@ struct KmsNodeV2 { address txSenderAddress; address signerAddress; string ipAddr
                         &self.ipAddress,
                     ),
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        &self.s3BucketUrl,
+                        &self.storageUrl,
                     ),
                 )
             }
@@ -2962,7 +2962,7 @@ struct KmsNodeV2 { address txSenderAddress; address signerAddress; string ipAddr
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "KmsNodeV2(address txSenderAddress,address signerAddress,string ipAddress,string s3BucketUrl)",
+                    "KmsNodeV2(address txSenderAddress,address signerAddress,string ipAddress,string storageUrl)",
                 )
             }
             #[inline]
@@ -2991,7 +2991,7 @@ struct KmsNodeV2 { address txSenderAddress; address signerAddress; string ipAddr
                         )
                         .0,
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.s3BucketUrl,
+                            &self.storageUrl,
                         )
                         .0,
                 ]
@@ -3013,7 +3013,7 @@ struct KmsNodeV2 { address txSenderAddress; address signerAddress; string ipAddr
                         &rust.ipAddress,
                     )
                     + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.s3BucketUrl,
+                        &rust.storageUrl,
                     )
             }
             #[inline]
@@ -3037,7 +3037,7 @@ struct KmsNodeV2 { address txSenderAddress; address signerAddress; string ipAddr
                     out,
                 );
                 <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.s3BucketUrl,
+                    &rust.storageUrl,
                     out,
                 );
             }
@@ -3279,7 +3279,7 @@ struct ProtocolMetadata { string name; string website; }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct V3UpgradeInput { address txSenderAddress; string s3BucketUrl; }
+struct V3UpgradeInput { address txSenderAddress; string storageUrl; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3287,7 +3287,7 @@ struct V3UpgradeInput { address txSenderAddress; string s3BucketUrl; }
         #[allow(missing_docs)]
         pub txSenderAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub s3BucketUrl: alloy::sol_types::private::String,
+        pub storageUrl: alloy::sol_types::private::String,
     }
     #[allow(
         non_camel_case_types,
@@ -3322,7 +3322,7 @@ struct V3UpgradeInput { address txSenderAddress; string s3BucketUrl; }
         #[doc(hidden)]
         impl ::core::convert::From<V3UpgradeInput> for UnderlyingRustTuple<'_> {
             fn from(value: V3UpgradeInput) -> Self {
-                (value.txSenderAddress, value.s3BucketUrl)
+                (value.txSenderAddress, value.storageUrl)
             }
         }
         #[automatically_derived]
@@ -3331,7 +3331,7 @@ struct V3UpgradeInput { address txSenderAddress; string s3BucketUrl; }
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
                     txSenderAddress: tuple.0,
-                    s3BucketUrl: tuple.1,
+                    storageUrl: tuple.1,
                 }
             }
         }
@@ -3348,7 +3348,7 @@ struct V3UpgradeInput { address txSenderAddress; string s3BucketUrl; }
                         &self.txSenderAddress,
                     ),
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        &self.s3BucketUrl,
+                        &self.storageUrl,
                     ),
                 )
             }
@@ -3424,7 +3424,7 @@ struct V3UpgradeInput { address txSenderAddress; string s3BucketUrl; }
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "V3UpgradeInput(address txSenderAddress,string s3BucketUrl)",
+                    "V3UpgradeInput(address txSenderAddress,string storageUrl)",
                 )
             }
             #[inline]
@@ -3445,7 +3445,7 @@ struct V3UpgradeInput { address txSenderAddress; string s3BucketUrl; }
                         )
                         .0,
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.s3BucketUrl,
+                            &self.storageUrl,
                         )
                         .0,
                 ]
@@ -3461,7 +3461,7 @@ struct V3UpgradeInput { address txSenderAddress; string s3BucketUrl; }
                         &rust.txSenderAddress,
                     )
                     + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.s3BucketUrl,
+                        &rust.storageUrl,
                     )
             }
             #[inline]
@@ -3477,7 +3477,7 @@ struct V3UpgradeInput { address txSenderAddress; string s3BucketUrl; }
                     out,
                 );
                 <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.s3BucketUrl,
+                    &rust.storageUrl,
                     out,
                 );
             }

@@ -261,7 +261,7 @@ task("task:upgradeGatewayConfig")
     for (let idx = 0; idx < numKmsNodes; idx++) {
       v3UpgradeInputs.push({
         txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
-        s3BucketUrl: getRequiredEnvVar(`KMS_NODE_S3_BUCKET_URL_${idx}`),
+        storageUrl: getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`),
       });
     }
 
