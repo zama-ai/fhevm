@@ -21,15 +21,17 @@ pub async fn setup() -> anyhow::Result<(PostgresPoolManager, DBInstance)> {
         pg_pool_connections: 10,
         pg_polling_interval: 60,
         worker_thread_count: 1,
+        pg_timeout: Duration::from_secs(15),
+        pg_auto_explain_with_min_duration: None,
     };
 
     let pool_mngr = PostgresPoolManager::connect_pool(
         test_instance.parent_token.child_token(),
         conf.database_url.as_str(),
-        Duration::from_secs(15),
-        10,
+        conf.pg_timeout,
+        conf.pg_pool_connections,
         Duration::from_secs(2),
-        None, // TODO: conf.pg_auto_explain_with_min_duration
+        conf.pg_auto_explain_with_min_duration,
     )
     .await
     .unwrap();
