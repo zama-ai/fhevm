@@ -91,7 +91,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
       txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
       signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
       ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
-      s3BucketUrl: getRequiredEnvVar(`KMS_NODE_S3_BUCKET_URL_${idx}`),
+      storageUrl: getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`),
     });
   }
 

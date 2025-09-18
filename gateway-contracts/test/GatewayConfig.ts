@@ -58,7 +58,7 @@ describe("GatewayConfig", function () {
       kmsTxSenders,
       kmsSigners,
       kmsNodeIps,
-      kmsNodeS3BucketUrls,
+      kmsNodeStorageUrls,
       nKmsNodes,
       coprocessorTxSenders,
       coprocessorSigners,
@@ -77,7 +77,7 @@ describe("GatewayConfig", function () {
         txSenderAddress: kmsTxSenders[i].address,
         signerAddress: kmsSigners[i].address,
         ipAddress: kmsNodeIps[i],
-        s3BucketUrl: kmsNodeS3BucketUrls[i],
+        storageUrl: kmsNodeStorageUrls[i],
       });
     }
 
