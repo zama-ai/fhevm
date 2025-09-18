@@ -101,7 +101,7 @@ impl MockServerHandle {
 }
 
 /// Mock server coordinating PatternMatcher, BlockchainState, and RPC handlers
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct MockServer {
     config: Arc<MockConfig>,
     pattern_matcher: Arc<PatternMatcher>,
@@ -325,19 +325,6 @@ impl MockServer {
             shutdown_token: self.shutdown_token,
         };
         EthRpcApiServer::into_rpc(rpc_impl).into()
-    }
-}
-
-impl Clone for MockServer {
-    fn clone(&self) -> Self {
-        Self {
-            config: self.config.clone(),
-            pattern_matcher: self.pattern_matcher.clone(),
-            blockchain_state: self.blockchain_state.clone(),
-            log_subscriptions: self.log_subscriptions.clone(),
-            head_subscriptions: self.head_subscriptions.clone(),
-            shutdown_token: self.shutdown_token.clone(),
-        }
     }
 }
 
