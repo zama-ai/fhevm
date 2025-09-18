@@ -80,7 +80,7 @@ impl HealthCheckService for ZkProofService {
 impl ZkProofService {
     pub async fn create(conf: Config, token: CancellationToken) -> Option<ZkProofService> {
         // Each worker needs at least 3 pg connections
-        let pool_connections =
+        let max_pool_connections =
             std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
         let t = telemetry::tracer("init_service");
         let _s = t.child_span("pg_connect");
@@ -88,10 +88,10 @@ impl ZkProofService {
         let Some(pool_mngr) = PostgresPoolManager::connect_pool(
             token.child_token(),
             conf.database_url.as_str(),
-            Duration::from_secs(15),
-            pool_connections,
+            conf.pg_timeout,
+            max_pool_connections,
             Duration::from_secs(2),
-            None, // TODO: conf.pg_auto_explain_with_min_duration
+            conf.pg_auto_explain_with_min_duration,
         )
         .await
         else {
