@@ -30,7 +30,7 @@ use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Vers
 use tokio::time::interval;
 use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info};
+use tracing::{error, info};
 
 const MAX_CACHED_TENANT_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -189,7 +189,7 @@ async fn execute_worker(
         execute_verify_proof_routine(&pool, &tenant_key_cache, &conf).await?;
         let count = get_remaining_tasks(&pool).await?;
         if count > 0 {
-            info!(target: "zkpok", {count}, "zkproof requests available");
+            info!({ count }, "zkproof requests available");
             continue;
         }
 
@@ -197,18 +197,18 @@ async fn execute_worker(
             res = listener.try_recv() => {
                 let res = res?;
                 match res {
-                    Some(notification) => info!(target: "zkpok", src = %notification.process_id(), "Received notification"),
+                    Some(notification) => info!( src = %notification.process_id(), "Received notification"),
                     None => {
-                        error!(target: "zkpok", "Connection lost");
+                        error!("Connection lost");
                         continue;
                     },
                 };
             },
             _ = idle_event.tick() => {
-                debug!(target: "zkpok", "Polling timeout, rechecking for tasks");
+                info!("Polling timeout, rechecking for requests");
             },
             _ = token.cancelled() => {
-                info!(target: "zkpok", "Cancellation requested, stopping worker");
+                info!("Cancellation requested, stopping worker");
                 return Ok(());
             }
         }
