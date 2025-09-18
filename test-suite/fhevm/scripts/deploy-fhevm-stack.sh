@@ -301,9 +301,9 @@ ${SCRIPT_DIR}/setup-kms-signer-address.sh
 run_compose "database" "Database service" "${PROJECT}-coprocessor-and-kms-db:running"
 
 if [ "$FORCE_BUILD" = true ]; then
-    RUN_COMPOSE=run_compose
-else
     RUN_COMPOSE=run_compose_with_build
+else
+    RUN_COMPOSE=run_compose
 fi
 
 # Run Host and Gateway nodes
@@ -341,78 +341,5 @@ ${RUN_COMPOSE} "host" "Host contracts" "${PROJECT}-host-sc-deploy:complete"
 
 # Run Test Suite container
 ${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
-
-
-#if [ "$FORCE_BUILD" = true ]; then
-#  run_compose_with_build "gateway" "Gateway Network Services" \
-#    "${PROJECT}-gateway-node:running" \
-#    "${PROJECT}-gateway-sc-deploy:complete" \
-#    "${PROJECT}-gateway-sc-add-network:complete"
-#else
-#  run_compose "gateway" "Gateway Network Services" \
-#    "${PROJECT}-gateway-node:running" \
-#    "${PROJECT}-gateway-sc-deploy:complete" \
-#    "${PROJECT}-gateway-sc-add-network:complete"
-#fi
-
-#if [ "$FORCE_BUILD" = true ]; then
-#  run_compose_with_build "host" "Host Network Services" \
-#    "${PROJECT}-host-node:running" \
-#    "${PROJECT}-host-sc-deploy:complete"
-#else
-#  run_compose "host" "Host Network Services" \
-#    "${PROJECT}-host-node:running" \
-#    "${PROJECT}-host-sc-deploy:complete"
-#fi
-
-# get_minio_ip "fhevm-minio"
-
-#if [ "$FORCE_BUILD" = true ]; then
-#  run_compose_with_build "coprocessor" "Coprocessor Services" \
-#    "${PROJECT}-coprocessor-db:running" \
-#    "${PROJECT}-host-listener:running" \
-#    "${PROJECT}-gw-listener:running" \
-#    "${PROJECT}-tfhe-worker:running" \
-#    "${PROJECT}-zkproof-worker:running" \
-#    "${PROJECT}-sns-worker:running" \
-#    "${PROJECT}-transaction-sender:running"
-#    # "${PROJECT}-key-downloader:complete" \
-#    # "${PROJECT}-db-migration:complete" \
-#else
-#  run_compose "coprocessor" "Coprocessor Services" \
-#    "${PROJECT}-coprocessor-db:running" \
-#    "${PROJECT}-host-listener:running" \
-#    "${PROJECT}-gw-listener:running" \
-#    "${PROJECT}-tfhe-worker:running" \
-#    "${PROJECT}-zkproof-worker:running" \
-#    "${PROJECT}-sns-worker:running" \
-#    "${PROJECT}-transaction-sender:running"
-#    # "${PROJECT}-key-downloader:complete" \
-#    # "${PROJECT}-db-migration:complete" \
-#fi
-
-# if [ "$FORCE_BUILD" = true ]; then
-#   run_compose_with_build "connector" "Connector Services" \
-#   "kms-connector-gw-listener:running" \
-#   "kms-connector-kms-worker:running" \
-#   "kms-connector-tx-sender:running"
-# else
-#   run_compose "connector" "Connector Services" \
-#   "kms-connector-gw-listener:running" \
-#   "kms-connector-kms-worker:running" \
-#   "kms-connector-tx-sender:running"
-# fi
-
-# External dependency - Relayer
-# run_compose "relayer" "Relayer Services" \
-#     "${PROJECT}-relayer:running"
-
-# if [ "$FORCE_BUILD" = true ]; then
-#   run_compose_with_build "test-suite" "Test Suite E2E Tests" \
-#     "${PROJECT}-test-suite-e2e-debug:running"
-# else
-#   run_compose "test-suite" "Test Suite E2E Tests" \
-#     "${PROJECT}-test-suite-e2e-debug:running"
-# fi
 
 log_info "All services started successfully!"

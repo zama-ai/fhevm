@@ -37,15 +37,16 @@ SNS_PK_FILE=${SNS_PK_FILE:-"$KEY_DIR/sns_pk"}
 KEY_ID=${KEY_ID:-"10f49fdf75a123370ce2e2b1c5cc0615fb6e78dd829d0d850470cdbc84f15c11"}
 KEY_ID_HEX="\\x${KEY_ID}"
 
-# Extract small ServerKey from ServerKey with noise squashing keys
-SKS_FILE="/tmp/sks"
-/usr/local/bin/utils extract-sks-without-noise --src-path $SNS_PK_FILE --dst-path $SKS_FILE
+echo "Skip extract-sks-without-noise"
+# # Extract small ServerKey from ServerKey with noise squashing keys
+# SKS_FILE="/tmp/sks"
+# /usr/local/bin/utils extract-sks-without-noise --src-path $SNS_PK_FILE --dst-path $SKS_FILE
 
-for file in "$PKS_FILE" "$SKS_FILE" "$PUBLIC_PARAMS_FILE" "$SNS_PK_FILE"; do
-    if [[ ! -f $file ]]; then
-        echo "Error: Key file $file not found."; exit 1;
-    fi
-done
+# for file in "$PKS_FILE" "$SKS_FILE" "$PUBLIC_PARAMS_FILE" "$SNS_PK_FILE"; do
+#     if [[ ! -f $file ]]; then
+#         echo "Error: Key file $file not found."; exit 1;
+#     fi
+# done
 
 if [[ -z "$DATABASE_URL" || -z "$TENANT_API_KEY" || -z "$ACL_CONTRACT_ADDRESS" || -z "$INPUT_VERIFIER_ADDRESS" ]]; then
     echo "Error: One or more required environment variables are missing."; exit 1;
@@ -121,19 +122,13 @@ EOF
   echo "$oid"
 }
 
-echo "Importing large object from $SNS_PK_FILE ($(du -h "$SNS_PK_FILE" | cut -f1))..."
-SNS_PK_OID=$(import_large_file "$SNS_PK_FILE" "$DATABASE_URL")
+# echo "Importing large object from $SNS_PK_FILE ($(du -h "$SNS_PK_FILE" | cut -f1))..."
+# SNS_PK_OID=$(import_large_file "$SNS_PK_FILE" "$DATABASE_URL")
  
 
-echo "$TENANT_API_KEY,$CHAIN_ID,$ACL_CONTRACT_ADDRESS,$INPUT_VERIFIER_ADDRESS,\
-\"\\x$(< "$PKS_FILE" xxd -p | tr -d '\n')\",\
-\"\\x$(< "$SKS_FILE" xxd -p | tr -d '\n')\",\
-\"\\x$(< "$PUBLIC_PARAMS_FILE" xxd -p | tr -d '\n')\",\
-$SNS_PK_OID,\"$KEY_ID_HEX\"" >> $TMP_CSV
+echo "$TENANT_API_KEY,$CHAIN_ID,$ACL_CONTRACT_ADDRESS,$INPUT_VERIFIER_ADDRESS,NULL,NULL,NULL,NULL,\"$KEY_ID_HEX\"" >> $TMP_CSV
 
 echo "----------- Tenant data prepared for insertion: $TMP_CSV -----------"
- 
-
 
 echo "Inserting tenant data from CSV using \COPY..."
 psql "$DATABASE_URL" -c "\COPY tenants (tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, sns_pk, key_id) FROM '$TMP_CSV' CSV HEADER;" || {
