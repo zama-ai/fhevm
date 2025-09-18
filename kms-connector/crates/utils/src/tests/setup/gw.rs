@@ -3,10 +3,9 @@ use crate::{
     conn::WalletGatewayProvider,
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
     tests::setup::{ROOT_CARGO_TOML, pick_free_port},
-    // tests::setup::{ROOT_CARGO_TOML, pick_free_port},
 };
 use alloy::{
-    primitives::{Address, ChainId, FixedBytes},
+    primitives::{Address, ChainId, address},
     providers::{ProviderBuilder, WsConnect},
 };
 use fhevm_gateway_bindings::{
@@ -22,15 +21,13 @@ use testcontainers::{
 };
 use tracing::info;
 
-pub const DECRYPTION_MOCK_ADDRESS: Address = Address(FixedBytes([
-    184, 174, 68, 54, 92, 69, 167, 197, 37, 107, 20, 246, 7, 202, 226, 59, 192, 64, 195, 84,
-]));
-pub const GATEWAY_CONFIG_MOCK_ADDRESS: Address = Address(FixedBytes([
-    159, 167, 153, 249, 90, 114, 37, 140, 4, 21, 223, 237, 216, 207, 118, 210, 97, 60, 117, 15,
-]));
-pub const KMS_MANAGEMENT_MOCK_ADDRESS: Address = Address(FixedBytes([
-    200, 27, 227, 169, 24, 21, 210, 212, 9, 109, 174, 8, 26, 113, 22, 201, 250, 123, 223, 8,
-]));
+pub const DECRYPTION_MOCK_ADDRESS: Address = address!("0x9FA799F95A72258c0415DFEdd8Cf76D2613c750f");
+
+pub const GATEWAY_CONFIG_MOCK_ADDRESS: Address =
+    address!("0xE61cff9C581c7c91AEF682c2C10e8632864339ab");
+
+pub const KMS_MANAGEMENT_MOCK_ADDRESS: Address =
+    address!("0x286f5339934279C74df10123bDbeEF3CaE932c22");
 
 pub const TEST_MNEMONIC: &str =
     "coyote sketch defense hover finger envelope celery urge panther venue verb cheese";
