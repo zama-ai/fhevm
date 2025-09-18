@@ -301,44 +301,47 @@ ${SCRIPT_DIR}/setup-kms-signer-address.sh
 run_compose "database" "Database service" "${PROJECT}-coprocessor-and-kms-db:running"
 
 if [ "$FORCE_BUILD" = true ]; then
-  run_compose_with_build "gateway" "Gateway Node" "${PROJECT}-gateway-node:running"
+    RUN_COMPOSE=run_compose
 else
-    # Run Host and Gateway nodes
-    run_compose "host-node" "Host node service" "${PROJECT}-host-node:running"
-    run_compose "gateway-node" "Gateway node service" "${PROJECT}-gateway-node:running"
-
-    # Run coprocessor services
-    # run_compose "coprocessor" "Coprocessor Services" \
-    #     "${PROJECT}-coprocessor-db:running" \
-    #     "${PROJECT}-db-migration:complete" \
-    #     "${PROJECT}-host-listener:running" \
-    #     "${PROJECT}-gw-listener:running" \
-    #     "${PROJECT}-tfhe-worker:running" \
-    #     "${PROJECT}-zkproof-worker:running" \
-    #     "${PROJECT}-sns-worker:running" \
-    #     "${PROJECT}-transaction-sender:running"
-
-    # Run KMS connector services
-    run_compose "connector" "Connector Services" \
-        "kms-connector-gw-listener:running" \
-        "kms-connector-kms-worker:running" \
-        "kms-connector-tx-sender:running"
-
-    # Run Relayer (External dependency)
-    run_compose "relayer" "Relayer Services" \
-        "${PROJECT}-relayer:running"
-
-    # Setup Gateway contracts and network
-    run_compose "gateway" "Gateway contracts" \
-        "${PROJECT}-gateway-sc-deploy:complete" \
-        "${PROJECT}-gateway-sc-add-network:complete"
-
-    # Setup Host contracts
-    run_compose "host" "Host contracts" "${PROJECT}-host-sc-deploy:complete"
-
-    # Run Test Suite container
-    run_compose "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
+    RUN_COMPOSE=run_compose_with_build
 fi
+
+# Run Host and Gateway nodes
+${RUN_COMPOSE} "host-node" "Host node service" "${PROJECT}-host-node:running"
+${RUN_COMPOSE} "gateway-node" "Gateway node service" "${PROJECT}-gateway-node:running"
+
+# Run coprocessor services
+${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
+    "${PROJECT}-coprocessor-db:running" \
+    "${PROJECT}-db-migration:complete" \
+    "${PROJECT}-host-listener:running" \
+    "${PROJECT}-gw-listener:running" \
+    "${PROJECT}-tfhe-worker:running" \
+    "${PROJECT}-zkproof-worker:running" \
+    "${PROJECT}-sns-worker:running" \
+    "${PROJECT}-transaction-sender:running"
+
+# Run KMS connector services
+${RUN_COMPOSE} "connector" "Connector Services" \
+    "kms-connector-gw-listener:running" \
+    "kms-connector-kms-worker:running" \
+    "kms-connector-tx-sender:running"
+
+# Run Relayer (External dependency)
+${RUN_COMPOSE} "relayer" "Relayer Services" \
+    "${PROJECT}-relayer:running"
+
+# Setup Gateway contracts and network
+${RUN_COMPOSE} "gateway" "Gateway contracts" \
+    "${PROJECT}-gateway-sc-deploy:complete" \
+    "${PROJECT}-gateway-sc-add-network:complete"
+
+# Setup Host contracts
+${RUN_COMPOSE} "host" "Host contracts" "${PROJECT}-host-sc-deploy:complete"
+
+# Run Test Suite container
+${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
+
 
 #if [ "$FORCE_BUILD" = true ]; then
 #  run_compose_with_build "gateway" "Gateway Network Services" \
