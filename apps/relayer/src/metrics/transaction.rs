@@ -17,28 +17,23 @@ static TRANSACTION_METRICS: OnceCell<TransactionMetrics> = OnceCell::new();
 /// Initialize transaction metrics.
 /// Call this once at startup with the Prometheus registry.
 pub fn init_transaction_metrics(registry: &Registry) {
-    let transactions_counter = register_counter_vec_with_registry!(
-        Opts::new("relayer_transaction_count", "Total number of transactions"),
-        &["transaction_type", "transaction_status"],
-        registry
-    )
-    .unwrap();
-    let pending_transactions_gauge = register_gauge_vec_with_registry!(
-        Opts::new(
-            "relayer_transaction_pending_gauge",
-            "Total number of pending transactions"
-        ),
-        &["transaction_type"],
-        registry
-    )
-    .unwrap();
-
-    TRANSACTION_METRICS
-        .set(TransactionMetrics {
-            transactions_counter,
-            pending_transactions_gauge,
-        })
-        .expect("Transaction metrics already initialized");
+    TRANSACTION_METRICS.get_or_init(|| TransactionMetrics {
+        transactions_counter: register_counter_vec_with_registry!(
+            Opts::new("relayer_transaction_count", "Total number of transactions"),
+            &["transaction_type", "transaction_status"],
+            registry
+        )
+        .unwrap(),
+        pending_transactions_gauge: register_gauge_vec_with_registry!(
+            Opts::new(
+                "relayer_transaction_pending_gauge",
+                "Total number of pending transactions"
+            ),
+            &["transaction_type"],
+            registry
+        )
+        .unwrap(),
+    });
 }
 
 #[derive(Debug, Clone, Copy)]

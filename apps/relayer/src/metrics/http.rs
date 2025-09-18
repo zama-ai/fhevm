@@ -22,40 +22,30 @@ static HTTP_METRICS: OnceCell<HttpMetrics> = OnceCell::new();
 
 /// Initialize HTTP metrics. Call this once at startup with the Prometheus registry.
 pub fn init_http_metrics(registry: &Registry, config: &HttpMetricsConfig) {
-    let requests_total = register_counter_vec_with_registry!(
-        Opts::new("relayer_http_requests_total", "Count of HTTP requests"),
-        &["endpoint", "method"],
-        registry
-    )
-    .unwrap();
-
-    let responses_total = register_counter_vec_with_registry!(
-        Opts::new("relayer_http_responses_total", "Count of HTTP responses"),
-        &["endpoint", "method", "status"],
-        registry
-    )
-    .unwrap();
-
-    let buckets = &config.histogram_buckets;
-
-    let request_duration_seconds = register_histogram_vec_with_registry!(
-        HistogramOpts::new(
-            "relayer_http_request_duration_seconds",
-            "Histogram of HTTP request durations (seconds)"
+    HTTP_METRICS.get_or_init(|| HttpMetrics {
+        requests_total: register_counter_vec_with_registry!(
+            Opts::new("relayer_http_requests_total", "Count of HTTP requests"),
+            &["endpoint", "method"],
+            registry
         )
-        .buckets(buckets.clone()),
-        &["endpoint", "method", "status"],
-        registry
-    )
-    .unwrap();
-
-    HTTP_METRICS
-        .set(HttpMetrics {
-            requests_total,
-            responses_total,
-            request_duration_seconds,
-        })
-        .expect("HTTP metrics already initialized");
+        .unwrap(),
+        responses_total: register_counter_vec_with_registry!(
+            Opts::new("relayer_http_responses_total", "Count of HTTP responses"),
+            &["endpoint", "method", "status"],
+            registry
+        )
+        .unwrap(),
+        request_duration_seconds: register_histogram_vec_with_registry!(
+            HistogramOpts::new(
+                "relayer_http_request_duration_seconds",
+                "Histogram of HTTP request durations (seconds)"
+            )
+            .buckets(config.histogram_buckets.clone()),
+            &["endpoint", "method", "status"],
+            registry
+        )
+        .unwrap(),
+    });
 }
 
 /// Increment the HTTP requests_total metric.

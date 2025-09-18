@@ -1,7 +1,8 @@
 use once_cell::sync::OnceCell;
 use prometheus::{
-    register_counter_vec_with_registry, register_histogram_vec_with_registry, CounterVec, Gauge,
-    HistogramOpts, HistogramVec, Opts, Registry,
+    register_counter_vec_with_registry, register_gauge_with_registry,
+    register_histogram_vec_with_registry, CounterVec, Gauge, HistogramOpts, HistogramVec, Opts,
+    Registry,
 };
 
 /// Transaction status (shared).
@@ -24,7 +25,7 @@ impl TxStatus {
 
 /// Global metrics registry and handles
 #[derive(Debug)]
-struct Metrics {
+struct BlockchainMetrics {
     // FHEVM
     fhevm_events_total: CounterVec,
     fhevm_tx_total: CounterVec,
@@ -37,100 +38,87 @@ struct Metrics {
     gateway_tx_confirmation_seconds: HistogramVec,
 }
 
-static METRICS: OnceCell<Metrics> = OnceCell::new();
+static METRICS: OnceCell<BlockchainMetrics> = OnceCell::new();
 
 /// Initialize all metrics. Call this once at startup.
 pub fn init_blockchain_metrics(registry: &Registry) {
-    let fhevm_events_total = register_counter_vec_with_registry!(
-        Opts::new(
-            "relayer_fhevm_events_total",
-            "Count of events from fhevm blockchain, by type"
-        ),
-        &["event_type"],
-        registry
-    )
-    .unwrap();
+    // let fhevm_pending_tx = Gauge::new(
+    //     "relayer_fhevm_pending_tx",
+    //     "Dynamic count of pending txs to fhevm",
+    // )
+    // .unwrap();
+    // registry
+    //     .register(Box::new(fhevm_pending_tx.clone()))
+    //     .unwrap();
 
-    let fhevm_tx_total = register_counter_vec_with_registry!(
-        Opts::new(
-            "relayer_fhevm_tx_total",
-            "Count of transactions sent to fhevm blockchain"
-        ),
-        &["status", "sender"],
-        registry
-    )
-    .unwrap();
-
-    let fhevm_pending_tx = Gauge::new(
-        "relayer_fhevm_pending_tx",
-        "Dynamic count of pending txs to fhevm",
-    )
-    .unwrap();
-    registry
-        .register(Box::new(fhevm_pending_tx.clone()))
-        .unwrap();
-
-    let gateway_tx_confirmation_seconds = register_histogram_vec_with_registry!(
-        HistogramOpts::new(
-            gateway::MetricName::TxConfirmationSeconds.as_str(),
-            "Histogram of tx confirmation times (seconds) on gateway"
-        ),
-        &["status", "sender"],
-        registry
-    )
-    .unwrap();
-
-    let gateway_events_total = register_counter_vec_with_registry!(
-        Opts::new(
-            "relayer_gateway_events_total",
-            "Count of gateway events by type and ID match"
-        ),
-        &["event_type", "request_id_status"],
-        registry
-    )
-    .unwrap();
-
-    let gateway_tx_total = register_counter_vec_with_registry!(
-        Opts::new(
-            "relayer_gateway_tx_total",
-            "Count of transactions sent to gateway blockchain"
-        ),
-        &["status", "sender"],
-        registry
-    )
-    .unwrap();
-
-    let gateway_pending_tx = Gauge::new(
-        "relayer_gateway_pending_tx",
-        "Dynamic count of pending txs to gateway",
-    )
-    .unwrap();
-    registry
-        .register(Box::new(gateway_pending_tx.clone()))
-        .unwrap();
-
-    let fhevm_tx_confirmation_seconds = register_histogram_vec_with_registry!(
-        HistogramOpts::new(
-            fhevm::MetricName::TxConfirmationSeconds.as_str(),
-            "Histogram of tx confirmation times (seconds) on fhevm"
-        ),
-        &["status", "sender"],
-        registry
-    )
-    .unwrap();
-
-    METRICS
-        .set(Metrics {
-            fhevm_events_total,
-            fhevm_tx_total,
-            fhevm_pending_tx,
-            fhevm_tx_confirmation_seconds,
-            gateway_events_total,
-            gateway_tx_total,
-            gateway_pending_tx,
-            gateway_tx_confirmation_seconds,
-        })
-        .expect("Blockchain metrics already initialized");
+    METRICS.get_or_init(|| BlockchainMetrics {
+        fhevm_events_total: register_counter_vec_with_registry!(
+            Opts::new(
+                "relayer_fhevm_events_total",
+                "Count of events from fhevm blockchain, by type"
+            ),
+            &["event_type"],
+            registry
+        )
+        .unwrap(),
+        fhevm_tx_total: register_counter_vec_with_registry!(
+            Opts::new(
+                "relayer_fhevm_tx_total",
+                "Count of transactions sent to fhevm blockchain"
+            ),
+            &["status", "sender"],
+            registry
+        )
+        .unwrap(),
+        fhevm_pending_tx: register_gauge_with_registry!(
+            "relayer_fhevm_pending_tx",
+            "Dynamic count of pending txs to fhevm",
+            registry
+        )
+        .unwrap(),
+        fhevm_tx_confirmation_seconds: register_histogram_vec_with_registry!(
+            HistogramOpts::new(
+                fhevm::MetricName::TxConfirmationSeconds.as_str(),
+                "Histogram of tx confirmation times (seconds) on fhevm"
+            ),
+            &["status", "sender"],
+            registry
+        )
+        .unwrap(),
+        gateway_events_total: register_counter_vec_with_registry!(
+            Opts::new(
+                "relayer_gateway_events_total",
+                "Count of gateway events by type and ID match"
+            ),
+            &["event_type", "request_id_status"],
+            registry
+        )
+        .unwrap(),
+        gateway_tx_total: register_counter_vec_with_registry!(
+            Opts::new(
+                "relayer_gateway_tx_total",
+                "Count of transactions sent to gateway blockchain"
+            ),
+            &["status", "sender"],
+            registry
+        )
+        .unwrap(),
+        gateway_pending_tx: register_gauge_with_registry!(
+            "relayer_gateway_pending_tx",
+            "Dynamic count of pending txs to gateway",
+            registry,
+        )
+        .unwrap(),
+        gateway_tx_confirmation_seconds: register_histogram_vec_with_registry!(
+            HistogramOpts::new(
+                gateway::MetricName::TxConfirmationSeconds.as_str(),
+                "Histogram of tx confirmation times (seconds) on gateway"
+            ),
+            &["status", "sender"],
+            registry
+        )
+        .unwrap(),
+    });
 }
 
 pub mod fhevm {

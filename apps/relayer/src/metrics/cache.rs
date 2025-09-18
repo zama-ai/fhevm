@@ -10,21 +10,17 @@ static CACHE_METRICS: OnceCell<CacheMetrics> = OnceCell::new();
 
 /// Initialize cache metrics. Call this once at startup with the Prometheus registry.
 pub fn init_cache_metrics(registry: &Registry) {
-    let cache_operations_total = register_counter_vec_with_registry!(
-        Opts::new(
-            "relayer_cache_operations_total",
-            "Total number of cache operations (hits and misses)"
-        ),
-        &["cache_type", "operation"],
-        registry
-    )
-    .unwrap();
-
-    CACHE_METRICS
-        .set(CacheMetrics {
-            cache_operations_total,
-        })
-        .expect("Cache metrics already initialized");
+    CACHE_METRICS.get_or_init(|| CacheMetrics {
+        cache_operations_total: register_counter_vec_with_registry!(
+            Opts::new(
+                "relayer_cache_operations_total",
+                "Total number of cache operations (hits and misses)"
+            ),
+            &["cache_type", "operation"],
+            registry
+        )
+        .unwrap(),
+    });
 }
 
 /// Cache types in the relayer.
