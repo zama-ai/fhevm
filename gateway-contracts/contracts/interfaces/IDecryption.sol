@@ -294,7 +294,7 @@ interface IDecryption {
 
     /**
      * @notice Checks if handles are ready to be decrypted by a delegated address.
-     * @param contractsChainId The contract's chain ID.
+     * @param contractsChainId The host chain ID, where the contracts are deployed.
      * @param delegationAccounts The delegator and delegated address.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param contractAddresses The contract addresses.
