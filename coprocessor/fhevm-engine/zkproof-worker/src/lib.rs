@@ -4,7 +4,7 @@ pub mod auxiliary;
 mod tests;
 
 pub mod verifier;
-use std::io;
+use std::{io, time::Duration};
 
 use fhevm_engine_common::{pg_pool::ServiceError, types::FhevmError};
 use thiserror::Error;
@@ -73,6 +73,8 @@ pub struct Config {
     pub notify_database_channel: String,
     pub pg_pool_connections: u32,
     pub pg_polling_interval: u32,
+    pub pg_timeout: Duration,
+    pub pg_auto_explain_with_min_duration: Option<Duration>,
 
     pub worker_thread_count: u32,
 }
