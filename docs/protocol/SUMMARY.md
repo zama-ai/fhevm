@@ -14,7 +14,7 @@
 - [Roadmap](roadmap.md)
 
 ## Developer
-
+- [Confidential contracts by OpenZeppelin](https://docs.openzeppelin.com/confidential-contracts/0.1.0/)
 - [Contributing](contribute.md)
 - [Feature request](https://github.com/zama-ai/fhevm/issues/new?assignees=&labels=enhancement&projects=&template=feature-request.md&title=)
 - [Bug report](https://github.com/zama-ai/fhevm/issues/new?assignees=&labels=bug&projects=&template=bug_report_fhevm.md&title=)
