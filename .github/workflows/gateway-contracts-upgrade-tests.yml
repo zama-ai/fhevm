@@ -13,9 +13,9 @@ jobs:
   check-changes:
     name: gateway-contracts-upgrade-tests/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
@@ -35,9 +35,9 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     permissions:
-      contents: 'read'
-      checks: 'write'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      checks: 'write' # Required to create GitHub checks for test results
+      packages: 'read' # Required to read GitHub packages/container registry
     runs-on: ubuntu-latest
     steps:
       - name: Checkout previous release code

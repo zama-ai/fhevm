@@ -19,9 +19,9 @@ jobs:
   check-changes:
     name: kms-connector-kms-worker-docker-build/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-kms-connector-kms-worker: ${{ steps.filter.outputs.kms-connector-kms-worker }}
@@ -52,12 +52,12 @@ jobs:
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
-      attestations: write
-      packages: 'write'
-      id-token: 'write'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
     with:
       use-cgr-secrets: true
       working-directory: "."
