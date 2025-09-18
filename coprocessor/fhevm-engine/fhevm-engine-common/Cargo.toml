@@ -29,10 +29,13 @@ tokio-util = { workspace = true}
 axum = { workspace = true}
 serde_json = { workspace = true}
 http = {workspace = true}
+thiserror = { workspace = true }
+
 
 # crates.io dependencies
 lazy_static = "1.5.0"
 rand_chacha = "0.3.1"
+futures = "0.3.31"
 
 # opentelemetry support
 opentelemetry = { workspace = true }
