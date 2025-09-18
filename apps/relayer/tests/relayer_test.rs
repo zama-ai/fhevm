@@ -7,7 +7,7 @@ mod tests {
     use crate::utils::TestSetup;
     use alloy::primitives::{Address, Bytes};
     use serde_json::json;
-    use std::{str::FromStr, time::Duration};
+    use std::str::FromStr;
 
     #[tokio::test]
     async fn test_input_url_endpoint_on_chain_rejection() {
@@ -409,8 +409,6 @@ mod tests {
                 response_time
             })
         };
-
-        tokio::time::sleep(Duration::from_micros(100)).await;
 
         // Send the remaining requests in parallel
         let mut remaining_set = tokio::task::JoinSet::new();
