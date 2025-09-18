@@ -84,7 +84,11 @@ async fn main() {
     }
 
     let cancel_token = CancellationToken::new();
-    let service = ZkProofService::create(conf, cancel_token.child_token()).await;
+    let Some(service) = ZkProofService::create(conf, cancel_token.child_token()).await else {
+        error!("Failed to create zkproof service");
+        std::process::exit(1);
+    };
+
     let service = Arc::new(service);
 
     let http_server = HttpServer::new(

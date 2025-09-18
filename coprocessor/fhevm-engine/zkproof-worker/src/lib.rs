@@ -6,7 +6,7 @@ mod tests;
 pub mod verifier;
 use std::io;
 
-use fhevm_engine_common::types::FhevmError;
+use fhevm_engine_common::{pg_pool::ServiceError, types::FhevmError};
 use thiserror::Error;
 
 /// The highest index of an input is 254,
@@ -53,6 +53,17 @@ pub enum ExecutionError {
 
     #[error("Too many inputs: {0}")]
     TooManyInputs(usize),
+}
+
+impl From<ExecutionError> for ServiceError {
+    fn from(err: ExecutionError) -> Self {
+        match err {
+            ExecutionError::DbError(e) => ServiceError::Database(e),
+
+            // collapse everything else into InternalError
+            other => ServiceError::InternalError(other.to_string()),
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone)]
