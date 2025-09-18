@@ -12,25 +12,33 @@ use std::str::FromStr;
 /// FHEVM mock setup extensions for isolated testing
 pub trait FhevmMockSetup {
     /// Setup FHEVM mock for successful public decryption
-    fn setup_for_public_decrypt(&self, ciphertext_handles: Vec<B256>);
+    fn setup_for_public_decrypt_success_response(&self, ciphertext_handles: Vec<B256>);
 
     /// Setup FHEVM mock for successful user decryption
-    fn setup_for_user_decrypt(&self, user_address: Address, ciphertext_handles: Vec<B256>);
+    fn setup_for_user_decrypt_success_response(
+        &self,
+        user_address: Address,
+        ciphertext_handles: Vec<B256>,
+    );
 
     /// Setup FHEVM mock for successful input proof verification
     fn setup_for_input_proof_success_response(&self, user_address: Address, ciphertext_data: Bytes);
 
     /// Setup FHEVM mock for input proof rejection
-    fn setup_for_input_proof_success_reject(&self, user_address: Address, ciphertext_data: Bytes);
+    fn setup_for_input_proof_reject_response(&self, user_address: Address, ciphertext_data: Bytes);
 }
 
 impl FhevmMockSetup for FhevmMockWrapper {
-    fn setup_for_public_decrypt(&self, ciphertext_handles: Vec<B256>) {
+    fn setup_for_public_decrypt_success_response(&self, ciphertext_handles: Vec<B256>) {
         let plaintext_values = vec![42u64; ciphertext_handles.len()];
         self.on_public_decrypt_success(ciphertext_handles, plaintext_values);
     }
 
-    fn setup_for_user_decrypt(&self, user_address: Address, ciphertext_handles: Vec<B256>) {
+    fn setup_for_user_decrypt_success_response(
+        &self,
+        user_address: Address,
+        ciphertext_handles: Vec<B256>,
+    ) {
         let encrypted_bytes = Bytes::from(vec![42u8; 32]);
         self.on_user_decrypt_success(ciphertext_handles, user_address, encrypted_bytes);
     }
@@ -43,7 +51,7 @@ impl FhevmMockSetup for FhevmMockWrapper {
         self.on_input_proof_success(user_address, ciphertext_data);
     }
 
-    fn setup_for_input_proof_success_reject(&self, user_address: Address, ciphertext_data: Bytes) {
+    fn setup_for_input_proof_reject_response(&self, user_address: Address, ciphertext_data: Bytes) {
         self.on_input_proof_error(user_address, ciphertext_data);
     }
 }

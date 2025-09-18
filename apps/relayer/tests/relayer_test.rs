@@ -20,7 +20,7 @@ mod tests {
         // Configure FHEVM mock for this specific test
         setup
             .fhevm_mock
-            .setup_for_input_proof_success_reject(user_address, ciphertext_data);
+            .setup_for_input_proof_reject_response(user_address, ciphertext_data);
 
         let client = reqwest::Client::new();
         let res = client
@@ -283,7 +283,7 @@ mod tests {
 
         setup
             .fhevm_mock
-            .setup_for_user_decrypt(user_address, handles);
+            .setup_for_user_decrypt_success_response(user_address, handles);
 
         let client = reqwest::Client::new();
         let (res, _response_time) = fhevm::post_user_decrypt(
@@ -306,7 +306,7 @@ mod tests {
 
         setup
             .fhevm_mock
-            .setup_for_user_decrypt(user_address, handles.clone());
+            .setup_for_user_decrypt_success_response(user_address, handles.clone());
         let (res, response_time) = fhevm::post_user_decrypt(&client, &base_url, &payload, 10).await;
         assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
         println!("First user decrypt request took: {:?}", response_time);
@@ -315,7 +315,7 @@ mod tests {
         for i in 0..3 {
             setup
                 .fhevm_mock
-                .setup_for_user_decrypt(user_address, handles.clone());
+                .setup_for_user_decrypt_success_response(user_address, handles.clone());
             let (res, response_time) =
                 fhevm::post_user_decrypt(&client, &base_url, &payload, 1).await;
             assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
@@ -344,7 +344,9 @@ mod tests {
 
     async fn test_single_request(setup: &TestSetup, payload: serde_json::Value) {
         let handles = fhevm::extract_ciphertext_handles_from_public_payload(&payload);
-        setup.fhevm_mock.setup_for_public_decrypt(handles);
+        setup
+            .fhevm_mock
+            .setup_for_public_decrypt_success_response(handles);
 
         let client = reqwest::Client::new();
         let base_url = format!("http://localhost:{}", setup.http_port);
@@ -356,7 +358,9 @@ mod tests {
 
     async fn test_sequential_requests(setup: &TestSetup, payload: serde_json::Value) {
         let handles = fhevm::extract_ciphertext_handles_from_public_payload(&payload);
-        setup.fhevm_mock.setup_for_public_decrypt(handles.clone());
+        setup
+            .fhevm_mock
+            .setup_for_public_decrypt_success_response(handles.clone());
 
         let client = reqwest::Client::new();
         let base_url = format!("http://localhost:{}", setup.http_port);
@@ -367,7 +371,9 @@ mod tests {
 
         let mut response_times_micros = Vec::new();
         for i in 0..3 {
-            setup.fhevm_mock.setup_for_public_decrypt(handles.clone());
+            setup
+                .fhevm_mock
+                .setup_for_public_decrypt_success_response(handles.clone());
             let (res, elapsed) = fhevm::post_public_decrypt(&client, &base_url, &payload, 1).await;
             response_times_micros.push(elapsed.as_micros());
             assert_eq!(res.status(), 200, "{}", res.text().await.unwrap());
@@ -391,7 +397,7 @@ mod tests {
             let handles_clone = fhevm::extract_ciphertext_handles_from_public_payload(&payload);
             let fhevm_mock_clone = setup.fhevm_mock.clone();
             tokio::spawn(async move {
-                fhevm_mock_clone.setup_for_public_decrypt(handles_clone);
+                fhevm_mock_clone.setup_for_public_decrypt_success_response(handles_clone);
                 let client = reqwest::Client::new();
                 let (res, response_time) =
                     fhevm::post_public_decrypt(&client, &url_clone, &payload_clone, 10).await;
@@ -414,7 +420,7 @@ mod tests {
             let handles_clone = fhevm::extract_ciphertext_handles_from_public_payload(&payload);
             let fhevm_mock_clone = setup.fhevm_mock.clone();
             remaining_set.spawn(async move {
-                fhevm_mock_clone.setup_for_public_decrypt(handles_clone);
+                fhevm_mock_clone.setup_for_public_decrypt_success_response(handles_clone);
                 let client = reqwest::Client::new();
                 let (res, response_time) =
                     fhevm::post_public_decrypt(&client, &url_clone, &payload_clone, 10).await;
