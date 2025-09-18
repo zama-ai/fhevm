@@ -60,6 +60,8 @@ async fn main() {
     let args = parse_args();
     tracing_subscriber::fmt()
         .json()
+        .with_current_span(true)
+        .with_span_list(false)
         .with_level(true)
         .with_max_level(args.log_level)
         .init();
