@@ -120,7 +120,7 @@ impl FhevmMockWrapper {
         self.register_pattern(contract, selector, request_log, response_log);
     }
 
-    /// Generic registration method for input proof patterns  
+    /// Generic registration method for input proof patterns
     fn register_input_pattern<F>(&self, operation_type: &str, log_creator: F)
     where
         F: FnOnce(u64, Address) -> (Log, Log),
@@ -529,6 +529,8 @@ mod tests {
 
     #[test]
     fn test_pattern_setup_methods() {
+        // Tests if all pattern setup methods complete without panicking
+
         let server = MockServer::new(MockConfig::new());
         let wrapper =
             FhevmMockWrapper::new(server, Address::repeat_byte(1), Address::repeat_byte(2));
@@ -549,7 +551,5 @@ mod tests {
         wrapper.on_input_proof_success(user, test_data.clone());
         wrapper.on_input_proof_error(user, test_data);
         wrapper.on_input_proof_revert("test reason");
-
-        // Test passes if all pattern setup methods complete without panicking
     }
 }
