@@ -9,9 +9,9 @@ jobs:
   check-changes:
     name: host-contracts-hardhat-forge-tests/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-host-contracts: ${{ steps.filter.outputs.host-contracts }}
@@ -32,7 +32,7 @@ jobs:
     if: ${{ needs.check-changes.outputs.changes-host-contracts == 'true' }}
     runs-on: large_ubuntu_32
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     strategy:
       matrix:
         node-version: [20.x]

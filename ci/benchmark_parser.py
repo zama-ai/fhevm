@@ -99,7 +99,7 @@ parser.add_argument(
 parser.add_argument(
     "--crate",
     dest="crate",
-    default="coprocessor/fhevm-engine/coprocessor",
+    default="coprocessor/fhevm-engine/tfhe-worker",
     help="Crate for which benchmarks have run",
 )
 

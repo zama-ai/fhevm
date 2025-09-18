@@ -9,9 +9,9 @@ jobs:
   check-changes:
     name: library-solidity-hardhat-tests/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-library-solidity: ${{ steps.filter.outputs.library-solidity }}
@@ -36,7 +36,7 @@ jobs:
       matrix:
         node-version: [20.x]
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

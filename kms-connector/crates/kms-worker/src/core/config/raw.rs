@@ -32,6 +32,7 @@ pub struct RawConfig {
     #[serde(default = "default_database_polling_timeout_secs")]
     pub database_polling_timeout_secs: u64,
     pub gateway_url: String,
+    #[serde(default)]
     pub kms_core_endpoints: Vec<String>,
     pub kms_core_endpoint: Option<String>,
     pub chain_id: u64,

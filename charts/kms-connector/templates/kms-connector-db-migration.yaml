@@ -9,7 +9,10 @@ metadata:
   namespace: {{ .Release.Namespace }}
   {{- with .Values.kmsConnectorDbMigration.annotations }}
   annotations:
-  {{- toYaml . | nindent 4 }}
+    "helm.sh/hook": "pre-install,pre-upgrade"
+    "helm.sh/hook-weight": "-1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+    {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
   backoffLimit: 3
@@ -22,13 +25,17 @@ spec:
       imagePullSecrets:
         - name: registry-credentials
       restartPolicy: Never
-      {{- if and .Values.kmsConnectorDbMigration.affinity .Values.kmsConnectorDbMigration.affinity.enabled }}
-      affinity:
-{{ toYaml (omit .Values.kmsConnectorDbMigration.affinity "enabled") | indent 8 }}
+      {{- with .Values.kmsConnectorDbMigration.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- if and .Values.kmsConnectorDbMigration.tolerations .Values.kmsConnectorDbMigration.tolerations.enabled }}
+      {{- with .Values.kmsConnectorDbMigration.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.kmsConnectorDbMigration.tolerations }}
       tolerations:
-{{ toYaml .Values.kmsConnectorDbMigration.tolerations.items | indent 8 }}
+        {{- toYaml . | nindent 8 }}
       {{- end }}
       {{- if .Values.kmsConnectorDbMigration.serviceAccountName }}
       serviceAccountName: {{ .Values.kmsConnectorDbMigration.serviceAccountName }}
@@ -39,14 +46,21 @@ spec:
         command:
           {{- toYaml .Values.kmsConnectorDbMigration.command | nindent 10 }}
         env:
-{{- toYaml .Values.kmsConnectorDbMigration.env | nindent 12 }}
+          {{- with .Values.commonConfig.env }}
+            {{- toYaml . | nindent 10 }}
+          {{- end }}
+          {{- with .Values.kmsConnectorDbMigration.env }}
+            {{- toYaml . | nindent 10 }}
+          {{- end }}
+          - name: DATABASE_URL
+            value: {{ .Values.commonConfig.databaseUrl | quote }}
         resources:
           requests:
-            cpu: {{ .Values.kmsConnectorDbMigration.resources.requests.cpu | default "100m" }}
-            memory: {{ .Values.kmsConnectorDbMigration.resources.requests.memory | default "256Mi" }}
+            cpu: {{ .Values.kmsConnectorDbMigration.resources.requests.cpu }}
+            memory: {{ .Values.kmsConnectorDbMigration.resources.requests.memory }}
           limits:
-            cpu: {{ .Values.kmsConnectorDbMigration.resources.limits.cpu | default "500m" }}
-            memory: {{ .Values.kmsConnectorDbMigration.resources.limits.memory | default "512Mi" }}
+            cpu: {{ .Values.kmsConnectorDbMigration.resources.limits.cpu }}
+            memory: {{ .Values.kmsConnectorDbMigration.resources.limits.memory }}
       volumes:
         - name: cache-volume
           emptyDir:
