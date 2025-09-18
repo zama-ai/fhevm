@@ -155,8 +155,8 @@ contract KMSManagement is
         mapping(uint256 requestId => bool hasConsensusAlreadyBeenReached) isRequestDone;
         /// @notice The KMS transaction sender addresses that propagated valid signatures for a request
         mapping(uint256 requestId => mapping(bytes32 digest => address[] kmsTxSenderAddresses)) consensusTxSenderAddresses;
-        /// @notice The KMS nodes' s3 bucket URL that propagated valid signatures for a request
-        mapping(uint256 requestId => mapping(bytes32 digest => string[] kmsNodeS3BucketUrls)) consensusS3BucketUrls;
+        /// @notice The KMS nodes' storage URL that propagated valid signatures for a request
+        mapping(uint256 requestId => mapping(bytes32 digest => string[] kmsNodeStorageUrls)) consensusStorageUrls;
         /// @notice The digest of the signed struct on which consensus was reached for a request
         mapping(uint256 requestId => bytes32 digest) consensusDigest;
     }
@@ -294,7 +294,7 @@ contract KMSManagement is
 
         $.kmsHasSignedForResponse[keyId][kmsSigner] = true;
 
-        // Store the KMS transaction sender address and the s3 bucket URL for the keygen response,
+        // Store the KMS transaction sender address and the storage URL for the keygen response,
         // event if the consensus has already been reached
         string[] memory consensusUrls = _storeConsensusMaterials(keyId, digest);
 
@@ -370,7 +370,7 @@ contract KMSManagement is
 
         $.kmsHasSignedForResponse[crsId][kmsSigner] = true;
 
-        // Store the KMS transaction sender address and the s3 bucket URL for the crsgen response,
+        // Store the KMS transaction sender address and the storage URL for the crsgen response,
         // event if the consensus has already been reached
         string[] memory consensusUrls = _storeConsensusMaterials(crsId, digest);
 
@@ -467,7 +467,7 @@ contract KMSManagement is
         // Get the unique digest associated to the keygen request
         bytes32 digest = $.consensusDigest[keyId];
 
-        return ($.consensusS3BucketUrls[keyId][digest], $.keyDigests[keyId]);
+        return ($.consensusStorageUrls[keyId][digest], $.keyDigests[keyId]);
     }
 
     /**
@@ -483,7 +483,7 @@ contract KMSManagement is
         // Get the unique digest associated to the crsgen request
         bytes32 digest = $.consensusDigest[crsId];
 
-        return ($.consensusS3BucketUrls[crsId][digest], $.crsDigests[crsId]);
+        return ($.consensusStorageUrls[crsId][digest], $.crsDigests[crsId]);
     }
 
     /**
@@ -521,25 +521,25 @@ contract KMSManagement is
     }
 
     /**
-     * @notice Stores the KMS transaction sender address and the s3 bucket URL for the keygen response
+     * @notice Stores the KMS transaction sender address and the storage URL for the keygen response
      * @param requestId The ID of the request.
      * @param digest The digest of the request.
-     * @return The list of s3 bucket URLs.
+     * @return The list of storage URLs.
      */
     function _storeConsensusMaterials(uint256 requestId, bytes32 digest) internal virtual returns (string[] memory) {
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 
-        // Get the KMS node's s3 bucket URL
-        string memory kmsNodeS3BucketUrl = GATEWAY_CONFIG.getKmsNode(msg.sender).s3BucketUrl;
+        // Get the KMS node's storage URL
+        string memory kmsNodeStorageUrl = GATEWAY_CONFIG.getKmsNode(msg.sender).storageUrl;
 
-        // Store the KMS transaction sender address and the s3 bucket URL for the keygen response
+        // Store the KMS transaction sender address and the storage URL for the keygen response
         // It is important to consider the same mapping fields used for the consensus
-        // A "late" valid KMS transaction sender address or s3 bucket URL will still be added in the list
+        // A "late" valid KMS transaction sender address or storage URL will still be added in the list
         address[] storage consensusTxSenders = $.consensusTxSenderAddresses[requestId][digest];
         consensusTxSenders.push(msg.sender);
 
-        string[] storage consensusUrls = $.consensusS3BucketUrls[requestId][digest];
-        consensusUrls.push(kmsNodeS3BucketUrl);
+        string[] storage consensusUrls = $.consensusStorageUrls[requestId][digest];
+        consensusUrls.push(kmsNodeStorageUrl);
 
         return consensusUrls;
     }

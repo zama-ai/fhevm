@@ -24,7 +24,7 @@ interface IGatewayConfig {
         address txSenderAddress;
         address signerAddress;
         string ipAddress;
-        string s3BucketUrl;
+        string storageUrl;
     }
     struct ProtocolMetadata {
         string name;
@@ -500,7 +500,7 @@ interface IGatewayConfig {
             "internalType": "string"
           },
           {
-            "name": "s3BucketUrl",
+            "name": "storageUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -787,7 +787,7 @@ interface IGatewayConfig {
             "internalType": "string"
           },
           {
-            "name": "s3BucketUrl",
+            "name": "storageUrl",
             "type": "string",
             "internalType": "string"
           }
@@ -1915,7 +1915,7 @@ struct HostChain { uint256 chainId; address fhevmExecutorAddress; address aclAdd
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; string s3BucketUrl; }
+struct KmsNode { address txSenderAddress; address signerAddress; string ipAddress; string storageUrl; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1927,7 +1927,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
         #[allow(missing_docs)]
         pub ipAddress: alloy::sol_types::private::String,
         #[allow(missing_docs)]
-        pub s3BucketUrl: alloy::sol_types::private::String,
+        pub storageUrl: alloy::sol_types::private::String,
     }
     #[allow(
         non_camel_case_types,
@@ -1970,7 +1970,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     value.txSenderAddress,
                     value.signerAddress,
                     value.ipAddress,
-                    value.s3BucketUrl,
+                    value.storageUrl,
                 )
             }
         }
@@ -1982,7 +1982,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     txSenderAddress: tuple.0,
                     signerAddress: tuple.1,
                     ipAddress: tuple.2,
-                    s3BucketUrl: tuple.3,
+                    storageUrl: tuple.3,
                 }
             }
         }
@@ -2005,7 +2005,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                         &self.ipAddress,
                     ),
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::tokenize(
-                        &self.s3BucketUrl,
+                        &self.storageUrl,
                     ),
                 )
             }
@@ -2081,7 +2081,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "KmsNode(address txSenderAddress,address signerAddress,string ipAddress,string s3BucketUrl)",
+                    "KmsNode(address txSenderAddress,address signerAddress,string ipAddress,string storageUrl)",
                 )
             }
             #[inline]
@@ -2110,7 +2110,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                         )
                         .0,
                     <alloy::sol_types::sol_data::String as alloy_sol_types::SolType>::eip712_data_word(
-                            &self.s3BucketUrl,
+                            &self.storageUrl,
                         )
                         .0,
                 ]
@@ -2132,7 +2132,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                         &rust.ipAddress,
                     )
                     + <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.s3BucketUrl,
+                        &rust.storageUrl,
                     )
             }
             #[inline]
@@ -2156,7 +2156,7 @@ struct KmsNode { address txSenderAddress; address signerAddress; string ipAddres
                     out,
                 );
                 <alloy::sol_types::sol_data::String as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.s3BucketUrl,
+                    &rust.storageUrl,
                     out,
                 );
             }

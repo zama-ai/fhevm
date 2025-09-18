@@ -105,7 +105,7 @@ NUM_KMS_NODES="1" # (number)
 KMS_TX_SENDER_ADDRESS_0="0xc1d91b49A1B3D1324E93F86778C44a03f1063f1b" # (address)
 KMS_SIGNER_ADDRESS_0="0x305F1F471e9baCFF2b3549F9601f9A4BEafc94e1" # (address)
 KMS_NODE_IP_ADDRESS_0="127.0.0.1" # (string)
-KMS_NODE_S3_BUCKET_URL_0="s3://kms-bucket-1" # (string)
+KMS_NODE_STORAGE_URL_0="s3://kms-bucket-1" # (string)
 ```
 
 - Coprocessors:

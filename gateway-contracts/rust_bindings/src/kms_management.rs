@@ -666,8 +666,8 @@ interface KMSManagement {
     error UUPSUnauthorizedCallContext();
     error UUPSUnsupportedProxiableUUID(bytes32 slot);
 
-    event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
-    event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, IKMSManagement.KeyDigest[] keyDigests);
+    event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
+    event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, IKMSManagement.KeyDigest[] keyDigests);
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, IKMSManagement.ParamsType paramsType);
     event EIP712DomainChanged();
     event Initialized(uint64 version);
@@ -1074,7 +1074,7 @@ interface KMSManagement {
         "internalType": "uint256"
       },
       {
-        "name": "kmsNodeS3BucketUrls",
+        "name": "kmsNodeStorageUrls",
         "type": "string[]",
         "indexed": false,
         "internalType": "string[]"
@@ -1099,7 +1099,7 @@ interface KMSManagement {
         "internalType": "uint256"
       },
       {
-        "name": "kmsNodeS3BucketUrls",
+        "name": "kmsNodeStorageUrls",
         "type": "string[]",
         "indexed": false,
         "internalType": "string[]"
@@ -2888,7 +2888,7 @@ error UUPSUnsupportedProxiableUUID(bytes32 slot);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ActivateCrs(uint256,string[],bytes)` and selector `0x2258b73faed33fb2e2ea454403bef974920caf682ab3a723484fcf67553b16a2`.
 ```solidity
-event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
+event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -2901,7 +2901,7 @@ event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
         #[allow(missing_docs)]
         pub crsId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub kmsNodeS3BucketUrls: alloy::sol_types::private::Vec<
+        pub kmsNodeStorageUrls: alloy::sol_types::private::Vec<
             alloy::sol_types::private::String,
         >,
         #[allow(missing_docs)]
@@ -2941,7 +2941,7 @@ event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
             ) -> Self {
                 Self {
                     crsId: data.0,
-                    kmsNodeS3BucketUrls: data.1,
+                    kmsNodeStorageUrls: data.1,
                     crsDigest: data.2,
                 }
             }
@@ -2968,7 +2968,7 @@ event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
                     > as alloy_sol_types::SolType>::tokenize(&self.crsId),
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::String,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeS3BucketUrls),
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeStorageUrls),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.crsDigest,
                     ),
@@ -3013,7 +3013,7 @@ event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
     #[derive()]
     /**Event with signature `ActivateKey(uint256,string[],(uint8,bytes)[])` and selector `0xeb85c26dbcad46b80a68a0f24cce7c2c90f0a1faded84184138839fc9e80a25b`.
 ```solidity
-event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, IKMSManagement.KeyDigest[] keyDigests);
+event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, IKMSManagement.KeyDigest[] keyDigests);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3026,7 +3026,7 @@ event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, IKMSManagement.Ke
         #[allow(missing_docs)]
         pub keyId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub kmsNodeS3BucketUrls: alloy::sol_types::private::Vec<
+        pub kmsNodeStorageUrls: alloy::sol_types::private::Vec<
             alloy::sol_types::private::String,
         >,
         #[allow(missing_docs)]
@@ -3069,7 +3069,7 @@ event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, IKMSManagement.Ke
             ) -> Self {
                 Self {
                     keyId: data.0,
-                    kmsNodeS3BucketUrls: data.1,
+                    kmsNodeStorageUrls: data.1,
                     keyDigests: data.2,
                 }
             }
@@ -3096,7 +3096,7 @@ event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, IKMSManagement.Ke
                     > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::String,
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeS3BucketUrls),
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeStorageUrls),
                     <alloy::sol_types::sol_data::Array<
                         IKMSManagement::KeyDigest,
                     > as alloy_sol_types::SolType>::tokenize(&self.keyDigests),
