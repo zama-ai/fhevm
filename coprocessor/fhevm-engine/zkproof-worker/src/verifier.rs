@@ -30,7 +30,7 @@ use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Vers
 use tokio::time::interval;
 use tokio::{select, time::Duration};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 const MAX_CACHED_TENANT_KEYS: usize = 100;
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
@@ -205,7 +205,7 @@ async fn execute_worker(
                 };
             },
             _ = idle_event.tick() => {
-                info!("Polling timeout, rechecking for requests");
+                debug!("Polling timeout, rechecking for requests");
             },
             _ = token.cancelled() => {
                 info!("Cancellation requested, stopping worker");
