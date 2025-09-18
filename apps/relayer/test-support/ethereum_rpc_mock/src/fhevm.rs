@@ -23,7 +23,6 @@ const RESPONSE_DELAY_MS: u64 = 500;
 const MOCK_CHAIN_ID: u64 = 1337;
 const MOCK_PUBLIC_KEY_SIZE: usize = 32;
 const MOCK_SIGNATURE_SIZE: usize = 65;
-const MOCK_ENCRYPTED_DATA_SIZE: usize = 32;
 
 // Mock data generation helpers
 
@@ -330,7 +329,7 @@ fn build_user_decrypt_request(
         decryptionId: U256::from(decryption_id),
         snsCtMaterials: create_sns_materials(handles),
         userAddress: user_address,
-        publicKey: Bytes::from(vec![0x04u8; MOCK_PUBLIC_KEY_SIZE]),
+        publicKey: Bytes::from(vec![0x00; MOCK_PUBLIC_KEY_SIZE]),
         extraData: Bytes::from(vec![0x00]),
     };
 
@@ -352,7 +351,7 @@ fn build_user_decrypt_response(
     let response = Decryption::UserDecryptionResponse {
         decryptionId: U256::from(decryption_id),
         userDecryptedShares: decrypted_shares,
-        signatures: vec![Bytes::from(vec![0u8; MOCK_ENCRYPTED_DATA_SIZE])],
+        signatures: vec![Bytes::from(vec![0u8; MOCK_SIGNATURE_SIZE])],
         extraData: Bytes::default(),
     };
 
@@ -393,7 +392,7 @@ fn build_public_decrypt_response(
         Decryption::PublicDecryptionResponse {
             decryptionId: U256::from(decryption_id),
             decryptedResult: Bytes::from(decrypted_values[0].to_be_bytes().to_vec()),
-            signatures: vec![Bytes::from(vec![0u8; MOCK_ENCRYPTED_DATA_SIZE])],
+            signatures: vec![Bytes::from(vec![0u8; MOCK_SIGNATURE_SIZE])],
             extraData: Bytes::default(),
         }
     } else {
@@ -454,7 +453,7 @@ fn build_input_success_response(contract: Address, request_id: u64, handles: Vec
         } else {
             handles
         },
-        signatures: vec![Bytes::from(vec![0x42u8; MOCK_SIGNATURE_SIZE])],
+        signatures: vec![Bytes::from(vec![0x00; MOCK_SIGNATURE_SIZE])],
     };
 
     build_event_log(
