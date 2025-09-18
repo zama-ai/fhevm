@@ -52,7 +52,7 @@ jobs:
     name: coprocessor-benchmarks-cpu/setup-instance
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -74,8 +74,8 @@ jobs:
     continue-on-error: true
     timeout-minutes: 720  # 12 hours
     permissions:
-      contents: 'read'
-      packages: 'read' # Read access
+      contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to read GitHub packages/container registry
     strategy:
       fail-fast: false
       # explicit include-based build matrix, of known valid options
@@ -233,7 +233,7 @@ jobs:
     needs: [ setup-instance, benchmarks-cpu ]
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     steps:
       - name: Stop remote instance
         id: stop-instance
