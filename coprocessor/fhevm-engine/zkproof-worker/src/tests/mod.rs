@@ -8,7 +8,8 @@ mod utils;
 #[tokio::test]
 #[serial(db)]
 async fn test_verify_proof() {
-    let (pool, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let pool = pool_mngr.pool();
 
     // Generate Valid ZkPok
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
@@ -42,7 +43,8 @@ async fn test_verify_proof() {
 #[tokio::test]
 #[serial(db)]
 async fn test_verify_empty_input_list() {
-    let (pool, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let pool = pool_mngr.pool();
 
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
         utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
@@ -61,7 +63,8 @@ async fn test_verify_empty_input_list() {
 #[tokio::test]
 #[serial(db)]
 async fn test_max_input_index() {
-    let (db, _instance) = utils::setup().await.expect("valid setup");
+    let (pool_mngr, _instance) = utils::setup().await.expect("valid setup");
+    let pool = pool_mngr.pool();
 
     let aux: (crate::auxiliary::ZkData, [u8; 92]) =
         utils::aux_fixture(ACL_CONTRACT_ADDR.to_owned());
@@ -70,11 +73,11 @@ async fn test_max_input_index() {
     let inputs = vec![utils::ZkInput::U8(1); MAX_INPUT_INDEX as usize + 2];
 
     assert!(!utils::is_valid(
-        &db,
+        &pool,
         utils::insert_proof(
-            &db,
+            &pool,
             101,
-            &utils::generate_zk_pok_with_inputs(&db, &aux.1, &inputs).await,
+            &utils::generate_zk_pok_with_inputs(&pool, &aux.1, &inputs).await,
             &aux.0
         )
         .await
@@ -87,11 +90,11 @@ async fn test_max_input_index() {
     // Test with highest number of inputs - 255
     let inputs = vec![utils::ZkInput::U64(2); MAX_INPUT_INDEX as usize + 1];
     assert!(utils::is_valid(
-        &db,
+        &pool,
         utils::insert_proof(
-            &db,
+            &pool,
             102,
-            &utils::generate_zk_pok_with_inputs(&db, &aux.1, &inputs).await,
+            &utils::generate_zk_pok_with_inputs(&pool, &aux.1, &inputs).await,
             &aux.0
         )
         .await
