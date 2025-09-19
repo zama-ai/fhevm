@@ -257,14 +257,14 @@ task("task:upgradeGatewayConfig")
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
-task("task:upgradeKmsManagement")
+task("task:upgradeKMSManagement")
   .addParam(
     "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/KmsManagement.sol:KmsManagement",
+    "The currently deployed implementation solidity contract path and name, eg: contracts/KMSManagement.sol:KMSManagement",
   )
   .addParam(
     "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/KmsManagementUpgradedExample.sol:KmsManagementUpgradedExample",
+    "The new implementation solidity contract path and name, eg: contracts/examples/KMSManagementUpgradedExample.sol:KMSManagementUpgradedExample",
   )
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -284,7 +284,7 @@ task("task:upgradeKmsManagement")
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
 
-    await checkImplementationArtifacts("KmsManagement", currentImplementation, newImplementation, hre);
+    await checkImplementationArtifacts("KMSManagement", currentImplementation, newImplementation, hre);
 
     if (useInternalProxyAddress) {
       dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });

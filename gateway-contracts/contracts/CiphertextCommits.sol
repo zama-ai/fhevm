@@ -5,7 +5,7 @@ import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/acc
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
-import "./interfaces/IKmsManagement.sol";
+import "./interfaces/IKMSManagement.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./libraries/HandleOps.sol";
@@ -26,7 +26,7 @@ contract CiphertextCommits is
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /// @notice The address of the KmsManagement contract, used for fetching information about the current key.
-    IKmsManagement private constant KMS_MANAGEMENT = IKmsManagement(kmsManagementAddress);
+    IKMSManagement private constant KMS_MANAGEMENT = IKMSManagement(kmsManagementAddress);
 
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that
@@ -117,12 +117,6 @@ contract CiphertextCommits is
         if ($._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }
-
-        // Check if the received key ID is the latest activated.
-        // TODO: Revisit the following line accordingly with key life-cycles issue
-        // See: https://github.com/zama-ai/fhevm-gateway/issues/90
-        // TODO: Re-enable this check once keys are generated through the Gateway
-        // KMS_MANAGEMENT.checkCurrentKeyId(keyId);
 
         // The addCiphertextHash is the hash of all received input arguments which means that multiple
         // Coprocessors can only have a consensus on a ciphertext material with the same information.
