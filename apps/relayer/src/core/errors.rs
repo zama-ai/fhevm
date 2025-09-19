@@ -1,6 +1,6 @@
 use crate::transaction::fhevm::FhevmError;
-use crate::{config::settings::AppConfigError, transaction::sender::TransactionError};
-use alloy::{primitives::Address, transports::TransportError};
+use crate::{config::settings::AppConfigError, transaction::TransactionServiceError};
+use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -57,44 +57,6 @@ pub enum EventProcessingError {
     HexError(String),
 }
 
-#[derive(Error, Debug)]
-pub enum TransactionServiceError {
-    #[error("Transaction failed: {0}")]
-    Failed(String),
-
-    #[error("Transaction timeout after {0} seconds")]
-    Timeout(u64),
-
-    #[error("Gas estimation failed: {0}")]
-    GasEstimation(String),
-
-    #[error("Nonce error: {0}")]
-    NonceError(String),
-
-    #[error("Network error: {0}")]
-    Network(String),
-
-    #[error("Config error: {0}")]
-    Config(String),
-
-    #[error("Provider error: {0}")]
-    Provider(String),
-
-    #[error(transparent)]
-    Other(#[from] eyre::Report),
-}
-
-// Implement From for better error conversion
-impl From<Error> for TransactionServiceError {
-    fn from(err: Error) -> Self {
-        match err {
-            Error::Transport(e) => Self::Network(e.to_string()),
-            Error::Config(msg) => Self::Config(msg),
-            Error::EventProcessing(e) => Self::Failed(e.to_string()),
-        }
-    }
-}
-
 impl From<TransactionServiceError> for EventProcessingError {
     fn from(e: TransactionServiceError) -> Self {
         match e {
@@ -121,138 +83,5 @@ impl From<TransactionServiceError> for EventProcessingError {
             }
             TransactionServiceError::Other(err) => Self::TransactionError(err.to_string()),
         }
-    }
-}
-
-impl From<TransactionError> for EventProcessingError {
-    fn from(err: TransactionError) -> Self {
-        match err {
-            TransactionError::InvalidPrivateKey(msg) => {
-                Self::HandlerError(format!("Invalid private key: {msg}"))
-            }
-            TransactionError::InvalidAddress(msg) => {
-                Self::HandlerError(format!("Invalid address: {msg}"))
-            }
-            TransactionError::RpcError(msg) => Self::TransactionError(format!("RPC error: {msg}")),
-            TransactionError::TransactionFailed(msg) => {
-                Self::TransactionError(format!("Transaction failed: {msg}"))
-            }
-            TransactionError::TransactionTimeout(secs) => {
-                Self::TransactionError(format!("Transaction timed out after {secs} seconds"))
-            }
-            TransactionError::MonitoringTimeout(secs) => Self::TransactionError(format!(
-                "Transaction monitoring timed out after {secs} seconds, but may still succeed"
-            )),
-            TransactionError::GasEstimationFailed(msg) => {
-                Self::TransactionError(format!("Gas estimation failed: {msg}"))
-            }
-            TransactionError::ReceiptNotFound(attempts) => {
-                Self::TransactionError(format!("Receipt not found after {attempts} attempts"))
-            }
-            TransactionError::InsufficientConfirmations { required, actual } => {
-                Self::TransactionError(format!(
-                    "Insufficient confirmations: required {required}, got {actual}"
-                ))
-            }
-            TransactionError::NetworkError(msg) => {
-                Self::TransactionError(format!("Network error: {msg}"))
-            }
-            TransactionError::TransportError(e) => {
-                Self::TransactionError(format!("Transport Error: {e}"))
-            }
-            TransactionError::InvalidChainId(msg) => {
-                Self::TransactionError(format!("Chain-id error: {msg}"))
-            }
-        }
-    }
-}
-
-impl From<&TransactionError> for TransactionServiceError {
-    fn from(err: &TransactionError) -> Self {
-        match err {
-            TransactionError::InvalidPrivateKey(msg) => {
-                Self::Failed(format!("Invalid private key: {msg}"))
-            }
-            TransactionError::InvalidAddress(msg) => {
-                Self::Failed(format!("Invalid address: {msg}"))
-            }
-            TransactionError::RpcError(msg) => Self::Network(msg.to_string()),
-            TransactionError::TransactionFailed(msg) => {
-                if msg.contains("nonce too low") {
-                    Self::NonceError(msg.to_string())
-                } else {
-                    Self::Failed(msg.to_string())
-                }
-            }
-            TransactionError::TransactionTimeout(secs) => Self::Timeout(*secs),
-            TransactionError::GasEstimationFailed(msg) => Self::GasEstimation(msg.to_string()),
-            TransactionError::MonitoringTimeout(secs) => Self::Timeout(*secs), // Transaction may still succeed but monitoring timed out
-            TransactionError::ReceiptNotFound(attempts) => {
-                Self::Failed(format!("Receipt not found after {attempts} attempts"))
-            }
-            TransactionError::InsufficientConfirmations { required, actual } => Self::Failed(
-                format!("Insufficient confirmations: required {required}, got {actual}"),
-            ),
-            TransactionError::NetworkError(msg) => Self::Network(msg.to_string()),
-            TransactionError::TransportError(e) => Self::Network(e.to_string()),
-            TransactionError::InvalidChainId(msg) => Self::Failed(msg.to_string()),
-        }
-    }
-}
-
-impl From<TransactionError> for TransactionServiceError {
-    fn from(err: TransactionError) -> Self {
-        match err {
-            TransactionError::InvalidPrivateKey(msg) => {
-                Self::Failed(format!("Invalid private key: {msg}"))
-            }
-            TransactionError::InvalidAddress(msg) => {
-                Self::Failed(format!("Invalid address: {msg}"))
-            }
-            TransactionError::RpcError(msg) => Self::Network(msg),
-            TransactionError::TransactionFailed(msg) => {
-                if msg.contains("nonce too low") {
-                    Self::NonceError(msg)
-                } else {
-                    Self::Failed(msg)
-                }
-            }
-            TransactionError::TransactionTimeout(secs) => Self::Timeout(secs),
-            TransactionError::GasEstimationFailed(msg) => Self::GasEstimation(msg),
-            TransactionError::MonitoringTimeout(secs) => Self::Timeout(secs), // Transaction may still succeed but monitoring timed out
-            TransactionError::ReceiptNotFound(attempts) => {
-                Self::Failed(format!("Receipt not found after {attempts} attempts"))
-            }
-            TransactionError::InsufficientConfirmations { required, actual } => Self::Failed(
-                format!("Insufficient confirmations: required {required}, got {actual}"),
-            ),
-            TransactionError::NetworkError(msg) => Self::Network(msg),
-            TransactionError::TransportError(e) => Self::Network(e.to_string()),
-            TransactionError::InvalidChainId(msg) => Self::Failed(msg),
-        }
-    }
-}
-
-impl From<TransportError> for TransactionServiceError {
-    fn from(err: TransportError) -> Self {
-        TransactionServiceError::Network(err.to_string())
-    }
-}
-
-impl From<String> for TransactionServiceError {
-    fn from(err: String) -> Self {
-        TransactionServiceError::Failed(err)
-    }
-}
-
-impl From<&str> for TransactionServiceError {
-    fn from(err: &str) -> Self {
-        TransactionServiceError::Failed(err.to_string())
-    }
-}
-
-impl From<eyre::Report> for TransactionError {
-    fn from(err: eyre::Report) -> Self {
-        TransactionError::RpcError(err.to_string())
     }
 }

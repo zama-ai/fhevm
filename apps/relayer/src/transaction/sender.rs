@@ -27,8 +27,7 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::{
     config::settings::{RetrySettings, TransactionConfig},
-    core::errors::TransactionServiceError,
-    transaction::nonce::CachedNonceManagerWithRefresh,
+    transaction::{nonce::CachedNonceManagerWithRefresh, TransactionServiceError},
 };
 
 pub trait SignerCombined: TxSigner<Signature> + Signer + Send + Sync {}
@@ -113,6 +112,12 @@ pub enum TransactionError {
     TransportError(#[from] alloy::transports::TransportError),
     #[error("Invalid chain-id: {0}")]
     InvalidChainId(String),
+}
+
+impl From<eyre::Report> for TransactionError {
+    fn from(err: eyre::Report) -> Self {
+        TransactionError::RpcError(err.to_string())
+    }
 }
 
 impl From<TransactionConfig> for TxConfig {

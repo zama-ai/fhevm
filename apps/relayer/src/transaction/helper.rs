@@ -1,8 +1,5 @@
-use crate::transaction::{TransactionService, TxConfig};
-use crate::{
-    core::errors::{EventProcessingError, TransactionServiceError},
-    metrics,
-};
+use crate::transaction::{TransactionService, TransactionServiceError, TxConfig};
+use crate::{core::errors::EventProcessingError, metrics};
 use alloy::network::{AnyTransactionReceipt, ReceiptResponse};
 use alloy::primitives::{Address, Bytes, B256};
 use serde::{Deserialize, Serialize};
