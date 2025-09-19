@@ -43,10 +43,11 @@ contract DecryptionMock {
 
     uint256 _decryptionRequestCounter;
 
-    function publicDecryptionRequest(bytes32[] calldata ctHandles, bytes calldata extraData) external {
+    function publicDecryptionRequest(bytes32[] calldata ctHandles, bytes calldata /* unusedVariable */) external {
         _decryptionRequestCounter++;
         uint256 decryptionId = _decryptionRequestCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
+        bytes memory extraData;
 
         emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
     }

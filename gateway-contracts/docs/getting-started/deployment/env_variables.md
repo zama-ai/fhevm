@@ -2,9 +2,10 @@
 
 This section describes the environment variables used for deployment. A complete example of an expected `.env` file is given in the [`.env.example`](../../../.env.example) file.
 
-Environment variables can be separated in 3 categories:
+Environment variables can be separated in 4 categories:
 
 - [`GatewayConfig` values](./env_variables.md#gatewayconfig-values)
+- [`CoprocessorContexts` values](./env_variables.md#coprocessorcontexts-values)
 - [`KmsManagement` parameters](./env_variables.md#kmsmanagement-parameters)
 - [Deployment settings](./env_variables.md#deployment-settings)
 
@@ -35,7 +36,7 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | `NUM_COPROCESSORS`                  | Number of coprocessors to register           | -             | -                                                                                                   | Must be at least the number of coprocessors registered below                  |
 | `COPROCESSOR_TX_SENDER_ADDRESS_{j}` | Address of the coprocessor `j`               | address       | -                                                                                                   | If `j` >= `NUM_COPROCESSORS`, the variable is ignored                         |
 | `COPROCESSOR_SIGNER_ADDRESS_{j}`    | Signer address of the coprocessor `j`        | address       | -                                                                                                   | If `j` >= `NUM_COPROCESSORS`, the variable is ignored                         |
-| `COPROCESSOR_S3_BUCKET_URL_{j}`     | S3 bucket URL of the coprocessor `j`         | string        | -                                                                                                   | If `j` >= `NUM_COPROCESSORS`, the variable is ignored                         |
+| `COPROCESSOR_STORAGE_URL_{j}`       | Storage URL of the coprocessor `j`           | string        | -                                                                                                   | If `j` >= `NUM_COPROCESSORS`, the variable is ignored                         |
 | `NUM_HOST_CHAINS`                   | Number of host chains to register            | -             | -                                                                                                   | Must be at least the number of host chains registered below                   |
 | `HOST_CHAIN_CHAIN_ID_{k}`           | Chain ID of the host chain `k`               | uint256       | -                                                                                                   | If `k` >= `NUM_HOST_CHAINS`, the variable is ignored                          |
 | `HOST_CHAIN_FHEVM_EXECUTOR_{k}`     | FHEVM executor of the host chain `k`         | address       | -                                                                                                   | If `k` >= `NUM_HOST_CHAINS`, the variable is ignored                          |
@@ -123,7 +124,7 @@ NUM_COPROCESSORS="3" # (number)
 ```bash
 COPROCESSOR_TX_SENDER_ADDRESS_0="0x6518D50aDc9036Df37119eA465a8159E34417E2E" # (address)
 COPROCESSOR_SIGNER_ADDRESS_0="0xa5eE8292dA52d8234248709F3E217ffEBA5E8312" # (address)
-COPROCESSOR_S3_BUCKET_URL_0="s3://bucket-1" # (string)
+COPROCESSOR_STORAGE_URL_0="s3://bucket-1" # (string)
 ```
 
 #### After deployment
@@ -147,6 +148,37 @@ HOST_CHAIN_WEBSITE_0="https://host-chain-2025.com" # (string)
 ```
 
 `HOST_CHAIN_CHAIN_ID` must be different for all host chains, else the script will fail.
+
+### CoprocessorContexts values
+
+These values are crucial for the fhevm Gateway protocol and are set in the `CoprocessorContexts` contract at deployment. To understand what each value is used for, please refer to the [CoprocessorContexts](../contracts/coprocessor_contexts.md) documentation.
+
+#### At deployment
+
+The following values are set at deployment.
+
+- Coprocessors feature set:
+
+```bash
+COPROCESSORS_FEATURE_SET="1" # (uint256)
+```
+
+This integer is used to identify the feature set of the coprocessors for software upgrades.
+
+- Coprocessors:
+
+```bash
+NUM_COPROCESSORS="3" # (number)
+```
+
+`NUM_COPROCESSORS` is the number of coprocessors to register in the `CoprocessorContexts` contract. It it not stored in it and is only used within the deployment script. The following metadata variables must be set for each coprocessor, indexed by a coprocessor number starting from 0. If not enough variables are set, the deployment will fail. If, on the contrary, too many variables are set, the deployment will succeed but the extra ones will be ignored.
+
+```bash
+COPROCESSOR_NAME_0="Coprocessor 1" # (string)
+COPROCESSOR_TX_SENDER_ADDRESS_0="0x6518D50aDc9036Df37119eA465a8159E34417E2E" # (address)
+COPROCESSOR_SIGNER_ADDRESS_0="0xa5eE8292dA52d8234248709F3E217ffEBA5E8312" # (address)
+COPROCESSOR_STORAGE_URL_0="s3://bucket-1" # (string)
+```
 
 ### KmsManagement parameters
 

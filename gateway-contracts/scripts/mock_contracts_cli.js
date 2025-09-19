@@ -10,6 +10,7 @@ const CONTRACTS_DIR = path.join(__dirname, "../contracts");
 const INTERFACES_DIR = path.join(CONTRACTS_DIR, "/interfaces");
 const MOCKS_DIR = path.join(CONTRACTS_DIR, "/mocks");
 const SHARED_STRUCTS_FILE = "shared/Structs.sol";
+const SHARED_ENUMS_FILE = "shared/Enums.sol";
 
 // Logging functions
 const logInfo = (msg) => console.log(`\x1b[34m[*]\x1b[0m ${msg}`);
@@ -171,6 +172,7 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
 
   // Parse shared files and extract their definitions
   const sharedStructsDefinitions = parseSharedFile(path.join(CONTRACTS_DIR, SHARED_STRUCTS_FILE));
+  const sharedEnumsDefinitions = parseSharedFile(path.join(CONTRACTS_DIR, SHARED_ENUMS_FILE));
 
   // Extract EventDefinitions from the interface definition
   const eventDefinitions = interfaceDefinition.subNodes.filter((node) => node.type === "EventDefinition");
@@ -194,7 +196,7 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   const mockFunctions = generateMockFunctions(
     functionDefinitions,
     eventDefinitions,
-    structDefinitions.concat(sharedStructsDefinitions),
+    structDefinitions.concat(sharedStructsDefinitions).concat(sharedEnumsDefinitions),
   );
 
   const spdxLine = "// SPDX-License-Identifier: BSD-3-Clause-Clear";
@@ -205,9 +207,13 @@ function createMockContract(contractContent, interfaceContent, outputPath) {
   const importsSharedStructs = parsedInterface.children.some(
     (child) => child.type === "ImportDirective" && child.path.includes(SHARED_STRUCTS_FILE),
   );
+  const importsSharedEnums = parsedInterface.children.some(
+    (child) => child.type === "ImportDirective" && child.path.includes(SHARED_ENUMS_FILE),
+  );
 
   let imports = [];
   if (importsSharedStructs) imports.push(`import "../${SHARED_STRUCTS_FILE}";`);
+  if (importsSharedEnums) imports.push(`import "../${SHARED_ENUMS_FILE}";`);
   const importsLines = imports.join("\n");
 
   // Build the mock contract
@@ -431,7 +437,26 @@ function findEmitStatements(statements) {
 
       case "IfStatement":
         // Concat inner Emit statements in the If's statements
-        emitStatements.push(...findEmitStatements(statement.trueBody?.statements || []));
+        // If it's a Block with statements
+        if (statement.trueBody.statements) {
+          emitStatements.push(...findEmitStatements(statement.trueBody.statements));
+
+          // Else, it can be another statement itself (like another IfStatement)
+        } else if (statement.trueBody.type) {
+          emitStatements.push(...findEmitStatements([statement.trueBody]));
+        }
+
+        // Handle the false body (else/else if block)
+        if (statement.falseBody) {
+          // If it's a Block with statements
+          if (statement.falseBody.statements) {
+            emitStatements.push(...findEmitStatements(statement.falseBody.statements));
+
+            // Else, it can be another statement itself (like another IfStatement)
+          } else if (statement.falseBody.type) {
+            emitStatements.push(...findEmitStatements([statement.falseBody]));
+          }
+        }
         break;
 
       case "Block":

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 import "../shared/Structs.sol";
+import "../shared/Enums.sol";
 
 contract MultichainAclMock {
     event AllowAccount(bytes32 indexed ctHandle, address accountAddress);

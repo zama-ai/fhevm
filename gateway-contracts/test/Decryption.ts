@@ -53,6 +53,18 @@ function getDateInSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+// Build the extra data v1 for the decryption request event
+function buildExtraDataV1DecryptionRequestEvent(ctHandles: string[], storageUrlsPerHandle: Record<string, string[]>) {
+  // Retrieve the storage URLs for each handle
+  const storageUrls = ctHandles.map((handle) => storageUrlsPerHandle[handle]);
+
+  // For now, there is only one version of the extra data for all decryption request events
+  const version = 1;
+
+  // Encode the extra data the same way it is done in the Decryption contract
+  return hre.ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "string[][]"], [version, storageUrls]);
+}
+
 // Create a new key, rotate it and activate it. It returns the new key ID.
 async function createAndRotateKey(
   sourceKeyId: BigNumberish,
@@ -187,6 +199,7 @@ describe("Decryption", function () {
   let coprocessorTxSenders: HardhatEthersSigner[];
   let keyId1: BigNumberish;
   let fheParamsName: string;
+  let coprocessorStorageUrlsPerHandle: Record<string, string[]>;
 
   // Trigger a key generation in KmsManagement contract and activate the key
   async function prepareAddCiphertextFixture() {
@@ -230,7 +243,7 @@ describe("Decryption", function () {
 
     let snsCiphertextMaterials: SnsCiphertextMaterialStruct[] = [];
 
-    // Allow public decryption
+    // Add the ciphertext materials for each handle
     for (const ctHandle of ctHandles) {
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextCommits
@@ -243,11 +256,17 @@ describe("Decryption", function () {
         ctHandle,
         keyId: keyId1,
         snsCiphertextDigest,
-        coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
       });
     }
 
-    return { ...fixtureData, snsCiphertextMaterials, keyId1 };
+    // Create a mapping from handles to their consensus storage URLs
+    const coprocessorStorageUrls = await ciphertextCommits.getConsensusStorageUrls(ctHandles);
+    const coprocessorStorageUrlsPerHandle: Record<string, string[]> = {};
+    ctHandles.forEach((handle, idx) => {
+      coprocessorStorageUrlsPerHandle[handle] = coprocessorStorageUrls[idx];
+    });
+
+    return { ...fixtureData, snsCiphertextMaterials, keyId1, coprocessorStorageUrlsPerHandle };
   }
 
   describe("Deployment", function () {
@@ -326,28 +345,37 @@ describe("Decryption", function () {
       eip712Message = fixtureData.eip712Message;
       keyId1 = fixtureData.keyId1;
       fheParamsName = fixtureData.fheParamsName;
+      coprocessorStorageUrlsPerHandle = fixtureData.coprocessorStorageUrlsPerHandle;
     });
 
     it("Should request a public decryption with multiple ctHandles", async function () {
       // Request public decryption
       const requestTx = await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
+      // Build extra data v1 for the decryption request event
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorStorageUrlsPerHandle);
+
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), extraDataV0);
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), extraDataV1);
     });
 
     it("Should request a public decryption with a single ctHandle", async function () {
+      const singleCtHandles = [ctHandles[0]];
+
       // Request public decryption with a single ctHandle
-      const requestTx = await decryption.publicDecryptionRequest([ctHandles[0]], extraDataV0);
+      const requestTx = await decryption.publicDecryptionRequest(singleCtHandles, extraDataV0);
 
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
+
+      // Build extra data v1 for the decryption request event
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), extraDataV0);
+        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), extraDataV1);
     });
 
     it("Should revert because ctHandles list is empty", async function () {
@@ -490,7 +518,6 @@ describe("Decryption", function () {
             ctHandle: newCtHandle,
             keyId: keyId2,
             snsCiphertextDigest,
-            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
           }),
         );
     });
@@ -876,6 +903,7 @@ describe("Decryption", function () {
       eip712ResponseMessages = fixtureData.eip712ResponseMessages;
       keyId1 = fixtureData.keyId1;
       fheParamsName = fixtureData.fheParamsName;
+      coprocessorStorageUrlsPerHandle = fixtureData.coprocessorStorageUrlsPerHandle;
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
@@ -890,16 +918,20 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
+      // Build extra data v1 for the decryption request event
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorStorageUrlsPerHandle);
+
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV0);
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV1);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
       // Create single list of inputs
       const singleCtHandleContractPair: CtHandleContractPairStruct[] = ctHandleContractPairs.slice(0, 1);
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
+      const singleCtHandles = [ctHandles[0]];
 
       // Request user decryption
       const requestTx = await decryption.userDecryptionRequest(
@@ -912,10 +944,13 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
+      // Build extra data v1 for the decryption request event
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorStorageUrlsPerHandle);
+
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey, extraDataV0);
+        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey, extraDataV1);
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
@@ -1371,7 +1406,6 @@ describe("Decryption", function () {
             ctHandle: newCtHandle,
             keyId: keyId2,
             snsCiphertextDigest,
-            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
           }),
         );
     });
@@ -1744,9 +1778,10 @@ describe("Decryption", function () {
       userDecryptedShares = fixtureData.userDecryptedShares;
       keyId1 = fixtureData.keyId1;
       fheParamsName = fixtureData.fheParamsName;
+      coprocessorStorageUrlsPerHandle = fixtureData.coprocessorStorageUrlsPerHandle;
     });
 
-    it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
+    it("Should request a delegated user decryption with multiple ctHandleContractPairs", async function () {
       // Request user decryption
       const requestTx = await decryption.delegatedUserDecryptionRequest(
         ctHandleContractPairs,
@@ -1758,6 +1793,9 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
+      // Build extra data v1 for the decryption request event
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorStorageUrlsPerHandle);
+
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
@@ -1766,13 +1804,14 @@ describe("Decryption", function () {
           toValues(snsCiphertextMaterials),
           delegationAccounts.delegatedAddress,
           publicKey,
-          extraDataV0,
+          extraDataV1,
         );
     });
 
-    it("Should request a user decryption with a single ctHandleContractPair", async function () {
+    it("Should request a delegated user decryption with a single ctHandleContractPair", async function () {
       const singleCtHandleContractPairs = ctHandleContractPairs.slice(0, 1);
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
+      const singleCtHandles = [ctHandles[0]];
 
       // Request user decryption
       const requestTx = await decryption.delegatedUserDecryptionRequest(
@@ -1785,6 +1824,9 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
+      // Build extra data v1 for the decryption request event
+      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorStorageUrlsPerHandle);
+
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
@@ -1793,7 +1835,7 @@ describe("Decryption", function () {
           toValues(singleSnsCiphertextMaterials),
           delegationAccounts.delegatedAddress,
           publicKey,
-          extraDataV0,
+          extraDataV1,
         );
     });
 
@@ -2223,7 +2265,6 @@ describe("Decryption", function () {
             ctHandle: newCtHandle,
             keyId: keyId2,
             snsCiphertextDigest,
-            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
           }),
         );
     });
