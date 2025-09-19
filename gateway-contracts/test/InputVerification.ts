@@ -7,7 +7,7 @@ import hre from "hardhat";
 import { GatewayConfig, InputVerification, InputVerification__factory } from "../typechain-types";
 import {
   EIP712,
-  createBytes32,
+  createByteInput,
   createCtHandles,
   createEIP712ResponseZKPoK,
   createRandomAddress,
@@ -23,7 +23,7 @@ describe("InputVerification", function () {
   // Define input values
   const contractAddress = createRandomAddress();
   const userAddress = createRandomAddress();
-  const ciphertextWithZKProof = createBytes32();
+  const ciphertextWithZKProof = createByteInput();
 
   // Expected ZK proof id (after first request)
   const zkProofId = 1;

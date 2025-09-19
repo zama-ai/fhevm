@@ -241,8 +241,6 @@ describe("CiphertextCommits", function () {
         .revertedWithCustomError(ciphertextCommits, "CoprocessorAlreadyAdded")
         .withArgs(ctHandle, coprocessorTxSenders[0]);
     });
-
-    // TODO: Add test checking `checkCurrentKeyId` once keys are generated through the Gateway
   });
 
   describe("Get ciphertext materials", async function () {
