@@ -5,11 +5,14 @@ use alloy_provider::fillers::{
 use anyhow::Result;
 use bigdecimal::num_bigint::BigInt;
 use tfhe::integer::bigint::StaticUnsignedBigInt;
-use tfhe::integer::ciphertext::BaseRadixCiphertext;
+use tfhe::integer::ciphertext::{BaseRadixCiphertext, ReRandomizationSeed};
 use tfhe::integer::U256;
-use tfhe::prelude::{CiphertextList, FheDecrypt};
+use tfhe::prelude::{CiphertextList, FheDecrypt, ReRandomize};
 use tfhe::shortint::Ciphertext;
-use tfhe::{CompressedCiphertextList, CompressedCiphertextListBuilder};
+use tfhe::{
+    CompactPublicKey, CompressedCiphertextList, CompressedCiphertextListBuilder,
+    ReRandomizationContext,
+};
 
 use crate::utils::{safe_deserialize, safe_serialize};
 
@@ -19,6 +22,7 @@ pub enum FhevmError {
     UnknownFheType(i32),
     DeserializationError(Box<dyn std::error::Error + Sync + Send>),
     CiphertextExpansionError(tfhe::Error),
+    ReRandomisationError(tfhe::Error),
     CiphertextExpansionUnsupportedCiphertextKind(tfhe::FheTypes),
     FheOperationOnlyOneOperandCanBeScalar {
         fhe_operation: i32,
@@ -145,6 +149,9 @@ impl std::fmt::Display for FhevmError {
             }
             Self::CiphertextExpansionError(e) => {
                 write!(f, "error expanding compact ciphertext list: {:?}", e)
+            }
+            Self::ReRandomisationError(e) => {
+                write!(f, "error re-randomising ciphertext: {:?}", e)
             }
             Self::CiphertextExpansionUnsupportedCiphertextKind(e) => {
                 write!(
@@ -624,6 +631,170 @@ impl SupportedFheCiphertexts {
             | SupportedFheCiphertexts::FheUint160(_)
             | SupportedFheCiphertexts::FheUint256(_)
             | SupportedFheCiphertexts::Scalar(_) => false,
+        }
+    }
+
+    pub fn add_to_re_randomization_context(&self, context: &mut ReRandomizationContext) {
+        match self {
+            SupportedFheCiphertexts::FheBool(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint4(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint8(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint16(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint32(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint64(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint128(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint160(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheUint256(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheBytes64(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheBytes128(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::FheBytes256(ct) => {
+                context.add_to_context(ct);
+            }
+            SupportedFheCiphertexts::Scalar(_) => (),
+        }
+    }
+
+    pub fn add_re_randomization_metadata(&mut self, hash_data: &[u8]) {
+        match self {
+            SupportedFheCiphertexts::FheBool(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint4(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint8(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint16(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint32(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint64(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint128(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint160(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheUint256(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheBytes64(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheBytes128(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::FheBytes256(ct) => {
+                ct.re_randomization_metadata_mut().set_data(hash_data);
+            }
+            SupportedFheCiphertexts::Scalar(_) => (),
+        }
+    }
+
+    pub fn add_to_rerandomisation_context(&self, context: &mut ReRandomizationContext) {
+        match self {
+            SupportedFheCiphertexts::FheBool(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheUint4(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheUint8(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheUint16(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheUint32(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheUint64(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheUint128(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheUint160(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheUint256(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheBytes64(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheBytes128(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::FheBytes256(c) => context.add_to_context(c),
+            SupportedFheCiphertexts::Scalar(_) => {
+                // Do nothing
+            }
+        };
+    }
+    pub fn re_randomise(
+        &mut self,
+        cpk: &CompactPublicKey,
+        seed: ReRandomizationSeed,
+    ) -> Result<SupportedFheCiphertexts, FhevmError> {
+        match self {
+            SupportedFheCiphertexts::FheBool(c) => Ok(SupportedFheCiphertexts::FheBool(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheUint4(c) => Ok(SupportedFheCiphertexts::FheUint4(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheUint8(c) => Ok(SupportedFheCiphertexts::FheUint8(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheUint16(c) => Ok(SupportedFheCiphertexts::FheUint16(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheUint32(c) => Ok(SupportedFheCiphertexts::FheUint32(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheUint64(c) => Ok(SupportedFheCiphertexts::FheUint64(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheUint128(c) => Ok(SupportedFheCiphertexts::FheUint128(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheUint160(c) => Ok(SupportedFheCiphertexts::FheUint160(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheUint256(c) => Ok(SupportedFheCiphertexts::FheUint256(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheBytes64(c) => Ok(SupportedFheCiphertexts::FheBytes64(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheBytes128(c) => Ok(SupportedFheCiphertexts::FheBytes128(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::FheBytes256(c) => Ok(SupportedFheCiphertexts::FheBytes256(
+                c.re_randomize(cpk, seed)
+                    .map_err(|e| FhevmError::ReRandomisationError(e))?,
+            )),
+            SupportedFheCiphertexts::Scalar(s) => {
+                //Do nothing, so return the same
+                Ok(SupportedFheCiphertexts::Scalar(s.clone()))
+            }
         }
     }
 }
