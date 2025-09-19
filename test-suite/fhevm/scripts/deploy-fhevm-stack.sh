@@ -295,6 +295,7 @@ get_minio_ip "fhevm-minio"
 run_compose "core" "Core Services" "kms-core:running"
 
 # Setup KMS signer address used in Gateway and Host contracts
+sleep 5
 ${SCRIPT_DIR}/setup-kms-signer-address.sh
 
 # Run database shared by Coprocessor and KMS connector services

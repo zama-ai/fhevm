@@ -7,6 +7,7 @@ pub(crate) mod database;
 pub(crate) mod digest;
 pub mod gw_listener;
 pub mod http_server;
+pub(crate) mod sks_key;
 
 pub(crate) type ChainId = u64;
 pub(crate) type KeyId = Uint<256, 4>;

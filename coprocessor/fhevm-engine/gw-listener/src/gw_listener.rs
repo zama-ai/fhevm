@@ -12,6 +12,7 @@ use tracing::{error, info};
 use crate::aws_s3::{download_key_from_s3, AwsS3Interface};
 use crate::database::{tenant_id, update_tenant_crs, update_tenant_key};
 use crate::digest::{digest_crs, digest_key};
+use crate::sks_key::extract_server_key_without_ns;
 use crate::{ChainId, ConfigSettings, HealthStatus, KeyId, KeyType, TenantId};
 
 sol!(
@@ -265,11 +266,16 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface> GatewayListener
         let key_id = key_id_to_bytes(key_id);
         let mut tx = db_pool.begin().await?;
         for (i_key, key_bytes) in keys_bytes.drain(..).enumerate() {
+            let reduced_key_bytes = match key_types[i_key] {
+                KeyType::ServerKey => Some(extract_server_key_without_ns(&key_bytes)?),
+                KeyType::PublicKey => None,
+            };
             update_tenant_key(
                 &mut tx,
                 &key_id,
                 key_types[i_key],
                 &key_bytes,
+                reduced_key_bytes,
                 tenant_id,
                 tenant_info.chain_id,
             )
