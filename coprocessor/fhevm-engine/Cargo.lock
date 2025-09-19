@@ -7328,7 +7328,7 @@ dependencies = [
 
 [[package]]
 name = "tfhe"
-version = "1.3.0"
+version = "1.4.0"
 dependencies = [
  "aligned-vec",
  "bincode",
@@ -7346,15 +7346,16 @@ dependencies = [
  "tfhe-cuda-backend",
  "tfhe-fft",
  "tfhe-ntt",
- "tfhe-versionable 0.6.0",
+ "tfhe-versionable 0.6.1",
  "tfhe-zk-pok",
 ]
 
 [[package]]
 name = "tfhe-csprng"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "aes",
+ "getrandom 0.2.16",
  "libc",
  "rayon",
 ]
@@ -7404,12 +7405,12 @@ dependencies = [
 
 [[package]]
 name = "tfhe-versionable"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "aligned-vec",
  "num-complex",
  "serde",
- "tfhe-versionable-derive 0.6.0",
+ "tfhe-versionable-derive 0.6.1",
 ]
 
 [[package]]
@@ -7425,7 +7426,7 @@ dependencies = [
 
 [[package]]
 name = "tfhe-versionable-derive"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7479,7 +7480,7 @@ dependencies = [
 
 [[package]]
 name = "tfhe-zk-pok"
-version = "0.7.0"
+version = "0.7.2"
 dependencies = [
  "ark-bls12-381",
  "ark-ec",
@@ -7490,7 +7491,7 @@ dependencies = [
  "rayon",
  "serde",
  "sha3",
- "tfhe-versionable 0.6.0",
+ "tfhe-versionable 0.6.1",
  "zeroize",
 ]
 

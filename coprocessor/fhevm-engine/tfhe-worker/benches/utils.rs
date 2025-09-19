@@ -94,6 +94,9 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         work_items_batch_size: ecfg.batch_size,
         dependence_chains_per_batch: 2000,
         tenant_key_cache_size: 4,
+        #[cfg(feature = "gpu")]
+        coprocessor_fhe_threads: 20,
+        #[cfg(not(feature = "gpu"))]
         coprocessor_fhe_threads: 128,
         maximum_handles_per_input: 255,
         tokio_threads: 16,
