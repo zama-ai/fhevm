@@ -35,6 +35,7 @@ opentelemetry-semantic-conventions = { workspace = true }
 humantime = { workspace = true }
 bytesize = { workspace = true}
 aws-sdk-s3 = { workspace = true }
+lru = { workspace = true }
 
 # crates.io dependencies
 aligned-vec = "0.6.4"
