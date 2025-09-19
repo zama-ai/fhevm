@@ -185,6 +185,9 @@ jobs:
         working-directory: test-suite/fhevm
         if: always()
         run: |
+          echo "::group::Db Migration"
+          ./fhevm-cli logs db-migration
+          echo "::endgroup::"
           echo "::group::Relayer Logs"
           ./fhevm-cli logs relayer
           echo "::endgroup::"

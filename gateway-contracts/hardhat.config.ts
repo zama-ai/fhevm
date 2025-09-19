@@ -16,6 +16,7 @@ import "./tasks/blockExplorerVerify";
 import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
+import "./tasks/generateFheKeys";
 import "./tasks/getters";
 import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";

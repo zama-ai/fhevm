@@ -1,8 +1,43 @@
+use alloy::primitives::Uint;
 use alloy::transports::http::reqwest::Url;
 use std::time::Duration;
 
+pub mod aws_s3;
+pub(crate) mod database;
+pub(crate) mod digest;
 pub mod gw_listener;
 pub mod http_server;
+pub(crate) mod sks_key;
+
+pub(crate) type ChainId = u64;
+pub(crate) type KeyId = Uint<256, 4>;
+pub(crate) type TenantId = u64;
+
+#[derive(Clone, Copy, Debug)]
+pub enum KeyType {
+    ServerKey = 0,
+    PublicKey = 1,
+}
+
+impl From<KeyType> for &'static str {
+    fn from(val: KeyType) -> Self {
+        match val {
+            KeyType::ServerKey => "ServerKey",
+            KeyType::PublicKey => "PublicKey",
+        }
+    }
+}
+
+impl TryFrom<u8> for KeyType {
+    type Error = anyhow::Error;
+    fn try_from(value: u8) -> anyhow::Result<KeyType> {
+        match value {
+            0 => Ok(KeyType::ServerKey),
+            1 => Ok(KeyType::PublicKey),
+            _ => Err(anyhow::anyhow!("Invalid KeyType")),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {

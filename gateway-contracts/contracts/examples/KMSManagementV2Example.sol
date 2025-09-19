@@ -2,11 +2,11 @@
 
 pragma solidity ^0.8.24;
 
-import "../KmsManagement.sol";
+import "../KMSManagement.sol";
 
-contract KmsManagementV2Example is KmsManagement {
+contract KMSManagementV2Example is KMSManagement {
     /// @notice Name of the contract
-    string private constant CONTRACT_NAME = "KmsManagement";
+    string private constant CONTRACT_NAME = "KMSManagement";
 
     /// @notice Version of the contract
     uint256 private constant MAJOR_VERSION = 1000;
