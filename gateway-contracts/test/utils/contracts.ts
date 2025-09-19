@@ -171,9 +171,12 @@ export async function loadTestVariablesFixture() {
   // Load the Decryption contract
   const decryption = await hre.ethers.getContractAt("Decryption", getRequiredEnvVar("DECRYPTION_ADDRESS"));
 
+<<<<<<< HEAD
   // Load the PauserSet contract
   const pauserSet = await hre.ethers.getContractAt("PauserSet", getRequiredEnvVar("PAUSER_SET_ADDRESS"));
 
+=======
+>>>>>>> 1160d001 (feat(gateway-contracts): implement single keygen)
   return {
     ...fixtureData,
     gatewayConfig,
@@ -186,6 +189,9 @@ export async function loadTestVariablesFixture() {
     nKmsNodes,
     nCoprocessors,
     nCustodians,
+<<<<<<< HEAD
     pauserSet,
+=======
+>>>>>>> 1160d001 (feat(gateway-contracts): implement single keygen)
   };
 }
