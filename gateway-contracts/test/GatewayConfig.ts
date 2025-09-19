@@ -19,7 +19,7 @@ import {
 import {
   CoprocessorStruct,
   CustodianStruct,
-  KmsNodeStruct,
+  KmsNodeV2Struct,
 } from "../typechain-types/contracts/interfaces/IGatewayConfig";
 import { UINT64_MAX, createRandomWallet, loadHostChainIds, loadTestVariablesFixture, toValues } from "./utils";
 
@@ -44,7 +44,7 @@ describe("GatewayConfig", function () {
   let owner: Wallet;
   let pauser: Wallet;
   let nKmsNodes: number;
-  let kmsNodes: KmsNodeStruct[];
+  let kmsNodes: KmsNodeV2Struct[];
   let kmsTxSenders: HardhatEthersSigner[];
   let kmsSigners: HardhatEthersSigner[];
   let coprocessors: CoprocessorStruct[];
@@ -178,7 +178,7 @@ describe("GatewayConfig", function () {
     });
 
     it("Should revert because the KMS nodes list is empty", async function () {
-      const emptyKmsNodes: KmsNodeStruct[] = [];
+      const emptyKmsNodes: KmsNodeV2Struct[] = [];
 
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
