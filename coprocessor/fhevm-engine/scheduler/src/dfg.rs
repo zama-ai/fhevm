@@ -46,7 +46,7 @@ impl TxNode {
         }
         let mut dependence_pairs = vec![];
         for (index, op) in operations.iter_mut().enumerate() {
-            for i in op.inputs.iter() {
+            for (pos, i) in op.inputs.iter().enumerate() {
                 match i {
                     DFGTaskInput::Dependence(dh) => {
                         // Check which dependences are satisfied internally,
@@ -54,7 +54,7 @@ impl TxNode {
                         // transaction level.
                         let producer = produced_handles.get(dh);
                         if let Some(producer) = producer {
-                            dependence_pairs.push((*producer, index));
+                            dependence_pairs.push((*producer, index, pos));
                         } else {
                             self.inputs.entry(dh.clone()).or_insert(None);
                         }
@@ -80,10 +80,10 @@ impl TxNode {
                         .index()
             );
         }
-        for (source, destination) in dependence_pairs {
+        for (source, destination, pos) in dependence_pairs {
             // This returns an error in case of circular
             // dependences. This should not be possible.
-            self.graph.add_dependence(source, destination, 0)?;
+            self.graph.add_dependence(source, destination, pos)?;
         }
         Ok(())
     }
@@ -246,6 +246,12 @@ impl std::fmt::Debug for DFTxGraph {
     }
 }
 
+pub struct DFGResult {
+    pub handle: Handle,
+    pub result: Result<Option<(i16, Vec<u8>)>>,
+    pub work_index: usize,
+}
+pub type OpEdge = u8;
 pub struct OpNode {
     opcode: i32,
     result: DFGTaskResult,
@@ -256,20 +262,28 @@ pub struct OpNode {
     is_allowed: bool,
     is_needed: bool,
 }
-pub type OpEdge = u8;
-
-pub struct DFGResult {
-    pub handle: Handle,
-    pub result: Result<Option<(i16, Vec<u8>)>>,
-    pub work_index: usize,
-}
-
 impl std::fmt::Debug for OpNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpNode")
             .field("OP", &self.opcode)
             .field("Result handle", &format_args!("{:?}", &self.result_handle))
             .finish()
+    }
+}
+impl OpNode {
+    fn check_ready_inputs(&mut self, ct_map: &mut HashMap<Handle, Option<DFGTxInput>>) -> bool {
+        for i in self.inputs.iter_mut() {
+            if !matches!(i, DFGTaskInput::Value(_)) {
+                let DFGTaskInput::Dependence(d) = i else {
+                    return false;
+                };
+                let Some(Some(DFGTxInput::Value(val))) = ct_map.get(d) else {
+                    return false;
+                };
+                *i = DFGTaskInput::Value(val.clone());
+            }
+        }
+        true
     }
 }
 
