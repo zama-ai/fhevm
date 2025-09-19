@@ -27,8 +27,8 @@ struct CoprocessorV2 {
     address txSenderAddress;
     /// @notice Address of the coprocessor's signer (used for signing inputs with EIP712 signatures)
     address signerAddress;
-    /// @notice URL address of the coprocessor's S3 bucket where ciphertexts are stored
-    string s3BucketUrl;
+    /// @notice URL address of the coprocessor's storage where ciphertexts are stored
+    string storageUrl;
 }
 
 /// @notice Struct that represents a coprocessor context

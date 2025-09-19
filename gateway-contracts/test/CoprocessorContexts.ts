@@ -124,7 +124,7 @@ describe("CoprocessorContexts", function () {
           name: "Coprocessor 1",
           txSenderAddress: nullAddress,
           signerAddress: coprocessorSigners[0].address,
-          s3BucketUrl: "s3://bucket-1",
+          storageUrl: "s3://bucket-1",
         },
       ];
       await expect(
@@ -145,7 +145,7 @@ describe("CoprocessorContexts", function () {
           name: "Coprocessor 1",
           txSenderAddress: coprocessorTxSenders[0].address,
           signerAddress: nullAddress,
-          s3BucketUrl: "s3://bucket-1",
+          storageUrl: "s3://bucket-1",
         },
       ];
       await expect(
@@ -167,13 +167,13 @@ describe("CoprocessorContexts", function () {
           name: "Coprocessor 1",
           txSenderAddress: firstTxSenderAddress,
           signerAddress: coprocessorSigners[0].address,
-          s3BucketUrl: "s3://bucket-1",
+          storageUrl: "s3://bucket-1",
         },
         {
           name: "Coprocessor 2",
           txSenderAddress: firstTxSenderAddress,
           signerAddress: coprocessorSigners[1].address,
-          s3BucketUrl: "s3://bucket-2",
+          storageUrl: "s3://bucket-2",
         },
       ];
       await expect(
@@ -195,13 +195,13 @@ describe("CoprocessorContexts", function () {
           name: "Coprocessor 1",
           txSenderAddress: coprocessorTxSenders[0].address,
           signerAddress: firstSignerAddress,
-          s3BucketUrl: "s3://bucket-1",
+          storageUrl: "s3://bucket-1",
         },
         {
           name: "Coprocessor 2",
           txSenderAddress: coprocessorTxSenders[1].address,
           signerAddress: firstSignerAddress,
-          s3BucketUrl: "s3://bucket-2",
+          storageUrl: "s3://bucket-2",
         },
       ];
       await expect(

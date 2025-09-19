@@ -49,7 +49,7 @@ describe("Mock contracts", function () {
     name: DefaultString,
     txSenderAddress: DefaultAddress,
     signerAddress: DefaultAddress,
-    s3BucketUrl: DefaultString,
+    storageUrl: DefaultString,
   };
 
   const DefaultCoprocessorContext = {

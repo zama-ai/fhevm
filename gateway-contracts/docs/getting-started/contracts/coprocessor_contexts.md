@@ -21,7 +21,7 @@ Several metadata are stored for each coprocessor:
 - `name` : name of the coprocessor (indicative)
 - `txSenderAddress` : see [Sender and signer](#sender-and-signer) below.
 - `signerAddress` : see [Sender and signer](#sender-and-signer) below.
-- `s3BucketUrl` : URL of the S3 bucket where the ciphertexts are stored. In the fhevm protocol, this URL is fetched by the KMS connector in order to download the ciphertexts needed for decryption requests.
+- `storageUrl` : URL of the storage where the ciphertexts are stored. In the fhevm protocol, this URL is fetched by the KMS connector in order to download the ciphertexts needed for decryption requests.
 
 ### Sender and signer
 

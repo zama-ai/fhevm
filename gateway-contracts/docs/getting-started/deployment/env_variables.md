@@ -36,7 +36,7 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | `NUM_COPROCESSORS`                  | Number of coprocessors to register           | -             | -                                                                                                   | Must be at least the number of coprocessors registered below                  |
 | `COPROCESSOR_TX_SENDER_ADDRESS_{j}` | Address of the coprocessor `j`               | address       | -                                                                                                   | If `j` >= `NUM_COPROCESSORS`, the variable is ignored                         |
 | `COPROCESSOR_SIGNER_ADDRESS_{j}`    | Signer address of the coprocessor `j`        | address       | -                                                                                                   | If `j` >= `NUM_COPROCESSORS`, the variable is ignored                         |
-| `COPROCESSOR_S3_BUCKET_URL_{j}`     | S3 bucket URL of the coprocessor `j`         | string        | -                                                                                                   | If `j` >= `NUM_COPROCESSORS`, the variable is ignored                         |
+| `COPROCESSOR_STORAGE_URL_{j}`       | Storage URL of the coprocessor `j`           | string        | -                                                                                                   | If `j` >= `NUM_COPROCESSORS`, the variable is ignored                         |
 | `NUM_HOST_CHAINS`                   | Number of host chains to register            | -             | -                                                                                                   | Must be at least the number of host chains registered below                   |
 | `HOST_CHAIN_CHAIN_ID_{k}`           | Chain ID of the host chain `k`               | uint256       | -                                                                                                   | If `k` >= `NUM_HOST_CHAINS`, the variable is ignored                          |
 | `HOST_CHAIN_FHEVM_EXECUTOR_{k}`     | FHEVM executor of the host chain `k`         | address       | -                                                                                                   | If `k` >= `NUM_HOST_CHAINS`, the variable is ignored                          |
@@ -124,7 +124,7 @@ NUM_COPROCESSORS="3" # (number)
 ```bash
 COPROCESSOR_TX_SENDER_ADDRESS_0="0x6518D50aDc9036Df37119eA465a8159E34417E2E" # (address)
 COPROCESSOR_SIGNER_ADDRESS_0="0xa5eE8292dA52d8234248709F3E217ffEBA5E8312" # (address)
-COPROCESSOR_S3_BUCKET_URL_0="s3://bucket-1" # (string)
+COPROCESSOR_STORAGE_URL_0="s3://bucket-1" # (string)
 ```
 
 #### After deployment
@@ -177,7 +177,7 @@ NUM_COPROCESSORS="3" # (number)
 COPROCESSOR_NAME_0="Coprocessor 1" # (string)
 COPROCESSOR_TX_SENDER_ADDRESS_0="0x6518D50aDc9036Df37119eA465a8159E34417E2E" # (address)
 COPROCESSOR_SIGNER_ADDRESS_0="0xa5eE8292dA52d8234248709F3E217ffEBA5E8312" # (address)
-COPROCESSOR_S3_BUCKET_URL_0="s3://bucket-1" # (string)
+COPROCESSOR_STORAGE_URL_0="s3://bucket-1" # (string)
 ```
 
 ### KmsManagement parameters

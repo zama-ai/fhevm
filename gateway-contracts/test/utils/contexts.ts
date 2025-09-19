@@ -5,7 +5,7 @@ import { createAndFundRandomWallets, createRandomWallets } from ".";
 import { CoprocessorContexts } from "../../typechain-types";
 import {
   CoprocessorContextTimePeriodsStruct,
-  CoprocessorStruct,
+  CoprocessorV2Struct,
 } from "../../typechain-types/contracts/interfaces/ICoprocessorContexts";
 
 export enum ContextStatus {
@@ -24,13 +24,13 @@ function _createCoprocessors(
   coprocessorTxSenders: HDNodeWallet[],
   coprocessorSigners: HDNodeWallet[],
 ) {
-  const coprocessors: CoprocessorStruct[] = [];
+  const coprocessors: CoprocessorV2Struct[] = [];
   for (let i = 0; i < nCoprocessors; i++) {
     coprocessors.push({
       name: `Coprocessor ${i}`,
       txSenderAddress: coprocessorTxSenders[i].address,
       signerAddress: coprocessorSigners[i].address,
-      s3BucketUrl: `s3://bucket-${i}`,
+      storageUrl: `s3://bucket-${i}`,
     });
   }
   return { coprocessors, coprocessorTxSenders, coprocessorSigners };
@@ -68,7 +68,7 @@ export async function addNewCoprocessorContext(
   };
 
   let result: {
-    coprocessors: CoprocessorStruct[];
+    coprocessors: CoprocessorV2Struct[];
     coprocessorTxSenders: HDNodeWallet[];
     coprocessorSigners: HDNodeWallet[];
   };
