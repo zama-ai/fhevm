@@ -101,7 +101,7 @@ task("task:verifyInputVerification")
     });
   });
 
-task("task:verifyKmsManagement")
+task("task:verifyKMSManagement")
   .addOptionalParam(
     "useInternalProxyAddress",
     "If proxy address from the /addresses directory should be used",
@@ -163,8 +163,8 @@ task("task:verifyAllGatewayContracts")
     console.log("Verify InputVerification contract:");
     await hre.run("task:verifyInputVerification", { useInternalProxyAddress });
 
-    console.log("Verify KmsManagement contract:");
-    await hre.run("task:verifyKmsManagement", { useInternalProxyAddress });
+    console.log("Verify KMSManagement contract:");
+    await hre.run("task:verifyKMSManagement", { useInternalProxyAddress });
 
     console.log("Verify CiphertextCommits contract:");
     await hre.run("task:verifyCiphertextCommits", { useInternalProxyAddress });
