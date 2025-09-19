@@ -40,7 +40,6 @@ interface IGatewayConfig {
     error InvalidHighPublicDecryptionThreshold(uint256 publicDecryptionThreshold, uint256 nKmsNodes);
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
     error InvalidNullChainId();
-    error InvalidNullPauser();
     error InvalidNullPublicDecryptionThreshold();
     error InvalidNullUserDecryptionThreshold();
     error NotCoprocessorSigner(address signerAddress);
@@ -51,12 +50,10 @@ interface IGatewayConfig {
     error NotKmsTxSender(address txSenderAddress);
 
     event AddHostChain(HostChain hostChain);
-    event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+    event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
     event PauseAllGatewayContracts();
-    event ReinitializeGatewayConfigV2(Custodian[] custodians);
     event UnpauseAllGatewayContracts();
     event UpdateMpcThreshold(uint256 newMpcThreshold);
-    event UpdatePauser(address newPauser);
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
@@ -81,15 +78,14 @@ interface IGatewayConfig {
     function getKmsSigners() external view returns (address[] memory);
     function getKmsTxSenders() external view returns (address[] memory);
     function getMpcThreshold() external view returns (uint256);
-    function getPauser() external view returns (address);
     function getProtocolMetadata() external view returns (ProtocolMetadata memory);
     function getPublicDecryptionThreshold() external view returns (uint256);
     function getUserDecryptionThreshold() external view returns (uint256);
     function getVersion() external pure returns (string memory);
+    function isPauser(address account) external view returns (bool);
     function pauseAllGatewayContracts() external;
     function unpauseAllGatewayContracts() external;
     function updateMpcThreshold(uint256 newMpcThreshold) external;
-    function updatePauser(address newPauser) external;
     function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external;
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
 }
@@ -529,19 +525,6 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
-    "name": "getPauser",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getProtocolMetadata",
     "inputs": [],
     "outputs": [
@@ -606,6 +589,25 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
+    "name": "isPauser",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "pauseAllGatewayContracts",
     "inputs": [],
     "outputs": [],
@@ -626,19 +628,6 @@ interface IGatewayConfig {
         "name": "newMpcThreshold",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "updatePauser",
-    "inputs": [
-      {
-        "name": "newPauser",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -714,12 +703,6 @@ interface IGatewayConfig {
     "type": "event",
     "name": "InitializeGatewayConfig",
     "inputs": [
-      {
-        "name": "pauser",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
-      },
       {
         "name": "metadata",
         "type": "tuple",
@@ -824,36 +807,6 @@ interface IGatewayConfig {
   },
   {
     "type": "event",
-    "name": "ReinitializeGatewayConfigV2",
-    "inputs": [
-      {
-        "name": "custodians",
-        "type": "tuple[]",
-        "indexed": false,
-        "internalType": "struct Custodian[]",
-        "components": [
-          {
-            "name": "txSenderAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "signerAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "encryptionKey",
-            "type": "bytes",
-            "internalType": "bytes"
-          }
-        ]
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
     "name": "UnpauseAllGatewayContracts",
     "inputs": [],
     "anonymous": false
@@ -867,19 +820,6 @@ interface IGatewayConfig {
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "UpdatePauser",
-    "inputs": [
-      {
-        "name": "newPauser",
-        "type": "address",
-        "indexed": false,
-        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -1009,11 +949,6 @@ interface IGatewayConfig {
   {
     "type": "error",
     "name": "InvalidNullChainId",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "InvalidNullPauser",
     "inputs": []
   },
   {
@@ -3180,79 +3115,6 @@ error InvalidNullChainId();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidNullPauser()` and selector `0x3555aed1`.
-```solidity
-error InvalidNullPauser();
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct InvalidNullPauser;
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = ();
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = ();
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<InvalidNullPauser> for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidNullPauser) -> Self {
-                ()
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for InvalidNullPauser {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidNullPauser {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidNullPauser()";
-            const SELECTOR: [u8; 4] = [53u8, 85u8, 174u8, 209u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `InvalidNullPublicDecryptionThreshold()` and selector `0xb1ae92ea`.
 ```solidity
 error InvalidNullPublicDecryptionThreshold();
@@ -3984,9 +3846,9 @@ event AddHostChain(HostChain hostChain);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `InitializeGatewayConfig(address,(string,string),uint256,(address,address,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0xfc55fb1abcb99520f75084d484300649c932991e580deb96e8879cb27ea38bf2`.
+    /**Event with signature `InitializeGatewayConfig((string,string),uint256,(address,address,string)[],(address,address,string)[],(address,address,bytes)[])` and selector `0x9e11e8571d7757a76b7552afcb1062a05440db6683e34da9f4a56a2583d5d21c`.
 ```solidity
-event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
+event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -3996,8 +3858,6 @@ event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256
     )]
     #[derive(Clone)]
     pub struct InitializeGatewayConfig {
-        #[allow(missing_docs)]
-        pub pauser: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
         pub metadata: <ProtocolMetadata as alloy::sol_types::SolType>::RustType,
         #[allow(missing_docs)]
@@ -4026,7 +3886,6 @@ event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for InitializeGatewayConfig {
             type DataTuple<'a> = (
-                alloy::sol_types::sol_data::Address,
                 ProtocolMetadata,
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Array<KmsNode>,
@@ -4037,11 +3896,11 @@ event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "InitializeGatewayConfig(address,(string,string),uint256,(address,address,string)[],(address,address,string)[],(address,address,bytes)[])";
+            const SIGNATURE: &'static str = "InitializeGatewayConfig((string,string),uint256,(address,address,string)[],(address,address,string)[],(address,address,bytes)[])";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                252u8, 85u8, 251u8, 26u8, 188u8, 185u8, 149u8, 32u8, 247u8, 80u8, 132u8,
-                212u8, 132u8, 48u8, 6u8, 73u8, 201u8, 50u8, 153u8, 30u8, 88u8, 13u8,
-                235u8, 150u8, 232u8, 135u8, 156u8, 178u8, 126u8, 163u8, 139u8, 242u8,
+                158u8, 17u8, 232u8, 87u8, 29u8, 119u8, 87u8, 167u8, 107u8, 117u8, 82u8,
+                175u8, 203u8, 16u8, 98u8, 160u8, 84u8, 64u8, 219u8, 102u8, 131u8, 227u8,
+                77u8, 169u8, 244u8, 165u8, 106u8, 37u8, 131u8, 213u8, 210u8, 28u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4051,12 +3910,11 @@ event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    pauser: data.0,
-                    metadata: data.1,
-                    mpcThreshold: data.2,
-                    kmsNodes: data.3,
-                    coprocessors: data.4,
-                    custodians: data.5,
+                    metadata: data.0,
+                    mpcThreshold: data.1,
+                    kmsNodes: data.2,
+                    coprocessors: data.3,
+                    custodians: data.4,
                 }
             }
             #[inline]
@@ -4077,9 +3935,6 @@ event InitializeGatewayConfig(address pauser, ProtocolMetadata metadata, uint256
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.pauser,
-                    ),
                     <ProtocolMetadata as alloy_sol_types::SolType>::tokenize(
                         &self.metadata,
                     ),
@@ -4230,115 +4085,6 @@ event PauseAllGatewayContracts();
             #[inline]
             fn from(
                 this: &PauseAllGatewayContracts,
-            ) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `ReinitializeGatewayConfigV2((address,address,bytes)[])` and selector `0x5d3104c54d74e1dfed77e78ac05c70001d83d277c6e9747d252183b7abf0a7d8`.
-```solidity
-event ReinitializeGatewayConfigV2(Custodian[] custodians);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct ReinitializeGatewayConfigV2 {
-        #[allow(missing_docs)]
-        pub custodians: alloy::sol_types::private::Vec<
-            <Custodian as alloy::sol_types::SolType>::RustType,
-        >,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for ReinitializeGatewayConfigV2 {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Array<Custodian>,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "ReinitializeGatewayConfigV2((address,address,bytes)[])";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                93u8, 49u8, 4u8, 197u8, 77u8, 116u8, 225u8, 223u8, 237u8, 119u8, 231u8,
-                138u8, 192u8, 92u8, 112u8, 0u8, 29u8, 131u8, 210u8, 119u8, 198u8, 233u8,
-                116u8, 125u8, 37u8, 33u8, 131u8, 183u8, 171u8, 240u8, 167u8, 216u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self { custodians: data.0 }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Array<
-                        Custodian,
-                    > as alloy_sol_types::SolType>::tokenize(&self.custodians),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(),)
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for ReinitializeGatewayConfigV2 {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&ReinitializeGatewayConfigV2> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(
-                this: &ReinitializeGatewayConfigV2,
             ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
@@ -4545,111 +4291,6 @@ event UpdateMpcThreshold(uint256 newMpcThreshold);
         impl From<&UpdateMpcThreshold> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &UpdateMpcThreshold) -> alloy_sol_types::private::LogData {
-                alloy_sol_types::SolEvent::encode_log_data(this)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UpdatePauser(address)` and selector `0xa690668c24d277243ff6fa650d3fd6e3d331a99ca0a8857c82e7f89452fc665d`.
-```solidity
-event UpdatePauser(address newPauser);
-```*/
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    #[derive(Clone)]
-    pub struct UpdatePauser {
-        #[allow(missing_docs)]
-        pub newPauser: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[automatically_derived]
-        impl alloy_sol_types::SolEvent for UpdatePauser {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type DataToken<'a> = <Self::DataTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "UpdatePauser(address)";
-            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                166u8, 144u8, 102u8, 140u8, 36u8, 210u8, 119u8, 36u8, 63u8, 246u8, 250u8,
-                101u8, 13u8, 63u8, 214u8, 227u8, 211u8, 49u8, 169u8, 156u8, 160u8, 168u8,
-                133u8, 124u8, 130u8, 231u8, 248u8, 148u8, 82u8, 252u8, 102u8, 93u8,
-            ]);
-            const ANONYMOUS: bool = false;
-            #[allow(unused_variables)]
-            #[inline]
-            fn new(
-                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
-                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                Self { newPauser: data.0 }
-            }
-            #[inline]
-            fn check_signature(
-                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
-            ) -> alloy_sol_types::Result<()> {
-                if topics.0 != Self::SIGNATURE_HASH {
-                    return Err(
-                        alloy_sol_types::Error::invalid_event_signature_hash(
-                            Self::SIGNATURE,
-                            topics.0,
-                            Self::SIGNATURE_HASH,
-                        ),
-                    );
-                }
-                Ok(())
-            }
-            #[inline]
-            fn tokenize_body(&self) -> Self::DataToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.newPauser,
-                    ),
-                )
-            }
-            #[inline]
-            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
-                (Self::SIGNATURE_HASH.into(),)
-            }
-            #[inline]
-            fn encode_topics_raw(
-                &self,
-                out: &mut [alloy_sol_types::abi::token::WordToken],
-            ) -> alloy_sol_types::Result<()> {
-                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
-                    return Err(alloy_sol_types::Error::Overrun);
-                }
-                out[0usize] = alloy_sol_types::abi::token::WordToken(
-                    Self::SIGNATURE_HASH,
-                );
-                Ok(())
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for UpdatePauser {
-            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
-                From::from(self)
-            }
-            fn into_log_data(self) -> alloy_sol_types::private::LogData {
-                From::from(&self)
-            }
-        }
-        #[automatically_derived]
-        impl From<&UpdatePauser> for alloy_sol_types::private::LogData {
-            #[inline]
-            fn from(this: &UpdatePauser) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -8030,149 +7671,6 @@ function getMpcThreshold() external view returns (uint256);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getPauser()` and selector `0x7008b548`.
-```solidity
-function getPauser() external view returns (address);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getPauserCall;
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getPauser()`](getPauserCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct getPauserReturn {
-        #[allow(missing_docs)]
-        pub _0: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getPauserCall> for UnderlyingRustTuple<'_> {
-                fn from(value: getPauserCall) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getPauserCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<getPauserReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: getPauserReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for getPauserReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for getPauserCall {
-            type Parameters<'a> = ();
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = alloy::sol_types::private::Address;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getPauser()";
-            const SELECTOR: [u8; 4] = [112u8, 8u8, 181u8, 72u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                ()
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: getPauserReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: getPauserReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getProtocolMetadata()` and selector `0x48144c61`.
 ```solidity
 function getProtocolMetadata() external view returns (ProtocolMetadata memory);
@@ -8759,6 +8257,156 @@ function getVersion() external pure returns (string memory);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isPauser(address)` and selector `0x46fbf68e`.
+```solidity
+function isPauser(address account) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isPauserCall {
+        #[allow(missing_docs)]
+        pub account: alloy::sol_types::private::Address,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isPauser(address)`](isPauserCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isPauserReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isPauserCall> for UnderlyingRustTuple<'_> {
+                fn from(value: isPauserCall) -> Self {
+                    (value.account,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isPauserCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { account: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isPauserReturn> for UnderlyingRustTuple<'_> {
+                fn from(value: isPauserReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isPauserReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isPauserCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isPauser(address)";
+            const SELECTOR: [u8; 4] = [70u8, 251u8, 246u8, 142u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.account,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isPauserReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isPauserReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `pauseAllGatewayContracts()` and selector `0x9a5a3bc4`.
 ```solidity
 function pauseAllGatewayContracts() external;
@@ -9189,148 +8837,6 @@ function updateMpcThreshold(uint256 newMpcThreshold) external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `updatePauser(address)` and selector `0x554bab3c`.
-```solidity
-function updatePauser(address newPauser) external;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct updatePauserCall {
-        #[allow(missing_docs)]
-        pub newPauser: alloy::sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`updatePauser(address)`](updatePauserCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct updatePauserReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<updatePauserCall> for UnderlyingRustTuple<'_> {
-                fn from(value: updatePauserCall) -> Self {
-                    (value.newPauser,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for updatePauserCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { newPauser: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<updatePauserReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: updatePauserReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for updatePauserReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl updatePauserReturn {
-            fn _tokenize(
-                &self,
-            ) -> <updatePauserCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for updatePauserCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::Address,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = updatePauserReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "updatePauser(address)";
-            const SELECTOR: [u8; 4] = [85u8, 75u8, 171u8, 60u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.newPauser,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                updatePauserReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `updatePublicDecryptionThreshold(uint256)` and selector `0x2e2d3a82`.
 ```solidity
 function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external;
@@ -9684,8 +9190,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         getMpcThreshold(getMpcThresholdCall),
         #[allow(missing_docs)]
-        getPauser(getPauserCall),
-        #[allow(missing_docs)]
         getProtocolMetadata(getProtocolMetadataCall),
         #[allow(missing_docs)]
         getPublicDecryptionThreshold(getPublicDecryptionThresholdCall),
@@ -9694,13 +9198,13 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         getVersion(getVersionCall),
         #[allow(missing_docs)]
+        isPauser(isPauserCall),
+        #[allow(missing_docs)]
         pauseAllGatewayContracts(pauseAllGatewayContractsCall),
         #[allow(missing_docs)]
         unpauseAllGatewayContracts(unpauseAllGatewayContractsCall),
         #[allow(missing_docs)]
         updateMpcThreshold(updateMpcThresholdCall),
-        #[allow(missing_docs)]
-        updatePauser(updatePauserCall),
         #[allow(missing_docs)]
         updatePublicDecryptionThreshold(updatePublicDecryptionThresholdCall),
         #[allow(missing_docs)]
@@ -9722,12 +9226,11 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             [42u8, 56u8, 137u8, 152u8],
             [42u8, 139u8, 157u8, 233u8],
             [46u8, 45u8, 58u8, 130u8],
+            [70u8, 251u8, 246u8, 142u8],
             [72u8, 20u8, 76u8, 97u8],
             [73u8, 126u8, 244u8, 37u8],
-            [85u8, 75u8, 171u8, 60u8],
             [103u8, 153u8, 239u8, 82u8],
             [108u8, 136u8, 235u8, 67u8],
-            [112u8, 8u8, 181u8, 72u8],
             [116u8, 32u8, 243u8, 212u8],
             [119u8, 45u8, 47u8, 233u8],
             [121u8, 139u8, 88u8, 166u8],
@@ -9753,7 +9256,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     impl alloy_sol_types::SolInterface for IGatewayConfigCalls {
         const NAME: &'static str = "IGatewayConfigCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 32usize;
+        const COUNT: usize = 31usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -9820,9 +9323,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::getMpcThreshold(_) => {
                     <getMpcThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getPauser(_) => {
-                    <getPauserCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::getProtocolMetadata(_) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -9835,6 +9335,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::isPauser(_) => <isPauserCall as alloy_sol_types::SolCall>::SELECTOR,
                 Self::pauseAllGatewayContracts(_) => {
                     <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -9843,9 +9344,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::updateMpcThreshold(_) => {
                     <updateMpcThresholdCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::updatePauser(_) => {
-                    <updatePauserCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::updatePublicDecryptionThreshold(_) => {
                     <updatePublicDecryptionThresholdCall as alloy_sol_types::SolCall>::SELECTOR
@@ -9950,6 +9448,15 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     updatePublicDecryptionThreshold
                 },
                 {
+                    fn isPauser(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isPauserCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
+                            .map(IGatewayConfigCalls::isPauser)
+                    }
+                    isPauser
+                },
+                {
                     fn getProtocolMetadata(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -9972,17 +9479,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     checkIsCustodianTxSender
                 },
                 {
-                    fn updatePauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updatePauserCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updatePauser)
-                    }
-                    updatePauser
-                },
-                {
                     fn getCoprocessorMajorityThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -10003,15 +9499,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigCalls::checkIsKmsSigner)
                     }
                     checkIsKmsSigner
-                },
-                {
-                    fn getPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getPauserCall as alloy_sol_types::SolCall>::abi_decode_raw(data)
-                            .map(IGatewayConfigCalls::getPauser)
-                    }
-                    getPauser
                 },
                 {
                     fn getKmsTxSenders(
@@ -10320,6 +9807,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     updatePublicDecryptionThreshold
                 },
                 {
+                    fn isPauser(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <isPauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::isPauser)
+                    }
+                    isPauser
+                },
+                {
                     fn getProtocolMetadata(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -10342,17 +9840,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     checkIsCustodianTxSender
                 },
                 {
-                    fn updatePauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updatePauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updatePauser)
-                    }
-                    updatePauser
-                },
-                {
                     fn getCoprocessorMajorityThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -10373,17 +9860,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigCalls::checkIsKmsSigner)
                     }
                     checkIsKmsSigner
-                },
-                {
-                    fn getPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getPauserCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::getPauser)
-                    }
-                    getPauser
                 },
                 {
                     fn getKmsTxSenders(
@@ -10711,9 +10187,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
-                Self::getPauser(inner) => {
-                    <getPauserCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
-                }
                 Self::getProtocolMetadata(inner) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -10732,6 +10205,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
+                Self::isPauser(inner) => {
+                    <isPauserCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
+                }
                 Self::pauseAllGatewayContracts(inner) => {
                     <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -10744,11 +10220,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::updateMpcThreshold(inner) => {
                     <updateMpcThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::updatePauser(inner) => {
-                    <updatePauserCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -10893,12 +10364,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         out,
                     )
                 }
-                Self::getPauser(inner) => {
-                    <getPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::getProtocolMetadata(inner) => {
                     <getProtocolMetadataCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -10923,6 +10388,12 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         out,
                     )
                 }
+                Self::isPauser(inner) => {
+                    <isPauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::pauseAllGatewayContracts(inner) => {
                     <pauseAllGatewayContractsCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -10937,12 +10408,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::updateMpcThreshold(inner) => {
                     <updateMpcThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::updatePauser(inner) => {
-                    <updatePauserCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -10987,8 +10452,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         InvalidNullChainId(InvalidNullChainId),
         #[allow(missing_docs)]
-        InvalidNullPauser(InvalidNullPauser),
-        #[allow(missing_docs)]
         InvalidNullPublicDecryptionThreshold(InvalidNullPublicDecryptionThreshold),
         #[allow(missing_docs)]
         InvalidNullUserDecryptionThreshold(InvalidNullUserDecryptionThreshold),
@@ -11018,7 +10481,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             [34u8, 247u8, 63u8, 234u8],
             [38u8, 205u8, 117u8, 220u8],
             [42u8, 124u8, 110u8, 246u8],
-            [53u8, 85u8, 174u8, 209u8],
             [57u8, 22u8, 114u8, 167u8],
             [65u8, 120u8, 222u8, 66u8],
             [82u8, 215u8, 37u8, 245u8],
@@ -11039,7 +10501,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
     impl alloy_sol_types::SolInterface for IGatewayConfigErrors {
         const NAME: &'static str = "IGatewayConfigErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 19usize;
+        const COUNT: usize = 18usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -11072,9 +10534,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 }
                 Self::InvalidNullChainId(_) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::InvalidNullPauser(_) => {
-                    <InvalidNullPauser as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidNullPublicDecryptionThreshold(_) => {
                     <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::SELECTOR
@@ -11160,17 +10619,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::NotKmsSigner)
                     }
                     NotKmsSigner
-                },
-                {
-                    fn InvalidNullPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullPauser as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidNullPauser)
-                    }
-                    InvalidNullPauser
                 },
                 {
                     fn NotCustodianSigner(
@@ -11399,17 +10847,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     NotKmsSigner
                 },
                 {
-                    fn InvalidNullPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullPauser as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidNullPauser)
-                    }
-                    InvalidNullPauser
-                },
-                {
                     fn NotCustodianSigner(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -11633,11 +11070,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
-                Self::InvalidNullPauser(inner) => {
-                    <InvalidNullPauser as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::InvalidNullPublicDecryptionThreshold(inner) => {
                     <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -11741,12 +11173,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         out,
                     )
                 }
-                Self::InvalidNullPauser(inner) => {
-                    <InvalidNullPauser as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::InvalidNullPublicDecryptionThreshold(inner) => {
                     <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -11809,13 +11235,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         PauseAllGatewayContracts(PauseAllGatewayContracts),
         #[allow(missing_docs)]
-        ReinitializeGatewayConfigV2(ReinitializeGatewayConfigV2),
-        #[allow(missing_docs)]
         UnpauseAllGatewayContracts(UnpauseAllGatewayContracts),
         #[allow(missing_docs)]
         UpdateMpcThreshold(UpdateMpcThreshold),
-        #[allow(missing_docs)]
-        UpdatePauser(UpdatePauser),
         #[allow(missing_docs)]
         UpdatePublicDecryptionThreshold(UpdatePublicDecryptionThreshold),
         #[allow(missing_docs)]
@@ -11842,11 +11264,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 165u8, 156u8, 176u8, 37u8, 67u8, 252u8, 118u8, 48u8, 132u8, 55u8,
             ],
             [
-                93u8, 49u8, 4u8, 197u8, 77u8, 116u8, 225u8, 223u8, 237u8, 119u8, 231u8,
-                138u8, 192u8, 92u8, 112u8, 0u8, 29u8, 131u8, 210u8, 119u8, 198u8, 233u8,
-                116u8, 125u8, 37u8, 33u8, 131u8, 183u8, 171u8, 240u8, 167u8, 216u8,
-            ],
-            [
                 102u8, 118u8, 147u8, 65u8, 239u8, 253u8, 38u8, 143u8, 196u8, 233u8,
                 169u8, 200u8, 242u8, 123u8, 252u8, 150u8, 133u8, 7u8, 181u8, 25u8, 176u8,
                 221u8, 185u8, 180u8, 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
@@ -11857,9 +11274,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 35u8, 114u8, 146u8, 122u8, 38u8, 198u8, 149u8, 131u8, 150u8, 19u8,
             ],
             [
-                166u8, 144u8, 102u8, 140u8, 36u8, 210u8, 119u8, 36u8, 63u8, 246u8, 250u8,
-                101u8, 13u8, 63u8, 214u8, 227u8, 211u8, 49u8, 169u8, 156u8, 160u8, 168u8,
-                133u8, 124u8, 130u8, 231u8, 248u8, 148u8, 82u8, 252u8, 102u8, 93u8,
+                158u8, 17u8, 232u8, 87u8, 29u8, 119u8, 87u8, 167u8, 107u8, 117u8, 82u8,
+                175u8, 203u8, 16u8, 98u8, 160u8, 84u8, 64u8, 219u8, 102u8, 131u8, 227u8,
+                77u8, 169u8, 244u8, 165u8, 106u8, 37u8, 131u8, 213u8, 210u8, 28u8,
             ],
             [
                 190u8, 79u8, 101u8, 93u8, 170u8, 224u8, 219u8, 174u8, 246u8, 58u8, 107u8,
@@ -11871,17 +11288,12 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 30u8, 41u8, 55u8, 56u8, 10u8, 37u8, 198u8, 145u8, 85u8, 117u8, 126u8,
                 58u8, 245u8, 211u8, 151u8, 154u8, 218u8, 181u8, 3u8, 88u8, 0u8,
             ],
-            [
-                252u8, 85u8, 251u8, 26u8, 188u8, 185u8, 149u8, 32u8, 247u8, 80u8, 132u8,
-                212u8, 132u8, 48u8, 6u8, 73u8, 201u8, 50u8, 153u8, 30u8, 88u8, 13u8,
-                235u8, 150u8, 232u8, 135u8, 156u8, 178u8, 126u8, 163u8, 139u8, 242u8,
-            ],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IGatewayConfigEvents {
         const NAME: &'static str = "IGatewayConfigEvents";
-        const COUNT: usize = 9usize;
+        const COUNT: usize = 7usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -11913,15 +11325,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         .map(Self::PauseAllGatewayContracts)
                 }
                 Some(
-                    <ReinitializeGatewayConfigV2 as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
-                ) => {
-                    <ReinitializeGatewayConfigV2 as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::ReinitializeGatewayConfigV2)
-                }
-                Some(
                     <UnpauseAllGatewayContracts as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
                     <UnpauseAllGatewayContracts as alloy_sol_types::SolEvent>::decode_raw_log(
@@ -11938,13 +11341,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             data,
                         )
                         .map(Self::UpdateMpcThreshold)
-                }
-                Some(<UpdatePauser as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
-                    <UpdatePauser as alloy_sol_types::SolEvent>::decode_raw_log(
-                            topics,
-                            data,
-                        )
-                        .map(Self::UpdatePauser)
                 }
                 Some(
                     <UpdatePublicDecryptionThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -11991,16 +11387,10 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::PauseAllGatewayContracts(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::ReinitializeGatewayConfigV2(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
                 Self::UnpauseAllGatewayContracts(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UpdateMpcThreshold(inner) => {
-                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
-                }
-                Self::UpdatePauser(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UpdatePublicDecryptionThreshold(inner) => {
@@ -12022,16 +11412,10 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::PauseAllGatewayContracts(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::ReinitializeGatewayConfigV2(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
                 Self::UnpauseAllGatewayContracts(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdateMpcThreshold(inner) => {
-                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
-                }
-                Self::UpdatePauser(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdatePublicDecryptionThreshold(inner) => {
@@ -12380,10 +11764,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, getMpcThresholdCall, N> {
             self.call_builder(&getMpcThresholdCall)
         }
-        ///Creates a new call builder for the [`getPauser`] function.
-        pub fn getPauser(&self) -> alloy_contract::SolCallBuilder<&P, getPauserCall, N> {
-            self.call_builder(&getPauserCall)
-        }
         ///Creates a new call builder for the [`getProtocolMetadata`] function.
         pub fn getProtocolMetadata(
             &self,
@@ -12408,6 +11788,13 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
             self.call_builder(&getVersionCall)
         }
+        ///Creates a new call builder for the [`isPauser`] function.
+        pub fn isPauser(
+            &self,
+            account: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<&P, isPauserCall, N> {
+            self.call_builder(&isPauserCall { account })
+        }
         ///Creates a new call builder for the [`pauseAllGatewayContracts`] function.
         pub fn pauseAllGatewayContracts(
             &self,
@@ -12430,13 +11817,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     newMpcThreshold,
                 },
             )
-        }
-        ///Creates a new call builder for the [`updatePauser`] function.
-        pub fn updatePauser(
-            &self,
-            newPauser: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, updatePauserCall, N> {
-            self.call_builder(&updatePauserCall { newPauser })
         }
         ///Creates a new call builder for the [`updatePublicDecryptionThreshold`] function.
         pub fn updatePublicDecryptionThreshold(
@@ -12492,12 +11872,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, PauseAllGatewayContracts, N> {
             self.event_filter::<PauseAllGatewayContracts>()
         }
-        ///Creates a new event filter for the [`ReinitializeGatewayConfigV2`] event.
-        pub fn ReinitializeGatewayConfigV2_filter(
-            &self,
-        ) -> alloy_contract::Event<&P, ReinitializeGatewayConfigV2, N> {
-            self.event_filter::<ReinitializeGatewayConfigV2>()
-        }
         ///Creates a new event filter for the [`UnpauseAllGatewayContracts`] event.
         pub fn UnpauseAllGatewayContracts_filter(
             &self,
@@ -12509,10 +11883,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::Event<&P, UpdateMpcThreshold, N> {
             self.event_filter::<UpdateMpcThreshold>()
-        }
-        ///Creates a new event filter for the [`UpdatePauser`] event.
-        pub fn UpdatePauser_filter(&self) -> alloy_contract::Event<&P, UpdatePauser, N> {
-            self.event_filter::<UpdatePauser>()
         }
         ///Creates a new event filter for the [`UpdatePublicDecryptionThreshold`] event.
         pub fn UpdatePublicDecryptionThreshold_filter(

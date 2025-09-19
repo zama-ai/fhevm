@@ -160,12 +160,12 @@ contract Decryption is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 4;
     uint256 private constant PATCH_VERSION = 0;
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 6;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.Decryption
@@ -235,11 +235,11 @@ contract Decryption is
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V3.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
     function publicDecryptionRequest(

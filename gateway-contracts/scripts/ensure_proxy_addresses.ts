@@ -63,6 +63,10 @@ function main(): void {
         stdio: "inherit",
         env: process.env,
       });
+      execSync(`make deploy-pauser-set`, {
+        stdio: "inherit",
+        env: process.env,
+      });
     } else {
       console.log("Contract addresses match local development environment.");
     }

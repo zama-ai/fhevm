@@ -36,7 +36,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
   // - the pauser can pause the protocol
   const owner = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY"), hre.ethers.provider);
   await fund(owner.address);
-  const pauser = await hre.ethers.getSigner(getRequiredEnvVar("PAUSER_ADDRESS"));
+  const pauser = await hre.ethers.getSigner(getRequiredEnvVar("PAUSER_ADDRESS_0"));
   await checkIsHardhatSigner(pauser);
 
   // Load the KMS transaction senders
@@ -167,6 +167,9 @@ export async function loadTestVariablesFixture() {
   const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
   const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
 
+  // Load the PauserSet contract
+  const pauserSet = await hre.ethers.getContractAt("PauserSet", getRequiredEnvVar("PAUSER_SET_ADDRESS"));
+
   return {
     ...fixtureData,
     gatewayConfig,
@@ -181,5 +184,6 @@ export async function loadTestVariablesFixture() {
     nCustodians,
     fheParamsName,
     fheParamsDigest,
+    pauserSet,
   };
 }
