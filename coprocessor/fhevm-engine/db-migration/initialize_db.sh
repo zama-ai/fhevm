@@ -128,8 +128,8 @@ echo "----------- Tenant data prepared for insertion: $TMP_CSV -----------"
 
 echo "Inserting tenant data from CSV using \COPY..."
 psql "$DATABASE_URL" -c \
-  "INSERT INTO tenants (tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, sns_pk, key_id)
-  VALUES ($TENANT_API_KEY,$CHAIN_ID,$ACL_CONTRACT_ADDRESS,$INPUT_VERIFIER_ADDRESS);" || {
+  "INSERT INTO tenants (tenant_api_key, chain_id, acl_contract_address, verifying_contract_address,pks_key,sks_key,public_params,sns_pk,key_id) \
+   VALUES ('$TENANT_API_KEY',$CHAIN_ID,'$ACL_CONTRACT_ADDRESS','$INPUT_VERIFIER_ADDRESS','','','',key_id);" || {
     echo "Error: Failed to insert tenant data."; exit 1;
 }
 
