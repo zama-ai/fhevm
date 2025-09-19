@@ -42,8 +42,8 @@ This version is a specific release for the fhevm architecture with tfhe-rs v0.11
 ## Notes
 
 - Testing in the test-suite for fhevm is based on `v0.7.0` release.
-- For anyone wanting to run the local setup to "see the magic happens" please follow instructions in [README.md](README.md).
-- Note that some tests may take significantly longer to execute (between 20 and 150 seconds), especially due to input proof verification.
+- For anyone wanting to run the local setup to "see the magic happen" please follow instructions in [README.md](README.md).
+- Note that some tests may take significantly longer to execute (between 20 and 150 seconds per test), especially due to input proof verification.
 
 ## Some References
 
