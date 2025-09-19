@@ -19,6 +19,7 @@ pub struct TestSetup {
     _host_handle: MockServerHandle,
     _gateway_handle: MockServerHandle,
     _temp_db: TempDir,
+    _temp_config: TempDir,
     _cancellation_token: CancellationToken,
 }
 
@@ -44,6 +45,12 @@ impl TestSetup {
         // Create temporary database directory
         let temp_db = TempDir::new()?;
         let temp_db_path = temp_db.path().to_string_lossy().to_string();
+
+        // Create temporary config file from example
+        let temp_config_dir = TempDir::new()?;
+        let temp_config_path = temp_config_dir.path().join("test_config.yaml");
+        std::fs::copy("config/local.yaml.example", &temp_config_path)
+            .map_err(|e| eyre::eyre!("Failed to copy config file: {}", e))?;
 
         // Configuration constants
         let decryption_addr: alloy::primitives::Address =
@@ -88,8 +95,9 @@ impl TestSetup {
             .await
             .map_err(|e| eyre::eyre!("Failed to start gateway mock server: {}", e))?;
 
-        // Create isolated settings
-        let mut settings = Settings::new(None).expect("Failed to load default configuration");
+        // Create isolated settings from temp config file
+        let mut settings = Settings::new(Some(temp_config_path.to_string_lossy().to_string()))
+            .expect("Failed to load default configuration");
 
         // Configure with isolated ports and database
         settings.db_path_rocksdb = temp_db_path;
@@ -108,7 +116,8 @@ impl TestSetup {
 
         // Create a new settings instance for the relayer since Settings doesn't implement Clone
         let mut relayer_settings =
-            Settings::new(None).expect("Failed to load default configuration");
+            Settings::new(Some(temp_config_path.to_string_lossy().to_string()))
+                .expect("Failed to load default configuration");
         relayer_settings.db_path_rocksdb = settings.db_path_rocksdb.clone();
         relayer_settings.http_endpoint = settings.http_endpoint.clone();
         relayer_settings.networks.fhevm.http_url = settings.networks.fhevm.http_url.clone();
@@ -142,6 +151,7 @@ impl TestSetup {
             _host_handle: host_handle,
             _gateway_handle: gateway_handle,
             _temp_db: temp_db,
+            _temp_config: temp_config_dir,
             _cancellation_token: cancellation_token,
         })
     }
