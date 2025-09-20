@@ -6201,6 +6201,10 @@ dependencies = [
  "anyhow",
  "daggy",
  "fhevm-engine-common",
+ "hex",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
  "rayon",
  "tfhe",
  "tokio",
@@ -7426,7 +7430,7 @@ version = "0.7.1"
 source = "git+ssh://git@github.com/zama-ai/tfhe-rs-internal.git?branch=ns%2Ffeat%2Frerand_preview#85ff0eb698648e60d2cb8b79d0f26a90f125765a"
 dependencies = [
  "aes",
- "getrandom 0.2.15",
+ "getrandom 0.2.16",
  "libc",
  "rayon",
 ]
