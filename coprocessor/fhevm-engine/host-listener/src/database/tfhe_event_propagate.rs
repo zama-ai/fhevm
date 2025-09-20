@@ -593,6 +593,13 @@ impl Database {
             event_type as i16,
         );
         query.execute(tx.deref_mut()).await?;
+        let query = sqlx::query!(
+            "UPDATE computations SET is_allowed = true
+              WHERE tenant_id = $1 AND output_handle = $2;",
+            tenant_id,
+            handle,
+        );
+        query.execute(tx.deref_mut()).await?;
         Ok(())
     }
 }
