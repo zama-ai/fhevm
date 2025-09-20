@@ -598,20 +598,6 @@ async fn update_computations_status(
             )
             .execute(db_txn.as_mut())
             .await?;
-            // We need to update the allowed_handles table as well for
-            // the case where an input handle (that is not the output
-            // of a FHE computation) is allowed. This means that the
-            // TFHE worker never sees this handle and therefore cannot
-            // update its computed status.
-            sqlx::query!(
-                "
-                UPDATE allowed_handles
-                SET is_computed = TRUE
-                WHERE handle = $1;",
-                task.handle
-            )
-            .execute(db_txn.as_mut())
-            .await?;
         } else {
             error!( handle = ?task.handle, "Large ciphertext not computed for task");
         }

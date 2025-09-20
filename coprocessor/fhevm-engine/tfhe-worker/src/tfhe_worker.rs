@@ -298,33 +298,6 @@ async fn tfhe_worker_cycle(
                 })?;
 
             s.end();
-            let mut s = tracer.start_with_context("update_allowed_handles_is_computed", &loop_ctx);
-            s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
-            s.set_attributes(
-                handles_to_update
-                    .iter()
-                    .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
-            );
-            let _ = query!(
-                "
-                    UPDATE allowed_handles
-                    SET is_computed = TRUE
-                    WHERE tenant_id = $1
-                    AND handle = ANY($2::BYTEA[])
-                    ",
-                *tenant_id,
-                &handles_to_update
-                    .iter()
-                    .map(|(handle, _)| handle.clone())
-                    .collect::<Vec<_>>()
-            )
-            .execute(trx.as_mut())
-            .await.map_err(|err| {
-                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while marking allowed handles as computed");
-                    err
-                })?;
-
-            s.end();
             let mut s = tracer.start_with_context("update_intermediate_computation", &loop_ctx);
             s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
             s.set_attributes(
@@ -515,54 +488,35 @@ async fn query_for_work<'a>(
     let the_work = query!(
         "
 WITH selected_computations AS (
-  -- Get all computations from such transactions
   (
-    SELECT 
-      c.tenant_id, 
-      c.output_handle,
-      c.transaction_id,
-      ah.handle, 
-      ah.is_computed
-    FROM computations c
-    LEFT JOIN allowed_handles ah
-       ON c.output_handle = ah.handle
-      AND c.tenant_id = ah.tenant_id
-    WHERE c.transaction_id IN (
-      -- Select transaction IDs with uncomputed handles
-      -- out of the dependence buckets
-      SELECT DISTINCT transaction_id 
-      FROM computations
-      WHERE is_error = FALSE
-        AND (tenant_id, output_handle) IN (
-          SELECT tenant_id, handle
-          FROM allowed_handles
-          WHERE is_computed = FALSE
-          ORDER BY schedule_order
-          LIMIT $1
-        )
-      LIMIT $2
-    )
+    SELECT DISTINCT
+      c.transaction_id
+    FROM (
+      SELECT transaction_id
+      FROM computations 
+      WHERE is_completed = FALSE
+        AND is_error = FALSE
+        AND is_allowed = TRUE
+      ORDER BY schedule_order
+      LIMIT $1
+    ) as c
   )
 )
 -- Acquire all computations from this transaction set
-SELECT 
+SELECT
   c.tenant_id, 
   c.output_handle, 
   c.dependencies, 
   c.fhe_operation, 
   c.is_scalar,
-  sc.handle IS NOT NULL AS is_allowed, 
+  c.is_allowed, 
   c.dependence_chain_id,
-  COALESCE(sc.is_computed) AS is_computed,
   c.transaction_id
 FROM computations c
 JOIN selected_computations sc
-  ON c.tenant_id = sc.tenant_id
-  AND c.output_handle = sc.output_handle
-  AND c.transaction_id = sc.transaction_id
+  ON  c.transaction_id = sc.transaction_id
 FOR UPDATE SKIP LOCKED            ",
         args.work_items_batch_size as i32,
-        args.dependence_chains_per_batch as i32,
     )
     .fetch_all(trx.as_mut())
     .await
@@ -572,6 +526,7 @@ FOR UPDATE SKIP LOCKED            ",
     })?;
     s.set_attribute(KeyValue::new("count", the_work.len() as i64));
     s.end();
+    info!(target: "tfhe_worker", { count = the_work.len() }, "Fetched work items");
     health_check.update_db_access();
     if the_work.is_empty() {
         health_check.update_activity();
@@ -632,7 +587,7 @@ FOR UPDATE SKIP LOCKED            ",
                     output_handle: w.output_handle.clone(),
                     fhe_op,
                     inputs,
-                    is_allowed: w.is_allowed.unwrap_or(false),
+                    is_allowed: w.is_allowed,
                 });
             }
             let mut txn = TxNode::default();

@@ -220,7 +220,7 @@ pub async fn wait_until_all_allowed_handles_computed(
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        let count = sqlx::query!("SELECT count(1) FROM allowed_handles WHERE is_computed = FALSE")
+        let count = sqlx::query!("SELECT count(1) FROM computations WHERE is_completed = FALSE")
             .fetch_one(&pool)
             .await?;
         let current_count = count.count.unwrap();
