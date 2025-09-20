@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE computations SET is_allowed = true\n              WHERE tenant_id = $1 AND output_handle = $2;",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "b8101284d4b6a652068f75060b8c52f8fb0b94968ced62f7a8471c4ecc9c6a93"
+}
