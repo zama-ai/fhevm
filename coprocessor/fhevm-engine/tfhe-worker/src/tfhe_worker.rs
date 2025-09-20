@@ -682,7 +682,7 @@ async fn build_transaction_graph_and_execute<'a>(
             keys.gpu_sks.clone(),
             health_check.activity_heartbeat.clone(),
         );
-        sched.schedule().await?;
+        sched.schedule(loop_ctx).await?;
     }
     s_compute.end();
     Ok(tx_graph)

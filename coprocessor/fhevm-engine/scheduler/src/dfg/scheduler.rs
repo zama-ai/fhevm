@@ -16,6 +16,10 @@ use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
+use opentelemetry::{
+    trace::{Span, Tracer},
+    KeyValue,
+};
 use std::{collections::HashMap, sync::atomic::AtomicUsize};
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
@@ -90,16 +94,16 @@ impl<'a> Scheduler<'a> {
         }
     }
 
-    pub async fn schedule(&mut self) -> Result<()> {
+    pub async fn schedule(&mut self, loop_ctx: &'a opentelemetry::Context) -> Result<()> {
         let schedule_type = std::env::var("FHEVM_DF_SCHEDULE");
         match schedule_type {
             Ok(val) => match val.as_str() {
                 "MAX_PARALLELISM" => {
-                    self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
+                    self.schedule_coarse_grain(PartitionStrategy::MaxParallelism, loop_ctx)
                         .await
                 }
                 "MAX_LOCALITY" => {
-                    self.schedule_coarse_grain(PartitionStrategy::MaxLocality)
+                    self.schedule_coarse_grain(PartitionStrategy::MaxLocality, loop_ctx)
                         .await
                 }
                 unhandled => panic!("Scheduling strategy {:?} does not exist", unhandled),
@@ -107,12 +111,12 @@ impl<'a> Scheduler<'a> {
             // Use overall best strategy as default
             #[cfg(not(feature = "gpu"))]
             _ => {
-                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
+                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism, loop_ctx)
                     .await
             }
             #[cfg(feature = "gpu")]
             _ => {
-                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism)
+                self.schedule_coarse_grain(PartitionStrategy::MaxParallelism, loop_ctx)
                     .await
             }
         }
@@ -151,7 +155,11 @@ impl<'a> Scheduler<'a> {
         }
     }
 
-    async fn schedule_coarse_grain(&mut self, strategy: PartitionStrategy) -> Result<()> {
+    async fn schedule_coarse_grain(
+        &mut self,
+        strategy: PartitionStrategy,
+        loop_ctx: &'a opentelemetry::Context,
+    ) -> Result<()> {
         let now = std::time::SystemTime::now();
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         match strategy {
@@ -185,7 +193,12 @@ impl<'a> Scheduler<'a> {
                     ));
                 }
                 let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
-                set.spawn_blocking(move || execute_partition(args, index, 0, sks, cpk));
+                let loop_ctx = loop_ctx.clone();
+                set.spawn_blocking(move || {
+                    tokio::runtime::Runtime::new()
+                        .unwrap()
+                        .block_on(execute_partition(args, index, 0, sks, cpk, &loop_ctx))
+                });
             }
         }
         while let Some(result) = set.join_next().await {
@@ -225,8 +238,18 @@ impl<'a> Scheduler<'a> {
                         ));
                     }
                     let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
+                    let loop_ctx = loop_ctx.clone();
                     set.spawn_blocking(move || {
-                        execute_partition(args, dependent_task_index, 0, sks, cpk)
+                        tokio::runtime::Runtime::new()
+                            .unwrap()
+                            .block_on(execute_partition(
+                                args,
+                                dependent_task_index,
+                                0,
+                                sks,
+                                cpk,
+                                &loop_ctx,
+                            ))
                     });
                 }
             }
@@ -359,7 +382,7 @@ fn partition_components<TNode, TEdge>(
     Ok(())
 }
 
-#[cfg(not(feature = "gpu"))]
+//#[cfg(not(feature = "gpu"))]
 fn re_randomise_transaction_inputs(
     inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
     transaction_id: &Handle,
@@ -414,8 +437,8 @@ fn re_randomise_transaction_inputs(
     );
     Ok(())
 }
-#[cfg(feature = "gpu")]
-fn re_randomise_transaction_inputs(
+//#[cfg(feature = "gpu")]
+fn dont_re_randomise_transaction_inputs(
     inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
     _transaction_id: &Handle,
     gpu_idx: usize,
@@ -424,7 +447,7 @@ fn re_randomise_transaction_inputs(
     // TODO: implement re-randomisation on GPU. For now just decompress inputs
     for txinput in inputs.values_mut() {
         match txinput {
-            Some(DFGTxInput::Value(val)) => {}
+            Some(DFGTxInput::Value(_)) => {}
             Some(DFGTxInput::Compressed((t, c))) => {
                 let decomp = SupportedFheCiphertexts::decompress(*t, c, gpu_idx);
                 if let Ok(decomp) = decomp {
@@ -441,16 +464,18 @@ fn re_randomise_transaction_inputs(
 }
 
 type TaskResult = Result<(SupportedFheCiphertexts, i16, Vec<u8>)>;
-fn execute_partition(
+async fn execute_partition(
     transactions: Vec<(DFGraph, HashMap<Handle, Option<DFGTxInput>>, Handle)>,
     task_id: NodeIndex,
     gpu_idx: usize,
     #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
     #[cfg(feature = "gpu")] sks: tfhe::CudaServerKey,
     cpk: tfhe::CompactPublicKey,
+    loop_ctx: &opentelemetry::Context,
 ) -> (HashMap<Handle, TaskResult>, NodeIndex) {
     tfhe::set_server_key(sks.clone());
     let mut res: HashMap<Handle, TaskResult> = HashMap::with_capacity(transactions.len());
+    let tracer = opentelemetry::global::tracer("tfhe_worker");
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
     'tx: for (ref mut dfg, ref mut tx_inputs, tid) in transactions {
@@ -468,11 +493,28 @@ fn execute_partition(
         }
         // Re-randomise inputs of the transaction - this also
         // decompresses ciphertexts
-        if let Err(e) = re_randomise_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
-            res.insert(tid.clone(), Err(e));
-            continue 'tx;
+        let mut s = tracer.start_with_context("rerandomise_inputs", loop_ctx);
+        if cfg!(feature = "gpu") || cfg!(feature = "rerandomise") {
+            if let Err(e) = re_randomise_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
+                res.insert(tid.clone(), Err(e));
+                continue 'tx;
+            }
+        } else {
+            if let Err(e) =
+                dont_re_randomise_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone())
+            {
+                res.insert(tid.clone(), Err(e));
+                continue 'tx;
+            }
         }
+        s.end();
+
         // Traverse prime the scheduler with ready ops from the transaction's subgraph
+        let mut s = tracer.start_with_context("execute_transaction", loop_ctx);
+        s.set_attribute(KeyValue::new(
+            "transaction_hash",
+            format!("0x{}", hex::encode(&tid)),
+        ));
         let mut set: JoinSet<(usize, OpResult)> = JoinSet::new();
         for nidx in dfg.graph.node_identifiers() {
             let Some(node) = dfg.graph.node_weight_mut(nidx) else {
@@ -490,8 +532,8 @@ fn execute_partition(
             );
         }
         let edges = dfg.graph.map(|_, _| (), |_, edge| *edge);
-        while !set.is_empty() {
-            if let Some(Ok(result)) = set.try_join_next() {
+        while let Some(result) = set.join_next().await {
+            if let Ok(result) = result {
                 let nidx = NodeIndex::new(result.0);
                 if result.1.is_ok() {
                     for edge in edges.edges_directed(nidx, Direction::Outgoing) {
@@ -526,10 +568,9 @@ fn execute_partition(
                             .map(|v| (v.0, v.1.as_ref().unwrap().0, v.1.unwrap().1)),
                     );
                 }
-            } else {
-                std::thread::sleep(std::time::Duration::from_micros(10));
             }
         }
+        s.end();
     }
     (res, task_id)
 }
