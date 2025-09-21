@@ -74,8 +74,19 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     /// @notice Returned when the context ID is zero.
     error ZeroContextId();
 
-    /// @notice Returned when the context ID is not registered as active or suspended.
+    /// @notice Returned when the context ID is not marked as active or suspended.
     error InvalidContextId(uint256 contextId);
+
+    /// @notice Returned when the context ID is already used (i.e., not in the Unused state).
+    error ContextAlreadyUsed(uint256 contextId);
+
+    /// @notice The state of a coprocessor context ID.
+    enum CoprocessorContextState {
+        Unused,
+        Active,
+        Suspended,
+        Deactivated
+    }
 
     /// @param handles      List of handles.
     /// @param userAddress      Address of the user.
@@ -126,12 +137,12 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
         uint256 threshold; /// @notice The threshold for the number of signers required for a signature to be valid
         /// @notice Current active coprocessor context ID.
         uint256 activeCoprocessorContextId;
-        /// @notice List of signers for the current active coprocessor context ID.
-        address[] activeCoprocessorContextSigners;
         /// @notice Suspended coprocessor context ID.
         uint256 suspendedCoprocessorContextId;
-        /// @notice List of signers for the suspended coprocessor context ID.
-        address[] suspendedCoprocessorContextSigners;
+        /// @notice Mapping to keep track of coprocessor context states.
+        mapping(uint256 contextId => CoprocessorContextState contextState) coprocessorContextStates;
+        /// @notice Mapping to keep track of coprocessor context signers.
+        mapping(uint256 contextId => address[] signers) coprocessorContextSigners;
     }
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
@@ -172,8 +183,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
         }
 
         InputVerifierStorage storage $ = _getInputVerifierStorage();
+
+        // Activate the initial context.
+        $.coprocessorContextStates[initialContextId] = CoprocessorContextState.Active;
+        $.coprocessorContextSigners[initialContextId] = initialContextSigners;
         $.activeCoprocessorContextId = initialContextId;
-        $.activeCoprocessorContextSigners = initialContextSigners;
     }
 
     /**
@@ -304,57 +318,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     }
 
     /**
-     * @notice          Adds a new signer.
-     * @dev             Only the owner can add a signer.
-     * @param signer    The address to be added as a signer.
-     */
-    /*
-    function addSigner(address signer) public virtual onlyACLOwner {
-        if (signer == address(0)) {
-            revert SignerNull();
-        }
-
-        InputVerifierStorage storage $ = _getInputVerifierStorage();
-        if ($.isSigner[signer]) {
-            revert AlreadySigner();
-        }
-
-        $.isSigner[signer] = true;
-        $.signers.push(signer);
-        _applyThreshold();
-        emit SignerAdded(signer);
-    }
-    */
-
-    /**
-     * @notice          Removes an existing signer.
-     * @dev             Only the owner can remove a signer.
-     * @param signer    The signer address to remove.
-     */
-    /*
-    function removeSigner(address signer) public virtual onlyACLOwner {
-        InputVerifierStorage storage $ = _getInputVerifierStorage();
-        if (!$.isSigner[signer]) {
-            revert NotASigner();
-        }
-
-        /// @dev Remove signer from the mapping.
-        $.isSigner[signer] = false;
-
-        /// @dev Find the index of the signer and remove it from the array.
-        for (uint i = 0; i < $.signers.length; i++) {
-            if ($.signers[i] == signer) {
-                $.signers[i] = $.signers[$.signers.length - 1]; /// @dev Move the last element into the place to delete.
-                $.signers.pop(); /// @dev Remove the last element.
-                _applyThreshold();
-                emit SignerRemoved(signer);
-                return;
-            }
-        }
-    }
-    */
-
-    /**
      * @notice          Returns the list of signers of a specific context ID.
      * @dev             If there are too many signers, it could be out-of-gas.
      * @param contextId The context ID of the signer addresses to return.
@@ -362,13 +325,8 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
      */
     function getCoprocessorSigners(uint256 contextId) public view virtual returns (address[] memory) {
         InputVerifierStorage storage $ = _getInputVerifierStorage();
-        if (contextId == $.activeCoprocessorContextId) {
-            return $.activeCoprocessorContextSigners;
-        } else if (contextId == $.suspendedCoprocessorContextId) {
-            return $.suspendedCoprocessorContextSigners;
-        } else {
-            revert InvalidContextId(contextId);
-        }
+
+        return $.coprocessorContextSigners[contextId];
     }
 
     /**
@@ -400,37 +358,39 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
         return false;
     }
 
-    function updateActiveCoprocessorContext(uint256 contextId, address[] calldata signers) public virtual onlyACLOwner {
-        if (contextId == 0) {
-            revert ZeroContextId();
-        }
-        if (signers.length == 0) {
-            revert EmptyContextSignerAddresses(contextId);
-        }
-        InputVerifierStorage storage $ = _getInputVerifierStorage();
-        $.activeCoprocessorContextId = contextId;
-        $.activeCoprocessorContextSigners = signers;
-    }
-
-    function updateSuspendedCoprocessorContext(
-        uint256 contextId,
-        address[] calldata signers
+    function addNewContextAndSuspendOldOne(
+        uint256 newContextId,
+        address[] calldata newContextSigners
     ) public virtual onlyACLOwner {
-        if (contextId == 0) {
+        if (newContextId == 0) {
             revert ZeroContextId();
         }
-        if (signers.length == 0) {
-            revert EmptyContextSignerAddresses(contextId);
+        if (newContextSigners.length == 0) {
+            revert EmptyContextSignerAddresses(newContextId);
         }
+
         InputVerifierStorage storage $ = _getInputVerifierStorage();
-        $.suspendedCoprocessorContextId = contextId;
-        $.suspendedCoprocessorContextSigners = signers;
+
+        // Check that the new context ID is not already used.
+        if ($.coprocessorContextStates[newContextId] != CoprocessorContextState.Unused) {
+            revert ContextAlreadyUsed(newContextId);
+        }
+
+        // Suspend the current active context.
+        $.coprocessorContextStates[$.activeCoprocessorContextId] = CoprocessorContextState.Suspended;
+        $.suspendedCoprocessorContextId = $.activeCoprocessorContextId;
+
+        // Activate the new context.
+        $.coprocessorContextStates[newContextId] = CoprocessorContextState.Active;
+        $.coprocessorContextSigners[newContextId] = newContextSigners;
+        $.activeCoprocessorContextId = newContextId;
     }
 
     function removeSuspendedCoprocessorContext() public virtual onlyACLOwner {
         InputVerifierStorage storage $ = _getInputVerifierStorage();
-        $.suspendedCoprocessorContextId = 0;
-        delete $.suspendedCoprocessorContextSigners;
+
+        // Mark the suspended context as deactivated.
+        $.coprocessorContextStates[$.suspendedCoprocessorContextId] = CoprocessorContextState.Deactivated;
     }
 
     /**
@@ -510,7 +470,10 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
 
         // Ensure the contextId is a valid active or suspended.
         InputVerifierStorage storage $ = _getInputVerifierStorage();
-        if (contextId != $.activeCoprocessorContextId && contextId != $.suspendedCoprocessorContextId) {
+        if (
+            $.coprocessorContextStates[contextId] != CoprocessorContextState.Active &&
+            $.coprocessorContextStates[contextId] != CoprocessorContextState.Suspended
+        ) {
             revert InvalidContextId(contextId);
         }
 
@@ -612,23 +575,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
         address signerRecovered = ECDSA.recover(message, signature);
         return signerRecovered;
     }
-
-    /**
-     * @notice Sets the threshold for the number of signers required for a signature to be valid.
-     */
-    /*
-    function _applyThreshold() internal virtual {
-        InputVerifierStorage storage $ = _getInputVerifierStorage();
-        uint256 signerLength = $.signers.length;
-
-        if (signerLength != 0) {
-            $.threshold = signerLength / 2 + 1;
-        } else {
-            /// @dev It is impossible to remove all KMS signers.
-            revert AtLeastOneSignerIsRequired();
-        }
-    }
-    */
 
     /**
      * @dev Returns the InputVerifier storage location.
