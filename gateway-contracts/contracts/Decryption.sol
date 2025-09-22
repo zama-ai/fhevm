@@ -542,14 +542,15 @@ contract Decryption is
         /// @dev KMS node that has not already signed.
         _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
 
-        /// @dev Store the signature for the user decryption response.
-        /// @dev This list is then used to check the consensus. Important: the mapping should not
+        uint256 counterShares = $._verifiedUserDecryptSignaturesCounter[decryptionId];
+        /// @dev Store the counter for the user decryption response shares.
+        /// @dev This counter is then used to check the consensus. Important: the counter should not
         /// @dev consider the digest (contrary to the public decryption case) as shares are expected
         /// @dev to be different for each KMS node.
-        $._verifiedUserDecryptSignaturesCounter[decryptionId] += 1;
+        $._verifiedUserDecryptSignaturesCounter[decryptionId] = counterShares + 1;
 
         /// @dev Store the user decrypted share for the user decryption response.
-        emit UserDecryptionResponse(decryptionId, userDecryptedShare, signature, extraData);
+        emit UserDecryptionResponse(decryptionId, counterShares, userDecryptedShare, signature, extraData);
 
         // Store the KMS transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus

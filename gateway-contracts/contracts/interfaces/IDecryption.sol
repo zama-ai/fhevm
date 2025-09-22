@@ -78,12 +78,14 @@ interface IDecryption {
     /**
      * @notice Emitted when an public decryption response is made.
      * @param decryptionId The decryption request ID associated with the response.
+     * @param counterShares The counter of shares associated with the response.
      * @param userDecryptedShare The of decryption share reencrypted with the user's public key.
      * @param signature The signature of the KMS connector that responded.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event UserDecryptionResponse(
         uint256 indexed decryptionId,
+        uint256 counterShares,
         bytes userDecryptedShare,
         bytes signature,
         bytes extraData

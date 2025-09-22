@@ -1431,19 +1431,17 @@ describe("Decryption", function () {
       // Check UserDecryptionResponse events are emitted for each response
       await expect(responseTx1)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
+        .withArgs(decryptionId, 0n, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
       await expect(responseTx2)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
+        .withArgs(decryptionId, 1n, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
       await expect(responseTx3)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
+        .withArgs(decryptionId, 2n, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
       // Consensus should be reached at the third response (reconstruction threshold)
       // Check 3rd response event: it should emit the consensus reached event
-      await expect(responseTx3)
-        .to.emit(decryption, "UserDecryptionResponseConsensusReached")
-        .withArgs(decryptionId);
+      await expect(responseTx3).to.emit(decryption, "UserDecryptionResponseConsensusReached").withArgs(decryptionId);
 
       // Check that the user decryption is done
       await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
@@ -2267,19 +2265,17 @@ describe("Decryption", function () {
       // Check UserDecryptionResponse events are emitted for each response
       await expect(responseTx1)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
+        .withArgs(decryptionId, 0n, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
       await expect(responseTx2)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
+        .withArgs(decryptionId, 1n, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
       await expect(responseTx3)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
+        .withArgs(decryptionId, 2n, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
       // Consensus should be reached at the third response (reconstruction threshold)
       // Check 3rd response event: it should emit the consensus reached event
-      await expect(responseTx3)
-        .to.emit(decryption, "UserDecryptionResponseConsensusReached")
-        .withArgs(decryptionId);
+      await expect(responseTx3).to.emit(decryption, "UserDecryptionResponseConsensusReached").withArgs(decryptionId);
 
       // Check that the user decryption is done
       await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
