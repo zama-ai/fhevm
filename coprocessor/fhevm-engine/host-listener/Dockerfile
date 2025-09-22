@@ -28,7 +28,8 @@ COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build host_listener binary
-RUN cargo fetch && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo fetch && \
     SQLX_OFFLINE=true BUILD_ID=$(cat BUILD_ID) cargo build --release -p host-listener
 
 # Stage 2: Runtime image
