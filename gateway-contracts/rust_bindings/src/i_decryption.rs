@@ -47,7 +47,7 @@ interface IDecryption {
     event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, bytes extraData);
     event PublicDecryptionResponse(uint256 indexed decryptionId, bytes decryptedResult, bytes[] signatures, bytes extraData);
     event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey, bytes extraData);
-    event UserDecryptionResponse(uint256 indexed decryptionId, bytes userDecryptedShare, bytes signature, bytes extraData);
+    event UserDecryptionResponse(uint256 indexed decryptionId, uint256 counterShares, bytes userDecryptedShare, bytes signature, bytes extraData);
     event UserDecryptionResponseConsensusReached(uint256 indexed decryptionId);
 
     function checkDecryptionDone(uint256 decryptionId) external view;
@@ -611,6 +611,12 @@ interface IDecryption {
         "name": "decryptionId",
         "type": "uint256",
         "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "counterShares",
+        "type": "uint256",
+        "indexed": false,
         "internalType": "uint256"
       },
       {
@@ -4038,9 +4044,9 @@ event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UserDecryptionResponse(uint256,bytes,bytes,bytes)` and selector `0x66aef293eb75c368842ba263f2b40b9f8da2b36a95a3ac952d701b0b1c4cd509`.
+    /**Event with signature `UserDecryptionResponse(uint256,uint256,bytes,bytes,bytes)` and selector `0x7fcdfb5381917f554a717d0a5470a33f5a49ba6445f05ec43c74c0bc2cc608b2`.
 ```solidity
-event UserDecryptionResponse(uint256 indexed decryptionId, bytes userDecryptedShare, bytes signature, bytes extraData);
+event UserDecryptionResponse(uint256 indexed decryptionId, uint256 counterShares, bytes userDecryptedShare, bytes signature, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4052,6 +4058,8 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes userDecryptedSh
     pub struct UserDecryptionResponse {
         #[allow(missing_docs)]
         pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub counterShares: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub userDecryptedShare: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
@@ -4070,6 +4078,7 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes userDecryptedSh
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for UserDecryptionResponse {
             type DataTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
                 alloy::sol_types::sol_data::Bytes,
@@ -4081,12 +4090,11 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes userDecryptedSh
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "UserDecryptionResponse(uint256,bytes,bytes,bytes)";
+            const SIGNATURE: &'static str = "UserDecryptionResponse(uint256,uint256,bytes,bytes,bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                102u8, 174u8, 242u8, 147u8, 235u8, 117u8, 195u8, 104u8, 132u8, 43u8,
-                162u8, 99u8, 242u8, 180u8, 11u8, 159u8, 141u8, 162u8, 179u8, 106u8,
-                149u8, 163u8, 172u8, 149u8, 45u8, 112u8, 27u8, 11u8, 28u8, 76u8, 213u8,
-                9u8,
+                127u8, 205u8, 251u8, 83u8, 129u8, 145u8, 127u8, 85u8, 74u8, 113u8, 125u8,
+                10u8, 84u8, 112u8, 163u8, 63u8, 90u8, 73u8, 186u8, 100u8, 69u8, 240u8,
+                94u8, 196u8, 60u8, 116u8, 192u8, 188u8, 44u8, 198u8, 8u8, 178u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4097,9 +4105,10 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes userDecryptedSh
             ) -> Self {
                 Self {
                     decryptionId: topics.1,
-                    userDecryptedShare: data.0,
-                    signature: data.1,
-                    extraData: data.2,
+                    counterShares: data.0,
+                    userDecryptedShare: data.1,
+                    signature: data.2,
+                    extraData: data.3,
                 }
             }
             #[inline]
@@ -4120,6 +4129,9 @@ event UserDecryptionResponse(uint256 indexed decryptionId, bytes userDecryptedSh
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.counterShares),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.userDecryptedShare,
                     ),
@@ -7581,10 +7593,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 190u8, 197u8, 254u8, 246u8, 153u8, 126u8, 16u8, 149u8, 135u8, 255u8,
             ],
             [
-                102u8, 174u8, 242u8, 147u8, 235u8, 117u8, 195u8, 104u8, 132u8, 43u8,
-                162u8, 99u8, 242u8, 180u8, 11u8, 159u8, 141u8, 162u8, 179u8, 106u8,
-                149u8, 163u8, 172u8, 149u8, 45u8, 112u8, 27u8, 11u8, 28u8, 76u8, 213u8,
-                9u8,
+                127u8, 205u8, 251u8, 83u8, 129u8, 145u8, 127u8, 85u8, 74u8, 113u8, 125u8,
+                10u8, 84u8, 112u8, 163u8, 63u8, 90u8, 73u8, 186u8, 100u8, 69u8, 240u8,
+                94u8, 196u8, 60u8, 116u8, 192u8, 188u8, 44u8, 198u8, 8u8, 178u8,
             ],
             [
                 215u8, 229u8, 138u8, 54u8, 122u8, 10u8, 108u8, 41u8, 142u8, 118u8, 173u8,
