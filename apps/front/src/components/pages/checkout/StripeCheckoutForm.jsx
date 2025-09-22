@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
+import PropTypes from "prop-types";
 import { loadStripe } from "@stripe/stripe-js";
 
 import {
@@ -54,5 +55,14 @@ function StripeCheckoutForm({ priceId, user, idToken, quantity }) {
     </div>
   );
 }
+
+StripeCheckoutForm.propTypes = {
+  priceId: PropTypes.string.isRequired,
+  user: PropTypes.shape({
+    email: PropTypes.string,
+  }),
+  idToken: PropTypes.string,
+  quantity: PropTypes.string,
+};
 
 export default StripeCheckoutForm;

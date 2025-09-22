@@ -1,4 +1,3 @@
-import React from "react";
 import PropTypes from "prop-types";
 import safeGet from "lodash/get";
 
@@ -8,15 +7,8 @@ function convertToPx(x) {
   return typeof x === "number" ? x.toString() + "px" : x.toString();
 }
 
-const TableHeader = (props) => {
-  const {
-    columnField,
-    header,
-    data,
-    alignRight,
-    contentType,
-    justify,
-  } = props;
+function TableHeader(props) {
+  const { columnField, header, data, alignRight, contentType, justify } = props;
 
   const justifyContent =
     justify ||
@@ -47,17 +39,15 @@ const TableHeader = (props) => {
   }
 
   return <th style={{ display: "flex", justifyContent }}>{displayHeader}</th>;
-};
+}
 
-const FullRowComponent = ({ children, className }) => (
-  <tr className={className}>
-    <td className="d-flex">{children}</td>
-  </tr>
-);
-
-FullRowComponent.propTypes = {
-  children: PropTypes.any,
-  className: PropTypes.string,
+TableHeader.propTypes = {
+  columnField: PropTypes.string,
+  header: PropTypes.oneOfType([PropTypes.string, PropTypes.func]),
+  data: PropTypes.array,
+  alignRight: PropTypes.bool,
+  contentType: PropTypes.string,
+  justify: PropTypes.string,
 };
 
 function CommonTable(props) {
@@ -228,4 +218,12 @@ CommonTable.propTypes = {
   style: PropTypes.object,
   className: PropTypes.string,
   withBorder: PropTypes.bool,
+  tableRef: PropTypes.oneOfType([
+    PropTypes.func,
+    PropTypes.shape({ current: PropTypes.any }),
+  ]),
+  rowRef: PropTypes.oneOfType([
+    PropTypes.func,
+    PropTypes.shape({ current: PropTypes.any }),
+  ]),
 };

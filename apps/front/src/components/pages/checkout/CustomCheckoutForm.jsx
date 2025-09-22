@@ -1,7 +1,7 @@
-import React from "react";
+import PropTypes from "prop-types";
 import { Link } from "react-router-dom";
 
-function CustomCheckoutForm({ planId, priceId, user, idToken }) {
+function CustomCheckoutForm({ planId, priceId }) {
   return (
     <div id="checkout">
       <div>
@@ -47,5 +47,10 @@ function CustomCheckoutForm({ planId, priceId, user, idToken }) {
     </div>
   );
 }
+
+CustomCheckoutForm.propTypes = {
+  planId: PropTypes.string,
+  priceId: PropTypes.string,
+};
 
 export default CustomCheckoutForm;

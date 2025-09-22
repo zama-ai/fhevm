@@ -1,4 +1,4 @@
-import React from "react";
+import PropTypes from "prop-types";
 
 export const PageFooterHyperlink = ({ children, path }) => {
   return (
@@ -11,4 +11,9 @@ export const PageFooterHyperlink = ({ children, path }) => {
       {children}
     </a>
   );
+};
+
+PageFooterHyperlink.propTypes = {
+  children: PropTypes.node.isRequired,
+  path: PropTypes.string.isRequired,
 };

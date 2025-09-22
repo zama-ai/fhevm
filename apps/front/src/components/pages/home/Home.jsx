@@ -1,5 +1,3 @@
-import React from "react";
-
 import { PageLayout } from "../../page-layout";
 import MoesifPlans from "../plans/MoesifPlans";
 import { SignupButton } from "../../buttons/signup-button";

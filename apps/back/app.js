@@ -32,7 +32,7 @@ const { BillingProvider } = require("./services/billingProvider");
 
 const app = express();
 app.use(express.static(path.join(__dirname)));
-const port = 3030;
+const port = parseInt(process.env.PORT ?? "3000", 10);
 
 const moesifManagementToken = process.env.MOESIF_MANAGEMENT_TOKEN;
 const templateWorkspaceIdLiveEvent =

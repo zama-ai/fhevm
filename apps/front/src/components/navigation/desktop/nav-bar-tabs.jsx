@@ -1,11 +1,22 @@
-import React from "react";
-import Auth0NavBarTabs from "./auth0-nav-bar-tabs";
-import OktaNavBarTabs from "./okta-nav-bar-tabs";
+import { NavBarTab } from "./nav-bar-tab";
+import preLoginMenu from "./pre-login-menu.json";
+import postLoginMenu from "./post-login-menu.json";
+import useAuth from "../../../hooks/useAuth";
+import { useMemo } from "react";
 
-export const NavBarTabs = () => {
-  if (import.meta.env.REACT_APP_AUTH_PROVIDER === "Okta") {
-    return <OktaNavBarTabs />;
-  } else if (import.meta.env.REACT_APP_AUTH_PROVIDER === "Auth0") {
-    return <Auth0NavBarTabs />;
-  }
-};
+export function NavBarTabs() {
+  const { isAuthenticated } = useAuth();
+
+  const menus = useMemo(
+    () => (isAuthenticated ? postLoginMenu : preLoginMenu),
+    [isAuthenticated]
+  );
+
+  return (
+    <div className="nav-bar__tabs">
+      {menus.map((item) => (
+        <NavBarTab key={item.path} path={item.path} label={item.label} />
+      ))}
+    </div>
+  );
+}

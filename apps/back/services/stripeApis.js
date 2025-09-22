@@ -4,7 +4,9 @@ const stripe = StripeSDK(process.env.STRIPE_API_KEY);
 function verifyStripeSession(checkout_session_id) {
   // Only allow expected Stripe session IDs (e.g., cs_test_... or cs_live_...) to prevent URL manipulation.
   // Adjust this regex if Stripe changes their format.
-  const validSessionId = /^cs_(test|live)_[a-zA-Z0-9]{20,}$/.test(checkout_session_id);
+  const validSessionId = /^cs_(test|live)_[a-zA-Z0-9]{20,}$/.test(
+    checkout_session_id
+  );
   if (!validSessionId) {
     return Promise.reject(
       new Error("Invalid Stripe checkout_session_id format")

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import Modal from "react-modal";
 import SVG from "react-inlinesvg";
 import copy from "copy-to-clipboard";
@@ -8,7 +8,7 @@ import { PageLoader } from "../../page-loader";
 import copyIcon from "../../../images/icons/copy.svg";
 import successIcon from "../../../images/icons/success.svg";
 import apiKeyIcon from "../../../images/icons/api-key.svg";
-import useAuthCombined from '../../../hooks/useAuthCombined';
+import useAuth from "../../../hooks/useAuth";
 
 const customStyles = {
   content: {
@@ -22,19 +22,11 @@ const customStyles = {
 };
 
 const Keys = () => {
-  const {
-    user,
-    isLoading,
-    userEmail,
-    idToken,
-  } = useAuthCombined();
+  const { user, isLoading, idToken } = useAuth();
 
   const [APIKey, setAPIKey] = useState("");
   const [modalIsOpen, setIsOpen] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
-
-
-  let resolvedEmail = user?.email || userEmail;
 
   Modal.setAppElement("#root");
 
@@ -46,7 +38,7 @@ const Keys = () => {
         Authorization: `Bearer ${idToken}`,
       },
       body: JSON.stringify({
-        email: resolvedEmail,
+        email: user?.email,
       }),
     })
       .then((res) => {
@@ -88,7 +80,7 @@ const Keys = () => {
         <h1>My API Keys</h1>
         <p className="description">
           On this page, you can generate an API key to access{"\n"}the APIs
-          you're subscribed to.
+          you&apos;re subscribed to.
         </p>
         <div>
           <p>
@@ -96,9 +88,9 @@ const Keys = () => {
           </p>
         </div>
         <div className="page-action">
-        <button className="button__purp" onClick={createKey}>
-          Create Key
-        </button>
+          <button className="button__purp" onClick={createKey}>
+            Create Key
+          </button>
         </div>
         <p>
           <strong>Note: </strong>
@@ -157,7 +149,9 @@ const Keys = () => {
                   call back from Stripe. See API route{" "}
                   <code>/register/stripe/:checkout_session_id</code>.
                 </li>
-                <li>If provision was triggered, was provisioning successful?</li>
+                <li>
+                  If provision was triggered, was provisioning successful?
+                </li>
               </ul>
             </div>
           )}

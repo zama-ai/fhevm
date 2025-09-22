@@ -1,11 +1,33 @@
-import React from "react";
-import OktaLogin from "./OktaLogin";
-import Auth0Login from "./Auth0Login";
+import { useAuth0 } from "@auth0/auth0-react";
 
-export default function Login() {
-  if (import.meta.env.REACT_APP_AUTH_PROVIDER === "Okta") {
-    return <OktaLogin />;
-  } else if (import.meta.env.REACT_APP_AUTH_PROVIDER === "Auth0") {
-    return <Auth0Login />;
+import { PageLayout } from "../../page-layout";
+import { PageLoader } from "../../page-loader";
+
+import wfImage from "../../../images/assets/dev-portal-architecture-diagram.svg";
+import { SignupButton } from "../../buttons/signup-button";
+import { LoginButton } from "../../buttons/login-button";
+
+function Login() {
+  const { isLoading } = useAuth0();
+
+  if (isLoading) {
+    return <PageLoader />;
   }
+
+  return (
+    <PageLayout>
+      <div className="login-page">
+        <h1>Welcome to Your Custom Dev Portal!</h1>
+        <h2>
+          <SignupButton isLink /> or <LoginButton isLink /> to get started.
+        </h2>
+
+        <div className="page-layout__focus">
+          <img src={wfImage} width="100%" alt="flow-diagram" />
+        </div>
+      </div>
+    </PageLayout>
+  );
 }
+
+export default Login;

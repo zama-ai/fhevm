@@ -4,11 +4,11 @@ import { PageLoader } from "../../page-loader";
 import MoesifEmbeddedTemplate from "../../moesif/moesif-embedded-template";
 import NoticeBox from "../../notice-box";
 import dashIcon from "../../../images/icons/bar-chart.svg";
-import useAuthCombined from "../../../hooks/useAuthCombined";
+import useAuth from "../../../hooks/useAuth";
 import fetchEmbedChartUrls from "./fetchEmbedChartUrls";
 
-const Dashboard = (props) => {
-  const { user, isLoading, idToken, userEmail } = useAuthCombined();
+const Dashboard = () => {
+  const { user, isLoading, idToken, userEmail } = useAuth();
 
   const [error, setError] = useState();
   const [embedTemplateUrls, setEmbedTemplateUrls] = useState(null);
@@ -16,7 +16,7 @@ const Dashboard = (props) => {
   const email = user?.email || userEmail;
 
   useEffect(() => {
-    window?.moesif?.track('viewed-dashboard');
+    window?.moesif?.track("viewed-dashboard");
 
     if (idToken) {
       fetchEmbedChartUrls({
@@ -35,7 +35,11 @@ const Dashboard = (props) => {
   }, [idToken, user, email]);
 
   if (isLoading || !idToken || (!error && !embedTemplateUrls)) {
-    return <PageLoader />;
+    return (
+      <PageLayout>
+        <PageLoader />
+      </PageLayout>
+    );
   }
 
   return (

@@ -1,11 +1,13 @@
 import { useOktaAuth } from "@okta/okta-react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import PropTypes from "prop-types";
+
 import { PageLayout } from "../../page-layout";
 import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
 import { PageLoader } from "../../page-loader";
 import MoesifEmbeddedTemplate from "../../moesif/moesif-embedded-template";
 
-const OktaDashboard = (props) => {
+function OktaDashboard(props) {
   const { authState } = useOktaAuth();
 
   const { fetchEmbedInfo } = props;
@@ -88,6 +90,10 @@ const OktaDashboard = (props) => {
       </>
     </PageLayout>
   );
+}
+
+OktaDashboard.propTypes = {
+  fetchEmbedInfo: PropTypes.func.isRequired,
 };
 
 export default OktaDashboard;

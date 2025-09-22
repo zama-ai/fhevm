@@ -1,11 +1,24 @@
-import React from "react";
-import Auth0NavBarButtons from "./auth0-nav-bar-buttons";
-import OktaNavBarButtons from "./okta-nav-bar-buttons";
+import { useAuth0 } from "@auth0/auth0-react";
+import { LoginButton } from "../../buttons/login-button";
+import { LogoutButton } from "../../buttons/logout-button";
+import { SignupButton } from "../../buttons/signup-button";
 
-export const NavBarButtons = () => {
-  if (import.meta.env.REACT_APP_AUTH_PROVIDER === "Okta") {
-    return <OktaNavBarButtons />;
-  } else if (import.meta.env.REACT_APP_AUTH_PROVIDER === "Auth0") {
-    return <Auth0NavBarButtons />;
-  }
-};
+export function NavBarButtons() {
+  const { isAuthenticated } = useAuth0();
+
+  return (
+    <div className="nav-bar__buttons">
+      {!isAuthenticated && (
+        <>
+          <SignupButton />
+          <LoginButton />
+        </>
+      )}
+      {isAuthenticated && (
+        <>
+          <LogoutButton />
+        </>
+      )}
+    </div>
+  );
+}

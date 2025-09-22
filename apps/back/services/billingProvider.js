@@ -1,4 +1,4 @@
-const crypto = require('crypto');
+const crypto = require("crypto");
 
 function getOneMonthFromNowISO() {
   const now = new Date(); // Get the current date and time

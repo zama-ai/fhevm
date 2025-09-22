@@ -16,7 +16,7 @@ export function formatPrice(priceInDecimal = 0) {
   }).format(priceInDollars);
 }
 
-export function formatPeriod(periodUnits, period) {
+export function formatPeriod(periodUnits, _period) {
   switch (periodUnits) {
     case "y":
       return "yearly";
@@ -43,7 +43,7 @@ export function formatIsoTimestamp(isoString) {
       second: "2-digit",
       hour12: true, // Use 12-hour format
     });
-  } catch (err) {
+  } catch (_err) {
     return "";
   }
 }
@@ -72,12 +72,15 @@ export async function moesifIdentifyUserFrontEndIfPossible(idToken, user) {
       ...stripeCustomerObject,
     });
   } else {
-    fetch(`${import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER}/stripe/customer`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-      },
-    })
+    fetch(
+      `${import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER}/stripe/customer`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+        },
+      }
+    )
       .then((res) => res.json())
       .then((stripeCustomerObject) => {
         if (stripeCustomerObject && stripeCustomerObject.id) {

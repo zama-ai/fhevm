@@ -1,4 +1,4 @@
-import React from "react";
+import { useState } from "react";
 import { MobileMenuToggleButton } from "./mobile-menu-toggle-button";
 import { MobileNavBarBrand } from "./mobile-nav-bar-brand";
 import { MobileNavBarButtons } from "./mobile-nav-bar-buttons";
@@ -14,13 +14,11 @@ const MobileMenuIcon = {
   MENU: "menu",
 };
 
-export const MobileNavBar = () => {
-  const [mobileMenuState, setMobileMenuState] = React.useState(
+export function MobileNavBar() {
+  const [mobileMenuState, setMobileMenuState] = useState(
     MobileMenuState.CLOSED
   );
-  const [mobileMenuIcon, setMobileMenuIcon] = React.useState(
-    MobileMenuIcon.MENU
-  );
+  const [mobileMenuIcon, setMobileMenuIcon] = useState(MobileMenuIcon.MENU);
 
   const isMobileMenuOpen = () => {
     return mobileMenuState === MobileMenuState.OPEN;
@@ -64,4 +62,4 @@ export const MobileNavBar = () => {
       </nav>
     </div>
   );
-};
+}

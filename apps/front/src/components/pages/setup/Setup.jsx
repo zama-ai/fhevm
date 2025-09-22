@@ -1,10 +1,9 @@
-import React from "react";
 import { PageLayout } from "../../page-layout";
 import wfImage from "../../../images/assets/dev-portal-architecture-diagram.svg";
-import { LoginButton } from '../../buttons/login-button';
-import { SignupButton } from '../../buttons/signup-button';
+import { LoginButton } from "../../buttons/login-button";
+import { SignupButton } from "../../buttons/signup-button";
 
-function Setup(props) {
+function Setup() {
   return (
     <PageLayout>
       <div className="heading-centered">
@@ -27,7 +26,12 @@ function Setup(props) {
         </div>
       </div>
       <div className="page-layout__focus">
-        <img src={wfImage} style={{ padding: '30px'}}width="100%" alt="flow-diagram" />
+        <img
+          src={wfImage}
+          style={{ padding: "30px" }}
+          width="100%"
+          alt="flow-diagram"
+        />
       </div>
       <div style={{ height: "50" }} />
     </PageLayout>

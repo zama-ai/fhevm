@@ -1,8 +1,7 @@
-import React from "react";
 import noPriceIcon from "../../../images/icons/empty-state-price.svg";
 import NoticeBox from "../../notice-box";
 
-function NoPriceFound(props) {
+function NoPriceFound() {
   return (
     <NoticeBox
       iconSrc={noPriceIcon}

@@ -1,7 +1,7 @@
-import React from "react";
 import { NavLink } from "react-router-dom";
+import PropTypes from "prop-types";
 
-export const NavBarTab = ({ path, label }) => {
+export function NavBarTab({ path, label }) {
   return (
     <NavLink
       to={path}
@@ -13,4 +13,9 @@ export const NavBarTab = ({ path, label }) => {
       {label}
     </NavLink>
   );
+}
+
+NavBarTab.propTypes = {
+  path: PropTypes.string.isRequired,
+  label: PropTypes.string.isRequired,
 };

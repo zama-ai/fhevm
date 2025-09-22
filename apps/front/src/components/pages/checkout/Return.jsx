@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { PageLayout } from "../../page-layout";
 import { Link } from "react-router-dom";
 import noPriceIcon from "../../../images/icons/empty-state-price.svg";
 import NoticeBox from "../../notice-box";
-import useAuthCombined from "../../../hooks/useAuthCombined";
+import useAuth from "../../../hooks/useAuth";
 import { moesifIdentifyUserFrontEndIfPossible } from "../../../common/utils";
 import { PageLoader } from "../../page-loader";
 
@@ -15,8 +15,6 @@ import { PageLoader } from "../../page-loader";
 // - receive the returned sessionId from Stripe and call backend API to provision services.
 
 function registerPurchaseStripe({
-  planId,
-  priceId,
   sessionId,
   idToken,
   setCustomerEmail,
@@ -28,7 +26,9 @@ function registerPurchaseStripe({
     setLoading(true);
 
     fetch(
-      `${import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER}/register/stripe/${sessionId}`,
+      `${
+        import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER
+      }/register/stripe/${sessionId}`,
       {
         method: "POST",
         headers: {
@@ -66,7 +66,6 @@ function registerPurchaseStripe({
 function registerPurchaseCustom({
   planId,
   priceId,
-  sessionId,
   idToken,
   user,
   setCustomerEmail,
@@ -99,7 +98,7 @@ function registerPurchaseCustom({
       }
       return res.json();
     })
-    .then((data) => {
+    .then(() => {
       setStatus("complete");
       setCustomerEmail(user?.email);
     })
@@ -112,12 +111,12 @@ function registerPurchaseCustom({
     });
 }
 
-function Return(props) {
+function Return() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
   const [customerEmail, setCustomerEmail] = useState("");
   const [provisionError, setProvisionError] = useState(null);
-  const { idToken, user } = useAuthCombined();
+  const { idToken, user } = useAuth();
 
   const queryString = window.location.search;
   const urlParams = new URLSearchParams(queryString);

@@ -1,6 +1,7 @@
-import React from "react";
+import PropTypes from "prop-types";
 import { NavLink } from "react-router-dom";
-import yourLogo from '../../../images/icons/your-logo.svg';
+
+import yourLogo from "../../../images/icons/your-logo.svg";
 
 export const MobileNavBarBrand = ({ handleClick }) => {
   return (
@@ -15,4 +16,8 @@ export const MobileNavBarBrand = ({ handleClick }) => {
       </NavLink>
     </div>
   );
+};
+
+MobileNavBarBrand.propTypes = {
+  handleClick: PropTypes.func.isRequired,
 };

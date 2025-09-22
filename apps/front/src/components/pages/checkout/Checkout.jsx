@@ -1,14 +1,14 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 
-import useAuthCombined from "../../../hooks/useAuthCombined";
+import useAuth from "../../../hooks/useAuth";
 import { PageLoader } from "../../page-loader";
 import { PageLayout } from "../../page-layout";
 import StripeCheckoutForm from "./StripeCheckoutForm";
 import { Navigate } from "react-router-dom";
 import CustomCheckoutForm from "./CustomCheckoutForm";
 
-function Checkout(props) {
-  const { isLoading, user, idToken } = useAuthCombined();
+function Checkout() {
+  const { isLoading, user, idToken } = useAuth();
 
   const queryString = window.location.search;
   const urlParams = new URLSearchParams(queryString);

@@ -9,15 +9,15 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "lint:fix": "eslint . --fix",
+    "preview": "vite preview",
+    "prepare": "husky"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.0.1",
     "@emotion/react": "^11.11.1",
     "@emotion/styled": "^11.11.0",
     "@mui/material": "^5.14.2",
-    "@okta/okta-auth-js": "^7.8.1",
-    "@okta/okta-react": "^6.7.0",
     "@stripe/react-stripe-js": "^2.1.0",
     "@stripe/stripe-js": "^1.52.1",
     "copy-to-clipboard": "^3.3.3",
@@ -40,11 +40,16 @@
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.16",
     "globals": "^15.13.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.6",
     "sass": "1.78.0",
     "sass-loader": "^16.0.3",
     "vite": "^6.2.4"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=18.0.0"
+  },
+  "lint-staged": {
+    "*.{js,jsx}": "pnpm lint:fix"
   }
 }

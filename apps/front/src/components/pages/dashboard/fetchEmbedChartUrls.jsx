@@ -15,15 +15,17 @@ function customizeUrlDisplayOptions(embedInfo) {
 }
 
 export default async function fetchEmbedChartUrls({
-  stripCustomerId,
+  stripCustomerId: _stripCustomerId,
   authUserId,
   idToken,
-  setError,
+  setError: _setError,
   email,
 }) {
   const response = await fetch(
     `${import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER}/embed-charts/` +
-      encodeURIComponent(authUserId) + `?email=` + encodeURIComponent(email),
+      encodeURIComponent(authUserId) +
+      `?email=` +
+      encodeURIComponent(email),
     {
       method: "GET",
       headers: {
@@ -34,9 +36,13 @@ export default async function fetchEmbedChartUrls({
   );
 
   if (!response.ok) {
-    console.log('error failed to fetch')
     const errorBody = await response.text(); // or response.json() if the response is JSON
-    throw new Error(`HTTP error! status: ${response.status}, body: ${errorBody}`);
+    console.error(
+      `Failed to fetch embed charts: status=${response.status} ${response.statusText}, body=${errorBody}`
+    );
+    throw new Error(
+      `HTTP error! status: ${response.status}, body: ${errorBody}`
+    );
   }
 
   const embedInfoArray = await response.json();

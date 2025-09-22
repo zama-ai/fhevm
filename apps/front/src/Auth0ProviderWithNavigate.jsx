@@ -1,6 +1,6 @@
 import { Auth0Provider } from "@auth0/auth0-react";
-import React from "react";
 import { useNavigate } from "react-router-dom";
+import PropTypes from "prop-types";
 
 export const Auth0ProviderWithNavigate = ({ children }) => {
   const navigate = useNavigate();
@@ -27,4 +27,8 @@ export const Auth0ProviderWithNavigate = ({ children }) => {
       {children}
     </Auth0Provider>
   );
+};
+
+Auth0ProviderWithNavigate.propTypes = {
+  children: PropTypes.node.isRequired,
 };

@@ -1,4 +1,4 @@
-import React from "react";
+import PropTypes from "prop-types";
 import { NavLink } from "react-router-dom";
 
 export const MobileNavBarTab = ({ path, label, handleClick }) => {
@@ -14,4 +14,10 @@ export const MobileNavBarTab = ({ path, label, handleClick }) => {
       {label}
     </NavLink>
   );
+};
+
+MobileNavBarTab.propTypes = {
+  path: PropTypes.string.isRequired,
+  label: PropTypes.string.isRequired,
+  handleClick: PropTypes.func.isRequired,
 };
