@@ -1,0 +1,175 @@
+/* General */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 10px;
+  text-rendering: geometricPrecision;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  color: var(--body-text-color);
+  background-color: var(--overall-bg);
+}
+
+html,
+body {
+  min-height: 100vh;
+  height: fit-content;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--overall-bg);
+
+  font-family: var(--font-primary);
+  font-size: 1.6rem;
+
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  overflow-y: scroll;
+}
+
+label {
+  display: block;
+  color: #5b676e;
+  font-family: Roboto;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: normal;
+  letter-spacing: 0.07px;
+  margin-bottom: 6px;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 500;
+  margin: 0;
+}
+
+h1 {
+  font-size: 3rem;
+  font-weight: 500;
+}
+
+h2 {
+  font-size: 2.4rem;
+}
+
+h3 {
+  font-size: 1.8rem;
+}
+
+h4 {
+  font-size: 2rem;
+}
+
+h5 {
+  font-size: 1.6rem;
+}
+
+h6 {
+  font-size: 1.4rem;
+}
+
+p {
+  margin: 0 0 1.3rem;
+  font-weight: 300;
+}
+
+strong {
+  font-weight: 500;
+}
+
+small {
+  font-size: 1.2rem;
+}
+
+blockquote {
+  padding: 1.6rem 3.2rem;
+  margin: 0 0 3.2rem;
+
+  border-left: 8px solid #eee;
+
+  font-size: 1.6rem;
+  font-style: italic;
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+a {
+  color: var(--body-text-color);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--link-hover-color);
+  text-decoration: underline;
+}
+
+figure {
+  margin: 0;
+}
+img {
+  vertical-align: middle;
+}
+
+code,
+pre {
+  font-family: "Fira Code", source-code-pro, Menlo, Monaco, Consolas,
+    "Courier New", monospace;
+  width: 100%;
+}
+
+code {
+  color: var(--emerald);
+}
+
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+.black-text {
+  color: black;
+}
+
+@media only screen and (max-width: 640px) {
+  .mobile-scroll-lock {
+    overflow: hidden;
+  }
+}
+
+.stripe-pricing-table-container {
+  background-color: white;
+  padding-top: 82px;
+  padding-bottom: 95px;
+}
+
+.lowercase {
+  text-transform: lowercase;
+}

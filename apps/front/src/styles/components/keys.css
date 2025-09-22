@@ -1,0 +1,51 @@
+.keys-description {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.api-key-container {
+  display: flex;
+  max-width: 1100px !important;
+}
+
+.api-key-presentation {
+  max-width: 1100px !important;
+  background-color: black;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  border-radius: 4px 0 0 4px;
+  padding: 8px;
+  height: 32px;
+  flex-grow: 1;
+}
+
+.api-key {
+  color: #fff;
+  max-width: 1100px !important;
+  font-family: Menlo;
+  font-size: 14px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: normal;
+  letter-spacing: 0.07px;
+}
+
+.copy-button {
+  background-color: white;
+  color: var(--orange);
+  border: 1px var(--orange) solid;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+}
+
+.page-action {
+  width: 100%;
+}
+
+@media screen and (min-width: 500px) {
+  .page-action {
+    max-width: 500px;
+  }
+}

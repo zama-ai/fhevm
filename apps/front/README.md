@@ -1,32 +1,7 @@
-# front
+# Moesif Developer Portal
 
-Displays the user interface
+The Moesif developer portal is an open-source project to help provide a great starting place to quickly build your own developer experience. You can customize and deploy the developer portal without being worried about lock-in or lack of customization. The developer portal is focused on providing a low-friction solution allowing your customers to quickly and easily subscribe and provide authenticated, metered access to your APIs.
 
-# dev
+Please refer to the [Wiki](https://github.com/Moesif/moesif-developer-portal/wiki) for a comprehensive overview and step-by-step setup guide.
 
-## run
-
-```bash
-# run dev in watch mode
-$ pnpm start
-```
-
-## update generated graphql schemas
-
-Generates types for all the GQL queries in the codebase.
-Requires the graphql server ([apps/back](../back/README.md)) to be running in dev mode to perform [introspection](https://graphql.org/learn/introspection/)
-
-```bash
-# update generated graphql schemas
-$ pnpm generate
-
-```
-
-## storybook
-
-Displays all visual components to sync with designers
-
-```bash
-# show storybook
-$ pnpm storybook
-```
+The `my-dev-portal` folder is a React application that contains the UI and front-end logic for the developer portal. Any additions to the UI, styling or branding changes, and other user-facing changes will be done within this folder/project.

@@ -1,4 +1,0 @@
-common:
-  port: 3000
-  prettify: true
-  logLevel: silent

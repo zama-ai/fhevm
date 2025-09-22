@@ -49,11 +49,7 @@ jobs:
             - 'apps/relayer/oracle/**'
           js:
             - 'apps/back/**'
-            - 'apps/email/**'
             - 'apps/front/**'
-            - 'apps/orchestrator/**'
-            - 'apps/web3/**'
-            - 'packages/**'
             - 'package.json'
             - 'pnpm-lock.yaml'
 

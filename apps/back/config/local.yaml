@@ -1,5 +1,0 @@
-common:
-  port: 3000
-  prettify: false
-tyk:
-  endpoint: https://innovative-mosquito-portal.aws-euc1.cloud-ara.tyk.io/portal-api

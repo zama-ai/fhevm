@@ -1,0 +1,7 @@
+[
+  { "path": "/dashboard", "label": "Dashboards"},
+  { "path": "/plans", "label": "Plans"},
+  { "path": "/keys", "label": "API Keys"},
+  { "path": "/settings", "label": "Settings"},
+  { "path": "/subscription", "label": "Subscription"}
+]

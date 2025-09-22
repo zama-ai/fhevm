@@ -1,47 +1,7 @@
-# Description
+# Moesif Developer Portal
 
-The Api-gateway provide data to to the frontend, auth users, stores users & apps data.
+The Moesif developer portal is an open-source project to help provide a great starting place to quickly build your own developer experience. You can customize and deploy the developer portal without being worried about lock-in or lack of customization. The developer portal is focused on providing a low-friction solution allowing your customers to quickly and easily subscribe and provide authenticated, metered access to your APIs.
 
-## Compile and run the project
+Please refer to the [Wiki](https://github.com/Moesif/moesif-developer-portal/wiki) for a comprehensive overview and step-by-step setup guide.
 
-```bash
-# run dev in watch mode
-$ pnpm start
-
-# production mode
-$ pnpm start:prod
-```
-
-## Manage the database
-
-```bash
-# apply prisma migrations
-$ pnpx prisma migrate dev
-
-# edit the database in prisma studio
-$ pnpx prisma studio
-```
-
-## Run tests
-
-```bash
-# unit tests
-$ pnpm test
-
-# e2e tests
-# in the repo root directory
-$ docker compose -f docker-compose.test.yaml up
-$ pnpm --filter back test:e2e
-
-# test coverage
-$ pnpm test:cov
-```
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- [Prisma Documentation](https://www.prisma.io/docs/orm) to learn more about the orm.
-- [Apollo Graphql Server Documentation](https://www.apollographql.com/docs/apollo-server/schema/schema)
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
+The `my-dev-portal-api` project is where the APIs and various other logic are contained. In this project, you’ll have connectivity to Moesif, payment providers, and gateways through various APIs.

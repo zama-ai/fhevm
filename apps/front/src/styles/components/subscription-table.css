@@ -1,0 +1,27 @@
+.sub-table {
+  background-color: rgb(50, 50, 50);
+  padding-right: 5em;
+  padding-left: 5em;
+  padding-top: 1em;
+  padding-bottom: 3em;
+  margin-bottom: 1em;
+}
+
+.sub-table > table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+.sub-table > th, td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+}
+.sub-table > th {
+  background-color: #f2f2f2;
+  font-weight: bold;
+}
+
+.sub-table > tr:nth-child(even) {
+  background-color: #f9f9f9;
+}

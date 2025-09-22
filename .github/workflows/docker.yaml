@@ -56,27 +56,6 @@ jobs:
               - 'pnpm-lock.yaml'
               - 'docker/back/**'
               - '.github/workflows/docker.yaml' 
-            email:
-              - 'apps/email/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'docker/email/**'
-              - '.github/workflows/docker.yaml'
-            orchestrator:
-              - 'apps/orchestrator/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'docker/orchestrator/**'
-              - '.github/workflows/docker.yaml'
-            web3:
-              - 'apps/web3/**'
-              - 'packages/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'docker/web3/**'
-              - '.github/workflows/docker.yaml'
             front:
               - 'apps/front/**'
               - 'packages/**'
@@ -122,24 +101,36 @@ jobs:
           STEPS_RELEASE_OUTPUTS_TO_RUN: ${{ steps.release.outputs.to_run }}
           STEPS_OTHER_OUTPUTS_TO_RUN: ${{ steps.other.outputs.to_run }}
         run: |
+          TO_RUN=""
           if [ "$EVENT_NAME" == "pull_request" ]; then
-            echo "to_run=${STEPS_PR_OUTPUTS_TO_RUN}" >> "$GITHUB_OUTPUT"
+            TO_RUN="${STEPS_PR_OUTPUTS_TO_RUN}"
           elif [ "$EVENT_NAME" == "release" ]; then
-            echo "to_run=${STEPS_RELEASE_OUTPUTS_TO_RUN}" >> "$GITHUB_OUTPUT"
+            TO_RUN="${STEPS_RELEASE_OUTPUTS_TO_RUN}"
           else
-            echo "to_run=${STEPS_OTHER_OUTPUTS_TO_RUN}" >> "$GITHUB_OUTPUT"
+            TO_RUN="${STEPS_OTHER_OUTPUTS_TO_RUN}"
           fi
+          
+          # Ensure TO_RUN is not empty, null, or just "[]"
+          if [ -z "$TO_RUN" ] || [ "$TO_RUN" == "null" ] || [ "$TO_RUN" == "[]" ]; then
+            echo "No services detected for changes, using empty array"
+            TO_RUN="[]"
+          fi
+          
+          echo "Final to_run value: $TO_RUN"
+          echo "to_run=${TO_RUN}" >> "$GITHUB_OUTPUT"
 
   # Build and push Docker images for services with changes
   build-docker:
     name: docker-build-and-push/build-docker (bpr)
     needs: [detect-changes]
     if: |
-      (github.event_name == 'release') ||
-      (github.event_name == 'workflow_dispatch') ||
-      (github.event_name == 'pull_request' && needs.detect-changes.outputs.to_run != '[]') ||
-      (github.event_name == 'push' && needs.detect-changes.outputs.to_run != '[]') ||
-      (github.event.action == 'labeled' && github.event.label.name == 'docker')
+      needs.detect-changes.outputs.to_run != '[]' && (
+        (github.event_name == 'release') ||
+        (github.event_name == 'workflow_dispatch') ||
+        (github.event_name == 'pull_request') ||
+        (github.event_name == 'push') ||
+        (github.event.action == 'labeled' && github.event.label.name == 'docker')
+      )
     strategy:
       matrix:
         # Use include to define matrix based on the objects in the configs output
@@ -158,9 +149,6 @@ jobs:
           map: |
             {
               "back":           { "context": ".", "file": "docker/back/Dockerfile", "target": "runtime"},
-              "email":          { "context": ".", "file": "docker/email/Dockerfile", "target": "runtime"},
-              "orchestrator":   { "context": ".", "file": "docker/orchestrator/Dockerfile", "target": "runtime"},
-              "web3":           { "context": ".", "file": "docker/web3/Dockerfile", "target": "runtime"},
               "front":          { "context": ".", "file": "docker/front/Dockerfile", "target": "runtime"},
               "relayer":        { "context": ".", "file": "docker/relayer/Dockerfile", "target": "runtime"},
               "decryption-oracle-contracts": {"context": ".", "file": "docker/oracle/Dockerfile", "target": "prod"}
@@ -183,12 +171,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install
-
-      - name: Build packages
-        run: |
-          pnpm --filter messages build
-          pnpm --filter utils build
+        run: pnpm install --frozen-lockfile
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0

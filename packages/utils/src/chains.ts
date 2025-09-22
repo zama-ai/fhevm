@@ -1,2 +1,0 @@
-export const LOCAL_FHEVM_CHAIN_ID = '123456'
-export const SEPOLIA_CHAIN_ID = '11155111'

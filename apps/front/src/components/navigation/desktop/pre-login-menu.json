@@ -1,0 +1,4 @@
+[
+  { "path": "/plans", "label": "Plans"},
+  { "path": "/setup", "label": "Setup"}
+]

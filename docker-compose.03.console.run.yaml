@@ -1,17 +1,9 @@
 # Run commands for the console services
 name: console
 services:
-
   back:
     image: local/console/back:${DOCKER_TAG:-latest}
     container_name: console-back
-    depends_on:
-      local_redis:
-        condition: service_healthy
-      local_aws:
-        condition: service_healthy
-      back-migrate:
-        condition: service_completed_successfully
     environment:
       - RUN_MODE=prod
     # We need to add fhevm settings
@@ -21,32 +13,15 @@ services:
         source: ${PWD}/apps/back/config/compose.yaml
     env_file:
       - ./apps/back/.env.compose
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3005/healthcheck"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
+    # healthcheck:
+    #   test: ["CMD", "wget", "-qO-", "http://localhost:3005/healthcheck"]
+    #   interval: 30s
+    #   timeout: 5s
+    #   retries: 3
     ports:
       - "3005:3005"
     networks:
       - console-net
-
-  email:
-    image: local/console/email:${DOCKER_TAG:-latest}
-    container_name: console-email
-    env_file:
-      - ./apps/email/.env.compose
-    # This returns 404 error because it's not implemented yet
-    # healthcheck:
-    #   test: ["CMD", "wget", "-qO-", "http://localhost:8002"]
-    #   interval: 30s
-    #   timeout: 5s
-    #   retries: 3
-    networks:
-      - console-net
-    depends_on:
-      local_aws:
-        condition: service_healthy
 
   front:
     image: local/console/front:${DOCKER_TAG:-latest}
@@ -59,7 +34,7 @@ services:
     #   timeout: 5s
     #   retries: 3
     ports:
-      - "8001:8080" 
+      - "8001:8080"
     networks:
       - console-net
     volumes:
@@ -69,54 +44,6 @@ services:
     depends_on:
       back:
         condition: service_started
-
-  orchestrator:
-    image: local/console/orchestrator:${DOCKER_TAG:-latest}
-    container_name: console-orchestrator
-    depends_on:
-      local_aws:
-        condition: service_healthy
-      orchestrator-migrate:
-        condition: service_completed_successfully
-    env_file:
-      - ./apps/orchestrator/.env.compose
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-debug}
-    volumes:
-      - type: bind
-        target: /prod-wrkspc/config
-        source: ${PWD}/apps/orchestrator/config
-    # This returns 404 error because it's not implemented yet
-    # healthcheck:
-    #   test: ["CMD", "wget", "-qO-", "http://localhost:3001"]
-    #   interval: 30s
-    #   timeout: 5s
-    #   retries: 3
-    networks:
-      - console-net
-
-  web3:
-    image: local/console/web3:${DOCKER_TAG:-latest}
-    container_name: console-web3
-    depends_on:
-      local_aws:
-        condition: service_healthy
-      web3-migrate:
-        condition: service_completed_successfully
-    env_file:
-      - ./apps/web3/.env.compose
-    volumes:
-      - type: bind
-        target: /prod-wrkspc/config
-        source: ${PWD}/apps/web3/config
-    # This returns 404 error because it's not implemented yet
-    # healthcheck:
-    #   test: ["CMD", "wget", "-qO-", "http://localhost:3002"]
-    #   interval: 30s
-    #   timeout: 5s
-    #   retries: 3
-    networks:
-      - console-net
 
   relayer:
     image: local/console/relayer:latest
@@ -131,9 +58,9 @@ services:
       dockerfile: ../../apps/relayer/fhevm-relayer/Dockerfile
     entrypoint: ["/bin/sh", "-c"]
     command:
-    - |
-      cat /config.yaml &&
-      /bin/server --config-file /config.yaml
+      - |
+        cat /config.yaml &&
+        /bin/server --config-file /config.yaml
     networks:
       - fhevm_default
       - console-net
@@ -144,11 +71,6 @@ services:
     ports:
       - "3001:3000"
       - "9898:9898"
-    depends_on:
-      # NOTE: we can't provide a dependency on the fhevm stack components
-      # since they are launched independently but the blockchain nodes are required
-      local_aws:
-        condition: service_healthy
 
 # It uses an already created docker-network
 networks:

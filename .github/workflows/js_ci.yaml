@@ -9,7 +9,7 @@ on:
     inputs:
       node-version:
         required: false
-        default: 22
+        default: "22.x"
         type: string
 
 jobs:
@@ -48,12 +48,6 @@ jobs:
           node-version: ${{ inputs.node-version }}
           cache: "pnpm"
       - name: Install dependencies
-        run: pnpm install
-      - name: Build packages
-        run: |
-          pnpm --filter messages build
-          pnpm --filter utils build
-      - name: Generate Prisma code
-        run: pnpm prisma:generate
+        run: pnpm install --frozen-lockfile
       - name: Test
         run: pnpm test

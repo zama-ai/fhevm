@@ -6,29 +6,11 @@ services:
       context: .
       dockerfile: ./docker/back/Dockerfile
 
-  email:
-    image: local/console/email:${DOCKER_TAG:-latest}
-    build:
-      context: .
-      dockerfile: ./docker/email/Dockerfile
-
   front:
     image: local/console/front:${DOCKER_TAG:-latest}
     build:
       context: .
       dockerfile: ./docker/front/Dockerfile
-
-  orchestrator:
-    image: local/console/orchestrator:${DOCKER_TAG:-latest}
-    build:
-      context: .
-      dockerfile: ./docker/orchestrator/Dockerfile
-
-  web3:
-    image: local/console/web3:${DOCKER_TAG:-latest}
-    build:
-      context: .
-      dockerfile: ./docker/web3/Dockerfile
 
   relayer:
     image: local/console/relayer:${DOCKER_TAG:-latest}
