@@ -15,19 +15,17 @@ Existing solutions like commit-reveal schemes attempt to hide bids during a prel
 
 Fully Homomorphic Encryption (FHE) to enable participants to submit encrypted bids directly to a smart contract in a single step, eliminating multi-phase complexity, improving user experience, and preserving bid secrecy without ever revealing or decrypting them.
 
-# Project setup
+# Project Setup
 
-First, you need to install a new project by cloning the Zama Hardhat template repository:
+Before starting this tutorial, ensure you have:
 
-```bash
-git clone https://github.com/zama-ai/fhevm-hardhat-template
-```
+1. Installed the FHEVM hardhat template
+2. Set up the OpenZeppelin Confidential Contracts library 
+3. Deployed your confidential token
 
-Then install the dependencies:
-
-```bash
-npm install
-```
+For help with these steps, refer to these tutorials:
+- [Setting up OpenZeppelin Confidential Contracts](./openzeppelin/README.md)
+- [Deploying a Confidential Token](./openzeppelin/erc7984-tutorial.md)
 
 # Create the smart contracts
 
