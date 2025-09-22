@@ -73,7 +73,7 @@ jobs:
     name: golden-container-images-docker-build-rust/build
     needs: [check-changes, determine-tag]
     if: ${{ needs.check-changes.outputs.changes-golden-rust == 'true' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@e666182756172bc747d2be6e4eb9b4ed80a00a0e
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3d8b1adcb5504fef30223016d459e3e38b36f9d1
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}

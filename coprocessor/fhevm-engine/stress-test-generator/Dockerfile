@@ -30,7 +30,8 @@ COPY --from=contract_builder /app/host-contracts/artifacts/contracts /app/host-c
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build stress_generator binary
-RUN cargo fetch && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo fetch && \
     SQLX_OFFLINE=true cargo build --release -p stress-test-generator
 
 # Stage 2: Runtime image

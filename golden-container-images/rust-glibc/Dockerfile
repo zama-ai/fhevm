@@ -41,10 +41,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
     chmod -R a+w /usr/local/cargo && \
     chmod -R a+w /usr/local/rustup
 
-RUN cargo install sccache --version ^0.7
-
 # Set environment variables for building
-ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 ENV CC=gcc
 ENV CXX=g++
 ENV RUSTFLAGS="-C target-feature=-crt-static"
@@ -82,7 +79,6 @@ COPY --from=builder /usr/local/rustup /usr/local/rustup
 ENV RUSTUP_HOME=/usr/local/rustup
 ENV CARGO_HOME=/usr/local/cargo
 ENV PATH="/usr/local/cargo/bin:${PATH}"
-ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
 ENV RUSTFLAGS="-C target-feature=-crt-static"
 
 USER fhevm:fhevm
