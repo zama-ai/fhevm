@@ -25,7 +25,6 @@ RUN apk add --no-cache \
     openssl-dev \
     protoc \
     protobuf \
-    openssh \
     postgresql-client \
     vim && \
     rm -rf /var/cache/apk/*
