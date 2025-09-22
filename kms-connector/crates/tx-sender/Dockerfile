@@ -21,13 +21,6 @@ COPY .git ./.git
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY kms-connector ./kms-connector
 
-# Install build dependencies
-RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
-    --mount=type=cache,target=/var/lib/apk,sharing=locked \
-    apk add --no-cache \
-    gcc \
-    protoc
-
 # Build with improved caching
 WORKDIR /app/kms-connector
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
