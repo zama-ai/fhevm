@@ -9,7 +9,7 @@ use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use prometheus::{register_int_counter, IntCounter};
 use scheduler::dfg::types::{DFGTxInput, SchedulerError};
-use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput, types::DFGTxResult, DFGraph};
+use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
 use scheduler::dfg::{DFGOp, DFTxGraph, TxNode};
 use sqlx::Postgres;
 use sqlx::{postgres::PgListener, query, Acquire};
@@ -147,197 +147,18 @@ async fn tfhe_worker_cycle(
                 &loop_ctx,
             )
             .await?;
-            // Get computation results
-            let graph_results = tx_graph.get_results();
-
-            // Traverse computations that have been scheduled and
-            // upload their results/errors
-            let mut handles_to_update = vec![];
-            let intermediate_handles_to_update = tx_graph.get_intermediate_handles();
-            let mut cts_to_insert = vec![];
-            for result in graph_results.into_iter() {
-                match result.compressed_ct {
-                    Ok((db_type, db_bytes)) => {
-                        cts_to_insert.push((
-                            *tenant_id,
-                            (
-                                result.handle.clone(),
-                                (db_bytes, (current_ciphertext_version(), db_type)),
-                            ),
-                        ));
-                        handles_to_update
-                            .push((result.handle.clone(), result.transaction_id.clone()));
-                        WORK_ITEMS_PROCESSED_COUNTER.inc();
-                    }
-                    Err(mut err) => {
-                        let cerr: Box<dyn std::error::Error + Send + Sync> =
-                            if err.downcast_ref::<FhevmError>().is_some() {
-                                let mut swap_val = FhevmError::BadInputs;
-                                std::mem::swap(
-                                    &mut *err.downcast_mut::<FhevmError>().unwrap(),
-                                    &mut swap_val,
-                                );
-                                CoprocessorError::FhevmError(swap_val).into()
-                            } else {
-                                CoprocessorError::SchedulerError(
-                                    *err.downcast_ref::<SchedulerError>()
-                                        .unwrap_or(&SchedulerError::SchedulerError),
-                                )
-                                .into()
-                            };
-                        // Downgrade SchedulerError to warning as the
-                        // error is not about the operations themselves.
-                        // Do not set the error flag in the DB.
-                        if let Some(err) = cerr.downcast_ref::<CoprocessorError>() {
-                            if matches!(err, CoprocessorError::SchedulerError(_)) {
-                                warn!(target: "tfhe_worker",
-                                                  { tenant_id = tenant_id, error = cerr,
-                                output_handle = format!("0x{}", hex::encode(&result.handle)) },
-                                                "scheduler encountered an error while processing work item"
-                                            );
-                                continue;
-                            }
-                        }
-                        WORKER_ERRORS_COUNTER.inc();
-                        error!(target: "tfhe_worker",
-                                      { tenant_id = tenant_id, error = cerr,
-                        output_handle = format!("0x{}", hex::encode(&result.handle)) },
-                                   "error while processing work item"
-                               );
-                        let mut s =
-                            tracer.start_with_context("set_computation_error_in_db", &loop_ctx);
-                        s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
-                        s.set_attribute(KeyValue::new(
-                            "handle",
-                            format!("0x{}", hex::encode(&result.handle)),
-                        ));
-                        let err_string = err.to_string();
-                        s.set_status(opentelemetry::trace::Status::Error {
-                            description: err_string.clone().into(),
-                        });
-
-                        let _ = query!(
-                            "
-                                UPDATE computations
-                                SET is_error = true, error_message = $1
-                                WHERE tenant_id = $2
-                                AND output_handle = $3
-                                AND transaction_id = $4
-                            ",
-                            err_string,
-                            *tenant_id,
-                            result.handle,
-                            result.transaction_id
-                        )
-                        .execute(trx.as_mut())
-                        .await?;
-                        s.end();
-                    }
-                }
-            }
-            let mut s = tracer.start_with_context("insert_ct_into_db", &loop_ctx);
-            s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
-            s.set_attributes(cts_to_insert.iter().map(|(_, (h, (_, (_, _))))| {
-                KeyValue::new("handle", format!("0x{}", hex::encode(h)))
-            }));
-            s.set_attributes(cts_to_insert.iter().map(|(_, (_, (_, (_, db_type))))| {
-                KeyValue::new("ciphertext_type", *db_type as i64)
-            }));
-            #[allow(clippy::type_complexity)]
-            let (tenant_ids, (handles, (ciphertexts, (ciphertext_versions, ciphertext_types)))): (
-                Vec<_>,
-                (Vec<_>, (Vec<_>, (Vec<_>, Vec<_>))),
-            ) = cts_to_insert.into_iter().unzip();
-            let _ = query!(
-			"
-                    INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
-                    SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::BYTEA[], $4::SMALLINT[], $5::SMALLINT[])
-                    ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
-                    ",
-		&tenant_ids, &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types)
-			.execute(trx.as_mut())
-			.await.map_err(|err| {
-                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while inserting new ciphertexts");
-                    err
-                })?;
-            // Notify all workers that new ciphertext is inserted
-            // For now, it's only the SnS workers that are listening for these events
-            let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
-                .execute(trx.as_mut())
-                .await?;
-            s.end();
-
-            let mut s = tracer.start_with_context("update_computation", &loop_ctx);
-            s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
-            s.set_attributes(
-                handles_to_update
-                    .iter()
-                    .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
-            );
-
-            let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) =
-                handles_to_update.iter().cloned().unzip();
-
-            let _ = query!(
-                "
-                UPDATE computations
-                SET is_completed = true, completed_at = CURRENT_TIMESTAMP
-                WHERE tenant_id = $1
-                AND (output_handle, transaction_id) IN (
-                    SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
-                )
-                ",
-                *tenant_id,
-                &handles_vec,
-                &txn_ids_vec
+            upload_transaction_graph_results(
+                tenant_id,
+                &mut tx_graph,
+                &mut trx,
+                &tracer,
+                &loop_ctx,
             )
-            .execute(trx.as_mut())
-            .await.map_err(|err| {
-                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while updating computations as completed");
-                    err
-                })?;
-
-            s.end();
-            let mut s = tracer.start_with_context("update_intermediate_computation", &loop_ctx);
-            s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
-            s.set_attributes(
-                intermediate_handles_to_update
-                    .iter()
-                    .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
-            );
-
-            let _ = query!(
-                "
-                UPDATE computations
-                SET is_completed = true, completed_at = CURRENT_TIMESTAMP
-                WHERE tenant_id = $1
-                AND (output_handle, transaction_id) IN (
-                    SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
-                )
-            ",
-                *tenant_id,
-                &intermediate_handles_to_update
-                    .iter()
-                    .map(|(handle, _)| handle.clone())
-                    .collect::<Vec<_>>(),
-                &intermediate_handles_to_update
-                    .iter()
-                    .map(|(_, txn_id)| txn_id.clone())
-                    .collect::<Vec<_>>()
-            )
-            .execute(trx.as_mut())
-            .await.map_err(|err| {
-                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while updating intermediate computations as completed");
-                    err
-                })?;
-            s.end();
+            .await?;
         }
         s.end();
-
         trx.commit().await?;
-
         let _guard = loop_ctx.attach();
-
         #[cfg(feature = "bench")]
         {
             let prev_cycle_time = TIMING.load(std::sync::atomic::Ordering::SeqCst);
@@ -641,4 +462,165 @@ async fn build_transaction_graph_and_execute<'a>(
     }
     s_compute.end();
     Ok(tx_graph)
+}
+
+async fn upload_transaction_graph_results<'a>(
+    tenant_id: &i32,
+    tx_graph: &mut DFTxGraph,
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+    tracer: &opentelemetry::global::BoxedTracer,
+    loop_ctx: &opentelemetry::Context,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Get computation results
+    let graph_results = tx_graph.get_results();
+
+    // Traverse computations that have been scheduled and
+    // upload their results/errors
+    let mut handles_to_update = tx_graph.get_intermediate_handles();
+    let mut cts_to_insert = vec![];
+    for result in graph_results.into_iter() {
+        match result.compressed_ct {
+            Ok((db_type, db_bytes)) => {
+                cts_to_insert.push((
+                    *tenant_id,
+                    (
+                        result.handle.clone(),
+                        (db_bytes, (current_ciphertext_version(), db_type)),
+                    ),
+                ));
+                handles_to_update.push((result.handle.clone(), result.transaction_id.clone()));
+                WORK_ITEMS_PROCESSED_COUNTER.inc();
+            }
+            Err(mut err) => {
+                let cerr: Box<dyn std::error::Error + Send + Sync> =
+                    if err.downcast_ref::<FhevmError>().is_some() {
+                        let mut swap_val = FhevmError::BadInputs;
+                        std::mem::swap(
+                            &mut *err.downcast_mut::<FhevmError>().unwrap(),
+                            &mut swap_val,
+                        );
+                        CoprocessorError::FhevmError(swap_val).into()
+                    } else {
+                        CoprocessorError::SchedulerError(
+                            *err.downcast_ref::<SchedulerError>()
+                                .unwrap_or(&SchedulerError::SchedulerError),
+                        )
+                        .into()
+                    };
+                // Downgrade SchedulerError to warning as the
+                // error is not about the operations themselves.
+                // Do not set the error flag in the DB.
+                if let Some(err) = cerr.downcast_ref::<CoprocessorError>() {
+                    if matches!(err, CoprocessorError::SchedulerError(_)) {
+                        warn!(target: "tfhe_worker",
+                                          { tenant_id = tenant_id, error = cerr,
+                        output_handle = format!("0x{}", hex::encode(&result.handle)) },
+                                        "scheduler encountered an error while processing work item"
+                                    );
+                        continue;
+                    }
+                }
+                WORKER_ERRORS_COUNTER.inc();
+                error!(target: "tfhe_worker",
+                              { tenant_id = tenant_id, error = cerr,
+                output_handle = format!("0x{}", hex::encode(&result.handle)) },
+                           "error while processing work item"
+                       );
+                let mut s = tracer.start_with_context("set_computation_error_in_db", loop_ctx);
+                s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+                s.set_attribute(KeyValue::new(
+                    "handle",
+                    format!("0x{}", hex::encode(&result.handle)),
+                ));
+                let err_string = err.to_string();
+                s.set_status(opentelemetry::trace::Status::Error {
+                    description: err_string.clone().into(),
+                });
+
+                let _ = query!(
+                    "
+                                UPDATE computations
+                                SET is_error = true, error_message = $1
+                                WHERE tenant_id = $2
+                                AND output_handle = $3
+                                AND transaction_id = $4
+                            ",
+                    err_string,
+                    *tenant_id,
+                    result.handle,
+                    result.transaction_id
+                )
+                .execute(trx.as_mut())
+                .await?;
+                s.end();
+            }
+        }
+    }
+    let mut s = tracer.start_with_context("insert_ct_into_db", loop_ctx);
+    s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+    s.set_attributes(
+        cts_to_insert
+            .iter()
+            .map(|(_, (h, (_, (_, _))))| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+    );
+    s.set_attributes(
+        cts_to_insert
+            .iter()
+            .map(|(_, (_, (_, (_, db_type))))| KeyValue::new("ciphertext_type", *db_type as i64)),
+    );
+    #[allow(clippy::type_complexity)]
+    let (tenant_ids, (handles, (ciphertexts, (ciphertext_versions, ciphertext_types)))): (
+        Vec<_>,
+        (Vec<_>, (Vec<_>, (Vec<_>, Vec<_>))),
+    ) = cts_to_insert.into_iter().unzip();
+    let _ = query!(
+			"
+                    INSERT INTO ciphertexts(tenant_id, handle, ciphertext, ciphertext_version, ciphertext_type)
+                    SELECT * FROM UNNEST($1::INTEGER[], $2::BYTEA[], $3::BYTEA[], $4::SMALLINT[], $5::SMALLINT[])
+                    ON CONFLICT (tenant_id, handle, ciphertext_version) DO NOTHING
+                    ",
+		&tenant_ids, &handles, &ciphertexts, &ciphertext_versions, &ciphertext_types)
+			.execute(trx.as_mut())
+			.await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while inserting new ciphertexts");
+                    err
+                })?;
+    // Notify all workers that new ciphertext is inserted
+    // For now, it's only the SnS workers that are listening for these events
+    let _ = sqlx::query!("SELECT pg_notify($1, '')", EVENT_CIPHERTEXT_COMPUTED)
+        .execute(trx.as_mut())
+        .await?;
+    s.end();
+
+    let mut s = tracer.start_with_context("update_computation", loop_ctx);
+    s.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+    s.set_attributes(
+        handles_to_update
+            .iter()
+            .map(|(h, _)| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+    );
+
+    let (handles_vec, txn_ids_vec): (Vec<_>, Vec<_>) = handles_to_update.into_iter().unzip();
+
+    let _ = query!(
+                "
+                UPDATE computations
+                SET is_completed = true, completed_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = $1
+                AND (output_handle, transaction_id) IN (
+                    SELECT * FROM unnest($2::BYTEA[], $3::BYTEA[])
+                )
+                ",
+                *tenant_id,
+                &handles_vec,
+                &txn_ids_vec
+            )
+            .execute(trx.as_mut())
+            .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = *tenant_id, error = %err }, "error while updating computations as completed");
+                    err
+                })?;
+
+    s.end();
+    Ok(())
 }
