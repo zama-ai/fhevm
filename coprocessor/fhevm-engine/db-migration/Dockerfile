@@ -6,7 +6,8 @@ USER root
 WORKDIR /app
 
 # Install sqlx-cli
-RUN cargo install sqlx-cli --version 0.7.2 \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo install sqlx-cli --version 0.7.2 \
     --no-default-features --features postgres --locked
 
 # Copy migrations and initialization script

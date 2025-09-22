@@ -25,9 +25,9 @@ jobs:
   check-changes:
     name: golden-container-images-docker-build-rust/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-golden-rust: ${{ steps.filter.outputs.golden-rust }}
@@ -46,9 +46,9 @@ jobs:
   determine-tag:
     name: golden-container-images-docker-build-rust/determine-tag
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.set-tag.outputs.tag }}
@@ -73,7 +73,7 @@ jobs:
     name: golden-container-images-docker-build-rust/build
     needs: [check-changes, determine-tag]
     if: ${{ needs.check-changes.outputs.changes-golden-rust == 'true' }}
-    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@e666182756172bc747d2be6e4eb9b4ed80a00a0e
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3d8b1adcb5504fef30223016d459e3e38b36f9d1
     secrets:
       AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
       AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
@@ -81,12 +81,12 @@ jobs:
       CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
       CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
-      attestations: 'write'
-      packages: 'write'
-      id-token: 'write'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
     with:
       use-cgr-secrets: true
       working-directory: "."

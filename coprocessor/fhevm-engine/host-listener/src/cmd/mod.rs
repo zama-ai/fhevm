@@ -2,11 +2,12 @@ use alloy::eips::BlockId;
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::pubsub::SubscriptionStream;
-use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Log};
+use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
 use alloy::sol_types::SolEventInterface;
 use anyhow::{anyhow, Result};
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
+
 use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -25,7 +26,7 @@ use fhevm_engine_common::types::BlockchainProvider;
 use fhevm_engine_common::utils::HeartBeat;
 
 use crate::contracts::{AclContract, TfheContract};
-use crate::database::tfhe_event_propagate::{ChainId, Database};
+use crate::database::tfhe_event_propagate::{ChainId, Database, LogTfhe};
 use crate::health_check::HealthCheck;
 
 pub mod block_history;
@@ -81,13 +82,6 @@ pub struct Args {
 
     #[arg(
         long,
-        default_value = "false",
-        help = "Disable block immediate recheck"
-    )]
-    pub no_block_immediate_recheck: bool,
-
-    #[arg(
-        long,
         default_value_t = DEFAULT_BLOCK_TIME,
         help = "Initial block time, refined on each block"
     )]
@@ -122,30 +116,33 @@ struct InfiniteLogIter {
     url: String,
     block_time: u64, /* A default value that is refined with real-time
                       * events data */
-    no_block_immediate_recheck: bool,
     contract_addresses: Vec<Address>,
     catchup_blocks: Option<(u64, Option<u64>)>, // to do catchup blocks by chunks
     // Option<(from_block, optional to_block)>
-    catchup_logs: VecDeque<Log>,
-    stream: Option<SubscriptionStream<Log>>,
+    next_blocklogs: VecDeque<BlockLogs<Log>>, // logs already fetched but not yet processed
+    stream: Option<SubscriptionStream<Header>>,
     pub provider: Arc<RwLock<Option<BlockchainProvider>>>, // required to maintain the stream
     last_valid_block: Option<u64>,
     start_at_block: Option<i64>,
     end_at_block: Option<u64>,
     catchup_margin: u64,
     catchup_paging: u64,
-    prev_event: Option<Log>,
-    current_event: Option<Log>,
-    last_block_event_count: u64,
     pub tick_timeout: HeartBeat,
     pub tick_block: HeartBeat,
     reorg_maximum_duration_in_blocks: u64, // in blocks
     block_history: BlockHistory,           // to detect reorgs
 }
-#[allow(clippy::large_enum_variant)]
-enum LogOrBlockTimeout {
-    Log(Option<Log>),
-    BlockTimeout,
+
+struct BlockLogs<T> {
+    logs: Vec<T>,
+    summary: BlockSummary,
+    catchup: bool,
+}
+
+enum BlockOrTimeoutOrNone {
+    Block(BlockLogs<Log>),
+    Timeout,
+    None,
 }
 
 impl InfiniteLogIter {
@@ -162,10 +159,9 @@ impl InfiniteLogIter {
         Self {
             url: args.url.clone(),
             block_time: args.initial_block_time,
-            no_block_immediate_recheck: args.no_block_immediate_recheck,
             contract_addresses,
             catchup_blocks: None,
-            catchup_logs: VecDeque::new(),
+            next_blocklogs: VecDeque::new(),
             stream: None,
             provider: Arc::new(RwLock::new(None)),
             last_valid_block: None,
@@ -173,9 +169,6 @@ impl InfiniteLogIter {
             end_at_block: args.end_at_block,
             catchup_paging: args.catchup_paging,
             catchup_margin: args.catchup_margin,
-            prev_event: None,
-            current_event: None,
-            last_block_event_count: 0,
             tick_timeout: HeartBeat::default(),
             tick_block: HeartBeat::default(),
             reorg_maximum_duration_in_blocks: args
@@ -219,8 +212,102 @@ impl InfiniteLogIter {
         BlockNumberOrTag::Number(last_block - catch_size.min(last_block))
     }
 
+    async fn deduce_block_summary(
+        &self,
+        number: u64,
+        log: &Log,
+        previous_block: Option<&BlockLogs<Log>>,
+    ) -> BlockSummary {
+        // find in memory
+        if let Some(summary) = self.block_history.find_block_by_number(number) {
+            return *summary;
+        };
+        // ask to chain
+        if let Ok(block_header) = self.get_block_by_number(number).await {
+            return block_header.into();
+        };
+        error!(log = ?log, number, "Cannot get block header from chain, using log data and previous block data");
+        let hash = log.block_hash.unwrap_or(BlockHash::ZERO);
+        // fake hash may cause this block to be refetched later because it's considered missing
+        let estimated_timestamp =
+            previous_block.map(|b| b.summary.timestamp).unwrap_or(0)
+                + self.block_time;
+        let timestamp = log.block_timestamp.unwrap_or(estimated_timestamp);
+        // inaccurate timestamp is ok
+        let parent_hash = previous_block
+            .map(|bl| bl.summary.hash)
+            .unwrap_or(BlockHash::ZERO);
+        // inaccurate parent hash is ok
+        BlockSummary {
+            number,
+            hash,
+            parent_hash,
+            timestamp,
+        }
+    }
+
+    async fn split_by_block(
+        &mut self,
+        mut logs: Vec<Log>,
+    ) -> Vec<BlockLogs<Log>> {
+        if logs.is_empty() {
+            return vec![];
+        }
+        let mut is_sorted = true;
+        let mut last_of_block = vec![false; logs.len()];
+        let mut prev_block_number = 0;
+        let last_index = logs.len() - 1;
+        // Sort if needed and ensure log.block_number is not None
+        for log in &mut logs[0..last_index] {
+            let log_block_number =
+                log.block_number.unwrap_or(prev_block_number);
+            if log.block_number.is_none() {
+                error!(log = ?log, assumed_block_number = prev_block_number, "Log without block number, assuming same block");
+                log.block_number = Some(prev_block_number);
+            };
+            is_sorted = is_sorted && prev_block_number <= log_block_number;
+            prev_block_number = log_block_number;
+        }
+        if !is_sorted {
+            error!("Logs are not ordered by block number in catch-up");
+            logs.sort_by_key(|log| log.block_number.unwrap());
+        };
+        // Find blocks limits and check block number ordering
+        for (index, log) in logs[0..last_index].iter().enumerate() {
+            last_of_block[index] =
+                logs[index + 1].block_number != log.block_number
+        }
+        last_of_block[last_index] = true;
+        // Regroup log by block in increasing block number order
+        let mut blocks_logs = vec![];
+        let mut current_logs: Vec<Log> = vec![];
+        for (index, log) in logs.into_iter().enumerate() {
+            if !last_of_block[index] {
+                current_logs.push(log);
+                continue;
+            }
+            let summary = self
+                .deduce_block_summary(
+                    log.block_number.unwrap(),
+                    &log,
+                    blocks_logs.last(),
+                )
+                .await;
+            current_logs.push(log);
+            let block_logs = BlockLogs {
+                logs: std::mem::take(&mut current_logs),
+                summary,
+                catchup: true,
+            };
+            blocks_logs.push(block_logs);
+        }
+        assert!(current_logs.is_empty());
+        blocks_logs
+    }
+
     async fn consume_catchup_blocks(&mut self) {
         let Some((_, to_block)) = self.catchup_blocks else {
+            // nothing to consume
             return;
         };
         let mut paging_size = self.catchup_paging;
@@ -269,18 +356,18 @@ impl InfiniteLogIter {
                 }
             };
         };
-
         info!(
             nb_events = logs.len(),
             from_block = from_block,
-            to_block = paging_to_block,
+            page_to_block = paging_to_block,
+            to_block = to_block,
             "Catchup get_logs step done"
         );
+        let by_blocks = self.split_by_block(logs).await;
+        self.next_blocklogs.extend(by_blocks);
+        self.catchup_blocks = Some((paging_to_block + 1, to_block)); // default
 
-        let nb_logs = logs.len();
-        self.catchup_logs.extend(logs);
-        self.catchup_blocks = Some((paging_to_block + 1, to_block)); //default
-
+        let nb_logs = self.next_blocklogs.len();
         if Some(paging_to_block) == to_block {
             self.catchup_blocks = None;
         } else if let Some(to_block) = to_block {
@@ -307,46 +394,15 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn recheck_tip_block(&mut self) {
-        let block = self.block_history.tip();
-        if self.no_block_immediate_recheck {
-            return;
-        }
-        let Some(block) = block else {
-            return;
-        };
-        let logs = match self.get_logs_at_hash(block.hash).await {
-            Ok(logs) => logs,
-            Err(err) => {
-                error!(
-                    error = ?err,
-                    block = ?block.number,
-                    block_hash = ?block.hash,
-                    "Error, Replaying Block"
-                );
-                return;
-            }
-        };
-        let last_block_event_count = self.last_block_event_count;
-        info!(
-            block = ?block.number,
-            block_hash = ?block.hash,
-            events_count = logs.len(),
-            last_block_event_count = last_block_event_count,
-            "Replaying Block"
-        );
-        if logs.is_empty() {
-            return;
-        }
-        self.last_block_event_count = 0;
-        self.catchup_logs.extend(logs);
-        if let Some(event) = self.current_event.take() {
-            self.catchup_logs.push_back(event);
-        }
+    async fn get_block_by_number(&self, number: u64) -> Result<Block> {
+        self.get_block_by_id(BlockId::number(number)).await
     }
 
     async fn get_current_block(&self) -> Result<Block> {
-        let block_id = BlockId::latest();
+        self.get_block_by_id(BlockId::latest()).await
+    }
+
+    async fn get_block_by_id(&self, block_id: BlockId) -> Result<Block> {
         for i in 0..=REORG_RETRY_GET_BLOCK {
             let Some(provider) = self.provider.read().await.clone() else {
                 error!("No provider, inconsistent state");
@@ -481,10 +537,6 @@ impl InfiniteLogIter {
         &mut self,
         missing_blocks: Vec<BlockSummary>,
     ) {
-        // move current to catchup as catchup could overwrite it
-        if let Some(event) = self.current_event.take() {
-            self.catchup_logs.push_back(event);
-        }
         for missing_block in missing_blocks {
             let Ok(logs) = self.get_logs_at_hash(missing_block.hash).await
             else {
@@ -499,62 +551,22 @@ impl InfiniteLogIter {
                 nb_events = logs.len(),
                 "Missing block retrieved",
             );
-            self.catchup_logs.extend(logs);
+            self.next_blocklogs.push_back(BlockLogs {
+                logs,
+                summary: missing_block,
+                catchup: true,
+            });
             self.block_history.add_block(missing_block);
         }
     }
 
     async fn check_missing_ancestors(
         &mut self,
-        event_block_hash: Option<BlockHash>,
+        current_block_summary: BlockSummary,
     ) {
-        let has_event = event_block_hash.is_some();
-        let mut current_block = None;
-        let current_block_hash = if has_event {
-            event_block_hash
-        } else {
-            // if no event is available we do the check+catchup from current block
-            // can happens in block timeout
-            current_block = self.get_current_block().await.ok();
-            current_block.as_ref().map(|b| b.header.hash)
-        };
-        let Some(current_block_hash) = current_block_hash else {
-            // Cannot happen, but just in case
-            error!("Check missing ancestors. No current block hash, skipping the check");
-            return;
-        };
-        if self
-            .block_history
-            .block_has_not_changed(&current_block_hash)
-        {
-            return;
-        }
-        // starting the detection
-        let current_block = match current_block {
-            Some(current_block) => current_block,
-            None => match self.get_block(current_block_hash).await {
-                Ok(block) => block,
-                Err(_) => match self.get_current_block().await {
-                    Ok(block) => block,
-                    Err(_) => {
-                        error!(
-                            current_block_hash = ?current_block_hash,
-                            "Reorg. Cannot get current block, cannot detect reorgs",
-                        );
-                        return; // no reorg
-                    }
-                },
-            },
-        };
-        let current_block_summary = current_block.into();
-
         if !self.block_history.is_ready_to_detect_reorg() {
             // at fresh restart no ancestor are known
-            if has_event {
-                // we don't add to history from which we have no event
-                // e.g. at timeout, because empty blocks are not get_logs
-                self.block_history.add_block(current_block_summary);
-            }
+            self.block_history.add_block(current_block_summary);
             return;
         }
 
@@ -563,9 +575,7 @@ impl InfiniteLogIter {
         if missing_blocks.is_empty() {
             // we don't add to history from which we have no event
             // e.g. at timeout, because empty blocks are not get_logs
-            if has_event {
-                self.block_history.add_block(current_block_summary);
-            }
+            self.block_history.add_block(current_block_summary);
             return; // no reorg
         }
         warn!(
@@ -576,9 +586,7 @@ impl InfiniteLogIter {
             .await;
         // we don't add to history from which we have no event
         // e.g. at timeout, because empty blocks are not get_logs
-        if has_event {
-            self.block_history.add_block(current_block_summary);
-        }
+        self.block_history.add_block(current_block_summary);
         warn!("Missing ancestors catchup done.");
     }
 
@@ -599,13 +607,11 @@ impl InfiniteLogIter {
                     // events to have the minimal gap between the two
                     // TODO: but it does not guarantee no gap for now
                     // (implementation dependant)
-                    let filter =
-                        Filter::new().address(self.contract_addresses.clone());
                     // subscribe_logs does not honor from_block and sometime not to_block
                     // so we rely on catchup_blocks and end_at_block_reached
                     self.stream = Some(
                         provider
-                            .subscribe_logs(&filter)
+                            .subscribe_blocks()
                             .await
                             .expect("BLA2")
                             .into_stream(),
@@ -649,11 +655,9 @@ impl InfiniteLogIter {
         }
     }
 
-    async fn next_event_or_block_end(&mut self) -> LogOrBlockTimeout {
+    async fn next_block(&mut self) -> Result<BlockOrTimeoutOrNone> {
         let Some(stream) = &mut self.stream else {
-            error!("No stream, inconsistent state");
-            return LogOrBlockTimeout::Log(None); // simulate a stream end to
-                                                 // force reinit
+            anyhow::bail!("No stream, inconsistent state");
         };
         let next_opt_event = stream.next();
         // it assume the eventual discard of next_opt_event is handled correctly
@@ -665,42 +669,75 @@ impl InfiniteLogIter {
         )
         .await
         {
-            Err(_) => LogOrBlockTimeout::BlockTimeout,
-            Ok(opt_log) => LogOrBlockTimeout::Log(opt_log),
+            Err(_) => Ok(BlockOrTimeoutOrNone::Timeout),
+            Ok(None) => Ok(BlockOrTimeoutOrNone::None),
+            Ok(Some(header)) => Ok(BlockOrTimeoutOrNone::Block(
+                self.attach_logs_to(header).await?,
+            )),
         }
     }
 
-    fn end_at_block_reached(&self, log: &Log) -> bool {
+    async fn attach_logs_to(
+        &self,
+        block_header: Header,
+    ) -> Result<BlockLogs<Log>> {
+        Ok(BlockLogs {
+            logs: self.get_logs_at_hash(block_header.hash).await?,
+            summary: block_header.into(),
+            catchup: false,
+        })
+    }
+
+    async fn find_last_block_and_logs(&self) -> Result<BlockLogs<Log>> {
+        let block = self.get_current_block().await?;
+        self.attach_logs_to(block.header).await
+    }
+
+    async fn end_at_block_reached(&self) -> bool {
         let Some(end_at_block) = self.end_at_block else {
             return false;
         };
-        let Some(current_block) = log.block_number else {
-            return false;
-        };
-        current_block > end_at_block
+        let current_block_number =
+            if let Some(current_block) = self.block_history.tip() {
+                current_block.number
+            } else if let Ok(current_block) = self.get_current_block().await {
+                current_block.header.number
+            } else {
+                return false;
+            };
+        current_block_number > end_at_block
     }
 
-    async fn next(&mut self) -> Option<Log> {
+    async fn next(&mut self) -> Option<BlockLogs<Log>> {
         let mut not_initialized = self.stream.is_none();
-        self.prev_event = self.current_event.take();
-        while self.current_event.is_none() {
+        let block_logs = loop {
             if self.stream.is_none() {
                 self.new_log_stream(not_initialized).await;
                 not_initialized = false;
                 continue;
             };
-            if self.catchup_logs.is_empty() {
+            if self.next_blocklogs.is_empty() {
                 self.consume_catchup_blocks().await;
             };
-            if let Some(log) = self.catchup_logs.pop_front() {
-                if self.catchup_logs.is_empty() {
-                    info!("Going back to real-time events");
-                };
-                self.current_event = Some(log);
-                break;
+            if !self.next_blocklogs.is_empty() {
+                return self.next_blocklogs.pop_front();
             };
-            match self.next_event_or_block_end().await {
-                LogOrBlockTimeout::Log(None) => {
+            if self.end_at_block_reached().await {
+                eprintln!(
+                    "End at block reached: {}",
+                    self.end_at_block.unwrap()
+                );
+                warn!("Stopping due to --end-at-block");
+                return None;
+            }
+            match self.next_block().await {
+                Err(err) => {
+                    error!(error = %err, "Error getting next block");
+                    self.stream = None; // to restart
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+                Ok(BlockOrTimeoutOrNone::None) => {
                     // the stream ends, could be a restart of the full node, or
                     // just a temporary gap
                     self.stream = None;
@@ -708,69 +745,127 @@ impl InfiniteLogIter {
                     tokio::time::sleep(Duration::from_secs(1)).await;
                     continue;
                 }
-                LogOrBlockTimeout::Log(Some(log)) => {
-                    if self.end_at_block_reached(&log) {
-                        info!(
-                            block = log.block_number,
-                            end_at_block = self.end_at_block,
-                            "Stopping due to --end-at-block"
-                        );
-                        return None;
-                    }
-                    info!(log = ?log, "Log event");
-                    let block_hash = log.block_hash;
-                    let block_hash_or_0 = block_hash.unwrap_or_default();
-                    let is_first_of_block = !self
-                        .block_history
-                        .block_has_not_changed(&block_hash_or_0);
-                    self.current_event = Some(log);
-                    if is_first_of_block {
-                        self.tick_block.update();
-                        self.recheck_tip_block().await;
-                        self.check_missing_ancestors(block_hash).await;
-                        if self.current_event.is_none() {
-                            // current log has been pushed in catchup_logs
-                            // after events from previous block (recheck or reorg)
-                            continue; // jump to process events from catchup_logs
-                        }
-                        if let Some(block_time) =
-                            self.block_history.estimated_block_time()
-                        {
-                            self.block_time = block_time;
-                        }
-                    }
-                    break; // we have a log to process
-                }
-                LogOrBlockTimeout::BlockTimeout => {
+                Ok(BlockOrTimeoutOrNone::Timeout) => {
                     self.tick_timeout.update();
-                    // check reorgs update the block history
+                    let Ok(block_logs) = self.find_last_block_and_logs().await
+                    else {
+                        error!("Cannot get last block and logs");
+                        continue;
+                    };
                     warn!(
+                        new_block = ?block_logs.summary,
                         block_time = self.block_time,
-                        "Block timeout, checking for missing ancestors"
+                        "Block timeout, proceed with last block"
                     );
-                    self.recheck_tip_block().await;
-                    self.check_missing_ancestors(None).await;
-                    continue;
+                    break block_logs;
+                }
+                Ok(BlockOrTimeoutOrNone::Block(block_logs)) => {
+                    self.tick_block.update();
+                    info!(new_block = ?block_logs.summary, nb_logs = block_logs.logs.len(), "New block");
+                    break block_logs;
                 }
             }
-        }
-        if self.current_event.is_some() {
-            self.last_block_event_count += 1;
         };
-        self.current_event.clone()
-    }
-
-    fn is_first_of_block(&self) -> bool {
-        match (&self.current_event, &self.prev_event) {
-            (Some(current_event), Some(prev_event)) => {
-                current_event.block_number != prev_event.block_number
-            }
-            _ => false,
-        }
+        self.check_missing_ancestors(block_logs.summary).await;
+        self.next_blocklogs.push_back(block_logs);
+        self.next_blocklogs.pop_front()
     }
 }
 
+async fn db_insert_block(
+    db: &mut Database,
+    block_logs: &BlockLogs<Log>,
+    acl_contract_address: &Option<Address>,
+    tfhe_contract_address: &Option<Address>,
+) -> anyhow::Result<()> {
+    info!(
+        block = ?block_logs.summary,
+        nb_events = block_logs.logs.len(),
+        catchup = block_logs.catchup,
+        "Inserting block in coprocessor",
+    );
+    let mut retries = 10;
+    loop {
+        let res = db_insert_block_no_retry(
+            db,
+            block_logs,
+            acl_contract_address,
+            tfhe_contract_address,
+        )
+        .await;
+        let Err(err) = res else {
+            return Ok(());
+        };
+        if retries == 0 {
+            error!(error = %err, block = ?block_logs.summary, "Error inserting block");
+            anyhow::bail!("Error in block insertion transaction: {err}");
+        } else if retries == 1 {
+            warn!(error = %err, block = ?block_logs.summary, retries = retries,
+                "Retry inserting block, last attempt"
+            );
+        } else {
+            warn!(error = %err, block = ?block_logs.summary, retries = retries, "Retry inserting block");
+        }
+        retries -= 1;
+        db.reconnect().await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+async fn db_insert_block_no_retry(
+    db: &mut Database,
+    block_logs: &BlockLogs<Log>,
+    acl_contract_address: &Option<Address>,
+    tfhe_contract_address: &Option<Address>,
+) -> std::result::Result<(), sqlx::Error> {
+    let mut tx = db.new_transaction().await?;
+    for log in &block_logs.logs {
+        info!(
+            block = ?log.block_number,
+            tx = ?log.transaction_hash,
+            log_index = ?log.log_index,
+            "Log",
+        );
+        let current_address = Some(log.inner.address);
+        let is_tfhe_address = &current_address == tfhe_contract_address;
+        if tfhe_contract_address.is_none() || is_tfhe_address {
+            if let Ok(event) =
+                TfheContract::TfheContractEvents::decode_log(&log.inner)
+            {
+                info!(tfhe_event = ?event, "TFHE event");
+                let log = LogTfhe {
+                    event,
+                    transaction_hash: log.transaction_hash,
+                };
+                db.insert_tfhe_event(&mut tx, &log).await?;
+                continue;
+            }
+        }
+        let is_acl_address = &current_address == acl_contract_address;
+        if acl_contract_address.is_none() || is_acl_address {
+            if let Ok(event) =
+                AclContract::AclContractEvents::decode_log(&log.inner)
+            {
+                info!(acl_event = ?event, "ACL event");
+                db.handle_acl_event(&mut tx, &event).await?;
+                continue;
+            }
+        }
+        if is_acl_address || is_tfhe_address {
+            error!(
+                event_address = ?log.inner.address,
+                acl_contract_address = ?acl_contract_address,
+                tfhe_contract_address = ?tfhe_contract_address,
+                "Cannot decode event",
+            );
+        }
+    }
+    db.mark_block_as_valid(&mut tx, &block_logs.summary).await?;
+    tx.commit().await
+}
+
 pub async fn main(args: Args) -> anyhow::Result<()> {
+    info!("Starting main");
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let acl_contract_address = if args.acl_contract_address.is_empty() {
@@ -861,76 +956,15 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
 
     log_iter.new_log_stream(true).await;
 
-    let mut block_tfhe_errors = 0;
-    while let Some(log) = log_iter.next().await {
-        if log_iter.is_first_of_block() {
-            if let Some(block_number) = log.block_number {
-                if block_tfhe_errors == 0 {
-                    let last_valid_block = db
-                        .mark_prev_block_as_valid(
-                            &log_iter.current_event,
-                            &log_iter.prev_event,
-                        )
-                        .await;
-                    if last_valid_block.is_some() {
-                        log_iter.last_valid_block = last_valid_block;
-                    }
-                } else {
-                    error!(
-                        block_tfhe_errors = block_tfhe_errors,
-                        "Errors in tfhe events"
-                    );
-                    block_tfhe_errors = 0;
-                }
-                info!(block = block_number, "Block");
-            }
-        };
-        if block_tfhe_errors > 0 {
-            error!(block_tfhe_errors = block_tfhe_errors, "Errors in block");
-        }
-        let current_address = Some(log.inner.address);
-        let is_tfhe_address = current_address == tfhe_contract_address;
-        if tfhe_contract_address.is_none() || is_tfhe_address {
-            if let Ok(event) =
-                TfheContract::TfheContractEvents::decode_log(&log.inner)
-            {
-                info!(tfhe_event = ?event, "TFHE event");
-                let log = Log {
-                    inner: event,
-                    block_hash: log.block_hash,
-                    block_number: log.block_number,
-                    block_timestamp: log.block_timestamp,
-                    transaction_hash: log.transaction_hash,
-                    transaction_index: log.transaction_index,
-                    log_index: log.log_index,
-                    removed: log.removed,
-                };
-                let res = db.insert_tfhe_event(&log).await;
-                if let Err(err) = res {
-                    block_tfhe_errors += 1;
-                    error!(error = %err, "Error inserting tfhe event");
-                }
-                continue;
-            }
-        }
-        let is_acl_address = current_address == acl_contract_address;
-        if acl_contract_address.is_none() || is_acl_address {
-            if let Ok(event) =
-                AclContract::AclContractEvents::decode_log(&log.inner)
-            {
-                info!(acl_event = ?event, "ACL event");
-                let _ = db.handle_acl_event(&event).await;
-                continue;
-            }
-        }
-        if is_acl_address || is_tfhe_address {
-            error!(
-                event_address = ?log.inner.address,
-                acl_contract_address = ?acl_contract_address,
-                tfhe_contract_address = ?tfhe_contract_address,
-                "Cannot decode event",
-            );
-        }
+    while let Some(block_logs) = log_iter.next().await {
+        let _ = db_insert_block(
+            &mut db,
+            &block_logs,
+            &acl_contract_address,
+            &tfhe_contract_address,
+        )
+        .await;
+        // logging & retry on error is already done in db_insert_block
     }
     cancel_token.cancel();
     anyhow::Result::Ok(())
