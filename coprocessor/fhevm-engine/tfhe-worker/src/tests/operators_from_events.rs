@@ -536,8 +536,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
         removed: false,
     };
     let mut tx = listener_event_to_db.new_transaction().await?;
-    allow_handle(&listener_event_to_db, &mut tx, false_handle.as_ref()).await?;
     insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+    allow_handle(&listener_event_to_db, &mut tx, false_handle.as_ref()).await?;
 
     let log = alloy::rpc::types::Log {
         inner: tfhe_event(TfheContractEvents::TrivialEncrypt(
@@ -556,8 +556,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
         log_index: None,
         removed: false,
     };
-    allow_handle(&listener_event_to_db, &mut tx, true_handle.as_ref()).await?;
     insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+    allow_handle(&listener_event_to_db, &mut tx, true_handle.as_ref()).await?;
     tx.commit().await?;
 
     for input_types in supported_types() {
@@ -641,8 +641,8 @@ async fn test_fhe_if_then_else_events() -> Result<(), Box<dyn std::error::Error>
                 log_index: None,
                 removed: false,
             };
-            allow_handle(&listener_event_to_db, &mut tx, output_handle.as_ref()).await?;
             insert_tfhe_event(&listener_event_to_db, &mut tx, log).await?;
+            allow_handle(&listener_event_to_db, &mut tx, output_handle.as_ref()).await?;
             tx.commit().await?;
             wait_until_all_allowed_handles_computed(&app).await?;
             let decrypt_request = vec![output_handle.to_vec()];
