@@ -281,30 +281,24 @@ contract CiphertextCommits is
             // This digest is null (0x0) for version V1.
             bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandles[i]];
 
-            // Get the context ID from the input verification context ID mapping
-            uint256 contextId = $.addCiphertextContextId[addCiphertextHash];
-
-            // If there's not context (`contextId=0`), get the list storage URL for each coprocessor from
-            // the first context (`contextId=1`), as versions < V4 were only using a single context.
-            // DEPRECATED: to remove before mainnet
-            // See https://github.com/zama-ai/fhevm-internal/issues/381
-            if (contextId == 0) {
-                contextId = 1;
-            }
-
+            // Get the transaction sender addresses and the context ID associated to the consensus
             // If the consensus has been reached but the hash is 0x0, it means that the handle has been
             // added in V1: the handle was used to retrieve the list of transaction sender addresses
-            // instead of the hash
+            // instead of the hash, under the first context (`contextId=1`).
             // We therefore consider this in order to be backward compatible.
             // DEPRECATED: to remove before mainnet
             // See https://github.com/zama-ai/fhevm-internal/issues/381
             address[] memory coprocessorTxSenderAddresses;
+            uint256 contextId;
             if (addCiphertextHash == bytes32(0)) {
                 coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[ctHandles[i]];
+                contextId = 1;
             } else {
                 coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[addCiphertextHash];
+                contextId = $.addCiphertextContextId[addCiphertextHash];
             }
 
+            // Get the list of storage URLs associated to the transaction sender addresses
             string[] memory coprocessorStorageUrls = new string[](coprocessorTxSenderAddresses.length);
             for (uint256 j = 0; j < coprocessorTxSenderAddresses.length; j++) {
                 coprocessorStorageUrls[j] = COPROCESSOR_CONTEXTS

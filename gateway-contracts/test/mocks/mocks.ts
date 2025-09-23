@@ -356,13 +356,13 @@ describe("Mock contracts", function () {
         inputVerificationMock.verifyProofResponse(zkProofCounterId, [DefaultBytes32], DefaultBytes, DefaultBytes),
       )
         .to.emit(inputVerificationMock, "VerifyProofResponse")
-        .withArgs(zkProofCounterId, DefaultUint256, [DefaultBytes32], [DefaultBytes]);
+        .withArgs(zkProofCounterId, DefaultUint256, [DefaultBytes32], [DefaultBytes], DefaultBytes);
     });
 
     it("Should emit RejectProofResponse event on reject proof response", async function () {
       await expect(inputVerificationMock.rejectProofResponse(zkProofCounterId, DefaultBytes))
         .to.emit(inputVerificationMock, "RejectProofResponse")
-        .withArgs(zkProofCounterId);
+        .withArgs(zkProofCounterId, DefaultBytes);
     });
   });
 

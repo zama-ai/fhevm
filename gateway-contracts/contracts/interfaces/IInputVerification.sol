@@ -32,13 +32,22 @@ interface IInputVerification {
      * @param coprocessorContextId The ID of the coprocessor context.
      * @param ctHandles The coprocessor's computed ciphertext handles.
      * @param signatures The coprocessor's signature.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event VerifyProofResponse(
         uint256 indexed zkProofId,
         uint256 indexed coprocessorContextId,
         bytes32[] ctHandles,
-        bytes[] signatures
+        bytes[] signatures,
+        bytes extraData
     );
+
+    /**
+     * @notice Emitted once an ZK Proof verification is rejected.
+     * @param zkProofId The ID of the ZK Proof.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    event RejectProofResponse(uint256 indexed zkProofId, bytes extraData);
 
     /**
      * @notice Error indicating that the coprocessor context is no longer valid for verifying the ZK Proof.
@@ -57,12 +66,6 @@ interface IInputVerification {
      * @param contextStatus The status of the coprocessor context.
      */
     error InvalidCoprocessorContextProofRejection(uint256 zkProofId, uint256 contextId, ContextStatus contextStatus);
-
-    /**
-     * @notice Emitted once an ZK Proof verification is rejected.
-     * @param zkProofId The ID of the ZK Proof.
-     */
-    event RejectProofResponse(uint256 indexed zkProofId);
 
     /**
      * @notice Error indicating that the coprocessor has already verified the ZKPoK.

@@ -277,7 +277,7 @@ describe("InputVerification", function () {
       // Check 2nd response event: it should only contain 2 valid signatures
       await expect(txResponse)
         .to.emit(inputVerification, "VerifyProofResponse")
-        .withArgs(zkProofId, contextId, ctHandles, signatures.slice(0, 2));
+        .withArgs(zkProofId, contextId, ctHandles, signatures.slice(0, 2), extraDataV0);
     });
 
     it("Should verify proof with 2 valid responses and ignore the other valid one", async function () {
@@ -327,7 +327,7 @@ describe("InputVerification", function () {
       // Check 3rd response event: it should only contain 2 valid signatures
       await expect(txResponse3)
         .to.emit(inputVerification, "VerifyProofResponse")
-        .withArgs(zkProofId, contextId, ctHandles, signatures.slice(1, 3));
+        .withArgs(zkProofId, contextId, ctHandles, signatures.slice(1, 3), extraDataV0);
     });
 
     it("Should verify a proof with 2 valid and 1 malicious signatures", async function () {
@@ -378,7 +378,7 @@ describe("InputVerification", function () {
       // Check 3rd response event: it should only contain 2 valid signatures
       await expect(txResponse3)
         .to.emit(inputVerification, "VerifyProofResponse")
-        .withArgs(zkProofId, contextId, ctHandles, signatures.slice(1, 3));
+        .withArgs(zkProofId, contextId, ctHandles, signatures.slice(1, 3), extraDataV0);
     });
 
     it("Should get all valid coprocessor transaction senders from proof verification consensus", async function () {
@@ -632,7 +632,7 @@ describe("InputVerification", function () {
         // and not the new one (1 coprocessor)
         await expect(txResponse)
           .to.emit(inputVerification, "VerifyProofResponse")
-          .withArgs(zkProofId, contextId, ctHandles, signatures.slice(0, 2));
+          .withArgs(zkProofId, contextId, ctHandles, signatures.slice(0, 2), extraDataV0);
       });
 
       it("Should revert because the context is no longer valid", async function () {
@@ -691,7 +691,7 @@ describe("InputVerification", function () {
       const txResponse = inputVerification.connect(coprocessorTxSenders[1]).rejectProofResponse(zkProofId, extraDataV0);
 
       // Consensus should be reached at the second response
-      await expect(txResponse).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
+      await expect(txResponse).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId, extraDataV0);
     });
 
     it("Should reject a proof with 2 valid responses and ignore the other valid one", async function () {
@@ -755,7 +755,7 @@ describe("InputVerification", function () {
         .rejectProofResponse(zkProofId, extraDataV0);
 
       // Consensus should be reached at the third response
-      await expect(txResponse3).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
+      await expect(txResponse3).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId, extraDataV0);
     });
 
     it("Should get all valid coprocessor transaction senders from proof rejection consensus", async function () {
@@ -965,7 +965,7 @@ describe("InputVerification", function () {
         // Consensus should be reached at the second response
         // This is because the consensus is reached amongst the suspended context (3 coprocessors)
         // and not the new one (1 coprocessor)
-        await expect(txResponse).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId);
+        await expect(txResponse).to.emit(inputVerification, "RejectProofResponse").withArgs(zkProofId, extraDataV0);
       });
 
       it("Should revert because the context is no longer valid", async function () {

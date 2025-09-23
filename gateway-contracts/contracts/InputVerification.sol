@@ -180,7 +180,7 @@ contract InputVerification is
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
         bytes calldata signature,
-        bytes calldata /* extraData */
+        bytes calldata extraData
     ) external virtual refreshCoprocessorContextStatuses {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
@@ -239,14 +239,14 @@ contract InputVerification is
             // verification request.
             $.verifyProofConsensusDigest[zkProofId] = digest;
 
-            emit VerifyProofResponse(zkProofId, contextId, ctHandles, currentSignatures);
+            emit VerifyProofResponse(zkProofId, contextId, ctHandles, currentSignatures, extraData);
         }
     }
 
     /// @dev See {IInputVerification-rejectProofResponse}.
     function rejectProofResponse(
         uint256 zkProofId,
-        bytes calldata /* extraData */
+        bytes calldata extraData
     ) external virtual refreshCoprocessorContextStatuses {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
@@ -298,7 +298,7 @@ contract InputVerification is
         ) {
             $.rejectedZKProofs[zkProofId] = true;
 
-            emit RejectProofResponse(zkProofId);
+            emit RejectProofResponse(zkProofId, extraData);
         }
     }
 
