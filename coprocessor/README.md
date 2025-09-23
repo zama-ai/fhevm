@@ -2,7 +2,7 @@
 **FHEVM Coprocessor** provides the execution service for FHE computations.
 
 It includes a **Coprocessor** service [FHEVM-coprocessor](docs/getting_started/fhevm/coprocessor/coprocessor_backend.md). The Coprocessor
-itself consists of multiple microservices, e.g. for FHE compute, input verify, transaction sending, listenting to events, etc.
+itself consists of multiple microservices, e.g. for FHE compute, input verify, transaction sending, listening to events, etc.
 
 ## Main features
 
@@ -19,7 +19,7 @@ _Learn more about FHEVM Coprocessor features in the [documentation](docs)._
 - [Getting Started](#getting-started)
   - [Generating Keys](#generating-keys)
   - [Coprocessor](#coprocessor)
-    - [Dependencies](#dependences)
+    - [Dependencies](#dependencies)
     - [Installation](#installation)
     - [Services Configuration](#services-configuration)
       - [tfhe-worker](#tfhe-worker)
@@ -49,7 +49,7 @@ The keys are stored by default in `fhevm-engine/fhevm-keys`.
 
 ### Coprocessor
 
-#### Dependences
+#### Dependencies
 
 - `docker-compose`
 - `rust`
