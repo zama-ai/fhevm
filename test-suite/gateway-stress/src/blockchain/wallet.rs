@@ -30,17 +30,17 @@ impl Wallet {
     pub async fn from_config(config: &Config) -> anyhow::Result<Self> {
         if let Some(aws_config) = &config.aws_kms_config {
             debug!("Building wallet using AWS KMS configuration...");
-            Self::from_aws_kms(aws_config.clone(), Some(config.gateway_chain_id)).await
+            Self::from_aws_kms(aws_config.clone(), config.gateway_chain_id).await
         } else if let Some(mnemonic) = &config.mnemonic {
             debug!("Building wallet using mnemonic...");
             Self::from_mnemonic_with_index(
                 mnemonic,
                 config.mnemonic_index,
-                Some(config.gateway_chain_id),
+                config.gateway_chain_id,
             )
         } else if let Some(private_key) = &config.private_key {
             debug!("Building wallet using private key...");
-            Self::from_private_key_str(private_key, Some(config.gateway_chain_id))
+            Self::from_private_key_str(private_key, config.gateway_chain_id)
         } else {
             Err(anyhow!(
                 "Either aws_kms or private_key should be configured"

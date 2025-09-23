@@ -1,7 +1,7 @@
 [package]
 name = "gateway-stress"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
 fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.8.0", default-features = false }
@@ -45,3 +45,9 @@ tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", default-features = true, features = [
     "env-filter",
 ] }
+
+# Database dependencies
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "migrate"] }
+toml = "0.8"
+hex = "0.4"
+rand = "0.8"

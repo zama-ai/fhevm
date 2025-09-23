@@ -5,27 +5,42 @@ use std::{path::Path, str::FromStr, time::Duration};
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Config {
-    pub gateway_url: String,
-    pub host_chain_id: u64,
-    pub gateway_chain_id: u64,
-    pub decryption_address: Address,
+    pub gateway_url: Option<String>,
+    pub host_chain_id: Option<u64>,
+    pub gateway_chain_id: Option<u64>,
+    pub decryption_address: Option<Address>,
     pub private_key: Option<String>,
     pub mnemonic: Option<String>,
     #[serde(default = "default_mnemonic_index")]
     pub mnemonic_index: usize,
     pub aws_kms_config: Option<AwsKmsConfig>,
-    #[serde(deserialize_with = "parse_ct_handles")]
+    #[serde(default, deserialize_with = "parse_ct_handles_option")]
     pub user_ct_handles: Vec<FixedBytes<32>>,
-    #[serde(deserialize_with = "parse_ct_handles")]
+    #[serde(default, deserialize_with = "parse_ct_handles_option")]
     pub public_ct_handles: Vec<FixedBytes<32>>,
-    pub allowed_contract: Address,
-    pub parallel_requests: u32,
-    #[serde(with = "humantime_serde")]
-    pub tests_duration: Duration,
-    #[serde(with = "humantime_serde")]
-    pub tests_interval: Duration,
+    pub allowed_contract: Option<Address>,
+    pub parallel_requests: Option<u32>,
+    #[serde(with = "humantime_serde::option")]
+    pub tests_duration: Option<Duration>,
+    #[serde(with = "humantime_serde::option")]
+    pub tests_interval: Option<Duration>,
     #[serde(default)]
     pub sequential: bool,
+    /// DB connector configuration
+    pub db_connector: Option<DbConnectorTestConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct DbConnectorTestConfig {
+    pub database_urls: Vec<String>,
+    pub request_type: String,
+    #[serde(with = "humantime_serde")]
+    pub duration: Duration,
+    pub batch_size: usize,
+    #[serde(with = "humantime_serde")]
+    pub batch_interval: Duration,
+    pub pool_size: Option<usize>,
+    pub connection_timeout: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -64,14 +79,13 @@ fn default_mnemonic_index() -> usize {
     0
 }
 
-fn parse_ct_handles<'de, D>(d: D) -> Result<Vec<FixedBytes<32>>, D::Error>
+fn parse_ct_handles_option<'de, D>(d: D) -> Result<Vec<FixedBytes<32>>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    let ct_handles = Vec::<String>::deserialize(d)?
+    let opt = Option::<Vec<String>>::deserialize(d)?;
+    Ok(opt.unwrap_or_default()
         .iter()
-        .map(|h| FixedBytes::from_str(h.as_str()).expect("Invalid handle: {h}"))
-        .collect();
-
-    Ok(ct_handles)
+        .filter_map(|h| FixedBytes::from_str(h.as_str()).ok())
+        .collect())
 }

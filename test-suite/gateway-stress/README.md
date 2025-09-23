@@ -1,7 +1,6 @@
 # Gateway Stress-Test Tool
 
-A simple tool to send a configurable number of parallel decryption requests (public or user
-decrypts at the time of writing), at a given frequency and for a specified duration.
+A tool to perform stress testing on the Gateway by sending parallel decryption requests (public or user decrypts) at a given frequency and for a specified duration. Additionally, it can perform direct database connector testing to verify synchronization across multiple database instances.
 
 ## Configuration
 
@@ -47,6 +46,32 @@ cargo run -- -c config/config.toml user
 ```
 
 Note that the `mixed` command of the CLI is not implemented yet.
+
+### DB Connector Testing
+
+The tool includes a `db-connector` subcommand for testing direct database insertions and synchronization:
+
+```bash
+# Run with configuration file (recommended)
+./gateway-stress -c config/config.toml db-connector
+
+# Run with response tracking
+./gateway-stress -c config/config.toml db-connector --track-responses
+
+# Override specific parameters for CI/testing
+./gateway-stress -c config/config.toml db-connector --duration 5m --batch-size 100
+
+# Override request type for specific scenario testing
+./gateway-stress -c config/config.toml db-connector --request-type public
+```
+
+The DB configuration is defined in the `[db_connector]` section of `config.toml`. 
+CLI arguments are used only to override specific parameters for CI or testing scenarios.
+
+The test will:
+- Insert decryption requests directly into configured database(s)
+- Optionally track response synchronization across all configured databases
+- Report statistics on sync rates and missing responses
 
 ## Tracing
 

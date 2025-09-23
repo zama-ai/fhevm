@@ -14,3 +14,28 @@ services:
       - ../env/staging/.env.test-suite.local
     command:
       - tail -f /dev/null
+  
+  # Gateway stress test with db-connector subcommand
+  gateway-stress-db:
+    container_name: fhevm-gateway-stress-db
+    image: ghcr.io/zama-ai/fhevm/gateway-stress:${TEST_SUITE_VERSION}
+    build:
+      context: ../../..
+      dockerfile: test-suite/gateway-stress/Dockerfile
+    env_file:
+      - ../env/staging/.env.connector.local  # Reuse connector env for DB connection
+    environment:
+      RUST_LOG: ${RUST_LOG:-gateway_stress=info}
+    command:
+      - db-connector
+      - --connectors
+      - "${DB_TEST_CONNECTORS:-1}"
+      - --track-responses
+      - --duration
+      - "${DB_TEST_DURATION:-30s}"
+      - --batch-size
+      - "${DB_TEST_BATCH:-10}"
+      - --request-type
+      - "${DB_TEST_TYPE:-mixed}"
+    profiles:
+      - db-test

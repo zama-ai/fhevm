@@ -70,7 +70,7 @@ pub async fn user_decryption_burst<P, S>(
     );
 
     let mut requests_tasks = JoinSet::new();
-    for index in 0..config.parallel_requests {
+    for index in 0..config.parallel_requests.unwrap_or(1) {
         requests_tasks.spawn(
             send_user_decryption(
                 index,
@@ -84,7 +84,7 @@ pub async fn user_decryption_burst<P, S>(
         );
     }
 
-    for _ in 0..config.parallel_requests {
+    for _ in 0..config.parallel_requests.unwrap_or(1) {
         requests_tasks.join_next().await;
         requests_pb.inc(1);
     }
@@ -135,7 +135,7 @@ async fn send_user_decryption_inner<P: Provider>(
                 .iter()
                 .map(|h| CtHandleContractPair {
                     ctHandle: *h,
-                    contractAddress: config.allowed_contract,
+                    contractAddress: config.allowed_contract.unwrap_or(Address::ZERO),
                 })
                 .collect(),
             RequestValidity {
@@ -143,8 +143,8 @@ async fn send_user_decryption_inner<P: Provider>(
                 durationDays: U256::from(DURATION_DAYS),
             },
             ContractsInfo {
-                chainId: U256::from(config.host_chain_id),
-                addresses: vec![config.allowed_contract],
+                chainId: U256::from(config.host_chain_id.unwrap_or(0)),
+                addresses: vec![config.allowed_contract.unwrap_or(Address::ZERO)],
             },
             user_addr,
             hex::decode(RAND_PUBLIC_KEY)?.into(),
@@ -206,8 +206,8 @@ pub fn generate_eip712(
     config: &Config,
     timestamp: u64,
 ) -> anyhow::Result<Eip712Result> {
-    let allowed_contract = config.allowed_contract;
-    let private_key = config.private_key.clone().unwrap();
+    let allowed_contract = config.allowed_contract.unwrap_or(Address::ZERO);
+    let private_key = config.private_key.clone().unwrap_or_default();
 
     // Spawn in new thread otherwise panic because it blocks the async runtime
     std::thread::spawn(move || {
@@ -263,7 +263,7 @@ where
 
     let mut received_id_guard = RECEIVED_RESPONSES_IDS.lock().await;
     let mut listener_guard = response_listener.lock().await;
-    for _ in 0..config.parallel_requests {
+    for _ in 0..config.parallel_requests.unwrap_or(1) {
         let Some(id) = id_receiver.recv().await else {
             return Err(anyhow!(
                 "Request id channel #{burst_index} was closed unexpectedly"
@@ -293,9 +293,9 @@ where
     progress_bar.finish_with_message(format!(
         "Handled burst #{} of {} in {:.2}s. Throughput: {:.2} tps",
         burst_index,
-        config.parallel_requests,
+        config.parallel_requests.unwrap_or(1),
         elapsed,
-        config.parallel_requests as f64 / elapsed
+        config.parallel_requests.unwrap_or(1) as f64 / elapsed
     ));
 
     Ok(())
