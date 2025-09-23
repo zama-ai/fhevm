@@ -13,7 +13,6 @@ fhevm_gateway_bindings.workspace = true
 actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
-bincode.workspace = true
 config.workspace = true
 dashmap.workspace = true
 kms-grpc.workspace = true
