@@ -1,5 +1,5 @@
 # --- Base stage ---
-FROM node:24.0.2-alpine3.21 AS base
+FROM node:22-alpine3.22 AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
@@ -14,16 +14,20 @@ COPY pnpm-lock.yaml pnpm-lock.yaml
 COPY ./apps/front apps/front
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm --filter "./packages/**" build
-# RUN pnpx prisma generate --schema apps/front/prisma/schema.prisma
 RUN pnpm --filter=front build
-# RUN pnpm --filter=front run copy:generated
 RUN pnpm deploy --filter=front --prod /prod/front
 RUN cp -r apps/front/dist /prod/front/
 RUN mkdir -p /prod/front/dist/scripts
 
 # --- Runtime stage ---
-FROM nginx:1.28-alpine3.21 AS runtime
+FROM nginx:1.29.1-alpine3.22 AS runtime
 WORKDIR /prod-wrkspc
 COPY --from=builder /prod/front/dist /usr/share/nginx/html/
 COPY /docker/front/nginx.conf /etc/nginx/nginx.conf
+# Copy the entrypoint script
+COPY apps/front/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT [ "/entrypoint.sh" ]
+
 EXPOSE 8080

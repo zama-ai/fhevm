@@ -7,9 +7,9 @@ import {
   EmbeddedCheckout,
 } from "@stripe/react-stripe-js";
 
-const stripePromise = loadStripe(
-  import.meta.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
-);
+import config from "../../../config";
+
+const stripePromise = loadStripe(config.stripe.publishableKey);
 
 // used on embedded checkout example code:
 // https://docs.stripe.com/checkout/embedded/quickstart
@@ -24,7 +24,7 @@ function StripeCheckoutForm({ priceId, user, idToken, quantity }) {
     }
     fetch(
       `${
-        import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER
+        config.devPortalApiServer
       }/create-stripe-checkout-session?price_id=${priceId}&email=${encodeURIComponent(
         user?.email
       )}${quantity ? `&quantity=${quantity}` : ""}`,

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import config from "../../../config";
 
 const SignUp = () => {
   const navigate = useNavigate();
@@ -18,7 +19,7 @@ const SignUp = () => {
 
     try {
       const response = await fetch(
-        `${import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER}/okta/register`,
+        `${config.devPortalApiServer}/okta/register`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

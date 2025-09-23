@@ -7,6 +7,7 @@ import NoticeBox from "../../notice-box";
 import useAuth from "../../../hooks/useAuth";
 import { moesifIdentifyUserFrontEndIfPossible } from "../../../common/utils";
 import { PageLoader } from "../../page-loader";
+import config from "../../../config";
 
 // used on embedded checkout example code:
 // https://docs.stripe.com/checkout/embedded/quickstart
@@ -25,17 +26,12 @@ function registerPurchaseStripe({
   if (sessionId && idToken) {
     setLoading(true);
 
-    fetch(
-      `${
-        import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER
-      }/register/stripe/${sessionId}`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-        },
-      }
-    )
+    fetch(`${config.devPortalApiServer}/register/stripe/${sessionId}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${idToken}`,
+      },
+    })
       .then(async (res) => {
         if (!res.ok) {
           const errorBody = await res.json();
@@ -75,7 +71,7 @@ function registerPurchaseCustom({
 }) {
   setLoading(true);
 
-  fetch(`${import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER}/register/custom`, {
+  fetch(`${config.devPortalApiServer}/register/custom`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -124,7 +120,7 @@ function Return() {
   const priceId = urlParams.get("price_id");
   const planId = urlParams.get("plan_id");
 
-  const isCustom = import.meta.env.REACT_APP_PAYMENT_PROVIDER === "custom";
+  const isCustom = config.paymentProvider === "custom";
 
   useEffect(() => {
     window.moesif?.track(

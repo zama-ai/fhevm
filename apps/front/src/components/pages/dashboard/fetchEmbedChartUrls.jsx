@@ -1,3 +1,5 @@
+import config from "../../../config";
+
 function customizeUrlDisplayOptions(embedInfo) {
   // see here
   // https://www.moesif.com/docs/embedded-templates/creating-and-using-templates/#display-options
@@ -22,7 +24,7 @@ export default async function fetchEmbedChartUrls({
   email,
 }) {
   const response = await fetch(
-    `${import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER}/embed-charts/` +
+    `${config.devPortalApiServer}/embed-charts/` +
       encodeURIComponent(authUserId) +
       `?email=` +
       encodeURIComponent(email),

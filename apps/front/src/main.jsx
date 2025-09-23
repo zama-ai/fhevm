@@ -6,15 +6,17 @@ import App from "./App.jsx";
 import "https://js.stripe.com/v3/pricing-table.js";
 import "./styles/styles.scss";
 
+import config from "./config.js";
+
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <App />
   </StrictMode>
 );
 
-if (import.meta.env.REACT_APP_MOESIF_PUBLISHABLE_APPLICATION_ID) {
+if (config.moesif.publishableApplicationId) {
   moesifBrowser.init({
-    applicationId: import.meta.env.REACT_APP_MOESIF_PUBLISHABLE_APPLICATION_ID,
+    applicationId: config.moesif.publishableApplicationId,
     // add other option here
   });
   if (window) {

@@ -2,6 +2,8 @@ import { Auth0Provider } from "@auth0/auth0-react";
 import { useNavigate } from "react-router-dom";
 import PropTypes from "prop-types";
 
+import config from "./config";
+
 export const Auth0ProviderWithNavigate = ({ children }) => {
   const navigate = useNavigate();
 
@@ -11,8 +13,8 @@ export const Auth0ProviderWithNavigate = ({ children }) => {
 
   return (
     <Auth0Provider
-      domain={import.meta.env.REACT_APP_AUTH0_DOMAIN}
-      clientId={import.meta.env.REACT_APP_AUTH0_CLIENT_ID}
+      domain={config.auth0.domain}
+      clientId={config.auth0.clientId}
       useRefreshTokens={true} // Enables Refresh Tokens
       cacheLocation="localstorage" // Required when using Refresh Tokens
       onRedirectCallback={onRedirectCallback}

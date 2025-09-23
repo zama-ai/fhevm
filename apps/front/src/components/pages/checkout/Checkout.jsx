@@ -6,6 +6,7 @@ import { PageLayout } from "../../page-layout";
 import StripeCheckoutForm from "./StripeCheckoutForm";
 import { Navigate } from "react-router-dom";
 import CustomCheckoutForm from "./CustomCheckoutForm";
+import config from "../../../config";
 
 function Checkout() {
   const { isLoading, user, idToken } = useAuth();
@@ -36,7 +37,7 @@ function Checkout() {
     <PageLayout>
       <h1>Subscribe</h1>
       <div className="page-layout__focus">
-        {import.meta.env.REACT_APP_PAYMENT_PROVIDER === "custom" ? (
+        {config.paymentProvider === "custom" ? (
           <CustomCheckoutForm
             key={urlPriceIdToPurchase}
             priceId={urlPriceIdToPurchase}

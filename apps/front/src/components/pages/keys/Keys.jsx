@@ -9,6 +9,7 @@ import copyIcon from "../../../images/icons/copy.svg";
 import successIcon from "../../../images/icons/success.svg";
 import apiKeyIcon from "../../../images/icons/api-key.svg";
 import useAuth from "../../../hooks/useAuth";
+import config from "../../../config";
 
 const customStyles = {
   content: {
@@ -31,7 +32,7 @@ const Keys = () => {
   Modal.setAppElement("#root");
 
   async function createKey() {
-    fetch(`${import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER}/create-key`, {
+    fetch(`${config.devPortalApiServer}/create-key`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
