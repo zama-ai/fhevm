@@ -26,8 +26,6 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
         address pauser;
         mapping(address kmsTxSenderAddress => bool isKmsTxSender) _isKmsTxSender;
         mapping(address kmsSignerAddress => bool isKmsSigner) _isKmsSigner;
-        mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender;
-        mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner;
         mapping(uint256 chainId => bool isRegistered) _isHostChainRegistered;
         ProtocolMetadata protocolMetadata; // deprecated, use protocolMetadataV2 instead
         mapping(address kmsTxSenderAddress => KmsNode kmsNode) kmsNodes;
@@ -36,9 +34,6 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
         uint256 mpcThreshold;
         uint256 publicDecryptionThreshold;
         uint256 userDecryptionThreshold;
-        mapping(address coprocessorTxSenderAddress => CoprocessorV1 coprocessor) coprocessors;
-        address[] coprocessorTxSenderAddresses;
-        address[] coprocessorSignerAddresses;
         HostChain[] hostChains;
         mapping(address custodianTxSenderAddress => Custodian custodian) custodians;
         address[] custodianTxSenderAddresses;

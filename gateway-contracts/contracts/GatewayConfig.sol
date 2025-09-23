@@ -51,10 +51,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address kmsTxSenderAddress => bool isKmsTxSender) _isKmsTxSender;
         /// @notice The KMS nodes' signer addresses
         mapping(address kmsSignerAddress => bool isKmsSigner) _isKmsSigner;
-        /// @notice DEPRECATED: coprocessors are stored in `CoprocessorContexts` contract
-        mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender; // DEPRECATED
-        /// @notice DEPRECATED: coprocessors are stored in `CoprocessorContexts` contract
-        mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner; // DEPRECATED
         // ----------------------------------------------------------------------------------------------
         // Host chains state variables:
         // ----------------------------------------------------------------------------------------------
@@ -80,15 +76,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 publicDecryptionThreshold;
         /// @notice The threshold to consider for user decryption consensus
         uint256 userDecryptionThreshold;
-        // ----------------------------------------------------------------------------------------------
-        // Coprocessors state variables (DEPRECATED):
-        // ----------------------------------------------------------------------------------------------
-        /// @notice DEPRECATED: coprocessors are stored in `CoprocessorContexts` contract
-        mapping(address coprocessorTxSenderAddress => CoprocessorV1 coprocessor) coprocessors; // DEPRECATED
-        /// @notice DEPRECATED: coprocessors are stored in `CoprocessorContexts` contract
-        address[] coprocessorTxSenderAddresses; // DEPRECATED
-        /// @notice DEPRECATED: coprocessors are stored in `CoprocessorContexts` contract
-        address[] coprocessorSignerAddresses; // DEPRECATED
         // ----------------------------------------------------------------------------------------------
         // Host chains state variables:
         // ----------------------------------------------------------------------------------------------
