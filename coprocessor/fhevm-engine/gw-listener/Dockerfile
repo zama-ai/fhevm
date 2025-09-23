@@ -10,7 +10,8 @@ COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build gw_listener binary
-RUN cargo fetch && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo fetch && \
     SQLX_OFFLINE=true cargo build --release -p gw-listener
 
 # Stage 2: Runtime image

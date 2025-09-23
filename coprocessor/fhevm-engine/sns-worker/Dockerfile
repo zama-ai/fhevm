@@ -11,7 +11,8 @@ COPY coprocessor/proto ./coprocessor/proto
 WORKDIR /app/coprocessor/fhevm-engine
 
 # Build sns_executor binary
-RUN cargo fetch && \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo fetch && \
     SQLX_OFFLINE=true cargo build --release -p sns-worker
 
 # Stage 2: Runtime image
