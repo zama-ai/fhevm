@@ -77,9 +77,11 @@ pub struct Database {
     pub tick: HeartBeat,
 }
 
+#[derive(Debug)]
 pub struct LogTfhe {
     pub event: Log<TfheContractEvents>,
     pub transaction_hash: Option<TransactionHash>,
+    pub is_allowed: bool,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -277,7 +279,8 @@ impl Database {
                 fhe_operation,
                 is_scalar,
                 dependence_chain_id,
-                transaction_id
+                transaction_id,
+                is_allowed,
             )
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
@@ -288,7 +291,8 @@ impl Database {
             fhe_operation as i16,
             is_scalar,
             bucket.to_vec(),
-            log.transaction_hash.map(|txh| txh.to_vec())
+            log.transaction_hash.map(|txh| txh.to_vec()),
+            log.is_allowed,
         );
         query.execute(tx.deref_mut()).await.map(|_| ())
     }
@@ -672,5 +676,48 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::OwnershipTransferred(_) => "OwnershipTransferred",
         E::Upgraded(_) => "Upgraded",
         E::VerifyCiphertext(_) => "VerifyCiphertext",
+    }
+}
+
+
+pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
+    use TfheContract as C;
+    use TfheContractEvents as E;
+    match op {
+        E::Cast(C::Cast {result, ..})
+        | E::FheAdd(C::FheAdd {result, ..})
+        | E::FheBitAnd(C::FheBitAnd {result, ..})
+        | E::FheBitOr(C::FheBitOr {result, ..})
+        | E::FheBitXor(C::FheBitXor {result, ..} )
+        | E::FheDiv(C::FheDiv {result, ..})
+        | E::FheMax(C::FheMax {result, ..})
+        | E::FheMin(C::FheMin {result, ..})
+        | E::FheMul(C::FheMul {result, ..})
+        | E::FheRem(C::FheRem {result, ..})
+        | E::FheRotl(C::FheRotl {result, ..})
+        | E::FheRotr(C::FheRotr {result, ..})
+        | E::FheShl(C::FheShl {result, ..})
+        | E::FheShr(C::FheShr {result, ..})
+        | E::FheSub(C::FheSub {result, ..})
+        | E::FheIfThenElse(C::FheIfThenElse {result, ..})
+        | E::FheEq(C::FheEq {result, ..})
+        | E::FheGe(C::FheGe {result, ..})
+        | E::FheGt(C::FheGt {result, ..})
+        | E::FheLe(C::FheLe {result, ..})
+        | E::FheLt(C::FheLt {result, ..})
+        | E::FheNe(C::FheNe {result, ..})
+        | E::FheNeg(C::FheNeg {result, ..})
+        | E::FheNot(C::FheNot {result, ..})
+        | E::FheRand(C::FheRand {result, ..})
+        | E::FheRandBounded(C::FheRandBounded {result, ..})
+        | E::TrivialEncrypt(C::TrivialEncrypt {result, ..})
+            => Some(result.clone()),
+
+        | E::Initialized(_)
+        | E::OwnershipTransferStarted(_)
+        | E::OwnershipTransferred(_)
+        | E::Upgraded(_)
+        | E::VerifyCiphertext(_)
+            => None,
     }
 }
