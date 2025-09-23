@@ -6,6 +6,11 @@ syncInjectedDepsAfterScripts:
   - build
 injectWorkspacePackages: true
 
+# Set minimumReleaseAge to 2880 minutes (2 days)
+# Avoids pulling in very recent versions of dependencies
+# See: https://pnpm.io/settings#minimumreleaseage
+minimumReleaseAge: 2880
+
 # documentation: https://pnpm.io/catalogs
 catalog:
   typescript: "5.6.2"

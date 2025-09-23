@@ -3,6 +3,7 @@ lockfileVersion: '9.0'
 settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
+  injectWorkspacePackages: true
 
 overrides:
   braces@<2.3.1: '>=2.3.1'
@@ -24,28 +25,28 @@ importers:
   apps/back:
     dependencies:
       '@okta/okta-auth-js':
-        specifier: ^7.8.1
+        specifier: ^7.14.0
         version: 7.14.0
       '@okta/okta-sdk-nodejs':
-        specifier: ^7.1.1
+        specifier: ^7.2.1
         version: 7.2.1
       '@stripe/stripe-js':
-        specifier: ^1.29.0
+        specifier: ^1.54.2
         version: 1.54.2
       body-parser:
-        specifier: ^1.20.0
+        specifier: ^1.20.3
         version: 1.20.3
       cors:
         specifier: ^2.8.5
         version: 2.8.5
       dotenv:
-        specifier: ^16.0.0
+        specifier: ^16.6.1
         version: 16.6.1
       express:
         specifier: ^4.21.2
         version: 4.21.2
       express-jwt:
-        specifier: ^8.4.1
+        specifier: ^8.5.1
         version: 8.5.1
       express-rate-limit:
         specifier: ^8.1.0
@@ -57,13 +58,13 @@ importers:
         specifier: ^9.0.2
         version: 9.0.2
       jwks-rsa:
-        specifier: ^3.1.0
+        specifier: ^3.2.0
         version: 3.2.0
       moesif-nodejs:
-        specifier: ^3.5.8
+        specifier: ^3.9.1
         version: 3.9.1
       node-fetch:
-        specifier: ^2.6.5
+        specifier: ^2.7.0
         version: 2.7.0
       path:
         specifier: ^0.12.7
@@ -73,28 +74,28 @@ importers:
         version: 8.222.0
     devDependencies:
       nodemon:
-        specifier: ^3.1.7
+        specifier: ^3.1.10
         version: 3.1.10
 
   apps/front:
     dependencies:
       '@auth0/auth0-react':
-        specifier: ^2.0.1
+        specifier: ^2.5.0
         version: 2.5.0(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@emotion/react':
-        specifier: ^11.11.1
+        specifier: ^11.14.0
         version: 11.14.0(@types/react@18.3.24)(react@18.3.1)
       '@emotion/styled':
-        specifier: ^11.11.0
+        specifier: ^11.14.1
         version: 11.14.1(@emotion/react@11.14.0(@types/react@18.3.24)(react@18.3.1))(@types/react@18.3.24)(react@18.3.1)
       '@mui/material':
-        specifier: ^5.14.2
+        specifier: ^5.18.0
         version: 5.18.0(@emotion/react@11.14.0(@types/react@18.3.24)(react@18.3.1))(@emotion/styled@11.14.1(@emotion/react@11.14.0(@types/react@18.3.24)(react@18.3.1))(@types/react@18.3.24)(react@18.3.1))(@types/react@18.3.24)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@stripe/react-stripe-js':
-        specifier: ^2.1.0
+        specifier: ^2.9.0
         version: 2.9.0(@stripe/stripe-js@1.54.2)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       '@stripe/stripe-js':
-        specifier: ^1.52.1
+        specifier: ^1.54.2
         version: 1.54.2
       copy-to-clipboard:
         specifier: ^3.3.3
@@ -115,56 +116,56 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
       react-inlinesvg:
-        specifier: ^3.0.2
+        specifier: ^3.0.3
         version: 3.0.3(react@18.3.1)
       react-modal:
-        specifier: ^3.16.1
+        specifier: ^3.16.3
         version: 3.16.3(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       react-router-dom:
-        specifier: ^6.10.0
+        specifier: ^6.30.1
         version: 6.30.1(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
     devDependencies:
       '@eslint/js':
-        specifier: ^9.17.0
+        specifier: ^9.36.0
         version: 9.36.0
       '@types/react':
-        specifier: ^18.3.17
+        specifier: ^18.3.24
         version: 18.3.24
       '@types/react-dom':
-        specifier: ^18.3.5
+        specifier: ^18.3.7
         version: 18.3.7(@types/react@18.3.24)
       '@vitejs/plugin-react':
-        specifier: ^4.3.4
+        specifier: ^4.7.0
         version: 4.7.0(vite@6.3.6(@types/node@24.5.2)(sass@1.78.0)(yaml@2.8.1))
       eslint:
-        specifier: ^9.17.0
+        specifier: ^9.36.0
         version: 9.36.0
       eslint-plugin-react:
-        specifier: ^7.37.2
+        specifier: ^7.37.5
         version: 7.37.5(eslint@9.36.0)
       eslint-plugin-react-hooks:
-        specifier: ^5.0.0
+        specifier: ^5.2.0
         version: 5.2.0(eslint@9.36.0)
       eslint-plugin-react-refresh:
-        specifier: ^0.4.16
+        specifier: ^0.4.20
         version: 0.4.20(eslint@9.36.0)
       globals:
-        specifier: ^15.13.0
+        specifier: ^15.15.0
         version: 15.15.0
       husky:
         specifier: ^9.1.7
         version: 9.1.7
       lint-staged:
         specifier: ^16.1.6
-        version: 16.2.0
+        version: 16.1.6
       sass:
         specifier: 1.78.0
         version: 1.78.0
       sass-loader:
-        specifier: ^16.0.3
+        specifier: ^16.0.5
         version: 16.0.5(sass@1.78.0)
       vite:
-        specifier: ^6.2.4
+        specifier: ^6.3.6
         version: 6.3.6(@types/node@24.5.2)(sass@1.78.0)(yaml@2.8.1)
 
   apps/oracle:
@@ -179,41 +180,41 @@ importers:
         specifier: 5.1.0
         version: 5.1.0(@openzeppelin/contracts@5.1.0)
       '@openzeppelin/foundry-upgrades':
-        specifier: ^0.3.6
+        specifier: ^0.3.8
         version: 0.3.8(@openzeppelin/defender-deploy-client-cli@0.0.1-alpha.10)(@openzeppelin/upgrades-core@1.44.1)
       '@openzeppelin/hardhat-upgrades':
         specifier: 3.5.0
         version: 3.5.0(@nomicfoundation/hardhat-ethers@3.1.0(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.9.2))(typescript@5.9.2)))(@nomicfoundation/hardhat-verify@2.1.1(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.9.2))(typescript@5.9.2)))(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.9.2))(typescript@5.9.2))
       ethers:
-        specifier: 6.x
+        specifier: ~6.15.0
         version: 6.15.0
       hardhat:
-        specifier: ^2.23.0
+        specifier: ^2.26.3
         version: 2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.9.2))(typescript@5.9.2)
       hardhat-deploy:
-        specifier: ^0.11.29
+        specifier: ^0.11.45
         version: 0.11.45
       hardhat-ignore-warnings:
-        specifier: ^0.2.11
+        specifier: ^0.2.12
         version: 0.2.12
     devDependencies:
       '@nomicfoundation/hardhat-toolbox':
         specifier: ^5.0.0
-        version: 5.0.0(ax3s2ehwcupjnuzxqw55wktgqq)
+        version: 5.0.0(c04cf9a3c78fbffb539beebf1354da91)
       '@trivago/prettier-plugin-sort-imports':
-        specifier: ^4.0.0
+        specifier: ^4.3.0
         version: 4.3.0(prettier@3.6.2)
       eslint:
-        specifier: ^8.28.0
+        specifier: ^8.57.1
         version: 8.57.1
       eslint-config-prettier:
-        specifier: ^8.5.0
+        specifier: ^8.10.2
         version: 8.10.2(eslint@8.57.1)
       prettier:
-        specifier: ^3.3.3
+        specifier: ^3.6.2
         version: 3.6.2
       prettier-plugin-solidity:
-        specifier: ^1.1.3
+        specifier: ^1.4.3
         version: 1.4.3(prettier@3.6.2)
 
 packages:
@@ -1279,56 +1280,67 @@ packages:
     resolution: {integrity: sha512-aL6hRwu0k7MTUESgkg7QHY6CoqPgr6gdQXRJI1/VbFlUMwsSzPGSR7sG5d+MCbYnJmJwThc2ol3nixj1fvI/zQ==}
     cpu: [arm]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-arm-musleabihf@4.52.0':
     resolution: {integrity: sha512-BTs0M5s1EJejgIBJhCeiFo7GZZ2IXWkFGcyZhxX4+8usnIo5Mti57108vjXFIQmmJaRyDwmV59Tw64Ap1dkwMw==}
     cpu: [arm]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-arm64-gnu@4.52.0':
     resolution: {integrity: sha512-uj672IVOU9m08DBGvoPKPi/J8jlVgjh12C9GmjjBxCTQc3XtVmRkRKyeHSmIKQpvJ7fIm1EJieBUcnGSzDVFyw==}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-arm64-musl@4.52.0':
     resolution: {integrity: sha512-/+IVbeDMDCtB/HP/wiWsSzduD10SEGzIZX2945KSgZRNi4TSkjHqRJtNTVtVb8IRwhJ65ssI56krlLik+zFWkw==}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-loong64-gnu@4.52.0':
     resolution: {integrity: sha512-U1vVzvSWtSMWKKrGoROPBXMh3Vwn93TA9V35PldokHGqiUbF6erSzox/5qrSMKp6SzakvyjcPiVF8yB1xKr9Pg==}
     cpu: [loong64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-ppc64-gnu@4.52.0':
     resolution: {integrity: sha512-X/4WfuBAdQRH8cK3DYl8zC00XEE6aM472W+QCycpQJeLWVnHfkv7RyBFVaTqNUMsTgIX8ihMjCvFF9OUgeABzw==}
     cpu: [ppc64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-riscv64-gnu@4.52.0':
     resolution: {integrity: sha512-xIRYc58HfWDBZoLmWfWXg2Sq8VCa2iJ32B7mqfWnkx5mekekl0tMe7FHpY8I72RXEcUkaWawRvl3qA55og+cwQ==}
     cpu: [riscv64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-riscv64-musl@4.52.0':
     resolution: {integrity: sha512-mbsoUey05WJIOz8U1WzNdf+6UMYGwE3fZZnQqsM22FZ3wh1N887HT6jAOjXs6CNEK3Ntu2OBsyQDXfIjouI4dw==}
     cpu: [riscv64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-linux-s390x-gnu@4.52.0':
     resolution: {integrity: sha512-qP6aP970bucEi5KKKR4AuPFd8aTx9EF6BvutvYxmZuWLJHmnq4LvBfp0U+yFDMGwJ+AIJEH5sIP+SNypauMWzg==}
     cpu: [s390x]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-x64-gnu@4.52.0':
     resolution: {integrity: sha512-nmSVN+F2i1yKZ7rJNKO3G7ZzmxJgoQBQZ/6c4MuS553Grmr7WqR7LLDcYG53Z2m9409z3JLt4sCOhLdbKQ3HmA==}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   '@rollup/rollup-linux-x64-musl@4.52.0':
     resolution: {integrity: sha512-2d0qRo33G6TfQVjaMR71P+yJVGODrt5V6+T0BDYH4EMfGgdC/2HWDVjSSFw888GSzAZUwuska3+zxNUCDco6rQ==}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   '@rollup/rollup-openharmony-arm64@4.52.0':
     resolution: {integrity: sha512-A1JalX4MOaFAAyGgpO7XP5khquv/7xKzLIyLmhNrbiCxWpMlnsTYr8dnsWM7sEeotNmxvSOEL7F65j0HXFcFsw==}
@@ -2155,6 +2167,10 @@ packages:
   chalk@4.1.2:
     resolution: {integrity: sha512-oKnbhFyRIXpUuez8iBMmyEa4nbj4IOQyuhc/wy9kY7/WVPcwIO9VA668Pu8RkO7+0G76SLROeyw9CpQ061i4mA==}
     engines: {node: '>=10'}
+
+  chalk@5.6.2:
+    resolution: {integrity: sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA==}
+    engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
 
   charenc@0.0.2:
     resolution: {integrity: sha512-yrLQ/yVUFXkzg7EDQsPieE/53+0RlaWTs+wBrvW36cyilJ2SaDWfl4Yj7MtLTXleV9uEKefbAGUPv2/iWSooRA==}
@@ -3432,14 +3448,18 @@ packages:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
     engines: {node: '>= 0.8.0'}
 
+  lilconfig@3.1.3:
+    resolution: {integrity: sha512-/vlFKAoH5Cgt3Ie+JLhRbwOsCQePABiU3tJ1egGvyQ+33R/vcwM2Zl2QR/LzjsBeItPt3oSVXapn+m4nQDvpzw==}
+    engines: {node: '>=14'}
+
   limiter@1.1.5:
     resolution: {integrity: sha512-FWWMIEOxz3GwUI4Ts/IvgVy6LPvoMPgjMdQ185nN6psJyBJ4yOpzqm695/h5umdLJg2vW3GR5iG11MAkR2AzJA==}
 
   lines-and-columns@1.2.4:
     resolution: {integrity: sha512-7ylylesZQ/PV29jhEDl3Ufjo6ZX7gCqJr5F7PKrqc93v7fzSymt1BpwEU8nAUXs8qzzvqhbjhK5QZg6Mt/HkBg==}
 
-  lint-staged@16.2.0:
-    resolution: {integrity: sha512-spdYSOCQ2MdZ9CM1/bu/kDmaYGsrpNOeu1InFFV8uhv14x6YIubGxbCpSmGILFoxkiheNQPDXSg5Sbb5ZuVnug==}
+  lint-staged@16.1.6:
+    resolution: {integrity: sha512-U4kuulU3CKIytlkLlaHcGgKscNfJPNTiDF2avIUGFCv7K95/DCYQ7Ra62ydeRWmgQGg9zJYw2dzdbztwJlqrow==}
     engines: {node: '>=20.17'}
     hasBin: true
 
@@ -4380,30 +4400,35 @@ packages:
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [linux]
+    libc: [glibc]
 
   solidity-comments-linux-arm64-musl@0.0.2:
     resolution: {integrity: sha512-guCDbHArcjE+JDXYkxx5RZzY1YF6OnAKCo+sTC5fstyW/KGKaQJNPyBNWuwYsQiaEHpvhW1ha537IvlGek8GqA==}
     engines: {node: '>= 10'}
     cpu: [arm64]
     os: [linux]
+    libc: [musl]
 
   solidity-comments-linux-x64-gnu@0.0.2:
     resolution: {integrity: sha512-zIqLehBK/g7tvrFmQljrfZXfkEeLt2v6wbe+uFu6kH/qAHZa7ybt8Vc0wYcmjo2U0PeBm15d79ee3AkwbIjFdQ==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   solidity-comments-linux-x64-gnu@0.1.1:
     resolution: {integrity: sha512-oiU4yhh1Q9SeGXQ+/sogfTNoOkU8I8IvlIeotBQziTOonUHrxQk4E63kNiYGPDn5ZbB3BhKFmGHNRNrkufsxcQ==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
+    libc: [glibc]
 
   solidity-comments-linux-x64-musl@0.0.2:
     resolution: {integrity: sha512-R9FeDloVlFGTaVkOlELDVC7+1Tjx5WBPI5L8r0AGOPHK3+jOcRh6sKYpI+VskSPDc3vOO46INkpDgUXrKydlIw==}
     engines: {node: '>= 10'}
     cpu: [x64]
     os: [linux]
+    libc: [musl]
 
   solidity-comments-win32-arm64-msvc@0.0.2:
     resolution: {integrity: sha512-QnWJoCQcJj+rnutULOihN9bixOtYWDdF5Rfz9fpHejL1BtNjdLW1om55XNVHGAHPqBxV4aeQQ6OirKnp9zKsug==}
@@ -6334,7 +6359,7 @@ snapshots:
       ethereumjs-util: 7.1.5
       hardhat: 2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.9.2))(typescript@5.9.2)
 
-  '@nomicfoundation/hardhat-toolbox@5.0.0(ax3s2ehwcupjnuzxqw55wktgqq)':
+  '@nomicfoundation/hardhat-toolbox@5.0.0(c04cf9a3c78fbffb539beebf1354da91)':
     dependencies:
       '@nomicfoundation/hardhat-chai-matchers': 2.1.0(@nomicfoundation/hardhat-ethers@3.1.0(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.9.2))(typescript@5.9.2)))(chai@4.5.0)(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.9.2))(typescript@5.9.2))
       '@nomicfoundation/hardhat-ethers': 3.1.0(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.9.2))(typescript@5.9.2))
@@ -7688,6 +7713,8 @@ snapshots:
     dependencies:
       ansi-styles: 4.3.0
       supports-color: 7.2.0
+
+  chalk@5.6.2: {}
 
   charenc@0.0.2: {}
 
@@ -9340,19 +9367,26 @@ snapshots:
       prelude-ls: 1.2.1
       type-check: 0.4.0
 
+  lilconfig@3.1.3: {}
+
   limiter@1.1.5: {}
 
   lines-and-columns@1.2.4: {}
 
-  lint-staged@16.2.0:
+  lint-staged@16.1.6:
     dependencies:
+      chalk: 5.6.2
       commander: 14.0.1
+      debug: 4.4.3(supports-color@8.1.1)
+      lilconfig: 3.1.3
       listr2: 9.0.4
       micromatch: 4.0.8
       nano-spawn: 1.0.3
       pidtree: 0.6.0
       string-argv: 0.3.2
       yaml: 2.8.1
+    transitivePeerDependencies:
+      - supports-color
 
   listr2@9.0.4:
     dependencies:

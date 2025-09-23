@@ -10,30 +10,28 @@
     "test": "echo \"Error: no test specified\"",
     "test:e2e": "echo \"Error: no e2e test specified\""
   },
-  "author": "",
-  "license": "UNLICENSED",
   "dependencies": {
-    "@okta/okta-auth-js": "^7.8.1",
-    "@okta/okta-sdk-nodejs": "^7.1.1",
-    "@stripe/stripe-js": "^1.29.0",
-    "body-parser": "^1.20.0",
+    "@okta/okta-auth-js": "^7.14.0",
+    "@okta/okta-sdk-nodejs": "^7.2.1",
+    "@stripe/stripe-js": "^1.54.2",
+    "body-parser": "^1.20.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.0.0",
+    "dotenv": "^16.6.1",
     "express": "^4.21.2",
-    "express-jwt": "^8.4.1",
+    "express-jwt": "^8.5.1",
     "express-rate-limit": "^8.1.0",
     "http": "0.0.1-security",
     "jsonwebtoken": "^9.0.2",
-    "jwks-rsa": "^3.1.0",
-    "moesif-nodejs": "^3.5.8",
-    "node-fetch": "^2.6.5",
+    "jwks-rsa": "^3.2.0",
+    "moesif-nodejs": "^3.9.1",
+    "node-fetch": "^2.7.0",
     "path": "^0.12.7",
     "stripe": "^8.222.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.7"
+    "nodemon": "^3.1.10"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22"
   }
 }
