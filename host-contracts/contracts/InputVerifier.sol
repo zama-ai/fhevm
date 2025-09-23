@@ -358,6 +358,16 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
         return false;
     }
 
+    /**
+     * @notice               Returns whether the context ID is active.
+     * @param contextId      The context ID to check.
+     * @return isSuspended   Whether the context ID is suspended.
+     */
+    function isContextSuspended(uint256 contextId) public view virtual returns (bool) {
+        InputVerifierStorage storage $ = _getInputVerifierStorage();
+        return $.coprocessorContextStates[contextId] == CoprocessorContextState.Suspended;
+    }
+
     function addNewContextAndSuspendOldOne(
         uint256 newContextId,
         address[] calldata newContextSigners
@@ -465,7 +475,10 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     }
 
     function _verifyEIP712(CiphertextVerification memory ctVerif, bytes[] memory signatures) internal virtual {
-        // Decode the contextId from the extraData.
+        // Decode the `contextId` from `ctVerif.extraData`.
+        /// @dev `extraData` is ABI-encoded as follows:
+        ///      - The first value is reserved for versioning (for backward compatibility).
+        ///      - The second value is the `contextId`, used to identify the verification context.
         (, uint256 contextId) = abi.decode(ctVerif.extraData, (uint256, uint256));
 
         // Ensure the contextId is a valid active or suspended.

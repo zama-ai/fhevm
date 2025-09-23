@@ -191,26 +191,31 @@ task('task:deployInputVerifier')
     const verifyingContractSource = process.env.INPUT_VERIFICATION_ADDRESS!;
     const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
 
-    let initialSigners: string[] = [];
+    // Load the initial coprocessor context from environment variables.
+    let initialContextSigners: string[] = [];
     const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
-    for (let idx = 0; idx < +numSigners; idx++) {
+    const initialContextId = getRequiredEnvVar('COPROCESSOR_CONTEXT_ID');
+    for (let idx = 0; idx < parseInt(numSigners); idx++) {
       if (!taskArguments.useAddress) {
         const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`);
         const inputSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-        initialSigners.push(inputSigner.address);
+        initialContextSigners.push(inputSigner.address);
       } else {
         const inputSignerAddress = getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`);
-        initialSigners.push(inputSignerAddress);
+        initialContextSigners.push(inputSignerAddress);
       }
     }
 
     await upgrades.upgradeProxy(proxy, newImplem, {
-      call: { fn: 'initializeFromEmptyProxy', args: [verifyingContractSource, chainIDSource, initialSigners] },
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [verifyingContractSource, chainIDSource, initialContextId, initialContextSigners],
+      },
     });
     console.log('InputVerifier code set successfully at address:', proxyAddress);
     console.log(
-      `${numSigners} Coprocessor signers were added to InputVerifier at initialization, list of Coprocessor signers is:`,
-      initialSigners,
+      `${numSigners} Coprocessor signers were added to InputVerifier at initialization for context ID ${initialContextId}, list of Coprocessor signers is:`,
+      initialContextSigners,
     );
   });
 

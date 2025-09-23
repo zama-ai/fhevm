@@ -344,7 +344,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       bits.length = 0;
       return this;
     },
-    async encrypt() {
+    async encrypt(contextId = 1) {
       let encrypted = Buffer.alloc(0);
 
       bits.map((v, i) => {
@@ -353,7 +353,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
 
       const encryptedArray = new Uint8Array(encrypted);
       const hash = new Keccak(256).update(Buffer.from(encryptedArray)).digest();
-      const extraDataV0 = ethers.solidityPacked(['uint8'], [0]);
+      const extraDataV0 = ethers.solidityPacked(['uint256', 'uint256'], [0, contextId]);
 
       const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
       if (chainId === undefined) {

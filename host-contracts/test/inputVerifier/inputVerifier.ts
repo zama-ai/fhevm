@@ -1,200 +1,227 @@
+import { loadFixture } from '@nomicfoundation/hardhat-network-helpers';
 import { expect } from 'chai';
 import dotenv from 'dotenv';
+import { Wallet } from 'ethers';
 import fs from 'fs';
 import { ethers } from 'hardhat';
 
+import { InputVerifier, TestInput } from '../../types';
 import { awaitAllDecryptionResults, initDecryptionOracle } from '../asyncDecrypt';
 import { createInstances } from '../instance';
-import { getSigners, initSigners } from '../signers';
+import { Signers, getSigners, initSigners } from '../signers';
+import { FhevmInstances } from '../types';
 
 describe('InputVerifier', function () {
-  before(async function () {
+  let deployer: Wallet;
+  let signers: Signers;
+  let instances: FhevmInstances;
+  let inputVerifier: InputVerifier;
+  let testInput: TestInput;
+
+  async function deployInputVerifierFixture() {
+    const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
+
+    // Initialize signers and FHEVM instances.
     await initSigners(2);
-    this.signers = await getSigners();
-    this.instances = await createInstances(this.signers);
-    this.inputVerifierFactory = await ethers.getContractFactory('InputVerifier');
+    const signers = await getSigners();
+    const instances = await createInstances(signers);
+
+    // Attach to the existing InputVerifier contract.
+    const inputVerifierFactory = await ethers.getContractFactory('InputVerifier');
+    const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
+    const inputVerifier = inputVerifierFactory.attach(origIVAdd) as InputVerifier;
+
+    // Deploy the TestInput contract.
+    const testInputFactory = await ethers.getContractFactory('TestInput');
+    const testInput = await testInputFactory.connect(signers.alice).deploy();
+    await testInput.waitForDeployment();
+
+    return {
+      deployer,
+      signers,
+      instances,
+      inputVerifierFactory,
+      inputVerifier,
+      testInput,
+    };
+  }
+
+  beforeEach(async function () {
+    const fixtureData = await loadFixture(deployInputVerifierFixture);
+    deployer = fixtureData.deployer;
+    signers = fixtureData.signers;
+    instances = fixtureData.instances;
+    inputVerifier = fixtureData.inputVerifier;
+    testInput = fixtureData.testInput;
+
     await initDecryptionOracle();
   });
 
-  it('original owner adds one signer, then adds one more signers, then adds one more, then removes one signer', async function () {
-    if (process.env.HARDHAT_PARALLEL !== '1') {
-      // to avoid messing up other tests if used on the real node, in parallel testing
+  describe('Coprocessor context', function () {
+    it('Should revert because the sender is not the host owner', async function () {
+      const fakeOwner = signers.alice;
+      await expect(inputVerifier.connect(fakeOwner).addNewContextAndSuspendOldOne(2, []))
+        .to.be.revertedWithCustomError(inputVerifier, 'NotHostOwner')
+        .withArgs(fakeOwner);
+    });
 
-      const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
-      const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
-      const inputVerifier = await this.inputVerifierFactory.attach(origIVAdd);
-      expect(await inputVerifier.getVersion()).to.equal('InputVerifier v0.1.0');
+    it('Should revert because the context ID is zero', async function () {
+      const zeroContextId = 0;
+      await expect(
+        inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(zeroContextId, []),
+      ).to.be.revertedWithCustomError(inputVerifier, 'ZeroContextId');
+    });
 
-      const addressSigner = process.env['COPROCESSOR_SIGNER_ADDRESS_1']!;
-      const tx = await inputVerifier.connect(deployer).addSigner(addressSigner);
-      await tx.wait();
+    it('Should revert because the context signers is empty', async function () {
+      const contextId = 2;
+      await expect(inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(contextId, []))
+        .to.be.revertedWithCustomError(inputVerifier, 'EmptyContextSignerAddresses')
+        .withArgs(contextId);
+    });
 
-      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(2); // one signer has been added
+    it('Should revert because the context ID is already used', async function () {
+      const alreadyUsedContextId = 1;
+      const newContextSigners = [signers.alice.address, signers.bob.address];
+      await expect(
+        inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(alreadyUsedContextId, newContextSigners),
+      )
+        .to.be.revertedWithCustomError(inputVerifier, 'ContextAlreadyUsed')
+        .withArgs(alreadyUsedContextId);
+    });
 
-      const contractFactory = await ethers.getContractFactory('TestInput');
-      const contract = await contractFactory.connect(this.signers.alice).deploy();
-      await contract.waitForDeployment();
-      const contractAddress = await contract.getAddress();
-      const inputAlice = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
-      inputAlice.add64(18446744073709550042n);
-      const encryptedAmount = await inputAlice.encrypt();
+    it('Should add the new coprocessor context', async function () {
+      const previousContextId = 1;
+      const newContextId = 2;
+      const newContextSigners = [signers.alice.address, signers.bob.address];
+      await expect(inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(newContextId, newContextSigners)).to.be
+        .fulfilled;
 
-      await expect(contract.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof))
-        .to.revertedWithCustomError(inputVerifier, 'SignatureThresholdNotReached')
-        .withArgs(1n); // should revert because now we are below the threshold! (we receive only 1 signature but threshold is 2)
+      // New context signers should contain the new signers
+      const contextSigners = await inputVerifier.getCoprocessorSigners(newContextId);
+      expect(contextSigners.length).to.equal(2);
+      expect(contextSigners[0]).to.equal(signers.alice.address);
+      expect(contextSigners[1]).to.equal(signers.bob.address);
 
-      await awaitAllDecryptionResults();
-      const y = await contract.yUint64();
-      expect(y).to.equal(0n);
+      // Previous context should be suspended
+      const isSuspended = await inputVerifier.isContextSuspended(previousContextId);
+      expect(isSuspended).to.equal(true);
 
-      process.env.NUM_COPROCESSORS = '2';
-      const encryptedAmount2 = await inputAlice.encrypt();
-      const tx2 = await contract.requestUint64NonTrivial(encryptedAmount2.handles[0], encryptedAmount2.inputProof);
-      await tx2.wait();
+      // Threshold should be half + 1
+      const threshold = await inputVerifier.getThreshold(newContextId);
+      expect(threshold).to.equal(newContextSigners.length / 2 + 1);
 
-      await awaitAllDecryptionResults();
-      const y2 = await contract.yUint64();
-      expect(y2).to.equal(18446744073709550042n); // in this case, one signature still suffices to pass the decrypt (threshold is still 1)
+      // The address should be a signer for the context ID
+      expect(await inputVerifier.isSigner(newContextId, signers.alice.address)).to.equal(true);
+    });
 
-      const addressSigner2 = process.env['COPROCESSOR_SIGNER_ADDRESS_2']!;
-      const tx3 = await inputVerifier.connect(deployer).addSigner(addressSigner2);
-      await tx3.wait();
-      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(3);
+    it('Should deactivate the suspended coprocessor context', async function () {
+      const previousContextId = 1;
+      const newContextId = 2;
+      const newContextSigners = [signers.alice.address, signers.bob.address];
+      await inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(newContextId, newContextSigners);
 
-      const inputAlice2 = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
-      inputAlice2.add64(42);
-      const encryptedAmount3 = await inputAlice2.encrypt();
-      const tx4 = await contract.requestUint64NonTrivial(encryptedAmount3.handles[0], encryptedAmount3.inputProof);
-      await tx4.wait();
+      // Previous context should be suspended
+      expect(await inputVerifier.isContextSuspended(previousContextId)).to.be.equal(true);
 
-      await awaitAllDecryptionResults();
-      const y4 = await contract.yUint64();
-      expect(y4).to.equal(42n); // in this case, two signatures still suffice to pass the decrypt (threshold is still 2)
+      await expect(inputVerifier.connect(deployer).removeSuspendedCoprocessorContext()).to.be.fulfilled;
 
-      const addressSigner3 = process.env['COPROCESSOR_SIGNER_ADDRESS_3']!;
-      const tx5 = await inputVerifier.connect(deployer).addSigner(addressSigner3);
-      await tx5.wait();
-      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(4);
-
-      const inputAlice3 = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
-      inputAlice3.add64(19);
-      const encryptedAmount4 = await inputAlice3.encrypt();
-      await expect(contract.requestUint64NonTrivial(encryptedAmount4.handles[0], encryptedAmount4.inputProof))
-        .to.revertedWithCustomError(inputVerifier, 'SignatureThresholdNotReached')
-        .withArgs(2n); // now we need at least 3 signatures
-
-      process.env.NUM_COPROCESSORS = '4';
-      const inputAlice4 = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
-      inputAlice4.add64(1992);
-      const encryptedAmount5 = await inputAlice4.encrypt();
-      const tx6 = await contract.requestUint64NonTrivial(encryptedAmount5.handles[0], encryptedAmount5.inputProof);
-      await tx6.wait();
-      await awaitAllDecryptionResults();
-      const y5 = await contract.yUint64();
-      expect(y5).to.equal(1992n);
-
-      process.env.NUM_COPROCESSORS = '3';
-      const inputAlice5 = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
-      inputAlice5.add64(873);
-      const encryptedAmount6 = await inputAlice5.encrypt();
-      const tx7 = await contract.requestUint64NonTrivial(encryptedAmount6.handles[0], encryptedAmount6.inputProof);
-      await tx7.wait();
-      await awaitAllDecryptionResults();
-      const y6 = await contract.yUint64();
-      expect(y6).to.equal(873n); // 3 signatures should still work
-
-      const tx8 = await inputVerifier.connect(deployer).removeSigner(addressSigner3);
-      await tx8.wait();
-      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(3);
-      const tx9 = await inputVerifier.connect(deployer).removeSigner(addressSigner2);
-      await tx9.wait();
-      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(2);
-      const tx10 = await inputVerifier.connect(deployer).removeSigner(addressSigner);
-      await tx10.wait();
-      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(1);
-      process.env.NUM_COPROCESSORS = '1';
-    }
+      // Previous context should be deactivated
+      expect(await inputVerifier.isContextSuspended(previousContextId)).to.be.equal(false);
+    });
   });
 
-  it('input tests with several non-trivial inputs', async function () {
-    if (process.env.HARDHAT_PARALLEL !== '1') {
-      // to avoid messing up other tests if used on the real node, in parallel testing
+  describe('Non-trivial inputs', function () {
+    it('Should handle uint64 non-trivial input correctly', async function () {
+      // To avoid messing up other tests if used on the real node, in parallel testing.
+      if (process.env.HARDHAT_PARALLEL !== '1') {
+        const testInputAddress = await testInput.getAddress();
+        const inputAlice = instances.alice.createEncryptedInput(testInputAddress, signers.alice.address);
+        inputAlice.add64(18446744073709550042n);
 
-      const origIVAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
-      const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
-      const inputVerifier = await this.inputVerifierFactory.attach(origIVAdd);
-      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(1);
+        // Value should not be decrypted yet.
+        expect(await testInput.yUint64()).to.equal(0n);
 
-      const addressSigner = process.env['COPROCESSOR_SIGNER_ADDRESS_1']!;
-      const tx = await inputVerifier.connect(deployer).addSigner(addressSigner);
-      await tx.wait();
+        const encryptedAmount = await inputAlice.encrypt();
+        await testInput.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof);
+        await awaitAllDecryptionResults();
 
-      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(2); // one signer has been added
+        // Value should be decrypted now.
+        expect(await testInput.yUint64()).to.equal(18446744073709550042n);
+      }
+    });
 
-      const contractFactory = await ethers.getContractFactory('TestInput');
-      const contract = await contractFactory.connect(this.signers.alice).deploy();
-      await contract.waitForDeployment();
-      const contractAddress = await contract.getAddress();
-      const inputAlice = this.instances.alice.createEncryptedInput(contractAddress, this.signers.alice.address);
-      inputAlice.addBool(true);
-      inputAlice.add8(42);
-      inputAlice.addAddress('0x1E69D5aa8750Ff56c556C164fE6feaE71BBA9a09');
-      const encryptedAmount = await inputAlice.encrypt();
+    it('Should handle mixed non-trivial inputs correctly', async function () {
+      // To avoid messing up other tests if used on the real node, in parallel testing.
+      if (process.env.HARDHAT_PARALLEL !== '1') {
+        const testInputAddress = await testInput.getAddress();
+        const inputAlice = instances.alice.createEncryptedInput(testInputAddress, signers.alice.address);
 
-      await expect(
-        contract.requestMixedNonTrivial(
+        inputAlice.addBool(true);
+        inputAlice.add8(42);
+        inputAlice.addAddress('0x1E69D5aa8750Ff56c556C164fE6feaE71BBA9a09');
+
+        // Values should not be decrypted yet.
+        expect(await testInput.yBool()).to.equal(false);
+        expect(await testInput.yUint8()).to.equal(0);
+        expect(await testInput.yAddress()).to.equal('0x0000000000000000000000000000000000000000');
+
+        const encryptedAmount = await inputAlice.encrypt();
+        await testInput.requestMixedNonTrivial(
           encryptedAmount.handles[0],
           encryptedAmount.handles[1],
           encryptedAmount.handles[2],
           encryptedAmount.inputProof,
-        ),
-      )
-        .to.revertedWithCustomError(inputVerifier, 'SignatureThresholdNotReached')
-        .withArgs(1n); // should revert because now we are below the threshold! (we receive only 1 signature but threshold is 2)
+        );
+        await awaitAllDecryptionResults();
 
-      await awaitAllDecryptionResults();
-      const y = await contract.yBool();
-      expect(y).to.equal(false);
+        // Values should be decrypted now.
+        expect(await testInput.yBool()).to.equal(true);
+        expect(await testInput.yUint8()).to.equal(42);
+        expect(await testInput.yAddress()).to.equal('0x1E69D5aa8750Ff56c556C164fE6feaE71BBA9a09');
+      }
+    });
 
-      process.env.NUM_COPROCESSORS = '2';
-      const encryptedAmount2 = await inputAlice.encrypt();
-      const tx2 = await contract.requestMixedNonTrivial(
-        encryptedAmount2.handles[0],
-        encryptedAmount2.handles[1],
-        encryptedAmount2.handles[2],
-        encryptedAmount2.inputProof,
-      );
-      await tx2.wait();
+    it('Should revert if not enough signatures are provided', async function () {
+      // To avoid messing up other tests if used on the real node, in parallel testing.
+      if (process.env.HARDHAT_PARALLEL !== '1') {
+        // Add new context with 2 signers, so threshold becomes 2.
+        const newContextId = 2;
+        const newContextSigners = [signers.alice.address, signers.bob.address];
+        await inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(newContextId, newContextSigners);
 
-      await awaitAllDecryptionResults();
-      const y2 = await contract.yBool();
-      expect(y2).to.equal(true); // in this case, one signature still suffices to pass the decrypt (threshold is still 1)
-      const y_8 = await contract.yUint8();
-      const y_Add = await contract.yAddress();
-      expect(y_8).to.equal(42);
-      expect(y_Add).to.equal('0x1E69D5aa8750Ff56c556C164fE6feaE71BBA9a09');
+        const testInputAddress = await testInput.getAddress();
 
-      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(2);
-      const tx10 = await inputVerifier.connect(deployer).removeSigner(addressSigner);
-      await tx10.wait();
-      expect((await inputVerifier.getCoprocessorSigners()).length).to.equal(1);
-      process.env.NUM_COPROCESSORS = '1';
-    }
-  });
+        // Prepare uint64 non-trivial input.
+        const inputAlice = instances.alice.createEncryptedInput(testInputAddress, signers.alice.address);
+        inputAlice.add64(18446744073709550042n);
+        const aliceEncryptedAmount = await inputAlice.encrypt(newContextId);
 
-  it('cannot add/remove signers if not the owner', async function () {
-    const origInputAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).INPUT_VERIFIER_CONTRACT_ADDRESS;
-    const inputVerifier = await this.inputVerifierFactory.attach(origInputAdd);
-    const randomAccount = this.signers.carol;
+        // Should revert due to not enough signatures for uint64 non-trivial input.
+        await expect(
+          testInput.requestUint64NonTrivial(aliceEncryptedAmount.handles[0], aliceEncryptedAmount.inputProof),
+        )
+          .to.revertedWithCustomError(inputVerifier, 'SignatureThresholdNotReached')
+          .withArgs(1n);
 
-    await expect(inputVerifier.connect(randomAccount).addSigner(randomAccount)).to.be.revertedWithCustomError(
-      inputVerifier,
-      'NotHostOwner',
-    );
+        // Prepare mixed non-trivial inputs.
+        const inputBob = instances.alice.createEncryptedInput(testInputAddress, signers.bob.address);
+        inputBob.addBool(true);
+        inputBob.add8(42);
+        inputBob.addAddress('0x1E69D5aa8750Ff56c556C164fE6feaE71BBA9a09');
+        const bobEncryptedAmount = await inputBob.encrypt(newContextId);
 
-    await expect(inputVerifier.connect(randomAccount).removeSigner(randomAccount)).to.be.revertedWithCustomError(
-      inputVerifier,
-      'NotHostOwner',
-    );
+        // Should revert due to not enough signatures for mixed non-trivial input.
+        await expect(
+          testInput.requestMixedNonTrivial(
+            bobEncryptedAmount.handles[0],
+            bobEncryptedAmount.handles[1],
+            bobEncryptedAmount.handles[2],
+            bobEncryptedAmount.inputProof,
+          ),
+        )
+          .to.revertedWithCustomError(inputVerifier, 'SignatureThresholdNotReached')
+          .withArgs(1n);
+      }
+    });
   });
 });

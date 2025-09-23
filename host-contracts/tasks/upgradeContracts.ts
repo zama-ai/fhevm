@@ -251,7 +251,19 @@ task('task:upgradeInputVerifier')
     }
     const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
 
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+    // Load the initial coprocessor context from environment variables.
+    let initialContextSigners: string[] = [];
+    const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
+    const initialContextId = getRequiredEnvVar('COPROCESSOR_CONTEXT_ID');
+    for (let idx = 0; idx < parseInt(numSigners); idx++) {
+      const inputSignerAddress = getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`);
+      initialContextSigners.push(inputSignerAddress);
+    }
+
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+      initialContextId,
+      initialContextSigners,
+    ]);
   });
 
 task('task:upgradeHCULimit')
