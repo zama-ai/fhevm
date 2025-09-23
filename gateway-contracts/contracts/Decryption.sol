@@ -56,15 +56,6 @@ contract Decryption is
     /// @notice The maximum number of bits that can be decrypted in a single public/user decryption request.
     uint256 internal constant MAX_DECRYPTION_REQUEST_BITS = 2048;
 
-    /// @notice The version number of the extra data for the public decryption request event.
-    uint256 private constant EXTRA_DATA_VERSION_PUBLIC_DECRYPTION_REQUEST_EVENT = 1;
-
-    /// @notice The version number of the extra data for the user decryption request event.
-    uint256 private constant EXTRA_DATA_VERSION_USER_DECRYPTION_REQUEST_EVENT = 1;
-
-    /// @notice The version number of the extra data for the delegated user decryption request event.
-    uint256 private constant EXTRA_DATA_VERSION_DELEGATED_USER_DECRYPTION_REQUEST_EVENT = 1;
-
     bytes32 private constant DOMAIN_TYPE_HASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
@@ -210,7 +201,7 @@ contract Decryption is
     /// @dev See {IDecryption-publicDecryptionRequest}.
     function publicDecryptionRequest(
         bytes32[] calldata ctHandles,
-        bytes calldata /* extraData */
+        bytes calldata extraData
     ) external virtual whenNotPaused {
         /// @dev Check that the list of handles is not empty
         if (ctHandles.length == 0) {
@@ -232,11 +223,8 @@ contract Decryption is
         /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        // Build the extra data for the decryption request event.
-        bytes memory extraDataV1 = _buildExtraDataV1DecryptionRequestEvent(
-            EXTRA_DATA_VERSION_PUBLIC_DECRYPTION_REQUEST_EVENT,
-            ctHandles
-        );
+        // Fetch the storage URLs that have reached consensus for the ciphertexts
+        string[][] memory storageUrls = CIPHERTEXT_COMMITS.getConsensusStorageUrls(ctHandles);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
 
@@ -251,7 +239,7 @@ contract Decryption is
         /// @dev The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[decryptionId] = ctHandles;
 
-        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraDataV1);
+        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, storageUrls, extraData);
     }
 
     /// @dev See {IDecryption-publicDecryptionResponse}.
@@ -362,11 +350,8 @@ contract Decryption is
         /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        // Build the extra data for the decryption request event.
-        bytes memory extraDataV1 = _buildExtraDataV1DecryptionRequestEvent(
-            EXTRA_DATA_VERSION_DELEGATED_USER_DECRYPTION_REQUEST_EVENT,
-            ctHandles
-        );
+        // Fetch the storage URLs that have reached consensus for the ciphertexts
+        string[][] memory storageUrls = CIPHERTEXT_COMMITS.getConsensusStorageUrls(ctHandles);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
 
@@ -381,7 +366,7 @@ contract Decryption is
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraDataV1);
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, storageUrls, userAddress, publicKey, extraData);
     }
 
     /// @dev See {IDecryption-userDecryptionWithDelegationRequest}.
@@ -445,12 +430,6 @@ contract Decryption is
         /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
         _checkCtMaterialKeyIds(snsCtMaterials);
 
-        // Build the extra data for the decryption request event.
-        bytes memory extraDataV1 = _buildExtraDataV1DecryptionRequestEvent(
-            EXTRA_DATA_VERSION_DELEGATED_USER_DECRYPTION_REQUEST_EVENT,
-            ctHandles
-        );
-
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Generate a new request ID
@@ -464,12 +443,15 @@ contract Decryption is
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
+        // The storage URLs that have reached consensus for the ciphertexts are fetched directly in
+        // the event emission to avoid "stack too deep" errors.
         emit UserDecryptionRequest(
             decryptionId,
             snsCtMaterials,
+            CIPHERTEXT_COMMITS.getConsensusStorageUrls(ctHandles),
             delegationAccounts.delegatedAddress,
             publicKey,
-            extraDataV1
+            extraData
         );
     }
 
@@ -947,25 +929,6 @@ contract Decryption is
         if (requestValidity.startTimestamp + requestValidity.durationDays * 1 days < block.timestamp) {
             revert UserDecryptionRequestExpired(block.timestamp, requestValidity);
         }
-    }
-
-    /// @notice Builds the extra data V1 for any decryption request event.
-    /// @dev For now, the extra data for request events are the same for all decryption types.
-    /// @param version The version number of the extra data
-    /// @param ctHandles The list of ciphertext handles
-    /// @return The extra data for the decryption request event
-    function _buildExtraDataV1DecryptionRequestEvent(
-        uint256 version,
-        bytes32[] memory ctHandles
-    ) internal view virtual returns (bytes memory) {
-        // Fetch the storage URLs that have reached consensus for the ciphertexts
-        string[][] memory storageUrls = CIPHERTEXT_COMMITS.getConsensusStorageUrls(ctHandles);
-
-        // Insert the storage URLs in the extra data.
-        // Version 1 of the extra data is of byte format [version_0..31 | storageUrls_32..]:
-        // - byte 0..31: the version number
-        // - bytes 32..: the storage URLs that have reached consensus for the ciphertexts (ABI encoded)
-        return abi.encode(version, storageUrls);
     }
 
     /// @notice Checks if a given contractAddress is included in the contractAddresses list.

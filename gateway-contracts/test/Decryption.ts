@@ -53,16 +53,11 @@ function getDateInSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
 
-// Build the extra data v1 for the decryption request event
-function buildExtraDataV1DecryptionRequestEvent(ctHandles: string[], storageUrlsPerHandle: Record<string, string[]>) {
-  // Retrieve the storage URLs for each handle
+// Get the storage URLs for the given ctHandles
+function getStorageUrls(ctHandles: string[], storageUrlsPerHandle: Record<string, string[]>) {
   const storageUrls = ctHandles.map((handle) => storageUrlsPerHandle[handle]);
 
-  // For now, there is only one version of the extra data for all decryption request events
-  const version = 1;
-
-  // Encode the extra data the same way it is done in the Decryption contract
-  return hre.ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "string[][]"], [version, storageUrls]);
+  return storageUrls;
 }
 
 // Create a new key, rotate it and activate it. It returns the new key ID.
@@ -352,13 +347,13 @@ describe("Decryption", function () {
       // Request public decryption
       const requestTx = await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
-      // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorStorageUrlsPerHandle);
+      // Get the storage URLs for the given ctHandles
+      const storageUrls = getStorageUrls(ctHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), extraDataV1);
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), storageUrls, extraDataV0);
     });
 
     it("Should request a public decryption with a single ctHandle", async function () {
@@ -369,13 +364,13 @@ describe("Decryption", function () {
 
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
 
-      // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorStorageUrlsPerHandle);
+      // Get the storage URLs for the given ctHandles
+      const storageUrls = getStorageUrls(singleCtHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), extraDataV1);
+        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), storageUrls, extraDataV0);
     });
 
     it("Should revert because ctHandles list is empty", async function () {
@@ -918,13 +913,13 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
-      // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorStorageUrlsPerHandle);
+      // Get the storage URLs for the given ctHandles
+      const storageUrls = getStorageUrls(ctHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), user.address, publicKey, extraDataV1);
+        .withArgs(decryptionId, toValues(snsCiphertextMaterials), storageUrls, user.address, publicKey, extraDataV0);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
@@ -944,13 +939,20 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
-      // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorStorageUrlsPerHandle);
+      // Get the storage URLs for the given ctHandles
+      const storageUrls = getStorageUrls(singleCtHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), user.address, publicKey, extraDataV1);
+        .withArgs(
+          decryptionId,
+          toValues(singleSnsCiphertextMaterials),
+          storageUrls,
+          user.address,
+          publicKey,
+          extraDataV0,
+        );
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
@@ -1793,8 +1795,8 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
-      // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(ctHandles, coprocessorStorageUrlsPerHandle);
+      // Get the storage URLs for the given ctHandles
+      const storageUrls = getStorageUrls(ctHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
@@ -1802,9 +1804,10 @@ describe("Decryption", function () {
         .withArgs(
           decryptionId,
           toValues(snsCiphertextMaterials),
+          storageUrls,
           delegationAccounts.delegatedAddress,
           publicKey,
-          extraDataV1,
+          extraDataV0,
         );
     });
 
@@ -1824,8 +1827,8 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
-      // Build extra data v1 for the decryption request event
-      const extraDataV1 = buildExtraDataV1DecryptionRequestEvent(singleCtHandles, coprocessorStorageUrlsPerHandle);
+      // Get the storage URLs for the given ctHandles
+      const storageUrls = getStorageUrls(singleCtHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
@@ -1833,9 +1836,10 @@ describe("Decryption", function () {
         .withArgs(
           decryptionId,
           toValues(singleSnsCiphertextMaterials),
+          storageUrls,
           delegationAccounts.delegatedAddress,
           publicKey,
-          extraDataV1,
+          extraDataV0,
         );
     });
 

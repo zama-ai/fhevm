@@ -16,6 +16,7 @@ contract DecryptionMock {
     event PublicDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
+        string[][] storageUrls,
         bytes extraData
     );
 
@@ -29,6 +30,7 @@ contract DecryptionMock {
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
+        string[][] storageUrls,
         address userAddress,
         bytes publicKey,
         bytes extraData
@@ -43,13 +45,13 @@ contract DecryptionMock {
 
     uint256 _decryptionRequestCounter;
 
-    function publicDecryptionRequest(bytes32[] calldata ctHandles, bytes calldata /* unusedVariable */) external {
+    function publicDecryptionRequest(bytes32[] calldata ctHandles, bytes calldata extraData) external {
         _decryptionRequestCounter++;
         uint256 decryptionId = _decryptionRequestCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
-        bytes memory extraData;
+        string[][] memory storageUrls = new string[][](1);
 
-        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
+        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, storageUrls, extraData);
     }
 
     function publicDecryptionResponse(
@@ -75,8 +77,9 @@ contract DecryptionMock {
         _decryptionRequestCounter++;
         uint256 decryptionId = _decryptionRequestCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
+        string[][] memory storageUrls = new string[][](1);
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, storageUrls, userAddress, publicKey, extraData);
     }
 
     function delegatedUserDecryptionRequest(
@@ -91,9 +94,10 @@ contract DecryptionMock {
         _decryptionRequestCounter++;
         uint256 decryptionId = _decryptionRequestCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
+        string[][] memory storageUrls = new string[][](1);
         address userAddress;
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(decryptionId, snsCtMaterials, storageUrls, userAddress, publicKey, extraData);
     }
 
     function userDecryptionResponse(

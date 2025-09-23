@@ -37,6 +37,8 @@ describe("Mock contracts", function () {
     snsCiphertextDigest: DefaultBytes32,
   };
 
+  const DefaultStorageUrls = [[]];
+
   const DefaultProtocolMetadata = { name: DefaultString, website: DefaultString };
 
   const DefaultKmsNode = {
@@ -216,7 +218,7 @@ describe("Mock contracts", function () {
       decryptionCounterId++;
       await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32], DefaultBytes))
         .to.emit(decryptionMock, "PublicDecryptionRequest")
-        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
+        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultStorageUrls, DefaultBytes);
     });
 
     it("Should emit PublicDecryptionResponse event on public decryption response", async function () {
@@ -244,6 +246,7 @@ describe("Mock contracts", function () {
         .withArgs(
           decryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
+          DefaultStorageUrls,
           DefaultAddress,
           DefaultBytes,
           DefaultBytes,
@@ -267,6 +270,7 @@ describe("Mock contracts", function () {
         .withArgs(
           decryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
+          DefaultStorageUrls,
           DefaultAddress,
           DefaultBytes,
           DefaultBytes,
@@ -348,7 +352,15 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(inputVerificationMock, "VerifyProofRequest")
-        .withArgs(zkProofCounterId, DefaultUint256, DefaultUint256, DefaultAddress, DefaultAddress, DefaultBytes, DefaultBytes);
+        .withArgs(
+          zkProofCounterId,
+          DefaultUint256,
+          DefaultUint256,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultBytes,
+          DefaultBytes,
+        );
     });
 
     it("Should emit VerifyProofResponse event on verify proof response", async function () {
