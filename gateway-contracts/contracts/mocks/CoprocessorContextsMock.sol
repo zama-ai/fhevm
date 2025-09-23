@@ -61,9 +61,9 @@ contract CoprocessorContextsMock {
     function forceUpdateContextToStatus(uint256 contextId, ContextStatus status) external {
         uint256 deactivatedBlockTimestamp;
 
-        emit ActivateCoprocessorContext(contextId);
-
         emit SuspendCoprocessorContext(contextId, deactivatedBlockTimestamp);
+
+        emit ActivateCoprocessorContext(contextId);
 
         emit DeactivateCoprocessorContext(contextId);
 

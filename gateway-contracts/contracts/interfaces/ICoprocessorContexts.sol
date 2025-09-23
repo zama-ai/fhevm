@@ -232,19 +232,14 @@ interface ICoprocessorContexts {
 
     /**
      * @notice Manually force the status update of a coprocessor context.
-     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
-     * used correctly. ⚠️
-     * Hence, prior to using this function, the caller should make sure that:
-     * - the status update is not against any of the lifecycle's rules (else it will revert)
-     * - the usually expected requirements (in the whole protocol) for the status update are met
-     * Additionally:
-     * - this function expects the context to already have been added and thus will revert if the
-     * targeted status does not reflect that
-     * - if a status update needs to be associated to a block timestamp, the current block timestamp
-     * will be used (i.e., the status update is immediate)
+     * This function reverts if
+     * - the status update is against any of the lifecycle's rules
+     * - the context has not been added yet
      * The following context status updates are only possible through this function:
      * - Compromised
      * - Destroyed
+     * Additionally, if a status update needs to be associated to a block timestamp, the current
+     * block timestamp is used (i.e., the status update is immediate)
      * @param contextId The ID of the coprocessor context to update.
      * @param status The status to update the coprocessor context to.
      */

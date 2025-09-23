@@ -91,7 +91,10 @@ Additionally:
 - in case of emergency (ex: bad software update), the owner can directly move a context from `suspended` back to `active`, which deactivates the context with issues.
 - an `active` context cannot be set to `compromised`,`deactivated` or `destroyed`, in order to ensure that the fhevm Gateway always has one active context.
 
-The complete lifecycle of a coprocessor context is represented in the following diagram:
+The complete lifecycle of a coprocessor context is represented in the following diagram, with the following legend:
+
+- _Red_: Automated status update
+- _Black_: Manual only status update
 
 ![Context lifecycle](../../.assets/lifecycle_contexts.png)
 

@@ -235,15 +235,13 @@ contract CoprocessorContexts is
                 $.coprocessorContextSuspendedTimePeriod[activeContextId];
             $.coprocessorContextDeactivatedBlockTimestamp[activeContextId] = deactivatedBlockTimestamp;
 
-            // Set the current active coprocessor context to the suspended state
-            ContextLifecycle.setSuspended($.coprocessorContextLifecycle, activeContextId);
+            // Set the new context as active and the current active context as suspended
+            ContextLifecycle.setActiveAndSuspended(
+                $.coprocessorContextLifecycle,
+                preActivationContextId,
+                activeContextId
+            );
             emit SuspendCoprocessorContext(activeContextId, deactivatedBlockTimestamp);
-
-            // Set the new active coprocessor context
-            // It is mandatory to directly set the new active coprocessor context right after suspending
-            // the current one in order to avoid having a state where no active context is available,
-            // which should never happen.
-            ContextLifecycle.setActive($.coprocessorContextLifecycle, preActivationContextId);
             emit ActivateCoprocessorContext(preActivationContextId);
         }
 
@@ -260,8 +258,6 @@ contract CoprocessorContexts is
 
     /**
      * @dev See {ICoprocessorContexts-forceUpdateContextToStatus}.
-     * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
-     * used correctly. See the interface documentation for more details. ⚠️
      */
     function forceUpdateContextToStatus(
         uint256 contextId,
@@ -269,16 +265,13 @@ contract CoprocessorContexts is
     ) external virtual onlyGatewayOwner ensureContextInitialized(contextId) {
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
         if (status == ContextStatus.Active) {
-            ContextLifecycle.setActive($.coprocessorContextLifecycle, contextId);
-            emit ActivateCoprocessorContext(contextId);
+            // Get the current active context ID
+            uint256 activeContextId = getActiveCoprocessorContextId();
 
-            // Set the suspended block timestamp to the current block timestamp (i.e., the status update
-            // is immediate)
-            // ⚠️ This should be used with caution as it will create a state where no context is active,
-            // which should never happen. Please make sure to activate a context right after. ⚠️
-        } else if (status == ContextStatus.Suspended) {
-            ContextLifecycle.setSuspended($.coprocessorContextLifecycle, contextId);
-            emit SuspendCoprocessorContext(contextId, block.timestamp);
+            // Set the new context as active and the current active context as suspended
+            ContextLifecycle.setActiveAndSuspended($.coprocessorContextLifecycle, contextId, activeContextId);
+            emit SuspendCoprocessorContext(activeContextId, block.timestamp);
+            emit ActivateCoprocessorContext(contextId);
         } else if (status == ContextStatus.Deactivated) {
             ContextLifecycle.setDeactivated($.coprocessorContextLifecycle, contextId);
             emit DeactivateCoprocessorContext(contextId);
@@ -307,17 +300,14 @@ contract CoprocessorContexts is
 
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
 
-        // Suspend the (problematic) active coprocessor context
-        ContextLifecycle.setSuspended($.coprocessorContextLifecycle, activeContextId);
+        // Re-activate the suspended coprocessor context and suspend the (problematic) active context
+        ContextLifecycle.setActiveAndSuspended($.coprocessorContextLifecycle, suspendedContextId, activeContextId);
 
         // Define the deactivation block timestamp for the current active coprocessor context
         uint256 deactivatedBlockTimestamp = block.timestamp + suspendedTimePeriod;
         $.coprocessorContextDeactivatedBlockTimestamp[activeContextId] = deactivatedBlockTimestamp;
 
         emit SuspendCoprocessorContext(activeContextId, deactivatedBlockTimestamp);
-
-        // Re-activate the suspended coprocessor context
-        ContextLifecycle.setActive($.coprocessorContextLifecycle, suspendedContextId);
         emit ActivateCoprocessorContext(suspendedContextId);
     }
 

@@ -49,6 +49,11 @@ library ContextLifecycle {
     error PreActivationContextOngoing(uint256 preActivationContextId);
 
     /**
+     * @notice Error indicating that an active context is ongoing.
+     */
+    error ActiveContextOngoing(uint256 activeContextId);
+
+    /**
      * @notice Error indicating that a suspended context is ongoing.
      */
     error SuspendedContextOngoing(uint256 suspendedContextId);
@@ -170,7 +175,7 @@ library ContextLifecycle {
     ) internal onlyNonNullContextId(contextId) {
         // This function should only be called if there is no active context yet
         if ($.activeContextId != 0) {
-            revert ContextIsActive($.activeContextId);
+            revert ActiveContextOngoing($.activeContextId);
         }
 
         $.contextStatuses[contextId] = ContextStatus.Active;
@@ -182,10 +187,16 @@ library ContextLifecycle {
      * @dev There should only be one active context at a time.
      * @param contextId The ID of the context to set as active.
      */
-    function setActive(ContextLifecycleStorage storage $, uint256 contextId) internal onlyNonNullContextId(contextId) {
+    function _setActive(ContextLifecycleStorage storage $, uint256 contextId) internal onlyNonNullContextId(contextId) {
         // Only a pre-activated or suspended context can be set as active
         if (!isPreActivation($, contextId) && !isSuspended($, contextId)) {
             revert ContextNotPreActivatedOrSuspended(contextId);
+        }
+
+        // There should only be one active context at a time. The old active context must be suspended
+        // first before a new active context can be set.
+        if ($.activeContextId != 0) {
+            revert ActiveContextOngoing($.activeContextId);
         }
 
         $.contextStatuses[contextId] = ContextStatus.Active;
@@ -205,13 +216,13 @@ library ContextLifecycle {
     /**
      * @notice Sets the context as suspended.
      * ⚠️ This function should be used with caution as it can lead to unexpected behaviors if not
-     * used correctly. ⚠️
+     * used correctly. Use `setActiveAndSuspended` instead. ⚠️
      * A suspended context is expected to always be followed by a context activation in order to
      * avoid having a state where no active context is available, which should never happen.
      * @dev There can only be one suspended context at a time.
      * @param contextId The ID of the context to set as suspended.
      */
-    function setSuspended(
+    function _setSuspended(
         ContextLifecycleStorage storage $,
         uint256 contextId
     ) internal onlyNonNullContextId(contextId) {
@@ -225,6 +236,22 @@ library ContextLifecycle {
 
         // Reset the active context ID as it is now suspended
         $.activeContextId = 0;
+    }
+
+    /**
+     * @notice Sets the contexts as active and suspended.
+     * @dev This function should be favored over setting the contexts separately as it ensures that
+     * there is always a (single) active context.
+     * @param contextIdToActivate The ID of the context to set as active.
+     * @param contextIdToSuspend The ID of the context to set as suspended.
+     */
+    function setActiveAndSuspended(
+        ContextLifecycleStorage storage $,
+        uint256 contextIdToActivate,
+        uint256 contextIdToSuspend
+    ) internal {
+        _setSuspended($, contextIdToSuspend);
+        _setActive($, contextIdToActivate);
     }
 
     /**

@@ -179,12 +179,6 @@ describe("Mock contracts", function () {
         .withArgs(DefaultUint256);
     });
 
-    it("Should emit SuspendCoprocessorContext event on force update context to suspended", async function () {
-      await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Suspended))
-        .to.emit(coprocessorContextsMock, "SuspendCoprocessorContext")
-        .withArgs(DefaultUint256, DefaultUint256);
-    });
-
     it("Should emit DeactivateCoprocessorContext event on force update context to deactivated", async function () {
       await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Deactivated))
         .to.emit(coprocessorContextsMock, "DeactivateCoprocessorContext")
