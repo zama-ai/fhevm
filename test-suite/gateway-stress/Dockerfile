@@ -16,7 +16,7 @@ COPY test-suite/gateway-stress test-suite/gateway-stress
 
 # Build with improved caching
 WORKDIR /app/test-suite/gateway-stress
-RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo build --profile=${LTO_RELEASE}
 
 # Stage 2: Runtime image

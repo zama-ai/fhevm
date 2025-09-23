@@ -30,7 +30,7 @@ RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
 
 # Build with improved caching
 WORKDIR /app/kms-connector
-RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     git config --global --add safe.directory /app && \
     cargo build --profile=${LTO_RELEASE} -p tx-sender
 
