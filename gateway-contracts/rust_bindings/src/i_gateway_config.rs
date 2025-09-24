@@ -37,12 +37,12 @@ interface IGatewayConfig {
     error EmptyKmsNodes();
     error HostChainAlreadyRegistered(uint256 chainId);
     error HostChainNotRegistered(uint256 chainId);
-    error InvalidHighKeygenThreshold(uint256 keygenThreshold, uint256 nKmsNodes);
+    error InvalidHighKmsGenThreshold(uint256 kmsGenThreshold, uint256 nKmsNodes);
     error InvalidHighMpcThreshold(uint256 mpcThreshold, uint256 nKmsNodes);
     error InvalidHighPublicDecryptionThreshold(uint256 publicDecryptionThreshold, uint256 nKmsNodes);
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
     error InvalidNullChainId();
-    error InvalidNullKeygenThreshold();
+    error InvalidNullKmsGenThreshold();
     error InvalidNullPublicDecryptionThreshold();
     error InvalidNullUserDecryptionThreshold();
     error NotCoprocessorSigner(address signerAddress);
@@ -57,7 +57,7 @@ interface IGatewayConfig {
     event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
     event PauseAllGatewayContracts();
     event UnpauseAllGatewayContracts();
-    event UpdateKeygenThreshold(uint256 newKeygenThreshold);
+    event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
     event UpdateMpcThreshold(uint256 newMpcThreshold);
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
@@ -79,7 +79,7 @@ interface IGatewayConfig {
     function getCustodianTxSenders() external view returns (address[] memory);
     function getHostChain(uint256 index) external view returns (HostChain memory);
     function getHostChains() external view returns (HostChain[] memory);
-    function getKeygenThreshold() external view returns (uint256);
+    function getKmsGenThreshold() external view returns (uint256);
     function getKmsNode(address kmsTxSenderAddress) external view returns (KmsNode memory);
     function getKmsSigners() external view returns (address[] memory);
     function getKmsTxSenders() external view returns (address[] memory);
@@ -91,7 +91,7 @@ interface IGatewayConfig {
     function isPauser(address account) external view returns (bool);
     function pauseAllGatewayContracts() external;
     function unpauseAllGatewayContracts() external;
-    function updateKeygenThreshold(uint256 newKeygenThreshold) external;
+    function updateKmsGenThreshold(uint256 newKmsGenThreshold) external;
     function updateMpcThreshold(uint256 newMpcThreshold) external;
     function updatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold) external;
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
@@ -457,7 +457,7 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
-    "name": "getKeygenThreshold",
+    "name": "getKmsGenThreshold",
     "inputs": [],
     "outputs": [
       {
@@ -647,10 +647,10 @@ interface IGatewayConfig {
   },
   {
     "type": "function",
-    "name": "updateKeygenThreshold",
+    "name": "updateKmsGenThreshold",
     "inputs": [
       {
-        "name": "newKeygenThreshold",
+        "name": "newKmsGenThreshold",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -856,10 +856,10 @@ interface IGatewayConfig {
   },
   {
     "type": "event",
-    "name": "UpdateKeygenThreshold",
+    "name": "UpdateKmsGenThreshold",
     "inputs": [
       {
-        "name": "newKeygenThreshold",
+        "name": "newKmsGenThreshold",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -956,10 +956,10 @@ interface IGatewayConfig {
   },
   {
     "type": "error",
-    "name": "InvalidHighKeygenThreshold",
+    "name": "InvalidHighKmsGenThreshold",
     "inputs": [
       {
-        "name": "keygenThreshold",
+        "name": "kmsGenThreshold",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -1025,7 +1025,7 @@ interface IGatewayConfig {
   },
   {
     "type": "error",
-    "name": "InvalidNullKeygenThreshold",
+    "name": "InvalidNullKmsGenThreshold",
     "inputs": []
   },
   {
@@ -2864,15 +2864,15 @@ error HostChainNotRegistered(uint256 chainId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidHighKeygenThreshold(uint256,uint256)` and selector `0x0450a857`.
+    /**Custom error with signature `InvalidHighKmsGenThreshold(uint256,uint256)` and selector `0x0f69cbfc`.
 ```solidity
-error InvalidHighKeygenThreshold(uint256 keygenThreshold, uint256 nKmsNodes);
+error InvalidHighKmsGenThreshold(uint256 kmsGenThreshold, uint256 nKmsNodes);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct InvalidHighKeygenThreshold {
+    pub struct InvalidHighKmsGenThreshold {
         #[allow(missing_docs)]
-        pub keygenThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        pub kmsGenThreshold: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub nKmsNodes: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -2907,31 +2907,31 @@ error InvalidHighKeygenThreshold(uint256 keygenThreshold, uint256 nKmsNodes);
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<InvalidHighKeygenThreshold>
+        impl ::core::convert::From<InvalidHighKmsGenThreshold>
         for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidHighKeygenThreshold) -> Self {
-                (value.keygenThreshold, value.nKmsNodes)
+            fn from(value: InvalidHighKmsGenThreshold) -> Self {
+                (value.kmsGenThreshold, value.nKmsNodes)
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for InvalidHighKeygenThreshold {
+        for InvalidHighKmsGenThreshold {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self {
-                    keygenThreshold: tuple.0,
+                    kmsGenThreshold: tuple.0,
                     nKmsNodes: tuple.1,
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidHighKeygenThreshold {
+        impl alloy_sol_types::SolError for InvalidHighKmsGenThreshold {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidHighKeygenThreshold(uint256,uint256)";
-            const SELECTOR: [u8; 4] = [4u8, 80u8, 168u8, 87u8];
+            const SIGNATURE: &'static str = "InvalidHighKmsGenThreshold(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [15u8, 105u8, 203u8, 252u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2943,7 +2943,7 @@ error InvalidHighKeygenThreshold(uint256 keygenThreshold, uint256 nKmsNodes);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.keygenThreshold),
+                    > as alloy_sol_types::SolType>::tokenize(&self.kmsGenThreshold),
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.nKmsNodes),
@@ -3323,13 +3323,13 @@ error InvalidNullChainId();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `InvalidNullKeygenThreshold()` and selector `0x98cc4bb3`.
+    /**Custom error with signature `InvalidNullKmsGenThreshold()` and selector `0x3ee50774`.
 ```solidity
-error InvalidNullKeygenThreshold();
+error InvalidNullKmsGenThreshold();
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct InvalidNullKeygenThreshold;
+    pub struct InvalidNullKmsGenThreshold;
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3355,28 +3355,28 @@ error InvalidNullKeygenThreshold();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<InvalidNullKeygenThreshold>
+        impl ::core::convert::From<InvalidNullKmsGenThreshold>
         for UnderlyingRustTuple<'_> {
-            fn from(value: InvalidNullKeygenThreshold) -> Self {
+            fn from(value: InvalidNullKmsGenThreshold) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
         impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for InvalidNullKeygenThreshold {
+        for InvalidNullKmsGenThreshold {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolError for InvalidNullKeygenThreshold {
+        impl alloy_sol_types::SolError for InvalidNullKmsGenThreshold {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "InvalidNullKeygenThreshold()";
-            const SELECTOR: [u8; 4] = [152u8, 204u8, 75u8, 179u8];
+            const SIGNATURE: &'static str = "InvalidNullKmsGenThreshold()";
+            const SELECTOR: [u8; 4] = [62u8, 229u8, 7u8, 116u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -4555,9 +4555,9 @@ event UnpauseAllGatewayContracts();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UpdateKeygenThreshold(uint256)` and selector `0x4bdc87f24182d4290326db16e01b050bdf19b43beea7bad50aef3a59291e79f2`.
+    /**Event with signature `UpdateKmsGenThreshold(uint256)` and selector `0x30c9b1d004f57eae3c6cc3a3752bcb4c8ea2e57c8241a782aa9b65fbc604ec5b`.
 ```solidity
-event UpdateKeygenThreshold(uint256 newKeygenThreshold);
+event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4566,9 +4566,9 @@ event UpdateKeygenThreshold(uint256 newKeygenThreshold);
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct UpdateKeygenThreshold {
+    pub struct UpdateKmsGenThreshold {
         #[allow(missing_docs)]
-        pub newKeygenThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        pub newKmsGenThreshold: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -4579,17 +4579,17 @@ event UpdateKeygenThreshold(uint256 newKeygenThreshold);
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for UpdateKeygenThreshold {
+        impl alloy_sol_types::SolEvent for UpdateKmsGenThreshold {
             type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "UpdateKeygenThreshold(uint256)";
+            const SIGNATURE: &'static str = "UpdateKmsGenThreshold(uint256)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                75u8, 220u8, 135u8, 242u8, 65u8, 130u8, 212u8, 41u8, 3u8, 38u8, 219u8,
-                22u8, 224u8, 27u8, 5u8, 11u8, 223u8, 25u8, 180u8, 59u8, 238u8, 167u8,
-                186u8, 213u8, 10u8, 239u8, 58u8, 89u8, 41u8, 30u8, 121u8, 242u8,
+                48u8, 201u8, 177u8, 208u8, 4u8, 245u8, 126u8, 174u8, 60u8, 108u8, 195u8,
+                163u8, 117u8, 43u8, 203u8, 76u8, 142u8, 162u8, 229u8, 124u8, 130u8, 65u8,
+                167u8, 130u8, 170u8, 155u8, 101u8, 251u8, 198u8, 4u8, 236u8, 91u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4598,7 +4598,7 @@ event UpdateKeygenThreshold(uint256 newKeygenThreshold);
                 topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
-                Self { newKeygenThreshold: data.0 }
+                Self { newKmsGenThreshold: data.0 }
             }
             #[inline]
             fn check_signature(
@@ -4620,7 +4620,7 @@ event UpdateKeygenThreshold(uint256 newKeygenThreshold);
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.newKeygenThreshold),
+                    > as alloy_sol_types::SolType>::tokenize(&self.newKmsGenThreshold),
                 )
             }
             #[inline]
@@ -4642,7 +4642,7 @@ event UpdateKeygenThreshold(uint256 newKeygenThreshold);
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for UpdateKeygenThreshold {
+        impl alloy_sol_types::private::IntoLogData for UpdateKmsGenThreshold {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -4651,9 +4651,9 @@ event UpdateKeygenThreshold(uint256 newKeygenThreshold);
             }
         }
         #[automatically_derived]
-        impl From<&UpdateKeygenThreshold> for alloy_sol_types::private::LogData {
+        impl From<&UpdateKmsGenThreshold> for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &UpdateKeygenThreshold) -> alloy_sol_types::private::LogData {
+            fn from(this: &UpdateKmsGenThreshold) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -7538,19 +7538,19 @@ function getHostChains() external view returns (HostChain[] memory);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `getKeygenThreshold()` and selector `0xb36b9da9`.
+    /**Function with signature `getKmsGenThreshold()` and selector `0xb4722bc4`.
 ```solidity
-function getKeygenThreshold() external view returns (uint256);
+function getKmsGenThreshold() external view returns (uint256);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getKeygenThresholdCall;
+    pub struct getKmsGenThresholdCall;
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`getKeygenThreshold()`](getKeygenThresholdCall) function.
+    ///Container type for the return parameters of the [`getKmsGenThreshold()`](getKmsGenThresholdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct getKeygenThresholdReturn {
+    pub struct getKmsGenThresholdReturn {
         #[allow(missing_docs)]
         pub _0: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -7580,16 +7580,16 @@ function getKeygenThreshold() external view returns (uint256);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getKeygenThresholdCall>
+            impl ::core::convert::From<getKmsGenThresholdCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: getKeygenThresholdCall) -> Self {
+                fn from(value: getKmsGenThresholdCall) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getKeygenThresholdCall {
+            for getKmsGenThresholdCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self
                 }
@@ -7615,23 +7615,23 @@ function getKeygenThreshold() external view returns (uint256);
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<getKeygenThresholdReturn>
+            impl ::core::convert::From<getKmsGenThresholdReturn>
             for UnderlyingRustTuple<'_> {
-                fn from(value: getKeygenThresholdReturn) -> Self {
+                fn from(value: getKmsGenThresholdReturn) -> Self {
                     (value._0,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for getKeygenThresholdReturn {
+            for getKmsGenThresholdReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self { _0: tuple.0 }
                 }
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for getKeygenThresholdCall {
+        impl alloy_sol_types::SolCall for getKmsGenThresholdCall {
             type Parameters<'a> = ();
             type Token<'a> = <Self::Parameters<
                 'a,
@@ -7641,8 +7641,8 @@ function getKeygenThreshold() external view returns (uint256);
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "getKeygenThreshold()";
-            const SELECTOR: [u8; 4] = [179u8, 107u8, 157u8, 169u8];
+            const SIGNATURE: &'static str = "getKmsGenThreshold()";
+            const SELECTOR: [u8; 4] = [180u8, 114u8, 43u8, 196u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -7667,7 +7667,7 @@ function getKeygenThreshold() external view returns (uint256);
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence(data)
                     .map(|r| {
-                        let r: getKeygenThresholdReturn = r.into();
+                        let r: getKmsGenThresholdReturn = r.into();
                         r._0
                     })
             }
@@ -7679,7 +7679,7 @@ function getKeygenThreshold() external view returns (uint256);
                     '_,
                 > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
                     .map(|r| {
-                        let r: getKeygenThresholdReturn = r.into();
+                        let r: getKmsGenThresholdReturn = r.into();
                         r._0
                     })
             }
@@ -9306,20 +9306,20 @@ function unpauseAllGatewayContracts() external;
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `updateKeygenThreshold(uint256)` and selector `0x5f9e797b`.
+    /**Function with signature `updateKmsGenThreshold(uint256)` and selector `0x0724dd23`.
 ```solidity
-function updateKeygenThreshold(uint256 newKeygenThreshold) external;
+function updateKmsGenThreshold(uint256 newKmsGenThreshold) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct updateKeygenThresholdCall {
+    pub struct updateKmsGenThresholdCall {
         #[allow(missing_docs)]
-        pub newKeygenThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        pub newKmsGenThreshold: alloy::sol_types::private::primitives::aliases::U256,
     }
-    ///Container type for the return parameters of the [`updateKeygenThreshold(uint256)`](updateKeygenThresholdCall) function.
+    ///Container type for the return parameters of the [`updateKmsGenThreshold(uint256)`](updateKmsGenThresholdCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct updateKeygenThresholdReturn {}
+    pub struct updateKmsGenThresholdReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -9348,19 +9348,19 @@ function updateKeygenThreshold(uint256 newKeygenThreshold) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<updateKeygenThresholdCall>
+            impl ::core::convert::From<updateKmsGenThresholdCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: updateKeygenThresholdCall) -> Self {
-                    (value.newKeygenThreshold,)
+                fn from(value: updateKmsGenThresholdCall) -> Self {
+                    (value.newKmsGenThreshold,)
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for updateKeygenThresholdCall {
+            for updateKmsGenThresholdCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
-                        newKeygenThreshold: tuple.0,
+                        newKmsGenThreshold: tuple.0,
                     }
                 }
             }
@@ -9383,43 +9383,43 @@ function updateKeygenThreshold(uint256 newKeygenThreshold) external;
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<updateKeygenThresholdReturn>
+            impl ::core::convert::From<updateKmsGenThresholdReturn>
             for UnderlyingRustTuple<'_> {
-                fn from(value: updateKeygenThresholdReturn) -> Self {
+                fn from(value: updateKmsGenThresholdReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for updateKeygenThresholdReturn {
+            for updateKmsGenThresholdReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
             }
         }
-        impl updateKeygenThresholdReturn {
+        impl updateKmsGenThresholdReturn {
             fn _tokenize(
                 &self,
-            ) -> <updateKeygenThresholdCall as alloy_sol_types::SolCall>::ReturnToken<
+            ) -> <updateKmsGenThresholdCall as alloy_sol_types::SolCall>::ReturnToken<
                 '_,
             > {
                 ()
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for updateKeygenThresholdCall {
+        impl alloy_sol_types::SolCall for updateKmsGenThresholdCall {
             type Parameters<'a> = (alloy::sol_types::sol_data::Uint<256>,);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = updateKeygenThresholdReturn;
+            type Return = updateKmsGenThresholdReturn;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "updateKeygenThreshold(uint256)";
-            const SELECTOR: [u8; 4] = [95u8, 158u8, 121u8, 123u8];
+            const SIGNATURE: &'static str = "updateKmsGenThreshold(uint256)";
+            const SELECTOR: [u8; 4] = [7u8, 36u8, 221u8, 35u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -9431,12 +9431,12 @@ function updateKeygenThreshold(uint256 newKeygenThreshold) external;
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.newKeygenThreshold),
+                    > as alloy_sol_types::SolType>::tokenize(&self.newKmsGenThreshold),
                 )
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                updateKeygenThresholdReturn::_tokenize(ret)
+                updateKmsGenThresholdReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -9951,7 +9951,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         getHostChains(getHostChainsCall),
         #[allow(missing_docs)]
-        getKeygenThreshold(getKeygenThresholdCall),
+        getKmsGenThreshold(getKmsGenThresholdCall),
         #[allow(missing_docs)]
         getKmsNode(getKmsNodeCall),
         #[allow(missing_docs)]
@@ -9975,7 +9975,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         unpauseAllGatewayContracts(unpauseAllGatewayContractsCall),
         #[allow(missing_docs)]
-        updateKeygenThreshold(updateKeygenThresholdCall),
+        updateKmsGenThreshold(updateKmsGenThresholdCall),
         #[allow(missing_docs)]
         updateMpcThreshold(updateMpcThresholdCall),
         #[allow(missing_docs)]
@@ -9992,6 +9992,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [7u8, 36u8, 221u8, 35u8],
             [13u8, 142u8, 110u8, 44u8],
             [30u8, 165u8, 189u8, 66u8],
             [37u8, 133u8, 187u8, 101u8],
@@ -10002,7 +10003,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             [70u8, 251u8, 246u8, 142u8],
             [72u8, 20u8, 76u8, 97u8],
             [73u8, 126u8, 244u8, 37u8],
-            [95u8, 158u8, 121u8, 123u8],
             [103u8, 153u8, 239u8, 82u8],
             [108u8, 136u8, 235u8, 67u8],
             [116u8, 32u8, 243u8, 212u8],
@@ -10013,7 +10013,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             [145u8, 100u8, 208u8, 174u8],
             [154u8, 90u8, 59u8, 196u8],
             [178u8, 126u8, 122u8, 245u8],
-            [179u8, 107u8, 157u8, 169u8],
+            [180u8, 114u8, 43u8, 196u8],
             [186u8, 31u8, 49u8, 210u8],
             [194u8, 180u8, 41u8, 134u8],
             [198u8, 39u8, 82u8, 88u8],
@@ -10086,8 +10086,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::getHostChains(_) => {
                     <getHostChainsCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::getKeygenThreshold(_) => {
-                    <getKeygenThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::getKmsGenThreshold(_) => {
+                    <getKmsGenThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::getKmsNode(_) => {
                     <getKmsNodeCall as alloy_sol_types::SolCall>::SELECTOR
@@ -10120,8 +10120,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::unpauseAllGatewayContracts(_) => {
                     <unpauseAllGatewayContractsCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::updateKeygenThreshold(_) => {
-                    <updateKeygenThresholdCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::updateKmsGenThreshold(_) => {
+                    <updateKmsGenThresholdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
                 Self::updateMpcThreshold(_) => {
                     <updateMpcThresholdCall as alloy_sol_types::SolCall>::SELECTOR
@@ -10151,6 +10151,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
             static DECODE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<IGatewayConfigCalls>] = &[
+                {
+                    fn updateKmsGenThreshold(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <updateKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::updateKmsGenThreshold)
+                    }
+                    updateKmsGenThreshold
+                },
                 {
                     fn getVersion(
                         data: &[u8],
@@ -10258,17 +10269,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigCalls::checkIsCustodianTxSender)
                     }
                     checkIsCustodianTxSender
-                },
-                {
-                    fn updateKeygenThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateKeygenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updateKeygenThreshold)
-                    }
-                    updateKeygenThreshold
                 },
                 {
                     fn getCoprocessorMajorityThreshold(
@@ -10381,15 +10381,15 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     checkIsCustodianSigner
                 },
                 {
-                    fn getKeygenThreshold(
+                    fn getKmsGenThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKeygenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(IGatewayConfigCalls::getKeygenThreshold)
+                            .map(IGatewayConfigCalls::getKmsGenThreshold)
                     }
-                    getKeygenThreshold
+                    getKmsGenThreshold
                 },
                 {
                     fn getCustodianSigners(
@@ -10533,6 +10533,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 &[u8],
             ) -> alloy_sol_types::Result<IGatewayConfigCalls>] = &[
                 {
+                    fn updateKmsGenThreshold(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
+                        <updateKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigCalls::updateKmsGenThreshold)
+                    }
+                    updateKmsGenThreshold
+                },
+                {
                     fn getVersion(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
@@ -10641,17 +10652,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigCalls::checkIsCustodianTxSender)
                     }
                     checkIsCustodianTxSender
-                },
-                {
-                    fn updateKeygenThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <updateKeygenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigCalls::updateKeygenThreshold)
-                    }
-                    updateKeygenThreshold
                 },
                 {
                     fn getCoprocessorMajorityThreshold(
@@ -10764,15 +10764,15 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                     checkIsCustodianSigner
                 },
                 {
-                    fn getKeygenThreshold(
+                    fn getKmsGenThreshold(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigCalls> {
-                        <getKeygenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <getKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(IGatewayConfigCalls::getKeygenThreshold)
+                            .map(IGatewayConfigCalls::getKmsGenThreshold)
                     }
-                    getKeygenThreshold
+                    getKmsGenThreshold
                 },
                 {
                     fn getCustodianSigners(
@@ -10994,8 +10994,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
-                Self::getKeygenThreshold(inner) => {
-                    <getKeygenThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::getKmsGenThreshold(inner) => {
+                    <getKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -11048,8 +11048,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
-                Self::updateKeygenThreshold(inner) => {
-                    <updateKeygenThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::updateKmsGenThreshold(inner) => {
+                    <updateKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -11175,8 +11175,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         out,
                     )
                 }
-                Self::getKeygenThreshold(inner) => {
-                    <getKeygenThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::getKmsGenThreshold(inner) => {
+                    <getKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -11247,8 +11247,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         out,
                     )
                 }
-                Self::updateKeygenThreshold(inner) => {
-                    <updateKeygenThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::updateKmsGenThreshold(inner) => {
+                    <updateKmsGenThresholdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -11291,7 +11291,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         HostChainNotRegistered(HostChainNotRegistered),
         #[allow(missing_docs)]
-        InvalidHighKeygenThreshold(InvalidHighKeygenThreshold),
+        InvalidHighKmsGenThreshold(InvalidHighKmsGenThreshold),
         #[allow(missing_docs)]
         InvalidHighMpcThreshold(InvalidHighMpcThreshold),
         #[allow(missing_docs)]
@@ -11301,7 +11301,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         InvalidNullChainId(InvalidNullChainId),
         #[allow(missing_docs)]
-        InvalidNullKeygenThreshold(InvalidNullKeygenThreshold),
+        InvalidNullKmsGenThreshold(InvalidNullKmsGenThreshold),
         #[allow(missing_docs)]
         InvalidNullPublicDecryptionThreshold(InvalidNullPublicDecryptionThreshold),
         #[allow(missing_docs)]
@@ -11330,20 +11330,20 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [4u8, 80u8, 168u8, 87u8],
             [6u8, 140u8, 141u8, 64u8],
+            [15u8, 105u8, 203u8, 252u8],
             [32u8, 106u8, 52u8, 110u8],
             [34u8, 247u8, 63u8, 234u8],
             [38u8, 205u8, 117u8, 220u8],
             [42u8, 124u8, 110u8, 246u8],
             [57u8, 22u8, 114u8, 167u8],
+            [62u8, 229u8, 7u8, 116u8],
             [65u8, 120u8, 222u8, 66u8],
             [82u8, 215u8, 37u8, 245u8],
             [132u8, 32u8, 143u8, 35u8],
             [138u8, 240u8, 130u8, 239u8],
             [144u8, 126u8, 102u8, 129u8],
             [150u8, 165u8, 104u8, 40u8],
-            [152u8, 204u8, 75u8, 179u8],
             [174u8, 232u8, 99u8, 35u8],
             [177u8, 174u8, 146u8, 234u8],
             [182u8, 103u8, 156u8, 59u8],
@@ -11379,8 +11379,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::HostChainNotRegistered(_) => {
                     <HostChainNotRegistered as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidHighKeygenThreshold(_) => {
-                    <InvalidHighKeygenThreshold as alloy_sol_types::SolError>::SELECTOR
+                Self::InvalidHighKmsGenThreshold(_) => {
+                    <InvalidHighKmsGenThreshold as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidHighMpcThreshold(_) => {
                     <InvalidHighMpcThreshold as alloy_sol_types::SolError>::SELECTOR
@@ -11394,8 +11394,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::InvalidNullChainId(_) => {
                     <InvalidNullChainId as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::InvalidNullKeygenThreshold(_) => {
-                    <InvalidNullKeygenThreshold as alloy_sol_types::SolError>::SELECTOR
+                Self::InvalidNullKmsGenThreshold(_) => {
+                    <InvalidNullKmsGenThreshold as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::InvalidNullPublicDecryptionThreshold(_) => {
                     <InvalidNullPublicDecryptionThreshold as alloy_sol_types::SolError>::SELECTOR
@@ -11442,17 +11442,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 &[u8],
             ) -> alloy_sol_types::Result<IGatewayConfigErrors>] = &[
                 {
-                    fn InvalidHighKeygenThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighKeygenThreshold as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidHighKeygenThreshold)
-                    }
-                    InvalidHighKeygenThreshold
-                },
-                {
                     fn EmptyKmsNodes(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -11462,6 +11451,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
+                },
+                {
+                    fn InvalidHighKmsGenThreshold(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidHighKmsGenThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::InvalidHighKmsGenThreshold)
+                    }
+                    InvalidHighKmsGenThreshold
                 },
                 {
                     fn NotPauser(
@@ -11513,6 +11513,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::NotCustodianSigner)
                     }
                     NotCustodianSigner
+                },
+                {
+                    fn InvalidNullKmsGenThreshold(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidNullKmsGenThreshold as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::InvalidNullKmsGenThreshold)
+                    }
+                    InvalidNullKmsGenThreshold
                 },
                 {
                     fn ChainIdNotUint64(
@@ -11581,17 +11592,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::HostChainAlreadyRegistered)
                     }
                     HostChainAlreadyRegistered
-                },
-                {
-                    fn InvalidNullKeygenThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullKeygenThreshold as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidNullKeygenThreshold)
-                    }
-                    InvalidNullKeygenThreshold
                 },
                 {
                     fn NotKmsTxSender(
@@ -11697,17 +11697,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 &[u8],
             ) -> alloy_sol_types::Result<IGatewayConfigErrors>] = &[
                 {
-                    fn InvalidHighKeygenThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidHighKeygenThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidHighKeygenThreshold)
-                    }
-                    InvalidHighKeygenThreshold
-                },
-                {
                     fn EmptyKmsNodes(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
@@ -11717,6 +11706,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::EmptyKmsNodes)
                     }
                     EmptyKmsNodes
+                },
+                {
+                    fn InvalidHighKmsGenThreshold(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidHighKmsGenThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::InvalidHighKmsGenThreshold)
+                    }
+                    InvalidHighKmsGenThreshold
                 },
                 {
                     fn NotPauser(
@@ -11772,6 +11772,17 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::NotCustodianSigner)
                     }
                     NotCustodianSigner
+                },
+                {
+                    fn InvalidNullKmsGenThreshold(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
+                        <InvalidNullKmsGenThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IGatewayConfigErrors::InvalidNullKmsGenThreshold)
+                    }
+                    InvalidNullKmsGenThreshold
                 },
                 {
                     fn ChainIdNotUint64(
@@ -11840,17 +11851,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                             .map(IGatewayConfigErrors::HostChainAlreadyRegistered)
                     }
                     HostChainAlreadyRegistered
-                },
-                {
-                    fn InvalidNullKeygenThreshold(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IGatewayConfigErrors> {
-                        <InvalidNullKeygenThreshold as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IGatewayConfigErrors::InvalidNullKeygenThreshold)
-                    }
-                    InvalidNullKeygenThreshold
                 },
                 {
                     fn NotKmsTxSender(
@@ -11977,8 +11977,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
-                Self::InvalidHighKeygenThreshold(inner) => {
-                    <InvalidHighKeygenThreshold as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::InvalidHighKmsGenThreshold(inner) => {
+                    <InvalidHighKmsGenThreshold as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -12002,8 +12002,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         inner,
                     )
                 }
-                Self::InvalidNullKeygenThreshold(inner) => {
-                    <InvalidNullKeygenThreshold as alloy_sol_types::SolError>::abi_encoded_size(
+                Self::InvalidNullKmsGenThreshold(inner) => {
+                    <InvalidNullKmsGenThreshold as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -12089,8 +12089,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         out,
                     )
                 }
-                Self::InvalidHighKeygenThreshold(inner) => {
-                    <InvalidHighKeygenThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::InvalidHighKmsGenThreshold(inner) => {
+                    <InvalidHighKmsGenThreshold as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -12119,8 +12119,8 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         out,
                     )
                 }
-                Self::InvalidNullKeygenThreshold(inner) => {
-                    <InvalidNullKeygenThreshold as alloy_sol_types::SolError>::abi_encode_raw(
+                Self::InvalidNullKmsGenThreshold(inner) => {
+                    <InvalidNullKmsGenThreshold as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -12192,7 +12192,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
         #[allow(missing_docs)]
         UnpauseAllGatewayContracts(UnpauseAllGatewayContracts),
         #[allow(missing_docs)]
-        UpdateKeygenThreshold(UpdateKeygenThreshold),
+        UpdateKmsGenThreshold(UpdateKmsGenThreshold),
         #[allow(missing_docs)]
         UpdateMpcThreshold(UpdateMpcThreshold),
         #[allow(missing_docs)]
@@ -12216,6 +12216,11 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 166u8,
             ],
             [
+                48u8, 201u8, 177u8, 208u8, 4u8, 245u8, 126u8, 174u8, 60u8, 108u8, 195u8,
+                163u8, 117u8, 43u8, 203u8, 76u8, 142u8, 162u8, 229u8, 124u8, 130u8, 65u8,
+                167u8, 130u8, 170u8, 155u8, 101u8, 251u8, 198u8, 4u8, 236u8, 91u8,
+            ],
+            [
                 53u8, 113u8, 23u8, 42u8, 73u8, 231u8, 45u8, 119u8, 36u8, 190u8, 56u8,
                 76u8, 221u8, 89u8, 244u8, 242u8, 26u8, 33u8, 108u8, 112u8, 53u8, 46u8,
                 165u8, 156u8, 176u8, 37u8, 67u8, 252u8, 118u8, 48u8, 132u8, 55u8,
@@ -12224,11 +12229,6 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 58u8, 124u8, 84u8, 177u8, 25u8, 93u8, 68u8, 162u8, 136u8, 249u8, 195u8,
                 201u8, 160u8, 103u8, 154u8, 237u8, 147u8, 37u8, 6u8, 142u8, 13u8, 13u8,
                 91u8, 105u8, 233u8, 96u8, 71u8, 53u8, 92u8, 199u8, 23u8, 69u8,
-            ],
-            [
-                75u8, 220u8, 135u8, 242u8, 65u8, 130u8, 212u8, 41u8, 3u8, 38u8, 219u8,
-                22u8, 224u8, 27u8, 5u8, 11u8, 223u8, 25u8, 180u8, 59u8, 238u8, 167u8,
-                186u8, 213u8, 10u8, 239u8, 58u8, 89u8, 41u8, 30u8, 121u8, 242u8,
             ],
             [
                 102u8, 118u8, 147u8, 65u8, 239u8, 253u8, 38u8, 143u8, 196u8, 233u8,
@@ -12296,13 +12296,13 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                         .map(Self::UnpauseAllGatewayContracts)
                 }
                 Some(
-                    <UpdateKeygenThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                    <UpdateKmsGenThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
-                    <UpdateKeygenThreshold as alloy_sol_types::SolEvent>::decode_raw_log(
+                    <UpdateKmsGenThreshold as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                         )
-                        .map(Self::UpdateKeygenThreshold)
+                        .map(Self::UpdateKmsGenThreshold)
                 }
                 Some(
                     <UpdateMpcThreshold as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
@@ -12361,7 +12361,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::UnpauseAllGatewayContracts(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::UpdateKeygenThreshold(inner) => {
+                Self::UpdateKmsGenThreshold(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
                 Self::UpdateMpcThreshold(inner) => {
@@ -12389,7 +12389,7 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 Self::UnpauseAllGatewayContracts(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::UpdateKeygenThreshold(inner) => {
+                Self::UpdateKmsGenThreshold(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::UpdateMpcThreshold(inner) => {
@@ -12712,11 +12712,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, getHostChainsCall, N> {
             self.call_builder(&getHostChainsCall)
         }
-        ///Creates a new call builder for the [`getKeygenThreshold`] function.
-        pub fn getKeygenThreshold(
+        ///Creates a new call builder for the [`getKmsGenThreshold`] function.
+        pub fn getKmsGenThreshold(
             &self,
-        ) -> alloy_contract::SolCallBuilder<&P, getKeygenThresholdCall, N> {
-            self.call_builder(&getKeygenThresholdCall)
+        ) -> alloy_contract::SolCallBuilder<&P, getKmsGenThresholdCall, N> {
+            self.call_builder(&getKmsGenThresholdCall)
         }
         ///Creates a new call builder for the [`getKmsNode`] function.
         pub fn getKmsNode(
@@ -12790,14 +12790,14 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::SolCallBuilder<&P, unpauseAllGatewayContractsCall, N> {
             self.call_builder(&unpauseAllGatewayContractsCall)
         }
-        ///Creates a new call builder for the [`updateKeygenThreshold`] function.
-        pub fn updateKeygenThreshold(
+        ///Creates a new call builder for the [`updateKmsGenThreshold`] function.
+        pub fn updateKmsGenThreshold(
             &self,
-            newKeygenThreshold: alloy::sol_types::private::primitives::aliases::U256,
-        ) -> alloy_contract::SolCallBuilder<&P, updateKeygenThresholdCall, N> {
+            newKmsGenThreshold: alloy::sol_types::private::primitives::aliases::U256,
+        ) -> alloy_contract::SolCallBuilder<&P, updateKmsGenThresholdCall, N> {
             self.call_builder(
-                &updateKeygenThresholdCall {
-                    newKeygenThreshold,
+                &updateKmsGenThresholdCall {
+                    newKmsGenThreshold,
                 },
             )
         }
@@ -12872,11 +12872,11 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, UnpauseAllGatewayContracts, N> {
             self.event_filter::<UnpauseAllGatewayContracts>()
         }
-        ///Creates a new event filter for the [`UpdateKeygenThreshold`] event.
-        pub fn UpdateKeygenThreshold_filter(
+        ///Creates a new event filter for the [`UpdateKmsGenThreshold`] event.
+        pub fn UpdateKmsGenThreshold_filter(
             &self,
-        ) -> alloy_contract::Event<&P, UpdateKeygenThreshold, N> {
-            self.event_filter::<UpdateKeygenThreshold>()
+        ) -> alloy_contract::Event<&P, UpdateKmsGenThreshold, N> {
+            self.event_filter::<UpdateKmsGenThreshold>()
         }
         ///Creates a new event filter for the [`UpdateMpcThreshold`] event.
         pub fn UpdateMpcThreshold_filter(

@@ -70,6 +70,17 @@ Both thresholds should be :
 
 These thresholds are set at deployment and can be updated by the owner later on, as long as the above conditions are met.
 
+#### KMS generation threshold
+
+The KMS generation threshold `kmsGenThreshold` is used to determine the minimum number of valid responses from KMS nodes required to validate a KMS public material generation (FHE key, CRS).
+
+This threshold should be :
+
+- non-null: it should require at least one vote
+- less or equal to the number of registered KMS nodes: it should not require more than the number of registered KMS nodes
+
+This threshold is set at deployment and can be updated by the owner later on, as long as the above conditions are met.
+
 ### Coprocessor
 
 A coprocessor is also part of a set of multiple coprocessors. They are used to :
