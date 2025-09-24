@@ -10,7 +10,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "preview": "vite preview",
-    "prepare": "husky"
+    "precommit": "husky"
   },
   "dependencies": {
     "@auth0/auth0-react": "^2.5.0",
