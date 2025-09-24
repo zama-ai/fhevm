@@ -11,7 +11,7 @@ connector-utils.workspace = true
 fhevm_gateway_bindings.workspace = true
 
 actix-web.workspace = true
-alloy.workspace = true
+alloy = { workspace = true, features = ["provider-anvil-api"] }
 anyhow.workspace = true
 prometheus.workspace = true
 serde.workspace = true

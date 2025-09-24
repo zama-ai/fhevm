@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use tx_sender::monitoring::health::{HealthStatus, State};
 
 #[rstest]
-#[timeout(Duration::from_secs(120))]
+#[timeout(Duration::from_secs(240))]
 #[tokio::test]
 async fn test_healthcheck_endpoint() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;

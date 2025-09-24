@@ -10,7 +10,10 @@ use crate::{
 use alloy::{
     hex,
     network::Ethereum,
-    providers::{PendingTransactionBuilder, PendingTransactionError, Provider, ext::DebugApi},
+    providers::{
+        PendingTransactionError, Provider,
+        ext::{AnvilApi, DebugApi},
+    },
     rpc::types::{
         TransactionReceipt, TransactionRequest,
         trace::geth::{CallConfig, GethDebugTracingOptions},
@@ -168,7 +171,7 @@ pub struct TransactionSenderInnerConfig {
     pub gas_multiplier_percent: usize,
 }
 
-impl<P: Provider> TransactionSenderInner<P> {
+impl<P: Provider + AnvilApi<Ethereum>> TransactionSenderInner<P> {
     pub fn new(
         provider: P,
         decryption_contract: DecryptionInstance<P>,
@@ -238,8 +241,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();
-        let tx = self.send_tx_with_retry(call).await?;
-        tx.get_receipt().await.map_err(Error::from)
+        self.send_tx_sync_with_retry(call).await
     }
 
     /// Sends a UserDecryptionResponse to the Gateway.
@@ -257,8 +259,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         debug!("Calldata length {}", call_builder.calldata().len());
 
         let call = call_builder.into_transaction_request();
-        let tx = self.send_tx_with_retry(call).await?;
-        tx.get_receipt().await.map_err(Error::from)
+        self.send_tx_sync_with_retry(call).await
     }
 
     /// Increases the `gas_limit` for the upcoming transaction.
@@ -282,12 +283,15 @@ impl<P: Provider> TransactionSenderInner<P> {
     /// Sends the requested transaction with retries.
     ///
     /// The `gas_limit` is increased at each attempts.
-    async fn send_tx_with_retry(
+    async fn send_tx_sync_with_retry(
         &self,
         call: TransactionRequest,
-    ) -> Result<PendingTransactionBuilder<Ethereum>, Error> {
+    ) -> Result<TransactionReceipt, Error> {
         for i in 1..=self.config.tx_retries {
-            match self.send_tx_with_increased_gas_limit(call.clone()).await {
+            match self
+                .send_tx_sync_with_increased_gas_limit(call.clone())
+                .await
+            {
                 Err(Error::Recoverable(e)) => {
                     warn!(
                         "Transaction attempt #{}/{} failed: {}. Retrying in {}ms...",
@@ -308,12 +312,15 @@ impl<P: Provider> TransactionSenderInner<P> {
         )))
     }
 
-    async fn send_tx_with_increased_gas_limit(
+    async fn send_tx_sync_with_increased_gas_limit(
         &self,
         mut call: TransactionRequest,
-    ) -> Result<PendingTransactionBuilder<Ethereum>, Error> {
+    ) -> Result<TransactionReceipt, Error> {
         self.overprovision_gas(&mut call).await?;
-        Ok(self.provider.send_transaction(call.clone()).await?)
+        Ok(self
+            .provider
+            .eth_send_transaction_sync(call.clone())
+            .await?)
     }
 
     /// Tries to use the `debug_trace_transaction` RPC call to find the cause of a reverted tx.
@@ -403,7 +410,7 @@ impl From<PendingTransactionError> for Error {
 mod tests {
     use super::*;
     use alloy::{
-        primitives::{Address, TxHash},
+        primitives::Address,
         providers::{ProviderBuilder, mock::Asserter},
         rpc::{json_rpc::ErrorPayload, types::trace::geth::GethTrace},
     };
@@ -424,15 +431,12 @@ mod tests {
         // Used to mock all RPC responses of transaction sending operation
         let test_data_dir = test_data_dir();
         let estimate_gas: usize = parse_mock(&format!("{test_data_dir}/1_estimate_gas.json"))?;
-        let send_tx: TxHash = parse_mock(&format!("{test_data_dir}/2_send_tx.json"))?;
-        let get_receipt: TransactionReceipt =
-            parse_mock(&format!("{test_data_dir}/3_get_receipt.json"))?;
+        let send_tx_sync: TransactionReceipt =
+            parse_mock(&format!("{test_data_dir}/2_send_tx_sync.json"))?;
         let debug_trace_tx: GethTrace =
-            parse_mock(&format!("{test_data_dir}/4_debug_trace_tx.json"))?;
+            parse_mock(&format!("{test_data_dir}/3_debug_trace_tx.json"))?;
         asserter.push_success(&estimate_gas);
-        asserter.push_success(&send_tx);
-        asserter.push_success(&get_receipt);
-        asserter.push_success(&get_receipt); // RPC call is made twice
+        asserter.push_success(&send_tx_sync);
         asserter.push_success(&debug_trace_tx);
 
         // Mock out of gas tx
@@ -481,11 +485,11 @@ mod tests {
         );
 
         let test_data_dir = test_data_dir();
-        let tx_receipt: TransactionReceipt =
-            parse_mock(&format!("{test_data_dir}/3_get_receipt.json")).unwrap();
+        let send_tx_sync: TransactionReceipt =
+            parse_mock(&format!("{test_data_dir}/2_send_tx_sync.json")).unwrap();
 
         let result = inner_sender
-            .get_revert_reason(&tx_receipt)
+            .get_revert_reason(&send_tx_sync)
             .await
             .unwrap_err()
             .to_string();
