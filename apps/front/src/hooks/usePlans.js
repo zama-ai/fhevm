@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import config from "../config";
 
 // This is set up as a hook so that
 // in case other pages need subscription info
@@ -9,7 +10,7 @@ export default function usePlans() {
   const [plans, setPlans] = useState(null);
 
   useEffect(() => {
-    fetch(`${import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER}/plans`)
+    fetch(`${config.devPortalApiServer}/plans`)
       .then((res) => res.json())
       .then((result) => {
         const loadedPlans = result?.hits || [];
@@ -29,6 +30,6 @@ export default function usePlans() {
   return {
     plansError: error,
     plansLoading: loading,
-    plans
+    plans,
   };
 }

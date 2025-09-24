@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import config from "../config";
 
 // This is set up as a hook so that
 // in case other pages need subscription info
@@ -15,9 +16,7 @@ export default function useSubscriptions({
   useEffect(() => {
     if (user?.email && idToken) {
       fetch(
-        `${
-          import.meta.env.REACT_APP_DEV_PORTAL_API_SERVER
-        }/subscriptions?email=${encodeURIComponent(user.email)}`,
+        `${config.devPortalApiServer}/subscriptions?email=${encodeURIComponent(user.email)}`,
         {
           headers: {
             // for this project, we decide to use idToken
