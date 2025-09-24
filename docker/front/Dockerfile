@@ -31,3 +31,7 @@ RUN chmod +x /entrypoint.sh
 ENTRYPOINT [ "/entrypoint.sh" ]
 
 EXPOSE 8080
+
+# The default command to run after the entrypoint script finishes.
+# This starts Nginx in the foreground.
+CMD ["nginx", "-g", "daemon off;"]
