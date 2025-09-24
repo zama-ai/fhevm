@@ -101,15 +101,22 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
     let receipt = pending_txn.get_receipt().await?;
     assert!(receipt.status());
 
+    let coprocessor_context_id = input_verification
+        .coprocessorContextId()
+        .call()
+        .await?
+        .to_le_bytes::<32>();
+
     loop {
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, input, extra_data
+            "SELECT zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, input, extra_data
              FROM verify_proofs",
         )
         .fetch_all(&env.db_pool)
         .await?;
         if !rows.is_empty() {
             let row = &rows[0];
+            assert_eq!(row.coprocessor_context_id, coprocessor_context_id);
             assert_eq!(row.chain_id, 42);
             assert_eq!(row.contract_address, contract_address.to_string());
             assert_eq!(row.user_address, user_address.to_string());

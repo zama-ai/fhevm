@@ -67,6 +67,11 @@
         "ordinal": 12,
         "name": "extra_data",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 13,
+        "name": "coprocessor_context_id",
+        "type_info": "Bytea"
       }
     ],
     "parameters": {
@@ -84,6 +89,7 @@
       true,
       true,
       true,
+      false,
       false,
       false
     ]
