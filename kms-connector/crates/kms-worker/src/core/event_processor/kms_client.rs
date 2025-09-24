@@ -242,23 +242,21 @@ where
     Fut: Future<Output = Result<Response<Empty>, Status>>,
 {
     for i in 1..=retries {
-        match request_fn()
-            .await
-            .map_err(ProcessingError::from_request_status)
-        {
+        match request_fn().await {
             Ok(_) => break,
-            Err(ProcessingError::Irrecoverable(e)) => {
+            Err(e) if e.code() == Code::AlreadyExists => return Ok(()),
+            Err(e) if [Code::ResourceExhausted, Code::Unknown].contains(&e.code()) => {
                 CORE_REQUEST_SENT_ERRORS.inc();
-                return Err(ProcessingError::Irrecoverable(e));
-            }
-            Err(ProcessingError::Recoverable(e)) => {
-                CORE_REQUEST_SENT_ERRORS.inc();
-                warn!("#{}/{} GRPC request attempt failed: {}", i, retries, e);
+                warn!("#{i}/{retries} GRPC request attempt failed: {e}");
                 if i == retries {
                     return Err(ProcessingError::Recoverable(anyhow!(
                         "All GRPC requests failed!"
                     )));
                 }
+            }
+            Err(e) => {
+                CORE_REQUEST_SENT_ERRORS.inc();
+                return Err(ProcessingError::Irrecoverable(e.into()));
             }
         }
     }
@@ -287,7 +285,7 @@ where
                 return Ok(response);
             }
             Err(status) => {
-                if status.code() == Code::Unavailable {
+                if [Code::Unavailable, Code::Unknown].contains(&status.code()) {
                     // Check if we've exceeded the timeout
                     if start.elapsed() >= timeout {
                         CORE_RESPONSE_ERRORS.inc();
