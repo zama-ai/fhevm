@@ -47,12 +47,11 @@ pub mod ExtraData {
     pub static DEPLOYED_BYTECODE: alloy_sol_types::private::Bytes = alloy_sol_types::private::Bytes::from_static(
         b"s\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\x000\x14`\x80`@R_\x80\xFD",
     );
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `NoVersionByteInExtraData()` and selector `0x56ea02c9`.
-```solidity
-error NoVersionByteInExtraData();
-```*/
+    ```solidity
+    error NoVersionByteInExtraData();
+    ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct NoVersionByteInExtraData;
@@ -70,9 +69,7 @@ error NoVersionByteInExtraData();
         type UnderlyingRustTuple<'a> = ();
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
+        fn _type_assertion(_t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>) {
             match _t {
                 alloy_sol_types::private::AssertTypeEq::<
                     <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
@@ -81,16 +78,14 @@ error NoVersionByteInExtraData();
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<NoVersionByteInExtraData>
-        for UnderlyingRustTuple<'_> {
+        impl ::core::convert::From<NoVersionByteInExtraData> for UnderlyingRustTuple<'_> {
             fn from(value: NoVersionByteInExtraData) -> Self {
                 ()
             }
         }
         #[automatically_derived]
         #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for NoVersionByteInExtraData {
+        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NoVersionByteInExtraData {
             fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                 Self
             }
@@ -98,9 +93,7 @@ error NoVersionByteInExtraData();
         #[automatically_derived]
         impl alloy_sol_types::SolError for NoVersionByteInExtraData {
             type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
+            type Token<'a> = <Self::Parameters<'a> as alloy_sol_types::SolType>::Token<'a>;
             const SIGNATURE: &'static str = "NoVersionByteInExtraData()";
             const SELECTOR: [u8; 4] = [86u8, 234u8, 2u8, 201u8];
             #[inline]
@@ -115,16 +108,15 @@ error NoVersionByteInExtraData();
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
+                <Self::Parameters<'_> as alloy_sol_types::SolType>::abi_decode_sequence_validate(
+                    data,
+                )
+                .map(Self::new)
             }
         }
     };
     ///Container for all the [`ExtraData`](self) custom errors.
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Debug, PartialEq, Eq, Hash)]
+    #[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq, Eq, Hash, Clone)]
     pub enum ExtraDataErrors {
         #[allow(missing_docs)]
         NoVersionByteInExtraData(NoVersionByteInExtraData),
@@ -162,32 +154,21 @@ error NoVersionByteInExtraData();
         }
         #[inline]
         #[allow(non_snake_case)]
-        fn abi_decode_raw(
-            selector: [u8; 4],
-            data: &[u8],
-        ) -> alloy_sol_types::Result<Self> {
-            static DECODE_SHIMS: &[fn(
-                &[u8],
-            ) -> alloy_sol_types::Result<ExtraDataErrors>] = &[
-                {
-                    fn NoVersionByteInExtraData(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ExtraDataErrors> {
-                        <NoVersionByteInExtraData as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ExtraDataErrors::NoVersionByteInExtraData)
-                    }
-                    NoVersionByteInExtraData
-                },
-            ];
+        fn abi_decode_raw(selector: [u8; 4], data: &[u8]) -> alloy_sol_types::Result<Self> {
+            static DECODE_SHIMS: &[fn(&[u8]) -> alloy_sol_types::Result<ExtraDataErrors>] = &[{
+                fn NoVersionByteInExtraData(
+                    data: &[u8],
+                ) -> alloy_sol_types::Result<ExtraDataErrors> {
+                    <NoVersionByteInExtraData as alloy_sol_types::SolError>::abi_decode_raw(data)
+                        .map(ExtraDataErrors::NoVersionByteInExtraData)
+                }
+                NoVersionByteInExtraData
+            }];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_SHIMS[idx](data)
         }
@@ -199,26 +180,23 @@ error NoVersionByteInExtraData();
         ) -> alloy_sol_types::Result<Self> {
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
-            ) -> alloy_sol_types::Result<ExtraDataErrors>] = &[
-                {
-                    fn NoVersionByteInExtraData(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ExtraDataErrors> {
-                        <NoVersionByteInExtraData as alloy_sol_types::SolError>::abi_decode_raw_validate(
+            )
+                -> alloy_sol_types::Result<ExtraDataErrors>] = &[{
+                fn NoVersionByteInExtraData(
+                    data: &[u8],
+                ) -> alloy_sol_types::Result<ExtraDataErrors> {
+                    <NoVersionByteInExtraData as alloy_sol_types::SolError>::abi_decode_raw_validate(
                                 data,
                             )
                             .map(ExtraDataErrors::NoVersionByteInExtraData)
-                    }
-                    NoVersionByteInExtraData
-                },
-            ];
+                }
+                NoVersionByteInExtraData
+            }];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
-                return Err(
-                    alloy_sol_types::Error::unknown_selector(
-                        <Self as alloy_sol_types::SolInterface>::NAME,
-                        selector,
-                    ),
-                );
+                return Err(alloy_sol_types::Error::unknown_selector(
+                    <Self as alloy_sol_types::SolInterface>::NAME,
+                    selector,
+                ));
             };
             DECODE_VALIDATE_SHIMS[idx](data)
         }
@@ -226,9 +204,7 @@ error NoVersionByteInExtraData();
         fn abi_encoded_size(&self) -> usize {
             match self {
                 Self::NoVersionByteInExtraData(inner) => {
-                    <NoVersionByteInExtraData as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
+                    <NoVersionByteInExtraData as alloy_sol_types::SolError>::abi_encoded_size(inner)
                 }
             }
         }
@@ -237,8 +213,7 @@ error NoVersionByteInExtraData();
             match self {
                 Self::NoVersionByteInExtraData(inner) => {
                     <NoVersionByteInExtraData as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
+                        inner, out,
                     )
                 }
             }
@@ -247,7 +222,7 @@ error NoVersionByteInExtraData();
     use alloy::contract as alloy_contract;
     /**Creates a new wrapper around an on-chain [`ExtraData`](self) contract instance.
 
-See the [wrapper's documentation](`ExtraDataInstance`) for more details.*/
+    See the [wrapper's documentation](`ExtraDataInstance`) for more details.*/
     #[inline]
     pub const fn new<
         P: alloy_contract::private::Provider<N>,
@@ -260,43 +235,40 @@ See the [wrapper's documentation](`ExtraDataInstance`) for more details.*/
     }
     /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+    Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+    For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
     #[inline]
-    pub fn deploy<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    >(
+    pub fn deploy<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>(
         provider: P,
-    ) -> impl ::core::future::Future<
-        Output = alloy_contract::Result<ExtraDataInstance<P, N>>,
-    > {
+    ) -> impl ::core::future::Future<Output = alloy_contract::Result<ExtraDataInstance<P, N>>> {
         ExtraDataInstance::<P, N>::deploy(provider)
     }
     /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+    and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+    This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+    the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     #[inline]
     pub fn deploy_builder<
         P: alloy_contract::private::Provider<N>,
         N: alloy_contract::private::Network,
-    >(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
+    >(
+        provider: P,
+    ) -> alloy_contract::RawCallBuilder<P, N> {
         ExtraDataInstance::<P, N>::deploy_builder(provider)
     }
     /**A [`ExtraData`](self) instance.
 
-Contains type-safe methods for interacting with an on-chain instance of the
-[`ExtraData`](self) contract located at a given `address`, using a given
-provider `P`.
+    Contains type-safe methods for interacting with an on-chain instance of the
+    [`ExtraData`](self) contract located at a given `address`, using a given
+    provider `P`.
 
-If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
-documentation on how to provide it), the `deploy` and `deploy_builder` methods can
-be used to deploy a new instance of the contract.
+    If the contract bytecode is available (see the [`sol!`](alloy_sol_types::sol!)
+    documentation on how to provide it), the `deploy` and `deploy_builder` methods can
+    be used to deploy a new instance of the contract.
 
-See the [module-level documentation](self) for all the available methods.*/
+    See the [module-level documentation](self) for all the available methods.*/
     #[derive(Clone)]
     pub struct ExtraDataInstance<P, N = alloy_contract::private::Ethereum> {
         address: alloy_sol_types::private::Address,
@@ -307,23 +279,21 @@ See the [module-level documentation](self) for all the available methods.*/
     impl<P, N> ::core::fmt::Debug for ExtraDataInstance<P, N> {
         #[inline]
         fn fmt(&self, f: &mut ::core::fmt::Formatter<'_>) -> ::core::fmt::Result {
-            f.debug_tuple("ExtraDataInstance").field(&self.address).finish()
+            f.debug_tuple("ExtraDataInstance")
+                .field(&self.address)
+                .finish()
         }
     }
     /// Instantiation and getters/setters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ExtraDataInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ExtraDataInstance<P, N>
+    {
         /**Creates a new wrapper around an on-chain [`ExtraData`](self) contract instance.
 
-See the [wrapper's documentation](`ExtraDataInstance`) for more details.*/
+        See the [wrapper's documentation](`ExtraDataInstance`) for more details.*/
         #[inline]
-        pub const fn new(
-            address: alloy_sol_types::private::Address,
-            provider: P,
-        ) -> Self {
+        pub const fn new(address: alloy_sol_types::private::Address, provider: P) -> Self {
             Self {
                 address,
                 provider,
@@ -332,22 +302,20 @@ See the [wrapper's documentation](`ExtraDataInstance`) for more details.*/
         }
         /**Deploys this contract using the given `provider` and constructor arguments, if any.
 
-Returns a new instance of the contract, if the deployment was successful.
+        Returns a new instance of the contract, if the deployment was successful.
 
-For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
+        For more fine-grained control over the deployment process, use [`deploy_builder`] instead.*/
         #[inline]
-        pub async fn deploy(
-            provider: P,
-        ) -> alloy_contract::Result<ExtraDataInstance<P, N>> {
+        pub async fn deploy(provider: P) -> alloy_contract::Result<ExtraDataInstance<P, N>> {
             let call_builder = Self::deploy_builder(provider);
             let contract_address = call_builder.deploy().await?;
             Ok(Self::new(contract_address, call_builder.provider))
         }
         /**Creates a `RawCallBuilder` for deploying this contract using the given `provider`
-and constructor arguments, if any.
+        and constructor arguments, if any.
 
-This is a simple wrapper around creating a `RawCallBuilder` with the data set to
-the bytecode concatenated with the constructor's ABI-encoded arguments.*/
+        This is a simple wrapper around creating a `RawCallBuilder` with the data set to
+        the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         #[inline]
         pub fn deploy_builder(provider: P) -> alloy_contract::RawCallBuilder<P, N> {
             alloy_contract::RawCallBuilder::new_raw_deploy(
@@ -389,10 +357,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Function calls.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ExtraDataInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ExtraDataInstance<P, N>
+    {
         /// Creates a new call builder using this contract instance's provider and address.
         ///
         /// Note that the call can be any function call, not just those defined in this
@@ -406,10 +373,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
     }
     /// Event filters.
     #[automatically_derived]
-    impl<
-        P: alloy_contract::private::Provider<N>,
-        N: alloy_contract::private::Network,
-    > ExtraDataInstance<P, N> {
+    impl<P: alloy_contract::private::Provider<N>, N: alloy_contract::private::Network>
+        ExtraDataInstance<P, N>
+    {
         /// Creates a new event filter using this contract instance's provider and address.
         ///
         /// Note that the type can be any event, not just those defined in this contract.
