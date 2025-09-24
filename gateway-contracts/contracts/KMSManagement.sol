@@ -561,7 +561,7 @@ contract KMSManagement is
      * @return Whether the consensus is reached
      */
     function _isKmsConsensusReached(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getKeygenThreshold();
+        uint256 consensusThreshold = GATEWAY_CONFIG.getKmsGenThreshold();
         return kmsCounter >= consensusThreshold;
     }
 

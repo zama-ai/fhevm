@@ -84,12 +84,22 @@ USER_DECRYPTION_THRESHOLD="3" # (uint256)
 
 `PUBLIC_DECRYPTION_THRESHOLD` and `USER_DECRYPTION_THRESHOLD` must be non-null and less or equal to the number of KMS nodes registered below.
 
-In practice in the FHEVM protocol, they are set to values using the following formulas:
+In practice in the FHEVM protocol, these thresholds are set using the following formulas:
 
 - public decryption threshold: `floor(n/2) + 1`
 - user decryption threshold: `2*t + 1`
 
 With `n` the number of KMS nodes registered below and `t` the MPC threshold.
+
+These values might change in the future.
+
+```bash
+KMS_GENERATION_THRESHOLD="3" # (uint256)
+```
+
+`KMS_GENERATION_THRESHOLD` must be non-null and less or equal to the number of KMS nodes registered below.
+
+In practice in the FHEVM protocol, this threshold is set to `floor(2n/3) + 1` with `n` the number of KMS nodes registered below.
 
 These values might change in the future.
 

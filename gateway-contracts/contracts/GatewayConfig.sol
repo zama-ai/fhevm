@@ -108,8 +108,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address custodianSignerAddress => bool isCustodianSigner) _isCustodianSigner;
         /// @notice The KMS nodes' metadata (V2)
         mapping(address kmsTxSenderAddress => KmsNodeV2 kmsNodeV2) kmsNodesV2;
-        /// @notice The threshold to consider for key and CRS generation consensus.
-        uint256 keygenThreshold;
+        /// @notice The threshold to consider for the KMS public material (FHE key, CRS) generation consensus.
+        uint256 kmsGenThreshold;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -138,7 +138,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
-        uint256 initialKeygenThreshold,
+        uint256 initialKmsGenThreshold,
         KmsNodeV2[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
@@ -175,7 +175,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         _setMpcThreshold(initialMpcThreshold);
         _setPublicDecryptionThreshold(initialPublicDecryptionThreshold);
         _setUserDecryptionThreshold(initialUserDecryptionThreshold);
-        _setKeygenThreshold(initialKeygenThreshold);
+        _setKmsGenThreshold(initialKmsGenThreshold);
 
         /// @dev Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
@@ -227,10 +227,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
     }
 
-    /// @dev See {IGatewayConfig-updateKeygenThreshold}.
-    function updateKeygenThreshold(uint256 newKeygenThreshold) external virtual onlyOwner {
-        _setKeygenThreshold(newKeygenThreshold);
-        emit UpdateKeygenThreshold(newKeygenThreshold);
+    /// @dev See {IGatewayConfig-updateKmsGenThreshold}.
+    function updateKmsGenThreshold(uint256 newKmsGenThreshold) external virtual onlyOwner {
+        _setKmsGenThreshold(newKmsGenThreshold);
+        emit UpdateKmsGenThreshold(newKmsGenThreshold);
     }
 
     /// @dev See {IGatewayConfig-addHostChain}.
@@ -358,10 +358,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         return $.userDecryptionThreshold;
     }
 
-    /// @dev See {IGatewayConfig-getKeygenThreshold}.
-    function getKeygenThreshold() external view virtual returns (uint256) {
+    /// @dev See {IGatewayConfig-getKmsGenThreshold}.
+    function getKmsGenThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.keygenThreshold;
+        return $.kmsGenThreshold;
     }
 
     /// @dev See {IGatewayConfig-getCoprocessorMajorityThreshold}.
@@ -514,23 +514,23 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /**
      * @dev Sets the key and CRS generation threshold.
-     * @param newKeygenThreshold The new key and CRS generation threshold.
+     * @param newKmsGenThreshold The new key and CRS generation threshold.
      */
-    function _setKeygenThreshold(uint256 newKeygenThreshold) internal virtual {
+    function _setKmsGenThreshold(uint256 newKmsGenThreshold) internal virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         uint256 nKmsNodes = $.kmsSignerAddresses.length;
 
         /// @dev Check that the key and CRS generation threshold `t` is valid. It must verify:
         /// @dev - `t >= 1` : the key and CRS generation consensus should require at least one vote
         /// @dev - `t <= n` : it should be less than the number of registered KMS nodes
-        if (newKeygenThreshold == 0) {
-            revert InvalidNullKeygenThreshold();
+        if (newKmsGenThreshold == 0) {
+            revert InvalidNullKmsGenThreshold();
         }
-        if (newKeygenThreshold > nKmsNodes) {
-            revert InvalidHighKeygenThreshold(newKeygenThreshold, nKmsNodes);
+        if (newKmsGenThreshold > nKmsNodes) {
+            revert InvalidHighKmsGenThreshold(newKmsGenThreshold, nKmsNodes);
         }
 
-        $.keygenThreshold = newKeygenThreshold;
+        $.kmsGenThreshold = newKmsGenThreshold;
     }
 
     /**
