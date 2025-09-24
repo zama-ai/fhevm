@@ -23,6 +23,7 @@ sol! {
         address userAddress;
         address contractAddress;
         uint256 contractChainId;
+        uint256 coprocessorContextId;
         bytes extraData;
     }
 }
@@ -242,7 +243,7 @@ where
             self.remove_proofs_by_retry_count().await?;
         }
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data
+            "SELECT zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data
              FROM verify_proofs
              WHERE verified IS NOT NULL AND retry_count < $1
              ORDER BY zk_proof_id
@@ -270,6 +271,14 @@ where
                         self.remove_proof_by_id(row.zk_proof_id).await?;
                         continue;
                     }
+                    if row.coprocessor_context_id.len() != 32 {
+                        error!(
+                            coprocessor_context_id_len = row.coprocessor_context_id.len(),
+                            "Bad coprocessor_context_id field, len is not 32"
+                        );
+                        self.remove_proof_by_id(row.zk_proof_id).await?;
+                        continue;
+                    }
                     let handles: Vec<FixedBytes<32>> = handles
                         .chunks(32)
                         .map(|chunk| {
@@ -291,6 +300,9 @@ where
                             .parse()
                             .expect("invalid contract address"),
                         contractChainId: U256::from(row.chain_id),
+                        coprocessorContextId: U256::from_le_bytes::<32>(
+                            row.coprocessor_context_id.as_slice().try_into()?,
+                        ),
                         extraData: row.extra_data.clone().into(),
                     }
                     .eip712_signing_hash(&domain);
