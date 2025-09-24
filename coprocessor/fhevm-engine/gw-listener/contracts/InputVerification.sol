@@ -6,6 +6,7 @@ pragma solidity ^0.8.28;
 contract InputVerification {
     event VerifyProofRequest(
         uint256 indexed zkProofId,
+        uint256 indexed coprocessorContextId,
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
@@ -14,6 +15,7 @@ contract InputVerification {
     );
 
     uint256 zkProofIdCounter = 0;
+    uint256 public coprocessorContextId = 7;
 
     function verifyProofRequest(
         uint256 contractChainId,
@@ -26,6 +28,7 @@ contract InputVerification {
         zkProofIdCounter += 1;
         emit VerifyProofRequest(
             zkProofId,
+            coprocessorContextId,
             contractChainId,
             contractAddress,
             userAddress,
