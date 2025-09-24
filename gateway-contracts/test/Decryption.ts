@@ -1431,13 +1431,13 @@ describe("Decryption", function () {
       // Check UserDecryptionResponse events are emitted for each response
       await expect(responseTx1)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, 0n, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
+        .withArgs(decryptionId, 1, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
       await expect(responseTx2)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, 1n, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
+        .withArgs(decryptionId, 2, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
       await expect(responseTx3)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, 2n, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
+        .withArgs(decryptionId, 3, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
       // Threshold should be reached at the third response (reconstruction threshold)
       // Check 3rd response event: it should emit the threshold reached event
@@ -2265,13 +2265,13 @@ describe("Decryption", function () {
       // Check UserDecryptionResponse events are emitted for each response
       await expect(responseTx1)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, 0n, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
+        .withArgs(decryptionId, 1, userDecryptedShares[0], kmsSignatures[0], extraDataV0);
       await expect(responseTx2)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, 1n, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
+        .withArgs(decryptionId, 2, userDecryptedShares[1], kmsSignatures[1], extraDataV0);
       await expect(responseTx3)
         .to.emit(decryption, "UserDecryptionResponse")
-        .withArgs(decryptionId, 2n, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
+        .withArgs(decryptionId, 3, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
       // Threshold should be reached at the third response (reconstruction threshold)
       // Check 3rd response event: it should emit the threshold reached event
