@@ -18,6 +18,7 @@ import "./tasks/deployment/contracts";
 import "./tasks/deployment/empty_proxies";
 import "./tasks/deployment/mock_contracts";
 import "./tasks/getters";
+import "./tasks/pauseContracts";
 import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";
 
