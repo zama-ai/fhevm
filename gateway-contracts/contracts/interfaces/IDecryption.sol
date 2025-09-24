@@ -91,7 +91,11 @@ interface IDecryption {
         bytes extraData
     );
 
-    event UserDecryptionResponseConsensusReached(uint256 indexed decryptionId);
+    /**
+     * @notice Emitted when the number of user decryption response received reaches the threshold.
+     * @param decryptionId The decryption request ID.
+     */
+    event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
 
     /// @notice Error indicating that the input list of handles is empty.
     error EmptyCtHandles();

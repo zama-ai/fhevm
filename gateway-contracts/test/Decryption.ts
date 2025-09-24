@@ -1439,9 +1439,9 @@ describe("Decryption", function () {
         .to.emit(decryption, "UserDecryptionResponse")
         .withArgs(decryptionId, 2n, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
-      // Consensus should be reached at the third response (reconstruction threshold)
-      // Check 3rd response event: it should emit the consensus reached event
-      await expect(responseTx3).to.emit(decryption, "UserDecryptionResponseConsensusReached").withArgs(decryptionId);
+      // Threshold should be reached at the third response (reconstruction threshold)
+      // Check 3rd response event: it should emit the threshold reached event
+      await expect(responseTx3).to.emit(decryption, "UserDecryptionResponseThresholdReached").withArgs(decryptionId);
 
       // Check that the user decryption is done
       await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
@@ -1477,11 +1477,11 @@ describe("Decryption", function () {
         .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3], extraDataV0);
 
       // Check that the 1st, 2nd and 4th responses do not emit an event:
-      // - 1st and 2nd responses are ignored because consensus is not reached yet
+      // - 1st and 2nd responses are ignored because threshold is not reached yet
       // - 4th response is ignored (not reverted) even though they are late
-      await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
-      await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
-      await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
+      await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponseThresholdReached");
+      await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponseThresholdReached");
+      await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponseThresholdReached");
     });
 
     // Note: there is no test with "malicious" responses for user decryption because all shares are
@@ -2273,9 +2273,9 @@ describe("Decryption", function () {
         .to.emit(decryption, "UserDecryptionResponse")
         .withArgs(decryptionId, 2n, userDecryptedShares[2], kmsSignatures[2], extraDataV0);
 
-      // Consensus should be reached at the third response (reconstruction threshold)
-      // Check 3rd response event: it should emit the consensus reached event
-      await expect(responseTx3).to.emit(decryption, "UserDecryptionResponseConsensusReached").withArgs(decryptionId);
+      // Threshold should be reached at the third response (reconstruction threshold)
+      // Check 3rd response event: it should emit the threshold reached event
+      await expect(responseTx3).to.emit(decryption, "UserDecryptionResponseThresholdReached").withArgs(decryptionId);
 
       // Check that the user decryption is done
       await expect(decryption.checkDecryptionDone(decryptionId)).to.not.be.reverted;
@@ -2311,11 +2311,11 @@ describe("Decryption", function () {
         .userDecryptionResponse(decryptionId, userDecryptedShares[3], kmsSignatures[3], extraDataV0);
 
       // Check that the 1st, 2nd and 4th responses do not emit an event:
-      // - 1st and 2nd responses are ignored because consensus is not reached yet
+      // - 1st and 2nd responses are ignored because threshold is not reached yet
       // - 4th response is ignored (not reverted) even though they are late
-      await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
-      await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
-      await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponseConsensusReached");
+      await expect(responseTx1).to.not.emit(decryption, "UserDecryptionResponseThresholdReached");
+      await expect(responseTx2).to.not.emit(decryption, "UserDecryptionResponseThresholdReached");
+      await expect(responseTx4).to.not.emit(decryption, "UserDecryptionResponseThresholdReached");
     });
 
     it("Should revert because the contract is paused", async function () {

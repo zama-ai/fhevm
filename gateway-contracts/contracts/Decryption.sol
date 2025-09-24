@@ -568,7 +568,7 @@ contract Decryption is
             // Since we use the default value for `bytes32`, this means we do not need to store the
             // digest in `decryptionConsensusDigest` here like we do for the public decryption case.
 
-            emit UserDecryptionResponseConsensusReached(decryptionId);
+            emit UserDecryptionResponseThresholdReached(decryptionId);
         }
     }
 

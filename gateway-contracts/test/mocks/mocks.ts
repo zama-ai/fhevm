@@ -195,8 +195,8 @@ describe("Mock contracts", function () {
     it("Should emit response and consensus events on user decryption response", async function () {
       await expect(decryptionMock.userDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes))
         .to.emit(decryptionMock, "UserDecryptionResponse")
-        .withArgs(decryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes)
-        .to.emit(decryptionMock, "UserDecryptionResponseConsensusReached")
+        .withArgs(decryptionCounterId, DefaultUint256, DefaultBytes, DefaultBytes, DefaultBytes)
+        .to.emit(decryptionMock, "UserDecryptionResponseThresholdReached")
         .withArgs(decryptionCounterId);
     });
   });
