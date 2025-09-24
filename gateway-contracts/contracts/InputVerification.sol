@@ -184,6 +184,7 @@ contract InputVerification is
 
         emit VerifyProofRequest(
             zkProofId,
+            0, // TODO: coprocessorContextId is not used for now
             contractChainId,
             contractAddress,
             userAddress,

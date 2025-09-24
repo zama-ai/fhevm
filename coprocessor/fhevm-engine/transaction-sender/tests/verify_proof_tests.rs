@@ -1,9 +1,9 @@
 use alloy::network::TxSigner;
 use alloy::primitives::FixedBytes;
 use alloy::primitives::U256;
+use alloy::providers::ProviderBuilder;
 use alloy::providers::WsConnect;
 use alloy::signers::local::PrivateKeySigner;
-use alloy::{providers::ProviderBuilder, sol};
 use common::SignerType;
 use common::{CiphertextCommits, InputVerification, TestEnvironment};
 use futures_util::StreamExt;
@@ -17,15 +17,6 @@ use std::time::Duration;
 use tokio::time::sleep;
 use transaction_sender::{FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender};
 mod common;
-
-sol! {
-    struct CiphertextVerification {
-        bytes32[] ctHandles;
-        address userAddress;
-        address contractAddress;
-        uint256 contractChainId;
-    }
-}
 
 #[rstest]
 #[case::private_key(SignerType::PrivateKey)]
@@ -97,11 +88,12 @@ async fn verify_proof_response_success(#[case] signer_type: SignerType) -> anyho
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         contract_chain_id as i64,
         env.contract_address.to_string(),
         env.user_address.to_string(),
@@ -213,11 +205,12 @@ async fn verify_proof_response_empty_handles_success(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         contract_chain_id as i64,
         env.contract_address.to_string(),
         env.user_address.to_string(),
@@ -327,9 +320,10 @@ async fn verify_proof_response_concurrent_success(
     let contract_chain_id = 42u64;
 
     let mut query_builder = QueryBuilder::<Postgres>::new("WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)");
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)");
     query_builder.push_values(0..count, |mut b, i| {
         b.push_bind(i as i64);
+        b.push_bind(U256::from(i).to_le_bytes::<32>());
         b.push_bind(contract_chain_id as i64);
         b.push_bind(env.contract_address.to_string());
         b.push_bind(env.user_address.to_string());
@@ -446,11 +440,12 @@ async fn reject_proof_response_success(#[case] signer_type: SignerType) -> anyho
 
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, false)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, false)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         42 as i64,
         env.contract_address.to_string(),
         env.user_address.to_string(),
@@ -545,11 +540,12 @@ async fn verify_proof_response_reversal_already_verified(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         42,
         env.contract_address.to_string(),
         env.user_address.to_string(),
@@ -646,11 +642,12 @@ async fn reject_proof_response_reversal_already_rejected(
 
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, false)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, false)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         42,
         env.contract_address.to_string(),
         env.user_address.to_string(),
@@ -744,11 +741,12 @@ async fn verify_proof_response_other_reversal(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         42,
         env.contract_address.to_string(),
         env.user_address.to_string(),
@@ -842,11 +840,12 @@ async fn reject_proof_response_other_reversal(
 
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, false)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, false)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         42,
         env.contract_address.to_string(),
         env.user_address.to_string(),
@@ -937,11 +936,12 @@ async fn verify_proof_response_other_reversal_gas_estimation(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         42,
         env.contract_address.to_string(),
         env.user_address.to_string(),
@@ -1035,11 +1035,12 @@ async fn reject_proof_response_other_reversal_gas_estimation(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, false)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, false)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         42,
         env.contract_address.to_string(),
         env.user_address.to_string(),
@@ -1135,11 +1136,12 @@ async fn verify_proof_max_retries_remove_entry(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         42,
         env.contract_address.to_string(),
         env.user_address.to_string(),
@@ -1225,11 +1227,12 @@ async fn verify_proof_max_retries_do_not_remove_entry(
     // Insert a proof into the database and notify the sender.
     sqlx::query!(
         "WITH ins AS (
-            INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, handles, verified)
-            VALUES ($1, $2, $3, $4, $5, true)
+            INSERT INTO verify_proofs (zk_proof_id, coprocessor_context_id, chain_id, contract_address, user_address, handles, verified)
+            VALUES ($1, $2, $3, $4, $5, $6, true)
         )
-        SELECT pg_notify($6, '')",
+        SELECT pg_notify($7, '')",
         proof_id as i64,
+        &U256::from(42).to_le_bytes::<32>(),
         42,
         env.contract_address.to_string(),
         env.user_address.to_string(),
