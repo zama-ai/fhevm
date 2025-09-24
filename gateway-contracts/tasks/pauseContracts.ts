@@ -10,9 +10,14 @@ import { getRequiredEnvVar } from "./utils/loadVariables";
 import { pascalCaseToSnakeCase } from "./utils/stringOps";
 
 // Helper function to get a Gateway contract and its proxy address
-async function getGatewayContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
+async function getGatewayContract(
+  name: string,
+  ethers: HardhatEthersHelpers,
+  useInternalAddress: boolean,
+  envVarPrivateKeyName: string,
+) {
   // Get the pauser wallet
-  const pauserPrivateKey = getRequiredEnvVar("PAUSER_PRIVATE_KEY");
+  const pauserPrivateKey = getRequiredEnvVar(envVarPrivateKeyName);
   const pauser = new Wallet(pauserPrivateKey).connect(ethers.provider);
 
   // Get contract factories
@@ -41,7 +46,7 @@ async function getGatewayContract(name: string, ethers: HardhatEthersHelpers, us
 // Helper function to pause a contract
 async function pauseSingleContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
   // Get the contract and its address
-  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress);
+  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress, "PAUSER_PRIVATE_KEY");
 
   // Pause the contract
   await contract.pause();
@@ -52,7 +57,7 @@ async function pauseSingleContract(name: string, ethers: HardhatEthersHelpers, u
 // Helper function to unpause a contract
 async function unpauseSingleContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
   // Get the contract and its address
-  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress);
+  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress, "DEPLOYER_PRIVATE_KEY"); // NOTE: this task won't work once ownership will be transferred from initial deployer to the multisig
 
   // Unpause the contract
   await contract.unpause();
@@ -131,7 +136,12 @@ task("task:pauseAllGatewayContracts")
     const name = "GatewayConfig";
 
     // Get the GatewayConfig contract and its address
-    const { contract, proxyAddress } = await getGatewayContract(name, hre.ethers, useInternalProxyAddress);
+    const { contract, proxyAddress } = await getGatewayContract(
+      name,
+      hre.ethers,
+      useInternalProxyAddress,
+      "PAUSER_PRIVATE_KEY",
+    );
 
     // Pause all the Gateway contracts
     await contract.pauseAllGatewayContracts();
@@ -153,7 +163,12 @@ task("task:unpauseAllGatewayContracts")
     const name = "GatewayConfig";
 
     // Get the GatewayConfig contract and its address
-    const { contract, proxyAddress } = await getGatewayContract(name, hre.ethers, useInternalProxyAddress);
+    const { contract, proxyAddress } = await getGatewayContract(
+      name,
+      hre.ethers,
+      useInternalProxyAddress,
+      "DEPLOYER_PRIVATE_KEY", // NOTE: this task won't work once ownership will be transferred from initial deployer to the multisig
+    );
 
     // Unpause all the Gateway contracts
     await contract.unpauseAllGatewayContracts();
