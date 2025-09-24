@@ -23,7 +23,7 @@ use opentelemetry::{
 use std::{collections::HashMap, sync::atomic::AtomicUsize};
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
-use tracing::error;
+use tracing::{error, info, warn};
 
 use super::{DFGraph, DFTxGraph, OpNode};
 
@@ -54,8 +54,10 @@ impl std::fmt::Debug for ExecNode {
 }
 
 enum DeviceSelection {
+    #[allow(dead_code)]
     Index(usize),
     RoundRobin,
+    #[allow(dead_code)]
     NA,
 }
 
@@ -106,7 +108,14 @@ impl<'a> Scheduler<'a> {
                     self.schedule_coarse_grain(PartitionStrategy::MaxLocality, loop_ctx)
                         .await
                 }
-                unhandled => panic!("Scheduling strategy {:?} does not exist", unhandled),
+                unhandled => {
+                    error!(target: "scheduler", { strategy = ?unhandled },
+			   "Scheduling strategy does not exist");
+                    info!(target: "scheduler", { },
+			  "Reverting to default (generally best performance) strategy MAX_PARALLELISM");
+                    self.schedule_coarse_grain(PartitionStrategy::MaxParallelism, loop_ctx)
+                        .await
+                }
             },
             // Use overall best strategy as default
             #[cfg(not(feature = "gpu"))]
@@ -137,7 +146,11 @@ impl<'a> Scheduler<'a> {
         match target {
             DeviceSelection::Index(i) => {
                 if i > self.csks.len() {
-                    return Err(SchedulerError::SchedulerError.into());
+                    error!(target: "scheduler", {index = ?i }, "Wrong device index");
+                    // Instead of giving up, we'll use device 0 (which
+                    // should always be safe to use) and keep making
+                    // progress even if suboptimally
+                    Ok((self.csks[0].clone(), self.cpk.clone()))
                 }
                 Ok((self.csks[i].clone(), self.cpk.clone()))
             }
@@ -160,7 +173,6 @@ impl<'a> Scheduler<'a> {
         strategy: PartitionStrategy,
         loop_ctx: &'a opentelemetry::Context,
     ) -> Result<()> {
-        let now = std::time::SystemTime::now();
         let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
         match strategy {
             PartitionStrategy::MaxLocality => {
@@ -231,6 +243,11 @@ impl<'a> Scheduler<'a> {
                             .graph
                             .node_weight_mut(*nidx)
                             .ok_or(SchedulerError::DataflowGraphError)?;
+                        // Skip transactions that cannot complete
+                        // because of missing dependences.
+                        if tx.is_uncomputable {
+                            continue;
+                        }
                         args.push((
                             std::mem::take(&mut tx.graph),
                             std::mem::take(&mut tx.inputs),
@@ -254,11 +271,6 @@ impl<'a> Scheduler<'a> {
                 }
             }
         }
-        println!(
-            "Scheduler time for block of {} transactions : {}",
-            self.graph.graph.node_count(),
-            now.elapsed().unwrap().as_millis()
-        );
         Ok(())
     }
 }
@@ -382,14 +394,12 @@ fn partition_components<TNode, TEdge>(
     Ok(())
 }
 
-//#[cfg(not(feature = "gpu"))]
 fn re_randomise_transaction_inputs(
     inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
     transaction_id: &Handle,
     gpu_idx: usize,
     cpk: tfhe::CompactPublicKey,
 ) -> Result<()> {
-    let now = std::time::SystemTime::now();
     let transaction_rerandomisation_domain_separator = *b"TFHE-w.r";
     let compact_public_encryption_domain_separator = *b"TFHE.Enc";
     let mut re_rand_context = ReRandomizationContext::new(
@@ -425,19 +435,15 @@ fn re_randomise_transaction_inputs(
                 ));
             }
             Some(DFGTxInput::Compressed(_)) => {
-                panic!("N compressed inputs should remain here");
+                error!(target: "scheduler", { transaction_id = ?transaction_id },
+		       "Failed to re-randomise inputs for transaction");
+                return Err(SchedulerError::ReRandomisationError.into());
             }
             None => {}
         }
     }
-    println!(
-        "RERAND execution time: {} -- {:?}",
-        now.elapsed().unwrap().as_millis(),
-        now
-    );
     Ok(())
 }
-//#[cfg(feature = "gpu")]
 fn dont_re_randomise_transaction_inputs(
     inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
     _transaction_id: &Handle,
@@ -486,30 +492,72 @@ async fn execute_partition(
         for (h, i) in tx_inputs.iter_mut() {
             if i.is_none() {
                 let Some(Ok(ct)) = res.get(h) else {
+                    warn!(target: "scheduler", {transaction_id = ?tid },
+		       "Missing input to compute transaction - skipping");
+                    for nidx in dfg.graph.node_identifiers() {
+                        let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                            error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
+                            continue;
+                        };
+                        if node.is_allowed {
+                            res.insert(
+                                node.result_handle.clone(),
+                                Err(SchedulerError::MissingInputs.into()),
+                            );
+                        }
+                    }
                     continue 'tx;
                 };
                 *i = Some(DFGTxInput::Value(ct.0.clone()));
             }
         }
-        // Re-randomise inputs of the transaction - this also
-        // decompresses ciphertexts
         let mut s = tracer.start_with_context("rerandomise_inputs", loop_ctx);
-        if cfg!(feature = "gpu") || cfg!(feature = "rerandomise") {
+        if !cfg!(feature = "gpu") {
+            // Re-randomise inputs of the transaction - this also
+            // decompresses ciphertexts
             if let Err(e) = re_randomise_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
-                res.insert(tid.clone(), Err(e));
+                error!(target: "scheduler", {transaction_id = ?tid, error = ?e },
+		       "Error while re-randomising inputs");
+                for nidx in dfg.graph.node_identifiers() {
+                    let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                        error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
+                        continue;
+                    };
+                    if node.is_allowed {
+                        res.insert(
+                            node.result_handle.clone(),
+                            Err(SchedulerError::ReRandomisationError.into()),
+                        );
+                    }
+                }
                 continue 'tx;
             }
         } else {
+            // If re-randomisation is not available (e.g., on GPU),
+            // only decompress ciphertexts
             if let Err(e) =
                 dont_re_randomise_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone())
             {
-                res.insert(tid.clone(), Err(e));
+                error!(target: "scheduler", {transaction_id = ?tid, error = ?e },
+		       "Error while decompressing inputs");
+                for nidx in dfg.graph.node_identifiers() {
+                    let Some(node) = dfg.graph.node_weight_mut(nidx) else {
+                        error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
+                        continue;
+                    };
+                    if node.is_allowed {
+                        res.insert(
+                            node.result_handle.clone(),
+                            Err(SchedulerError::ReRandomisationError.into()),
+                        );
+                    }
+                }
                 continue 'tx;
             }
         }
         s.end();
 
-        // Traverse prime the scheduler with ready ops from the transaction's subgraph
+        // Prime the scheduler with ready ops from the transaction's subgraph
         let mut s = tracer.start_with_context("execute_transaction", loop_ctx);
         s.set_attribute(KeyValue::new(
             "transaction_hash",
@@ -518,14 +566,13 @@ async fn execute_partition(
         let mut set: JoinSet<(usize, OpResult)> = JoinSet::new();
         for nidx in dfg.graph.node_identifiers() {
             let Some(node) = dfg.graph.node_weight_mut(nidx) else {
-                error!(target: "scheduler", { }, "Wrong dataflow graph index");
+                error!(target: "scheduler", {index = ?nidx.index() }, "Wrong dataflow graph index");
                 continue;
             };
             try_schedule_node(
                 node,
                 nidx.index(),
                 &mut set,
-                &mut res,
                 tx_inputs,
                 gpu_idx,
                 sks.clone(),
@@ -539,7 +586,7 @@ async fn execute_partition(
                     for edge in edges.edges_directed(nidx, Direction::Outgoing) {
                         let child_index = edge.target();
                         let Some(child_node) = dfg.graph.node_weight_mut(child_index) else {
-                            error!(target: "scheduler", { }, "Wrong dataflow graph index");
+                            error!(target: "scheduler", {index = ?child_index.index() }, "Wrong dataflow graph index");
                             continue;
                         };
                         // Update input of consumers
@@ -551,14 +598,13 @@ async fn execute_partition(
                             child_node,
                             child_index.index(),
                             &mut set,
-                            &mut res,
                             tx_inputs,
                             gpu_idx,
                             sks.clone(),
                         );
                     }
                 }
-                // Update partition's outputs (allowed handles)
+                // Update partition's outputs (allowed handles only)
                 let node = dfg.graph.node_weight_mut(nidx).unwrap();
                 if node.is_allowed {
                     res.insert(
@@ -579,7 +625,6 @@ fn try_schedule_node(
     node: &mut OpNode,
     node_index: usize,
     set: &mut JoinSet<(usize, OpResult)>,
-    res: &mut HashMap<Handle, TaskResult>,
     tx_inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
     gpu_idx: usize,
     #[cfg(not(feature = "gpu"))] sks: tfhe::ServerKey,
@@ -593,12 +638,8 @@ fn try_schedule_node(
         if let DFGTaskInput::Value(i) = i {
             cts.push(i);
         } else {
-            // If any input is not a value here, we failed. That
-            // should not be possible as we called the checker.
-            res.insert(
-                node.result_handle.clone(),
-                Err(SchedulerError::SchedulerError.into()),
-            );
+            // That should not be possible as we called the checker.
+            error!(target: "scheduler", { handle = ?node.result_handle }, "Computation missing inputs");
             return;
         }
     }
@@ -621,7 +662,6 @@ fn run_computation(
     gpu_idx: usize,
 ) -> (usize, OpResult) {
     let op = FheOperation::try_from(operation);
-    println!("Performing {operation} index {graph_node_index}");
     match op {
         Ok(FheOperation::FheGetCiphertext) => {
             let (ct_type, ct_bytes) = inputs[0].compress();

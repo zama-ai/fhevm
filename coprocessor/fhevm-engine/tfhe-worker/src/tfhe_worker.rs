@@ -85,7 +85,7 @@ async fn tfhe_worker_cycle(
         .connect(&db_url)
         .await?;
     let mut listener = PgListener::connect_with(&pool).await.unwrap();
-    listener.listen("event_allowed_handle").await?;
+    listener.listen("work_available").await?;
 
     #[cfg(feature = "bench")]
     populate_cache_with_tenant_keys(vec![1i32], &pool, &tenant_key_cache).await?;
@@ -96,7 +96,7 @@ async fn tfhe_worker_cycle(
             tokio::select! {
                 _ = listener.try_recv() => {
                     WORK_ITEMS_NOTIFICATIONS_COUNTER.inc();
-                    info!(target: "tfhe_worker", "Received event_allowed_handle notification from postgres");
+                    info!(target: "tfhe_worker", "Received work_available notification from postgres");
                 },
                 _ = tokio::time::sleep(tokio::time::Duration::from_millis(args.worker_polling_interval_ms)) => {
                     WORK_ITEMS_POLL_COUNTER.inc();
@@ -241,61 +241,39 @@ async fn query_ciphertexts<'a>(
 }
 
 // Update uncomputable ops schedule orders
-// async fn update_uncomputable_handles<'a>(
-//     execution_results: &mut Vec<DFGTxResult>,
-//     tenant_id: i32,
-//     trx: &mut sqlx::Transaction<'a, Postgres>,
-//     tracer: &opentelemetry::global::BoxedTracer,
-//     loop_ctx: &opentelemetry::Context,
-// ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-//     let mut s = tracer.start_with_context("update_unschedulable_computations", loop_ctx);
-//     // Extract all uncomputable results
-//     let mut uncomputable = vec![];
-//     for res in execution_results.iter_mut() {
-//         if let Some(r) = &res.result {
-//             if r.is_err() {
-//                 uncomputable.push(std::mem::take(&mut res.handle));
-//             }
-//             // Else nothing to do, the result is present and valid
-//         } else {
-//             // There should always be a result, even if it's an error
-//             return Err(Box::new(CoprocessorError::SchedulerError(
-//                 SchedulerError::DataflowGraphError,
-//             )));
-//         }
-//     }
-//     s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
-//     s.set_attributes(
-//         uncomputable
-//             .iter()
-//             .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
-//     );
-//     let _ = query!(
-//                     "
-//                             UPDATE allowed_handles
-//                             SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
-//                                 uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
-//                             WHERE tenant_id = $1
-//                             AND handle = ANY($2::BYTEA[])
-//                         ",
-//                     tenant_id,
-//                     &uncomputable
-//                 )
-//                 .execute(trx.as_mut())
-//                 .await.map_err(|err| {
-//                     error!(target: "tfhe_worker", { tenant_id = tenant_id, error = %err }, "error while marking computations as unschedulable");
-//                     err
-//                 })?;
-//     execution_results.retain(|r| {
-//         if let Some(res) = &r.result {
-//             res.is_ok()
-//         } else {
-//             false
-//         }
-//     });
-//     s.end();
-//     Ok(())
-// }
+async fn update_uncomputable_handles<'a>(
+    uncomputable: Vec<Handle>,
+    tenant_id: i32,
+    trx: &mut sqlx::Transaction<'a, Postgres>,
+    tracer: &opentelemetry::global::BoxedTracer,
+    loop_ctx: &opentelemetry::Context,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut s = tracer.start_with_context("update_unschedulable_computations", loop_ctx);
+    s.set_attribute(KeyValue::new("tenant_id", tenant_id as i64));
+    s.set_attributes(
+        uncomputable
+            .iter()
+            .map(|h| KeyValue::new("handle", format!("0x{}", hex::encode(h)))),
+    );
+    let _ = query!(
+        "
+        UPDATE computations
+           SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,
+               uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT
+         WHERE tenant_id = $1
+           AND output_handle = ANY($2::BYTEA[])
+        ",
+                    tenant_id,
+                    &uncomputable
+                )
+                .execute(trx.as_mut())
+                .await.map_err(|err| {
+                    error!(target: "tfhe_worker", { tenant_id = tenant_id, error = %err }, "error while marking computations as unschedulable");
+                    err
+                })?;
+    s.end();
+    Ok(())
+}
 
 async fn query_for_work<'a>(
     args: &crate::daemon_cli::Args,
@@ -432,11 +410,9 @@ async fn build_transaction_graph_and_execute<'a>(
 ) -> Result<DFTxGraph, Box<dyn std::error::Error + Send + Sync>> {
     let mut tx_graph = DFTxGraph::default();
     tx_graph.build(tenant_txs)?;
-
     let cts_to_query = tx_graph.needed_map.keys().cloned().collect::<Vec<_>>();
     let ciphertext_map =
         query_ciphertexts(&cts_to_query, *tenant_id, trx, tracer, loop_ctx).await?;
-
     for (handle, (ct_type, mut ct)) in ciphertext_map.into_iter() {
         tx_graph.add_input(
             &handle,
@@ -478,6 +454,7 @@ async fn upload_transaction_graph_results<'a>(
     // upload their results/errors
     let mut handles_to_update = tx_graph.get_intermediate_handles();
     let mut cts_to_insert = vec![];
+    let mut uncomputable = vec![];
     for result in graph_results.into_iter() {
         match result.compressed_ct {
             Ok((db_type, db_bytes)) => {
@@ -507,17 +484,29 @@ async fn upload_transaction_graph_results<'a>(
                         )
                         .into()
                     };
-                // Downgrade SchedulerError to warning as the
+                // Downgrade SchedulerError to warning when the
                 // error is not about the operations themselves.
-                // Do not set the error flag in the DB.
+                // Do not set the error flag in the DB in such cases.
                 if let Some(err) = cerr.downcast_ref::<CoprocessorError>() {
-                    if matches!(err, CoprocessorError::SchedulerError(_)) {
+                    if matches!(
+                        err,
+                        CoprocessorError::SchedulerError(SchedulerError::DataflowGraphError)
+                    ) || matches!(
+                        err,
+                        CoprocessorError::SchedulerError(SchedulerError::SchedulerError)
+                    ) {
                         warn!(target: "tfhe_worker",
                                           { tenant_id = tenant_id, error = cerr,
                         output_handle = format!("0x{}", hex::encode(&result.handle)) },
                                         "scheduler encountered an error while processing work item"
                                     );
                         continue;
+                    }
+                    if matches!(
+                        err,
+                        CoprocessorError::SchedulerError(SchedulerError::MissingInputs)
+                    ) {
+                        uncomputable.push(result.handle.clone());
                     }
                 }
                 WORKER_ERRORS_COUNTER.inc();
@@ -622,5 +611,7 @@ async fn upload_transaction_graph_results<'a>(
                 })?;
 
     s.end();
+
+    update_uncomputable_handles(uncomputable, *tenant_id, trx, tracer, loop_ctx).await?;
     Ok(())
 }

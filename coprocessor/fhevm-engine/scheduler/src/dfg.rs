@@ -32,13 +32,13 @@ pub struct TxNode {
     // transaction)
     pub results: Vec<Handle>,
     pub transaction_id: Handle,
-    pub is_error: bool,
+    pub is_uncomputable: bool,
     pub intermediate_handles: Vec<Handle>,
 }
 impl TxNode {
     pub fn build(&mut self, mut operations: Vec<DFGOp>, transaction_id: &Handle) -> Result<()> {
         self.transaction_id = transaction_id.clone();
-        self.is_error = false;
+        self.is_uncomputable = false;
         // Gather all handles produced within the transaction
         let mut produced_handles: HashMap<Handle, usize> = HashMap::new();
         for (index, op) in operations.iter().enumerate() {
@@ -175,36 +175,55 @@ impl DFTxGraph {
         result: Result<(SupportedFheCiphertexts, i16, Vec<u8>)>,
         edges: &Dag<(), TxEdge>,
     ) -> Result<()> {
-        if let Some(producer) = self.allowed_map.get_mut(handle) {
-            for edge in edges.edges_directed(*producer, Direction::Outgoing) {
-                let dependent_tx_index = edge.target();
-                let dependent_tx = self
-                    .graph
-                    .node_weight_mut(dependent_tx_index)
-                    .ok_or(SchedulerError::DataflowGraphError)?;
-                if let Ok(ref result) = result {
+        if let Some(producer) = self.allowed_map.get(handle).cloned() {
+            if let Ok(ref result) = result {
+                // Traverse immediate dependents and add this result as an input
+                for edge in edges.edges_directed(producer, Direction::Outgoing) {
+                    let dependent_tx_index = edge.target();
+                    let dependent_tx = self
+                        .graph
+                        .node_weight_mut(dependent_tx_index)
+                        .ok_or(SchedulerError::DataflowGraphError)?;
                     dependent_tx
                         .inputs
                         .entry(handle.to_vec())
                         .and_modify(|v| *v = Some(DFGTxInput::Value(result.0.clone())));
-                } else {
-                    // If the output is an error, all dependent
-                    // transactions are blocked
-                    dependent_tx.is_error = true;
                 }
+            } else {
+                // If this result was an error, mark this transaction
+                // and all its dependents as uncomputable, we will
+                // skip them during scheduling
+                self.set_uncomputable(producer, edges)?;
             }
+            // Finally add the output (either error or compressed
+            // ciphertext) to the graph's outputs
             let producer_tx = self
                 .graph
-                .node_weight_mut(*producer)
+                .node_weight_mut(producer)
                 .ok_or(SchedulerError::DataflowGraphError)?;
-            if result.is_err() {
-                producer_tx.is_error = true;
-            }
             self.results.push(DFGTxResult {
                 transaction_id: producer_tx.transaction_id.clone(),
                 handle: handle.to_vec(),
                 compressed_ct: result.map(|rok| (rok.1, rok.2)),
             });
+        }
+        Ok(())
+    }
+    // Set a node as uncomputable and recursively traverse graph to
+    // set its dependents as uncomputable as well
+    fn set_uncomputable(
+        &mut self,
+        tx_node_index: NodeIndex,
+        edges: &Dag<(), TxEdge>,
+    ) -> Result<()> {
+        let tx_node = self
+            .graph
+            .node_weight_mut(tx_node_index)
+            .ok_or(SchedulerError::DataflowGraphError)?;
+        tx_node.is_uncomputable = true;
+        for edge in edges.edges_directed(tx_node_index, Direction::Outgoing) {
+            let dependent_tx_index = edge.target();
+            self.set_uncomputable(dependent_tx_index, edges)?;
         }
         Ok(())
     }
@@ -214,7 +233,7 @@ impl DFTxGraph {
     pub fn get_intermediate_handles(&mut self) -> Vec<(Handle, Handle)> {
         let mut res = vec![];
         for tx in self.graph.node_weights_mut() {
-            if !tx.is_error {
+            if !tx.is_uncomputable {
                 res.append(
                     &mut (std::mem::take(&mut tx.intermediate_handles))
                         .into_iter()
@@ -254,13 +273,11 @@ pub struct DFGResult {
 pub type OpEdge = u8;
 pub struct OpNode {
     opcode: i32,
-    result: DFGTaskResult,
     result_handle: Handle,
     inputs: Vec<DFGTaskInput>,
     #[cfg(feature = "gpu")]
     locality: i32,
     is_allowed: bool,
-    is_needed: bool,
 }
 impl std::fmt::Debug for OpNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -291,7 +308,6 @@ impl OpNode {
 pub struct DFGraph {
     pub graph: Dag<OpNode, OpEdge>,
 }
-
 impl DFGraph {
     pub fn add_node(
         &mut self,
@@ -302,13 +318,11 @@ impl DFGraph {
     ) -> NodeIndex {
         self.graph.add_node(OpNode {
             opcode,
-            result: None,
             result_handle: rh,
             inputs,
             #[cfg(feature = "gpu")]
             locality: -1,
             is_allowed,
-            is_needed: is_allowed,
         })
     }
     pub fn add_dependence(
@@ -327,54 +341,4 @@ impl DFGraph {
             .map_err(|_| SchedulerError::CyclicDependence)?;
         Ok(())
     }
-
-    // fn is_needed(&self, index: usize) -> bool {
-    //     let node_index = NodeIndex::new(index);
-    //     let node = self.graph.node_weight(node_index).unwrap();
-    //     if node.is_allowed || node.is_needed {
-    //         true
-    //     } else {
-    //         for edge in self.graph.edges_directed(node_index, Direction::Outgoing) {
-    //             // If any outgoing dependence is needed, so is this node
-    //             if self.is_needed(edge.target().index()) {
-    //                 return true;
-    //             }
-    //         }
-    //         false
-    //     }
-    // }
-
-    // pub fn finalize(&mut self) {
-    //     // Traverse in reverse order and mark nodes as needed as the
-    //     // graph order is roughly computable, so allowed nodes should
-    //     // generally be later in the graph.
-    //     for index in (0..self.graph.node_count()).rev() {
-    //         if self.is_needed(index) {
-    //             let node = self.graph.node_weight_mut(NodeIndex::new(index)).unwrap();
-    //             node.is_needed = true;
-    //         }
-    //     }
-    //     // Prune graph of all unneeded nodes and edges
-    //     let mut unneeded_nodes = Vec::new();
-    //     for index in 0..self.graph.node_count() {
-    //         let node_index = NodeIndex::new(index);
-    //         let Some(node) = self.graph.node_weight(node_index) else {
-    //             continue;
-    //         };
-    //         if !node.is_needed {
-    //             unneeded_nodes.push(index);
-    //         }
-    //     }
-    //     unneeded_nodes.sort();
-    //     // Remove unneeded nodes and their edges
-    //     for index in unneeded_nodes.iter().rev() {
-    //         let node_index = NodeIndex::new(*index);
-    //         let Some(node) = self.graph.node_weight(node_index) else {
-    //             continue;
-    //         };
-    //         if !node.is_needed {
-    //             self.graph.remove_node(node_index);
-    //         }
-    //     }
-    // }
 }
