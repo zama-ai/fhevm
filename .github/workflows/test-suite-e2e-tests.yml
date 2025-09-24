@@ -4,6 +4,49 @@ name: test-suite-e2e-tests
 # https://docs.github.com/en/actions/reference/events-that-trigger-workflows#providing-inputs
 # Core, relayer and test-suite will use the default versions defined in the `fhevm-cli` script
 on:
+  workflow_call:
+    inputs:
+      connector_version:
+        description: "Connector Version"
+        default: ""
+        type: string
+      db_migration_version:
+        description: "Coprocessor DB Migration Image Version"
+        default: ""
+        type: string
+      host_version:
+        description: "Host Image Version"
+        default: ""
+        type: string
+      gateway_version:
+        description: "Gateway Image Version"
+        required: false
+        default: ""
+        type: string
+      host_listener_version:
+        description: "Host Listener Image Version"
+        default: ""
+        type: string
+      gateway_listener_version:
+        description: "Gateway Listener Image Version"
+        default: ""
+        type: string
+      tx_sender_version:
+        description: "Transaction Sender Image Version"
+        default: ""
+        type: string
+      tfhe_worker_version:
+        description: "TFHE Worker Image Version"
+        default: ""
+        type: string
+      sns_worker_version:
+        description: "SNS Worker Image Version"
+        default: ""
+        type: string
+      zkproof_worker_version:
+        description: "ZKProof Worker Image Version"
+        default: ""
+        type: string
   workflow_dispatch:
     inputs:
       connector_version:
