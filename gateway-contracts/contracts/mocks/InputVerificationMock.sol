@@ -18,6 +18,7 @@ contract InputVerificationMock {
 
     event VerifyProofRequest(
         uint256 indexed zkProofId,
+        uint256 indexed coprocessorContextId,
         uint256 indexed contractChainId,
         address contractAddress,
         address userAddress,
@@ -43,6 +44,7 @@ contract InputVerificationMock {
 
         emit VerifyProofRequest(
             zkProofId,
+            0, // TODO: coprocessorContextId is not used for now
             contractChainId,
             contractAddress,
             userAddress,
