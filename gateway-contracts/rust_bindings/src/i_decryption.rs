@@ -47,7 +47,7 @@ interface IDecryption {
     event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, bytes extraData);
     event PublicDecryptionResponse(uint256 indexed decryptionId, bytes decryptedResult, bytes[] signatures, bytes extraData);
     event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey, bytes extraData);
-    event UserDecryptionResponse(uint256 indexed decryptionId, uint256 counterShares, bytes userDecryptedShare, bytes signature, bytes extraData);
+    event UserDecryptionResponse(uint256 indexed decryptionId, uint256 indexShare, bytes userDecryptedShare, bytes signature, bytes extraData);
     event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
 
     function checkDecryptionDone(uint256 decryptionId) external view;
@@ -614,7 +614,7 @@ interface IDecryption {
         "internalType": "uint256"
       },
       {
-        "name": "counterShares",
+        "name": "indexShare",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -4046,7 +4046,7 @@ event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `UserDecryptionResponse(uint256,uint256,bytes,bytes,bytes)` and selector `0x7fcdfb5381917f554a717d0a5470a33f5a49ba6445f05ec43c74c0bc2cc608b2`.
 ```solidity
-event UserDecryptionResponse(uint256 indexed decryptionId, uint256 counterShares, bytes userDecryptedShare, bytes signature, bytes extraData);
+event UserDecryptionResponse(uint256 indexed decryptionId, uint256 indexShare, bytes userDecryptedShare, bytes signature, bytes extraData);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4059,7 +4059,7 @@ event UserDecryptionResponse(uint256 indexed decryptionId, uint256 counterShares
         #[allow(missing_docs)]
         pub decryptionId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-        pub counterShares: alloy::sol_types::private::primitives::aliases::U256,
+        pub indexShare: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub userDecryptedShare: alloy::sol_types::private::Bytes,
         #[allow(missing_docs)]
@@ -4105,7 +4105,7 @@ event UserDecryptionResponse(uint256 indexed decryptionId, uint256 counterShares
             ) -> Self {
                 Self {
                     decryptionId: topics.1,
-                    counterShares: data.0,
+                    indexShare: data.0,
                     userDecryptedShare: data.1,
                     signature: data.2,
                     extraData: data.3,
@@ -4131,7 +4131,7 @@ event UserDecryptionResponse(uint256 indexed decryptionId, uint256 counterShares
                 (
                     <alloy::sol_types::sol_data::Uint<
                         256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.counterShares),
+                    > as alloy_sol_types::SolType>::tokenize(&self.indexShare),
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.userDecryptedShare,
                     ),

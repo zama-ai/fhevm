@@ -549,7 +549,15 @@ contract Decryption is
         txSenderAddresses.push(msg.sender);
 
         // Store the user decrypted share for the user decryption response.
-        emit UserDecryptionResponse(decryptionId, txSenderAddresses.length, userDecryptedShare, signature, extraData);
+        // The index of the share is the length of the txSenderAddresses - 1 so that the first response
+        // associated to this decryptionId has an index of 0.
+        emit UserDecryptionResponse(
+            decryptionId,
+            txSenderAddresses.length - 1,
+            userDecryptedShare,
+            signature,
+            extraData
+        );
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted

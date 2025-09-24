@@ -36,7 +36,7 @@ contract DecryptionMock {
 
     event UserDecryptionResponse(
         uint256 indexed decryptionId,
-        uint256 counterShares,
+        uint256 indexShare,
         bytes userDecryptedShare,
         bytes signature,
         bytes extraData
@@ -104,9 +104,9 @@ contract DecryptionMock {
         bytes calldata signature,
         bytes calldata extraData
     ) external {
-        uint256 counterShares;
+        uint256 indexShare;
 
-        emit UserDecryptionResponse(decryptionId, counterShares, userDecryptedShare, signature, extraData);
+        emit UserDecryptionResponse(decryptionId, indexShare, userDecryptedShare, signature, extraData);
 
         emit UserDecryptionResponseThresholdReached(decryptionId);
     }
