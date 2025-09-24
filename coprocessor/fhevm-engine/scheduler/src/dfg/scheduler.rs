@@ -429,10 +429,8 @@ fn re_randomise_transaction_inputs(
     let mut seed_gen = re_rand_context.finalize();
     for txinput in inputs.values_mut() {
         match txinput {
-            Some(DFGTxInput::Value(val)) => {
-                *txinput = Some(DFGTxInput::Value(
-                    val.re_randomise(&cpk, seed_gen.next_seed())?,
-                ));
+            Some(DFGTxInput::Value(ref mut val)) => {
+                val.re_randomise(&cpk, seed_gen.next_seed()?)?;
             }
             Some(DFGTxInput::Compressed(_)) => {
                 error!(target: "scheduler", { transaction_id = ?transaction_id },
