@@ -70,7 +70,11 @@
       },
       {
         "ordinal": 13,
+<<<<<<< HEAD
         "name": "transaction_id",
+=======
+        "name": "coprocessor_context_id",
+>>>>>>> 980ecf55 (feat(coprocessor): add copro context ID for input proofs)
         "type_info": "Bytea"
       }
     ],
@@ -93,7 +97,11 @@
       true,
       false,
       false,
+<<<<<<< HEAD
       true
+=======
+      false
+>>>>>>> 980ecf55 (feat(coprocessor): add copro context ID for input proofs)
     ]
   },
   "hash": "be2b163e885ff2e4df27ae07c51f8c304f534b50565504a96bd63ce63a6179d7"
