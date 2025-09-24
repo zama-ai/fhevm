@@ -16,9 +16,9 @@ async function getGatewayContract(
   useInternalAddress: boolean,
   envVarPrivateKeyName: string,
 ) {
-  // Get the pauser wallet
-  const pauserPrivateKey = getRequiredEnvVar(envVarPrivateKeyName);
-  const pauser = new Wallet(pauserPrivateKey).connect(ethers.provider);
+  // Get the account (pauser for pausing OR deployer for unpausing) wallet
+  const accountPrivateKey = getRequiredEnvVar(envVarPrivateKeyName);
+  const account = new Wallet(accountPrivateKey).connect(ethers.provider);
 
   // Get contract factories
   if (useInternalAddress) {
@@ -38,7 +38,7 @@ async function getGatewayContract(
   // Get the proxy address
   const proxyAddress = getRequiredEnvVar(addressEnvVarName);
 
-  const contract = await ethers.getContractAt(name, proxyAddress, pauser);
+  const contract = await ethers.getContractAt(name, proxyAddress, account);
 
   return { contract, proxyAddress };
 }
@@ -57,7 +57,8 @@ async function pauseSingleContract(name: string, ethers: HardhatEthersHelpers, u
 // Helper function to unpause a contract
 async function unpauseSingleContract(name: string, ethers: HardhatEthersHelpers, useInternalAddress: boolean) {
   // Get the contract and its address
-  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress, "DEPLOYER_PRIVATE_KEY"); // NOTE: this task won't work once ownership will be transferred from initial deployer to the multisig
+  // NOTE: this task won't work once ownership will be transferred from initial deployer to the multisig
+  const { contract, proxyAddress } = await getGatewayContract(name, ethers, useInternalAddress, "DEPLOYER_PRIVATE_KEY");
 
   // Unpause the contract
   await contract.unpause();
@@ -163,11 +164,12 @@ task("task:unpauseAllGatewayContracts")
     const name = "GatewayConfig";
 
     // Get the GatewayConfig contract and its address
+    // NOTE: this task won't work once ownership will be transferred from initial deployer to the multisig
     const { contract, proxyAddress } = await getGatewayContract(
       name,
       hre.ethers,
       useInternalProxyAddress,
-      "DEPLOYER_PRIVATE_KEY", // NOTE: this task won't work once ownership will be transferred from initial deployer to the multisig
+      "DEPLOYER_PRIVATE_KEY",
     );
 
     // Unpause all the Gateway contracts
