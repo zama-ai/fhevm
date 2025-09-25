@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use super::{Config, EventPublisher};
 use crate::{
     core::DbEventPublisher,
@@ -18,6 +16,7 @@ use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     kms_management::KmsManagement::{self, KmsManagementInstance},
 };
+use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
@@ -255,6 +254,8 @@ mod tests {
     };
     use tracing_test::traced_test;
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_public_decryption_requests_subscription() {
@@ -264,10 +265,17 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(PublicDecryptionRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_public_decryption_requests().await;
-        assert!(logs_contain("PublicDecryptionRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_public_decryption_requests());
+        loop {
+            if logs_contain("PublicDecryptionRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_user_decryption_requests_subscription() {
@@ -277,10 +285,17 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(UserDecryptionRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_user_decryption_requests().await;
-        assert!(logs_contain("UserDecryptionRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_user_decryption_requests());
+        loop {
+            if logs_contain("UserDecryptionRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_preprocess_keygen_requests_subscription() {
@@ -290,10 +305,17 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(PreprocessKeygenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_preprocess_keygen_requests().await;
-        assert!(logs_contain("PreprocessKeygenRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_preprocess_keygen_requests());
+        loop {
+            if logs_contain("PreprocessKeygenRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_preprocess_kskgen_requests_subscription() {
@@ -303,10 +325,17 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(PreprocessKskgenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_preprocess_kskgen_requests().await;
-        assert!(logs_contain("PreprocessKskgenRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_preprocess_kskgen_requests());
+        loop {
+            if logs_contain("PreprocessKskgenRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_keygen_requests_subscription() {
@@ -316,10 +345,17 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(KeygenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_keygen_requests().await;
-        assert!(logs_contain("KeygenRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_keygen_requests());
+        loop {
+            if logs_contain("KeygenRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_kskgen_requests_subscription() {
@@ -329,10 +365,17 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(KskgenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_kskgen_requests().await;
-        assert!(logs_contain("KskgenRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_kskgen_requests());
+        loop {
+            if logs_contain("KskgenRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_crsgen_requests_subscription() {
@@ -342,8 +385,13 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(CrsgenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_crsgen_requests().await;
-        assert!(logs_contain("CrsgenRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_crsgen_requests());
+        loop {
+            if logs_contain("CrsgenRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     /// Mock the log generated by the publication of a Gateway event.
