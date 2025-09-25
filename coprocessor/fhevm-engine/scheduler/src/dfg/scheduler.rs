@@ -146,13 +146,15 @@ impl<'a> Scheduler<'a> {
         match target {
             DeviceSelection::Index(i) => {
                 if i > self.csks.len() {
-                    error!(target: "scheduler", {index = ?i }, "Wrong device index");
+                    error!(target: "scheduler", {index = ?i },
+			   "Wrong device index");
                     // Instead of giving up, we'll use device 0 (which
                     // should always be safe to use) and keep making
                     // progress even if suboptimally
                     Ok((self.csks[0].clone(), self.cpk.clone()))
+                } else {
+                    Ok((self.csks[i].clone(), self.cpk.clone()))
                 }
-                Ok((self.csks[i].clone(), self.cpk.clone()))
             }
             DeviceSelection::RoundRobin => {
                 static LAST: std::sync::atomic::AtomicUsize =
