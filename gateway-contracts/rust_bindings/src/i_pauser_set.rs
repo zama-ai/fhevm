@@ -9,6 +9,7 @@ interface IPauserSet {
 
     event AddPauser(address account);
     event RemovePauser(address account);
+    event SwapPauser(address oldAccount, address newAccount);
 
     function addPauser(address account) external;
     function getVersion() external pure returns (string memory);
@@ -97,6 +98,25 @@ interface IPauserSet {
     "inputs": [
       {
         "name": "account",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "SwapPauser",
+    "inputs": [
+      {
+        "name": "oldAccount",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "newAccount",
         "type": "address",
         "indexed": false,
         "internalType": "address"
@@ -602,6 +622,122 @@ event RemovePauser(address account);
         impl From<&RemovePauser> for alloy_sol_types::private::LogData {
             #[inline]
             fn from(this: &RemovePauser) -> alloy_sol_types::private::LogData {
+                alloy_sol_types::SolEvent::encode_log_data(this)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Event with signature `SwapPauser(address,address)` and selector `0x3b13241d00fed42521a881fa11572547b2f695930d5bdcda93c07b28781b041e`.
+```solidity
+event SwapPauser(address oldAccount, address newAccount);
+```*/
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    #[derive(Clone)]
+    pub struct SwapPauser {
+        #[allow(missing_docs)]
+        pub oldAccount: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub newAccount: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[automatically_derived]
+        impl alloy_sol_types::SolEvent for SwapPauser {
+            type DataTuple<'a> = (
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Address,
+            );
+            type DataToken<'a> = <Self::DataTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
+            const SIGNATURE: &'static str = "SwapPauser(address,address)";
+            const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
+                59u8, 19u8, 36u8, 29u8, 0u8, 254u8, 212u8, 37u8, 33u8, 168u8, 129u8,
+                250u8, 17u8, 87u8, 37u8, 71u8, 178u8, 246u8, 149u8, 147u8, 13u8, 91u8,
+                220u8, 218u8, 147u8, 192u8, 123u8, 40u8, 120u8, 27u8, 4u8, 30u8,
+            ]);
+            const ANONYMOUS: bool = false;
+            #[allow(unused_variables)]
+            #[inline]
+            fn new(
+                topics: <Self::TopicList as alloy_sol_types::SolType>::RustType,
+                data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                Self {
+                    oldAccount: data.0,
+                    newAccount: data.1,
+                }
+            }
+            #[inline]
+            fn check_signature(
+                topics: &<Self::TopicList as alloy_sol_types::SolType>::RustType,
+            ) -> alloy_sol_types::Result<()> {
+                if topics.0 != Self::SIGNATURE_HASH {
+                    return Err(
+                        alloy_sol_types::Error::invalid_event_signature_hash(
+                            Self::SIGNATURE,
+                            topics.0,
+                            Self::SIGNATURE_HASH,
+                        ),
+                    );
+                }
+                Ok(())
+            }
+            #[inline]
+            fn tokenize_body(&self) -> Self::DataToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.oldAccount,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.newAccount,
+                    ),
+                )
+            }
+            #[inline]
+            fn topics(&self) -> <Self::TopicList as alloy_sol_types::SolType>::RustType {
+                (Self::SIGNATURE_HASH.into(),)
+            }
+            #[inline]
+            fn encode_topics_raw(
+                &self,
+                out: &mut [alloy_sol_types::abi::token::WordToken],
+            ) -> alloy_sol_types::Result<()> {
+                if out.len() < <Self::TopicList as alloy_sol_types::TopicList>::COUNT {
+                    return Err(alloy_sol_types::Error::Overrun);
+                }
+                out[0usize] = alloy_sol_types::abi::token::WordToken(
+                    Self::SIGNATURE_HASH,
+                );
+                Ok(())
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::private::IntoLogData for SwapPauser {
+            fn to_log_data(&self) -> alloy_sol_types::private::LogData {
+                From::from(self)
+            }
+            fn into_log_data(self) -> alloy_sol_types::private::LogData {
+                From::from(&self)
+            }
+        }
+        #[automatically_derived]
+        impl From<&SwapPauser> for alloy_sol_types::private::LogData {
+            #[inline]
+            fn from(this: &SwapPauser) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
@@ -1622,6 +1758,8 @@ function removePauser(address account) external;
         AddPauser(AddPauser),
         #[allow(missing_docs)]
         RemovePauser(RemovePauser),
+        #[allow(missing_docs)]
+        SwapPauser(SwapPauser),
     }
     #[automatically_derived]
     impl IPauserSetEvents {
@@ -1638,6 +1776,11 @@ function removePauser(address account) external;
                 89u8, 2u8, 123u8, 152u8, 210u8, 94u8, 186u8, 159u8, 63u8, 64u8,
             ],
             [
+                59u8, 19u8, 36u8, 29u8, 0u8, 254u8, 212u8, 37u8, 33u8, 168u8, 129u8,
+                250u8, 17u8, 87u8, 37u8, 71u8, 178u8, 246u8, 149u8, 147u8, 13u8, 91u8,
+                220u8, 218u8, 147u8, 192u8, 123u8, 40u8, 120u8, 27u8, 4u8, 30u8,
+            ],
+            [
                 250u8, 170u8, 88u8, 218u8, 98u8, 17u8, 116u8, 178u8, 166u8, 9u8, 40u8,
                 249u8, 119u8, 10u8, 110u8, 79u8, 248u8, 182u8, 173u8, 89u8, 161u8, 171u8,
                 91u8, 195u8, 204u8, 154u8, 47u8, 231u8, 181u8, 41u8, 64u8, 171u8,
@@ -1647,7 +1790,7 @@ function removePauser(address account) external;
     #[automatically_derived]
     impl alloy_sol_types::SolEventInterface for IPauserSetEvents {
         const NAME: &'static str = "IPauserSetEvents";
-        const COUNT: usize = 2usize;
+        const COUNT: usize = 3usize;
         fn decode_raw_log(
             topics: &[alloy_sol_types::Word],
             data: &[u8],
@@ -1666,6 +1809,13 @@ function removePauser(address account) external;
                             data,
                         )
                         .map(Self::RemovePauser)
+                }
+                Some(<SwapPauser as alloy_sol_types::SolEvent>::SIGNATURE_HASH) => {
+                    <SwapPauser as alloy_sol_types::SolEvent>::decode_raw_log(
+                            topics,
+                            data,
+                        )
+                        .map(Self::SwapPauser)
                 }
                 _ => {
                     alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
@@ -1691,6 +1841,9 @@ function removePauser(address account) external;
                 Self::RemovePauser(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
+                Self::SwapPauser(inner) => {
+                    alloy_sol_types::private::IntoLogData::to_log_data(inner)
+                }
             }
         }
         fn into_log_data(self) -> alloy_sol_types::private::LogData {
@@ -1699,6 +1852,9 @@ function removePauser(address account) external;
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
                 Self::RemovePauser(inner) => {
+                    alloy_sol_types::private::IntoLogData::into_log_data(inner)
+                }
+                Self::SwapPauser(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
             }
@@ -1913,6 +2069,10 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ///Creates a new event filter for the [`RemovePauser`] event.
         pub fn RemovePauser_filter(&self) -> alloy_contract::Event<&P, RemovePauser, N> {
             self.event_filter::<RemovePauser>()
+        }
+        ///Creates a new event filter for the [`SwapPauser`] event.
+        pub fn SwapPauser_filter(&self) -> alloy_contract::Event<&P, SwapPauser, N> {
+            self.event_filter::<SwapPauser>()
         }
     }
 }

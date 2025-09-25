@@ -14,6 +14,7 @@ describe("PauserSet", function () {
   let pauserSet: PauserSet;
   let owner: Wallet;
   let pauser: Wallet;
+  let newPauser: string;
 
   before(async function () {
     // Initialize globally used variables before each test
@@ -33,6 +34,10 @@ describe("PauserSet", function () {
       .to.be.revertedWithCustomError(pauserSet, "NotGatewayOwner")
       .withArgs(fakeOwner.address);
     await expect(pauserSet.connect(fakeOwner).removePauser(pauser.address))
+      .to.be.revertedWithCustomError(pauserSet, "NotGatewayOwner")
+      .withArgs(fakeOwner.address);
+    const newPauser = createRandomWallet();
+    await expect(pauserSet.connect(fakeOwner).swapPauser(pauser.address, newPauser))
       .to.be.revertedWithCustomError(pauserSet, "NotGatewayOwner")
       .withArgs(fakeOwner.address);
   });
@@ -70,6 +75,35 @@ describe("PauserSet", function () {
     const nullPauser = hre.ethers.ZeroAddress;
 
     await expect(pauserSet.connect(owner).addPauser(nullPauser)).to.be.revertedWithCustomError(
+      pauserSet,
+      "InvalidNullPauser",
+    );
+  });
+
+  it("Should swap the pauser", async function () {
+    const oldPauser = createRandomWallet();
+    await pauserSet.connect(owner).addPauser(oldPauser.address);
+    const newPauser = createRandomWallet();
+    const tx = await pauserSet.connect(owner).swapPauser(oldPauser.address, newPauser.address);
+    await expect(tx).to.emit(pauserSet, "SwapPauser").withArgs(oldPauser.address, newPauser.address);
+    expect(await pauserSet.isPauser(oldPauser)).to.be.false;
+    expect(await pauserSet.isPauser(newPauser)).to.be.true;
+  });
+
+  it("Should revert swappig the pauser", async function () {
+    const newPauser = createRandomWallet();
+    await expect(pauserSet.connect(owner).swapPauser(newPauser.address, newPauser.address))
+      .to.be.revertedWithCustomError(pauserSet, "AccountNotPauser")
+      .withArgs(newPauser.address);
+    await expect(pauserSet.connect(owner).swapPauser(pauser.address, pauser.address))
+      .to.be.revertedWithCustomError(pauserSet, "AccountAlreadyPauser")
+      .withArgs(pauser.address);
+    const nullPauser = hre.ethers.ZeroAddress;
+    await expect(pauserSet.connect(owner).swapPauser(nullPauser, newPauser.address)).to.be.revertedWithCustomError(
+      pauserSet,
+      "InvalidNullPauser",
+    );
+    await expect(pauserSet.connect(owner).swapPauser(pauser.address, nullPauser)).to.be.revertedWithCustomError(
       pauserSet,
       "InvalidNullPauser",
     );

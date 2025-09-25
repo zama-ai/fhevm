@@ -37,6 +37,16 @@ contract PauserSet is IPauserSet, GatewayConfigChecks {
         emit RemovePauser(account);
     }
 
+    /// @dev See {IPauserSet-swapPauser}.
+    function swapPauser(address oldAccount, address newAccount) external onlyGatewayOwner {
+        if (oldAccount == address(0) || newAccount == address(0)) revert InvalidNullPauser();
+        if (!pausers[oldAccount]) revert AccountNotPauser(oldAccount);
+        if (pausers[newAccount]) revert AccountAlreadyPauser(newAccount);
+        pausers[oldAccount] = false;
+        pausers[newAccount] = true;
+        emit SwapPauser(oldAccount, newAccount);
+    }
+
     /// @dev See {IPauserSet-isPauser}.
     function isPauser(address account) external view returns (bool) {
         return pausers[account];
