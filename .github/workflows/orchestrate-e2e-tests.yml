@@ -2,7 +2,7 @@ name: orchestrate-e2e-tests
 
 on:
   workflow_run:
-    workflows: ["gateway-contracts-docker-build", "connector-docker-build", "host-docker-build", "gateway-docker-build"]
+    workflows: ["trigger-all-builds"]
     types:
       - completed
     branches:
@@ -18,93 +18,105 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  collect-images:
-    name: orchestrate-e2e-tests/collect-images
+  wait-for-all-builds:
+    name: orchestrate-e2e-tests/wait-for-all-builds
     if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') }}
     permissions:
       actions: 'read'
       contents: 'read'
     runs-on: ubuntu-latest
     outputs:
-      connector_version: ${{ steps.extract.outputs.connector_version }}
-      db_migration_version: ${{ steps.extract.outputs.db_migration_version }}
-      host_version: ${{ steps.extract.outputs.host_version }}
-      gateway_version: ${{ steps.extract.outputs.gateway_version }}
-      host_listener_version: ${{ steps.extract.outputs.host_listener_version }}
-      gateway_listener_version: ${{ steps.extract.outputs.gateway_listener_version }}
-      tx_sender_version: ${{ steps.extract.outputs.tx_sender_version }}
-      tfhe_worker_version: ${{ steps.extract.outputs.tfhe_worker_version }}
-      sns_worker_version: ${{ steps.extract.outputs.sns_worker_version }}
-      zkproof_worker_version: ${{ steps.extract.outputs.zkproof_worker_version }}
+      all-builds-complete: ${{ steps.check.outputs.all-builds-complete }}
+      image-tag: ${{ steps.check.outputs.image-tag }}
     steps:
-      - name: Extract image versions
-        id: extract
+      - name: Check all builds completed
+        id: check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            # Get the triggering workflow run
-            workflow_run_id="${{ github.event.workflow_run.id }}"
-            workflow_name="${{ github.event.workflow_run.name }}"
-            
-            # Extract image version from workflow run artifacts or outputs
-            image_tag=$(gh api repos/${{ github.repository }}/actions/runs/${workflow_run_id}/jobs --jq '.jobs[0].steps[] | select(.name | contains("outputs")) | .conclusion')
-            
-            # Set default to PR number or commit SHA
-            default_version="${{ github.event.workflow_run.head_sha }}"
-            
-            case "$workflow_name" in
-              "gateway-contracts-docker-build")
-                echo "gateway_version=${default_version}" >> $GITHUB_OUTPUT
-                ;;
-              "connector-docker-build")
-                echo "connector_version=${default_version}" >> $GITHUB_OUTPUT
-                ;;
-              "host-docker-build")
-                echo "host_version=${default_version}" >> $GITHUB_OUTPUT
-                echo "host_listener_version=${default_version}" >> $GITHUB_OUTPUT
-                ;;
-              "gateway-docker-build")
-                echo "gateway_listener_version=${default_version}" >> $GITHUB_OUTPUT
-                ;;
-            esac
-          else
-            # For pull requests, use PR number as tag
-            pr_tag="pr-${{ github.event.number }}"
-            echo "connector_version=${pr_tag}" >> $GITHUB_OUTPUT
-            echo "db_migration_version=${pr_tag}" >> $GITHUB_OUTPUT
-            echo "host_version=${pr_tag}" >> $GITHUB_OUTPUT
-            echo "gateway_version=${pr_tag}" >> $GITHUB_OUTPUT
-            echo "host_listener_version=${pr_tag}" >> $GITHUB_OUTPUT
-            echo "gateway_listener_version=${pr_tag}" >> $GITHUB_OUTPUT
-            echo "tx_sender_version=${pr_tag}" >> $GITHUB_OUTPUT
-            echo "tfhe_worker_version=${pr_tag}" >> $GITHUB_OUTPUT
-            echo "sns_worker_version=${pr_tag}" >> $GITHUB_OUTPUT
-            echo "zkproof_worker_version=${pr_tag}" >> $GITHUB_OUTPUT
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            commit_sha="${{ github.event.pull_request.head.sha }}"
+            echo "all-builds-complete=true" >> $GITHUB_OUTPUT
+            echo "image-tag=${commit_sha:0:7}" >> $GITHUB_OUTPUT
+            exit 0
           fi
+          
+          commit_sha="${{ github.event.workflow_run.head_sha }}"
+          echo "image-tag=${commit_sha:0:7}" >> $GITHUB_OUTPUT
+          
+          # Wait for all build workflows to complete for this commit
+          required_workflows=("gateway-contracts-docker-build" "connector-docker-build" "host-docker-build" "gateway-docker-build")
+          
+          max_attempts=30
+          attempt=1
+          
+          while [ $attempt -le $max_attempts ]; do
+            echo "Attempt $attempt/$max_attempts: Checking all builds for commit ${commit_sha}"
+            all_complete=true
+            
+            for workflow in "${required_workflows[@]}"; do
+              echo "Checking workflow: ${workflow}"
+              
+              run_status=$(gh api \
+                "repos/${{ github.repository }}/actions/workflows/${workflow}.yml/runs" \
+                --jq ".workflow_runs[] | select(.head_sha == \"${commit_sha}\") | .conclusion" \
+                | head -1)
+              
+              if [[ "$run_status" != "success" ]]; then
+                echo "Workflow ${workflow} status: ${run_status:-pending}"
+                all_complete=false
+                break
+              fi
+            done
+            
+            if [ "$all_complete" = true ]; then
+              echo "all-builds-complete=true" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+            
+            echo "Not all builds complete yet, waiting 30 seconds..."
+            sleep 30
+            attempt=$((attempt + 1))
+          done
+          
+          echo "Timeout waiting for builds to complete"
+          echo "all-builds-complete=false" >> $GITHUB_OUTPUT
+          exit 1
 
   run-e2e-tests:
     name: orchestrate-e2e-tests/run-e2e-tests
-    needs: collect-images
+    needs: wait-for-all-builds
+    if: ${{ needs.wait-for-all-builds.outputs.all-builds-complete == 'true' }}
     permissions:
       actions: 'write'
       contents: 'read'
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger E2E Tests
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh workflow run test-suite-e2e-tests.yml \
-            --repo ${{ github.repository }} \
-            --ref ${{ github.ref }} \
-            -f connector_version="${{ needs.collect-images.outputs.connector_version }}" \
-            -f db_migration_version="${{ needs.collect-images.outputs.db_migration_version }}" \
-            -f host_version="${{ needs.collect-images.outputs.host_version }}" \
-            -f gateway_version="${{ needs.collect-images.outputs.gateway_version }}" \
-            -f host_listener_version="${{ needs.collect-images.outputs.host_listener_version }}" \
-            -f gateway_listener_version="${{ needs.collect-images.outputs.gateway_listener_version }}" \
-            -f tx_sender_version="${{ needs.collect-images.outputs.tx_sender_version }}" \
-            -f tfhe_worker_version="${{ needs.collect-images.outputs.tfhe_worker_version }}" \
-            -f sns_worker_version="${{ needs.collect-images.outputs.sns_worker_version }}" \
-            -f zkproof_worker_version="${{ needs.collect-images.outputs.zkproof_worker_version }}"
+      - name: Call E2E Tests Workflow
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const imageTag = '${{ needs.wait-for-all-builds.outputs.image-tag }}';
+            
+            const response = await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'test-suite-e2e-tests.yml',
+              ref: context.ref,
+              inputs: {
+                connector_version: imageTag,
+                db_migration_version: imageTag,
+                host_version: imageTag,
+                gateway_version: imageTag,
+                host_listener_version: imageTag,
+                gateway_listener_version: imageTag,
+                tx_sender_version: imageTag,
+                tfhe_worker_version: imageTag,
+                sns_worker_version: imageTag,
+                zkproof_worker_version: imageTag
+              }
+            });
+            
+            console.log(`E2E tests workflow dispatched with image tag: ${imageTag}`);
+            console.log('Response status:', response.status);
