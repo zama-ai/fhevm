@@ -39,17 +39,31 @@ jobs:
               'kms-connector-kms-worker-docker-build.yml',
               'test-suite-docker-build.yml'
             ];
-            
-            const ref = context.ref;
-            console.log(`Triggering builds for merge queue ref: ${ref}`);
-            
+
+            // Determine a valid ref
+            let ref;
+            if (context.eventName === 'pull_request') {
+              const pr = context.payload.pull_request;
+              // Skip if from a fork (branch not in this repo)
+              if (pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+                core.warning('PR from fork; skipping dispatch of internal build workflows.');
+                return;
+              }
+              ref = pr.head.ref; // branch name (not refs/heads/…)
+            } else {
+              // For workflow_dispatch or push use the ref_name
+              ref = process.env.GITHUB_REF_NAME || context.ref.replace('refs/heads/','');
+            }
+
+            console.log(`Triggering builds using ref: ${ref}`);
+
             for (const workflow of workflows) {
               try {
                 await github.rest.actions.createWorkflowDispatch({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   workflow_id: workflow,
-                  ref: ref
+                  ref
                 });
                 console.log(`✅ Triggered ${workflow}`);
               } catch (error) {
