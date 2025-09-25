@@ -7,6 +7,10 @@ services:
     ports:
       - "9000:9000"
       - "9001:9001"
+    networks:
+      fhevm_default:
+        aliases:
+          - minio
     entrypoint: >
       minio server /data --console-address ":9001"
     healthcheck:
@@ -42,9 +46,15 @@ services:
         mc anonymous set public myminio/ct128
     volumes:
       - minio_secrets:/minio_secrets
+    networks:
+      fhevm_default:
     depends_on:
       minio:
         condition: service_healthy
 
 volumes:
   minio_secrets:
+
+networks:
+  fhevm_default:
+    external: true

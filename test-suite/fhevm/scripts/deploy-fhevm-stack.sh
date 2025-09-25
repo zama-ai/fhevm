@@ -242,6 +242,7 @@ get_minio_ip() {
 
 cleanup() {
     log_warn "Setup new environment, cleaning up..."
+    docker network remove fhevm_default || true
     docker compose -p "${PROJECT}" down -v --remove-orphans
 
     # Only exit if requested
@@ -284,6 +285,8 @@ log_info "  test-suite/e2e:${TEST_SUITE_VERSION}${BUILD_TAG}"
 log_info "External Dependencies:"
 log_info "  kms-service:${CORE_VERSION}"
 log_info "  fhevm-relayer:${RELAYER_VERSION}"
+
+docker network create fhevm_default || true
 
 run_compose "minio" "MinIO Services" \
     "${PROJECT}-minio:running" \
