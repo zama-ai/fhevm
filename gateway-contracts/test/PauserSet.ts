@@ -14,7 +14,6 @@ describe("PauserSet", function () {
   let pauserSet: PauserSet;
   let owner: Wallet;
   let pauser: Wallet;
-  let newPauser: string;
 
   before(async function () {
     // Initialize globally used variables before each test

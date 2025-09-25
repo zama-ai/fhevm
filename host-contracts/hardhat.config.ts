@@ -12,6 +12,7 @@ import CustomProvider from './CustomProvider';
 import './tasks/accounts';
 import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
+import './tasks/pauseContracts';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 import './tasks/upgradeContracts';
