@@ -2,43 +2,17 @@ name: trigger-all-builds
 
 on:
   workflow_dispatch:
-    inputs:
-      reason:
-        description: "Reason for triggering all builds"
-        default: "Manual trigger for e2e testing"
-        type: string
   pull_request:
     branches:
       - main
-    types: [opened, synchronize, reopened]
-    # Only trigger when PR enters merge queue
-    paths:
-      - 'mergify/merge-queue/**'
 
 permissions: {}
 
 jobs:
-  check-merge-queue:
-    name: trigger-all-builds/check-merge-queue
-    runs-on: ubuntu-latest
-    outputs:
-      is-merge-queue: ${{ steps.check.outputs.is-merge-queue }}
-    steps:
-      - name: Check if in merge queue
-        id: check
-        run: |
-          if [[ "${{ github.head_ref }}" == mergify/merge-queue/* ]]; then
-            echo "is-merge-queue=true" >> $GITHUB_OUTPUT
-          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "is-merge-queue=true" >> $GITHUB_OUTPUT
-          else
-            echo "is-merge-queue=false" >> $GITHUB_OUTPUT
-          fi
-
   trigger-builds:
     name: trigger-all-builds/trigger-builds
     needs: check-merge-queue
-    if: ${{ needs.check-merge-queue.outputs.is-merge-queue == 'true' }}
+    # if: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
     permissions:
       actions: 'write'
       contents: 'read'
