@@ -325,7 +325,6 @@ FOR UPDATE SKIP LOCKED            ",
     })?;
     s.set_attribute(KeyValue::new("count", the_work.len() as i64));
     s.end();
-    info!(target: "tfhe_worker", { count = the_work.len() }, "Fetched work items");
     health_check.update_db_access();
     if the_work.is_empty() {
         health_check.update_activity();

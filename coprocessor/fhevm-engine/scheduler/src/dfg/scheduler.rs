@@ -208,11 +208,9 @@ impl<'a> Scheduler<'a> {
                 }
                 let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
                 let loop_ctx = loop_ctx.clone();
-                set.spawn_blocking(move || {
-                    tokio::runtime::Runtime::new()
-                        .unwrap()
-                        .block_on(execute_partition(args, index, 0, sks, cpk, &loop_ctx))
-                });
+                set.spawn(
+                    async move { execute_partition(args, index, 0, sks, cpk, &loop_ctx).await },
+                );
             }
         }
         while let Some(result) = set.join_next().await {
@@ -258,17 +256,8 @@ impl<'a> Scheduler<'a> {
                     }
                     let (sks, cpk) = self.get_keys(DeviceSelection::RoundRobin)?;
                     let loop_ctx = loop_ctx.clone();
-                    set.spawn_blocking(move || {
-                        tokio::runtime::Runtime::new()
-                            .unwrap()
-                            .block_on(execute_partition(
-                                args,
-                                dependent_task_index,
-                                0,
-                                sks,
-                                cpk,
-                                &loop_ctx,
-                            ))
+                    set.spawn(async move {
+                        execute_partition(args, dependent_task_index, 0, sks, cpk, &loop_ctx).await
                     });
                 }
             }
@@ -444,7 +433,7 @@ fn re_randomise_transaction_inputs(
     }
     Ok(())
 }
-fn dont_re_randomise_transaction_inputs(
+fn decompress_transaction_inputs(
     inputs: &mut HashMap<Handle, Option<DFGTxInput>>,
     _transaction_id: &Handle,
     gpu_idx: usize,
@@ -479,12 +468,12 @@ async fn execute_partition(
     cpk: tfhe::CompactPublicKey,
     loop_ctx: &opentelemetry::Context,
 ) -> (HashMap<Handle, TaskResult>, NodeIndex) {
-    tfhe::set_server_key(sks.clone());
     let mut res: HashMap<Handle, TaskResult> = HashMap::with_capacity(transactions.len());
     let tracer = opentelemetry::global::tracer("tfhe_worker");
     // Traverse transactions within the partition. The transactions
     // are topologically sorted so the order is executable
     'tx: for (ref mut dfg, ref mut tx_inputs, tid) in transactions {
+        tfhe::set_server_key(sks.clone());
         // Update the transaction inputs based on allowed handles so
         // far. If any input is still missing, and we cannot fill it
         // (e.g., error in the producer transaction) we cannot execute
@@ -535,9 +524,7 @@ async fn execute_partition(
         } else {
             // If re-randomisation is not available (e.g., on GPU),
             // only decompress ciphertexts
-            if let Err(e) =
-                dont_re_randomise_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone())
-            {
+            if let Err(e) = decompress_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
                 error!(target: "scheduler", {transaction_id = ?tid, error = ?e },
 		       "Error while decompressing inputs");
                 for nidx in dfg.graph.node_identifiers() {
@@ -580,6 +567,7 @@ async fn execute_partition(
         }
         let edges = dfg.graph.map(|_, _| (), |_, edge| *edge);
         while let Some(result) = set.join_next().await {
+            tfhe::set_server_key(sks.clone());
             if let Ok(result) = result {
                 let nidx = NodeIndex::new(result.0);
                 if result.1.is_ok() {
