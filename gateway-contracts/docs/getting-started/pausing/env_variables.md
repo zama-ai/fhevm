@@ -14,15 +14,15 @@ Here's the complete list of environment variables used for pausing the FHEVM gat
 
 | Environment Variable   | Description                       | Solidity Type | Default | Comment |
 | ---------------------- | --------------------------------- | ------------- | ------- | ------- |
-| `PAUSER_PRIVATE_KEY`   | Private key of one of the pausers | string        | -       | -       |
-| `DEPLOYER_PRIVATE_KEY` | Private key of the deployer       | string        | -       | -       |
+| `PAUSER_PRIVATE_KEY`   | Private key of one of the pausers | bytes32       | -       | -       |
+| `DEPLOYER_PRIVATE_KEY` | Private key of the deployer       | bytes32       | -       | -       |
 
 ## In details
 
 - Pauser private key:
 
 ```bash
-PAUSER_PRIVATE_KEY="0x3588ffb4f4d9bea785a012b895543fe68f2d580a9d449decc91a25878064079a" # (string)
+PAUSER_PRIVATE_KEY="0x3588ffb4f4d9bea785a012b895543fe68f2d580a9d449decc91a25878064079a" # (bytes32)
 ```
 
 The pauser private key is the private key of one of the pausers registered in the `PauserSet` contract. It is used to pause the contracts using the pausing hardhat tasks, including the `pauseAllGatewayContracts`. Each operator are expected to set this environment variable to the private key associated to their hot wallet used as pauser.
