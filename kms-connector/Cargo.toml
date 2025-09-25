@@ -69,6 +69,7 @@ sqlx = { version = "=0.8.6", default-features = false, features = [
     "macros",
     "postgres",
     "runtime-tokio",
+    "tls-rustls",
 ] }
 thiserror = { version = "=2.0.12", default-features = false }
 tokio = { version = "=1.46.1", default-features = false, features = [

@@ -119,6 +119,8 @@ jobs:
           cp .env.example .env
           cp -r ../../previous-fhevm/gateway-contracts/contracts ./previous-contracts
           npx hardhat task:deployEmptyUUPSProxies
+          npx hardhat compile:specific --contract contracts/immutable
+          npx hardhat task:deployPauserSet
 
       # TODO: We should instead automatically detect if the contract needs to be upgraded
       #  See https://github.com/zama-ai/fhevm-internal/issues/379

@@ -34,7 +34,7 @@ abstract contract Pausable is PausableUpgradeable {
     error NotOwnerOrGatewayConfig(address notOwnerOrGatewayConfig);
 
     modifier onlyPauser() {
-        if (msg.sender != _GATEWAY_CONFIG.getPauser()) {
+        if (!_GATEWAY_CONFIG.isPauser(msg.sender)) {
             revert NotPauser(msg.sender);
         }
         _;
@@ -49,7 +49,7 @@ abstract contract Pausable is PausableUpgradeable {
      * - The contract must not be paused.
      */
     function pause() external virtual {
-        if (msg.sender != _GATEWAY_CONFIG.getPauser() && msg.sender != gatewayConfigAddress) {
+        if (!_GATEWAY_CONFIG.isPauser(msg.sender) && msg.sender != gatewayConfigAddress) {
             revert NotPauserOrGatewayConfig(msg.sender);
         }
         _pause();

@@ -12,6 +12,7 @@ import {
   InputVerification,
   KmsManagement,
   MultichainAcl,
+  PauserSet,
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
@@ -38,6 +39,7 @@ describe("GatewayConfig", function () {
   const fakeSigner = createRandomWallet();
 
   let gatewayConfig: GatewayConfig;
+  let pauserSet: PauserSet;
   let owner: Wallet;
   let pauser: HardhatEthersSigner;
   let nKmsNodes: number;
@@ -105,6 +107,7 @@ describe("GatewayConfig", function () {
     // Initialize globally used variables before each test
     const fixtureData = await loadFixture(getInputsForDeployFixture);
     gatewayConfig = fixtureData.gatewayConfig;
+    pauserSet = fixtureData.pauserSet;
     owner = fixtureData.owner;
     pauser = fixtureData.pauser;
     nKmsNodes = fixtureData.nKmsNodes;
@@ -140,7 +143,6 @@ describe("GatewayConfig", function () {
         call: {
           fn: "initializeFromEmptyProxy",
           args: [
-            pauser.address,
             protocolMetadata,
             mpcThreshold,
             publicDecryptionThreshold,
@@ -163,35 +165,12 @@ describe("GatewayConfig", function () {
       // It should emit one event containing the initialization parameters
       expect(initializeGatewayConfigEvents.length).to.equal(1);
       expect(stringifiedEventArgs).to.deep.equal([
-        pauser.address,
         toValues(protocolMetadata).toString(),
         mpcThreshold,
         toValues(kmsNodes).toString(),
         toValues(coprocessors).toString(),
         toValues(custodians).toString(),
       ]);
-    });
-
-    it("Should revert because the pauser is the null address", async function () {
-      const nullPauser = hre.ethers.ZeroAddress;
-
-      await expect(
-        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
-          call: {
-            fn: "initializeFromEmptyProxy",
-            args: [
-              nullPauser,
-              protocolMetadata,
-              mpcThreshold,
-              publicDecryptionThreshold,
-              userDecryptionThreshold,
-              kmsNodes,
-              coprocessors,
-              custodians,
-            ],
-          },
-        }),
-      ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullPauser");
     });
 
     it("Should revert because the KMS nodes list is empty", async function () {
@@ -202,7 +181,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -224,7 +202,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -246,7 +223,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -269,7 +245,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               highMpcThreshold,
               publicDecryptionThreshold,
@@ -294,7 +269,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               nullPublicDecryptionThreshold,
@@ -317,7 +291,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               highPublicDecryptionThreshold,
@@ -342,7 +315,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -365,7 +337,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -387,7 +358,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -597,30 +567,54 @@ describe("GatewayConfig", function () {
     });
 
     describe("Pauser", function () {
-      it("Should return the initialized pauser address", async function () {
-        expect(await gatewayConfig.getPauser()).to.equal(pauser.address);
+      it("Should return true for the initial pauser address", async function () {
+        expect(await gatewayConfig.isPauser(pauser.address)).to.equal(true);
       });
 
       it("Should revert because the sender is not the owner", async function () {
-        await expect(gatewayConfig.connect(fakeOwner).updatePauser(fakeOwner.address))
-          .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+        await expect(pauserSet.connect(fakeOwner).addPauser(fakeOwner.address))
+          .to.be.revertedWithCustomError(pauserSet, "NotGatewayOwner")
+          .withArgs(fakeOwner.address);
+        await expect(pauserSet.connect(fakeOwner).removePauser(pauser.address))
+          .to.be.revertedWithCustomError(pauserSet, "NotGatewayOwner")
           .withArgs(fakeOwner.address);
       });
 
-      it("Should update the pauser", async function () {
+      it("Should add the pauser", async function () {
         const newPauser = createRandomWallet();
 
-        const tx = await gatewayConfig.connect(owner).updatePauser(newPauser.address);
+        const tx = await pauserSet.connect(owner).addPauser(newPauser.address);
 
-        await expect(tx).to.emit(gatewayConfig, "UpdatePauser").withArgs(newPauser.address);
+        await expect(tx).to.emit(pauserSet, "NewPauser").withArgs(newPauser.address);
+      });
+
+      it("Should revert when adding an already added pauser", async function () {
+        await expect(pauserSet.connect(owner).addPauser(pauser.address))
+          .to.be.revertedWithCustomError(pauserSet, "AccountIsAlreadyPauser")
+          .withArgs(pauser.address);
+      });
+
+      it("Should revert when removing a non-pauser", async function () {
+        const newPauser = createRandomWallet();
+        await expect(pauserSet.connect(owner).removePauser(newPauser.address))
+          .to.be.revertedWithCustomError(pauserSet, "AccountIsNotPauser")
+          .withArgs(newPauser.address);
+      });
+
+      it("Should remove when removing a pauser", async function () {
+        const newPauser = createRandomWallet();
+        await pauserSet.connect(owner).addPauser(newPauser.address);
+        const tx = await pauserSet.connect(owner).removePauser(newPauser.address);
+
+        await expect(tx).to.emit(pauserSet, "RemovedPauser").withArgs(newPauser.address);
       });
 
       it("Should revert because the pauser is the null address", async function () {
         const nullPauser = hre.ethers.ZeroAddress;
 
-        await expect(gatewayConfig.connect(owner).updatePauser(nullPauser)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "InvalidNullPauser",
+        await expect(pauserSet.connect(owner).addPauser(nullPauser)).to.be.revertedWithCustomError(
+          pauserSet,
+          "PauserCannotBeNull",
         );
       });
     });

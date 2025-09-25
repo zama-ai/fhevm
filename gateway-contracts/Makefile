@@ -82,6 +82,10 @@ conformance: prettier update-bindings update-mocks update-selectors
 deploy-empty-proxies:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployEmptyUUPSProxies
 
+deploy-pauser-set:
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat compile:specific --contract contracts/immutable
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployPauserSet
+
 # Ensure that the empty proxy addresses exists as these are required for contract compilation.
 # In addition, ensure that the addresses match the ones used in local development in order to
 # avoid discrepancies between local and CI (e.g., when generating and checking rust bindings).

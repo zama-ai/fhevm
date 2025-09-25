@@ -16,7 +16,7 @@ RUN npm ci --include=dev \
     && npx hardhat compile
 
 # Stage 1: Build Stress-Tool
-FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.89.0 AS builder
+FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:1.90.0 AS builder
 
 USER root
 
