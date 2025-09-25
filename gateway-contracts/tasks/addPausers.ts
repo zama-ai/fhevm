@@ -30,9 +30,9 @@ task("task:addPausers")
     const pauserSetAddress = getRequiredEnvVar("PAUSER_SET_ADDRESS");
 
     // Add pauser(s)
-    const gatewayConfig = await hre.ethers.getContractAt("PauserSet", pauserSetAddress, deployer);
+    const pauserSet = await hre.ethers.getContractAt("PauserSet", pauserSetAddress, deployer);
     for (const pauser of pausers) {
-      await gatewayConfig.addPauser(pauser);
+      await pauserSet.addPauser(pauser);
     }
 
     console.log("In PauserSet contract:", pauserSetAddress, "\n");

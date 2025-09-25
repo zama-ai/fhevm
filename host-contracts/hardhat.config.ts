@@ -10,6 +10,7 @@ import { resolve } from 'path';
 
 import CustomProvider from './CustomProvider';
 import './tasks/accounts';
+import './tasks/addPausers';
 import './tasks/blockExplorerVerify';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
@@ -51,6 +52,9 @@ task('test', async (taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     await hre.run('task:deployAllHostContracts');
+    // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
+    // for local testing
+    await hre.run('task:addPausers', { useInternalPauserSetAddress: true });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
