@@ -37,11 +37,13 @@ interface IDecryption {
      * @notice Emitted when an public decryption request is made.
      * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
+     * @param storageUrls The storage URLs that have reached consensus for the ciphertexts.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event PublicDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
+        string[][] storageUrls,
         bytes extraData
     );
 
@@ -63,6 +65,7 @@ interface IDecryption {
      * @notice Emitted when a user decryption request is made.
      * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
+     * @param storageUrls The storage URLs that have reached consensus for the ciphertexts.
      * @param userAddress The user's address.
      * @param publicKey The user's public key for used reencryption.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -70,6 +73,7 @@ interface IDecryption {
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
         SnsCiphertextMaterial[] snsCtMaterials,
+        string[][] storageUrls,
         address userAddress,
         bytes publicKey,
         bytes extraData

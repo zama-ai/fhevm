@@ -4,17 +4,19 @@ import { ethers } from "hardhat";
 
 import {
   CiphertextCommitsMock,
+  CoprocessorContextsMock,
   DecryptionMock,
   GatewayConfigMock,
   InputVerificationMock,
   KmsManagementMock,
   MultichainAclMock,
 } from "../../typechain-types";
-import { toValues } from "../utils";
+import { ContextStatus, toValues } from "../utils";
 
 describe("Mock contracts", function () {
   // Mock contracts
   let ciphertextCommitsMock: CiphertextCommitsMock;
+  let coprocessorContextsMock: CoprocessorContextsMock;
   let decryptionMock: DecryptionMock;
   let gatewayConfigMock: GatewayConfigMock;
   let kmsManagementMock: KmsManagementMock;
@@ -33,8 +35,9 @@ describe("Mock contracts", function () {
     ctHandle: DefaultBytes32,
     keyId: DefaultUint256,
     snsCiphertextDigest: DefaultBytes32,
-    coprocessorTxSenderAddresses: EmptyArray,
   };
+
+  const DefaultStorageUrls = [[]];
 
   const DefaultProtocolMetadata = { name: DefaultString, website: DefaultString };
 
@@ -45,9 +48,22 @@ describe("Mock contracts", function () {
   };
 
   const DefaultCoprocessor = {
+    name: DefaultString,
     txSenderAddress: DefaultAddress,
     signerAddress: DefaultAddress,
-    s3BucketUrl: DefaultString,
+    storageUrl: DefaultString,
+  };
+
+  const DefaultCoprocessorContext = {
+    contextId: DefaultUint256,
+    previousContextId: DefaultUint256,
+    featureSet: DefaultUint256,
+    coprocessors: [],
+  };
+
+  const DefaultCoprocessorContextTimePeriods = {
+    preActivationTimePeriod: DefaultUint256,
+    suspendedTimePeriod: DefaultUint256,
   };
 
   const DefaultCustodian = {
@@ -83,6 +99,9 @@ describe("Mock contracts", function () {
     const ciphertextCommitsFactory = await ethers.getContractFactory("CiphertextCommitsMock");
     const ciphertextCommitsMock = await ciphertextCommitsFactory.deploy();
 
+    const coprocessorContextsFactory = await ethers.getContractFactory("CoprocessorContextsMock");
+    const coprocessorContextsMock = await coprocessorContextsFactory.deploy();
+
     const decryptionFactory = await ethers.getContractFactory("DecryptionMock");
     const decryptionMock = await decryptionFactory.deploy();
 
@@ -101,6 +120,7 @@ describe("Mock contracts", function () {
     return {
       multichainAclMock,
       ciphertextCommitsMock,
+      coprocessorContextsMock,
       decryptionMock,
       gatewayConfigMock,
       kmsManagementMock,
@@ -112,6 +132,7 @@ describe("Mock contracts", function () {
     // Initialize globally used variables before each test
     const fixture = await loadFixture(loadMockContractsFixture);
     ciphertextCommitsMock = fixture.ciphertextCommitsMock;
+    coprocessorContextsMock = fixture.coprocessorContextsMock;
     decryptionMock = fixture.decryptionMock;
     gatewayConfigMock = fixture.gatewayConfigMock;
     kmsManagementMock = fixture.kmsManagementMock;
@@ -125,7 +146,63 @@ describe("Mock contracts", function () {
         ciphertextCommitsMock.addCiphertextMaterial(DefaultBytes32, DefaultUint256, DefaultBytes32, DefaultBytes32),
       )
         .to.emit(ciphertextCommitsMock, "AddCiphertextMaterial")
-        .withArgs(DefaultBytes32, DefaultBytes32, DefaultBytes32, [DefaultAddress]);
+        .withArgs(DefaultBytes32, DefaultBytes32, DefaultBytes32, DefaultUint256);
+    });
+  });
+
+  describe("CoprocessorContextsMock", async function () {
+    it("Should emit PreActivateCoprocessorContext event on add coprocessor context call", async function () {
+      await expect(
+        coprocessorContextsMock.addCoprocessorContext(
+          DefaultUint256,
+          [DefaultCoprocessor],
+          DefaultCoprocessorContextTimePeriods,
+        ),
+      )
+        .to.emit(coprocessorContextsMock, "PreActivateCoprocessorContext")
+        .withArgs(toValues(DefaultCoprocessorContext), DefaultUint256);
+    });
+
+    it("Should emit several status events on refresh coprocessor context statuses call", async function () {
+      await expect(coprocessorContextsMock.refreshCoprocessorContextStatuses())
+        .to.emit(coprocessorContextsMock, "SuspendCoprocessorContext")
+        .withArgs(DefaultUint256, DefaultUint256)
+        .and.emit(coprocessorContextsMock, "ActivateCoprocessorContext")
+        .withArgs(DefaultUint256)
+        .and.emit(coprocessorContextsMock, "DeactivateCoprocessorContext")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit ActivateCoprocessorContext event on force update context to active", async function () {
+      await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Active))
+        .to.emit(coprocessorContextsMock, "ActivateCoprocessorContext")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit DeactivateCoprocessorContext event on force update context to deactivated", async function () {
+      await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Deactivated))
+        .to.emit(coprocessorContextsMock, "DeactivateCoprocessorContext")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit CompromiseCoprocessorContext event on force update context to compromised", async function () {
+      await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Compromised))
+        .to.emit(coprocessorContextsMock, "CompromiseCoprocessorContext")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit DestroyCoprocessorContext event on force update context to destroyed", async function () {
+      await expect(coprocessorContextsMock.forceUpdateContextToStatus(DefaultUint256, ContextStatus.Destroyed))
+        .to.emit(coprocessorContextsMock, "DestroyCoprocessorContext")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit several events on move suspended coprocessor context to active call", async function () {
+      await expect(coprocessorContextsMock.swapSuspendedCoprocessorContextWithActive(DefaultUint256))
+        .to.emit(coprocessorContextsMock, "SuspendCoprocessorContext")
+        .withArgs(DefaultUint256, DefaultUint256)
+        .and.emit(coprocessorContextsMock, "ActivateCoprocessorContext")
+        .withArgs(DefaultUint256);
     });
   });
 
@@ -135,7 +212,7 @@ describe("Mock contracts", function () {
       decryptionCounterId++;
       await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32], DefaultBytes))
         .to.emit(decryptionMock, "PublicDecryptionRequest")
-        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
+        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultStorageUrls, DefaultBytes);
     });
 
     it("Should emit PublicDecryptionResponse event on public decryption response", async function () {
@@ -163,6 +240,7 @@ describe("Mock contracts", function () {
         .withArgs(
           decryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
+          DefaultStorageUrls,
           DefaultAddress,
           DefaultBytes,
           DefaultBytes,
@@ -186,6 +264,7 @@ describe("Mock contracts", function () {
         .withArgs(
           decryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
+          DefaultStorageUrls,
           DefaultAddress,
           DefaultBytes,
           DefaultBytes,
@@ -209,7 +288,6 @@ describe("Mock contracts", function () {
           DefaultUint256,
           DefaultUint256,
           [DefaultKmsNode],
-          [DefaultCoprocessor],
           [DefaultCustodian],
         ),
       )
@@ -219,15 +297,8 @@ describe("Mock contracts", function () {
           toValues(DefaultProtocolMetadata),
           DefaultUint256,
           toValues([DefaultKmsNode]),
-          toValues([DefaultCoprocessor]),
           toValues([DefaultCustodian]),
         );
-    });
-
-    it("Should emit Reinitialization event on reinitialization", async function () {
-      await expect(gatewayConfigMock.reinitializeV2([DefaultCustodian]))
-        .to.emit(gatewayConfigMock, "ReinitializeGatewayConfigV2")
-        .withArgs(toValues([DefaultCustodian]));
     });
 
     it("Should emit UpdatePauser event on update pauser call", async function () {
@@ -275,7 +346,15 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(inputVerificationMock, "VerifyProofRequest")
-        .withArgs(zkProofCounterId, DefaultUint256, DefaultAddress, DefaultAddress, DefaultBytes, DefaultBytes);
+        .withArgs(
+          zkProofCounterId,
+          DefaultUint256,
+          DefaultUint256,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultBytes,
+          DefaultBytes,
+        );
     });
 
     it("Should emit VerifyProofResponse event on verify proof response", async function () {
@@ -283,13 +362,13 @@ describe("Mock contracts", function () {
         inputVerificationMock.verifyProofResponse(zkProofCounterId, [DefaultBytes32], DefaultBytes, DefaultBytes),
       )
         .to.emit(inputVerificationMock, "VerifyProofResponse")
-        .withArgs(zkProofCounterId, [DefaultBytes32], [DefaultBytes]);
+        .withArgs(zkProofCounterId, DefaultUint256, [DefaultBytes32], [DefaultBytes], DefaultBytes);
     });
 
     it("Should emit RejectProofResponse event on reject proof response", async function () {
       await expect(inputVerificationMock.rejectProofResponse(zkProofCounterId, DefaultBytes))
         .to.emit(inputVerificationMock, "RejectProofResponse")
-        .withArgs(zkProofCounterId);
+        .withArgs(zkProofCounterId, DefaultBytes);
     });
   });
 
