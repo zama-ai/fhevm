@@ -237,6 +237,7 @@ case $COMMAND in
   clean)
     echo -e "${LIGHT_BLUE}[CLEAN]${RESET} ${BOLD}Cleaning up FHEVM stack...${RESET}"
     docker compose -p "${PROJECT}" down -v --remove-orphans
+    docker network rm fhevm_default || true
     echo -e "${GREEN}[SUCCESS]${RESET} ${BOLD}FHEVM stack cleaned successfully${RESET}"
     ;;
 

@@ -21,6 +21,8 @@ services:
       - ../config/kms-core/config.toml:/app/kms/core/service/config/config.toml
     ports:
       - "50051:50051"
+    networks:
+      fhevm_default:
     healthcheck:
       test: "grpc_health_probe --addr=localhost:50051"
       interval: 1s
@@ -30,4 +32,8 @@ services:
 
 volumes:
   fhevm_minio_secrets:
+    external: true
+
+networks:
+  fhevm_default:
     external: true

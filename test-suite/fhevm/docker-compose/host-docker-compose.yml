@@ -13,3 +13,9 @@ services:
       - ../env/staging/.env.host.local
     command:
       - npx hardhat task:deployAllHostContracts
+    networks:
+      fhevm_default:
+
+networks:
+  fhevm_default:
+    external: true

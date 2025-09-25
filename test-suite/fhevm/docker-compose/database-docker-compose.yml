@@ -7,6 +7,8 @@ services:
       - ../env/staging/.env.database.local
     ports:
       - '5432:5432'
+    networks:
+      fhevm_default:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -17,3 +19,7 @@ services:
 
 volumes:
   db:
+
+networks:
+  fhevm_default:
+    external: true

@@ -20,3 +20,9 @@ services:
       - "${MNEMONIC}"
     ports:
       - "8546:8546"
+    networks:
+      fhevm_default:
+
+networks:
+  fhevm_default:
+    external: true

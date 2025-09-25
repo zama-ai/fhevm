@@ -11,3 +11,9 @@ services:
       - ../config/relayer/local.yaml:/app/config/local.yaml
     ports:
       - "3000:3000"
+    networks:
+      fhevm_default:
+
+networks:
+  fhevm_default:
+    external: true

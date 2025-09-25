@@ -15,6 +15,10 @@ services:
       - npx hardhat task:deployAllGatewayContracts
     volumes:
       - addresses-volume:/app/addresses
+    networks:
+      fhevm_default:
+
+
 
   gateway-sc-add-network:
     container_name: fhevm-gateway-sc-add-network
@@ -37,6 +41,13 @@ services:
     # are compiled, and most of them import these addresses.
     volumes:
       - addresses-volume:/app/addresses
+    networks:
+      fhevm_default:
+
+
 
 volumes:
   addresses-volume:
+networks:
+  fhevm_default:
+    external: true

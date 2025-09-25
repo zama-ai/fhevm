@@ -14,3 +14,9 @@ services:
       - ../env/staging/.env.test-suite.local
     command:
       - tail -f /dev/null
+    networks:
+      fhevm_default:
+
+networks:
+  fhevm_default:
+    external: true

@@ -17,6 +17,8 @@ services:
       - /initialize_db.sh
     volumes:
       - keys-cache:/fhevm-keys
+    networks:
+      fhevm_default:
 
   ####################### COPROCESSOR SERVICES #######################
   host-listener:
@@ -42,6 +44,9 @@ services:
     depends_on:
       db-migration:
         condition: service_completed_successfully
+    networks:
+      fhevm_default:
+
 
   gw-listener:
     container_name: fhevm-gw-listener
@@ -73,6 +78,10 @@ services:
     depends_on:
       db-migration:
         condition: service_completed_successfully
+    extra_hosts:
+      - "minio:172.17.0.1"
+    networks:
+      fhevm_default:
 
   tfhe-worker:
     container_name: fhevm-tfhe-worker
@@ -99,6 +108,8 @@ services:
     depends_on:
       db-migration:
         condition: service_completed_successfully
+    networks:
+      fhevm_default:
 
   zkproof-worker:
     container_name: fhevm-zkproof-worker
@@ -123,6 +134,8 @@ services:
     depends_on:
       db-migration:
         condition: service_completed_successfully
+    networks:
+      fhevm_default:
 
   sns-worker:
     container_name: fhevm-sns-worker
@@ -160,6 +173,8 @@ services:
     depends_on:
       db-migration:
         condition: service_completed_successfully
+    networks:
+      fhevm_default:
 
   transaction-sender:
     container_name: fhevm-transaction-sender
@@ -192,6 +207,12 @@ services:
     depends_on:
       db-migration:
         condition: service_completed_successfully
+    networks:
+      fhevm_default:
 
 volumes:
   keys-cache:
+
+networks:
+  fhevm_default:
+    external: true
