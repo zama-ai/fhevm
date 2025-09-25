@@ -6,7 +6,7 @@ Several settings are stored in the contract, which can be separated in several c
 
 - [Protocol metadata](#protocol-metadata)
 - [Operators](#operators)
-- [Governance accounts](#governance-accounts)
+- [Governance](#governance)
 - [Host chains](#host-chains)
 
 Except for host chains, they are all set when deploying the `GatewayConfig` contract. Once set, some (but not all) of them can be updated.
@@ -108,34 +108,31 @@ Additionally, the transaction sender address is used for identifying an operator
 - `getKmsNode(address kmsTxSenderAddress)`: get a KMS node's metadata.
 - `getCoprocessor(address coprocessorTxSenderAddress)`: get a coprocessor's metadata.
 
-## Governance accounts
+## Governance
 
-The fhevm Gateway protocol is governed by two accounts:
+The fhevm Gateway protocol is governed by the following roles:
 
 - `owner`: account that can perform restricted actions
-- `pauser`: account that can pause contract functions
+- `pausers`: accounts that can pause contract functions
 
 ### Owner
 
 The owner is first set as the account that deploys the contracts (the deployer). It is allowed to perform several restricted actions :
 
 - upgrade the contracts
-- update the [pauser](#pauser)
+- update the pausers (see [Pausers](./pauser_set.md))
 - add [host chains](#host-chains)
 - trigger a KMS public material generation (see [KmsManagement](./kms_management.md#public-material-generation))
 - update KMS-related parameters (see [KmsManagement](./kms_management.md#store-parameters))
 
 The owner is handled by OpenZeppelin's `Ownable2StepUpgradeable` contract. In particular, this means that the deployer can transfer its ownership to another account in a two-step process.
 
-### Pauser
+### Pausers
 
-**Important**: currently, the pauser is not used as the pausing mechanism is not implemented yet.
+Details about pausers are available in the following documentation:
 
-The pauser is an account that can pause contract functions. A paused function means that any transaction sent to trigger it will be reverted.
-
-Nothing prevents the pauser from being the owner itself. However, in practice, it can be useful to use different accounts. For example, if they are both governed by multi-sig contracts, the pauser can be set to a lower threshold than the owner in order to pause the protocol quicker in case of emergency.
-
-Currently, it is set at deployment and can be updated by the owner later on.
+- [PauserSet](./pauser_set.md)
+- [Pausing](../pausing/pausing.md)
 
 ### Host chains
 

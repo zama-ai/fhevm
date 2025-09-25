@@ -128,24 +128,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   ]);
 });
 
-// Deploy the PauserSet contract
-task("task:deployPauserSet").setAction(async function (_, hre) {
-  // Get a deployer wallet
-  const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
-  const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
-
-  const pauserSetFactory = await hre.ethers.getContractFactory("PauserSet", deployer);
-  const pauserSet = await pauserSetFactory.deploy();
-  const pauserSetAddress = await pauserSet.getAddress();
-
-  console.log("PauserSet contract (immutable) deployed at: ", pauserSetAddress);
-
-  await run("task:setContractAddress", {
-    name: "PauserSet",
-    address: pauserSetAddress,
-  });
-});
-
 // Deploy the InputVerification contract
 task("task:deployInputVerification").setAction(async function (_, hre) {
   await deployContractImplementation("InputVerification", hre);
