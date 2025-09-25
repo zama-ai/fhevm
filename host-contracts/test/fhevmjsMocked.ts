@@ -1,14 +1,16 @@
+import { HardhatEthersSigner } from '@nomicfoundation/hardhat-ethers/signers';
 import { toBigIntBE } from 'bigint-buffer';
 import { toBufferBE } from 'bigint-buffer';
 import crypto from 'crypto';
 import dotenv from 'dotenv';
-import { Wallet, ethers } from 'ethers';
+import { BigNumberish, ethers } from 'ethers';
 import * as fs from 'fs';
 import hre from 'hardhat';
 import { Keccak } from 'sha3';
 import { isAddress } from 'web3-validator';
 
 import { getRequiredEnvVar } from '../tasks/utils/loadVariables';
+import { ACL } from '../types';
 import { insertSQL } from './coprocessorUtils';
 import { awaitCoprocessor, getClearText } from './coprocessorUtils';
 import { checkIsHardhatSigner } from './utils';
@@ -196,7 +198,7 @@ export const userDecryptRequestMocked =
 
     // ACL checking
     const aclFactory = await hre.ethers.getContractFactory('ACL');
-    const acl = aclFactory.attach(aclAdd);
+    const acl = aclFactory.attach(aclAdd) as ACL;
     const verifications = handles.map(async ({ ctHandle, contractAddress }) => {
       const userAllowed = await acl.persistAllowed(ctHandle, userAddress);
       const contractAllowed = await acl.persistAllowed(ctHandle, contractAddress);
@@ -344,7 +346,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       bits.length = 0;
       return this;
     },
-    async encrypt(contextId = 1) {
+    async encrypt(coprocessorContextId = 1) {
       let encrypted = Buffer.alloc(0);
 
       bits.map((v, i) => {
@@ -353,7 +355,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
 
       const encryptedArray = new Uint8Array(encrypted);
       const hash = new Keccak(256).update(Buffer.from(encryptedArray)).digest();
-      const extraDataV0 = ethers.solidityPacked(['uint256', 'uint256'], [0, contextId]);
+      const extraDataV0 = ethers.solidityPacked(['uint256'], [0]);
 
       const chainId = process.env.SOLIDITY_COVERAGE === 'true' ? 31337 : hre.network.config.chainId;
       if (chainId === undefined) {
@@ -382,9 +384,16 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         return dataInput;
       });
 
-      let inputProof = '0x' + numberToHex(handles.length); // numHandles + numCoprocessorSigners + list_handles + signatureCoprocessorSigners (total len : 1+1+32+NUM_HANDLES*32+65*numSigners)
+      /**
+       * Compute the input proof by appending numHandles + numCoprocessorSigners + coprocessorContextId + list_handles + signatureCoprocessorSigners
+       * (total length in bytes: 1+1+32+NUM_HANDLES*32+65*numSigners).
+       */
+      let inputProof = '0x' + numberToHex(handles.length);
       const numSigners = +process.env.NUM_COPROCESSORS!;
       inputProof += numberToHex(numSigners);
+
+      const coprocessorContextIdHex = ethers.zeroPadValue(ethers.toBeHex(coprocessorContextId), 32);
+      inputProof = ethers.concat([inputProof, coprocessorContextIdHex]);
 
       const listHandlesStr = handles.map((i) => uint8ArrayToHexString(i));
       listHandlesStr.map((handle) => (inputProof += handle));
@@ -393,6 +402,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
         listHandles,
         userAddress,
         contractAddress,
+        coprocessorContextId,
         extraDataV0,
       );
       signaturesCoproc.map((sigCopro) => (inputProof += sigCopro.slice(2)));
@@ -450,9 +460,10 @@ export const ENCRYPTION_TYPES = {
 };
 
 async function computeInputSignaturesCopro(
-  handlesList: string[],
+  handlesList: BigNumberish[],
   userAddress: string,
   contractAddress: string,
+  coprocessorContextId: number,
   extraData: string,
 ): Promise<string[]> {
   const signatures: string[] = [];
@@ -461,18 +472,26 @@ async function computeInputSignaturesCopro(
 
   for (let idx = 0; idx < numSigners; idx++) {
     const coprocSigner = signers[idx];
-    const signature = await coprocSign(handlesList, userAddress, contractAddress, extraData, coprocSigner);
+    const signature = await coprocSign(
+      handlesList,
+      userAddress,
+      contractAddress,
+      coprocessorContextId,
+      extraData,
+      coprocSigner,
+    );
     signatures.push(signature);
   }
   return signatures;
 }
 
 async function coprocSign(
-  handlesList: string[],
+  handlesList: BigNumberish[],
   userAddress: string,
   contractAddress: string,
+  coprocessorContextId: number,
   extraData: string,
-  signer: Wallet,
+  signer: HardhatEthersSigner,
 ): Promise<string> {
   const inputVerificationAdd = process.env.INPUT_VERIFICATION_ADDRESS;
   const chainId = process.env.CHAIN_ID_GATEWAY;
@@ -504,6 +523,10 @@ async function coprocSign(
         type: 'uint256',
       },
       {
+        name: 'coprocessorContextId',
+        type: 'uint256',
+      },
+      {
         name: 'extraData',
         type: 'bytes',
       },
@@ -515,6 +538,7 @@ async function coprocSign(
     userAddress: userAddress,
     contractAddress: contractAddress,
     contractChainId: hostChainId,
+    coprocessorContextId,
     extraData,
   };
 

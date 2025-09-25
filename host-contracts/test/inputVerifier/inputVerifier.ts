@@ -96,21 +96,21 @@ describe('InputVerifier', function () {
       await expect(inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(newContextId, newContextSigners)).to.be
         .fulfilled;
 
-      // New context signers should contain the new signers
+      // New context signers should contain the new signers.
       const contextSigners = await inputVerifier.getCoprocessorSigners(newContextId);
       expect(contextSigners.length).to.equal(2);
       expect(contextSigners[0]).to.equal(signers.alice.address);
       expect(contextSigners[1]).to.equal(signers.bob.address);
 
-      // Previous context should be suspended
-      const isSuspended = await inputVerifier.isContextSuspended(previousContextId);
+      // Previous context should be marked as suspended.
+      const isSuspended = await inputVerifier.isCoprocessorContextActiveOrSuspended(previousContextId);
       expect(isSuspended).to.equal(true);
 
-      // Threshold should be half + 1
+      // Threshold should be half + 1.
       const threshold = await inputVerifier.getThreshold(newContextId);
       expect(threshold).to.equal(newContextSigners.length / 2 + 1);
 
-      // The address should be a signer for the context ID
+      // The address should be a signer for the context ID.
       expect(await inputVerifier.isSigner(newContextId, signers.alice.address)).to.equal(true);
     });
 
@@ -120,13 +120,15 @@ describe('InputVerifier', function () {
       const newContextSigners = [signers.alice.address, signers.bob.address];
       await inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(newContextId, newContextSigners);
 
-      // Previous context should be suspended
-      expect(await inputVerifier.isContextSuspended(previousContextId)).to.be.equal(true);
+      // Previous context should be marked as suspended.
+      expect(await inputVerifier.isCoprocessorContextActiveOrSuspended(previousContextId)).to.be.equal(true);
 
       await expect(inputVerifier.connect(deployer).removeSuspendedCoprocessorContext()).to.be.fulfilled;
 
-      // Previous context should be deactivated
-      expect(await inputVerifier.isContextSuspended(previousContextId)).to.be.equal(false);
+      // Previous context should be marked as deactivated.
+      await expect(inputVerifier.isCoprocessorContextActiveOrSuspended(previousContextId))
+        .to.revertedWithCustomError(inputVerifier, 'InvalidContextId')
+        .withArgs(previousContextId);
     });
   });
 
