@@ -16,8 +16,8 @@ abstract contract Pausable is PausableUpgradeable {
     IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /**
-     * @notice Error emitted when an address is not the pauser.
-     * @param notPauser The address that is not the pauser.
+     * @notice Error emitted when an address is not a pauser.
+     * @param notPauser The address that is not a pauser.
      */
     error NotPauser(address notPauser);
 
