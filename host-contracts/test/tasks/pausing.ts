@@ -19,13 +19,13 @@ describe('Pausing and Unpausing Tasks', function () {
 
     it('Should pause acl', async function () {
       expect(await acl.paused()).to.eq(false);
-      await run('task:pauseACL', { useInternalProxyAddress: true });
+      await run('task:pauseACL', { useInternalACLAddress: true });
       expect(await acl.paused()).to.eq(true);
     });
 
     it('Should unpause acl', async function () {
       expect(await acl.paused()).to.eq(true);
-      await run('task:unpauseACL', { useInternalProxyAddress: true });
+      await run('task:unpauseACL', { useInternalACLAddress: true });
       expect(await acl.paused()).to.eq(false);
     });
   });
