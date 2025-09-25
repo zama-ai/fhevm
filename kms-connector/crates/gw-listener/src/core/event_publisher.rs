@@ -60,7 +60,8 @@ impl DbEventPublisher {
         let sns_ciphertexts_db = request
             .snsCtMaterials
             .iter()
-            .map(SnsCiphertextMaterialDbItem::from)
+            .zip(request.storageUrls)
+            .map(|(sns_ct, url)| SnsCiphertextMaterialDbItem::new(sns_ct, url))
             .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
         sqlx::query!(
@@ -80,7 +81,8 @@ impl DbEventPublisher {
         let sns_ciphertexts_db = request
             .snsCtMaterials
             .iter()
-            .map(SnsCiphertextMaterialDbItem::from)
+            .zip(request.storageUrls)
+            .map(|(sns_ct, url)| SnsCiphertextMaterialDbItem::new(sns_ct, url))
             .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
         sqlx::query!(

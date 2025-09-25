@@ -32,30 +32,32 @@ pub enum GatewayEvent {
 impl GatewayEvent {
     /// Create a new `GatewayEvent::PublicDecryption` from a `PgRow`.
     pub fn from_public_decryption_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let sns_ct_materials = row
+        let (sns_ct_materials, storage_urls) = row
             .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
-            .iter()
-            .map(SnsCiphertextMaterial::from)
+            .into_iter()
+            .map(|s| (SnsCiphertextMaterial::from(&s), s.storage_urls))
             .collect();
 
         Ok(GatewayEvent::PublicDecryption(PublicDecryptionRequest {
             decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             snsCtMaterials: sns_ct_materials,
+            storageUrls: storage_urls,
             extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),
         }))
     }
 
     /// Create a new `GatewayEvent::UserDecryption` from a `PgRow`.
     pub fn from_user_decryption_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        let sns_ct_materials = row
+        let (sns_ct_materials, storage_urls) = row
             .try_get::<Vec<SnsCiphertextMaterialDbItem>, _>("sns_ct_materials")?
-            .iter()
-            .map(SnsCiphertextMaterial::from)
+            .into_iter()
+            .map(|s| (SnsCiphertextMaterial::from(&s), s.storage_urls))
             .collect();
 
         Ok(GatewayEvent::UserDecryption(UserDecryptionRequest {
             decryptionId: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             snsCtMaterials: sns_ct_materials,
+            storageUrls: storage_urls,
             userAddress: row.try_get::<[u8; 20], _>("user_address")?.into(),
             publicKey: row.try_get::<Vec<u8>, _>("public_key")?.into(),
             extraData: row.try_get::<Vec<u8>, _>("extra_data")?.into(),

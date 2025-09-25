@@ -1,5 +1,5 @@
+use crate::types::db::SnsCiphertextMaterialDbItem;
 use alloy::primitives::{Address, FixedBytes, U256};
-use fhevm_gateway_bindings::decryption::Decryption::SnsCiphertextMaterial;
 use rand::Rng;
 
 pub fn rand_u256() -> U256 {
@@ -22,11 +22,11 @@ pub fn rand_digest() -> FixedBytes<32> {
     rand::rng().random::<[u8; 32]>().into()
 }
 
-pub fn rand_sns_ct() -> SnsCiphertextMaterial {
-    SnsCiphertextMaterial {
-        keyId: rand_u256(),
-        ctHandle: rand::rng().random::<[u8; 32]>().into(),
-        snsCiphertextDigest: rand::rng().random::<[u8; 32]>().into(),
-        coprocessorTxSenderAddresses: vec![rand_address()],
+pub fn rand_sns_ct() -> SnsCiphertextMaterialDbItem {
+    SnsCiphertextMaterialDbItem {
+        key_id: rand::rng().random::<[u8; 32]>(),
+        ct_handle: rand::rng().random::<[u8; 32]>(),
+        sns_ciphertext_digest: rand::rng().random::<[u8; 32]>(),
+        storage_urls: vec!["http://localhost:9000/ct/128".to_string()],
     }
 }
