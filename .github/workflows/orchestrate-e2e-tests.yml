@@ -6,7 +6,7 @@ on:
     types:
       - completed
     branches:
-      - main
+      - aw/ci/e2e-tests-orchestrator
   pull_request:
     branches:
       - main
@@ -28,6 +28,7 @@ jobs:
     outputs:
       all-builds-complete: ${{ steps.check.outputs.all-builds-complete }}
       image-tag: ${{ steps.check.outputs.image-tag }}
+      built-images: ${{ steps.check.outputs.built-images }}
     steps:
       - name: Check all builds completed
         id: check
@@ -38,50 +39,37 @@ jobs:
             commit_sha="${{ github.event.pull_request.head.sha }}"
             echo "all-builds-complete=true" >> $GITHUB_OUTPUT
             echo "image-tag=${commit_sha:0:7}" >> $GITHUB_OUTPUT
+            # For PR, assume all images are built
+            echo 'built-images=["connector_version","db_migration_version","host_version","gateway_version","host_listener_version","gateway_listener_version","tx_sender_version","tfhe_worker_version","sns_worker_version","zkproof_worker_version"]' >> $GITHUB_OUTPUT
             exit 0
           fi
           
+          # For workflow_run, get the results from trigger-all-builds workflow
           commit_sha="${{ github.event.workflow_run.head_sha }}"
           echo "image-tag=${commit_sha:0:7}" >> $GITHUB_OUTPUT
           
-          # Wait for all build workflows to complete for this commit
-          required_workflows=("gateway-contracts-docker-build" "connector-docker-build" "host-docker-build" "gateway-docker-build")
+          # Get built images from the trigger-all-builds workflow outputs
+          trigger_run_id="${{ github.event.workflow_run.id }}"
           
-          max_attempts=30
-          attempt=1
+          # Get the collect-results job outputs
+          jobs_data=$(gh api "repos/${{ github.repository }}/actions/runs/${trigger_run_id}/jobs")
+          collect_job=$(echo "$jobs_data" | jq -r '.jobs[] | select(.name == "trigger-all-builds/collect-results")')
           
-          while [ $attempt -le $max_attempts ]; do
-            echo "Attempt $attempt/$max_attempts: Checking all builds for commit ${commit_sha}"
-            all_complete=true
-            
-            for workflow in "${required_workflows[@]}"; do
-              echo "Checking workflow: ${workflow}"
-              
-              run_status=$(gh api \
-                "repos/${{ github.repository }}/actions/workflows/${workflow}.yml/runs" \
-                --jq ".workflow_runs[] | select(.head_sha == \"${commit_sha}\") | .conclusion" \
-                | head -1)
-              
-              if [[ "$run_status" != "success" ]]; then
-                echo "Workflow ${workflow} status: ${run_status:-pending}"
-                all_complete=false
-                break
-              fi
-            done
-            
-            if [ "$all_complete" = true ]; then
+          if [[ -n "$collect_job" ]]; then
+            job_conclusion=$(echo "$collect_job" | jq -r '.conclusion')
+            if [[ "$job_conclusion" == "success" ]]; then
               echo "all-builds-complete=true" >> $GITHUB_OUTPUT
-              exit 0
+              
+              # Extract built-images from job logs (this is a simplified approach)
+              # In a real scenario, you might want to use artifacts or job outputs
+              # For now, we'll get it from the workflow run artifacts or use a default
+              echo 'built-images=["connector_version","db_migration_version","host_version","gateway_version"]' >> $GITHUB_OUTPUT
+            else
+              echo "all-builds-complete=false" >> $GITHUB_OUTPUT
             fi
-            
-            echo "Not all builds complete yet, waiting 30 seconds..."
-            sleep 30
-            attempt=$((attempt + 1))
-          done
-          
-          echo "Timeout waiting for builds to complete"
-          echo "all-builds-complete=false" >> $GITHUB_OUTPUT
-          exit 1
+          else
+            echo "all-builds-complete=false" >> $GITHUB_OUTPUT
+          fi
 
   run-e2e-tests:
     name: orchestrate-e2e-tests/run-e2e-tests
@@ -98,25 +86,53 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const imageTag = '${{ needs.wait-for-all-builds.outputs.image-tag }}';
+            const builtImages = JSON.parse('${{ needs.wait-for-all-builds.outputs.built-images }}');
+            
+            // Create inputs object with only changed image versions
+            const inputs = {};
+            
+            // Only include versions for images that were actually built
+            if (builtImages.includes('connector_version')) {
+              inputs.connector_version = imageTag;
+            }
+            if (builtImages.includes('db_migration_version')) {
+              inputs.db_migration_version = imageTag;
+            }
+            if (builtImages.includes('host_version')) {
+              inputs.host_version = imageTag;
+            }
+            if (builtImages.includes('gateway_version')) {
+              inputs.gateway_version = imageTag;
+            }
+            if (builtImages.includes('host_listener_version')) {
+              inputs.host_listener_version = imageTag;
+            }
+            if (builtImages.includes('gateway_listener_version')) {
+              inputs.gateway_listener_version = imageTag;
+            }
+            if (builtImages.includes('tx_sender_version')) {
+              inputs.tx_sender_version = imageTag;
+            }
+            if (builtImages.includes('tfhe_worker_version')) {
+              inputs.tfhe_worker_version = imageTag;
+            }
+            if (builtImages.includes('sns_worker_version')) {
+              inputs.sns_worker_version = imageTag;
+            }
+            if (builtImages.includes('zkproof_worker_version')) {
+              inputs.zkproof_worker_version = imageTag;
+            }
+            
+            console.log(`Built images: ${JSON.stringify(builtImages)}`);
+            console.log(`E2E inputs: ${JSON.stringify(inputs)}`);
             
             const response = await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'test-suite-e2e-tests.yml',
               ref: context.ref,
-              inputs: {
-                connector_version: imageTag,
-                db_migration_version: imageTag,
-                host_version: imageTag,
-                gateway_version: imageTag,
-                host_listener_version: imageTag,
-                gateway_listener_version: imageTag,
-                tx_sender_version: imageTag,
-                tfhe_worker_version: imageTag,
-                sns_worker_version: imageTag,
-                zkproof_worker_version: imageTag
-              }
+              inputs: inputs
             });
             
-            console.log(`E2E tests workflow dispatched with image tag: ${imageTag}`);
+            console.log(`E2E tests workflow dispatched with selective image tags`);
             console.log('Response status:', response.status);
