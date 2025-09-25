@@ -1,0 +1,84 @@
+name: trigger-all-builds
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for triggering all builds"
+        default: "Manual trigger for e2e testing"
+        type: string
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+    # Only trigger when PR enters merge queue
+    paths:
+      - 'mergify/merge-queue/**'
+
+permissions: {}
+
+jobs:
+  check-merge-queue:
+    name: trigger-all-builds/check-merge-queue
+    runs-on: ubuntu-latest
+    outputs:
+      is-merge-queue: ${{ steps.check.outputs.is-merge-queue }}
+    steps:
+      - name: Check if in merge queue
+        id: check
+        run: |
+          if [[ "${{ github.head_ref }}" == mergify/merge-queue/* ]]; then
+            echo "is-merge-queue=true" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "is-merge-queue=true" >> $GITHUB_OUTPUT
+          else
+            echo "is-merge-queue=false" >> $GITHUB_OUTPUT
+          fi
+
+  trigger-builds:
+    name: trigger-all-builds/trigger-builds
+    needs: check-merge-queue
+    if: ${{ needs.check-merge-queue.outputs.is-merge-queue == 'true' }}
+    permissions:
+      actions: 'write'
+      contents: 'read'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger all build workflows
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const workflows = [
+              'coprocessor-db-migration-docker-build.yml',
+              'coprocessor-gw-listener-docker-build.yml',
+              'coprocessor-host-listener-docker-build.yml',
+              'coprocessor-tx-sender-docker-build.yml',
+              'coprocessor-sns-worker-docker-build.yml',
+              'coprocessor-tfhe-worker-docker-build.yml',
+              'coprocessor-zkproof-worker-docker-build.yml',
+              'gateway-contracts-docker-build.yml',
+              'host-contracts-docker-build.yml',
+              'kms-connector-db-migration-docker-build.yml',
+              'kms-connector-gw-listener-docker-build.yml',
+              'kms-connector-tx-sender-docker-build.yml',
+              'kms-connector-kms-worker-docker-build.yml',
+              'test-suite-docker-build.yml'
+            ];
+            
+            const ref = context.ref;
+            console.log(`Triggering builds for merge queue ref: ${ref}`);
+            
+            for (const workflow of workflows) {
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: workflow,
+                  ref: ref
+                });
+                console.log(`✅ Triggered ${workflow}`);
+              } catch (error) {
+                console.log(`❌ Failed to trigger ${workflow}: ${error.message}`);
+              }
+            }
