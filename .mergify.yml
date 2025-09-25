@@ -6,6 +6,7 @@ queue_rules:
     merge_method: squash
     update_method: rebase
     merge_conditions:
+      - check-success = trigger-all-builds/trigger-builds
       - check-success = orchestrate-e2e-tests/run-e2e-tests
     queue_conditions:
       - base = main
