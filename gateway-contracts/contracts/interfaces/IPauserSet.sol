@@ -20,6 +20,13 @@ interface IPauserSet {
     event RemovePauser(address account);
 
     /**
+     * @notice Emitted when an a pauser is swapped.
+     * @param oldAccount The address of the old pauser.
+     * @param newAccount The address of the new pauser.
+     */
+    event SwapPauser(address oldAccount, address newAccount);
+
+    /**
      * @notice Error indicating that the given account is already a pauser.
      * @param account The address of the account.
      */
