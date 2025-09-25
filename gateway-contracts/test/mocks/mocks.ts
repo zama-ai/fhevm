@@ -203,7 +203,6 @@ describe("Mock contracts", function () {
     it("Should emit InitializeGatewayConfig event on initialization", async function () {
       await expect(
         gatewayConfigMock.initializeFromEmptyProxy(
-          DefaultAddress,
           DefaultProtocolMetadata,
           DefaultUint256,
           DefaultUint256,
@@ -215,25 +214,12 @@ describe("Mock contracts", function () {
       )
         .to.emit(gatewayConfigMock, "InitializeGatewayConfig")
         .withArgs(
-          DefaultAddress,
           toValues(DefaultProtocolMetadata),
           DefaultUint256,
           toValues([DefaultKmsNode]),
           toValues([DefaultCoprocessor]),
           toValues([DefaultCustodian]),
         );
-    });
-
-    it("Should emit Reinitialization event on reinitialization", async function () {
-      await expect(gatewayConfigMock.reinitializeV2([DefaultCustodian]))
-        .to.emit(gatewayConfigMock, "ReinitializeGatewayConfigV2")
-        .withArgs(toValues([DefaultCustodian]));
-    });
-
-    it("Should emit UpdatePauser event on update pauser call", async function () {
-      await expect(gatewayConfigMock.updatePauser(DefaultAddress))
-        .to.emit(gatewayConfigMock, "UpdatePauser")
-        .withArgs(DefaultAddress);
     });
 
     it("Should emit UpdateMpcThreshold event on update MPC threshold call", async function () {

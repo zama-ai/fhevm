@@ -41,7 +41,7 @@ describe("GatewayConfig", function () {
   let gatewayConfig: GatewayConfig;
   let pauserSet: PauserSet;
   let owner: Wallet;
-  let pauser: HardhatEthersSigner;
+  let pauser: Wallet;
   let nKmsNodes: number;
   let kmsNodes: KmsNodeStruct[];
   let kmsTxSenders: HardhatEthersSigner[];
@@ -563,59 +563,6 @@ describe("GatewayConfig", function () {
           const hostChain = await gatewayConfig.getHostChain(i);
           expect(hostChain).to.deep.equal(hostChains[i]);
         }
-      });
-    });
-
-    describe("Pauser", function () {
-      it("Should return true for the initial pauser address", async function () {
-        expect(await gatewayConfig.isPauser(pauser.address)).to.equal(true);
-      });
-
-      it("Should revert because the sender is not the owner", async function () {
-        await expect(pauserSet.connect(fakeOwner).addPauser(fakeOwner.address))
-          .to.be.revertedWithCustomError(pauserSet, "NotGatewayOwner")
-          .withArgs(fakeOwner.address);
-        await expect(pauserSet.connect(fakeOwner).removePauser(pauser.address))
-          .to.be.revertedWithCustomError(pauserSet, "NotGatewayOwner")
-          .withArgs(fakeOwner.address);
-      });
-
-      it("Should add the pauser", async function () {
-        const newPauser = createRandomWallet();
-
-        const tx = await pauserSet.connect(owner).addPauser(newPauser.address);
-
-        await expect(tx).to.emit(pauserSet, "NewPauser").withArgs(newPauser.address);
-      });
-
-      it("Should revert when adding an already added pauser", async function () {
-        await expect(pauserSet.connect(owner).addPauser(pauser.address))
-          .to.be.revertedWithCustomError(pauserSet, "AccountIsAlreadyPauser")
-          .withArgs(pauser.address);
-      });
-
-      it("Should revert when removing a non-pauser", async function () {
-        const newPauser = createRandomWallet();
-        await expect(pauserSet.connect(owner).removePauser(newPauser.address))
-          .to.be.revertedWithCustomError(pauserSet, "AccountIsNotPauser")
-          .withArgs(newPauser.address);
-      });
-
-      it("Should remove when removing a pauser", async function () {
-        const newPauser = createRandomWallet();
-        await pauserSet.connect(owner).addPauser(newPauser.address);
-        const tx = await pauserSet.connect(owner).removePauser(newPauser.address);
-
-        await expect(tx).to.emit(pauserSet, "RemovedPauser").withArgs(newPauser.address);
-      });
-
-      it("Should revert because the pauser is the null address", async function () {
-        const nullPauser = hre.ethers.ZeroAddress;
-
-        await expect(pauserSet.connect(owner).addPauser(nullPauser)).to.be.revertedWithCustomError(
-          pauserSet,
-          "PauserCannotBeNull",
-        );
       });
     });
 

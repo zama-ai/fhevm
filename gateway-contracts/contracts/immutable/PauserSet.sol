@@ -23,18 +23,18 @@ contract PauserSet is IPauserSet, GatewayConfigChecks {
 
     /// @dev See {IPauserSet-addPauser}.
     function addPauser(address account) external onlyGatewayOwner {
-        if (account == address(0)) revert PauserCannotBeNull();
-        if (pausers[account]) revert AccountIsAlreadyPauser(account);
+        if (account == address(0)) revert InvalidNullPauser();
+        if (pausers[account]) revert AccountAlreadyPauser(account);
         pausers[account] = true;
-        emit NewPauser(account);
+        emit AddPauser(account);
     }
 
     /// @dev See {IPauserSet-removePauser}.
     function removePauser(address account) external onlyGatewayOwner {
-        if (account == address(0)) revert PauserCannotBeNull();
-        if (!pausers[account]) revert AccountIsNotPauser(account);
+        if (account == address(0)) revert InvalidNullPauser();
+        if (!pausers[account]) revert AccountNotPauser(account);
         pausers[account] = false;
-        emit RemovedPauser(account);
+        emit RemovePauser(account);
     }
 
     /// @dev See {IPauserSet-isPauser}.

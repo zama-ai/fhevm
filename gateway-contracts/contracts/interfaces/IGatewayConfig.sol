@@ -240,7 +240,7 @@ interface IGatewayConfig {
 
     /**
      * @notice Check if the account is a pauser.
-     * @return whether or not the account is a pauser.
+     * @return Whether or not the account is a pauser.
      */
     function isPauser(address account) external view returns (bool);
 

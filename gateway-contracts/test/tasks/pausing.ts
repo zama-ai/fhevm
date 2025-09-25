@@ -2,18 +2,14 @@ import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
 
-import { Decryption, InputVerification } from "../typechain-types";
-import { loadTestVariablesFixture } from "./utils";
+import { Decryption, InputVerification } from "../../typechain-types";
+import { loadTestVariablesFixture } from "../utils";
 
 describe("Pausing and Unpausing Tasks", function () {
   let decryption: Decryption;
   let inputVerification: InputVerification;
   describe("Hardhat pausing/unpausing tasks", function () {
     before(async function () {
-      // `PAUSER_PRIVATE_KEY` env variable is assigned value of `PAUSER_PRIVATE_KEY_0`
-      const pauserPrivateKey = process.env.PAUSER_PRIVATE_KEY_0;
-      process.env.PAUSER_PRIVATE_KEY = pauserPrivateKey;
-
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       decryption = fixtureData.decryption;
       inputVerification = fixtureData.inputVerification;

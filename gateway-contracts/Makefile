@@ -22,7 +22,7 @@ coverage: clean
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat coverage
 
 get-accounts:
-	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts --num-accounts 20
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts
 
 start-local-node: clean
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat node --port 8757
@@ -82,9 +82,13 @@ conformance: prettier update-bindings update-mocks update-selectors
 deploy-empty-proxies:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployEmptyUUPSProxies
 
+# Deploy the pauser set contract
 deploy-pauser-set:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat compile:specific --contract contracts/immutable
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployPauserSet
+
+# Deploy the contracts needed for deploying the gateway contracts
+deploy-setup-contracts: deploy-empty-proxies deploy-pauser-set
 
 # Ensure that the empty proxy addresses exists as these are required for contract compilation.
 # In addition, ensure that the addresses match the ones used in local development in order to
