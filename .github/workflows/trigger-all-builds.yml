@@ -11,7 +11,7 @@ permissions: {}
 jobs:
   trigger-builds:
     name: trigger-all-builds/trigger-builds
-    needs: check-merge-queue
+    # to be activated before merging this PR
     # if: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
     permissions:
       actions: 'write'
@@ -56,3 +56,121 @@ jobs:
                 console.log(`❌ Failed to trigger ${workflow}: ${error.message}`);
               }
             }
+
+  collect-results:
+    name: trigger-all-builds/collect-results
+    # to be activated before merging this PR
+    # if: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    permissions:
+      actions: 'read'
+      contents: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      built-images: ${{ steps.collect.outputs.built-images }}
+      image-tag: ${{ steps.collect.outputs.image-tag }}
+    steps:
+      - name: Wait for builds to complete and collect results
+        id: collect
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          commit_sha="${{ github.sha }}"
+          image_tag="${commit_sha:0:7}"
+          echo "image-tag=${image_tag}" >> $GITHUB_OUTPUT
+          
+          # Map workflow names to image names
+          declare -A workflow_to_image
+          workflow_to_image["coprocessor-db-migration-docker-build"]="db_migration_version"
+          workflow_to_image["coprocessor-gw-listener-docker-build"]="gateway_listener_version"
+          workflow_to_image["coprocessor-host-listener-docker-build"]="host_listener_version"
+          workflow_to_image["coprocessor-tx-sender-docker-build"]="tx_sender_version"
+          workflow_to_image["coprocessor-sns-worker-docker-build"]="sns_worker_version"
+          workflow_to_image["coprocessor-tfhe-worker-docker-build"]="tfhe_worker_version"
+          workflow_to_image["coprocessor-zkproof-worker-docker-build"]="zkproof_worker_version"
+          workflow_to_image["gateway-contracts-docker-build"]="gateway_version"
+          workflow_to_image["host-contracts-docker-build"]="host_version"
+          workflow_to_image["kms-connector-db-migration-docker-build"]="connector_version"
+          workflow_to_image["kms-connector-gw-listener-docker-build"]="connector_version"
+          workflow_to_image["kms-connector-tx-sender-docker-build"]="connector_version"
+          workflow_to_image["kms-connector-kms-worker-docker-build"]="connector_version"
+          workflow_to_image["test-suite-docker-build"]="test_suite_version"
+          
+          # Wait for all workflows to complete and collect built images
+          max_attempts=60
+          attempt=1
+          built_images=()
+          
+          while [ $attempt -le $max_attempts ]; do
+            echo "Attempt $attempt/$max_attempts: Checking workflow results for commit ${commit_sha}"
+            all_done=true
+            current_built_images=()
+            
+            for workflow_name in "${!workflow_to_image[@]}"; do
+              echo "Checking workflow: ${workflow_name}"
+              
+              # Get the latest run for this commit
+              run_info=$(gh api \
+                "repos/${{ github.repository }}/actions/workflows/${workflow_name}.yml/runs" \
+                --jq ".workflow_runs[] | select(.head_sha == \"${commit_sha}\") | {conclusion, id}" \
+                | head -1)
+              
+              if [[ -n "$run_info" ]]; then
+                conclusion=$(echo "$run_info" | jq -r '.conclusion')
+                run_id=$(echo "$run_info" | jq -r '.id')
+                
+                if [[ "$conclusion" == "success" ]]; then
+                  # Check if the build actually happened by looking for check-changes job output
+                  jobs_data=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}/jobs")
+                  check_changes_job=$(echo "$jobs_data" | jq -r '.jobs[] | select(.name | contains("check-changes"))')
+                  
+                  if [[ -n "$check_changes_job" ]]; then
+                    job_conclusion=$(echo "$check_changes_job" | jq -r '.conclusion')
+                    if [[ "$job_conclusion" == "success" ]]; then
+                      # Check the job steps to see if changes were detected
+                      steps=$(echo "$check_changes_job" | jq -r '.steps[] | select(.name == "Check changes") | .conclusion')
+                      if [[ "$steps" == "success" ]]; then
+                        image_name="${workflow_to_image[$workflow_name]}"
+                        current_built_images+=("${image_name}")
+                        echo "✅ ${workflow_name} built image: ${image_name}"
+                      else
+                        echo "🔶 ${workflow_name} completed but no changes detected"
+                      fi
+                    else
+                      echo "❌ ${workflow_name} check-changes job failed: ${job_conclusion}"
+                    fi
+                  else
+                    echo "⚠️ ${workflow_name} no check-changes job found"
+                  fi
+                elif [[ "$conclusion" == "failure" || "$conclusion" == "cancelled" ]]; then
+                  echo "❌ ${workflow_name} failed with conclusion: ${conclusion}"
+                elif [[ "$conclusion" == "null" || -z "$conclusion" ]]; then
+                  echo "⏳ ${workflow_name} still running"
+                  all_done=false
+                fi
+              else
+                echo "⚠️ No run found for ${workflow_name} with commit ${commit_sha}"
+                all_done=false
+              fi
+            done
+            
+            if [ "$all_done" = true ]; then
+              built_images=("${current_built_images[@]}")
+              break
+            fi
+            
+            echo "Not all workflows complete yet, waiting 30 seconds..."
+            sleep 30
+            attempt=$((attempt + 1))
+          done
+          
+          if [ $attempt -gt $max_attempts ]; then
+            echo "⚠️ Timeout waiting for all workflows to complete, using current results"
+            built_images=("${current_built_images[@]}")
+          fi
+          
+          # Remove duplicates and create JSON array
+          unique_images=($(printf "%s\n" "${built_images[@]}" | sort -u))
+          json_array=$(printf '%s\n' "${unique_images[@]}" | jq -R . | jq -s .)
+          
+          echo "built-images=${json_array}" >> $GITHUB_OUTPUT
+          echo "Final built images: ${json_array}"
