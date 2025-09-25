@@ -30,12 +30,12 @@ describe('Upgrades', function () {
     });
     await acl.waitForDeployment();
     const ownerBef = await acl.owner();
-    expect(await acl.getVersion()).to.equal('ACL v0.2.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.3.0');
     const acl2 = await upgrades.upgradeProxy(acl, this.aclFactoryUpgraded);
     await acl2.waitForDeployment();
     const ownerAft = await acl2.owner();
     expect(ownerBef).to.equal(ownerAft);
-    expect(await acl2.getVersion()).to.equal('ACL v0.3.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.4.0');
     const aclAddress = ethers.getCreateAddress({
       from: this.signers.alice.address,
       nonce: nonceBef, // using nonce of nonceBef instead of nonceBef+1 here, since the original implementation has already been deployer during the setup phase, and hardhat-upgrades plugin is able to detect this and not redeploy twice same contract
@@ -114,11 +114,11 @@ describe('Upgrades', function () {
     const origACLAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const acl = (await this.aclFactory.attach(origACLAdd, deployer)) as ACL;
-    expect(await acl.getVersion()).to.equal('ACL v0.2.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.3.0');
     const newaclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample', deployer);
     const acl2 = (await upgrades.upgradeProxy(acl, newaclFactoryUpgraded)) as unknown as ACLUpgradedExample;
     await acl2.waitForDeployment();
-    expect(await acl2.getVersion()).to.equal('ACL v0.3.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.4.0');
     expect(await acl2.getAddress()).to.equal(origACLAdd);
     const newSigner = (await ethers.getSigners())[1];
     await acl2.transferOwnership(newSigner);
@@ -128,6 +128,6 @@ describe('Upgrades', function () {
     const newaclFactoryUpgraded3 = await ethers.getContractFactory('ACLUpgradedExample2', newSigner);
     const acl3 = await upgrades.upgradeProxy(acl2, newaclFactoryUpgraded3); // new owner can upgrade ACL
     await acl3.waitForDeployment();
-    expect(await acl3.getVersion()).to.equal('ACL v0.4.0');
+    expect(await acl3.getVersion()).to.equal('ACL v0.5.0');
   });
 });
