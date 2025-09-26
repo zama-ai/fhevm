@@ -1,6 +1,6 @@
 queue_rules:
   - name: main
-    batch_size: 1
+    batch_size: 3
     batch_max_wait_time: 1m
     checks_timeout: 12h
     merge_method: squash
