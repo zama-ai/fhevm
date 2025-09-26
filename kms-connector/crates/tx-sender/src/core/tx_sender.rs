@@ -10,10 +10,7 @@ use crate::{
 use alloy::{
     hex,
     network::Ethereum,
-    providers::{
-        PendingTransactionError, Provider,
-        ext::{AnvilApi, DebugApi},
-    },
+    providers::{PendingTransactionError, Provider, ext::DebugApi},
     rpc::types::{
         TransactionReceipt, TransactionRequest,
         trace::geth::{CallConfig, GethDebugTracingOptions},
@@ -171,7 +168,7 @@ pub struct TransactionSenderInnerConfig {
     pub gas_multiplier_percent: usize,
 }
 
-impl<P: Provider + AnvilApi<Ethereum>> TransactionSenderInner<P> {
+impl<P: Provider> TransactionSenderInner<P> {
     pub fn new(
         provider: P,
         decryption_contract: DecryptionInstance<P>,
@@ -319,7 +316,8 @@ impl<P: Provider + AnvilApi<Ethereum>> TransactionSenderInner<P> {
         self.overprovision_gas(&mut call).await?;
         Ok(self
             .provider
-            .eth_send_transaction_sync(call.clone())
+            .client()
+            .request("eth_sendTransactionSync", (call.clone(),))
             .await?)
     }
 
