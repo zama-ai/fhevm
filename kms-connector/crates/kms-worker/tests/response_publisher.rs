@@ -10,13 +10,13 @@ use connector_utils::{
     },
 };
 use kms_grpc::kms::v1::{
-    CrsGenResult, KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse,
+    CrsGenResult, KeyDigest, KeyGenPreprocResult, KeyGenResult, PublicDecryptionResponse,
     PublicDecryptionResponsePayload, RequestId, UserDecryptionResponse,
     UserDecryptionResponsePayload,
 };
 use kms_worker::core::{DbKmsResponsePublisher, KmsResponsePublisher};
 use sqlx::Row;
-use std::collections::HashMap;
+use std::str::FromStr;
 use tracing::info;
 
 #[tokio::test]
@@ -134,9 +134,16 @@ async fn test_publish_keygen_response() -> anyhow::Result<()> {
     let rand_key_id = rand_u256();
     let rand_prep_keygen_id = rand_u256();
     let rand_signature = rand_signature();
-    let mut rand_key_digests = HashMap::new();
-    rand_key_digests.insert(String::from("ServerKey"), rand_digest().to_vec());
-    rand_key_digests.insert(String::from("PublicKey"), rand_digest().to_vec());
+    let rand_key_digests = vec![
+        KeyDigest {
+            key_type: String::from("ServerKey"),
+            digest: rand_digest().to_vec(),
+        },
+        KeyDigest {
+            key_type: String::from("PublicKey"),
+            digest: rand_digest().to_vec(),
+        },
+    ];
 
     let grpc_response = KmsGrpcResponse::Keygen(KeyGenResult {
         request_id: Some(RequestId {
@@ -162,12 +169,12 @@ async fn test_publish_keygen_response() -> anyhow::Result<()> {
     let key_digests = row.try_get::<Vec<KeyDigestDbItem>, _>("key_digests")?;
     let signature = row.try_get::<Vec<u8>, _>("signature")?;
     assert_eq!(key_id, rand_key_id);
-    for kd in key_digests {
-        let key_type_str = match kd.key_type {
-            KeyType::Public => "PublicKey",
-            KeyType::Server => "ServerKey",
-        };
-        assert_eq!(Some(&kd.digest), rand_key_digests.get(key_type_str));
+    for (i, kd) in key_digests.iter().enumerate() {
+        assert_eq!(
+            kd.key_type,
+            KeyType::from_str(&rand_key_digests[i].key_type)?
+        );
+        assert_eq!(kd.digest, rand_key_digests[i].digest);
     }
     assert_eq!(signature, rand_signature);
     info!("Response successfully stored!");

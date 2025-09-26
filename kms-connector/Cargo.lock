@@ -1950,7 +1950,7 @@ checksum = "55248b47b0caf0546f7988906588779981c43bb1bc9d0c44087278f80cdb44ba"
 [[package]]
 name = "bc2wrap"
 version = "2.0.1"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.11.1#d1cb20e9957b6145978af265ec16e8aa7cbabe10"
+source = "git+https://github.com/zama-ai/kms.git?rev=bc02d569cc0c346c60e4c11678b7708cb94c84be#bc02d569cc0c346c60e4c11678b7708cb94c84be"
 dependencies = [
  "bincode 2.0.1",
  "serde",
@@ -3975,7 +3975,7 @@ dependencies = [
 [[package]]
 name = "kms-grpc"
 version = "0.11.1"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.11.1#d1cb20e9957b6145978af265ec16e8aa7cbabe10"
+source = "git+https://github.com/zama-ai/kms.git?rev=bc02d569cc0c346c60e4c11678b7708cb94c84be#bc02d569cc0c346c60e4c11678b7708cb94c84be"
 dependencies = [
  "alloy-primitives",
  "alloy-sol-types",
@@ -6642,7 +6642,7 @@ dependencies = [
 [[package]]
 name = "threshold-fhe"
 version = "0.11.1"
-source = "git+https://github.com/zama-ai/kms.git?tag=v0.11.1#d1cb20e9957b6145978af265ec16e8aa7cbabe10"
+source = "git+https://github.com/zama-ai/kms.git?rev=bc02d569cc0c346c60e4c11678b7708cb94c84be#bc02d569cc0c346c60e4c11678b7708cb94c84be"
 dependencies = [
  "aes",
  "aes-prng",

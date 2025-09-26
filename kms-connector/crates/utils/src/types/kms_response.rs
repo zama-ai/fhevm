@@ -237,10 +237,10 @@ impl KeygenResponse {
         let key_digests = grpc_response
             .key_digests
             .into_iter()
-            .map(|(k, d)| {
+            .map(|kd| {
                 Ok(KeyDigestDbItem {
-                    key_type: k.parse()?,
-                    digest: d,
+                    key_type: kd.key_type.parse()?,
+                    digest: kd.digest,
                 })
             })
             .collect::<anyhow::Result<Vec<KeyDigestDbItem>>>()?;
