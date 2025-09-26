@@ -13,13 +13,7 @@ import "../interfaces/IGatewayConfig.sol";
  */
 abstract contract Pausable is PausableUpgradeable {
     /// @notice The address of the GatewayConfig contract
-    IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
-
-    /**
-     * @notice Error emitted when an address is not a pauser.
-     * @param notPauser The address that is not a pauser.
-     */
-    error NotPauser(address notPauser);
+    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /**
      * @notice Error emitted when an address is not the pauser or the gateway config.
@@ -33,13 +27,6 @@ abstract contract Pausable is PausableUpgradeable {
      */
     error NotOwnerOrGatewayConfig(address notOwnerOrGatewayConfig);
 
-    modifier onlyPauser() {
-        if (!_GATEWAY_CONFIG.isPauser(msg.sender)) {
-            revert NotPauser(msg.sender);
-        }
-        _;
-    }
-
     /**
      * @dev Triggers stopped state.
      *
@@ -49,7 +36,7 @@ abstract contract Pausable is PausableUpgradeable {
      * - The contract must not be paused.
      */
     function pause() external virtual {
-        if (!_GATEWAY_CONFIG.isPauser(msg.sender) && msg.sender != gatewayConfigAddress) {
+        if (!GATEWAY_CONFIG.isPauser(msg.sender) && msg.sender != gatewayConfigAddress) {
             revert NotPauserOrGatewayConfig(msg.sender);
         }
         _pause();

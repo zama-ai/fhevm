@@ -3,6 +3,7 @@ include .env.example
 LOCAL_NETWORK_NAME=localGateway
 ENV_PATH=.env.example
 FORGE_DAPP_OUT=artifacts
+# FORCE_GENERATE_ADDRESSES=false
 
 prettier:
 	npx prettier . --write
@@ -77,6 +78,10 @@ update-selectors: ensure-addresses
 
 # Conform to pre-commit checks
 conformance: prettier update-bindings update-mocks update-selectors
+
+# Conform to pre-commit checks after regenerating the addresses
+conformance-regenerate-addresses: 
+	FORCE_GENERATE_ADDRESSES=true $(MAKE) prettier update-bindings update-mocks update-selectors
 
 # Deploy the empty proxy addresses
 deploy-empty-proxies:

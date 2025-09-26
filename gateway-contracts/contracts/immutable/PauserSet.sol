@@ -3,14 +3,14 @@ pragma solidity ^0.8.24;
 
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IPauserSet } from "../interfaces/IPauserSet.sol";
-import { GatewayConfigChecks } from "../shared/GatewayConfigChecks.sol";
+import { GatewayOwnable } from "../shared/GatewayOwnable.sol";
 import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
 
 /**
  * @title PauserSet smart contract
  * @dev See {IPauserSet}
  */
-contract PauserSet is IPauserSet, GatewayConfigChecks {
+contract PauserSet is IPauserSet, GatewayOwnable {
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that
     /// @dev they can still define their own private constants with the same name.

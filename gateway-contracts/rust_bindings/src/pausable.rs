@@ -8,7 +8,6 @@ interface Pausable {
     error InvalidInitialization();
     error NotInitializing();
     error NotOwnerOrGatewayConfig(address notOwnerOrGatewayConfig);
-    error NotPauser(address notPauser);
     error NotPauserOrGatewayConfig(address notPauserOrGatewayConfig);
 
     event Initialized(uint64 version);
@@ -116,17 +115,6 @@ interface Pausable {
     "inputs": [
       {
         "name": "notOwnerOrGatewayConfig",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "NotPauser",
-    "inputs": [
-      {
-        "name": "notPauser",
         "type": "address",
         "internalType": "address"
       }
@@ -537,86 +525,6 @@ error NotOwnerOrGatewayConfig(address notOwnerOrGatewayConfig);
                 (
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.notOwnerOrGatewayConfig,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `NotPauser(address)` and selector `0x206a346e`.
-```solidity
-error NotPauser(address notPauser);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct NotPauser {
-        #[allow(missing_docs)]
-        pub notPauser: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Address,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::Address,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<NotPauser> for UnderlyingRustTuple<'_> {
-            fn from(value: NotPauser) -> Self {
-                (value.notPauser,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for NotPauser {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { notPauser: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for NotPauser {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "NotPauser(address)";
-            const SELECTOR: [u8; 4] = [32u8, 106u8, 52u8, 110u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.notPauser,
                     ),
                 )
             }
@@ -1619,8 +1527,6 @@ function unpause() external;
         #[allow(missing_docs)]
         NotOwnerOrGatewayConfig(NotOwnerOrGatewayConfig),
         #[allow(missing_docs)]
-        NotPauser(NotPauser),
-        #[allow(missing_docs)]
         NotPauserOrGatewayConfig(NotPauserOrGatewayConfig),
     }
     #[automatically_derived]
@@ -1632,7 +1538,6 @@ function unpause() external;
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
-            [32u8, 106u8, 52u8, 110u8],
             [56u8, 137u8, 22u8, 187u8],
             [141u8, 252u8, 32u8, 43u8],
             [215u8, 230u8, 188u8, 248u8],
@@ -1645,7 +1550,7 @@ function unpause() external;
     impl alloy_sol_types::SolInterface for PausableErrors {
         const NAME: &'static str = "PausableErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 7usize;
+        const COUNT: usize = 6usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -1664,7 +1569,6 @@ function unpause() external;
                 Self::NotOwnerOrGatewayConfig(_) => {
                     <NotOwnerOrGatewayConfig as alloy_sol_types::SolError>::SELECTOR
                 }
-                Self::NotPauser(_) => <NotPauser as alloy_sol_types::SolError>::SELECTOR,
                 Self::NotPauserOrGatewayConfig(_) => {
                     <NotPauserOrGatewayConfig as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -1687,15 +1591,6 @@ function unpause() external;
             static DECODE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<PausableErrors>] = &[
-                {
-                    fn NotPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PausableErrors> {
-                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw(data)
-                            .map(PausableErrors::NotPauser)
-                    }
-                    NotPauser
-                },
                 {
                     fn NotPauserOrGatewayConfig(
                         data: &[u8],
@@ -1782,17 +1677,6 @@ function unpause() external;
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<PausableErrors>] = &[
-                {
-                    fn NotPauser(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<PausableErrors> {
-                        <NotPauser as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(PausableErrors::NotPauser)
-                    }
-                    NotPauser
-                },
                 {
                     fn NotPauserOrGatewayConfig(
                         data: &[u8],
@@ -1894,9 +1778,6 @@ function unpause() external;
                         inner,
                     )
                 }
-                Self::NotPauser(inner) => {
-                    <NotPauser as alloy_sol_types::SolError>::abi_encoded_size(inner)
-                }
                 Self::NotPauserOrGatewayConfig(inner) => {
                     <NotPauserOrGatewayConfig as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -1936,9 +1817,6 @@ function unpause() external;
                         inner,
                         out,
                     )
-                }
-                Self::NotPauser(inner) => {
-                    <NotPauser as alloy_sol_types::SolError>::abi_encode_raw(inner, out)
                 }
                 Self::NotPauserOrGatewayConfig(inner) => {
                     <NotPauserOrGatewayConfig as alloy_sol_types::SolError>::abi_encode_raw(

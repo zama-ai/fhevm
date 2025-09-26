@@ -17,13 +17,23 @@ function main(): void {
       process.exit(1);
     }
 
+    const forceGenerateAddresses = process.env.FORCE_GENERATE_ADDRESSES?.toLowerCase();
+
+    // If set, forceGenerateAddresses must be 'true' or 'false'. Otherwise, it defaults to false.
+    if (forceGenerateAddresses && !["true", "false"].includes(forceGenerateAddresses)) {
+      console.error("FORCE_GENERATE_ADDRESSES must be 'true' or 'false' (or unset for default false)");
+      process.exit(1);
+    }
+
+    // By default, addresses are not generated, unless FORCE_GENERATE_ADDRESSES is set to "true" or
+    // addresses are missing (see below).
+    let shouldGenerateAddresses = forceGenerateAddresses === "true";
+
     // Get addresses directory
     const addressesDir = "addresses";
 
     // Get gateway config address env file
     const gatewayConfigAddressEnv = path.join(addressesDir, ".env.gateway");
-
-    let shouldGenerateAddresses = false;
 
     // If addresses/ directory doesn't exist, is empty, or gatewayConfig address file missing
     if (
