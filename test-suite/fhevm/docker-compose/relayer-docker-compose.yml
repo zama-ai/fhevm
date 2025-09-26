@@ -4,6 +4,10 @@ services:
     image: ghcr.io/zama-ai/console/fhevm-relayer:${RELAYER_VERSION}
     env_file:
       - ../env/staging/.env.relayer.local
+    environment:
+      # cheating for minio dns resolution
+      - APP_KEYURL__FHE_PUBLIC_KEY__URL=http://172.17.0.1:9000/kms-public/PUB/PublicKey/0400000000000000000000000000000000000000000000000000000000000001
+      - APP_KEYURL__CRS__URL=http://172.17.0.1:9000/kms-public/PUB/CRS/0500000000000000000000000000000000000000000000000000000000000001
     command:
     - /bin/server
     - --config-file=/app/config/local.yaml
