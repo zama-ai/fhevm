@@ -180,7 +180,7 @@ jobs:
           node-version: 20.x
 
       - run: cp ./host-contracts/.env.example ./host-contracts/.env
-      - run: npm --prefix ./host-contracts ci --include=optional
+      - run: npm --workspace=host-contracts ci --include=optional
       - run: "cd host-contracts && npm install && npm run deploy:emptyProxies && npx hardhat compile"
         env:
           HARDHAT_NETWORK: hardhat
