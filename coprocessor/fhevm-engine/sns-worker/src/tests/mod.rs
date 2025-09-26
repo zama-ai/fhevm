@@ -408,7 +408,9 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
 
     let token = db_instance.parent_token.child_token();
     let config = conf.clone();
-    let (client_key, _) = fetch_keys(&pool, &TENANT_API_KEY.to_owned()).await?;
+    let Some((client_key, _)) = fetch_keys(&pool, &TENANT_API_KEY.to_owned()).await? else {
+        panic!("Client key should be available in the test database");
+    };
 
     tokio::spawn(async move {
         crate::run_all(config, token)

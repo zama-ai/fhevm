@@ -16,22 +16,24 @@ pub(crate) async fn fetch_keyset(
     cache: &Arc<RwLock<lru::LruCache<String, KeySet>>>,
     pool: &PgPool,
     tenant_api_key: &String,
-) -> Result<KeySet, ExecutionError> {
+) -> Result<Option<KeySet>, ExecutionError> {
     let mut cache = cache.write().await;
     if let Some(keys) = cache.get(tenant_api_key) {
         info!(tenant_api_key, "Cache hit");
-        return Ok(keys.clone());
+        return Ok(Some(keys.clone()));
     }
 
     info!(tenant_api_key, "Cache miss");
-    let (client_key, server_key) = fetch_keys(pool, tenant_api_key).await?;
+    let Some((client_key, server_key)) = fetch_keys(pool, tenant_api_key).await? else {
+        return Ok(None);
+    };
     let key_set: KeySet = KeySet {
         client_key,
         server_key,
     };
 
     cache.push(tenant_api_key.clone(), key_set.clone());
-    Ok(key_set)
+    Ok(Some(key_set))
 }
 
 /// Retrieve both the ClientKey and ServerKey from the tenants table
@@ -44,7 +46,7 @@ pub(crate) async fn fetch_keyset(
 pub async fn fetch_keys(
     pool: &PgPool,
     tenant_api_key: &String,
-) -> anyhow::Result<(Option<tfhe::ClientKey>, tfhe::ServerKey)> {
+) -> anyhow::Result<Option<(Option<tfhe::ClientKey>, tfhe::ServerKey)>> {
     let blob = read_keys_from_large_object(
         pool,
         tenant_api_key,
@@ -53,6 +55,9 @@ pub async fn fetch_keys(
     )
     .await?;
     info!(bytes_len = blob.len(), "Retrieved sns_pk");
+    if blob.is_empty() {
+        return Ok(None);
+    }
 
     let server_key: tfhe::ServerKey = safe_deserialize_sns_key(&blob)?;
 
@@ -70,9 +75,9 @@ pub async fn fetch_keys(
         if !cks.is_empty() {
             info!(bytes_len = cks.len(), "Retrieved cks");
             let client_key: tfhe::ClientKey = safe_deserialize_sns_key(&cks)?;
-            return Ok((Some(client_key), server_key));
+            return Ok(Some((Some(client_key), server_key)));
         }
     }
 
-    Ok((None, server_key))
+    Ok(Some((None, server_key)))
 }

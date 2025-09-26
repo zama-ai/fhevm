@@ -7,6 +7,8 @@ services:
       dockerfile: kms-connector/connector-db/Dockerfile
     env_file:
       - ../env/staging/.env.connector.local
+    networks:
+      fhevm_default:
 
   kms-connector-gw-listener:
     container_name: kms-connector-gw-listener
@@ -23,6 +25,8 @@ services:
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
+    networks:
+      fhevm_default:
 
   kms-connector-kms-worker:
     container_name: kms-connector-kms-worker
@@ -39,6 +43,8 @@ services:
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
+    networks:
+      fhevm_default:
 
   kms-connector-tx-sender:
     container_name: kms-connector-tx-sender
@@ -55,6 +61,13 @@ services:
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
+    networks:
+      fhevm_default:
+
 
 volumes:
   kms-connector-db:
+
+networks:
+  fhevm_default:
+    external: true
