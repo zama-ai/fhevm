@@ -178,3 +178,5 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+## Community Contributions
+- ariel841005 reported a potential FHE.sub overflow issue in ConfidentialERC20 (issue #897, Sep 2025).
