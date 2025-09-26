@@ -282,6 +282,14 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     }
 
     /**
+     * @notice Getter function for the PauserSet contract address.
+     * @return pauserSetAddress Address of the PauserSet contract.
+     */
+    function getPauserSetAddress() public view virtual returns (address) {
+        return address(PAUSER_SET);
+    }
+
+    /**
      * @notice Returns whether the account is allowed to use the `handle`, either due to
      * allowTransient() or allow().
      * @param handle Handle.
