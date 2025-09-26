@@ -12,6 +12,7 @@ import * as path from 'path';
 
 import CustomProvider from './CustomProvider';
 import './tasks/accounts';
+import './tasks/addPausers';
 import './tasks/taskDeploy';
 import './tasks/taskUtils';
 
@@ -58,6 +59,7 @@ task('test', async (_taskArgs, hre, runSuper) => {
   // Run modified test task
   if (hre.network.name === 'hardhat') {
     await hre.run('task:deployAllHostContracts');
+    await hre.run('task:addPausers', { useInternalPauserSetAddress: true });
   }
 
   await runSuper();

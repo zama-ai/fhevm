@@ -16,6 +16,8 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   // Compile and deploy all host empty proxy contracts
   await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxy' });
   await hre.run('task:deployEmptyUUPSProxies');
+  await hre.run('compile:specific', { contract: 'fhevmTemp/contracts/immutable' });
+  await hre.run('task:deployPauserSet');
 
   // Compile and deploy all host contracts
   await hre.run('compile:specific', { contract: 'examples' });
@@ -29,6 +31,48 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
 
   console.info('Contract deployment done!');
 });
+
+// Deploy the PauserSet contract
+task('task:deployPauserSet').setAction(async function (_, hre) {
+  // Get a deployer wallet
+  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+
+  console.log('Deploying PauserSet...');
+  const pauserSetFactory = await hre.ethers.getContractFactory('PauserSet', deployer);
+  const pauserSet = await pauserSetFactory.deploy();
+  const pauserSetAddress = await pauserSet.getAddress();
+
+  await hre.run('task:setPauserSetAddress', {
+    address: pauserSetAddress,
+  });
+});
+
+task('task:setPauserSetAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.host');
+    const content = `PAUSER_SET_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      console.log(`PauserSet address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      console.error('Failed to write PauserSet address:', err);
+    }
+
+    const solidityTemplate = `
+address constant pauserSetAdd = ${taskArguments.address};\n`;
+
+    try {
+      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
+        encoding: 'utf8',
+        flag: 'a',
+      });
+      console.log('./fhevmTemp/addresses/FHEVMHostAddresses.sol appended with hcuLimitAdd successfully!');
+    } catch (error) {
+      console.error('Failed to write ./fhevmTemp/addresses/FHEVMHostAddresses.sol', error);
+    }
+  });
 
 async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
   console.info('Deploying an EmptyUUPS proxy contract...');
