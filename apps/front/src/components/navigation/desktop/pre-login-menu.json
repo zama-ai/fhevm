@@ -1,4 +1,1 @@
-[
-  { "path": "/plans", "label": "Plans"},
-  { "path": "/setup", "label": "Setup"}
-]
+[{ "path": "/plans", "label": "Plans" }]

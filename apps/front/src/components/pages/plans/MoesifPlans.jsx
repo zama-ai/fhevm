@@ -61,18 +61,6 @@ function MoesifPlans() {
     <div className="page-layout__content">
       <div className="plans-title-section">
         <h3 className="plans-title">API Products and Plans</h3>
-        <div className="plans-hint">
-          <div>
-            Developers: See README.md file in{" "}
-            <a href="https://github.com/Moesif/moesif-developer-portal">
-              this repo
-            </a>{" "}
-            for setup instructions
-          </div>
-          <div>
-            Or, jump to <Link to={"/setup"}>setup</Link> page to get started
-          </div>
-        </div>
       </div>
       {error && <p>Error loading plans</p>}
       {!loading && !error && (!plans || plans.length === 0) && <NoPriceFound />}
@@ -81,7 +69,7 @@ function MoesifPlans() {
           plans
             .filter((plan) => plan.status === "active")
             .map((plan) =>
-              plan?.prices?.map((price) => (
+              plan?.prices?.filter(price => price.currency === 'USD').map((price) => (
                 <PriceTile
                   key={`${plan.id}${price.id}`}
                   plan={plan}

@@ -17,7 +17,7 @@ function Login() {
   return (
     <PageLayout>
       <div className="login-page">
-        <h1>Welcome to Your Custom Dev Portal!</h1>
+        <h1>Welcome to Zama Developer Platform</h1>
         <h2>
           <SignupButton isLink /> or <LoginButton isLink /> to get started.
         </h2>

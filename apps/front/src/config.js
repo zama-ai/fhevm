@@ -24,6 +24,14 @@ const config = {
       window.VITE_CONFIG?.REACT_APP_STRIPE_MANAGEMENT_URL ||
       import.meta.env.REACT_APP_STRIPE_MANAGEMENT_URL,
   },
+  links: {
+    zama: 'https://zama.ai',
+    termsAndConditions: "https://zama.ai/terms-and-conditions",
+    privacyPolicy: "https://zama.ai/privacy-policy",
+    docs: {
+      relayerSdk: 'https://docs.zama.ai/protocol/relayer-sdk-guides'
+    }
+  }
 };
 
 export default config;

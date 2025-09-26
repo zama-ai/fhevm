@@ -46,7 +46,7 @@ function Subscription() {
             actions={
               <>
                 <a
-                  href="https://www.moesif.com/docs/product-catalog/"
+                  href={config.links.docs.relayerSdk}
                   target="_blank"
                   rel="noreferrer noopener"
                 >
@@ -69,12 +69,6 @@ function Subscription() {
           ))}
         </div>
       )}
-      <p className="text-muted">
-        Newly created subscriptions may take up to 10 to 15 minutes to sync. For
-        developers, if you want subscriptions to sync faster, you can locally
-        cache the subscription in your system. In this example project, there is
-        no local database or storage.
-      </p>
     </>
   );
 }

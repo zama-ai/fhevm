@@ -8,6 +8,8 @@ import useAuth from "../../../hooks/useAuth";
 import { moesifIdentifyUserFrontEndIfPossible } from "../../../common/utils";
 import { PageLoader } from "../../page-loader";
 import config from "../../../config";
+import usePlans from "../../../hooks/usePlans";
+import { useMemo } from "react";
 
 // used on embedded checkout example code:
 // https://docs.stripe.com/checkout/embedded/quickstart
@@ -18,7 +20,6 @@ import config from "../../../config";
 function registerPurchaseStripe({
   sessionId,
   idToken,
-  setCustomerEmail,
   setStatus,
   setLoading,
   setProvisionError,
@@ -45,7 +46,6 @@ function registerPurchaseStripe({
       })
       .then((data) => {
         setStatus(data.status);
-        setCustomerEmail(data.customer_email);
       })
       .catch((err) => {
         setProvisionError(err);
@@ -59,58 +59,9 @@ function registerPurchaseStripe({
   }
 }
 
-function registerPurchaseCustom({
-  planId,
-  priceId,
-  idToken,
-  user,
-  setCustomerEmail,
-  setStatus,
-  setLoading,
-  setProvisionError,
-}) {
-  setLoading(true);
-
-  fetch(`${config.devPortalApiServer}/register/custom`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${idToken}`,
-    },
-    body: JSON.stringify({
-      plan_id: planId,
-      price_id: priceId,
-      // session_id:
-      // you may have a some sort of session id or checkout id from your payment provider that you can
-      // use to verify purchase on the backend.
-    }),
-  })
-    .then(async (res) => {
-      if (!res.ok) {
-        const errorBody = await res.json();
-        throw new Error(
-          `Failed provision: ${res.status}, body: ${JSON.stringify(errorBody)}`
-        );
-      }
-      return res.json();
-    })
-    .then(() => {
-      setStatus("complete");
-      setCustomerEmail(user?.email);
-    })
-    .catch((err) => {
-      setProvisionError(err);
-    })
-    .finally(() => {
-      setLoading(false);
-      moesifIdentifyUserFrontEndIfPossible(idToken, user);
-    });
-}
-
 function Return() {
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [customerEmail, setCustomerEmail] = useState("");
   const [provisionError, setProvisionError] = useState(null);
   const { idToken, user } = useAuth();
 
@@ -120,40 +71,29 @@ function Return() {
   const priceId = urlParams.get("price_id");
   const planId = urlParams.get("plan_id");
 
-  const isCustom = config.paymentProvider === "custom";
+  const {plans} = usePlans()
+  const planName = useMemo(() => 
+    plans?.find(p => p.id === planId)?.name || "selected"
+  , [plans, planId])
 
   useEffect(() => {
     window.moesif?.track(
-      isCustom ? "custom-checkout-returned" : "stripe-checkout-returned",
+      "stripe-checkout-returned",
       {
         stripe_session_id: sessionId,
         price_id: priceId,
         status,
       }
     );
-    if (isCustom && idToken) {
-      registerPurchaseCustom({
-        planId,
-        priceId,
-        sessionId,
-        idToken,
-        user,
-        setCustomerEmail,
-        setStatus,
-        setLoading,
-        setProvisionError,
-      });
-    } else {
       registerPurchaseStripe({
         sessionId,
         idToken,
-        setCustomerEmail,
         setStatus,
         setLoading,
         setProvisionError,
       });
-    }
-  }, [sessionId, idToken, isCustom, status, user, priceId, planId]);
+
+  }, [sessionId, idToken, status, user, priceId, planId]);
 
   if (status === "open") {
     return <Navigate to={`/checkout?price_id_to_purchase=${priceId}`} />;
@@ -161,18 +101,18 @@ function Return() {
 
   // for stripe sessionId is required, but if isCustom, for developers you may have to determine
   // what is considered success.
-  if (status === "complete" && (sessionId || isCustom)) {
+  if (status === "complete" && sessionId) {
     return (
       <PageLayout>
         <h1>Subscribe</h1>
         <NoticeBox
           iconSrc={noPriceIcon}
           title="Success"
-          description={`You are now subscribed to the plan and price. An email should be sent to ${customerEmail}`}
+          description={`You are now subscribed to the ${planName} plan.`}
           actions={
             <>
               <a
-                href="https://www.moesif.com/docs/developer-portal/"
+                href={config.links.docs.relayerSdk}
                 target="_blank"
                 rel="noreferrer noopener"
               >
@@ -209,7 +149,7 @@ function Return() {
         actions={
           <>
             <a
-              href="https://www.moesif.com/docs/developer-portal/"
+              href={config.links.docs.relayerSdk}
               target="_blank"
               rel="noreferrer noopener"
             >

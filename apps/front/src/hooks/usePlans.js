@@ -1,35 +1,25 @@
-import { useState, useEffect } from "react";
 import config from "../config";
+import { useQuery } from "@tanstack/react-query";
 
-// This is set up as a hook so that
-// in case other pages need subscription info
-// it can also be reused.
 export default function usePlans() {
-  const [error, setError] = useState();
-  const [loading, setLoading] = useState(true);
-  const [plans, setPlans] = useState(null);
-
-  useEffect(() => {
-    fetch(`${config.devPortalApiServer}/plans`)
-      .then((res) => res.json())
-      .then((result) => {
-        const loadedPlans = result?.hits || [];
-        const activePlans = loadedPlans.filter(
-          (item) => item.status === "active"
-        );
-        setPlans(activePlans);
-        setLoading(false);
+  const {data, error, isLoading} = useQuery({ queryKey: ['plans'],
+    queryFn: async () => {
+      const response = await fetch(`${config.devPortalApiServer}/plans`);
+      if (!response.ok) {
+        console.error(`Failed to fetch plans. Status: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch plans: ${response.status} ${response.statusText}`);
+      }
+      const result = await response.json();
+      return (result?.hits || []).filter(function(item) {
+        return item.status === 'active'
       })
-      .catch((err) => {
-        console.log("failed to load plans", err);
-        setLoading(false);
-        setError(err);
-      });
-  }, []);
+    }
+  })
 
-  return {
+  return { 
+    plans: data,
+    plansLoading: isLoading,
     plansError: error,
-    plansLoading: loading,
-    plans,
-  };
+  }
 }
+

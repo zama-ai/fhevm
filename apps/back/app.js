@@ -1,12 +1,9 @@
 const express = require("express");
 const path = require("path");
 require("dotenv").config({ path: [".env", ".env.template"] });
-const rateLimit = require("express-rate-limit");
 const bodyParser = require("body-parser");
 const moesif = require("moesif-nodejs");
 const cors = require("cors");
-const fetch = require("node-fetch");
-const { Client } = require("@okta/okta-sdk-nodejs");
 
 const {
   verifyStripeSession,
@@ -70,11 +67,6 @@ app.use(moesifMiddleware, cors());
 
 app.post(
   "/create-stripe-checkout-session",
-  rateLimit({
-    windowMs: 1 * 60 * 1000, // 1 minute
-    max: 10, // Limit each IP/user to 10 requests per windowMs
-    message: "Too many checkout session requests, please try again later.",
-  }),
   authMiddleware,
   async (req, res) => {
     const priceId = req.query?.price_id;
@@ -175,88 +167,12 @@ app.get(
   }
 );
 
-app.post("/okta/register", jsonParser, async (req, res) => {
-  try {
-    const oktaClient = new Client({
-      orgUrl: process.env.OKTA_DOMAIN,
-      token: process.env.OKTA_API_TOKEN,
-    });
-
-    const { firstName, lastName, email, password } = req.body;
-
-    const newUser = {
-      profile: {
-        firstName,
-        lastName,
-        email,
-        login: email,
-      },
-      credentials: {
-        password: {
-          value: password,
-        },
-      },
-    };
-
-    const response = await fetch(`${process.env.OKTA_DOMAIN}/api/v1/users`, {
-      method: "POST",
-      headers: {
-        Authorization: `SSWS ${process.env.OKTA_API_TOKEN}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(newUser),
-    });
-
-    if (!response.ok) {
-      throw new Error("Failed to create user");
-    }
-
-    const createdUser = await response.json();
-
-    res
-      .status(201)
-      .json({ message: "User created successfully", user: createdUser });
-
-    try {
-      console.log(
-        `URL = ${process.env.OKTA_DOMAIN}/api/v1/apps/${process.env.OKTA_APPLICATION_ID}/users/${createdUser.id}`
-      );
-      const assignUserResponse = await fetch(
-        `${process.env.OKTA_DOMAIN}/api/v1/apps/${process.env.OKTA_APPLICATION_ID}/users/${createdUser.id}`,
-        {
-          method: "PUT",
-          headers: {
-            Authorization: `SSWS ${process.env.OKTA_API_TOKEN}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!assignUserResponse.ok) {
-        throw new Error("Failed to assign user to application");
-      }
-      console.log("User assigned to application successfully.");
-    } catch (error) {
-      console.error("Failed to assign user to application:", error.message);
-    }
-  } catch (error) {
-    console.error("Error creating user:", error);
-    res.status(500).json({ message: "Failed to create user" });
-  }
-});
-
 // This handles Provision after user success checked out from Stripe
 // - syncing the Stripe ids to Moesif.
 // - creates customers to API Management platform if need.
 // - Please see DATA-MODEL.md see the assumptions and background on data mapping.
 app.post(
   "/register/stripe/:checkout_session_id",
-  rateLimit({
-    windowMs: 5 * 60 * 1000, // 5 minutes
-    max: 5, // limit each IP to 5 requests per windowMs
-    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  }),
   authMiddleware,
   function (req, res) {
     const checkout_session_id = req.params.checkout_session_id;
@@ -331,12 +247,6 @@ app.post(
 // - provision the by calling API gateway plugin.
 app.post(
   "/register/custom",
-  rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: 5,
-    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  }),
   authMiddleware,
   jsonParser,
   async function (req, res) {
@@ -387,11 +297,6 @@ app.post(
 
 app.get(
   "/stripe/customer",
-  rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
-    message: "Too many requests, please try again later.",
-  }),
   authMiddleware,
   function (req, res) {
     const email = req.user?.email;
@@ -415,13 +320,6 @@ app.get(
 
 app.post(
   "/create-key",
-  rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: 5, // limit each IP to 5 requests per windowMs
-    message: {
-      message: "Too many requests to create API key, please try again later.",
-    },
-  }),
   authMiddleware,
   jsonParser,
   async function (req, res) {
@@ -450,12 +348,6 @@ app.post(
 
 app.get(
   "/embed-charts(/:authUserId)",
-  rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per windowMs
-    standardHeaders: true, // Return rate limit info in the headers
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  }),
   authMiddleware,
   async function (req, res) {
     // if authMiddleware is enabled, the data for user should come from the auth data.

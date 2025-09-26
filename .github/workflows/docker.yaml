@@ -157,7 +157,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-          token: ${{ secrets.RELAYER_TOKEN }}
+          token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
           submodules: recursive
 
       - name: Install pnpm
@@ -255,7 +255,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-          token: ${{ secrets.RELAYER_TOKEN }}
+          token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
           submodules: recursive
       - name: Install pnpm
         uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
@@ -269,7 +269,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ secrets.BOT_USERNAME }}
-          password: ${{ secrets.RELAYER_TOKEN }}
+          password: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
       - name: Test
         run: |
           DOCKER_TAG=$(git rev-parse --short "$GITHUB_SHA")

@@ -2,20 +2,18 @@ import isNil from "lodash/isNil";
 
 import config from "../config";
 
-export function formatPrice(priceInDecimal = 0) {
+export function formatPrice(priceInDecimal = 0, currency = 'USD') {
   if (isNil(priceInDecimal)) {
     return "";
   }
 
-  const priceInDollars = Number(priceInDecimal) / 100;
-
   // Format the price as a currency string with up to 10 decimal places
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
+    currency,
     minimumFractionDigits: 0, // Minimum number of decimal places
     maximumFractionDigits: 10, // Maximum number of decimal places
-  }).format(priceInDollars);
+  }).format(priceInDecimal);
 }
 
 export function formatPeriod(periodUnits, _period) {

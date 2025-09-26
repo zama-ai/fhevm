@@ -1,5 +1,6 @@
 import noPriceIcon from "../../../images/icons/empty-state-price.svg";
 import NoticeBox from "../../notice-box";
+import config from "../../../config";
 
 function NoPriceFound() {
   return (
@@ -31,7 +32,7 @@ function NoPriceFound() {
       actions={
         <>
           <a
-            href="https://www.moesif.com/docs/product-catalog/"
+            href={config.links.docs.relayerSdk}
             target="_blank"
             rel="noreferrer noopener"
           >

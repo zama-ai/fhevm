@@ -167,28 +167,27 @@ function PriceTile(props) {
         <div className="price-name">
           {price?.name || plan?.name || "Place Holder Plan"}
         </div>
+        <div className="plan--description">
+          {plan.description}
+        </div>
         {price.tiers ? (
           <TierTable tiers={price.tiers} />
         ) : (
           <div className="single-price">
             <div>
               <span className="single-price--price">
-                {formatPrice(price.price_in_decimal)}
+                {formatPrice(price.price_in_decimal, price.currency)}
               </span>{" "}
               <span className="single-price--unit">
                 {price.pricing_model === "per_unit"
                   ? `/${plan?.unit || "unit"}`
-                  : "flat fee"}
+                  : formatPeriod(price.period_units, price.period)}
               </span>
             </div>
           </div>
         )}
       </div>
       <div className="plan--bottom">
-        <div className="plan-period">
-          {formatPeriod(price.period_units, price.period)}{" "}
-          {plan?.name && `- ${plan?.name}`}
-        </div>
         {actionButton}
       </div>
     </div>
@@ -200,6 +199,7 @@ PriceTile.propTypes = {
     id: PropTypes.string.isRequired,
     name: PropTypes.string,
     price_in_decimal: PropTypes.string.isRequired,
+    currency: PropTypes.string,
     pricing_model: PropTypes.oneOf(["per_unit", "flat", "tiered", "volume"])
       .isRequired,
     period: PropTypes.number.isRequired,
@@ -217,6 +217,7 @@ PriceTile.propTypes = {
     id: PropTypes.string.isRequired,
     name: PropTypes.string,
     unit: PropTypes.string,
+    description: PropTypes.string,
   }),
   actionButton: PropTypes.node,
   subscriptionPeriod: PropTypes.string,

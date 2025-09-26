@@ -6,6 +6,7 @@ import NoticeBox from "../../notice-box";
 import dashIcon from "../../../images/icons/bar-chart.svg";
 import useAuth from "../../../hooks/useAuth";
 import fetchEmbedChartUrls from "./fetchEmbedChartUrls";
+import config from "../../../config";
 
 const Dashboard = () => {
   const { user, isLoading, idToken, userEmail } = useAuth();
@@ -45,25 +46,6 @@ const Dashboard = () => {
   return (
     <PageLayout>
       <h1>My Dashboards</h1>
-      <p>
-        Please see{" "}
-        <a
-          className="button__link"
-          target="_blank"
-          href="https://www.moesif.com/docs/embedded-templates/"
-        >
-          Moesif Embedded Metric
-        </a>{" "}
-        docs to for details regarding configuration,{" "}
-        <a
-          className="button__link"
-          target="_blank"
-          href="https://www.moesif.com/docs/embedded-templates/creating-and-using-templates/#display-options"
-        >
-          display options
-        </a>
-        , and setup instructions.
-      </p>
       {!error && (
         <MoesifEmbeddedTemplate embedTemplateUrls={embedTemplateUrls || []} />
       )}
@@ -89,9 +71,9 @@ const Dashboard = () => {
               </a>
               <a
                 target="_blank"
-                href="https://www.moesif.com/docs/developer-portal/configuring-the-dashboard/"
+                href={config.links.docs.relayerSdk}
               >
-                <button className="button">Dev Portal Docs</button>
+                <button className="button">Relayer SDK</button>
               </a>
             </>
           }

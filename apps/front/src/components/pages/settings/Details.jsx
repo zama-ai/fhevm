@@ -4,6 +4,7 @@ import PropTypes from "prop-types";
 import { PageLoader } from "../../page-loader";
 import NoticeBox from "../../notice-box";
 import profileIcon from "../../../images/icons/user.svg";
+import config from "../../../config";
 
 function Details(props) {
   const {
@@ -56,19 +57,19 @@ function Details(props) {
             actions={
               <>
                 <a
-                  href="https://www.moesif.com/docs/developer-portal/developer-portal-overview/"
+                  href={config.links.docs.relayerSdk}
                   target="_blank"
                   rel="noreferrer noopener"
                 >
                   <button className="button button__link">See Docs</button>
                 </a>
                 <a
-                  href="https://www.moesif.com"
+                  href={config.links.zama}
                   target="_blank"
                   rel="noreferrer noopener"
                 >
                   <button className="button button--outline-secondary">
-                    Go to Moesif
+                    Go to Zama
                   </button>
                 </a>
               </>

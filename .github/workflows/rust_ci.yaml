@@ -5,7 +5,7 @@ name: rust-ci
 on:
   workflow_call:
     secrets:
-      RELAYER_TOKEN:
+      DEVELOPER_PLATFORM_ACTIONS_TOKEN:
         required: true
       BOT_USERNAME:
         required: true
@@ -27,13 +27,13 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ secrets.BOT_USERNAME }}
-          password: ${{ secrets.RELAYER_TOKEN }}
+          password: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
 
       - name: Checkout Project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
-          token: ${{ secrets.RELAYER_TOKEN }}
+          token: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
           submodules: recursive
 
       - name: Setup Rust

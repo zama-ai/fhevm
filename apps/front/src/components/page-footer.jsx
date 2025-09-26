@@ -1,3 +1,5 @@
+import config from "../config";
+
 export const PageFooter = () => {
   return (
     <footer className="page-footer">
@@ -6,30 +8,30 @@ export const PageFooter = () => {
           <div className="page-footer-info__message">
             <a
               className="btn"
-              href="https://github.com/Moesif/moesif-developer-portal"
+              href={config.links.zama}
               target="_blank"
               rel="noopener noreferrer"
             >
-              Github Repo
+              © 2025 Zama SAS
             </a>
           </div>
           <div className="page-footer-info__button">
             <a
               className="button button__link"
-              href="https://www.moesif.com"
+              href={config.links.termsAndConditions}
               target="_blank"
               rel="noopener noreferrer"
             >
-              Moesif
+              Terms & Conditions
             </a>{" "}
             <a
               className="button button__link"
-              href="https://www.moesif.com/docs/developer-portal/"
+              href={config.links.privacyPolicy}
               target="_blank"
               rel="noopener noreferrer"
               style={{ marginLeft: "40px" }}
             >
-              More Docs
+              Privacy Policy
             </a>
           </div>
         </div>

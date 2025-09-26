@@ -10,10 +10,9 @@ function Home() {
     <PageLayout isHome>
       <section className="hero">
         <div className="hero-content">
-          <h1>My Dev Portal</h1>
+          <h1>Zama Developer Platform</h1>
           <p>
-            Welcome to your custom developer portal. <br></br>
-            Prompt customers to the links below.
+            The Zama Developer Platform is your gateway to confidential-by-default blockchain apps<br/>Get started in minutes with secure APIs, usage analytics, and simple key management.
           </p>
 
           <div className="buttons">
