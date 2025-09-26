@@ -375,8 +375,11 @@ async fn upload_ciphertexts(
         .bind(EVENT_CIPHERTEXTS_UPLOADED)
         .execute(trx.as_mut())
         .await?;
+    
 
     trx.commit().await?;
+
+    // TODO telemetry::record_transaction_completed(&self.db_pool, &l1_transaction_id).await?;
 
     transient_error.map_or(Ok(()), Err)
 }
@@ -396,7 +399,7 @@ async fn fetch_pending_uploads(
     limit: i64,
 ) -> Result<Vec<UploadJob>, ExecutionError> {
     let rows = sqlx::query!(
-        "SELECT tenant_id, handle, ciphertext, ciphertext128, ciphertext128_format 
+        "SELECT tenant_id, handle, ciphertext, ciphertext128, ciphertext128_format, transaction_id 
         FROM ciphertext_digest 
         WHERE ciphertext IS NULL OR ciphertext128 IS NULL
         FOR UPDATE SKIP LOCKED
@@ -414,6 +417,7 @@ async fn fetch_pending_uploads(
         let ciphertext_digest = row.ciphertext;
         let ciphertext128_digest = row.ciphertext128;
         let handle = row.handle;
+        let transaction_id = row.transaction_id;
 
         // Fetch missing ciphertext
         if ciphertext_digest.is_none() {
@@ -483,7 +487,12 @@ async fn fetch_pending_uploads(
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128: Arc::new(ct128),
-                otel: telemetry::tracer_with_handle("recovery_task", handle),
+                otel: telemetry::tracer_with_handle(
+                    "recovery_task",
+                    handle,
+                    &transaction_id.clone(),
+                ),
+                transaction_id,
             };
 
             // Instruct the uploader to acquire DB lock when processing the item

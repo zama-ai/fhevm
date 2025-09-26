@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use fhevm_engine_common::telemetry;
 use std::convert::TryInto;
 
 pub(crate) fn try_into_array<const SIZE: usize>(vec: Vec<u8>) -> Result<[u8; SIZE]> {

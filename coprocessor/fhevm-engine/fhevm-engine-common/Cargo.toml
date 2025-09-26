@@ -19,7 +19,7 @@ rand = { workspace = true }
 serde = { workspace = true }
 sha3 = { workspace = true }
 strum = { workspace = true }
-sqlx = {workspace = true}
+sqlx = {workspace = true, features = ["bigdecimal"]}
 tfhe = { workspace = true }
 tonic  = { workspace = true }
 tokio = { workspace = true }
@@ -30,12 +30,14 @@ axum = { workspace = true}
 serde_json = { workspace = true}
 http = {workspace = true}
 thiserror = { workspace = true }
+prometheus = { workspace = true }
 
 
 # crates.io dependencies
 lazy_static = "1.5.0"
 rand_chacha = "0.3.1"
 futures = "0.3.31"
+once_cell = "1.21.3"
 
 # opentelemetry support
 opentelemetry = { workspace = true }

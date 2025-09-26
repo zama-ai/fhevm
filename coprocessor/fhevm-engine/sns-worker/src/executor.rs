@@ -173,7 +173,7 @@ pub(crate) async fn run_loop(
         .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
-    let t = telemetry::tracer("worker_loop_init");
+    let t = telemetry::tracer("worker_loop_init", &None);
     let s = t.child_span("fetch_keyset");
     let keys: KeySet = fetch_keyset(&keys_cache, &pool, tenant_api_key).await?;
     telemetry::end_span(s);
@@ -295,7 +295,7 @@ async fn fetch_and_execute_sns_tasks(
     if let Some(mut tasks) = query_sns_tasks(trx, conf.db.batch_limit, order).await? {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
 
-        let t = telemetry::tracer("batch_execution");
+        let t = telemetry::tracer("batch_execution", &None);
         t.set_attribute("count", tasks.len().to_string());
 
         process_tasks(
@@ -319,6 +319,12 @@ async fn fetch_and_execute_sns_tasks(
         telemetry::end_span(s);
 
         db_txn.commit().await?;
+
+        for task in tasks.iter() {
+            if let Some(transaction_id) = &task.transaction_id {
+                telemetry::record_transaction_completed(pool, &transaction_id).await?;
+            }
+        }
     } else {
         db_txn.rollback().await?;
     }
@@ -371,13 +377,15 @@ pub async fn query_sns_tasks(
             let tenant_id: i32 = record.try_get("tenant_id")?;
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
+            let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
 
             Ok(HandleItem {
                 tenant_id,
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
-                otel: telemetry::tracer_with_handle("task", handle),
+                otel: telemetry::tracer_with_handle("task", handle, &transaction_id.clone()),
+                transaction_id,
             })
         })
         .collect::<Result<Vec<_>, ExecutionError>>()?;

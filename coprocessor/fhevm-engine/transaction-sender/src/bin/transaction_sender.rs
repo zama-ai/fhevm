@@ -18,6 +18,7 @@ use transaction_sender::{
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
+use fhevm_engine_common::telemetry;
 use humantime::parse_duration;
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
@@ -168,6 +169,8 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
     };
+
+    telemetry::setup_otlp("transaction-sender").unwrap();
 
     let abstract_signer: AbstractSigner;
     match conf.signer_type {

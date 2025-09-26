@@ -208,7 +208,7 @@ impl PostgresPoolManager {
                             error!(error=%err, code=%code, "Transient DB error; retrying...");
                         } else {
                             error!(error=%db_err, code=%code, "Non-transient DB error; not retrying");
-                            return Err(err);
+                            // return Err(err);
                         }
                     }
                     ServiceError::Database(other) => {

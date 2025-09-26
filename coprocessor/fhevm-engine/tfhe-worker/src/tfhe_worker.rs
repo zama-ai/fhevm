@@ -1,5 +1,6 @@
 use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
+use fhevm_engine_common::telemetry::set_txn_id;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
@@ -110,6 +111,7 @@ async fn tfhe_worker_cycle(
         let loop_span = tracer.start("worker_iteration");
         let loop_ctx = opentelemetry::Context::current_with_span(loop_span);
         let mut s = tracer.start_with_context("acquire_connection", &loop_ctx);
+        let mut span_txns = tracer.start_with_context("transactions", &loop_ctx);
         let mut conn = pool.acquire().await?;
         s.end();
         let mut s = tracer.start_with_context("begin_transaction", &loop_ctx);
@@ -226,11 +228,13 @@ FOR UPDATE SKIP LOCKED            ",
                         .or_insert((true, vec![idx]));
                 }
             }
-            for (_, (needed, ops)) in transactions {
+            for (transaction_id, (needed, ops)) in transactions {
                 if !needed {
                     ops.iter().for_each(|idx| {
                         work_to_remove.insert(*idx);
                     });
+                } else {
+                    set_txn_id(&mut span_txns, &transaction_id);
                 }
             }
             for idx in work_to_remove.iter().rev() {
@@ -295,6 +299,7 @@ FOR UPDATE SKIP LOCKED            ",
             let mut s_schedule = tracer.start_with_context("schedule_fhe_work", &loop_ctx);
             s_schedule.set_attribute(KeyValue::new("work_items", work.len() as i64));
             s_schedule.set_attribute(KeyValue::new("tenant_id", *tenant_id as i64));
+
             // We need to ensure that no handles are missing from
             // either DB inputs or values produced within this batch
             // before this batch is scheduled.
@@ -539,6 +544,11 @@ FOR UPDATE SKIP LOCKED            ",
                                 w.output_handle.clone(),
                                 (db_bytes, (current_ciphertext_version(), *db_type)),
                             ),
+                        ));
+
+                        s_schedule.set_attribute(KeyValue::new(
+                            "transaction_id",
+                            hex::encode(w.transaction_id.clone()),
                         ));
                         handles_to_update.push((w.output_handle.clone(), w.transaction_id.clone()));
                         // As we've completed useful computation on an

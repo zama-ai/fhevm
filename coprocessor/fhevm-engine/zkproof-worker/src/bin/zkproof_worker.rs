@@ -104,13 +104,12 @@ async fn main() {
         anyhow::Ok(())
     });
 
-    let service_task = async {
-        info!("Starting worker...");
+    let service_task = task::spawn(async move {
         if let Err(err) = service.run().await {
             error!(error = %err, "Worker failed");
         }
         Ok::<_, anyhow::Error>(())
-    };
+    });
 
     let (_http_result, _service_result) = join!(http_task, service_task);
 }

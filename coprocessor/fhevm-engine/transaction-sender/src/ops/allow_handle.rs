@@ -23,7 +23,9 @@ use alloy::{
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{tenant_keys::query_tenant_info, types::AllowEvents, utils::compact_hex};
+use fhevm_engine_common::{
+    telemetry, tenant_keys::query_tenant_info, types::AllowEvents, utils::compact_hex,
+};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
@@ -235,6 +237,23 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         )
         .execute(&self.db_pool)
         .await?;
+
+        let l1_transaction_id = sqlx::query!(
+            "SELECT transaction_id FROM allowed_handles
+                 WHERE handle = $1
+                 AND account_address = $2
+                 AND tenant_id = $3",
+            key.handle,
+            key.account_addr,
+            key.tenant_id
+        )
+        .fetch_one(&self.db_pool)
+        .await?
+        .transaction_id
+        .unwrap_or_default();
+
+        telemetry::record_transaction_completed(&self.db_pool, &l1_transaction_id).await?;
+
         Ok(())
     }
 }
@@ -360,7 +379,7 @@ where
     async fn execute(&self) -> anyhow::Result<bool> {
         let rows = sqlx::query!(
             "
-            SELECT handle, tenant_id, account_address, event_type, txn_limited_retries_count, txn_unlimited_retries_count
+            SELECT handle, tenant_id, account_address, event_type, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
             FROM allowed_handles 
             WHERE txn_is_sent = false 
             AND txn_limited_retries_count < $1
@@ -376,10 +395,17 @@ where
 
         info!(rows_count = rows.len(), "Selected rows to process");
 
+        // Keep track of all the tracers we create to ensure they are not dropped until the end of the join_set.
+        let mut tracers = vec![];
+
         let maybe_has_more_work = rows.len() == self.conf.allow_handle_batch_limit as usize;
 
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
+            let transaction_id = row.transaction_id.clone();
+            let t = telemetry::tracer("call_allow_account_l2", &transaction_id);
+            tracers.push(t);
+
             let tenant = match query_tenant_info(&self.db_pool, row.tenant_id).await {
                 Ok(res) => res,
                 Err(_) => {

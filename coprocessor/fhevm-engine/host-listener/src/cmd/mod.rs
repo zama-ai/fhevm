@@ -5,6 +5,7 @@ use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Log};
 use alloy::sol_types::SolEventInterface;
 use anyhow::{anyhow, Result};
+use fhevm_engine_common::telemetry;
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 use std::collections::VecDeque;
@@ -22,7 +23,7 @@ use tokio_util::sync::CancellationToken;
 
 use fhevm_engine_common::healthz_server::HttpServer as HealthHttpServer;
 use fhevm_engine_common::types::BlockchainProvider;
-use fhevm_engine_common::utils::HeartBeat;
+use fhevm_engine_common::utils::{compact_hex, HeartBeat};
 
 use crate::contracts::{AclContract, TfheContract};
 use crate::database::tfhe_event_propagate::{ChainId, Database};
@@ -894,7 +895,21 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             if let Ok(event) =
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
-                info!(tfhe_event = ?event, "TFHE event");
+                let transaction_id = log
+                    .transaction_hash
+                    .map(|h| h.to_vec())
+                    .unwrap_or_default();
+
+                let pool = db.pool.read().await.clone();
+                let _ = telemetry::record_txn_created(
+                    &pool,
+                    &transaction_id,
+                    1,
+                    log.block_number.unwrap_or_default(),
+                )
+                .await;
+
+                info!(tfhe_event = ?event, transaction_id = ?compact_hex(&transaction_id), "TFHE event");
                 let log = Log {
                     inner: event,
                     block_hash: log.block_hash,
@@ -918,8 +933,21 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
-                info!(acl_event = ?event, "ACL event");
-                let _ = db.handle_acl_event(&event).await;
+                let transaction_id = log.transaction_hash.map(|h| h.to_vec());
+
+                if let Some(txn_id) = &transaction_id {
+                    let pool = db.pool.read().await.clone();
+                    let _ = telemetry::record_txn_created(
+                        &pool,
+                        txn_id,
+                        1,
+                        log.block_number.unwrap_or_default(),
+                    )
+                    .await;
+                }
+
+                info!(acl_event = ?event, transaction_id = ?compact_hex(&transaction_id.clone().unwrap_or_default()), "ACL event");
+                let _ = db.handle_acl_event(&event, transaction_id).await;
                 continue;
             }
         }

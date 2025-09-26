@@ -2,6 +2,7 @@ use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::{compact_hex, HeartBeat};
@@ -482,23 +483,38 @@ impl Database {
     pub async fn handle_acl_event(
         &mut self,
         event: &Log<AclContractEvents>,
+        transaction_id: Option<Vec<u8>>,
     ) -> Result<(), SqlxError> {
         let data = &event.data;
 
         match data {
             AclContractEvents::Allowed(allowed) => {
+                let _t = telemetry::tracer_with_handle(
+                    "handle_acl_event_allowed",
+                    vec![],
+                    &transaction_id,
+                );
+
                 let handle = allowed.handle.to_vec();
 
                 self.insert_allowed_handle(
                     handle.clone(),
                     allowed.account.to_string(),
                     AllowEvents::AllowedAccount,
+                    transaction_id.clone(),
                 )
                 .await?;
 
-                self.insert_pbs_computations(&vec![handle]).await?;
+                self.insert_pbs_computations(&vec![handle], transaction_id)
+                    .await?;
             }
             AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
+                let _t = telemetry::tracer_with_handle(
+                    "handle_acl_event_allowed_for_decryption",
+                    vec![],
+                    &transaction_id,
+                );
+
                 let handles = allowed_for_decryption
                     .handlesList
                     .iter()
@@ -515,11 +531,13 @@ impl Database {
                         handle,
                         "".to_string(),
                         AllowEvents::AllowedForDecryption,
+                        transaction_id.clone(),
                     )
                     .await?;
                 }
 
-                self.insert_pbs_computations(&handles).await?;
+                self.insert_pbs_computations(&handles, transaction_id)
+                    .await?;
             }
             AclContractEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
@@ -584,15 +602,17 @@ impl Database {
     pub async fn insert_pbs_computations(
         &mut self,
         handles: &Vec<Vec<u8>>,
+        transaction_id: Option<Vec<u8>>,
     ) -> Result<(), SqlxError> {
         let tenant_id = self.tenant_id;
         for handle in handles {
             let query = || {
                 sqlx::query!(
-                    "INSERT INTO pbs_computations(tenant_id, handle) VALUES($1, $2) 
+                    "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3) 
                          ON CONFLICT DO NOTHING;",
                     tenant_id,
                     handle,
+                    transaction_id
                 )
             };
             let mut retry_count = 0;
@@ -621,17 +641,19 @@ impl Database {
         handle: Vec<u8>,
         account_address: String,
         event_type: AllowEvents,
+        transaction_id: Option<Vec<u8>>,
     ) -> Result<(), SqlxError> {
         let tenant_id = self.tenant_id;
 
         let query = || {
             sqlx::query!(
-                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
                      ON CONFLICT DO NOTHING;",
                 tenant_id,
                 handle,
                 account_address,
                 event_type as i16,
+                transaction_id
             )
         };
         let mut retry_count = 0;
