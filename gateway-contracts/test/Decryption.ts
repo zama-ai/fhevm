@@ -11,7 +11,7 @@ import {
   GatewayConfig,
   IDecryption,
   KmsManagement,
-  MultichainAcl,
+  MultichainACL,
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
@@ -175,7 +175,7 @@ describe("Decryption", function () {
 
   let gatewayConfig: GatewayConfig;
   let kmsManagement: KmsManagement;
-  let multichainAcl: MultichainAcl;
+  let MultichainACL: MultichainACL;
   let ciphertextCommits: CiphertextCommits;
   let decryption: Decryption;
   let owner: Wallet;
@@ -283,12 +283,12 @@ describe("Decryption", function () {
     // Allow handles for public decryption
     async function preparePublicDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
-      const { multichainAcl, decryption, kmsSigners, coprocessorTxSenders } = fixtureData;
+      const { MultichainACL, decryption, kmsSigners, coprocessorTxSenders } = fixtureData;
 
       // Allow public decryption
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle, extraDataV0);
         }
       }
 
@@ -313,7 +313,7 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(preparePublicDecryptEIP712Fixture);
       gatewayConfig = fixtureData.gatewayConfig;
       kmsManagement = fixtureData.kmsManagement;
-      multichainAcl = fixtureData.multichainAcl;
+      MultichainACL = fixtureData.MultichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
@@ -388,7 +388,7 @@ describe("Decryption", function () {
     it("Should revert because handles are not allowed for public decryption", async function () {
       // Check that the request fails because the handles are not allowed for public decryption
       await expect(decryption.publicDecryptionRequest(newCtHandles, extraDataV0))
-        .to.be.revertedWithCustomError(multichainAcl, "PublicDecryptNotAllowed")
+        .to.be.revertedWithCustomError(MultichainACL, "PublicDecryptNotAllowed")
         .withArgs(newCtHandles[0]);
     });
 
@@ -398,7 +398,7 @@ describe("Decryption", function () {
       // have been allowed for public decryption
       for (const newCtHandle of newCtHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
         }
       }
 
@@ -474,7 +474,7 @@ describe("Decryption", function () {
             .connect(coprocessorTxSenders[i])
             .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
 
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
         }
       }
 
@@ -726,7 +726,7 @@ describe("Decryption", function () {
 
       it("Should revert because handles have not been allowed for public decryption", async function () {
         await expect(decryption.checkPublicDecryptionReady(newCtHandles, extraDataV0))
-          .to.be.revertedWithCustomError(multichainAcl, "PublicDecryptNotAllowed")
+          .to.be.revertedWithCustomError(MultichainACL, "PublicDecryptNotAllowed")
           .withArgs(newCtHandles[0]);
       });
 
@@ -736,7 +736,7 @@ describe("Decryption", function () {
         // have been allowed for public decryption
         for (const newCtHandle of newCtHandles) {
           for (let i = 0; i < coprocessorTxSenders.length; i++) {
-            await multichainAcl.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
+            await MultichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
           }
         }
 
@@ -803,13 +803,13 @@ describe("Decryption", function () {
     // Allow access the the handles for the user and the contract
     async function prepareUserDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
-      const { decryption, multichainAcl, kmsSigners, coprocessorTxSenders } = fixtureData;
+      const { decryption, MultichainACL, kmsSigners, coprocessorTxSenders } = fixtureData;
 
       // Allow user decryption for the user and contract address over all handles
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, user.address, extraDataV0);
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, user.address, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress, extraDataV0);
         }
       }
 
@@ -860,7 +860,7 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
       gatewayConfig = fixtureData.gatewayConfig;
       kmsManagement = fixtureData.kmsManagement;
-      multichainAcl = fixtureData.multichainAcl;
+      MultichainACL = fixtureData.MultichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
@@ -1193,7 +1193,7 @@ describe("Decryption", function () {
           extraDataV0,
         ),
       )
-        .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
+        .to.be.revertedWithCustomError(MultichainACL, "AccountNotAllowedToUseCiphertext")
         .withArgs(ctHandleContractPairs[0].ctHandle, fakeUserAddress);
     });
 
@@ -1209,7 +1209,7 @@ describe("Decryption", function () {
           extraDataV0,
         ),
       )
-        .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
+        .to.be.revertedWithCustomError(MultichainACL, "AccountNotAllowedToUseCiphertext")
         .withArgs(fakeContractAddressCtHandleContractPairs[0].ctHandle, fakeContractAddress);
     });
 
@@ -1218,8 +1218,8 @@ describe("Decryption", function () {
       // We need to do this because `userDecryptionRequest` first checks if the accounts have access
       // to the handle
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
+        await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
+        await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
       }
 
       await expect(
@@ -1347,8 +1347,8 @@ describe("Decryption", function () {
         await ciphertextCommits
           .connect(coprocessorTxSenders[i])
           .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
+        await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
+        await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
       }
 
       // Request user decryption with ctMaterials tied to different key IDs
@@ -1572,7 +1572,7 @@ describe("Decryption", function () {
 
       it("Should revert because the user is not allowed for user decryption on a ctHandle", async function () {
         await expect(decryption.checkUserDecryptionReady(fakeUserAddress, ctHandleContractPairs, extraDataV0))
-          .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
+          .to.be.revertedWithCustomError(MultichainACL, "AccountNotAllowedToUseCiphertext")
           .withArgs(ctHandleContractPairs[0].ctHandle, fakeUserAddress);
       });
 
@@ -1580,7 +1580,7 @@ describe("Decryption", function () {
         await expect(
           decryption.checkUserDecryptionReady(user.address, fakeContractAddressCtHandleContractPairs, extraDataV0),
         )
-          .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
+          .to.be.revertedWithCustomError(MultichainACL, "AccountNotAllowedToUseCiphertext")
           .withArgs(fakeContractAddressCtHandleContractPairs[0].ctHandle, fakeContractAddress);
       });
 
@@ -1589,8 +1589,8 @@ describe("Decryption", function () {
         // We need to do this because `checkUserDecryptionReady` first checks if the accounts
         // have access to the handle
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
         }
 
         await expect(decryption.checkUserDecryptionReady(user.address, [newCtHandleContractPair], extraDataV0))
@@ -1667,19 +1667,19 @@ describe("Decryption", function () {
     // Allow handles for user decryption
     async function prepareDelegatedUserDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
-      const { decryption, multichainAcl, kmsSigners, coprocessorTxSenders } = fixtureData;
+      const { decryption, MultichainACL, kmsSigners, coprocessorTxSenders } = fixtureData;
 
       // Allow account
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, delegatorAddress, extraDataV0);
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, delegatorAddress, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress, extraDataV0);
         }
       }
 
       // Delegate account
       for (const txSender of coprocessorTxSenders) {
-        await multichainAcl.connect(txSender).delegateAccount(hostChainId, delegationAccounts, contractsInfo.addresses);
+        await MultichainACL.connect(txSender).delegateAccount(hostChainId, delegationAccounts, contractsInfo.addresses);
       }
 
       // Create EIP712 messages
@@ -1730,7 +1730,7 @@ describe("Decryption", function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
       kmsManagement = fixtureData.kmsManagement;
-      multichainAcl = fixtureData.multichainAcl;
+      MultichainACL = fixtureData.MultichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
@@ -2073,7 +2073,7 @@ describe("Decryption", function () {
           extraDataV0,
         ),
       )
-        .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
+        .to.be.revertedWithCustomError(MultichainACL, "AccountNotAllowedToUseCiphertext")
         .withArgs(ctHandles[0], fakeDelegatorAddress);
     });
 
@@ -2089,7 +2089,7 @@ describe("Decryption", function () {
           extraDataV0,
         ),
       )
-        .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
+        .to.be.revertedWithCustomError(MultichainACL, "AccountNotAllowedToUseCiphertext")
         .withArgs(ctHandles[0], fakeContractAddress);
     });
 
@@ -2098,10 +2098,12 @@ describe("Decryption", function () {
       // The associated ciphertext material has not yet been added to the CiphertextStorage state.
       for (const newCtHandle of newCtHandles) {
         for (const coprocessorTxSender of coprocessorTxSenders) {
-          await multichainAcl
-            .connect(coprocessorTxSender)
-            .allowAccount(newCtHandle, delegationAccounts.delegatorAddress, extraDataV0);
-          await multichainAcl.connect(coprocessorTxSender).allowAccount(newCtHandle, contractAddress, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSender).allowAccount(
+            newCtHandle,
+            delegationAccounts.delegatorAddress,
+            extraDataV0,
+          );
+          await MultichainACL.connect(coprocessorTxSender).allowAccount(newCtHandle, contractAddress, extraDataV0);
         }
       }
 
@@ -2138,7 +2140,7 @@ describe("Decryption", function () {
           extraDataV0,
         ),
       )
-        .to.be.revertedWithCustomError(multichainAcl, "AccountNotDelegated")
+        .to.be.revertedWithCustomError(MultichainACL, "AccountNotDelegated")
         .withArgs(hostChainId, toValues(delegationAccounts), fakeContractAddress);
     });
 
@@ -2199,8 +2201,8 @@ describe("Decryption", function () {
         await ciphertextCommits
           .connect(coprocessorTxSenders[i])
           .addCiphertextMaterial(newCtHandle, keyId2, ciphertextDigest, snsCiphertextDigest);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, delegatorAddress, extraDataV0);
-        await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
+        await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, delegatorAddress, extraDataV0);
+        await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
       }
 
       // Request user decryption with ctMaterials tied to different key IDs
@@ -2334,9 +2336,11 @@ describe("Decryption", function () {
       it("Should revert because the delegator is not allowed for user decryption on a ctHandle", async function () {
         // Delegate the fake delegation accounts for the contract addresses
         for (const txSender of coprocessorTxSenders) {
-          await multichainAcl
-            .connect(txSender)
-            .delegateAccount(hostChainId, fakeDelegatorDelegationAccounts, contractsInfo.addresses);
+          await MultichainACL.connect(txSender).delegateAccount(
+            hostChainId,
+            fakeDelegatorDelegationAccounts,
+            contractsInfo.addresses,
+          );
         }
 
         await expect(
@@ -2348,7 +2352,7 @@ describe("Decryption", function () {
             extraDataV0,
           ),
         )
-          .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
+          .to.be.revertedWithCustomError(MultichainACL, "AccountNotAllowedToUseCiphertext")
           .withArgs(ctHandles[0], fakeDelegatorAddress);
       });
 
@@ -2362,7 +2366,7 @@ describe("Decryption", function () {
             extraDataV0,
           ),
         )
-          .to.be.revertedWithCustomError(multichainAcl, "AccountNotAllowedToUseCiphertext")
+          .to.be.revertedWithCustomError(MultichainACL, "AccountNotAllowedToUseCiphertext")
           .withArgs(fakeContractAddressCtHandleContractPairs[0].ctHandle, fakeContractAddress);
       });
 
@@ -2376,7 +2380,7 @@ describe("Decryption", function () {
             extraDataV0,
           ),
         )
-          .to.be.revertedWithCustomError(multichainAcl, "AccountNotDelegated")
+          .to.be.revertedWithCustomError(MultichainACL, "AccountNotDelegated")
           .withArgs(hostChainId, toValues(delegationAccounts), fakeContractAddress);
       });
 
@@ -2385,8 +2389,8 @@ describe("Decryption", function () {
         // We need to do this because `checkDelegatedUserDecryptionReady` first checks if the accounts
         // have access to the handle
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, delegatorAddress, extraDataV0);
-          await multichainAcl.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, delegatorAddress, extraDataV0);
+          await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
         }
 
         await expect(

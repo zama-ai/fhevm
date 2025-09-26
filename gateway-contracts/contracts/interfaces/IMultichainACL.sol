@@ -4,10 +4,10 @@ pragma solidity ^0.8.24;
 import "../shared/Structs.sol";
 
 /**
- * @title Interface for the MultichainAcl contract.
- * @notice The MultichainAcl contract aggregates ACLs from all host chains.
+ * @title Interface for the MultichainACL contract.
+ * @notice The MultichainACL contract aggregates ACLs from all host chains.
  */
-interface IMultichainAcl {
+interface IMultichainACL {
     /**
      * @notice Emitted when an account is allowed to use a ciphertext handle.
      * @param ctHandle The ciphertext handle that the account is allowed to use.

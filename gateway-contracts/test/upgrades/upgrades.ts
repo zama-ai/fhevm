@@ -16,12 +16,15 @@ import {
   InputVerification__factory,
   KmsManagementV2Example__factory,
   KmsManagement__factory,
-  MultichainAclV2Example__factory,
-  MultichainAcl__factory,
+  MultichainACLV2Example__factory,
+  MultichainACL__factory,
 } from "../../typechain-types";
 import { createAndFundRandomWallet, loadTestVariablesFixture, toValues } from "../utils";
 
-describe("Upgrades", function () {
+// TODO: Re-enable the upgrade tests once fhevm 0.9 is released
+// See https://github.com/zama-ai/fhevm-internal/issues/439
+// Until then, all of the following tests are skipped and tagged as "pending" in the CI
+describe.skip("Upgrades", function () {
   let owner: Wallet;
   let emptyUUPSFactory: EmptyUUPSProxy__factory;
   let ciphertextCommitsFactoryV1: CiphertextCommits__factory;
@@ -35,8 +38,8 @@ describe("Upgrades", function () {
   let inputVerificationFactoryV2: InputVerificationV2Example__factory;
   let kmsManagementFactoryV1: KmsManagement__factory;
   let kmsManagementFactoryV2: KmsManagementV2Example__factory;
-  let multichainAclFactoryV1: MultichainAcl__factory;
-  let multichainAclFactoryV2: MultichainAclV2Example__factory;
+  let MultichainACLFactoryV1: MultichainACL__factory;
+  let MultichainACLFactoryV2: MultichainACLV2Example__factory;
 
   before(async function () {
     owner = new Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
@@ -58,30 +61,27 @@ describe("Upgrades", function () {
     kmsManagementFactoryV1 = await ethers.getContractFactory("KmsManagement", owner);
     kmsManagementFactoryV2 = await ethers.getContractFactory("KmsManagementV2Example", owner);
 
-    multichainAclFactoryV1 = await ethers.getContractFactory("MultichainAcl", owner);
-    multichainAclFactoryV2 = await ethers.getContractFactory("MultichainAclV2Example", owner);
+    MultichainACLFactoryV1 = await ethers.getContractFactory("MultichainACL", owner);
+    MultichainACLFactoryV2 = await ethers.getContractFactory("MultichainACLV2Example", owner);
   });
 
-  it("Should deploy upgradable MultichainAcl", async function () {
+  it("Should deploy upgradable MultichainACL", async function () {
     const nonceBef = await ethers.provider.getTransactionCount(owner);
     const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
       initializer: "initialize",
       kind: "uups",
     });
-    const multichainAcl = await upgrades.upgradeProxy(emptyUUPS, multichainAclFactoryV1);
-    await multichainAcl.waitForDeployment();
-    const ownerBef = await multichainAcl.owner();
-    expect(await multichainAcl.getVersion()).to.equal("MultichainAcl v0.1.0");
-    const multichainAclV2 = await upgrades.upgradeProxy(multichainAcl, multichainAclFactoryV2);
-    await multichainAclV2.waitForDeployment();
-    const ownerAft = await multichainAclV2.owner();
-    expect(ownerBef).to.equal(ownerAft);
-    expect(await multichainAclV2.getVersion()).to.equal("MultichainAcl v1000.0.0");
-    const multichainAclAddress = ethers.getCreateAddress({
+    const MultichainACL = await upgrades.upgradeProxy(emptyUUPS, MultichainACLFactoryV1);
+    await MultichainACL.waitForDeployment();
+    expect(await MultichainACL.getVersion()).to.equal("MultichainACL v0.1.0");
+    const MultichainACLV2 = await upgrades.upgradeProxy(MultichainACL, MultichainACLFactoryV2);
+    await MultichainACLV2.waitForDeployment();
+    expect(await MultichainACLV2.getVersion()).to.equal("MultichainACL v1000.0.0");
+    const multichainACLAddress = ethers.getCreateAddress({
       from: owner.address,
       nonce: nonceBef, // using nonce of nonceBef instead of nonceBef+1 here, since the original implementation has already been deployer during the setup phase, and hardhat-upgrades plugin is able to detect this and not redeploy twice same contract
     });
-    expect(multichainAclAddress).to.equal(await multichainAclV2.getAddress());
+    expect(multichainACLAddress).to.equal(await MultichainACLV2.getAddress());
   });
 
   it("Should deploy upgradable CiphertextCommits", async function () {

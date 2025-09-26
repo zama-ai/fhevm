@@ -59,6 +59,12 @@ interface IGatewayConfig {
      */
     event AddHostChain(HostChain hostChain);
 
+    /**
+     * @notice Error indicating that the given account is not a pauser.
+     * @param account The address of the account.
+     */
+    error NotPauser(address account);
+
     /// @notice Error emitted when the KMS nodes list is empty.
     error EmptyKmsNodes();
 
