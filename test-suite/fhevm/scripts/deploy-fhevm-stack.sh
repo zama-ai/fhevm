@@ -354,7 +354,9 @@ log_info "Starting crs & keygen"
 
 cd ${SCRIPT_DIR}/../../../gateway-contracts
 
-make clean
+set -ex
+npm install nodejs
+npm install hardhat
 npm ci
 npm install
 DOTENV_CONFIG_PATH=.env.example npx hardhat  task:deployAllGatewayContracts
@@ -371,13 +373,10 @@ DOTENV_CONFIG_PATH=.env.example HARDHAT_NETWORK=staging CHAIN_ID_GATEWAY=54321 R
     --params-type ${PARAM_TYPE} \
     --use-internal-kms-management-address true
 
+sleep 5
 DOTENV_CONFIG_PATH=.env.example HARDHAT_NETWORK=staging CHAIN_ID_GATEWAY=54321 RPC_URL=http://localhost:8546 npx hardhat task:triggerKeygen \
     --params-type ${PARAM_TYPE} \
     --use-internal-kms-management-address true
 
 
-log_info "Get crs & keygen"
-
-DOTENV_CONFIG_PATH=.env.example HARDHAT_NETWORK=staging CHAIN_ID_GATEWAY=54321 RPC_URL=http://localhost:8546 npx hardhat task:getCrs
-
-DOTENV_CONFIG_PATH=.env.example HARDHAT_NETWORK=staging CHAIN_ID_GATEWAY=54321 RPC_URL=http://localhost:8546 npx hardhat task:getKey
+sleep 30
