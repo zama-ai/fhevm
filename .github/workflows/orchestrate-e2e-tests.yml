@@ -1,0 +1,144 @@
+name: orchestrate-e2e-tests
+
+on:
+  workflow_run:
+    workflows: ["trigger-all-builds"]
+    types:
+      - completed
+    branches:
+      - aw/ci/e2e-tests-orchestrator
+
+permissions: {}
+
+concurrency:
+  group: orchestrate-e2e-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  wait-for-all-builds:
+    name: orchestrate-e2e-tests/wait-for-all-builds
+    # Only proceed when the triggering workflow (trigger-all-builds) succeeded
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      actions: 'read'
+      contents: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      all-builds-complete: ${{ steps.check.outputs.all-builds-complete }}
+      image-tag: ${{ steps.check.outputs.image-tag }}
+      built-images: ${{ steps.check.outputs.built-images }}
+    steps:
+      - name: Check all builds completed
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          
+          # For workflow_run, get the results from trigger-all-builds workflow
+          commit_sha="${{ github.event.workflow_run.head_sha }}"
+          echo "image-tag=${commit_sha:0:7}" >> $GITHUB_OUTPUT
+          
+          trigger_run_id="${{ github.event.workflow_run.id }}"
+          
+          jobs_data=$(gh api "repos/${{ github.repository }}/actions/runs/${trigger_run_id}/jobs")
+          collect_job=$(echo "$jobs_data" | jq -r '.jobs[] | select(.name == "trigger-all-builds/collect-results")')
+          
+          if [[ -z "$collect_job" ]]; then
+            echo "No collect-results job found"
+            echo "all-builds-complete=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+            job_conclusion=$(echo "$collect_job" | jq -r '.conclusion')
+            if [[ "$job_conclusion" != "success" ]]; then
+              echo "collect-results job not successful (${job_conclusion})"
+              echo "all-builds-complete=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+          
+          collect_job_id=$(echo "$collect_job" | jq -r '.id')
+          gh api "repos/${{ github.repository }}/actions/jobs/${collect_job_id}/logs" > collect_logs.txt
+          
+          if grep -q "Final built images:" collect_logs.txt; then
+            json_array=$(grep "Final built images:" collect_logs.txt | tail -1 | sed 's/.*Final built images: //')
+          else
+            echo "Could not find built images line in logs"
+            echo "all-builds-complete=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          if ! echo "$json_array" | jq empty >/dev/null 2>&1; then
+            echo "Invalid JSON for built images: $json_array"
+            echo "all-builds-complete=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "built-images=${json_array}" >> $GITHUB_OUTPUT
+          if [[ "$(echo "$json_array" | jq 'length')" -eq 0 ]]; then
+            echo "No images reported; marking incomplete."
+            echo "all-builds-complete=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "Extracted built images: ${json_array}"
+          echo "all-builds-complete=true" >> $GITHUB_OUTPUT
+
+  run-e2e-tests:
+    name: orchestrate-e2e-tests/run-e2e-tests
+    needs: wait-for-all-builds
+    if: ${{ needs.wait-for-all-builds.outputs.all-builds-complete == 'true' }}
+    permissions:
+      actions: 'write'
+      contents: 'read'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call E2E Tests Workflow
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          IMAGE_TAG: ${{ needs.wait-for-all-builds.outputs.image-tag }}
+          BUILT_IMAGES: ${{ needs.wait-for-all-builds.outputs.built-images }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const imageTag = process.env.IMAGE_TAG;
+            let builtImages;
+            try {
+              builtImages = JSON.parse(process.env.BUILT_IMAGES || '[]');
+            } catch (e) {
+              core.setFailed('Failed to parse BUILT_IMAGES: ' + e.message);
+              return;
+            }
+
+            if (!Array.isArray(builtImages) || builtImages.length === 0) {
+              console.log('No built images detected, skipping E2E dispatch.');
+              return;
+            }
+
+            const keys = [
+              'connector_version','db_migration_version','host_version','gateway_version',
+              'host_listener_version','gateway_listener_version','tx_sender_version',
+              'tfhe_worker_version','sns_worker_version','zkproof_worker_version'
+            ];
+
+            const inputs = {};
+            for (const k of keys) {
+              if (builtImages.includes(k)) inputs[k] = imageTag;
+            }
+
+            if (Object.keys(inputs).length === 0) {
+              console.log('No matching image keys for E2E tests, skipping dispatch.');
+              return;
+            }
+
+            const ref = context.payload.workflow_run.head_branch;
+            console.log(`Dispatching E2E on ref ${ref} with inputs:`, inputs);
+
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'test-suite-e2e-tests.yml',
+              ref,
+              inputs
+            });
+
+            console.log('E2E tests workflow dispatched.')
