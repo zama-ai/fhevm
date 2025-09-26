@@ -43,7 +43,7 @@ describe("MultichainAcl", function () {
   let multichainAcl: MultichainAcl;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
-  let pauser: HardhatEthersSigner;
+  let pauser: Wallet;
 
   beforeEach(async function () {
     // Initialize used global variables before each test

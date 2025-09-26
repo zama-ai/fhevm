@@ -179,7 +179,7 @@ describe("Decryption", function () {
   let ciphertextCommits: CiphertextCommits;
   let decryption: Decryption;
   let owner: Wallet;
-  let pauser: HardhatEthersSigner;
+  let pauser: Wallet;
   let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
   let kmsSignatures: string[];
   let kmsTxSenders: HardhatEthersSigner[];

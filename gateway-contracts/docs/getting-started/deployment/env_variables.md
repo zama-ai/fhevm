@@ -24,7 +24,6 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | ----------------------------------- | -------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
 | `PROTOCOL_NAME`                     | Name of the protocol to display              | string        | -                                                                                                   | -                                                                             |
 | `PROTOCOL_WEBSITE`                  | Website of the protocol to display           | string        | -                                                                                                   | -                                                                             |
-| `PAUSER_ADDRESS`                    | Address of the pauser                        | address       | -                                                                                                   | -                                                                             |
 | `MPC_THRESHOLD`                     | MPC threshold (cryptographic parameter)      | uint256       | -                                                                                                   | Must be strictly less than the number of KMS nodes registered                 |
 | `PUBLIC_DECRYPTION_THRESHOLD`       | Public decryption threshold                  | uint256       | -                                                                                                   | Must be non-null and less than or equal to the number of KMS nodes registered |
 | `USER_DECRYPTION_THRESHOLD`         | User decryption threshold                    | uint256       | -                                                                                                   | Must be non-null and less than or equal to the number of KMS nodes registered |
@@ -42,6 +41,8 @@ Here's the complete list of environment variables used for deploying the FHEVM g
 | `HOST_CHAIN_ACL_ADDRESS_{k}`        | ACL address of the host chain `k`            | address       | -                                                                                                   | If `k` >= `NUM_HOST_CHAINS`, the variable is ignored                          |
 | `HOST_CHAIN_NAME_{k}`               | Name of the host chain `k`                   | string        | -                                                                                                   | If `k` >= `NUM_HOST_CHAINS`, the variable is ignored                          |
 | `HOST_CHAIN_WEBSITE_{k}`            | Website of the host chain `k`                | string        | -                                                                                                   | If `k` >= `NUM_HOST_CHAINS`, the variable is ignored                          |
+| `NUM_PAUSERS`                       | Number of pausers to register                | -             | -                                                                                                   | Must be at least the number of pausers registered below                       |
+| `PAUSER_ADDRESS_{l}`                | Address of the pauser `l`                    | address       | -                                                                                                   | If `l` >= `NUM_PAUSERS`, the variable is ignored                              |
 | `FHE_PARAMS_NAME`                   | Name of the parameters to use for FHE keys   | string        | -                                                                                                   | Not used yet                                                                  |
 | `FHE_PARAMS_DIGEST`                 | Digest of the parameters to use for FHE keys | bytes32       | -                                                                                                   | Not used yet                                                                  |
 | `DEPLOYER_PRIVATE_KEY`              | Private key for contract deployment          | bytes32       | -                                                                                                   | -                                                                             |
@@ -66,12 +67,6 @@ The following values are set at deployment.
 ```bash
 PROTOCOL_NAME="Protocol" # (string)
 PROTOCOL_WEBSITE="https://protocol.com" # (string)
-```
-
-- Pauser:
-
-```bash
-PAUSER_ADDRESS="0xa44366bAA26296c1409AD1e284264212029F02f1" # (address)
 ```
 
 - KMS Thresholds:

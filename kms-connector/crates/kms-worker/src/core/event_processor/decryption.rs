@@ -97,6 +97,8 @@ where
                 enc_key,
                 typed_ciphertexts: ciphertexts,
                 extra_data,
+                epoch_id: None,
+                context_id: None,
             };
 
             verify_user_decryption_eip712(&user_decryption_request)?;
@@ -108,6 +110,8 @@ where
                 key_id: Some(RequestId { request_id: key_id }),
                 domain: Some(domain_msg),
                 extra_data,
+                epoch_id: None,
+                context_id: None,
             };
             Ok(public_decryption_request.into())
         }

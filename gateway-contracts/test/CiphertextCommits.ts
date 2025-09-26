@@ -41,7 +41,7 @@ describe("CiphertextCommits", function () {
   let ciphertextCommits: CiphertextCommits;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
-  let pauser: HardhatEthersSigner;
+  let pauser: Wallet;
 
   async function prepareFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
