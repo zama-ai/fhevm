@@ -47,7 +47,7 @@ task('coverage').setAction(async (taskArgs, hre, runSuper) => {
 });
 
 task('test', async (_taskArgs, hre, runSuper) => {
-  const sourceDir = path.resolve(__dirname, '../node_modules/@fhevm/core-contracts/contracts');
+  const sourceDir = path.resolve(__dirname, '../node_modules/@fhevm/host-contracts/contracts');
   const destinationDir = path.resolve(__dirname, 'fhevmTemp/contracts');
   fs.copySync(sourceDir, destinationDir, { dereference: true });
 

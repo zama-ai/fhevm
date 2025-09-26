@@ -26,8 +26,8 @@ services:
   fhevm-sc-deploy:
     container_name: fhevm-sc-deploy
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../
+      dockerfile: host-contracts/Dockerfile
     env_file:
       - ./.env
     environment:

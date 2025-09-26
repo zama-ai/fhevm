@@ -1,5 +1,5 @@
 {
-  "name": "@fhevm/core-contracts",
+  "name": "@fhevm/host-contracts",
   "version": "0.8.0",
   "description": "fhevm backend contracts",
   "repository": {
