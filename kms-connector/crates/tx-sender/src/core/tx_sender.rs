@@ -9,7 +9,6 @@ use crate::{
 };
 use alloy::{
     hex,
-    network::Ethereum,
     providers::{PendingTransactionError, Provider, ext::DebugApi},
     rpc::types::{
         TransactionReceipt, TransactionRequest,
