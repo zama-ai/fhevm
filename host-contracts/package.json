@@ -10,7 +10,7 @@
   "scripts": {
     "compile": "HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
     "compile:decryptionOracle": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile:specific --contract decryptionOracle",
-    "deploy:emptyProxies": "hardhat task:deployEmptyUUPSProxies",
+    "deploy:emptyProxies": "hardhat task:deployEmptyUUPSProxies && hardhat task:deployPauserSet",
     "lint": "npm run lint:sol && npm run lint:ts && npm run prettier:check",
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
