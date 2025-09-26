@@ -77,8 +77,8 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   const publicDecryptionThreshold = getRequiredEnvVar("PUBLIC_DECRYPTION_THRESHOLD");
   const userDecryptionThreshold = getRequiredEnvVar("USER_DECRYPTION_THRESHOLD");
 
-  // Parse the key and CRS generation threshold
-  const keygenThreshold = getRequiredEnvVar("KEYGEN_THRESHOLD");
+  // Parse the KMS public material generation threshold
+  const kmsGenThreshold = getRequiredEnvVar("KMS_GENERATION_THRESHOLD");
 
   // Parse the KMS nodes
   const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
@@ -88,7 +88,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
       txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
       signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
       ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
-      s3BucketUrl: getRequiredEnvVar(`KMS_NODE_S3_BUCKET_URL_${idx}`),
+      storageUrl: getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`),
     });
   }
 
@@ -126,7 +126,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     mpcThreshold,
     publicDecryptionThreshold,
     userDecryptionThreshold,
-    keygenThreshold,
+    kmsGenThreshold,
     kmsNodes,
     coprocessors,
     custodians,

@@ -62,11 +62,11 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     kmsNodeIps.push(kmsNodeIp);
   }
 
-  // Load the KMS node S3 bucket URLs
-  const kmsNodeS3BucketUrls = [];
+  // Load the KMS node storage URLs
+  const kmsNodeStorageUrls = [];
   for (let idx = 0; idx < nKmsNodes; idx++) {
-    const kmsNodeS3BucketUrl = getRequiredEnvVar(`KMS_NODE_S3_BUCKET_URL_${idx}`);
-    kmsNodeS3BucketUrls.push(kmsNodeS3BucketUrl);
+    const kmsNodeStorageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
+    kmsNodeStorageUrls.push(kmsNodeStorageUrl);
   }
 
   // Load the coprocessor transaction senders
@@ -121,7 +121,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     kmsTxSenders,
     kmsSigners,
     kmsNodeIps,
-    kmsNodeS3BucketUrls,
+    kmsNodeStorageUrls,
     coprocessorTxSenders,
     coprocessorSigners,
     coprocessorS3Buckets,

@@ -52,10 +52,10 @@ interface IKMSManagement {
     /**
      * @notice Emitted when the key is activated.
      * @param keyId The ID of the activated key.
-     * @param kmsNodeS3BucketUrls The KMS nodes' s3 bucket URL that participated in the consensus.
+     * @param kmsNodeStorageUrls The KMS nodes' storage URL that participated in the consensus.
      * @param keyDigests The digests of the generated keys.
      */
-    event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, KeyDigest[] keyDigests);
+    event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     /**
      * @notice Emitted to trigger a CRS (Common Reference String) generation.
@@ -68,10 +68,10 @@ interface IKMSManagement {
     /**
      * @notice Emitted when the CRS is activated.
      * @param crsId The ID of the generated CRS.
-     * @param kmsNodeS3BucketUrls The KMS nodes' s3 bucket URL that participated in the consensus.
+     * @param kmsNodeStorageUrls The KMS nodes' storage URL that participated in the consensus.
      * @param crsDigest The digest of the generated CRS.
      */
-    event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
+    event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
 
     /**
      * @notice Error thrown when a KMS node has already signed for a preprocessing keygen response.
@@ -178,14 +178,14 @@ interface IKMSManagement {
     /**
      * @notice Get the key materials for a given key ID.
      * @param keyId The ID of the key.
-     * @return The key materials (s3 bucket URLs, key digests).
+     * @return The key materials (storage URLs, key digests).
      */
     function getKeyMaterials(uint256 keyId) external view returns (string[] memory, KeyDigest[] memory);
 
     /**
      * @notice Get the CRS materials for a given CRS ID.
      * @param crsId The ID of the CRS.
-     * @return The CRS materials (s3 bucket URLs, CRS digest).
+     * @return The CRS materials (storage URLs, CRS digest).
      */
     function getCrsMaterials(uint256 crsId) external view returns (string[] memory, bytes memory);
 
