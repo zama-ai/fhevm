@@ -1,0 +1,12 @@
+kms_type = "centralized"
+fhe_params = "Default"
+decryption_mode = "NoiseFloodSmall"
+num_majority = 1
+num_reconstruct = 1
+
+[[cores]]
+party_id = 1
+address = "kms-core:50051"
+s3_endpoint = "http://minio:9000/kms-public"
+object_folder = "PUB"
+

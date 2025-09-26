@@ -7,7 +7,7 @@ use crate::{
 use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
     gateway_config::GatewayConfig::GatewayConfigInstance,
-    kms_management::KmsManagement::KmsManagementInstance,
+    kms_management::KMSManagement::KMSManagementInstance,
 };
 use sqlx::{Pool, Postgres};
 use testcontainers::{ContainerAsync, GenericImage};
@@ -91,7 +91,7 @@ impl TestInstance {
         &self.gateway().gateway_config_contract
     }
 
-    pub fn kms_management_contract(&self) -> &KmsManagementInstance<WalletGatewayProvider> {
+    pub fn kms_management_contract(&self) -> &KMSManagementInstance<WalletGatewayProvider> {
         &self.gateway().kms_management_contract
     }
 
