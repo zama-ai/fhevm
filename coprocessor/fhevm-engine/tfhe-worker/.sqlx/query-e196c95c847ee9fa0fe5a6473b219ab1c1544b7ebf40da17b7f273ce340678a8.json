@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE computations\n           SET schedule_order = CURRENT_TIMESTAMP + INTERVAL '1 second' * uncomputable_counter,\n               uncomputable_counter = LEAST(uncomputable_counter * 2, 32000)::SMALLINT\n         WHERE tenant_id = $1\n           AND output_handle = ANY($2::BYTEA[])\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e196c95c847ee9fa0fe5a6473b219ab1c1544b7ebf40da17b7f273ce340678a8"
+}
