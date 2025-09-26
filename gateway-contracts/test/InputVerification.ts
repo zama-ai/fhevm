@@ -119,7 +119,7 @@ describe("InputVerification", function () {
         inputVerification
           .connect(owner)
           .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0),
-      ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
+      ).to.be.revertedWithCustomError(inputVerification, "EnforcedPause");
     });
   });
 

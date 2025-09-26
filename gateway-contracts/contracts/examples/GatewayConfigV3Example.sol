@@ -23,28 +23,63 @@ contract GatewayConfigV3Example is Ownable2StepUpgradeable, UUPSUpgradeable, Pau
 
     /// @custom:storage-location erc7201:fhevm_gateway.storage.GatewayConfig
     struct GatewayConfigStorage {
-        address pauser;
-        mapping(address kmsTxSenderAddress => bool isKmsTxSender) _isKmsTxSender;
-        mapping(address kmsSignerAddress => bool isKmsSigner) _isKmsSigner;
-        mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender;
-        mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner;
-        mapping(uint256 chainId => bool isRegistered) _isHostChainRegistered;
-        ProtocolMetadata protocolMetadata; // deprecated, use protocolMetadataV2 instead
+        /// @notice DEPRECATED, use protocolMetadataV2 instead
+        ProtocolMetadata protocolMetadata; // DEPRECATED
+        // ----------------------------------------------------------------------------------------------
+        // KMS nodes state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The KMS nodes' transaction sender addresses
+        mapping(address kmsTxSenderAddress => bool isTxSender) isKmsTxSender;
+        /// @notice The KMS nodes' signer addresses
+        mapping(address kmsSignerAddress => bool isSigner) isKmsSigner;
+        /// @notice The KMS nodes' metadata
         mapping(address kmsTxSenderAddress => KmsNode kmsNode) kmsNodes;
+        /// @notice The KMS nodes' transaction sender address list
         address[] kmsTxSenderAddresses;
+        /// @notice The KMS nodes' signer address list
         address[] kmsSignerAddresses;
+        /// @notice The MPC threshold
         uint256 mpcThreshold;
+        /// @notice The threshold to consider for public decryption consensus
         uint256 publicDecryptionThreshold;
+        /// @notice The threshold to consider for user decryption consensus
         uint256 userDecryptionThreshold;
+        // ----------------------------------------------------------------------------------------------
+        // Coprocessors state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The coprocessors' transaction sender addresses
+        mapping(address coprocessorTxSenderAddress => bool isTxSender) isCoprocessorTxSender;
+        /// @notice The coprocessors' signer addresses
+        mapping(address coprocessorSignerAddress => bool isSigner) isCoprocessorSigner;
+        /// @notice The coprocessors' metadata
         mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor) coprocessors;
+        /// @notice The coprocessors' transaction sender address list
         address[] coprocessorTxSenderAddresses;
+        /// @notice The coprocessors' signer address list
         address[] coprocessorSignerAddresses;
+        // ----------------------------------------------------------------------------------------------
+        // Host chain state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The host chains' registered status
+        mapping(uint256 chainId => bool isRegistered) isHostChainRegistered;
+        /// @notice The host chains' metadata
         HostChain[] hostChains;
+        // ----------------------------------------------------------------------------------------------
+        // Custodians state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The custodians' metadata
         mapping(address custodianTxSenderAddress => Custodian custodian) custodians;
+        /// @notice The custodians' transaction sender address list
         address[] custodianTxSenderAddresses;
+        /// @notice The custodians' signer address list
         address[] custodianSignerAddresses;
-        mapping(address custodianTxSenderAddress => bool isCustodianTxSender) _isCustodianTxSender;
-        mapping(address custodianSignerAddress => bool isCustodianSigner) _isCustodianSigner;
+        /// @notice The custodians' transaction sender addresses
+        mapping(address custodianTxSenderAddress => bool isTxSender) isCustodianTxSender;
+        /// @notice The custodians' signer addresses
+        mapping(address custodianSignerAddress => bool isSigner) isCustodianSigner;
+        // ----------------------------------------------------------------------------------------------
+        // Protocol metadata state variables:
+        // ----------------------------------------------------------------------------------------------
         // New state variables added in the upgraded version
         ProtocolMetadataV2 protocolMetadataV2;
     }

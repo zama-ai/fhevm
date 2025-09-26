@@ -483,38 +483,4 @@ describe("MultichainAcl", function () {
         .withArgs(hostChainId, toValues(fakeDelegationAccounts), allowedContracts[0]);
     });
   });
-
-  describe("Pause", async function () {
-    it("Should pause the contract with the pauser and unpause with the owner", async function () {
-      // Check that the contract is not paused
-      expect(await multichainAcl.paused()).to.be.false;
-
-      // Pause the contract with the pauser address
-      await expect(multichainAcl.connect(pauser).pause()).to.emit(multichainAcl, "Paused").withArgs(pauser);
-      expect(await multichainAcl.paused()).to.be.true;
-
-      // Unpause the contract with the owner address
-      await expect(multichainAcl.connect(owner).unpause()).to.emit(multichainAcl, "Unpaused").withArgs(owner);
-      expect(await multichainAcl.paused()).to.be.false;
-    });
-
-    it("Should revert on pause because sender is not the pauser", async function () {
-      const fakePauser = createRandomWallet();
-
-      await expect(multichainAcl.connect(fakePauser).pause())
-        .to.be.revertedWithCustomError(multichainAcl, "NotPauserOrGatewayConfig")
-        .withArgs(fakePauser.address);
-    });
-
-    it("Should revert on unpause because sender is not the owner", async function () {
-      // Pause the contract with the pauser address
-      await multichainAcl.connect(pauser).pause();
-
-      const fakeOwner = createRandomWallet();
-
-      await expect(multichainAcl.connect(fakeOwner).unpause())
-        .to.be.revertedWithCustomError(multichainAcl, "NotOwnerOrGatewayConfig")
-        .withArgs(fakeOwner.address);
-    });
-  });
 });

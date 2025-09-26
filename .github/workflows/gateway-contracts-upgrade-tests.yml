@@ -33,7 +33,10 @@ jobs:
   sc-upgrade:
     name: gateway-contracts-upgrade-tests/sc-upgrade (bpr)
     needs: check-changes
-    if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
+    # if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
+    # TODO: Re-enable the upgrade tests once fhevm 0.9 is released
+    # See https://github.com/zama-ai/fhevm-internal/issues/439
+    if: false
     permissions:
       contents: 'read' # Required to checkout repository code
       checks: 'write' # Required to create GitHub checks for test results
