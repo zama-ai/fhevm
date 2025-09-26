@@ -11,3 +11,5 @@ address constant kmsVerifierAdd = 0xe3a9105a3a932253A70F126eb1E3b589C643dD24;
 address constant inputVerifierAdd = 0x901F8942346f7AB3a01F6D7613119Bca447Bb030;
 
 address constant hcuLimitAdd = 0x36772142b74871f255CbD7A3e89B401d3e45825f;
+
+address constant pauserSetAdd = 0x44aA028fd264C76BF4A8f8B4d8A5272f6AE25CAc;
