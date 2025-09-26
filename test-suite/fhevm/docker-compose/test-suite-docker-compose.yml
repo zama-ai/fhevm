@@ -16,6 +16,9 @@ services:
       - tail -f /dev/null
     networks:
       fhevm_default:
+    extra_hosts:
+      # aliases for minio service is not working
+      - "minio:172.17.0.1"
 
 networks:
   fhevm_default:
