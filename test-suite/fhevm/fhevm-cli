@@ -51,6 +51,7 @@ function usage {
   echo -e "${BOLD}${LIGHT_BLUE}Commands:${RESET}"
   echo -e "  ${YELLOW}deploy${RESET} ${CYAN}[--build]${RESET}    WIP: Deploy the full fhevm stack (optionally rebuild images)"
   echo -e "  ${YELLOW}test${RESET} ${CYAN}[TYPE]${RESET}         Run tests (input-proof|user-decryption|public-decryption|erc20|debug)"
+  echo -e "  ${YELLOW}db-test${RESET} ${CYAN}[OPTIONS]${RESET}   Test N database connectors with direct insertions"
   echo -e "  ${YELLOW}upgrade${RESET} ${CYAN}[SERVICE]${RESET}   Upgrade specific service (host|gateway|connector|coprocessor|relayer|test-suite)"
   echo -e "  ${YELLOW}clean${RESET}               Remove all containers and volumes"
   echo -e "  ${YELLOW}logs${RESET} ${CYAN}[SERVICE]${RESET}      View logs for a specific service"
@@ -69,6 +70,7 @@ function usage {
   echo -e "  ${PURPLE}./fhevm-cli test user-decryption ${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test public-decryption -n staging${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli test erc20${RESET}"
+  echo -e "  ${PURPLE}./fhevm-cli db-test -n 3 --track-responses${RESET}"
   echo -e "  ${PURPLE}./fhevm-cli upgrade coprocessor${RESET}"
   echo -e "${BLUE}============================================================${RESET}"
 }
@@ -206,6 +208,140 @@ case $COMMAND in
     if [ "$TEST_TYPE" != "debug" ]; then
       echo -e "${log_message}"
       docker exec fhevm-test-suite-e2e-debug "${docker_args[@]}"
+    fi
+    ;;
+
+  db-test)
+    print_logo
+    echo -e "${LIGHT_BLUE}${BOLD}[DB-TEST] Running DB Connector Test...${RESET}"
+    
+    # Check if running with docker-compose or locally
+    USE_DOCKER=false
+    USE_LOCAL=false
+    
+    # Parse first argument to determine mode
+    if [[ "$1" == "--docker" ]] || [[ "$1" == "-d" ]]; then
+      USE_DOCKER=true
+      shift
+    elif [[ "$1" == "--local" ]] || [[ "$1" == "-l" ]]; then
+      USE_LOCAL=true
+      shift
+    else
+      # Default to docker if stack is running
+      if docker ps | grep -q "kms-connector-db"; then
+        USE_DOCKER=true
+        echo -e "${YELLOW}[INFO] Detected running docker stack, using docker mode${RESET}"
+      else
+        USE_LOCAL=true
+        echo -e "${YELLOW}[INFO] No docker stack detected, using local mode${RESET}"
+      fi
+    fi
+    
+    if [ "$USE_DOCKER" = true ]; then
+      # Run using docker-compose
+      echo -e "${BLUE}[INFO] Running DB test in Docker environment${RESET}"
+      
+      # Build environment variables for docker-compose
+      COMPOSE_ENV=""
+      while (( "$#" )); do
+        case "$1" in
+          -n|--connectors)
+            COMPOSE_ENV="$COMPOSE_ENV DB_TEST_CONNECTORS=$2"
+            shift 2
+            ;;
+          --duration)
+            COMPOSE_ENV="$COMPOSE_ENV DB_TEST_DURATION=$2"
+            shift 2
+            ;;
+          -b|--batch-size)
+            COMPOSE_ENV="$COMPOSE_ENV DB_TEST_BATCH=$2"
+            shift 2
+            ;;
+          -t|--type)
+            COMPOSE_ENV="$COMPOSE_ENV DB_TEST_TYPE=$2"
+            shift 2
+            ;;
+          *)
+            shift
+            ;;
+        esac
+      done
+      
+      # Run the test service using existing test-suite docker-compose
+      eval "$COMPOSE_ENV docker compose -p fhevm -f ${SCRIPT_DIR}/docker-compose/test-suite-docker-compose.yml --profile db-test run --rm gateway-stress-db"
+    else
+      # Run locally with cargo
+      GATEWAY_STRESS_DIR="${SCRIPT_DIR}/../gateway-stress"
+      
+      if [ ! -d "$GATEWAY_STRESS_DIR" ]; then
+        echo -e "${RED}[ERROR]${RESET} ${BOLD}gateway-stress directory not found at: $GATEWAY_STRESS_DIR${RESET}"
+        exit 1
+      fi
+      
+      cd "$GATEWAY_STRESS_DIR"
+      CMD="cargo run -- db-connector"
+    
+    # Parse arguments for db-test
+    while (( "$#" )); do
+      case "$1" in
+        -n|--num-connectors)
+          CMD="$CMD --num-connectors $2"
+          shift 2
+          ;;
+        -t|--type)
+          CMD="$CMD --request-type $2"
+          shift 2
+          ;;
+        -b|--batch-size)
+          CMD="$CMD --batch-size $2"
+          shift 2
+          ;;
+        --duration)
+          CMD="$CMD --duration $2"
+          shift 2
+          ;;
+        -i|--interval)
+          CMD="$CMD --interval $2"
+          shift 2
+          ;;
+        -c|--config)
+          CMD="$CMD --config $2"
+          shift 2
+          ;;
+        --track-responses)
+          CMD="$CMD --track-responses"
+          shift
+          ;;
+        --clear-db)
+          CMD="$CMD --clear-db"
+          shift
+          ;;
+        *)
+          echo -e "${RED}[ERROR]${RESET} ${BOLD}Unknown option: $1${RESET}"
+          echo ""
+          echo -e "${BOLD}DB-Test Options:${RESET}"
+          echo -e "  ${CYAN}-n, --num-connectors NUM${RESET} Number of DB URLs to use"
+          echo -e "  ${CYAN}-t, --type TYPE${RESET}          Request type: public, user, or mixed"
+          echo -e "  ${CYAN}-b, --batch-size SIZE${RESET}    Requests per batch"
+          echo -e "  ${CYAN}--duration TIME${RESET}          Test duration (e.g., 30s, 5m)"
+          echo -e "  ${CYAN}-i, --interval TIME${RESET}      Batch interval (e.g., 1s, 500ms)"
+          echo -e "  ${CYAN}-c, --config FILE${RESET}        Path to config file"
+          echo -e "  ${CYAN}--track-responses${RESET}        Enable response tracking"
+          echo -e "  ${CYAN}--clear-db${RESET}               Clear DB tables before test"
+          exit 1
+          ;;
+      esac
+    done
+    
+      echo -e "${YELLOW}Executing: $CMD${RESET}"
+      eval $CMD
+      
+      if [ $? -eq 0 ]; then
+        echo -e "${GREEN}${BOLD}[SUCCESS] DB Connector Test completed successfully!${RESET}"
+      else
+        echo -e "${RED}${BOLD}[FAILURE] DB Connector Test failed${RESET}"
+        exit 1
+      fi
     fi
     ;;
 

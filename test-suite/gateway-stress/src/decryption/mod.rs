@@ -27,15 +27,15 @@ where
     trace!("Receipt details: {receipt:?}");
 
     for log in receipt.inner.logs().iter() {
-        if let Some(first_topic) = log.topics().first()
-            && first_topic == &event_hash
-        {
-            let decryption_id = decode_fn(log.data())?;
-            debug!(
-                ?receipt.transaction_hash,
-                "Decryption #{decryption_id} has been accepted on the Gateway!"
-            );
-            return Ok(decryption_id);
+        if let Some(first_topic) = log.topics().first() {
+            if first_topic == &event_hash {
+                let decryption_id = decode_fn(log.data())?;
+                debug!(
+                    ?receipt.transaction_hash,
+                    "Decryption #{decryption_id} has been accepted on the Gateway!"
+                );
+                return Ok(decryption_id);
+            }
         }
     }
 
