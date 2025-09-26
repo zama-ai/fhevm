@@ -4,7 +4,8 @@ pragma solidity ^0.8.24;
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { decryptionAddress, inputVerificationAddress } from "../addresses/GatewayAddresses.sol";
+import { IPauserSet } from "./interfaces/IPauserSet.sol";
+import { decryptionAddress, inputVerificationAddress, pauserSetAddress } from "../addresses/GatewayAddresses.sol";
 import { Decryption } from "./Decryption.sol";
 import { InputVerification } from "./InputVerification.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
@@ -25,22 +26,23 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
     uint256 private constant PATCH_VERSION = 0;
 
     /// Constant used for making sure the version number using in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// @notice The address of the all gateway contracts
     Decryption private constant DECRYPTION = Decryption(decryptionAddress);
     InputVerification private constant INPUT_VERIFICATION = InputVerification(inputVerificationAddress);
+    IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAddress);
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.GatewayConfig
     struct GatewayConfigStorage {
-        /// @notice The pauser's address
-        address pauser;
+        /// @notice DEPRECATED: to remove for mainnet
+        address pauser; // DEPRECATED
         /// @notice The KMS nodes' transaction sender addresses
         mapping(address kmsTxSenderAddress => bool isKmsTxSender) _isKmsTxSender;
         /// @notice The KMS nodes' signer addresses
@@ -98,7 +100,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
     /// @notice Initializes the contract
     /// @dev This function needs to be public in order to be called by the UUPS proxy.
-    /// @param initialPauser Pauser address
     /// @param initialMetadata Metadata of the protocol
     /// @param initialMpcThreshold The MPC threshold
     /// @param initialPublicDecryptionThreshold The public decryption threshold
@@ -108,7 +109,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @param initialCustodians List of custodians
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
-        address initialPauser,
         ProtocolMetadata memory initialMetadata,
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
@@ -119,10 +119,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
-
-        if (initialPauser == address(0)) {
-            revert InvalidNullPauser();
-        }
 
         if (initialKmsNodes.length == 0) {
             revert EmptyKmsNodes();
@@ -138,9 +134,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         $.protocolMetadata = initialMetadata;
-
-        /// @dev Register the pauser
-        $.pauser = initialPauser;
 
         /// @dev Register the KMS nodes
         for (uint256 i = 0; i < initialKmsNodes.length; i++) {
@@ -176,7 +169,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
 
         emit InitializeGatewayConfig(
-            initialPauser,
             initialMetadata,
             initialMpcThreshold,
             initialKmsNodes,
@@ -185,37 +177,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         );
     }
 
-    /// @notice Reinitializes the contract with custodians.
+    /// @notice Reinitializes the contract to v3.
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(Custodian[] memory custodians) public virtual reinitializer(REINITIALIZER_VERSION) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-
-        if (custodians.length == 0) {
-            revert EmptyCustodians();
-        }
-
-        /// @dev Register the custodians
-        for (uint256 i = 0; i < custodians.length; i++) {
-            $.custodians[custodians[i].txSenderAddress] = custodians[i];
-            $.custodianTxSenderAddresses.push(custodians[i].txSenderAddress);
-            $._isCustodianTxSender[custodians[i].txSenderAddress] = true;
-            $.custodianSignerAddresses.push(custodians[i].signerAddress);
-            $._isCustodianSigner[custodians[i].signerAddress] = true;
-        }
-
-        emit ReinitializeGatewayConfigV2(custodians);
-    }
-
-    /// @dev See {IGatewayConfig-updatePauser}.
-    function updatePauser(address newPauser) external virtual onlyOwner {
-        if (newPauser == address(0)) {
-            revert InvalidNullPauser();
-        }
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        $.pauser = newPauser;
-        emit UpdatePauser(newPauser);
-    }
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IGatewayConfig-updateMpcThreshold}.
     function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner {
@@ -331,10 +296,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
     }
 
-    /// @dev See {IGatewayConfig-getPauser}.
-    function getPauser() external view virtual returns (address) {
-        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.pauser;
+    /// @dev See {IGatewayConfig-isPauser}.
+    function isPauser(address account) external view virtual returns (bool) {
+        return PAUSER_SET.isPauser(account);
     }
 
     /// @dev See {IGatewayConfig-getProtocolMetadata}.

@@ -106,11 +106,6 @@ impl PublicDecryptionResponse {
         // Encode all plaintexts using ABI encoding
         let result = abi_encode_plaintexts(&payload.plaintexts);
 
-        // Get the external signature
-        let signature = grpc_response
-            .external_signature
-            .ok_or_else(|| anyhow!("KMS Core did not provide required EIP-712 signature"))?;
-
         info!(
             "Storing public decryption response for request {} with {} plaintexts",
             decryption_id,
@@ -119,7 +114,7 @@ impl PublicDecryptionResponse {
         Ok(PublicDecryptionResponse {
             decryption_id,
             decrypted_result: result.into(),
-            signature,
+            signature: grpc_response.external_signature,
             extra_data: grpc_response.extra_data,
         })
     }
@@ -135,7 +130,7 @@ impl UserDecryptionResponse {
             .ok_or_else(|| anyhow!("Received empty payload for user decryption {decryption_id}"))?;
 
         // Serialize all signcrypted ciphertexts
-        let serialized_response_payload = bincode::serialize(&payload)
+        let serialized_response_payload = bc2wrap::serialize(&payload)
             .map_err(|e| anyhow!("Failed to serialize UserDecryption payload: {e}"))?;
 
         for ct in &payload.signcrypted_ciphertexts {

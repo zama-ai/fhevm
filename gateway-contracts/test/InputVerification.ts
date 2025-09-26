@@ -70,7 +70,7 @@ describe("InputVerification", function () {
     let inputVerification: InputVerification;
     let contractChainId: number;
     let owner: Wallet;
-    let pauser: HardhatEthersSigner;
+    let pauser: Wallet;
 
     before(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -132,7 +132,7 @@ describe("InputVerification", function () {
     let inputVerificationAddress: string;
     let eip712Message: EIP712;
     let signatures: string[];
-    let pauser: HardhatEthersSigner;
+    let pauser: Wallet;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -473,7 +473,7 @@ describe("InputVerification", function () {
     let coprocessorSigners: HardhatEthersSigner[];
     let contractChainId: number;
     let inputVerificationAddress: string;
-    let pauser: HardhatEthersSigner;
+    let pauser: Wallet;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -713,7 +713,7 @@ describe("InputVerification", function () {
   describe("Pause", async function () {
     let inputVerification: InputVerification;
     let owner: Wallet;
-    let pauser: HardhatEthersSigner;
+    let pauser: Wallet;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);

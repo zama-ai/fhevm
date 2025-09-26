@@ -18,7 +18,7 @@ export function loadHostChainIds() {
 
 // Check if the given signer is a valid hardhat signer
 // This is needed because `hre.ethers.getSigner` does not throw an error if it used on a random address
-async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
+async function checkIsHardhatSigner(signer: HardhatEthersSigner | Wallet) {
   const signers = await hre.ethers.getSigners();
   if (signers.findIndex((s) => s.address === signer.address) === -1) {
     throw new Error(
@@ -31,12 +31,12 @@ async function checkIsHardhatSigner(signer: HardhatEthersSigner) {
 // Creates the wallets used for the tests from the private keys in the .env file.
 // Adds some funds to these wallets.
 async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCustodians: number) {
-  // Get signers
-  // - the owner owns the contracts and can initialize the protocol, update FHE params
-  // - the pauser can pause the protocol
+  // The owner owns the contracts and can initialize the protocol
   const owner = new Wallet(getRequiredEnvVar("DEPLOYER_PRIVATE_KEY"), hre.ethers.provider);
   await fund(owner.address);
-  const pauser = await hre.ethers.getSigner(getRequiredEnvVar("PAUSER_ADDRESS"));
+
+  // A pauser can pause the protocol by pausing some of the contracts
+  const pauser = new Wallet(getRequiredEnvVar("PAUSER_PRIVATE_KEY"), hre.ethers.provider);
   await checkIsHardhatSigner(pauser);
 
   // Load the KMS transaction senders
@@ -167,6 +167,9 @@ export async function loadTestVariablesFixture() {
   const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
   const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
 
+  // Load the PauserSet contract
+  const pauserSet = await hre.ethers.getContractAt("PauserSet", getRequiredEnvVar("PAUSER_SET_ADDRESS"));
+
   return {
     ...fixtureData,
     gatewayConfig,
@@ -181,5 +184,6 @@ export async function loadTestVariablesFixture() {
     nCustodians,
     fheParamsName,
     fheParamsDigest,
+    pauserSet,
   };
 }

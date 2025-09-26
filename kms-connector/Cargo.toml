@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "simple-connector"]
+members = ["crates/*"]
 
 [workspace.package]
 authors = ["Zama"]
@@ -19,14 +19,15 @@ kms-worker.path = "crates/kms-worker"
 tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "2c9fb79fa557feb4c113f1482f0a4805e9d6acac", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.11.0-26", default-features = true }
-tfhe = "=1.3.2"
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.11.1", default-features = true }
+bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.11.1", default-features = true }
+tfhe = "=1.3.3"
 
 #####################################################################
 #                       External dependencies                       #
 #####################################################################
 actix-web = "=4.11.0"
-alloy = { version = "=1.0.9", default-features = false, features = [
+alloy = { version = "=1.0.36", default-features = false, features = [
     "essentials",
     "provider-debug-api",
     "provider-ws",
@@ -36,18 +37,17 @@ alloy = { version = "=1.0.9", default-features = false, features = [
 ] }
 anyhow = { version = "=1.0.98", default-features = false }
 async-trait = { version = "=0.1.88", default-features = false }
-aws-config = { version = "=1.8.2", default-features = true }
-aws-sdk-kms = { version = "=1.79.0", default-features = true }
-aws-sdk-s3 = { version = "=1.98.0", default-features = true }
-bincode = { version = "=1.3.3", default-features = false }
-clap = { version = "=4.5.41", default-features = true, features = [
+aws-config = { version = "=1.8.6", default-features = true }
+aws-sdk-kms = { version = "=1.86.0", default-features = true }
+aws-sdk-s3 = { version = "=1.105.0", default-features = true }
+clap = { version = "=4.5.47", default-features = true, features = [
     "cargo",
     "derive",
 ] }
-config = { version = "=0.15.13", default-features = false, features = ["toml"] }
+config = { version = "=0.15.15", default-features = false, features = ["toml"] }
 dashmap = { version = "=6.1.0", default-features = false }
 futures = { version = "=0.3.31", default-features = false }
-git-version = { version = "0.3.9", default-features = false }
+git-version = { version = "=0.3.9", default-features = false }
 opentelemetry = "=0.30.0"
 opentelemetry-otlp = { version = "=0.30.0", features = ["grpc-tonic"] }
 opentelemetry_sdk = "=0.30.0"
@@ -55,11 +55,11 @@ prometheus = "=0.14.0"
 rustls = { version = "=0.23.31", default-features = false, features = [
     "aws-lc-rs",
 ] }
-serde = { version = "=1.0.219", default-features = false, features = [
+serde = { version = "=1.0.226", default-features = false, features = [
     "derive",
     "std",
 ] }
-serde_json = { version = "=1.0.141", default-features = false, features = [
+serde_json = { version = "=1.0.145", default-features = false, features = [
     "std",
 ] }
 sha3 = { version = "=0.10.8", default-features = false }
@@ -69,15 +69,16 @@ sqlx = { version = "=0.8.6", default-features = false, features = [
     "macros",
     "postgres",
     "runtime-tokio",
+    "tls-rustls",
 ] }
 thiserror = { version = "=2.0.12", default-features = false }
-tokio = { version = "=1.46.1", default-features = false, features = [
+tokio = { version = "=1.47.1", default-features = false, features = [
     "macros",
     "rt-multi-thread",
     "signal",
     "sync",
 ] }
-tokio-util = { version = "=0.7.15", default-features = false }
+tokio-util = { version = "=0.7.16", default-features = false }
 tokio-stream = { version = "=0.1.17", default-features = false }
 tonic = { version = "=0.13.1", default-features = true, features = [
     "tls-ring",
@@ -95,9 +96,9 @@ tracing-subscriber = { version = "=0.3.20", default-features = true, features = 
 #####################################################################
 connector-tests.path = "tests"
 rand = "=0.9.2"
-rstest = "=0.25.0"
+rstest = "=0.26.1"
 serial_test = "3.2.0"
 tempfile = "=3.20.0"
 testcontainers = "=0.24.0"
-toml = { version = "=0.9.2", default-features = true }
+toml = { version = "=0.9.5", default-features = true }
 tracing-test = { version = "=0.2.5", default-features = false }

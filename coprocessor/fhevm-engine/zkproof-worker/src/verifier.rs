@@ -1,4 +1,5 @@
 use alloy_primitives::Address;
+use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tenant_keys::TfheTenantKeys;
 use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
@@ -10,7 +11,6 @@ use hex::encode;
 use lru::LruCache;
 use sha3::Digest;
 use sha3::Keccak256;
-use sqlx::postgres::PgPoolOptions;
 use sqlx::{postgres::PgListener, PgPool, Row};
 use sqlx::{Postgres, Transaction};
 use std::num::NonZero;
@@ -43,9 +43,8 @@ pub(crate) struct Ciphertext {
 }
 
 pub struct ZkProofService {
-    pool: PgPool,
+    pool_mngr: PostgresPoolManager,
     conf: Config,
-    _cancel_token: CancellationToken,
 
     // Timestamp of the last moment the service was active
     last_active_at: Arc<RwLock<SystemTime>>,
@@ -53,7 +52,7 @@ pub struct ZkProofService {
 impl HealthCheckService for ZkProofService {
     async fn health_check(&self) -> HealthStatus {
         let mut status = HealthStatus::default();
-        status.set_db_connected(&self.pool).await;
+        status.set_db_connected(&self.pool_mngr.pool()).await;
         status
     }
 
@@ -79,31 +78,37 @@ impl HealthCheckService for ZkProofService {
 }
 
 impl ZkProofService {
-    pub async fn create(conf: Config, cancel_token: CancellationToken) -> ZkProofService {
+    pub async fn create(conf: Config, token: CancellationToken) -> Option<ZkProofService> {
         // Each worker needs at least 3 pg connections
-        let pool_connections =
+        let max_pool_connections =
             std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
         let t = telemetry::tracer("init_service");
         let _s = t.child_span("pg_connect");
 
-        // DB Connection pool is shared amongst all workers
-        let pool = PgPoolOptions::new()
-            .max_connections(pool_connections)
-            .connect(&conf.database_url)
-            .await
-            .expect("valid db pool");
+        let Some(pool_mngr) = PostgresPoolManager::connect_pool(
+            token.child_token(),
+            conf.database_url.as_str(),
+            conf.pg_timeout,
+            max_pool_connections,
+            Duration::from_secs(2),
+            conf.pg_auto_explain_with_min_duration,
+        )
+        .await
+        else {
+            error!("Service was cancelled during Postgres pool initialization");
+            return None;
+        };
 
-        ZkProofService {
-            pool,
+        Some(ZkProofService {
+            pool_mngr,
             conf,
-            _cancel_token: cancel_token,
             last_active_at: Arc::new(RwLock::new(SystemTime::UNIX_EPOCH)),
-        }
+        })
     }
 
     pub async fn run(&self) -> Result<(), ExecutionError> {
         execute_verify_proofs_loop(
-            self.pool.clone(),
+            self.pool_mngr.clone(),
             self.conf.clone(),
             self.last_active_at.clone(),
         )
@@ -113,7 +118,7 @@ impl ZkProofService {
 /// Executes the main loop for handling verify_proofs requests inserted in the
 /// database
 pub async fn execute_verify_proofs_loop(
-    pool: PgPool,
+    pool_mngr: PostgresPoolManager,
     conf: Config,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
@@ -129,20 +134,27 @@ pub async fn execute_verify_proofs_loop(
     telemetry::attribute(&mut s, "count", conf.worker_thread_count.to_string());
     let mut task_set = JoinSet::new();
 
-    for _ in 0..conf.worker_thread_count {
+    for index in 0..conf.worker_thread_count {
         let conf = conf.clone();
         let tenant_key_cache = tenant_key_cache.clone();
-        let pool = pool.clone();
         let last_active_at = last_active_at.clone();
 
         // Spawn a ZK-proof worker
         // All workers compete for zk-proof tasks queued in the 'verify_proof' table.
-        task_set.spawn(async move {
-            if let Err(err) = execute_worker(&conf, &pool, &tenant_key_cache, last_active_at).await
-            {
-                error!(error = %err, "executor failed with");
+        let op = move |pool: PgPool, ct: CancellationToken| {
+            let tenant_key_cache = tenant_key_cache.clone();
+            let last_active_at = last_active_at.clone();
+            let conf = conf.clone();
+            async move {
+                execute_worker(conf, pool, ct, tenant_key_cache, last_active_at)
+                    .await
+                    .map_err(ServiceError::from)
             }
-        });
+        };
+
+        pool_mngr
+            .spawn_join_set_with_db_retry(op, &mut task_set, format!("worker_{}", index).as_str())
+            .await;
     }
 
     telemetry::end_span(s);
@@ -158,47 +170,46 @@ pub async fn execute_verify_proofs_loop(
 }
 
 async fn execute_worker(
-    conf: &Config,
-    pool: &sqlx::Pool<sqlx::Postgres>,
-    tenant_key_cache: &Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
+    conf: Config,
+    pool: sqlx::Pool<sqlx::Postgres>,
+    token: CancellationToken,
+    tenant_key_cache: Arc<RwLock<LruCache<i64, TfheTenantKeys>>>,
     last_active_at: Arc<RwLock<SystemTime>>,
 ) -> Result<(), ExecutionError> {
-    let mut listener = PgListener::connect_with(pool).await?;
+    update_last_active(last_active_at.clone()).await;
+
+    let mut listener = PgListener::connect_with(&pool).await?;
     listener.listen(&conf.listen_database_channel).await?;
 
     let mut idle_event = interval(Duration::from_secs(conf.pg_polling_interval as u64));
 
     loop {
-        if let Ok(mut value) = last_active_at.try_write() {
-            *value = SystemTime::now();
-        }
+        update_last_active(last_active_at.clone()).await;
 
-        if let Err(e) = execute_verify_proof_routine(pool, tenant_key_cache, conf).await {
-            error!(target: "zkpok", error = %e, "Execution error");
-        } else {
-            let count = get_remaining_tasks(pool).await?;
-            if get_remaining_tasks(pool).await? > 0 {
-                info!(target: "zkpok", {count}, "ZkPok tasks available");
-                continue;
-            }
+        execute_verify_proof_routine(&pool, &tenant_key_cache, &conf).await?;
+        let count = get_remaining_tasks(&pool).await?;
+        if count > 0 {
+            info!({ count }, "zkproof requests available");
+            continue;
         }
 
         select! {
             res = listener.try_recv() => {
+                let res = res?;
                 match res {
-                    Ok(None) => {
-                        error!(target: "zkpok", "DB connection err");
-                        return Err(ExecutionError::LostDbConnection)
-                    },
-                    Ok(_) => info!(target: "zkpok", "Received notification"),
-                    Err(err) => {
-                        error!(target: "zkpok", error = %err, "DB connection error");
-                        return Err(ExecutionError::LostDbConnection)
+                    Some(notification) => info!( src = %notification.process_id(), "Received notification"),
+                    None => {
+                        error!("Connection lost");
+                        continue;
                     },
                 };
             },
             _ = idle_event.tick() => {
-                debug!(target: "zkpok", "Polling timeout, rechecking for tasks");
+                debug!("Polling timeout, rechecking for requests");
+            },
+            _ = token.cancelled() => {
+                info!("Cancellation requested, stopping worker");
+                return Ok(());
             }
         }
     }
@@ -515,4 +526,9 @@ pub(crate) async fn insert_ciphertexts(
     .execute(db_txn.as_mut())
     .await?;
     Ok(())
+}
+
+async fn update_last_active(last_active_at: Arc<RwLock<SystemTime>>) {
+    let mut value = last_active_at.write().await;
+    *value = SystemTime::now();
 }
