@@ -6,12 +6,14 @@ import {UnsafeUpgrades} from "@openzeppelin/foundry-upgrades/src/Upgrades.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ACL} from "../../contracts/ACL.sol";
+import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {ACLEvents} from "../../contracts/ACLEvents.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
-import {fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {fhevmExecutorAdd, pauserSetAdd, aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract ACLTest is Test {
     ACL internal acl;
+    PauserSet internal pauserSet;
 
     address internal constant owner = address(456);
     address internal constant pauser = address(789);
@@ -36,12 +38,7 @@ contract ACLTest is Test {
 
     function _upgradeProxy() internal {
         implementation = address(new ACL());
-        UnsafeUpgrades.upgradeProxy(
-            proxy,
-            implementation,
-            abi.encodeCall(acl.initializeFromEmptyProxy, (pauser)),
-            owner
-        );
+        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(acl.initializeFromEmptyProxy, ()), owner);
         acl = ACL(proxy);
         fhevmExecutor = acl.getFHEVMExecutorAddress();
     }
@@ -56,6 +53,20 @@ contract ACLTest is Test {
             address(new EmptyUUPSProxy()),
             abi.encodeCall(EmptyUUPSProxy.initialize, owner)
         );
+        _deployMockContracts();
+    }
+
+    function _deployMockContracts() internal {
+        vm.etch(aclAdd, address(new ACL()).code);
+        vm.store(
+            aclAdd,
+            0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300, // OwnableStorageLocation
+            bytes32(uint256(uint160(owner)))
+        ); // Mocked ACL setup needed for PauserSet
+        vm.etch(pauserSetAdd, address(new PauserSet()).code);
+        pauserSet = PauserSet(pauserSetAdd);
+        vm.prank(owner);
+        pauserSet.addPauser(pauser);
     }
 
     /**
@@ -64,10 +75,11 @@ contract ACLTest is Test {
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxy();
-        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.2.0")));
+        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.3.0")));
         assertEq(acl.owner(), owner);
-        assertEq(acl.getPauser(), pauser);
+        assertEq(acl.isPauser(pauser), true);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
+        assertEq(acl.getPauserSetAddress(), pauserSetAdd);
     }
 
     /**
@@ -519,75 +531,6 @@ contract ACLTest is Test {
         vm.prank(sender);
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
         acl.revokeDelegation(delegatee, contractAddresses);
-    }
-
-    /**
-     * @dev Tests that updatePauser() cannot be called if the contract is paused.
-     */
-    function test_CannotUpdatePauserIfPaused(address randomAccount) public {
-        _upgradeProxy();
-        vm.prank(pauser);
-        acl.pause();
-
-        vm.expectPartialRevert(PausableUpgradeable.EnforcedPause.selector);
-        vm.prank(owner);
-        acl.updatePauser(randomAccount);
-    }
-
-    /**
-     * @dev Tests that only the owner can update the pauser.
-     *      It expects a revert if another address tries to update the pauser.
-     */
-    function test_OnlyOwnerCanUpdatePauser(address randomAccount) public {
-        _upgradeProxy();
-        vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
-        vm.prank(randomAccount);
-        acl.updatePauser(randomAccount);
-    }
-
-    /**
-     * @dev Tests that the owner can update the pauser to a new address.
-     *      It expects an event to be emitted and the pauser to be updated.
-     */
-    function test_OwnerCanUpdatePauser(address randomPauser) public {
-        _upgradeProxy();
-        vm.assume(randomPauser != address(0));
-        vm.prank(owner);
-        vm.expectEmit(address(acl));
-        emit ACLEvents.UpdatePauser(randomPauser);
-        acl.updatePauser(randomPauser);
-        assertEq(acl.getPauser(), randomPauser);
-    }
-
-    /**
-     * @dev Tests that the owner cannot set the pauser to the null address.
-     *      It expects a revert with the InvalidNullPauser error.
-     */
-    function test_CannotSetPauserAsNullAddress() public {
-        _upgradeProxy();
-        vm.prank(owner);
-        vm.expectRevert(ACL.InvalidNullPauser.selector);
-        acl.updatePauser(address(0));
-    }
-
-    /// @dev This function exists for the test below to call it externally.
-    function upgradeWithNullPauser() public {
-        implementation = address(new ACL());
-        UnsafeUpgrades.upgradeProxy(
-            proxy,
-            implementation,
-            abi.encodeCall(acl.initializeFromEmptyProxy, (address(0))),
-            owner
-        );
-    }
-
-    /**
-     * @dev Tests that the contract cannot be reinitialized if the pauser is set to the null address.
-     */
-    function test_CannotReinitializeIfPauserIsNull() public {
-        vm.expectRevert(ACL.InvalidNullPauser.selector);
-        this.upgradeWithNullPauser();
     }
 
     /**
