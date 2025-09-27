@@ -819,16 +819,18 @@ async fn db_insert_block_no_retry(
     tfhe_contract_address: &Option<Address>,
 ) -> std::result::Result<(), sqlx::Error> {
     let mut tx = db.new_transaction().await?;
+    // Proces all tfhe events first in case an allow event is out of
+    // order and occurs before the operation producing its handle
     for log in &block_logs.logs {
-        info!(
-            block = ?log.block_number,
-            tx = ?log.transaction_hash,
-            log_index = ?log.log_index,
-            "Log",
-        );
         let current_address = Some(log.inner.address);
         let is_tfhe_address = &current_address == tfhe_contract_address;
         if tfhe_contract_address.is_none() || is_tfhe_address {
+            info!(
+                block = ?log.block_number,
+                tx = ?log.transaction_hash,
+                log_index = ?log.log_index,
+                "Log",
+            );
             if let Ok(event) =
                 TfheContract::TfheContractEvents::decode_log(&log.inner)
             {
@@ -841,8 +843,26 @@ async fn db_insert_block_no_retry(
                 continue;
             }
         }
+        if is_tfhe_address {
+            error!(
+                event_address = ?log.inner.address,
+                acl_contract_address = ?acl_contract_address,
+                tfhe_contract_address = ?tfhe_contract_address,
+                "Cannot decode event",
+            );
+        }
+    }
+    // Process ACL events
+    for log in &block_logs.logs {
+        let current_address = Some(log.inner.address);
         let is_acl_address = &current_address == acl_contract_address;
         if acl_contract_address.is_none() || is_acl_address {
+            info!(
+                block = ?log.block_number,
+                tx = ?log.transaction_hash,
+                log_index = ?log.log_index,
+                "Log",
+            );
             if let Ok(event) =
                 AclContract::AclContractEvents::decode_log(&log.inner)
             {
@@ -851,7 +871,7 @@ async fn db_insert_block_no_retry(
                 continue;
             }
         }
-        if is_acl_address || is_tfhe_address {
+        if is_acl_address {
             error!(
                 event_address = ?log.inner.address,
                 acl_contract_address = ?acl_contract_address,

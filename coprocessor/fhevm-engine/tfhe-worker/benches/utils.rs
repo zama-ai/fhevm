@@ -94,9 +94,9 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         work_items_batch_size: ecfg.batch_size,
         dependence_chains_per_batch: 2000,
         tenant_key_cache_size: 4,
-        coprocessor_fhe_threads: 128,
+        coprocessor_fhe_threads: 64,
         maximum_handles_per_input: 255,
-        tokio_threads: 16,
+        tokio_threads: 32,
         pg_pool_max_connections: 2,
         server_addr: format!("127.0.0.1:{app_port}"),
         metrics_addr: "".to_string(),
@@ -220,9 +220,11 @@ pub async fn wait_until_all_allowed_handles_computed(
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        let count = sqlx::query!("SELECT count(1) FROM allowed_handles WHERE is_computed = FALSE")
-            .fetch_one(&pool)
-            .await?;
+        let count = sqlx::query!(
+            "SELECT count(1) FROM computations WHERE is_allowed = TRUE AND is_completed = FALSE"
+        )
+        .fetch_one(&pool)
+        .await?;
         let current_count = count.count.unwrap();
         if current_count == 0 {
             break;
