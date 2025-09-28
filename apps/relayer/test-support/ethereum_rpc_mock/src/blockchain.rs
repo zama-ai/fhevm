@@ -79,33 +79,38 @@ impl Default for Account {
 /// Represents a transaction that should be executed at a later time
 #[derive(Debug, Clone)]
 pub struct ScheduledTransaction {
-    /// Delay before execution
-    pub delay: Duration,
     /// Target contract address (None for contract creation)
     pub target_address: Option<Address>,
-    /// Response event to emit when transaction executes
-    pub response_event: Option<InnerLog>,
+    /// Response events to emit with their individual delays
+    pub response_events: Vec<(Duration, InnerLog)>,
 }
 
 impl ScheduledTransaction {
-    /// Create a new scheduled transaction with basic parameters
-    pub fn new(delay: Duration, target_address: Option<Address>) -> Self {
+    /// Create scheduled transaction with single event (most common case)
+    pub fn with_single_event(
+        delay: Duration,
+        target_address: Option<Address>,
+        event: InnerLog,
+    ) -> Self {
         Self {
-            delay,
             target_address,
-            response_event: None,
+            response_events: vec![(delay, event)],
         }
     }
 
-    /// Create a new scheduled transaction to a specific address (builder pattern)
-    pub fn new_to(delay: Duration, target_address: Address) -> Self {
-        Self::new(delay, Some(target_address))
-    }
-
-    /// Set the response event to emit (builder pattern)
-    pub fn with_response_event(mut self, event: InnerLog) -> Self {
-        self.response_event = Some(event);
-        self
+    /// Create scheduled transaction with multiple events (new multi-response capability)
+    pub fn with_multiple_events(
+        target_address: Option<Address>,
+        events: Vec<(Duration, InnerLog)>,
+    ) -> Self {
+        debug_assert!(
+            !events.is_empty(),
+            "ScheduledTransaction requires at least one event"
+        );
+        Self {
+            target_address,
+            response_events: events,
+        }
     }
 }
 
@@ -268,28 +273,35 @@ impl BlockchainState {
     /// Schedule a delayed transaction for later execution
     ///
     /// This method preserves the exact async pattern from TransactionScheduler for safety.
-    /// It spawns a tokio task that sleeps for the specified delay, then emits any response
+    /// It spawns one tokio task per event with individual delays, then emits the response
     /// event and increments the block number.
     pub fn schedule_delayed_transaction(
         &self,
         transaction: ScheduledTransaction,
         log_subscriptions: Arc<AsyncRwLock<HashMap<SubscriptionId<'static>, SubscriptionSink>>>,
     ) {
-        let delay = transaction.delay;
-        let log_subscriptions = log_subscriptions.clone();
+        let num_events = transaction.response_events.len();
         let blockchain_state = self.clone(); // Clone Arc wrapper (expert recommendation)
 
         debug!(
-            delay_ms = delay.as_millis(),
-            has_response_event = transaction.response_event.is_some(),
+            num_response_events = num_events,
             "Scheduling delayed transaction via BlockchainState"
         );
 
-        // Preserve exact same async task pattern from TransactionScheduler
-        tokio::spawn(async move {
-            tokio::time::sleep(delay).await;
+        // Spawn one tokio task per event with individual delays
+        for (delay, event) in transaction.response_events {
+            let log_subscriptions = log_subscriptions.clone();
+            let blockchain_state = blockchain_state.clone();
 
-            if let Some(event) = transaction.response_event {
+            debug!(
+                delay_ms = delay.as_millis(),
+                "Scheduling individual event with delay"
+            );
+
+            // Preserve exact same async task pattern from TransactionScheduler
+            tokio::spawn(async move {
+                tokio::time::sleep(delay).await;
+
                 debug!("Emitting scheduled transaction event from BlockchainState");
                 if let Err(e) = Self::emit_to_log_subscribers_static(
                     &log_subscriptions,
@@ -300,11 +312,11 @@ impl BlockchainState {
                 {
                     error!(error = %e, "Failed to emit scheduled event from BlockchainState");
                 }
-            }
 
-            blockchain_state.increment_block();
-            info!("Executed scheduled transaction via BlockchainState");
-        });
+                blockchain_state.increment_block();
+                info!("Executed scheduled transaction event via BlockchainState");
+            });
+        }
     }
 
     /// Static helper for event emission in async tasks (preserves exact behavior)

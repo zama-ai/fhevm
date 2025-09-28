@@ -75,8 +75,8 @@ pub enum Response {
         hash: Option<B256>,
         /// Return data (for calls) or logs (for transactions)
         data: ResponseData,
-        /// Optional scheduled transaction for delayed response
-        scheduled_transaction: Option<crate::blockchain::ScheduledTransaction>,
+        /// Optional scheduled transactions for delayed responses
+        scheduled_transactions: Vec<crate::blockchain::ScheduledTransaction>,
     },
     /// Reverted execution
     Revert {
@@ -84,8 +84,6 @@ pub enum Response {
         hash: Option<B256>,
         /// Optional revert reason
         reason: Option<String>,
-        /// Optional scheduled transaction for delayed response
-        scheduled_transaction: Option<crate::blockchain::ScheduledTransaction>,
     },
     /// Error in processing
     Error(String),
@@ -106,7 +104,7 @@ impl Response {
         Self::Success {
             hash: Some(crate::blockchain::BlockchainState::generate_random_hash()),
             data: ResponseData::Logs(Vec::new()),
-            scheduled_transaction: None,
+            scheduled_transactions: Vec::new(),
         }
     }
 
@@ -115,7 +113,7 @@ impl Response {
         Self::Success {
             hash: None,
             data: ResponseData::Bytes(data),
-            scheduled_transaction: None,
+            scheduled_transactions: Vec::new(),
         }
     }
 
@@ -124,7 +122,6 @@ impl Response {
         Self::Revert {
             hash: Some(crate::blockchain::BlockchainState::generate_random_hash()),
             reason: Some(reason),
-            scheduled_transaction: None,
         }
     }
 
@@ -133,24 +130,19 @@ impl Response {
         Self::Error(message)
     }
 
-    /// Add a scheduled transaction to this response
-    pub fn with_scheduled_transaction(
+    /// Add scheduled transactions to this response
+    pub fn with_scheduled_transactions(
         mut self,
-        scheduled: crate::blockchain::ScheduledTransaction,
+        scheduled: Vec<crate::blockchain::ScheduledTransaction>,
     ) -> Self {
-        match &mut self {
-            Self::Success {
-                scheduled_transaction,
-                ..
-            }
-            | Self::Revert {
-                scheduled_transaction,
-                ..
-            } => {
-                *scheduled_transaction = Some(scheduled);
-            }
-            Self::Error(_) => {} // Cannot add to error responses
+        if let Self::Success {
+            scheduled_transactions,
+            ..
+        } = &mut self
+        {
+            *scheduled_transactions = scheduled;
         }
+        // Cannot add to revert or error responses - they don't have scheduled_transactions field
         self
     }
 
@@ -185,18 +177,14 @@ impl Response {
         self
     }
 
-    /// Get scheduled transaction
-    pub fn scheduled_transaction(&self) -> Option<&crate::blockchain::ScheduledTransaction> {
+    /// Get scheduled transactions
+    pub fn scheduled_transactions(&self) -> &[crate::blockchain::ScheduledTransaction] {
         match self {
             Self::Success {
-                scheduled_transaction,
+                scheduled_transactions,
                 ..
-            }
-            | Self::Revert {
-                scheduled_transaction,
-                ..
-            } => scheduled_transaction.as_ref(),
-            Self::Error(_) => None,
+            } => scheduled_transactions,
+            Self::Revert { .. } | Self::Error(_) => &[],
         }
     }
 }

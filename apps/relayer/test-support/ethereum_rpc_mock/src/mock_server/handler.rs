@@ -312,7 +312,7 @@ impl EthRpcApiServer for MockRpcHandler {
                 Response::Success {
                     hash: Some(BlockchainState::generate_random_hash()),
                     data: ResponseData::Logs(vec![]),
-                    scheduled_transaction: None,
+                    scheduled_transactions: Vec::new(),
                 }
             };
 
@@ -321,7 +321,7 @@ impl EthRpcApiServer for MockRpcHandler {
             Response::Success {
                 hash,
                 data: ResponseData::Logs(logs),
-                scheduled_transaction,
+                scheduled_transactions,
             } => {
                 // Create and store receipt using BlockchainState
                 let _receipt = self.blockchain_state.create_and_store_receipt(
@@ -339,10 +339,10 @@ impl EthRpcApiServer for MockRpcHandler {
                     }
                 }
 
-                // Schedule delayed transaction if present
-                if let Some(scheduled_tx) = scheduled_transaction {
+                // Schedule delayed transactions if present
+                for scheduled_tx in scheduled_transactions {
                     debug!(
-                        delay_ms = scheduled_tx.delay.as_millis(),
+                        num_events = scheduled_tx.response_events.len(),
                         "Scheduling follow-up transaction after transaction execution"
                     );
                     self.blockchain_state
@@ -368,21 +368,7 @@ impl EthRpcApiServer for MockRpcHandler {
                 );
                 Ok(format!("{:#x}", hash.unwrap_or_default()))
             }
-            Response::Revert {
-                hash: _,
-                reason,
-                scheduled_transaction,
-            } => {
-                // Schedule delayed transaction if present even for reverts
-                if let Some(scheduled_tx) = scheduled_transaction {
-                    debug!(
-                        delay_ms = scheduled_tx.delay.as_millis(),
-                        "Scheduling follow-up transaction after transaction revert"
-                    );
-                    self.blockchain_state
-                        .schedule_delayed_transaction(scheduled_tx, self.log_subscriptions.clone());
-                }
-
+            Response::Revert { hash: _, reason } => {
                 let error_message = reason.as_deref().unwrap_or("Transaction reverted");
                 warn!("Transaction reverted: {}", error_message);
                 Err(ErrorObject::owned(-32000, error_message, None::<()>))

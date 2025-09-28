@@ -161,7 +161,6 @@ impl FhevmMockWrapper {
             Response::Revert {
                 hash: Some(random_hash()),
                 reason: Some(reason.to_string()),
-                scheduled_transaction: None,
             },
             UsageLimit::Unlimited,
         );
@@ -191,7 +190,6 @@ impl FhevmMockWrapper {
             Response::Revert {
                 hash: Some(random_hash()),
                 reason: Some(reason.to_string()),
-                scheduled_transaction: None,
             },
             UsageLimit::Unlimited,
         );
@@ -225,7 +223,6 @@ impl FhevmMockWrapper {
             Response::Revert {
                 hash: Some(random_hash()),
                 reason: Some(reason.to_string()),
-                scheduled_transaction: None,
             },
             UsageLimit::Unlimited,
         );
@@ -270,15 +267,17 @@ impl FhevmMockWrapper {
         response_log: Log,
     ) {
         // Create scheduled transaction for delayed response using the inner response log
-        let scheduled_tx =
-            ScheduledTransaction::new_to(Duration::from_millis(RESPONSE_DELAY_MS), contract)
-                .with_response_event(response_log);
+        let scheduled_tx = ScheduledTransaction::with_single_event(
+            Duration::from_millis(RESPONSE_DELAY_MS),
+            Some(contract),
+            response_log,
+        );
 
         // Create immediate response with request log and scheduled transaction
         let immediate_response = Response::Success {
             hash: Some(random_hash()),
             data: crate::mock_server::ResponseData::Logs(vec![request_log]),
-            scheduled_transaction: Some(scheduled_tx),
+            scheduled_transactions: vec![scheduled_tx],
         };
 
         // Register pattern that returns immediate response with scheduled transaction
