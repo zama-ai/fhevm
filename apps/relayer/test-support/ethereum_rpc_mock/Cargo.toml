@@ -8,7 +8,7 @@ edition = "2021"
 tokio = { version = "1", features = ["rt-multi-thread", "signal"] }
 tokio-util = "0.7"
 
-# Serialization - match relayer versions  
+# Serialization - match relayer versions
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0.68"
 
@@ -43,7 +43,7 @@ async-trait = "0.1.51"
 strum = { version = "0.26", features = ["derive"] }
 
 # FHEVM bindings - match relayer version exactly
-fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "81e0d1594d71b43c6f5f4d3d11d3526aed2c747c" }
+fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", rev = "c1bbe40390c9af5e59a89bb52cb5e9db00407c1e" }
 
 # JSON-RPC server - unique to mock
 jsonrpsee = { version = "0.24", features = ["server", "macros"] }

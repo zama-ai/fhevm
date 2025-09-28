@@ -7,7 +7,7 @@ use crate::blockchain::ethereum::bindings::{
 use alloy::contract::Error;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum FhevmError {
     DecryptionError(DecryptionErrors),
     InputError(InputVerificationErrors),
@@ -405,4 +405,19 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
         ));
     }
     FhevmError::GenericError
+}
+
+impl Clone for FhevmError {
+    fn clone(&self) -> Self {
+        match self {
+            FhevmError::DecryptionError(_) => {
+                // Since DecryptionErrors doesn't implement Clone, we fallback to GenericError
+                FhevmError::GenericError
+            }
+            FhevmError::InputError(_) => FhevmError::GenericError,
+            FhevmError::AclError(_) => FhevmError::GenericError,
+            FhevmError::CiphertextError(_) => FhevmError::GenericError,
+            FhevmError::GenericError => FhevmError::GenericError,
+        }
+    }
 }
