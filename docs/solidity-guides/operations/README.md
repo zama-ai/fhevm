@@ -79,8 +79,8 @@ Choose the smallest encrypted type that can accommodate your data to optimize ga
 
 ```solidity
 // Bad: Using euint256 for small numbers wastes gas
-euint64 age = FHE.asEuint128(25);  // age will never exceed 255
-euint64 percentage = FHE.asEuint128(75);  // percentage is 0-100
+euint256 age = FHE.asEuint256(25);  // age will never exceed 255
+euint256 percentage = FHE.asEuint256(75);  // percentage is 0-100
 ```
 
 ✅ Instead, use the smallest appropriate type:
