@@ -1,12 +1,13 @@
-use crate::types::{
-    GatewayEvent, KmsGrpcResponse, db::KeyDigestDbItem, fhe::abi_encode_plaintexts,
-};
+use crate::types::{GatewayEvent, KmsGrpcResponse, db::KeyDigestDbItem};
 use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
-use kms_grpc::kms::v1::{
-    CrsGenResult, KeyGenPreprocResult, KeyGenResult,
-    PublicDecryptionResponse as GrpcPublicDecryptionResponse,
-    UserDecryptionResponse as GrpcUserDecryptionResponse,
+use kms_grpc::{
+    kms::v1::{
+        CrsGenResult, KeyGenPreprocResult, KeyGenResult,
+        PublicDecryptionResponse as GrpcPublicDecryptionResponse,
+        UserDecryptionResponse as GrpcUserDecryptionResponse,
+    },
+    rpc_types::abi_encode_plaintexts,
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use std::fmt::Display;
@@ -160,7 +161,7 @@ impl PublicDecryptionResponse {
         }
 
         // Encode all plaintexts using ABI encoding
-        let result = abi_encode_plaintexts(&payload.plaintexts);
+        let result = abi_encode_plaintexts(&payload.plaintexts)?;
 
         Ok(PublicDecryptionResponse {
             decryption_id,
