@@ -37,7 +37,7 @@ impl BenchAverageResult {
 
         Self {
             parallel_requests: input.parallel_requests,
-            number_of_measures: input.number_of_measures,
+            number_of_measures: results.len(),
             decryption_type: input.decryption_type,
             average_latency,
             average_throughput,

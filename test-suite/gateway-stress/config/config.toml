@@ -37,14 +37,14 @@ parallel_requests = 5
 # ENV: USER_CT_HANDLES (format: comma separated list)
 # Example: USER_CT_HANDLES="0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500,0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500"
 user_ct_handles = [
-    "0x2a879e617c9a25d91bcb828b4631c61e8abcd51743ff00000000000030390500",
+    "0x7e314aadb1fe25d0eedc986529cf05604b71b717fdff00000000000030390500",
 ]
 
 # The handles used for public decryptions
 # ENV: PUBLIC_CT_HANDLES (format: comma separated list)
 # Example: PUBLIC_CT_HANDLES="0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500,0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500"
 public_ct_handles = [
-    "0x4cecf31bbca4baf834c96d7ae6a07279b50e0716e0ff00000000000030390500",
+    "0xcc0fe2694c954beeea00716b20dbff2f4aa3756afbff00000000000030390500",
 ]
 
 # The contract allowed for user decrytion on ct_handles

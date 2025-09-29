@@ -309,14 +309,16 @@ impl App {
                     )
                     .await
                 }
-            }?;
+            };
 
-            results.push(BenchBurstResult::new(
-                *burst_index,
-                bench_record.parallel_requests,
-                bench_record.decryption_type,
-                burst_result,
-            ));
+            if let Ok(burst_result) = burst_result {
+                results.push(BenchBurstResult::new(
+                    *burst_index,
+                    bench_record.parallel_requests,
+                    bench_record.decryption_type,
+                    burst_result,
+                ));
+            }
             *burst_index += 1;
         }
 
