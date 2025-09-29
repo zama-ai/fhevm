@@ -111,7 +111,6 @@ function transfer(address to, euint64 encryptedAmount) public {
   require(FHE.isSenderAllowed(encryptedAmount), "Unauthorized access to encrypted amount.");
 
   // Proceed with further logic
-  euint64 amount = FHE.asEuint64(encryptedAmount);
   ...
 }
 ```
