@@ -16,22 +16,6 @@ services:
     volumes:
       - db:/var/lib/postgresql/data
 
-  # key-downloader:
-  #   container_name: fhevm-key-downloader
-  #   image: busybox
-  #   env_file:
-  #     - ../env/staging/.env.coprocessor.local
-  #   volumes:
-  #     - keys-cache:/keys
-  #   command: >
-  #     sh -c "echo 'Starting key downloads...' &&
-  #       wget $KMS_PUBLIC_KEY -O /keys/pks &&
-  #       echo 'Downloaded public key' &&
-  #       wget $KMS_SERVER_KEY -O /keys/sns_pk &&
-  #       echo 'Downloaded server key' &&
-  #       wget $KMS_CRS_KEY -O /keys/pp &&
-  #       echo 'Downloaded PP key - All downloads complete'"
-
   db-migration:
     container_name: fhevm-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
