@@ -15,7 +15,7 @@ use alloy::{
     network::EthereumWallet,
     primitives::Address,
     providers::{
-        Identity, ProviderBuilder, RootProvider, WsConnect,
+        Identity, ProviderBuilder, RootProvider,
         fillers::{ChainIdFiller, FillProvider, JoinFill, WalletFiller},
     },
     rpc::types::Log,
@@ -73,16 +73,13 @@ impl App {
         });
 
         let wallet = Wallet::from_config(&config).await?;
-        let gateway_url = &config.gateway_url;
         let provider = NonceManagedProvider::new(
             ProviderBuilder::new()
                 .disable_recommended_fillers()
                 .with_chain_id(config.gateway_chain_id)
                 .filler(FillersWithoutNonceManagement::default())
                 .wallet(wallet.clone())
-                .connect_ws(WsConnect::new(gateway_url))
-                .await
-                .map_err(|e| anyhow!("Failed to connect to Gateway at {gateway_url}: {e}"))?,
+                .connect_http(config.gateway_url.parse()?),
             wallet.address(),
         );
         info!("Successfully connected to the Gateway");
