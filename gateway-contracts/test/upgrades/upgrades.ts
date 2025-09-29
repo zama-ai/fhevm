@@ -8,6 +8,7 @@ import {
   CiphertextCommits__factory,
   DecryptionV2Example__factory,
   Decryption__factory,
+  EmptyUUPSProxyGatewayConfig__factory,
   EmptyUUPSProxy__factory,
   GatewayConfigV2Example__factory,
   GatewayConfigV3Example__factory,
@@ -21,12 +22,10 @@ import {
 } from "../../typechain-types";
 import { createAndFundRandomWallet, loadTestVariablesFixture, toValues } from "../utils";
 
-// TODO: Re-enable the upgrade tests once fhevm 0.9 is released
-// See https://github.com/zama-ai/fhevm-internal/issues/439
-// Until then, all of the following tests are skipped and tagged as "pending" in the CI
-describe.skip("Upgrades", function () {
+describe("Upgrades", function () {
   let owner: Wallet;
-  let emptyUUPSFactory: EmptyUUPSProxy__factory;
+  let regularEmptyUUPSFactory: EmptyUUPSProxy__factory;
+  let gatewayConfigEmptyUUPSFactory: EmptyUUPSProxyGatewayConfig__factory;
   let ciphertextCommitsFactoryV1: CiphertextCommits__factory;
   let ciphertextCommitsFactoryV2: CiphertextCommitsV2Example__factory;
   let decryptionFactoryV1: Decryption__factory;
@@ -43,7 +42,8 @@ describe.skip("Upgrades", function () {
 
   before(async function () {
     owner = new Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
-    emptyUUPSFactory = await ethers.getContractFactory("EmptyUUPSProxy", owner);
+    regularEmptyUUPSFactory = await ethers.getContractFactory("EmptyUUPSProxy", owner);
+    gatewayConfigEmptyUUPSFactory = await ethers.getContractFactory("EmptyUUPSProxyGatewayConfig", owner);
 
     ciphertextCommitsFactoryV1 = await ethers.getContractFactory("CiphertextCommits", owner);
     ciphertextCommitsFactoryV2 = await ethers.getContractFactory("CiphertextCommitsV2Example", owner);
@@ -67,7 +67,7 @@ describe.skip("Upgrades", function () {
 
   it("Should deploy upgradable MultichainACL", async function () {
     const nonceBef = await ethers.provider.getTransactionCount(owner);
-    const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
+    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
       initializer: "initialize",
       kind: "uups",
     });
@@ -85,46 +85,46 @@ describe.skip("Upgrades", function () {
   });
 
   it("Should deploy upgradable CiphertextCommits", async function () {
-    const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
+    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
       initializer: "initialize",
       kind: "uups",
     });
     const ciphertextCommits = await upgrades.upgradeProxy(emptyUUPS, ciphertextCommitsFactoryV1);
     await ciphertextCommits.waitForDeployment();
-    expect(await ciphertextCommits.getVersion()).to.equal("CiphertextCommits v0.3.0");
+    expect(await ciphertextCommits.getVersion()).to.equal("CiphertextCommits v0.1.0");
     const ciphertextCommitsV2 = await upgrades.upgradeProxy(ciphertextCommits, ciphertextCommitsFactoryV2);
     await ciphertextCommitsV2.waitForDeployment();
     expect(await ciphertextCommitsV2.getVersion()).to.equal("CiphertextCommits v1000.0.0");
   });
 
   it("Should deploy upgradable Decryption", async function () {
-    const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
+    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
       initializer: "initialize",
       kind: "uups",
     });
     const decryption = await upgrades.upgradeProxy(emptyUUPS, decryptionFactoryV1);
     await decryption.waitForDeployment();
-    expect(await decryption.getVersion()).to.equal("Decryption v0.4.0");
+    expect(await decryption.getVersion()).to.equal("Decryption v0.1.0");
     const decryptionV2 = await upgrades.upgradeProxy(decryption, decryptionFactoryV2);
     await decryptionV2.waitForDeployment();
     expect(await decryptionV2.getVersion()).to.equal("Decryption v1000.0.0");
   });
 
   it("Should deploy upgradable GatewayConfig", async function () {
-    const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
+    const emptyUUPS = await upgrades.deployProxy(gatewayConfigEmptyUUPSFactory, [owner.address], {
       initializer: "initialize",
       kind: "uups",
     });
     const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
     await gatewayConfig.waitForDeployment();
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.3.0");
+    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
     const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV2);
     await gatewayConfigV2.waitForDeployment();
     expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
   });
 
   it("Should deploy upgradable KmsManagement", async function () {
-    const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
+    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
       initializer: "initialize",
       kind: "uups",
     });
@@ -137,13 +137,13 @@ describe.skip("Upgrades", function () {
   });
 
   it("Should deploy upgradable InputVerification", async function () {
-    const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
+    const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
       initializer: "initialize",
       kind: "uups",
     });
     const inputVerification = await upgrades.upgradeProxy(emptyUUPS, inputVerificationFactoryV1);
     await inputVerification.waitForDeployment();
-    expect(await inputVerification.getVersion()).to.equal("InputVerification v0.2.0");
+    expect(await inputVerification.getVersion()).to.equal("InputVerification v0.1.0");
     const inputVerificationV2 = await upgrades.upgradeProxy(inputVerification, inputVerificationFactoryV2);
     await inputVerificationV2.waitForDeployment();
     expect(await inputVerificationV2.getVersion()).to.equal("InputVerification v1000.0.0");
@@ -152,13 +152,13 @@ describe.skip("Upgrades", function () {
   it("Should allow original owner to upgrade the original GatewayConfig and transfer ownership", async function () {
     // Create a new gateway contract in order to avoid upgrading the original one and thus break
     // some tests if it's not re-compiled in the mean time
-    const emptyUUPS = await upgrades.deployProxy(emptyUUPSFactory, [owner.address], {
+    const emptyUUPS = await upgrades.deployProxy(gatewayConfigEmptyUUPSFactory, [owner.address], {
       initializer: "initialize",
       kind: "uups",
     });
     const gatewayConfig = await upgrades.upgradeProxy(emptyUUPS, gatewayConfigFactoryV1);
     await gatewayConfig.waitForDeployment();
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.3.0");
+    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
 
     const originalGatewayConfigAddress = await gatewayConfig.getAddress();
     const deployer = owner;
@@ -193,7 +193,7 @@ describe.skip("Upgrades", function () {
     const newField = "Protocol new field";
 
     // Check that GatewayConfig is at version 0.1.0
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.3.0");
+    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
 
     // Check that the protocol metadata is correct
     const metadata = await gatewayConfig.getProtocolMetadata();
