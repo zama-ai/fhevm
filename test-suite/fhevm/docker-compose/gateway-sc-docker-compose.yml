@@ -53,7 +53,7 @@ services:
     command:
       - npx hardhat task:triggerKeygen --params-type 1 --use-internal-kms-management-address true
     depends_on:
-      gateway-sc-deploy:
+      gateway-sc-add-network:
         condition: service_completed_successfully
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
@@ -75,7 +75,7 @@ services:
     command:
       - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-kms-management-address true
     depends_on:
-      gateway-sc-deploy:
+      gateway-sc-trigger-keygen:
         condition: service_completed_successfully
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.

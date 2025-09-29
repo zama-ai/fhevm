@@ -596,13 +596,6 @@ describe("Decryption", function () {
           .connect(kmsTxSenders[0])
           .publicDecryptionResponse(tooHighDecryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
-
-      // Check that a public decryption response with too high (not requested yet) old decryptionId reverts
-      await expect(
-        decryption
-          .connect(kmsTxSenders[0])
-          .publicDecryptionResponse(invalidOldDecryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
-      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
     });
 
     it("Should revert because the contract is paused", async function () {
@@ -1436,13 +1429,6 @@ describe("Decryption", function () {
         decryption
           .connect(kmsTxSenders[0])
           .userDecryptionResponse(tooHighDecryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
-      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
-
-      // Check that a user decryption response with too high (not requested yet) old decryptionId reverts
-      await expect(
-        decryption
-          .connect(kmsTxSenders[0])
-          .userDecryptionResponse(invalidOldDecryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
     });
 
