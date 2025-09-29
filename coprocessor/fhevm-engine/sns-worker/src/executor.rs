@@ -159,11 +159,8 @@ async fn get_keyset(
     keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
     tenant_api_key: &String,
 ) -> Result<Option<KeySet>, ExecutionError> {
-    let t = telemetry::tracer("worker_loop_init");
-    let s = t.child_span("fetch_keyset");
+    let _t = telemetry::tracer("fetch_keyset");
     let keys: Option<KeySet> = fetch_keyset(&keys_cache, &pool, tenant_api_key).await?;
-    telemetry::end_span(s);
-    t.end();
     Ok(keys)
 }
 

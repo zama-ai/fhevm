@@ -2,7 +2,13 @@ use std::time::Duration;
 
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
+use alloy::{
+    eips::BlockNumberOrTag, network::Ethereum, primitives::Address, providers::Provider,
+    rpc::types::Log, sol,
+};
 use alloy::{network::Ethereum, primitives::Address, providers::Provider, sol};
+use fhevm_engine_common::telemetry;
+use fhevm_engine_common::utils::compact_hex;
 use futures_util::{future::join_all, StreamExt};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tokio_util::sync::CancellationToken;
@@ -166,8 +172,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         error!("Block stream closed");
                         return Err(anyhow::anyhow!("Block stream closed"));
                     };
-                    let (request, _) = item?;
-                    self.verify_proof_request(db_pool, request).await?;
+                    let (request, log) = item?;
+                    self.verify_proof_request(db_pool, request, log).await?;
                 }
             }
             // Reset sleep duration on successful iteration.
@@ -264,22 +270,36 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         &self,
         db_pool: &Pool<Postgres>,
         request: InputVerification::VerifyProofRequest,
+        log: Log,
     ) -> anyhow::Result<()> {
-        info!(zk_proof_id = %request.zkProofId, "Received ZK proof request event");
+        let transaction_id = log.transaction_hash.map(|h| h.to_vec()).unwrap_or_default();
+        info!(zk_proof_id = %request.zkProofId, tid = %compact_hex(&transaction_id), "Received ZK proof request event");
+
+        let chain_id = request.contractChainId.to::<i64>();
+
+        let _ = telemetry::try_begin_transaction(
+            &db_pool,
+            chain_id,
+            &transaction_id,
+            log.block_number.unwrap_or_default(),
+        )
+        .await;
+
         // TODO: check if we can avoid the cast from u256 to i64
         sqlx::query!(
             "WITH ins AS (
-                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data)
-                VALUES ($1, $2, $3, $4, $5, $6)
+                INSERT INTO verify_proofs (zk_proof_id, chain_id, contract_address, user_address, input, extra_data, transaction_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7)
                 ON CONFLICT(zk_proof_id) DO NOTHING
             )
-            SELECT pg_notify($7, '')",
+            SELECT pg_notify($8, '')",
             request.zkProofId.to::<i64>(),
             request.contractChainId.to::<i64>(),
             request.contractAddress.to_string(),
             request.userAddress.to_string(),
             Some(request.ciphertextWithZKProof.as_ref()),
             request.extraData.as_ref(),
+            transaction_id,
             self.conf.verify_proof_req_db_channel
         )
         .execute(db_pool)

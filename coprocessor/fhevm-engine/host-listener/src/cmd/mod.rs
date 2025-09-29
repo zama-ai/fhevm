@@ -835,7 +835,13 @@ async fn db_insert_block_no_retry(
                 for handle in handles {
                     is_allowed.insert(handle.to_vec());
                 }
-                db.handle_acl_event(&mut tx, &event).await?;
+                db.handle_acl_event(
+                    &mut tx,
+                    &event,
+                    &log.transaction_hash,
+                    &log.block_number,
+                )
+                .await?;
                 continue;
             }
         }
@@ -848,6 +854,7 @@ async fn db_insert_block_no_retry(
                     event,
                     transaction_hash: log.transaction_hash,
                     is_allowed: false, // updated in the next loop
+                    block_number: log.block_number,
                 };
                 tfhe_event_log.push(log);
                 continue;

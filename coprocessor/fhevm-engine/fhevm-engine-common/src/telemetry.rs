@@ -333,7 +333,7 @@ impl TransactionMetrics {
     }
 }
 
-/// Tries to begin a transaction using TXN_METRICS_MANAGER
+/// Marks a transaction as started using the global transaction manager
 pub async fn try_begin_transaction(
     pool: &sqlx::PgPool,
     chain_id: i64,

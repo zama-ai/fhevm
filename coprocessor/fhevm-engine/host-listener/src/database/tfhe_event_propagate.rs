@@ -2,6 +2,7 @@ use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::{compact_hex, HeartBeat};
@@ -82,6 +83,7 @@ pub struct LogTfhe {
     pub event: Log<TfheContractEvents>,
     pub transaction_hash: Option<TransactionHash>,
     pub is_allowed: bool,
+    pub block_number: Option<u64>,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -367,6 +369,12 @@ impl Database {
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
+
+        self.record_transaction_begin(
+            &log.transaction_hash,
+            &log.block_number,
+        ).await;
+
         match &event.data {
             E::Cast(C::Cast {ct, toType, result, ..})
             => insert_computation_bytes(tx, result, &[ct], &[ty(toType)], &HAS_SCALAR).await,
@@ -460,8 +468,13 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         event: &Log<AclContractEvents>,
+        transaction_hash: &Option<Handle>,
+        block_number: &Option<u64>,
     ) -> Result<(), SqlxError> {
         let data = &event.data;
+
+        self.record_transaction_begin(transaction_hash, block_number)
+            .await;
 
         match data {
             AclContractEvents::Allowed(allowed) => {
@@ -598,6 +611,23 @@ impl Database {
         );
         query.execute(tx.deref_mut()).await?;
         Ok(())
+    }
+
+    async fn record_transaction_begin(
+        &self,
+        transaction_hash: &Option<Handle>,
+        block_number: &Option<u64>,
+    ) {
+        if let Some(txn_id) = transaction_hash {
+            let pool = self.pool.read().await.clone();
+            let _ = telemetry::try_begin_transaction(
+                &pool,
+                self.chain_id as i64,
+                &txn_id.to_vec(),
+                block_number.unwrap_or_default(),
+            )
+            .await;
+        }
     }
 }
 
