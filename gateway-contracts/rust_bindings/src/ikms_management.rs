@@ -16,13 +16,8 @@ interface IKMSManagement {
     error KmsAlreadySignedForKeygen(uint256 keyId, address kmsSigner);
     error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
 
-<<<<<<< HEAD
     event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
     event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
-=======
-    event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
-    event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, KeyDigest[] keyDigests);
->>>>>>> feat/keygen_via_gateway
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType);
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId);
     event PrepKeygenRequest(uint256 prepKeygenId, uint256 epochId, ParamsType paramsType);
@@ -320,11 +315,7 @@ interface IKMSManagement {
         "internalType": "uint256"
       },
       {
-<<<<<<< HEAD
         "name": "kmsNodeStorageUrls",
-=======
-        "name": "kmsNodeS3BucketUrls",
->>>>>>> feat/keygen_via_gateway
         "type": "string[]",
         "indexed": false,
         "internalType": "string[]"
@@ -349,11 +340,7 @@ interface IKMSManagement {
         "internalType": "uint256"
       },
       {
-<<<<<<< HEAD
         "name": "kmsNodeStorageUrls",
-=======
-        "name": "kmsNodeS3BucketUrls",
->>>>>>> feat/keygen_via_gateway
         "type": "string[]",
         "indexed": false,
         "internalType": "string[]"
@@ -1497,11 +1484,7 @@ error KmsAlreadySignedForPrepKeygen(uint256 prepKeygenId, address kmsSigner);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ActivateCrs(uint256,string[],bytes)` and selector `0x2258b73faed33fb2e2ea454403bef974920caf682ab3a723484fcf67553b16a2`.
 ```solidity
-<<<<<<< HEAD
 event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
-=======
-event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
->>>>>>> feat/keygen_via_gateway
 ```*/
     #[allow(
         non_camel_case_types,
@@ -1514,11 +1497,7 @@ event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
         #[allow(missing_docs)]
         pub crsId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-<<<<<<< HEAD
         pub kmsNodeStorageUrls: alloy::sol_types::private::Vec<
-=======
-        pub kmsNodeS3BucketUrls: alloy::sol_types::private::Vec<
->>>>>>> feat/keygen_via_gateway
             alloy::sol_types::private::String,
         >,
         #[allow(missing_docs)]
@@ -1558,11 +1537,7 @@ event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
             ) -> Self {
                 Self {
                     crsId: data.0,
-<<<<<<< HEAD
                     kmsNodeStorageUrls: data.1,
-=======
-                    kmsNodeS3BucketUrls: data.1,
->>>>>>> feat/keygen_via_gateway
                     crsDigest: data.2,
                 }
             }
@@ -1589,11 +1564,7 @@ event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
                     > as alloy_sol_types::SolType>::tokenize(&self.crsId),
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::String,
-<<<<<<< HEAD
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeStorageUrls),
-=======
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeS3BucketUrls),
->>>>>>> feat/keygen_via_gateway
                     <alloy::sol_types::sol_data::Bytes as alloy_sol_types::SolType>::tokenize(
                         &self.crsDigest,
                     ),
@@ -1638,11 +1609,7 @@ event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Event with signature `ActivateKey(uint256,string[],(uint8,bytes)[])` and selector `0xeb85c26dbcad46b80a68a0f24cce7c2c90f0a1faded84184138839fc9e80a25b`.
 ```solidity
-<<<<<<< HEAD
 event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
-=======
-event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, KeyDigest[] keyDigests);
->>>>>>> feat/keygen_via_gateway
 ```*/
     #[allow(
         non_camel_case_types,
@@ -1655,11 +1622,7 @@ event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, KeyDigest[] keyDi
         #[allow(missing_docs)]
         pub keyId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
-<<<<<<< HEAD
         pub kmsNodeStorageUrls: alloy::sol_types::private::Vec<
-=======
-        pub kmsNodeS3BucketUrls: alloy::sol_types::private::Vec<
->>>>>>> feat/keygen_via_gateway
             alloy::sol_types::private::String,
         >,
         #[allow(missing_docs)]
@@ -1702,11 +1665,7 @@ event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, KeyDigest[] keyDi
             ) -> Self {
                 Self {
                     keyId: data.0,
-<<<<<<< HEAD
                     kmsNodeStorageUrls: data.1,
-=======
-                    kmsNodeS3BucketUrls: data.1,
->>>>>>> feat/keygen_via_gateway
                     keyDigests: data.2,
                 }
             }
@@ -1733,11 +1692,7 @@ event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, KeyDigest[] keyDi
                     > as alloy_sol_types::SolType>::tokenize(&self.keyId),
                     <alloy::sol_types::sol_data::Array<
                         alloy::sol_types::sol_data::String,
-<<<<<<< HEAD
                     > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeStorageUrls),
-=======
-                    > as alloy_sol_types::SolType>::tokenize(&self.kmsNodeS3BucketUrls),
->>>>>>> feat/keygen_via_gateway
                     <alloy::sol_types::sol_data::Array<
                         KeyDigest,
                     > as alloy_sol_types::SolType>::tokenize(&self.keyDigests),
