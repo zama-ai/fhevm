@@ -4,29 +4,31 @@ import { IDecryption } from "./interfaces/IDecryption.sol";
 import {
     ciphertextCommitsAddress,
     gatewayConfigAddress,
-    multichainAclAddress
+    multichainACLAddress
 } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./interfaces/IGatewayConfig.sol";
-import "./interfaces/IMultichainAcl.sol";
-import "./interfaces/ICiphertextCommits.sol";
-import "./shared/UUPSUpgradeableEmptyProxy.sol";
-import "./shared/GatewayConfigChecks.sol";
-import "./shared/FheType.sol";
-import "./shared/Pausable.sol";
-import "./libraries/FHETypeBitSizes.sol";
+import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
+import { IMultichainACL } from "./interfaces/IMultichainACL.sol";
+import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
+import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
+import { FheType } from "./shared/FheType.sol";
+import { Pausable } from "./shared/Pausable.sol";
+import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
+import { HandleOps } from "./libraries/HandleOps.sol";
+import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { SnsCiphertextMaterial, CtHandleContractPair, DelegationAccounts } from "./shared/Structs.sol";
 
 /// @title Decryption contract
 /// @dev See {IDecryption}.
 contract Decryption is
     IDecryption,
     EIP712Upgradeable,
-    Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
+    GatewayOwnable,
     GatewayConfigChecks,
     Pausable
 {
@@ -105,8 +107,8 @@ contract Decryption is
     /// @notice The address of the GatewayConfig contract for checking if a signer is valid
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @notice The address of the MultichainAcl contract for checking if a decryption requests are allowed
-    IMultichainAcl private constant MULTICHAIN_ACL = IMultichainAcl(multichainAclAddress);
+    /// @notice The address of the MultichainACL contract for checking if a decryption requests are allowed
+    IMultichainACL private constant MULTICHAIN_ACL = IMultichainACL(multichainACLAddress);
 
     /// @notice The address of the CiphertextCommits contract for getting ciphertext materials.
     ICiphertextCommits private constant CIPHERTEXT_COMMITS = ICiphertextCommits(ciphertextCommitsAddress);
@@ -160,49 +162,35 @@ contract Decryption is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// Constant used for making sure the version number using in the `reinitializer` modifier is
-    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    /**
+     * @dev Constant used for making sure the version number using in the `reinitializer` modifier is
+     * identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+     * This constant does not represent the number of time a specific contract have been upgraded,
+     * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
+     */
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.Decryption
     struct DecryptionStorage {
+        // ----------------------------------------------------------------------------------------------
+        // Common decryption state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice The number of (public, user, delegated user) decryption requests, used to
         /// @notice generate request IDs (`decryptionId`).
-        uint256 _decryptionRequestCounter;
+        uint256 decryptionRequestCounter;
         /// @notice Whether a (public, user, delegated user) decryption is done
         mapping(uint256 decryptionId => bool decryptionDone) decryptionDone;
         // prettier-ignore
         /// @notice Whether KMS signer has already responded to a decryption request.
         mapping(uint256 decryptionId =>
             mapping(address kmsSigner => bool alreadyResponded))
-                _kmsNodeAlreadySigned;
+                kmsNodeAlreadySigned;
         // ----------------------------------------------------------------------------------------------
-        // Public decryption state variables:
-        // ----------------------------------------------------------------------------------------------
-        // prettier-ignore
-        /// @notice Verified signatures for a public decryption.
-        mapping(uint256 decryptionId =>
-            mapping(bytes32 digest => bytes[] verifiedSignatures))
-                _verifiedPublicDecryptSignatures;
-        /// @notice Handles of the ciphertexts requested for a public decryption
-        mapping(uint256 decryptionId => bytes32[] ctHandles) publicCtHandles;
-        // ----------------------------------------------------------------------------------------------
-        // User decryption state variables:
-        // ----------------------------------------------------------------------------------------------
-        /// @notice Verified signatures for a user decryption.
-        mapping(uint256 decryptionId => bytes[] verifiedSignatures) _verifiedUserDecryptSignatures;
-        /// @notice The decryption payloads stored during user decryption requests.
-        mapping(uint256 decryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
-        /// @notice Whether a user decryption has been done
-        mapping(uint256 decryptionId => bool userDecryptionDone) userDecryptionDone;
-        /// @notice The user decrypted shares received from user decryption responses.
-        mapping(uint256 decryptionId => bytes[] shares) userDecryptedShares;
-        // ----------------------------------------------------------------------------------------------
-        // Transaction sender addresses from consensus state variables:
+        // Common decryption consensus state variables:
         // ----------------------------------------------------------------------------------------------
         // prettier-ignore
         /// @notice The KMS transaction senders involved in a consensus for a decryption response.
@@ -211,6 +199,25 @@ contract Decryption is
                consensusTxSenderAddresses;
         /// @notice The digest of the decryption response that reached consensus for a decryption request.
         mapping(uint256 decryptionId => bytes32 consensusDigest) decryptionConsensusDigest;
+        // ----------------------------------------------------------------------------------------------
+        // Public decryption state variables:
+        // ----------------------------------------------------------------------------------------------
+        // prettier-ignore
+        /// @notice Verified signatures for a public decryption.
+        mapping(uint256 decryptionId =>
+            mapping(bytes32 digest => bytes[] verifiedSignatures))
+                verifiedPublicDecryptSignatures;
+        /// @notice Handles of the ciphertexts requested for a public decryption
+        mapping(uint256 decryptionId => bytes32[] ctHandles) publicCtHandles;
+        // ----------------------------------------------------------------------------------------------
+        // User decryption state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice Verified signatures for a user decryption.
+        mapping(uint256 decryptionId => bytes[] verifiedSignatures) verifiedUserDecryptSignatures;
+        /// @notice The decryption payloads stored during user decryption requests.
+        mapping(uint256 decryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
+        /// @notice The user decrypted shares received from user decryption responses.
+        mapping(uint256 decryptionId => bytes[] shares) userDecryptedShares;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -230,16 +237,16 @@ contract Decryption is
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
-        __Ownable_init(owner());
         __Pausable_init();
     }
 
     /**
-     * @notice Re-initializes the contract from V3.
+     * @notice Re-initializes the contract from V1.
+     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
     function publicDecryptionRequest(
@@ -273,8 +280,8 @@ contract Decryption is
         // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
-        $._decryptionRequestCounter++;
-        uint256 decryptionId = $._decryptionRequestCounter;
+        $.decryptionRequestCounter++;
+        uint256 decryptionId = $.decryptionRequestCounter;
 
         /// @dev The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[decryptionId] = ctHandles;
@@ -294,7 +301,7 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Make sure the decryptionId corresponds to a generated decryption request.
-        if (decryptionId > $._decryptionRequestCounter || decryptionId == 0) {
+        if (decryptionId > $.decryptionRequestCounter || decryptionId == 0) {
             revert DecryptionNotRequested(decryptionId);
         }
 
@@ -317,7 +324,7 @@ contract Decryption is
         /// @dev the digest (contrary to the user decryption case) as the decrypted result is expected
         /// @dev to be the same for all KMS nodes. This allows to filter out results from malicious
         /// @dev KMS nodes.
-        bytes[] storage verifiedSignatures = $._verifiedPublicDecryptSignatures[decryptionId][digest];
+        bytes[] storage verifiedSignatures = $.verifiedPublicDecryptSignatures[decryptionId][digest];
         verifiedSignatures.push(signature);
 
         // Store the KMS transaction sender address for the public decryption response
@@ -407,8 +414,8 @@ contract Decryption is
         // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
-        $._decryptionRequestCounter++;
-        uint256 decryptionId = $._decryptionRequestCounter;
+        $.decryptionRequestCounter++;
+        uint256 decryptionId = $.decryptionRequestCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
@@ -492,8 +499,8 @@ contract Decryption is
         // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
-        $._decryptionRequestCounter++;
-        uint256 decryptionId = $._decryptionRequestCounter;
+        $.decryptionRequestCounter++;
+        uint256 decryptionId = $.decryptionRequestCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
@@ -519,7 +526,7 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Make sure the decryptionId corresponds to a generated decryption request.
-        if (decryptionId > $._decryptionRequestCounter || decryptionId == 0) {
+        if (decryptionId > $.decryptionRequestCounter || decryptionId == 0) {
             revert DecryptionNotRequested(decryptionId);
         }
 
@@ -543,7 +550,7 @@ contract Decryption is
         /// @dev This list is then used to check the consensus. Important: the mapping should not
         /// @dev consider the digest (contrary to the public decryption case) as shares are expected
         /// @dev to be different for each KMS node.
-        bytes[] storage verifiedSignatures = $._verifiedUserDecryptSignatures[decryptionId];
+        bytes[] storage verifiedSignatures = $.verifiedUserDecryptSignatures[decryptionId];
         verifiedSignatures.push(signature);
 
         /// @dev Store the user decrypted share for the user decryption response.
@@ -683,11 +690,11 @@ contract Decryption is
         GATEWAY_CONFIG.checkIsKmsSigner(signer);
 
         /// @dev Check that the signer has not already responded to the user decryption request.
-        if ($._kmsNodeAlreadySigned[decryptionId][signer]) {
+        if ($.kmsNodeAlreadySigned[decryptionId][signer]) {
             revert KmsNodeAlreadySigned(decryptionId, signer);
         }
 
-        $._kmsNodeAlreadySigned[decryptionId][signer] = true;
+        $.kmsNodeAlreadySigned[decryptionId][signer] = true;
     }
 
     /**

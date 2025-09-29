@@ -6,6 +6,10 @@ import path from "path";
 import { ADDRESSES_DIR } from "../../hardhat.config";
 import { pascalCaseToCamelCase, pascalCaseToSnakeCase } from "../utils/stringOps";
 
+// Define the empty proxy names for the different contracts
+export const GATEWAY_CONFIG_EMPTY_PROXY_NAME = "EmptyUUPSProxyGatewayConfig";
+export const REGULAR_EMPTY_PROXY_NAME = "EmptyUUPSProxy";
+
 // A helper task to update a contract's address in their .sol and .env file in the `addresses` directory
 task("task:setContractAddress")
   .addParam("name", "The name of the contract (PascalCase)")

@@ -125,7 +125,7 @@ task("task:verifyKmsManagement")
     });
   });
 
-task("task:verifyMultichainAcl")
+task("task:verifyMultichainACL")
   .addOptionalParam(
     "useInternalProxyAddress",
     "If proxy address from the /addresses directory should be used",
@@ -169,8 +169,8 @@ task("task:verifyAllGatewayContracts")
     console.log("Verify CiphertextCommits contract:");
     await hre.run("task:verifyCiphertextCommits", { useInternalProxyAddress });
 
-    console.log("Verify MultichainAcl contract:");
-    await hre.run("task:verifyMultichainAcl", { useInternalProxyAddress });
+    console.log("Verify MultichainACL contract:");
+    await hre.run("task:verifyMultichainACL", { useInternalProxyAddress });
 
     console.log("Verify Decryption contract:");
     await hre.run("task:verifyDecryption", { useInternalProxyAddress });

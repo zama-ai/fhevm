@@ -75,8 +75,14 @@ check-selectors: ensure-addresses
 update-selectors: ensure-addresses
 	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 > ./selectors.txt
 
+# Update auto-generated files for conformance checks
+update-conformance: update-bindings update-mocks update-selectors
+
 # Conform to pre-commit checks
-conformance: prettier update-bindings update-mocks update-selectors
+conformance: prettier update-conformance
+
+# Regenerate the addresses and conform to pre-commit checks
+conformance-regenerate-addresses: prettier deploy-setup-contracts update-conformance
 
 # Deploy the empty proxy addresses
 deploy-empty-proxies:

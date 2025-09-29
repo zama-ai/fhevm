@@ -8,8 +8,9 @@ import { IPauserSet } from "./interfaces/IPauserSet.sol";
 import { decryptionAddress, inputVerificationAddress, pauserSetAddress } from "../addresses/GatewayAddresses.sol";
 import { Decryption } from "./Decryption.sol";
 import { InputVerification } from "./InputVerification.sol";
-import "./shared/UUPSUpgradeableEmptyProxy.sol";
-import "./shared/Pausable.sol";
+import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import { Pausable } from "./shared/Pausable.sol";
+import { ProtocolMetadata, HostChain, Coprocessor, Custodian, KmsNode } from "./shared/Structs.sol";
 
 /**
  * @title GatewayConfig contract
@@ -17,7 +18,7 @@ import "./shared/Pausable.sol";
  * @dev Add/remove methods will be added in the future for KMS nodes, coprocessors and host chains.
  * @dev See https://github.com/zama-ai/fhevm-gateway/issues/98 for more details.
  */
-contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy, Pausable {
+contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeableEmptyProxy {
     /// @notice The maximum chain ID.
     uint256 internal constant MAX_CHAIN_ID = type(uint64).max;
 
@@ -26,12 +27,16 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// Constant used for making sure the version number using in the `reinitializer` modifier is
-    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    /**
+     * @dev Constant used for making sure the version number using in the `reinitializer` modifier is
+     * identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+     * This constant does not represent the number of time a specific contract have been upgraded,
+     * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
+     */
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// @notice The address of the all gateway contracts
     Decryption private constant DECRYPTION = Decryption(decryptionAddress);
@@ -41,20 +46,18 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.GatewayConfig
     struct GatewayConfigStorage {
-        /// @notice DEPRECATED: to remove for mainnet
-        address pauser; // DEPRECATED
-        /// @notice The KMS nodes' transaction sender addresses
-        mapping(address kmsTxSenderAddress => bool isKmsTxSender) _isKmsTxSender;
-        /// @notice The KMS nodes' signer addresses
-        mapping(address kmsSignerAddress => bool isKmsSigner) _isKmsSigner;
-        /// @notice The coprocessors' transaction sender addresses
-        mapping(address coprocessorTxSenderAddress => bool isCoprocessorTxSender) _isCoprocessorTxSender;
-        /// @notice The coprocessors' signer addresses
-        mapping(address coprocessorSignerAddress => bool isCoprocessorSigner) _isCoprocessorSigner;
-        /// @notice The host chains' registered status
-        mapping(uint256 chainId => bool isRegistered) _isHostChainRegistered;
+        // ----------------------------------------------------------------------------------------------
+        // Protocol metadata state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice The protocol's metadata
         ProtocolMetadata protocolMetadata;
+        // ----------------------------------------------------------------------------------------------
+        // KMS nodes state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The KMS nodes' transaction sender addresses
+        mapping(address kmsTxSenderAddress => bool isTxSender) isKmsTxSender;
+        /// @notice The KMS nodes' signer addresses
+        mapping(address kmsSignerAddress => bool isSigner) isKmsSigner;
         /// @notice The KMS nodes' metadata
         mapping(address kmsTxSenderAddress => KmsNode kmsNode) kmsNodes;
         /// @notice The KMS nodes' transaction sender address list
@@ -67,14 +70,29 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 publicDecryptionThreshold;
         /// @notice The threshold to consider for user decryption consensus
         uint256 userDecryptionThreshold;
+        // ----------------------------------------------------------------------------------------------
+        // Coprocessors state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The coprocessors' transaction sender addresses
+        mapping(address coprocessorTxSenderAddress => bool isTxSender) isCoprocessorTxSender;
+        /// @notice The coprocessors' signer addresses
+        mapping(address coprocessorSignerAddress => bool isSigner) isCoprocessorSigner;
         /// @notice The coprocessors' metadata
         mapping(address coprocessorTxSenderAddress => Coprocessor coprocessor) coprocessors;
         /// @notice The coprocessors' transaction sender address list
         address[] coprocessorTxSenderAddresses;
         /// @notice The coprocessors' signer address list
         address[] coprocessorSignerAddresses;
+        // ----------------------------------------------------------------------------------------------
+        // Host chain state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The host chains' registered status
+        mapping(uint256 chainId => bool isRegistered) isHostChainRegistered;
         /// @notice The host chains' metadata
         HostChain[] hostChains;
+        // ----------------------------------------------------------------------------------------------
+        // Custodians state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice The custodians' metadata
         mapping(address custodianTxSenderAddress => Custodian custodian) custodians;
         /// @notice The custodians' transaction sender address list
@@ -82,9 +100,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         /// @notice The custodians' signer address list
         address[] custodianSignerAddresses;
         /// @notice The custodians' transaction sender addresses
-        mapping(address custodianTxSenderAddress => bool isCustodianTxSender) _isCustodianTxSender;
+        mapping(address custodianTxSenderAddress => bool isTxSender) isCustodianTxSender;
         /// @notice The custodians' signer addresses
-        mapping(address custodianSignerAddress => bool isCustodianSigner) _isCustodianSigner;
+        mapping(address custodianSignerAddress => bool isSigner) isCustodianSigner;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -96,6 +114,13 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
+    }
+
+    modifier onlyPauser() {
+        if (!isPauser(msg.sender)) {
+            revert NotPauser(msg.sender);
+        }
+        _;
     }
 
     /// @notice Initializes the contract
@@ -118,7 +143,6 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         Custodian[] memory initialCustodians
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
-        __Pausable_init();
 
         if (initialKmsNodes.length == 0) {
             revert EmptyKmsNodes();
@@ -137,10 +161,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         /// @dev Register the KMS nodes
         for (uint256 i = 0; i < initialKmsNodes.length; i++) {
-            $._isKmsTxSender[initialKmsNodes[i].txSenderAddress] = true;
+            $.isKmsTxSender[initialKmsNodes[i].txSenderAddress] = true;
             $.kmsNodes[initialKmsNodes[i].txSenderAddress] = initialKmsNodes[i];
             $.kmsTxSenderAddresses.push(initialKmsNodes[i].txSenderAddress);
-            $._isKmsSigner[initialKmsNodes[i].signerAddress] = true;
+            $.isKmsSigner[initialKmsNodes[i].signerAddress] = true;
             $.kmsSignerAddresses.push(initialKmsNodes[i].signerAddress);
         }
 
@@ -152,10 +176,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         /// @dev Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
-            $._isCoprocessorTxSender[initialCoprocessors[i].txSenderAddress] = true;
+            $.isCoprocessorTxSender[initialCoprocessors[i].txSenderAddress] = true;
             $.coprocessors[initialCoprocessors[i].txSenderAddress] = initialCoprocessors[i];
             $.coprocessorTxSenderAddresses.push(initialCoprocessors[i].txSenderAddress);
-            $._isCoprocessorSigner[initialCoprocessors[i].signerAddress] = true;
+            $.isCoprocessorSigner[initialCoprocessors[i].signerAddress] = true;
             $.coprocessorSignerAddresses.push(initialCoprocessors[i].signerAddress);
         }
 
@@ -163,9 +187,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         for (uint256 i = 0; i < initialCustodians.length; i++) {
             $.custodians[initialCustodians[i].txSenderAddress] = initialCustodians[i];
             $.custodianTxSenderAddresses.push(initialCustodians[i].txSenderAddress);
-            $._isCustodianTxSender[initialCustodians[i].txSenderAddress] = true;
+            $.isCustodianTxSender[initialCustodians[i].txSenderAddress] = true;
             $.custodianSignerAddresses.push(initialCustodians[i].signerAddress);
-            $._isCustodianSigner[initialCustodians[i].signerAddress] = true;
+            $.isCustodianSigner[initialCustodians[i].signerAddress] = true;
         }
 
         emit InitializeGatewayConfig(
@@ -176,11 +200,18 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             initialCustodians
         );
     }
-
-    /// @notice Reinitializes the contract to v3.
+    /**
+     * @notice Re-initializes the contract from V1.
+     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
+     */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+
+    /// @dev See {IGatewayConfig-isPauser}.
+    function isPauser(address account) public view virtual returns (bool) {
+        return PAUSER_SET.isPauser(account);
+    }
 
     /// @dev See {IGatewayConfig-updateMpcThreshold}.
     function updateMpcThreshold(uint256 newMpcThreshold) external virtual onlyOwner {
@@ -210,12 +241,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
 
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if ($._isHostChainRegistered[hostChain.chainId]) {
+        if ($.isHostChainRegistered[hostChain.chainId]) {
             revert HostChainAlreadyRegistered(hostChain.chainId);
         }
 
         $.hostChains.push(hostChain);
-        $._isHostChainRegistered[hostChain.chainId] = true;
+        $.isHostChainRegistered[hostChain.chainId] = true;
         emit AddHostChain(hostChain);
     }
 
@@ -243,7 +274,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IGatewayConfig-checkIsKmsTxSender}.
     function checkIsKmsTxSender(address txSenderAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$._isKmsTxSender[txSenderAddress]) {
+        if (!$.isKmsTxSender[txSenderAddress]) {
             revert NotKmsTxSender(txSenderAddress);
         }
     }
@@ -251,7 +282,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IGatewayConfig-checkIsKmsSigner}.
     function checkIsKmsSigner(address signerAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$._isKmsSigner[signerAddress]) {
+        if (!$.isKmsSigner[signerAddress]) {
             revert NotKmsSigner(signerAddress);
         }
     }
@@ -259,7 +290,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IGatewayConfig-checkIsCoprocessorTxSender}.
     function checkIsCoprocessorTxSender(address txSenderAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$._isCoprocessorTxSender[txSenderAddress]) {
+        if (!$.isCoprocessorTxSender[txSenderAddress]) {
             revert NotCoprocessorTxSender(txSenderAddress);
         }
     }
@@ -267,7 +298,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IGatewayConfig-checkIsCoprocessorSigner}.
     function checkIsCoprocessorSigner(address signerAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$._isCoprocessorSigner[signerAddress]) {
+        if (!$.isCoprocessorSigner[signerAddress]) {
             revert NotCoprocessorSigner(signerAddress);
         }
     }
@@ -275,7 +306,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IGatewayConfig-checkIsCustodianTxSender}.
     function checkIsCustodianTxSender(address txSenderAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$._isCustodianTxSender[txSenderAddress]) {
+        if (!$.isCustodianTxSender[txSenderAddress]) {
             revert NotCustodianTxSender(txSenderAddress);
         }
     }
@@ -283,7 +314,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IGatewayConfig-checkIsCustodianSigner}.
     function checkIsCustodianSigner(address signerAddress) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$._isCustodianSigner[signerAddress]) {
+        if (!$.isCustodianSigner[signerAddress]) {
             revert NotCustodianSigner(signerAddress);
         }
     }
@@ -291,14 +322,9 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @dev See {IGatewayConfig-checkHostChainIsRegistered}.
     function checkHostChainIsRegistered(uint256 chainId) external view virtual {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$._isHostChainRegistered[chainId]) {
+        if (!$.isHostChainRegistered[chainId]) {
             revert HostChainNotRegistered(chainId);
         }
-    }
-
-    /// @dev See {IGatewayConfig-isPauser}.
-    function isPauser(address account) external view virtual returns (bool) {
-        return PAUSER_SET.isPauser(account);
     }
 
     /// @dev See {IGatewayConfig-getProtocolMetadata}.

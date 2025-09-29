@@ -8,11 +8,13 @@ import path from "path";
 import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../utils/loadVariables";
 import { pascalCaseToSnakeCase } from "../utils/stringOps";
+import { GATEWAY_CONFIG_EMPTY_PROXY_NAME, REGULAR_EMPTY_PROXY_NAME } from "./utils";
 
 // Helper function to deploy a contract implementation to its proxy
 async function deployContractImplementation(
   name: string,
   hre: HardhatRuntimeEnvironment,
+  emptyProxyName: string,
   initializeArgs?: unknown[],
 ): Promise<string> {
   const { ethers, upgrades } = hre;
@@ -22,7 +24,7 @@ async function deployContractImplementation(
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
   // Get contract factories
-  const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+  const proxyImplementation = await ethers.getContractFactory(emptyProxyName, deployer);
   const newImplem = await ethers.getContractFactory(name, deployer);
 
   const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
@@ -117,7 +119,9 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   console.log("Coprocessors:", coprocessors);
   console.log("Custodians:", custodians);
 
-  await deployContractImplementation("GatewayConfig", hre, [
+  // The GatewayConfig contract is not deployed using the same empty proxy as the other contracts,
+  // as it is made ownable
+  await deployContractImplementation("GatewayConfig", hre, GATEWAY_CONFIG_EMPTY_PROXY_NAME, [
     protocolMetadata,
     mpcThreshold,
     publicDecryptionThreshold,
@@ -130,7 +134,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
 
 // Deploy the InputVerification contract
 task("task:deployInputVerification").setAction(async function (_, hre) {
-  await deployContractImplementation("InputVerification", hre);
+  await deployContractImplementation("InputVerification", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
 // Deploy the KmsManagement contract
@@ -141,22 +145,22 @@ task("task:deployKmsManagement").setAction(async function (_, hre) {
   console.log("FHE params name:", fheParamsName);
   console.log("FHE params digest:", fheParamsDigest);
 
-  await deployContractImplementation("KmsManagement", hre, [fheParamsName, fheParamsDigest]);
+  await deployContractImplementation("KmsManagement", hre, REGULAR_EMPTY_PROXY_NAME, [fheParamsName, fheParamsDigest]);
 });
 
 // Deploy the CiphertextCommits contract
 task("task:deployCiphertextCommits").setAction(async function (_, hre) {
-  await deployContractImplementation("CiphertextCommits", hre);
+  await deployContractImplementation("CiphertextCommits", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
-// Deploy the MultichainAcl contract
-task("task:deployMultichainAcl").setAction(async function (_, hre) {
-  await deployContractImplementation("MultichainAcl", hre);
+// Deploy the MultichainACL contract
+task("task:deployMultichainACL").setAction(async function (_, hre) {
+  await deployContractImplementation("MultichainACL", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
 // Deploy the Decryption contract
 task("task:deployDecryption").setAction(async function (_, hre) {
-  await deployContractImplementation("Decryption", hre);
+  await deployContractImplementation("Decryption", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
 // Deploy all the contracts
@@ -186,8 +190,8 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   console.log("Deploy CiphertextCommits contract:");
   await hre.run("task:deployCiphertextCommits");
 
-  console.log("Deploy MultichainAcl contract:");
-  await hre.run("task:deployMultichainAcl");
+  console.log("Deploy MultichainACL contract:");
+  await hre.run("task:deployMultichainACL");
 
   console.log("Deploy Decryption contract:");
   await hre.run("task:deployDecryption");
