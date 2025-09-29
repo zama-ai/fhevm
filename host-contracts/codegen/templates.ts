@@ -1102,7 +1102,7 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
         bytes4 callbackSelector,
         uint256 msgValue
     ) internal returns (uint256 requestID) {
-      requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, 0);
+      requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, msgValue);
       saveRequestedHandles(requestID, ctsHandles);
     }
 
@@ -1132,7 +1132,9 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
     }
 
     /**
-     * @dev Private low-level function used to extract the decryptedResult bytes array and verify the KMS signatures.
+     * @dev Internal low-level function used to verify the KMS signatures.
+     * @notice Prefer using the higher-level \`checkSignatures\` function whenever possible, in combination with \`requestDecryption\`
+     * @notice This low-level function is useful in combination with the less practical \`requestDecryptionWithoutSavingHandles\`
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
      * @dev The callback function has the following signature:
      * - requestID (static uint256)
