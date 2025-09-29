@@ -19,23 +19,23 @@ describe('Upgrades', function () {
     this.decryptionOracleFactoryUpgraded = await ethers.getContractFactory('DecryptionOracleUpgradedExample');
   });
 
-  it('deploy upgradable ACL', async function () {
+  it('deploy upgradeable ACL', async function () {
     const nonceBef = await ethers.provider.getTransactionCount(this.signers.alice);
     const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
     });
     const acl = await upgrades.upgradeProxy(emptyUUPS, this.aclFactory, {
-      call: { fn: 'initializeFromEmptyProxy', args: [this.signers.alice.address] },
+      call: { fn: 'initializeFromEmptyProxy' },
     });
     await acl.waitForDeployment();
     const ownerBef = await acl.owner();
-    expect(await acl.getVersion()).to.equal('ACL v0.2.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.3.0');
     const acl2 = await upgrades.upgradeProxy(acl, this.aclFactoryUpgraded);
     await acl2.waitForDeployment();
     const ownerAft = await acl2.owner();
     expect(ownerBef).to.equal(ownerAft);
-    expect(await acl2.getVersion()).to.equal('ACL v0.3.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.4.0');
     const aclAddress = ethers.getCreateAddress({
       from: this.signers.alice.address,
       nonce: nonceBef, // using nonce of nonceBef instead of nonceBef+1 here, since the original implementation has already been deployer during the setup phase, and hardhat-upgrades plugin is able to detect this and not redeploy twice same contract
@@ -43,7 +43,7 @@ describe('Upgrades', function () {
     expect(aclAddress).to.equal(await acl2.getAddress());
   });
 
-  it('deploy upgradable KMSVerifier', async function () {
+  it('deploy upgradeable KMSVerifier', async function () {
     const kmsFactory = await ethers.getContractFactory('KMSVerifier', this.signers.fred);
     const kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host
     const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.fred.address], {
@@ -58,7 +58,7 @@ describe('Upgrades', function () {
     expect(await kms2.getVersion()).to.equal('KMSVerifier v0.3.0');
   });
 
-  it('deploy upgradable FHEVMExecutor', async function () {
+  it('deploy upgradeable FHEVMExecutor', async function () {
     const executorFactory = await ethers.getContractFactory(
       'contracts/FHEVMExecutor.sol:FHEVMExecutor',
       this.signers.fred,
@@ -78,7 +78,7 @@ describe('Upgrades', function () {
     expect(await executor2.getVersion()).to.equal('FHEVMExecutor v0.4.0');
   });
 
-  it('deploy upgradable HCULimit', async function () {
+  it('deploy upgradeable HCULimit', async function () {
     const paymentFactory = await ethers.getContractFactory('HCULimit', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host
     const paymentFactoryUpgraded = await ethers.getContractFactory('HCULimitUpgradedExample', this.signers.fred);
     const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.fred.address], {
@@ -95,7 +95,7 @@ describe('Upgrades', function () {
     expect(await payment2.getVersion()).to.equal('HCULimit v0.4.0');
   });
 
-  it('deploy upgradable DecryptionOracle', async function () {
+  it('deploy upgradeable DecryptionOracle', async function () {
     const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, [this.signers.alice.address], {
       initializer: 'initialize',
       kind: 'uups',
@@ -114,11 +114,11 @@ describe('Upgrades', function () {
     const origACLAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).ACL_CONTRACT_ADDRESS;
     const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
     const acl = (await this.aclFactory.attach(origACLAdd, deployer)) as ACL;
-    expect(await acl.getVersion()).to.equal('ACL v0.2.0');
+    expect(await acl.getVersion()).to.equal('ACL v0.3.0');
     const newaclFactoryUpgraded = await ethers.getContractFactory('ACLUpgradedExample', deployer);
     const acl2 = (await upgrades.upgradeProxy(acl, newaclFactoryUpgraded)) as unknown as ACLUpgradedExample;
     await acl2.waitForDeployment();
-    expect(await acl2.getVersion()).to.equal('ACL v0.3.0');
+    expect(await acl2.getVersion()).to.equal('ACL v0.4.0');
     expect(await acl2.getAddress()).to.equal(origACLAdd);
     const newSigner = (await ethers.getSigners())[1];
     await acl2.transferOwnership(newSigner);
@@ -128,6 +128,6 @@ describe('Upgrades', function () {
     const newaclFactoryUpgraded3 = await ethers.getContractFactory('ACLUpgradedExample2', newSigner);
     const acl3 = await upgrades.upgradeProxy(acl2, newaclFactoryUpgraded3); // new owner can upgrade ACL
     await acl3.waitForDeployment();
-    expect(await acl3.getVersion()).to.equal('ACL v0.4.0');
+    expect(await acl3.getVersion()).to.equal('ACL v0.5.0');
   });
 });

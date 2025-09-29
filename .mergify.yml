@@ -1,7 +1,7 @@
 queue_rules:
   - name: main
     batch_size: 3
-    batch_max_wait_time: 4h
+    batch_max_wait_time: 1m
     checks_timeout: 12h
     merge_method: squash
     update_method: rebase

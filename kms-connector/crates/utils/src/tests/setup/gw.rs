@@ -123,7 +123,7 @@ pub async fn setup_anvil_gateway(
     block_time: u64,
 ) -> anyhow::Result<ContainerAsync<GenericImage>> {
     info!("Starting Anvil...");
-    let anvil = GenericImage::new("ghcr.io/foundry-rs/foundry", "v1.2.3")
+    let anvil = GenericImage::new("ghcr.io/foundry-rs/foundry", "v1.3.5")
         .with_wait_for(WaitFor::message_on_stdout("Listening"))
         .with_entrypoint("anvil")
         .with_cmd([

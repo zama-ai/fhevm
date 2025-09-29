@@ -72,7 +72,7 @@ task('task:deployACL').setAction(async function (taskArguments: TaskArguments, {
   const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
   const proxy = await upgrades.forceImport(proxyAddress, currentImplementation);
   await upgrades.upgradeProxy(proxy, newImplem, {
-    call: { fn: 'initializeFromEmptyProxy', args: [getRequiredEnvVar('PAUSER_ADDRESS')] },
+    call: { fn: 'initializeFromEmptyProxy' },
   });
   console.log('ACL code set successfully at address:', proxyAddress);
 });
@@ -370,6 +370,29 @@ address constant hcuLimitAdd = ${taskArguments.address};\n`;
     }
   });
 
+task('task:setPauserSetAddress')
+  .addParam('address', 'The address of the contract')
+  .setAction(async function (taskArguments: TaskArguments, { ethers }) {
+    const envFilePath = path.join(__dirname, '../addresses/.env.host');
+    const content = `PAUSER_SET_CONTRACT_ADDRESS=${taskArguments.address}\n`;
+    try {
+      fs.appendFileSync(envFilePath, content, { flag: 'a' });
+      console.log(`PauserSet address ${taskArguments.address} written successfully!`);
+    } catch (err) {
+      console.error('Failed to write PauserSet address:', err);
+    }
+
+    const solidityTemplate = `
+address constant pauserSetAdd = ${taskArguments.address};\n`;
+
+    try {
+      fs.appendFileSync('./addresses/FHEVMHostAddresses.sol', solidityTemplate, { encoding: 'utf8', flag: 'a' });
+      console.log('./addresses/FHEVMHostAddresses.sol appended with hcuLimitAdd successfully!');
+    } catch (error) {
+      console.error('Failed to write ./addresses/FHEVMHostAddresses.sol', error);
+    }
+  });
+
 task('task:addInputSigners')
   .addParam('privateKey', 'The deployer private key')
   .addParam('numSigners', 'Number of coprocessor signers to add')
@@ -409,12 +432,30 @@ task('task:addInputSigners')
     }
   });
 
+// Deploy the PauserSet contract
+task('task:deployPauserSet').setAction(async function (_, hre) {
+  // Get a deployer wallet
+  const deployerPrivateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
+  const deployer = new Wallet(deployerPrivateKey).connect(hre.ethers.provider);
+
+  console.log('Deploying PauserSet...');
+  const pauserSetFactory = await hre.ethers.getContractFactory('PauserSet', deployer);
+  const pauserSet = await pauserSetFactory.deploy();
+  const pauserSetAddress = await pauserSet.getAddress();
+
+  await hre.run('task:setPauserSetAddress', {
+    address: pauserSetAddress,
+  });
+});
+
 task('task:deployAllHostContracts').setAction(async function (_, hre) {
   if (process.env.SOLIDITY_COVERAGE !== 'true') {
     await hre.run('clean');
   }
 
   await hre.run('task:deployEmptyUUPSProxies');
+  await hre.run('compile:specific', { contract: 'contracts/immutable' });
+  await hre.run('task:deployPauserSet');
 
   // The deployEmptyUUPSProxies task may have updated the contracts' addresses in `addresses/*.sol`.
   // Thus, we must re-compile the contracts with these new addresses, otherwise the old ones will be

@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import { IPauserSet } from "../interfaces/IPauserSet.sol";
-import { GatewayConfigChecks } from "../shared/GatewayConfigChecks.sol";
-import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {IPauserSet} from "../interfaces/IPauserSet.sol";
+import {ACLChecks} from "../shared/ACLChecks.sol";
+import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 /**
  * @title PauserSet smart contract
  * @dev See {IPauserSet}
  */
-contract PauserSet is IPauserSet, GatewayConfigChecks {
+contract PauserSet is IPauserSet, ACLChecks {
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that
     /// @dev they can still define their own private constants with the same name.
@@ -22,7 +22,7 @@ contract PauserSet is IPauserSet, GatewayConfigChecks {
     mapping(address account => bool isPauser) pausers;
 
     /// @dev See {IPauserSet-addPauser}.
-    function addPauser(address account) external onlyGatewayOwner {
+    function addPauser(address account) external onlyACLOwner {
         if (account == address(0)) revert InvalidNullPauser();
         if (pausers[account]) revert AccountAlreadyPauser(account);
         pausers[account] = true;
@@ -30,7 +30,7 @@ contract PauserSet is IPauserSet, GatewayConfigChecks {
     }
 
     /// @dev See {IPauserSet-removePauser}.
-    function removePauser(address account) external onlyGatewayOwner {
+    function removePauser(address account) external onlyACLOwner {
         if (account == address(0)) revert InvalidNullPauser();
         if (!pausers[account]) revert AccountNotPauser(account);
         pausers[account] = false;
@@ -38,7 +38,7 @@ contract PauserSet is IPauserSet, GatewayConfigChecks {
     }
 
     /// @dev See {IPauserSet-swapPauser}.
-    function swapPauser(address oldAccount, address newAccount) external onlyGatewayOwner {
+    function swapPauser(address oldAccount, address newAccount) external onlyACLOwner {
         if (oldAccount == address(0) || newAccount == address(0)) revert InvalidNullPauser();
         if (!pausers[oldAccount]) revert AccountNotPauser(oldAccount);
         if (pausers[newAccount]) revert AccountAlreadyPauser(newAccount);
