@@ -3,15 +3,10 @@ pragma solidity ^0.8.24;
 import "../shared/Structs.sol";
 
 contract GatewayConfigMock {
-    struct V3UpgradeInput {
-        address txSenderAddress;
-        string s3BucketUrl;
-    }
-
     event InitializeGatewayConfig(
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
-        KmsNodeV2[] kmsNodes,
+        KmsNode[] kmsNodes,
         Coprocessor[] coprocessors,
         Custodian[] custodians
     );
@@ -36,13 +31,13 @@ contract GatewayConfigMock {
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
         uint256 initialKeygenThreshold,
-        KmsNodeV2[] memory initialKmsNodes,
+        KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
     ) public {
         ProtocolMetadata memory metadata;
         uint256 mpcThreshold;
-        KmsNodeV2[] memory kmsNodes = new KmsNodeV2[](1);
+        KmsNode[] memory kmsNodes = new KmsNode[](1);
         Coprocessor[] memory coprocessors = new Coprocessor[](1);
         Custodian[] memory custodians = new Custodian[](1);
 
