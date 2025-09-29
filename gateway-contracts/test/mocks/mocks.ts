@@ -7,17 +7,17 @@ import {
   DecryptionMock,
   GatewayConfigMock,
   InputVerificationMock,
-  KmsManagementMock,
+  KMSManagementMock,
   MultichainACLMock,
 } from "../../typechain-types";
-import { toValues } from "../utils";
+import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getPrepKeygenId, toValues } from "../utils";
 
 describe("Mock contracts", function () {
   // Mock contracts
   let ciphertextCommitsMock: CiphertextCommitsMock;
   let decryptionMock: DecryptionMock;
   let gatewayConfigMock: GatewayConfigMock;
-  let kmsManagementMock: KmsManagementMock;
+  let kmsManagementMock: KMSManagementMock;
   let inputVerificationMock: InputVerificationMock;
   let MultichainACLMock: MultichainACLMock;
 
@@ -38,10 +38,17 @@ describe("Mock contracts", function () {
 
   const DefaultProtocolMetadata = { name: DefaultString, website: DefaultString };
 
-  const DefaultKmsNode = {
+  const DefaultKmsNodeV1 = {
     txSenderAddress: DefaultAddress,
     signerAddress: DefaultAddress,
     ipAddress: DefaultString,
+  };
+
+  const DefaultKmsNodeV2 = {
+    txSenderAddress: DefaultAddress,
+    signerAddress: DefaultAddress,
+    ipAddress: DefaultString,
+    s3BucketUrl: DefaultString,
   };
 
   const DefaultCoprocessor = {
@@ -79,6 +86,13 @@ describe("Mock contracts", function () {
     delegatedAddress: DefaultAddress,
   };
 
+  const DefaultParamsType = ParamsTypeEnum.Default;
+
+  const DefaultKmsDigest = {
+    keyType: KeyTypeEnum.Server,
+    digest: DefaultBytes,
+  };
+
   async function loadMockContractsFixture() {
     const ciphertextCommitsFactory = await ethers.getContractFactory("CiphertextCommitsMock");
     const ciphertextCommitsMock = await ciphertextCommitsFactory.deploy();
@@ -92,7 +106,7 @@ describe("Mock contracts", function () {
     const inputVerificationFactory = await ethers.getContractFactory("InputVerificationMock");
     const inputVerificationMock = await inputVerificationFactory.deploy();
 
-    const kmsManagementFactory = await ethers.getContractFactory("KmsManagementMock");
+    const kmsManagementFactory = await ethers.getContractFactory("KMSManagementMock");
     const kmsManagementMock = await kmsManagementFactory.deploy();
 
     const MultichainACLFactory = await ethers.getContractFactory("MultichainACLMock");
@@ -130,24 +144,27 @@ describe("Mock contracts", function () {
   });
 
   describe("DecryptionMock", async function () {
-    let decryptionCounterId = DefaultUint256;
+    // Define the decryption ID values. See `KmsRequestCounter.sol` for more details.
+    let publicDecryptionCounterId = BigInt(1) << BigInt(248);
+    let userDecryptionCounterId = BigInt(2) << BigInt(248);
+
     it("Should emit PublicDecryptionRequest event on public decryption request", async function () {
-      decryptionCounterId++;
+      publicDecryptionCounterId++;
       await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32], DefaultBytes))
         .to.emit(decryptionMock, "PublicDecryptionRequest")
-        .withArgs(decryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
+        .withArgs(publicDecryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
     });
 
     it("Should emit PublicDecryptionResponse event on public decryption response", async function () {
       await expect(
-        decryptionMock.publicDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
+        decryptionMock.publicDecryptionResponse(publicDecryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
       )
         .to.emit(decryptionMock, "PublicDecryptionResponse")
-        .withArgs(decryptionCounterId, DefaultBytes, [DefaultBytes], DefaultBytes);
+        .withArgs(publicDecryptionCounterId, DefaultBytes, [DefaultBytes], DefaultBytes);
     });
 
     it("Should emit UserDecryptionRequest event on user decryption request", async function () {
-      decryptionCounterId++;
+      userDecryptionCounterId++;
       await expect(
         decryptionMock.userDecryptionRequest(
           EmptyArray,
@@ -161,7 +178,7 @@ describe("Mock contracts", function () {
       )
         .to.emit(decryptionMock, "UserDecryptionRequest")
         .withArgs(
-          decryptionCounterId,
+          userDecryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
           DefaultAddress,
           DefaultBytes,
@@ -170,7 +187,7 @@ describe("Mock contracts", function () {
     });
 
     it("Should emit UserDecryptionRequest event on delegated user decryption request", async function () {
-      decryptionCounterId++;
+      userDecryptionCounterId++;
       await expect(
         decryptionMock.delegatedUserDecryptionRequest(
           EmptyArray,
@@ -184,7 +201,7 @@ describe("Mock contracts", function () {
       )
         .to.emit(decryptionMock, "UserDecryptionRequest")
         .withArgs(
-          decryptionCounterId,
+          userDecryptionCounterId,
           toValues([DefaultSnsCiphertextMaterial]),
           DefaultAddress,
           DefaultBytes,
@@ -193,13 +210,22 @@ describe("Mock contracts", function () {
     });
 
     it("Should emit UserDecryptionResponse event on user decryption response", async function () {
-      await expect(decryptionMock.userDecryptionResponse(decryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes))
+      await expect(
+        decryptionMock.userDecryptionResponse(userDecryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
+      )
         .to.emit(decryptionMock, "UserDecryptionResponse")
-        .withArgs(decryptionCounterId, [DefaultBytes], [DefaultBytes], DefaultBytes);
+        .withArgs(userDecryptionCounterId, [DefaultBytes], [DefaultBytes], DefaultBytes);
     });
   });
 
   describe("GatewayConfigMock", async function () {
+    const DefaultV3UpgradeInputs = [
+      {
+        txSenderAddress: DefaultAddress,
+        s3BucketUrl: DefaultString,
+      },
+    ];
+
     it("Should emit InitializeGatewayConfig event on initialization", async function () {
       await expect(
         gatewayConfigMock.initializeFromEmptyProxy(
@@ -207,7 +233,8 @@ describe("Mock contracts", function () {
           DefaultUint256,
           DefaultUint256,
           DefaultUint256,
-          [DefaultKmsNode],
+          DefaultUint256,
+          [DefaultKmsNodeV2],
           [DefaultCoprocessor],
           [DefaultCustodian],
         ),
@@ -216,7 +243,7 @@ describe("Mock contracts", function () {
         .withArgs(
           toValues(DefaultProtocolMetadata),
           DefaultUint256,
-          toValues([DefaultKmsNode]),
+          toValues([DefaultKmsNodeV2]),
           toValues([DefaultCoprocessor]),
           toValues([DefaultCustodian]),
         );
@@ -279,95 +306,40 @@ describe("Mock contracts", function () {
     });
   });
 
-  describe("KmsManagementMock", async function () {
-    let preKeygenCounterId = DefaultUint256;
-    let preKskgenCounterId = DefaultUint256;
-    let crsgenCounterId = DefaultUint256;
-    it("Should emit PreprocessKeygenRequest event on pre-keygen request", async function () {
-      preKeygenCounterId++;
-      await expect(kmsManagementMock.preprocessKeygenRequest(DefaultString))
-        .to.emit(kmsManagementMock, "PreprocessKeygenRequest")
-        .withArgs(preKeygenCounterId, DefaultBytes32);
+  describe("KMSManagementMock", async function () {
+    const prepKeygenId = getPrepKeygenId(1);
+    const keyId = getKeyId(1);
+    const crsgenId = getCrsId(1);
+    const epochId = 0;
+
+    it("Should emit PrepKeygenRequest event on keygen request", async function () {
+      await expect(kmsManagementMock.keygen(DefaultParamsType))
+        .to.emit(kmsManagementMock, "PrepKeygenRequest")
+        .withArgs(prepKeygenId, epochId, DefaultParamsType);
     });
 
-    it("Should emit PreprocessKeygenResponse event on pre-keygen response", async function () {
-      await expect(kmsManagementMock.preprocessKeygenResponse(preKeygenCounterId, DefaultUint256))
-        .to.emit(kmsManagementMock, "PreprocessKeygenResponse")
-        .withArgs(preKeygenCounterId, DefaultUint256);
-    });
-
-    it("Should emit PreprocessKskgenRequest event on pre-kskgen request", async function () {
-      preKskgenCounterId++;
-      await expect(kmsManagementMock.preprocessKskgenRequest(DefaultString))
-        .to.emit(kmsManagementMock, "PreprocessKskgenRequest")
-        .withArgs(preKskgenCounterId, DefaultBytes32);
-    });
-
-    it("Should emit PreprocessKskgenResponse event on pre-kskgen response", async function () {
-      await expect(kmsManagementMock.preprocessKskgenResponse(preKskgenCounterId, DefaultUint256))
-        .to.emit(kmsManagementMock, "PreprocessKskgenResponse")
-        .withArgs(preKskgenCounterId, DefaultUint256);
-    });
-
-    it("Should emit KeygenRequest event on keygen request", async function () {
-      await expect(kmsManagementMock.keygenRequest(DefaultUint256))
+    it("Should emit KeygenRequest event on preprocessing keygen response", async function () {
+      await expect(kmsManagementMock.prepKeygenResponse(prepKeygenId, DefaultBytes))
         .to.emit(kmsManagementMock, "KeygenRequest")
-        .withArgs(DefaultUint256, DefaultBytes32);
+        .withArgs(prepKeygenId, keyId);
     });
 
-    it("Should emit KeygenResponse event on keygen response", async function () {
-      await expect(kmsManagementMock.keygenResponse(DefaultUint256, DefaultUint256))
-        .to.emit(kmsManagementMock, "KeygenResponse")
-        .withArgs(DefaultUint256, DefaultUint256, DefaultBytes32);
+    it("Should emit ActivateKey event on keygen response", async function () {
+      await expect(kmsManagementMock.keygenResponse(keyId, [DefaultKmsDigest], DefaultBytes))
+        .to.emit(kmsManagementMock, "ActivateKey")
+        .withArgs(keyId, [DefaultString], toValues([DefaultKmsDigest]));
     });
 
     it("Should emit CrsgenRequest event on crsgen request", async function () {
-      crsgenCounterId++;
-      await expect(kmsManagementMock.crsgenRequest(DefaultString))
+      await expect(kmsManagementMock.crsgenRequest(DefaultUint256, DefaultParamsType))
         .to.emit(kmsManagementMock, "CrsgenRequest")
-        .withArgs(crsgenCounterId, DefaultBytes32);
+        .withArgs(crsgenId, DefaultUint256, DefaultParamsType);
     });
 
-    it("Should emit CrsgenResponse event on crsgen request", async function () {
-      await expect(kmsManagementMock.crsgenResponse(crsgenCounterId, DefaultUint256))
-        .to.emit(kmsManagementMock, "CrsgenResponse")
-        .withArgs(crsgenCounterId, DefaultUint256, DefaultBytes32);
-    });
-
-    it("Should emit KskgenRequest event on kskgen request", async function () {
-      await expect(kmsManagementMock.kskgenRequest(DefaultUint256, DefaultUint256, DefaultUint256))
-        .to.emit(kmsManagementMock, "KskgenRequest")
-        .withArgs(DefaultUint256, DefaultUint256, DefaultUint256, DefaultBytes32);
-    });
-
-    it("Should emit KskgenResponse event on kskgen response", async function () {
-      await expect(kmsManagementMock.kskgenResponse(DefaultUint256, DefaultUint256))
-        .to.emit(kmsManagementMock, "KskgenResponse")
-        .withArgs(DefaultUint256, DefaultUint256, DefaultBytes32);
-    });
-
-    it("Should emit ActivateKeyRequest event on activate key request", async function () {
-      await expect(kmsManagementMock.activateKeyRequest(DefaultUint256))
-        .to.emit(kmsManagementMock, "ActivateKeyRequest")
-        .withArgs(DefaultUint256);
-    });
-
-    it("Should emit ActivateKeyResponse event on activate key response", async function () {
-      await expect(kmsManagementMock.activateKeyResponse(DefaultUint256))
-        .to.emit(kmsManagementMock, "ActivateKeyResponse")
-        .withArgs(DefaultUint256);
-    });
-
-    it("Should emit AddFheParams event on add FHE params call", async function () {
-      await expect(kmsManagementMock.addFheParams(DefaultString, DefaultBytes32))
-        .to.emit(kmsManagementMock, "AddFheParams")
-        .withArgs(DefaultString, DefaultBytes32);
-    });
-
-    it("Should emit UpdateFheParams event on update FHE params call", async function () {
-      await expect(kmsManagementMock.updateFheParams(DefaultString, DefaultBytes32))
-        .to.emit(kmsManagementMock, "UpdateFheParams")
-        .withArgs(DefaultString, DefaultBytes32);
+    it("Should emit ActivateCrs event on crsgen request", async function () {
+      await expect(kmsManagementMock.crsgenResponse(crsgenId, DefaultBytes, DefaultBytes))
+        .to.emit(kmsManagementMock, "ActivateCrs")
+        .withArgs(crsgenId, [DefaultString], DefaultBytes);
     });
   });
 

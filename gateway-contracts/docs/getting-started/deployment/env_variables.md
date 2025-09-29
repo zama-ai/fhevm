@@ -105,6 +105,7 @@ NUM_KMS_NODES="1" # (number)
 KMS_TX_SENDER_ADDRESS_0="0xc1d91b49A1B3D1324E93F86778C44a03f1063f1b" # (address)
 KMS_SIGNER_ADDRESS_0="0x305F1F471e9baCFF2b3549F9601f9A4BEafc94e1" # (address)
 KMS_NODE_IP_ADDRESS_0="127.0.0.1" # (string)
+KMS_NODE_S3_BUCKET_URL_0="s3://kms-bucket-1" # (string)
 ```
 
 - Coprocessors:
@@ -118,7 +119,7 @@ NUM_COPROCESSORS="3" # (number)
 ```bash
 COPROCESSOR_TX_SENDER_ADDRESS_0="0x6518D50aDc9036Df37119eA465a8159E34417E2E" # (address)
 COPROCESSOR_SIGNER_ADDRESS_0="0xa5eE8292dA52d8234248709F3E217ffEBA5E8312" # (address)
-COPROCESSOR_S3_BUCKET_URL_0="s3://bucket-1" # (string)
+COPROCESSOR_S3_BUCKET_URL_0="s3://coprocessor-bucket-1" # (string)
 ```
 
 #### After deployment
@@ -142,19 +143,6 @@ HOST_CHAIN_WEBSITE_0="https://host-chain-2025.com" # (string)
 ```
 
 `HOST_CHAIN_CHAIN_ID` must be different for all host chains, else the script will fail.
-
-### KmsManagement parameters
-
-🚧 **Important** 🚧: The `KmsManagement` contract is currently neither used nor up-to-date. It will be reworked in the future. See [this issue](https://github.com/zama-ai/fhevm-gateway/issues/108) for more details. Still, the associated environment variables are required, else the deployment script will fail.
-
-The following values are set in the `KmsManagement` contract at deployment.
-
-- FHE parameters:
-
-```bash
-FHE_PARAMS_NAME="TEST" # (string)
-FHE_PARAMS_DIGEST="0xd61fa44c57b6e7526a46e1072d63332ab4eb38e050fe54dd51fe995f9055c354" # (bytes32)
-```
 
 ### Deployment settings
 

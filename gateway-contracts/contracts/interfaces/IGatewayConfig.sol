@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "../shared/Structs.sol";
+import { ProtocolMetadata, KmsNode, Coprocessor, Custodian, HostChain } from "../shared/Structs.sol";
 
 /**
  * @title Interface for the GatewayConfig contract.
@@ -54,6 +54,12 @@ interface IGatewayConfig {
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
     /**
+     * @notice Emitted when the key and CRS generation threshold has been updated.
+     * @param newKeygenThreshold The new key and CRS generation threshold.
+     */
+    event UpdateKeygenThreshold(uint256 newKeygenThreshold);
+
+    /**
      * @notice Emitted when a new host chain has been registered.
      * @param hostChain The new host chain metadata.
      */
@@ -97,6 +103,12 @@ interface IGatewayConfig {
     /// @param nKmsNodes The number of KMS nodes.
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
 
+    /// @notice Error emitted when the key and CRS generation threshold is null.
+    error InvalidNullKeygenThreshold();
+
+    /// @notice Error emitted when the key and CRS generation threshold is strictly greater than the number of KMS nodes.
+    error InvalidHighKeygenThreshold(uint256 keygenThreshold, uint256 nKmsNodes);
+
     /**
      * @notice Emitted when all the pausable gateway contracts are paused.
      */
@@ -125,7 +137,7 @@ interface IGatewayConfig {
      */
     error NotCoprocessorTxSender(address txSenderAddress);
 
-    /*
+    /**
      * @notice Error emitted when an address is not a coprocessor signer.
      * @param signerAddress The address that is not a coprocessor signer.
      */
@@ -137,7 +149,7 @@ interface IGatewayConfig {
      */
     error NotCustodianTxSender(address txSenderAddress);
 
-    /*
+    /**
      * @notice Error emitted when an address is not a custodian signer.
      * @param signerAddress The address that is not a custodian signer.
      */
@@ -155,7 +167,9 @@ interface IGatewayConfig {
      */
     error HostChainAlreadyRegistered(uint256 chainId);
 
-    /// @notice Error indicating that a null chain ID is not allowed.
+    /**
+     * @notice Error indicating that a null chain ID is not allowed.
+     */
     error InvalidNullChainId();
 
     /**
@@ -191,6 +205,13 @@ interface IGatewayConfig {
      * @param newUserDecryptionThreshold The new user decryption threshold.
      */
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
+
+    /**
+     * @notice Update the key and CRS generation threshold.
+     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes currently registered.
+     * @param newKeygenThreshold The new key and CRS generation threshold.
+     */
+    function updateKeygenThreshold(uint256 newKeygenThreshold) external;
 
     /**
      * @notice Pause all pausable gateway contracts.
@@ -275,7 +296,13 @@ interface IGatewayConfig {
     function getUserDecryptionThreshold() external view returns (uint256);
 
     /**
-     * @notice Get the coprocessor majority threshold.
+     * @notice Get the key and CRS generation threshold
+     * @return The key and CRS generation threshold.
+     */
+    function getKeygenThreshold() external view returns (uint256);
+
+    /**
+     * @notice Get the coprocessor majority threshold
      * @return The coprocessor majority threshold.
      */
     function getCoprocessorMajorityThreshold() external view returns (uint256);

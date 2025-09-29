@@ -10,7 +10,7 @@ import {
   EmptyUUPSProxyGatewayConfig,
   GatewayConfig,
   InputVerification,
-  KmsManagement,
+  KMSManagement,
   MultichainACL,
   PauserSet,
 } from "../typechain-types";
@@ -19,7 +19,7 @@ import {
 import {
   CoprocessorStruct,
   CustodianStruct,
-  KmsNodeStruct,
+  KmsNodeV2Struct,
 } from "../typechain-types/contracts/interfaces/IGatewayConfig";
 import { UINT64_MAX, createRandomWallet, loadHostChainIds, loadTestVariablesFixture, toValues } from "./utils";
 
@@ -32,6 +32,7 @@ describe("GatewayConfig", function () {
   const mpcThreshold = 1;
   const publicDecryptionThreshold = 3;
   const userDecryptionThreshold = 3;
+  const keygenThreshold = 3;
 
   // Define fake values
   const fakeOwner = createRandomWallet();
@@ -43,7 +44,7 @@ describe("GatewayConfig", function () {
   let owner: Wallet;
   let pauser: Wallet;
   let nKmsNodes: number;
-  let kmsNodes: KmsNodeStruct[];
+  let kmsNodes: KmsNodeV2Struct[];
   let kmsTxSenders: HardhatEthersSigner[];
   let kmsSigners: HardhatEthersSigner[];
   let coprocessors: CoprocessorStruct[];
@@ -59,6 +60,7 @@ describe("GatewayConfig", function () {
       kmsTxSenders,
       kmsSigners,
       kmsNodeIps,
+      kmsNodeS3BucketUrls,
       nKmsNodes,
       coprocessorTxSenders,
       coprocessorSigners,
@@ -77,6 +79,7 @@ describe("GatewayConfig", function () {
         txSenderAddress: kmsTxSenders[i].address,
         signerAddress: kmsSigners[i].address,
         ipAddress: kmsNodeIps[i],
+        s3BucketUrl: kmsNodeS3BucketUrls[i],
       });
     }
 
@@ -147,6 +150,7 @@ describe("GatewayConfig", function () {
             mpcThreshold,
             publicDecryptionThreshold,
             userDecryptionThreshold,
+            keygenThreshold,
             kmsNodes,
             coprocessors,
             custodians,
@@ -174,7 +178,7 @@ describe("GatewayConfig", function () {
     });
 
     it("Should revert because the KMS nodes list is empty", async function () {
-      const emptyKmsNodes: KmsNodeStruct[] = [];
+      const emptyKmsNodes: KmsNodeV2Struct[] = [];
 
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
@@ -185,6 +189,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               userDecryptionThreshold,
+              keygenThreshold,
               emptyKmsNodes,
               coprocessors,
               custodians,
@@ -206,6 +211,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               userDecryptionThreshold,
+              keygenThreshold,
               kmsNodes,
               emptyCoprocessors,
               custodians,
@@ -227,6 +233,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               userDecryptionThreshold,
+              keygenThreshold,
               kmsNodes,
               coprocessors,
               emptyCustodians,
@@ -249,6 +256,7 @@ describe("GatewayConfig", function () {
               highMpcThreshold,
               publicDecryptionThreshold,
               userDecryptionThreshold,
+              keygenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -273,6 +281,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               nullPublicDecryptionThreshold,
               userDecryptionThreshold,
+              keygenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -295,6 +304,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               highPublicDecryptionThreshold,
               userDecryptionThreshold,
+              keygenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -319,6 +329,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               nullUserDecryptionThreshold,
+              keygenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -341,6 +352,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               highUserDecryptionThreshold,
+              keygenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -350,6 +362,54 @@ describe("GatewayConfig", function () {
       )
         .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
         .withArgs(highUserDecryptionThreshold, nKmsNodes);
+    });
+
+    it("Should revert because the keygen threshold is null", async function () {
+      // The keygen threshold must be greater than 0
+      const nullKeygenThreshold = 0;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              nullKeygenThreshold,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullKeygenThreshold");
+    });
+
+    it("Should revert because the keygen threshold is too high", async function () {
+      // The keygen threshold must be less or equal to the number of KMS nodes
+      const highKeygenThreshold = nKmsNodes + 1;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              highKeygenThreshold,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighKeygenThreshold")
+        .withArgs(highKeygenThreshold, nKmsNodes);
     });
 
     it("Should revert because initialization is not from an empty proxy", async function () {
@@ -362,6 +422,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               userDecryptionThreshold,
+              keygenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -672,6 +733,44 @@ describe("GatewayConfig", function () {
       });
     });
 
+    describe("Update keygen threshold", function () {
+      it("Should revert because the sender is not the owner", async function () {
+        await expect(gatewayConfig.connect(fakeOwner).updateKeygenThreshold(1))
+          .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+          .withArgs(fakeOwner.address);
+      });
+
+      it("Should update the keygen threshold", async function () {
+        // The keygen threshold must be greater than 0
+        const newKeygenThreshold = 1;
+
+        const tx = await gatewayConfig.connect(owner).updateKeygenThreshold(newKeygenThreshold);
+
+        await expect(tx).to.emit(gatewayConfig, "UpdateKeygenThreshold").withArgs(newKeygenThreshold);
+
+        // Check that the keygen threshold has been updated
+        expect(await gatewayConfig.getKeygenThreshold()).to.equal(newKeygenThreshold);
+      });
+
+      it("Should revert because the keygen threshold is null", async function () {
+        // The keygen threshold must be greater than 0
+        const nullKeygenThreshold = 0;
+
+        await expect(
+          gatewayConfig.connect(owner).updateKeygenThreshold(nullKeygenThreshold),
+        ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullKeygenThreshold");
+      });
+
+      it("Should revert because the keygen threshold is too high", async function () {
+        // The keygen threshold must be less or equal to the number of KMS nodes
+        const highKeygenThreshold = nKmsNodes + 1;
+
+        await expect(gatewayConfig.connect(owner).updateKeygenThreshold(highKeygenThreshold))
+          .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighKeygenThreshold")
+          .withArgs(highKeygenThreshold, nKmsNodes);
+      });
+    });
+
     describe("Add host chain", function () {
       // Define a new chain ID that does not correspond to an already registered host chain
       // (since the GatewayConfig contract has already been deployed and host chains have been
@@ -770,7 +869,7 @@ describe("GatewayConfig", function () {
       let ciphertextCommits: CiphertextCommits;
       let decryption: Decryption;
       let inputVerification: InputVerification;
-      let kmsManagement: KmsManagement;
+      let kmsManagement: KMSManagement;
       let MultichainACL: MultichainACL;
 
       before(async function () {

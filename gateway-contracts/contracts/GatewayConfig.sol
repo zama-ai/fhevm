@@ -22,6 +22,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     /// @notice The maximum chain ID.
     uint256 internal constant MAX_CHAIN_ID = type(uint64).max;
 
+    // ----------------------------------------------------------------------------------------------
+    // Contract information:
+    // ----------------------------------------------------------------------------------------------
+
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that
     /// @dev they can still define their own private constants with the same name.
@@ -103,6 +107,8 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address custodianTxSenderAddress => bool isTxSender) isCustodianTxSender;
         /// @notice The custodians' signer addresses
         mapping(address custodianSignerAddress => bool isSigner) isCustodianSigner;
+        /// @notice The threshold to consider for key and CRS generation consensus.
+        uint256 keygenThreshold;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -138,6 +144,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
+        uint256 initialKeygenThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
@@ -173,6 +180,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         _setMpcThreshold(initialMpcThreshold);
         _setPublicDecryptionThreshold(initialPublicDecryptionThreshold);
         _setUserDecryptionThreshold(initialUserDecryptionThreshold);
+        _setKeygenThreshold(initialKeygenThreshold);
 
         /// @dev Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
@@ -200,6 +208,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             initialCustodians
         );
     }
+
     /**
      * @notice Re-initializes the contract from V1.
      * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
@@ -229,6 +238,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external virtual onlyOwner {
         _setUserDecryptionThreshold(newUserDecryptionThreshold);
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
+    }
+
+    /// @dev See {IGatewayConfig-updateKeygenThreshold}.
+    function updateKeygenThreshold(uint256 newKeygenThreshold) external virtual onlyOwner {
+        _setKeygenThreshold(newKeygenThreshold);
+        emit UpdateKeygenThreshold(newKeygenThreshold);
     }
 
     /// @dev See {IGatewayConfig-addHostChain}.
@@ -349,6 +364,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function getUserDecryptionThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
         return $.userDecryptionThreshold;
+    }
+
+    /// @dev See {IGatewayConfig-getKeygenThreshold}.
+    function getKeygenThreshold() external view virtual returns (uint256) {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        return $.keygenThreshold;
     }
 
     /// @dev See {IGatewayConfig-getCoprocessorMajorityThreshold}.
@@ -497,6 +518,27 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
 
         $.userDecryptionThreshold = newUserDecryptionThreshold;
+    }
+
+    /**
+     * @dev Sets the key and CRS generation threshold.
+     * @param newKeygenThreshold The new key and CRS generation threshold.
+     */
+    function _setKeygenThreshold(uint256 newKeygenThreshold) internal virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        uint256 nKmsNodes = $.kmsSignerAddresses.length;
+
+        /// @dev Check that the key and CRS generation threshold `t` is valid. It must verify:
+        /// @dev - `t >= 1` : the key and CRS generation consensus should require at least one vote
+        /// @dev - `t <= n` : it should be less than the number of registered KMS nodes
+        if (newKeygenThreshold == 0) {
+            revert InvalidNullKeygenThreshold();
+        }
+        if (newKeygenThreshold > nKmsNodes) {
+            revert InvalidHighKeygenThreshold(newKeygenThreshold, nKmsNodes);
+        }
+
+        $.keygenThreshold = newKeygenThreshold;
     }
 
     /**

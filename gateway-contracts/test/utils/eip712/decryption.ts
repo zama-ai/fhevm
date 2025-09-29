@@ -2,88 +2,7 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { HDNodeWallet, Wallet } from "ethers";
 import { ethers } from "hardhat";
 
-export interface EIP712Type {
-  name: string;
-  type: string;
-}
-
-export interface EIP712 {
-  domain: {
-    chainId: number;
-    name: string;
-    verifyingContract: string;
-    version: string;
-  };
-  message: {
-    [key: string]: string | string[] | number | number[] | Uint8Array | Uint8Array[];
-  };
-  primaryType: string;
-  types: {
-    [key: string]: EIP712Type[];
-  };
-}
-
-// Create an EIP712 message for a ZKPoK response
-export function createEIP712ResponseZKPoK(
-  chainId: number,
-  verifyingContract: string,
-  ctHandles: string[],
-  userAddress: string,
-  contractAddress: string,
-  contractChainId: number,
-  extraData: string,
-): EIP712 {
-  if (!ethers.isAddress(verifyingContract)) {
-    throw new Error("Invalid verifying contract address.");
-  }
-  return {
-    types: {
-      EIP712Domain: [
-        { name: "name", type: "string" },
-        { name: "version", type: "string" },
-        { name: "chainId", type: "uint256" },
-        { name: "verifyingContract", type: "address" },
-      ],
-      CiphertextVerification: [
-        { name: "ctHandles", type: "bytes32[]" },
-        { name: "userAddress", type: "address" },
-        { name: "contractAddress", type: "address" },
-        { name: "contractChainId", type: "uint256" },
-        { name: "extraData", type: "bytes" },
-      ],
-    },
-    primaryType: "CiphertextVerification",
-    domain: {
-      name: "InputVerification",
-      version: "1",
-      chainId,
-      verifyingContract,
-    },
-    message: {
-      ctHandles,
-      userAddress,
-      contractAddress,
-      contractChainId,
-      extraData,
-    },
-  };
-}
-
-// Get signatures from signers using the EIP712 message response for proof verification
-export async function getSignaturesZKPoK(
-  eip712: EIP712,
-  signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
-): Promise<string[]> {
-  return Promise.all(
-    signers.map((signer) =>
-      signer.signTypedData(
-        eip712.domain,
-        { CiphertextVerification: eip712.types.CiphertextVerification },
-        eip712.message,
-      ),
-    ),
-  );
-}
+import { EIP712, getSignaturesEIP712 } from "./interface";
 
 // Create an EIP712 message for a public decryption response
 export function createEIP712ResponsePublicDecrypt(
@@ -257,15 +176,7 @@ export async function getSignaturesDelegatedUserDecryptRequest(
   eip712: EIP712,
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
 ): Promise<string[]> {
-  return Promise.all(
-    signers.map((signer) =>
-      signer.signTypedData(
-        eip712.domain,
-        { DelegatedUserDecryptRequestVerification: eip712.types.DelegatedUserDecryptRequestVerification },
-        eip712.message,
-      ),
-    ),
-  );
+  return getSignaturesEIP712(eip712, signers);
 }
 
 // Create an EIP712 message for a user decryption response
@@ -311,7 +222,7 @@ export function createEIP712ResponseUserDecrypt(
   };
 }
 
-// Get signatures from signers using the EIP712 message response for user decryption
+// Get signatures for user decryption responses, pairing each EIP712 message with its corresponding signer by index.
 export async function getSignaturesUserDecryptResponse(
   eip712s: EIP712[],
   signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
@@ -321,12 +232,13 @@ export async function getSignaturesUserDecryptResponse(
   }
 
   return Promise.all(
-    signers.map((signer, index) =>
-      signer.signTypedData(
+    signers.map((signer, index) => {
+      const primaryType = eip712s[index].primaryType;
+      return signer.signTypedData(
         eip712s[index].domain,
-        { UserDecryptResponseVerification: eip712s[index].types.UserDecryptResponseVerification },
+        { [primaryType]: eip712s[index].types[primaryType] },
         eip712s[index].message,
-      ),
-    ),
+      );
+    }),
   );
 }
