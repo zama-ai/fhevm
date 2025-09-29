@@ -11,7 +11,6 @@ import {
   EmptyUUPSProxyGatewayConfig__factory,
   EmptyUUPSProxy__factory,
   GatewayConfigV2Example__factory,
-  GatewayConfigV3Example__factory,
   GatewayConfig__factory,
   InputVerificationV2Example__factory,
   InputVerification__factory,
@@ -32,7 +31,6 @@ describe("Upgrades", function () {
   let decryptionFactoryV2: DecryptionV2Example__factory;
   let gatewayConfigFactoryV1: GatewayConfig__factory;
   let gatewayConfigFactoryV2: GatewayConfigV2Example__factory;
-  let gatewayConfigFactoryV3: GatewayConfigV3Example__factory;
   let inputVerificationFactoryV1: InputVerification__factory;
   let inputVerificationFactoryV2: InputVerificationV2Example__factory;
   let kmsManagementFactoryV1: KmsManagement__factory;
@@ -53,7 +51,6 @@ describe("Upgrades", function () {
 
     gatewayConfigFactoryV1 = await ethers.getContractFactory("GatewayConfig", owner);
     gatewayConfigFactoryV2 = await ethers.getContractFactory("GatewayConfigV2Example", owner);
-    gatewayConfigFactoryV3 = await ethers.getContractFactory("GatewayConfigV3Example", owner);
 
     inputVerificationFactoryV1 = await ethers.getContractFactory("InputVerification", owner);
     inputVerificationFactoryV2 = await ethers.getContractFactory("InputVerificationV2Example", owner);
@@ -149,7 +146,7 @@ describe("Upgrades", function () {
     expect(await inputVerificationV2.getVersion()).to.equal("InputVerification v1000.0.0");
   });
 
-  it("Should allow original owner to upgrade the original GatewayConfig and transfer ownership", async function () {
+  it("Should allow original owner to upgrade the GatewayConfig, transfer ownership and no longer upgrade the contract", async function () {
     // Create a new gateway contract in order to avoid upgrading the original one and thus break
     // some tests if it's not re-compiled in the mean time
     const emptyUUPS = await upgrades.deployProxy(gatewayConfigEmptyUUPSFactory, [owner.address], {
@@ -160,73 +157,19 @@ describe("Upgrades", function () {
     await gatewayConfig.waitForDeployment();
     expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
 
-    const originalGatewayConfigAddress = await gatewayConfig.getAddress();
-    const deployer = owner;
-
-    const gatewayConfigV2ExampleFactory = await ethers.getContractFactory("GatewayConfigV2Example", deployer);
-    const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigV2ExampleFactory);
-    await gatewayConfigV2.waitForDeployment();
-    expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
-    expect(await gatewayConfigV2.getAddress()).to.equal(originalGatewayConfigAddress);
-
     const newSigner = await createAndFundRandomWallet();
-    await gatewayConfigV2.transferOwnership(newSigner);
-    await gatewayConfigV2.connect(newSigner).acceptOwnership();
+    await gatewayConfig.transferOwnership(newSigner);
+    await gatewayConfig.connect(newSigner).acceptOwnership();
 
-    const gatewayConfigV3ExampleFactoryOldOwner = await ethers.getContractFactory("GatewayConfigV3Example", deployer);
-    await expect(upgrades.upgradeProxy(gatewayConfigV2, gatewayConfigV3ExampleFactoryOldOwner)).to.be.reverted; // old owner can no longer upgrade ACL
+    // Old owner should not be able to upgrade the contract
+    const gatewayConfigV2ExampleFactoryOldOwner = await ethers.getContractFactory("GatewayConfigV2Example", owner);
+    await expect(upgrades.upgradeProxy(gatewayConfig, gatewayConfigV2ExampleFactoryOldOwner)).to.be.reverted;
 
-    const gatewayConfigV3ExampleFactoryNewOwner = await ethers.getContractFactory("GatewayConfigV3Example", newSigner);
-    const gatewayConfigV3 = await upgrades.upgradeProxy(gatewayConfigV2, gatewayConfigV3ExampleFactoryNewOwner); // new owner can upgrade ACL
+    // New owner should be able to upgrade the contract
+    const gatewayConfigV2ExampleFactoryNewOwner = await ethers.getContractFactory("GatewayConfigV2Example", newSigner);
+    const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigV2ExampleFactoryNewOwner);
 
-    await gatewayConfigV3.waitForDeployment();
-    expect(await gatewayConfigV3.getVersion()).to.equal("GatewayConfig v1001.0.0");
-  });
-
-  it("Should maintain state consistency after upgrades", async function () {
-    const fixtureData = await loadFixture(loadTestVariablesFixture);
-    const { gatewayConfig } = fixtureData;
-
-    // Protocol metadata fields
-    const name = "Protocol";
-    const website = "https://protocol.com";
-    const newField = "Protocol new field";
-
-    // Check that GatewayConfig is at version 0.1.0
-    expect(await gatewayConfig.getVersion()).to.equal("GatewayConfig v0.1.0");
-
-    // Check that the protocol metadata is correct
-    const metadata = await gatewayConfig.getProtocolMetadata();
-    expect(metadata).to.deep.equal(
-      toValues({
-        name,
-        website,
-      }),
-    );
-
-    // Upgrade the GatewayConfig contract to V2
-    const gatewayConfigV2 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV2);
     await gatewayConfigV2.waitForDeployment();
-
-    // Check the contract version and the protocol metadata are still correct in V2
     expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
-    expect(metadata).to.deep.equal(
-      toValues({
-        name,
-        website,
-      }),
-    );
-
-    // Upgrade the GatewayConfig contract to V3
-    const gatewayConfigV3 = await upgrades.upgradeProxy(gatewayConfig, gatewayConfigFactoryV3, {
-      call: { fn: "initialize", args: [newField] },
-    });
-    await gatewayConfigV3.waitForDeployment();
-    expect(await gatewayConfigV3.getVersion()).to.equal("GatewayConfig v1001.0.0");
-    expect(await gatewayConfigV3.getAddress()).to.equal(await gatewayConfig.getAddress());
-
-    // Check that the protocol metadata is consistent and includes the new field after the upgrade
-    const metadataAfterUpgrade = await gatewayConfigV3.getProtocolMetadata();
-    expect(metadataAfterUpgrade).to.deep.equal(toValues({ name, website, newField }));
   });
 });

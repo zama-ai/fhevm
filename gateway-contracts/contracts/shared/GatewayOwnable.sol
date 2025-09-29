@@ -8,8 +8,8 @@ import { HandleOps } from "../libraries/HandleOps.sol";
 
 /**
  * @title GatewayOwnable
- * @dev This contract that makes another contract owned by the Gateway owner, defined as the owner of
- *  the GatewayConfig contract.
+ * @dev Ensures that a contract is owned by the Gateway owner, defined as the owner of the
+ * GatewayConfig contract
  */
 abstract contract GatewayOwnable {
     /**
