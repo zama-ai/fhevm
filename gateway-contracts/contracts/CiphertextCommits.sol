@@ -4,12 +4,13 @@ import { gatewayConfigAddress, kmsManagementAddress } from "../addresses/Gateway
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
 import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { IKmsManagement } from "./interfaces/IKmsManagement.sol";
+import { IKMSManagement } from "./interfaces/IKMSManagement.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { HandleOps } from "./libraries/HandleOps.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { CiphertextMaterial, SnsCiphertextMaterial } from "./shared/Structs.sol";
+
 /**
  * @title CiphertextCommits smart contract
  * @dev See {ICiphertextCommits}.
@@ -19,7 +20,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /// @notice The address of the KmsManagement contract, used for fetching information about the current key.
-    IKmsManagement private constant KMS_MANAGEMENT = IKmsManagement(kmsManagementAddress);
+    IKMSManagement private constant KMS_MANAGEMENT = IKMSManagement(kmsManagementAddress);
 
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that
@@ -116,12 +117,6 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         if ($.alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }
-
-        // Check if the received key ID is the latest activated.
-        // TODO: Revisit the following line accordingly with key life-cycles issue
-        // See: https://github.com/zama-ai/fhevm-gateway/issues/90
-        // TODO: Re-enable this check once keys are generated through the Gateway
-        // KMS_MANAGEMENT.checkCurrentKeyId(keyId);
 
         // The addCiphertextHash is the hash of all received input arguments which means that multiple
         // Coprocessors can only have a consensus on a ciphertext material with the same information.

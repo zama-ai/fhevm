@@ -21,6 +21,7 @@ import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
 import { HandleOps } from "./libraries/HandleOps.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { SnsCiphertextMaterial, CtHandleContractPair, DelegationAccounts } from "./shared/Structs.sol";
+import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
 /// @title Decryption contract
 /// @dev See {IDecryption}.
@@ -177,7 +178,8 @@ contract Decryption is
         // ----------------------------------------------------------------------------------------------
         /// @notice The number of (public, user, delegated user) decryption requests, used to
         /// @notice generate request IDs (`decryptionId`).
-        uint256 decryptionRequestCounter;
+        /// @notice TODO: remove this variable for mainnet
+        uint256 _decryptionRequestCounter;
         /// @notice Whether a (public, user, delegated user) decryption is done
         mapping(uint256 decryptionId => bool decryptionDone) decryptionDone;
         // prettier-ignore
@@ -193,7 +195,7 @@ contract Decryption is
         mapping(uint256 decryptionId =>
             mapping(bytes32 digest => address[] kmsTxSenderAddresses))
                consensusTxSenderAddresses;
-        /// @notice The digest of the decryption response that reached consensus for a decryption request.
+        /// @notice The digest of the signed struct on which consensus was reached for a decryption request.
         mapping(uint256 decryptionId => bytes32 consensusDigest) decryptionConsensusDigest;
         // ----------------------------------------------------------------------------------------------
         // Public decryption state variables:
@@ -214,6 +216,14 @@ contract Decryption is
         mapping(uint256 decryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
         /// @notice The user decrypted shares received from user decryption responses.
         mapping(uint256 decryptionId => bytes[] shares) userDecryptedShares;
+        // ----------------------------------------------------------------------------------------------
+        // Decryption counters:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The number of public decryption requests, used to generate request IDs (`decryptionId`).
+        uint256 publicDecryptionCounter;
+        /// @notice The number of user decryption requests, used to generate request IDs (`decryptionId`)
+        /// @notice (including delegated user decryption requests).
+        uint256 userDecryptionCounter;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -234,6 +244,12 @@ contract Decryption is
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
         __Pausable_init();
+
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Initialize the counters in order to generate globally unique requestIds per request type
+        $.publicDecryptionCounter = PUBLIC_DECRYPT_COUNTER_BASE;
+        $.userDecryptionCounter = USER_DECRYPT_COUNTER_BASE;
     }
 
     /**
@@ -264,25 +280,26 @@ contract Decryption is
         /// @dev a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
-        /// @dev Check that received snsCtMaterials have the same keyId.
-        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
+        // Check that received snsCtMaterials have the same keyId.
+        // TODO: This should be removed once batched decryption requests with different keys is
+        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Generate a new request ID
-        // Decryption request IDs are unique across all kinds of decryption request (public, user,
-        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
+        // Generate a globally unique decryptionId for the public decryption request.
+        // The counter is initialized at deployment such that decryptionId's first byte uniquely
+        // represents a public decryption request, with format: [0000 0001 | counter_1..31]
+        // This counter is used to ensure the IDs' uniqueness, as there is no proper way
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
-        $.decryptionRequestCounter++;
-        uint256 decryptionId = $.decryptionRequestCounter;
+        $.publicDecryptionCounter++;
+        uint256 publicDecryptionId = $.publicDecryptionCounter;
 
         /// @dev The handles are used during response calls for the EIP712 signature validation.
-        $.publicCtHandles[decryptionId] = ctHandles;
+        $.publicCtHandles[publicDecryptionId] = ctHandles;
 
-        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
+        emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
     }
 
     /// @dev See {IDecryption-publicDecryptionResponse}.
@@ -297,7 +314,7 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Make sure the decryptionId corresponds to a generated decryption request.
-        if (decryptionId > $.decryptionRequestCounter || decryptionId == 0) {
+        if (decryptionId > $.publicDecryptionCounter || decryptionId == 0) {
             revert DecryptionNotRequested(decryptionId);
         }
 
@@ -402,25 +419,27 @@ contract Decryption is
         /// @dev a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
-        /// @dev Check that received snsCtMaterials have the same keyId.
-        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
+        // Check that received snsCtMaterials have the same keyId.
+        // TODO: This should be removed once batched decryption requests with different keys is
+        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Generate a new request ID
-        // Decryption request IDs are unique across all kinds of decryption request (public, user,
-        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
+        // Generate a globally unique decryptionId for the user decryption request.
+        // The counter is initialized at deployment such that decryptionId's first byte uniquely
+        // represents a user decryption request (including delegated user decryption requests),
+        // with format: [0000 0010 | counter_1..31]
+        // This counter is used to ensure the IDs' uniqueness, as there is no proper way
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
-        $.decryptionRequestCounter++;
-        uint256 decryptionId = $.decryptionRequestCounter;
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
     /// @dev See {IDecryption-userDecryptionWithDelegationRequest}.
@@ -488,25 +507,28 @@ contract Decryption is
         /// @dev a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
-        /// @dev Check that received snsCtMaterials have the same keyId.
-        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
+        // Check that received snsCtMaterials have the same keyId.
+        // TODO: This should be removed once batched decryption requests with different keys is
+        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
-        // Generate a new request ID
-        // Decryption request IDs are unique across all kinds of decryption request (public, user,
-        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
+
+        // Generate a globally unique decryptionId for the delegated user decryption request.
+        // The counter is initialized at deployment such that decryptionId's first byte uniquely
+        // represents a user decryption request (including delegated user decryption requests),
+        // with format: [0000 0010 | counter_1..31]
+        // This counter is used to ensure the IDs' uniqueness, as there is no proper way
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
-        $.decryptionRequestCounter++;
-        uint256 decryptionId = $.decryptionRequestCounter;
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         emit UserDecryptionRequest(
-            decryptionId,
+            userDecryptionId,
             snsCtMaterials,
             delegationAccounts.delegatedAddress,
             publicKey,
@@ -526,7 +548,7 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Make sure the decryptionId corresponds to a generated decryption request.
-        if (decryptionId > $.decryptionRequestCounter || decryptionId == 0) {
+        if (decryptionId > $.userDecryptionCounter || decryptionId == 0) {
             revert DecryptionNotRequested(decryptionId);
         }
 
@@ -645,14 +667,15 @@ contract Decryption is
 
     /**
      * @dev See {IDecryption-getDecryptionConsensusTxSenders}.
-     * For public decryption, the list remains empty until the consensus is reached.
+     * For public decryption, the returned list remains empty until the consensus is reached.
      */
     function getDecryptionConsensusTxSenders(uint256 decryptionId) external view virtual returns (address[] memory) {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Get the unique digest associated to the decryption request in order to retrieve the list of
-        // KMS transaction sender address that were involved in the consensus
-        // For public decryption, this digest remains the default value (0x0) until the consensus is reached.
+        // KMS transaction sender addresses that were involved in the associated consensus
+        // For public decryption, this digest remains the default value (0x0) until the consensus is
+        // reached, meaning the returned list will be empty until then.
         bytes32 consensusDigest = $.decryptionConsensusDigest[decryptionId];
 
         return $.consensusTxSenderAddresses[decryptionId][consensusDigest];
@@ -981,8 +1004,12 @@ contract Decryption is
         return false;
     }
 
-    /// @notice Checks that all SNS ciphertext materials have the same keyId.
-    /// @param snsCtMaterials The list of SNS ciphertext materials to check
+    /**
+     * @notice Checks that all SNS ciphertext materials have the same keyId.
+     * @param snsCtMaterials The list of SNS ciphertext materials to check
+     * @dev TODO: This should be removed once batched decryption requests with different keys is
+     * supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
+     */
     function _checkCtMaterialKeyIds(SnsCiphertextMaterial[] memory snsCtMaterials) internal pure virtual {
         if (snsCtMaterials.length <= 1) return;
 
