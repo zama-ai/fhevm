@@ -4,10 +4,10 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, MultichainAcl, MultichainAcl__factory } from "../typechain-types";
+import { GatewayConfig, MultichainACL, MultichainACL__factory } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
-// as this type is defined as a shared structs instead of directly in the IMultichainAcl interface
-import { DelegationAccountsStruct } from "../typechain-types/contracts/interfaces/IMultichainAcl";
+// as this type is defined as a shared structs instead of directly in the IMultichainACL interface
+import { DelegationAccountsStruct } from "../typechain-types/contracts/interfaces/IMultichainACL";
 import {
   createCtHandle,
   createRandomAddress,
@@ -20,7 +20,7 @@ import {
 
 const MAX_CONTRACT_ADDRESSES = 10;
 
-describe("MultichainAcl", function () {
+describe("MultichainACL", function () {
   // Define the host chains' chain IDs
   const hostChainIds = loadHostChainIds();
   const hostChainId = hostChainIds[0];
@@ -40,7 +40,7 @@ describe("MultichainAcl", function () {
   const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
 
   let gatewayConfig: GatewayConfig;
-  let multichainAcl: MultichainAcl;
+  let multichainAcl: MultichainACL;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
   let pauser: Wallet;
@@ -56,11 +56,11 @@ describe("MultichainAcl", function () {
   });
 
   describe("Deployment", function () {
-    let multichainAclFactory: MultichainAcl__factory;
+    let multichainAclFactory: MultichainACL__factory;
 
     beforeEach(async function () {
-      // Get the MultichainAcl contract factory
-      multichainAclFactory = await hre.ethers.getContractFactory("MultichainAcl", owner);
+      // Get the MultichainACL contract factory
+      multichainAclFactory = await hre.ethers.getContractFactory("MultichainACL", owner);
     });
 
     it("Should revert because initialization is not from an empty proxy", async function () {

@@ -4,17 +4,17 @@ pragma solidity ^0.8.24;
 import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./interfaces/IMultichainAcl.sol";
+import "./interfaces/IMultichainACL.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./interfaces/IGatewayConfig.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
 import "./shared/Pausable.sol";
 
-/// @title MultichainAcl smart contract
-/// @dev See {IMultichainAcl}
-contract MultichainAcl is
-    IMultichainAcl,
+/// @title MultichainACL smart contract
+/// @dev See {IMultichainACL}
+contract MultichainACL is
+    IMultichainACL,
     Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
     GatewayConfigChecks,
@@ -29,7 +29,7 @@ contract MultichainAcl is
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that
     /// @dev they can still define their own private constants with the same name.
-    string private constant CONTRACT_NAME = "MultichainAcl";
+    string private constant CONTRACT_NAME = "MultichainACL";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
@@ -39,8 +39,8 @@ contract MultichainAcl is
     uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
-    /// @custom:storage-location erc7201:fhevm_gateway.storage.MultichainAcl
-    struct MultichainAclStorage {
+    /// @custom:storage-location erc7201:fhevm_gateway.storage.MultichainACL
+    struct MultichainACLStorage {
         // ----------------------------------------------------------------------------------------------
         // Allow account state variables:
         // ----------------------------------------------------------------------------------------------
@@ -96,7 +96,7 @@ contract MultichainAcl is
     }
 
     /// @dev Storage location has been computed using the following command:
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.MultichainAcl")) - 1))
+    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.MultichainACL")) - 1))
     /// @dev & ~bytes32(uint256(0xff))
     bytes32 private constant MULTICHAIN_ACL_STORAGE_LOCATION =
         0xc6e55c773d840671d532b9f3847a71edf30a8cc021a5cb4790841cc1251d0700;
@@ -121,12 +121,12 @@ contract MultichainAcl is
     /// @custom:oz-upgrades-validate-as-initializer
     function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
-    /// @dev See {IMultichainAcl-allowPublicDecrypt}.
+    /// @dev See {IMultichainACL-allowPublicDecrypt}.
     function allowPublicDecrypt(
         bytes32 ctHandle,
         bytes calldata /* extraData */
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
-        MultichainAclStorage storage $ = _getMultichainAclStorage();
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
 
         /**
          * @dev Check if the coprocessor has already allowed the ciphertext handle for public decryption.
@@ -152,13 +152,13 @@ contract MultichainAcl is
         }
     }
 
-    /// @dev See {IMultichainAcl-allowAccount}.
+    /// @dev See {IMultichainACL-allowAccount}.
     function allowAccount(
         bytes32 ctHandle,
         address accountAddress,
         bytes calldata /* extraData */
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
-        MultichainAclStorage storage $ = _getMultichainAclStorage();
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
 
         /**
          * @dev Check if the coprocessor has already allowed the account to use the ciphertext handle.
@@ -187,7 +187,7 @@ contract MultichainAcl is
         }
     }
 
-    /// @dev See {IMultichainAcl-delegateAccount}.
+    /// @dev See {IMultichainACL-delegateAccount}.
     function delegateAccount(
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
@@ -200,7 +200,7 @@ contract MultichainAcl is
             revert ContractsMaxLengthExceeded(MAX_CONTRACT_ADDRESSES, contractAddresses.length);
         }
 
-        MultichainAclStorage storage $ = _getMultichainAclStorage();
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
 
         /// @dev The delegateAccountHash is the hash of all input arguments.
         /// @dev This hash is used to track the delegation consensus over the whole contractAddresses list,
@@ -241,18 +241,18 @@ contract MultichainAcl is
         }
     }
 
-    /// @dev See {IMultichainAcl-checkPublicDecryptAllowed}.
+    /// @dev See {IMultichainACL-checkPublicDecryptAllowed}.
     function checkPublicDecryptAllowed(bytes32 ctHandle) external view virtual {
-        MultichainAclStorage storage $ = _getMultichainAclStorage();
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
 
         if (!$.allowedPublicDecrypts[ctHandle]) {
             revert PublicDecryptNotAllowed(ctHandle);
         }
     }
 
-    /// @dev See {IMultichainAcl-checkAccountAllowed}.
+    /// @dev See {IMultichainACL-checkAccountAllowed}.
     function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view virtual {
-        MultichainAclStorage storage $ = _getMultichainAclStorage();
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
 
         /// @dev Check that the account address is allowed to use this ciphertext.
         if (!$.allowedAccounts[ctHandle][accountAddress]) {
@@ -260,7 +260,7 @@ contract MultichainAcl is
         }
     }
 
-    /// @dev See {IMultichainAcl-checkAccountDelegated}.
+    /// @dev See {IMultichainACL-checkAccountDelegated}.
     function checkAccountDelegated(
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
@@ -270,7 +270,7 @@ contract MultichainAcl is
             revert EmptyContractAddresses();
         }
 
-        MultichainAclStorage storage $ = _getMultichainAclStorage();
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
         for (uint256 i = 0; i < contractAddresses.length; i++) {
             if (
                 !$._delegatedContracts[delegationAccounts.delegatorAddress][delegationAccounts.delegatedAddress][
@@ -282,27 +282,27 @@ contract MultichainAcl is
         }
     }
 
-    /// @dev See {IMultichainAcl-getAllowPublicDecryptConsensusTxSenders}.
+    /// @dev See {IMultichainACL-getAllowPublicDecryptConsensusTxSenders}.
     function getAllowPublicDecryptConsensusTxSenders(
         bytes32 ctHandle
     ) external view virtual returns (address[] memory) {
-        MultichainAclStorage storage $ = _getMultichainAclStorage();
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
 
         return $.allowPublicDecryptConsensusTxSenders[ctHandle];
     }
 
-    /// @dev See {IMultichainAcl-getAllowAccountConsensusTxSenders}.
+    /// @dev See {IMultichainACL-getAllowAccountConsensusTxSenders}.
     function getAllowAccountConsensusTxSenders(
         bytes32 ctHandle,
         address accountAddress
     ) external view virtual returns (address[] memory) {
-        MultichainAclStorage storage $ = _getMultichainAclStorage();
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
 
         return $.allowAccountConsensusTxSenders[ctHandle][accountAddress];
     }
 
     /**
-     * @dev See {IMultichainAcl-getDelegateAccountConsensusTxSenders}.
+     * @dev See {IMultichainACL-getDelegateAccountConsensusTxSenders}.
      * The contract address list needs to be provided in the same order as when the consensus was reached
      * in order to be able to retrieve the coprocessor transaction senders associated to it.
      */
@@ -311,7 +311,7 @@ contract MultichainAcl is
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
     ) external view virtual returns (address[] memory) {
-        MultichainAclStorage storage $ = _getMultichainAclStorage();
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
 
         // Get the hash of the delegate account's inputs used to track the consensus.
         bytes32 delegateAccountHash = _getDelegateAccountHash(chainId, delegationAccounts, contractAddresses);
@@ -319,7 +319,7 @@ contract MultichainAcl is
         return $.delegateAccountConsensusTxSenders[delegateAccountHash];
     }
 
-    /// @dev See {IMultichainAcl-getVersion}.
+    /// @dev See {IMultichainACL-getVersion}.
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -359,12 +359,12 @@ contract MultichainAcl is
     }
 
     /**
-     * @dev Returns the MultichainAcl storage location.
+     * @dev Returns the MultichainACL storage location.
      * Note that this function is internal but not virtual: derived contracts should be able to
      * access it, but if the underlying storage struct version changes, we force them to define a new
      * getter function and use that one instead in order to avoid overriding the storage location.
      */
-    function _getMultichainAclStorage() internal pure returns (MultichainAclStorage storage $) {
+    function _getMultichainACLStorage() internal pure returns (MultichainACLStorage storage $) {
         // solhint-disable-next-line no-inline-assembly
         assembly {
             $.slot := MULTICHAIN_ACL_STORAGE_LOCATION

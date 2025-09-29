@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-/// @title MultichainAcl smart contract
-/// @dev source: github.com/zama-ai/fhevm-gateway/blob/main/contracts/MultichainAcl.sol
-/// @notice This contract is a mock of the MultichainAcl contract from L2.
-contract MultichainAcl {
+/// @title MultichainACL smart contract
+/// @dev source: github.com/zama-ai/fhevm-gateway/blob/main/contracts/MultichainACL.sol
+/// @notice This contract is a mock of the MultichainACL contract from L2.
+contract MultichainACL {
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address coprocessor);
     error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
 

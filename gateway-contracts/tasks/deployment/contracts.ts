@@ -149,9 +149,9 @@ task("task:deployCiphertextCommits").setAction(async function (_, hre) {
   await deployContractImplementation("CiphertextCommits", hre);
 });
 
-// Deploy the MultichainAcl contract
-task("task:deployMultichainAcl").setAction(async function (_, hre) {
-  await deployContractImplementation("MultichainAcl", hre);
+// Deploy the MultichainACL contract
+task("task:deployMultichainACL").setAction(async function (_, hre) {
+  await deployContractImplementation("MultichainACL", hre);
 });
 
 // Deploy the Decryption contract
@@ -186,8 +186,8 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   console.log("Deploy CiphertextCommits contract:");
   await hre.run("task:deployCiphertextCommits");
 
-  console.log("Deploy MultichainAcl contract:");
-  await hre.run("task:deployMultichainAcl");
+  console.log("Deploy MultichainACL contract:");
+  await hre.run("task:deployMultichainACL");
 
   console.log("Deploy Decryption contract:");
   await hre.run("task:deployDecryption");

@@ -186,7 +186,7 @@ jobs:
 
       # TODO: We should instead automatically detect if the contract needs to be upgraded
       #  See https://github.com/zama-ai/fhevm-internal/issues/379
-      # - name: Upgrade MultichainAcl contract
+      # - name: Upgrade MultichainACL contract
       #   working-directory: current-fhevm/gateway-contracts
       #   env:
       #     DOTENV_CONFIG_PATH: .env
@@ -194,9 +194,9 @@ jobs:
       #     CHAIN_ID_GATEWAY: 54321
       #     RPC_URL: http://localhost:8546
       #   run: |
-      #     npx hardhat task:upgradeMultichainAcl \
-      #       --current-implementation previous-contracts/MultichainAcl.sol:MultichainAcl \
-      #       --new-implementation contracts/MultichainAcl.sol:MultichainAcl \
+      #     npx hardhat task:upgradeMultichainACL \
+      #       --current-implementation previous-contracts/MultichainACL.sol:MultichainACL \
+      #       --new-implementation contracts/MultichainACL.sol:MultichainACL \
       #       --use-internal-proxy-address true \
       #       --verify-contract false
 

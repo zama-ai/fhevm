@@ -45,10 +45,10 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
     flag: "w",
   });
 
-  console.log("Deploying an EmptyUUPS proxy contract for MultichainAcl...");
+  console.log("Deploying an EmptyUUPS proxy contract for MultichainACL...");
   const multichainAclAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "MultichainAcl",
+    name: "MultichainACL",
     address: multichainAclAddress,
   });
 

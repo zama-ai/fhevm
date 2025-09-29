@@ -12,7 +12,7 @@ import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/Mes
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/IGatewayConfig.sol";
-import "./interfaces/IMultichainAcl.sol";
+import "./interfaces/IMultichainACL.sol";
 import "./interfaces/ICiphertextCommits.sol";
 import "./shared/UUPSUpgradeableEmptyProxy.sol";
 import "./shared/GatewayConfigChecks.sol";
@@ -105,8 +105,8 @@ contract Decryption is
     /// @notice The address of the GatewayConfig contract for checking if a signer is valid
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @notice The address of the MultichainAcl contract for checking if a decryption requests are allowed
-    IMultichainAcl private constant MULTICHAIN_ACL = IMultichainAcl(multichainAclAddress);
+    /// @notice The address of the MultichainACL contract for checking if a decryption requests are allowed
+    IMultichainACL private constant MULTICHAIN_ACL = IMultichainACL(multichainAclAddress);
 
     /// @notice The address of the CiphertextCommits contract for getting ciphertext materials.
     ICiphertextCommits private constant CIPHERTEXT_COMMITS = ICiphertextCommits(ciphertextCommitsAddress);

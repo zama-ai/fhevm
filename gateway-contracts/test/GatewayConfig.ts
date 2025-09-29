@@ -11,7 +11,7 @@ import {
   GatewayConfig,
   InputVerification,
   KmsManagement,
-  MultichainAcl,
+  MultichainACL,
   PauserSet,
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
@@ -799,7 +799,7 @@ describe("GatewayConfig", function () {
       let decryption: Decryption;
       let inputVerification: InputVerification;
       let kmsManagement: KmsManagement;
-      let multichainAcl: MultichainAcl;
+      let multichainAcl: MultichainACL;
 
       before(async function () {
         const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -831,7 +831,7 @@ describe("GatewayConfig", function () {
         // The following contracts are pausable but don't have pausable functions yet, so they are
         // not paused by the `pauseAllGatewayContracts()` function for now:
         // - CiphertextCommits
-        // - MultichainAcl
+        // - MultichainACL
         // - GatewayConfig
         // In addition, the `KmsManagement` contract is not used yet, so we don't need to pause it for now.
         // See https://github.com/zama-ai/fhevm-internal/issues/180

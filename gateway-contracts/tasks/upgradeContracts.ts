@@ -109,14 +109,14 @@ async function checkImplementationArtifacts(
   }
 }
 
-task("task:upgradeMultichainAcl")
+task("task:upgradeMultichainACL")
   .addParam(
     "currentImplementation",
-    "The currently deployed implementation solidity contract path and name, eg: contracts/MultichainAcl.sol:MultichainAcl",
+    "The currently deployed implementation solidity contract path and name, eg: contracts/MultichainACL.sol:MultichainACL",
   )
   .addParam(
     "newImplementation",
-    "The new implementation solidity contract path and name, eg: contracts/examples/MultichainAclUpgradedExample.sol:MultichainAclUpgradedExample",
+    "The new implementation solidity contract path and name, eg: contracts/examples/MultichainACLUpgradedExample.sol:MultichainACLUpgradedExample",
   )
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -136,7 +136,7 @@ task("task:upgradeMultichainAcl")
   ) {
     await compileImplementations(currentImplementation, newImplementation, hre);
 
-    await checkImplementationArtifacts("MultichainAcl", currentImplementation, newImplementation, hre);
+    await checkImplementationArtifacts("MultichainACL", currentImplementation, newImplementation, hre);
 
     if (useInternalProxyAddress) {
       dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });

@@ -8,7 +8,7 @@ import {
   GatewayConfigMock,
   InputVerificationMock,
   KmsManagementMock,
-  MultichainAclMock,
+  MultichainACLMock,
 } from "../../typechain-types";
 import { toValues } from "../utils";
 
@@ -19,7 +19,7 @@ describe("Mock contracts", function () {
   let gatewayConfigMock: GatewayConfigMock;
   let kmsManagementMock: KmsManagementMock;
   let inputVerificationMock: InputVerificationMock;
-  let multichainAclMock: MultichainAclMock;
+  let multichainAclMock: MultichainACLMock;
 
   // Default values
   const DefaultBytes = ethers.hexlify(new Uint8Array(0));
@@ -95,7 +95,7 @@ describe("Mock contracts", function () {
     const kmsManagementFactory = await ethers.getContractFactory("KmsManagementMock");
     const kmsManagementMock = await kmsManagementFactory.deploy();
 
-    const multichainAclFactory = await ethers.getContractFactory("MultichainAclMock");
+    const multichainAclFactory = await ethers.getContractFactory("MultichainACLMock");
     const multichainAclMock = await multichainAclFactory.deploy();
 
     return {
@@ -371,7 +371,7 @@ describe("Mock contracts", function () {
     });
   });
 
-  describe("MultichainAclMock", async function () {
+  describe("MultichainACLMock", async function () {
     it("Should emit AllowPublicDecrypt event on allow public decrypt call", async function () {
       await expect(multichainAclMock.allowPublicDecrypt(DefaultBytes32, DefaultBytes))
         .to.emit(multichainAclMock, "AllowPublicDecrypt")

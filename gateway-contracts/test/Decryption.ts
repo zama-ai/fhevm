@@ -11,7 +11,7 @@ import {
   GatewayConfig,
   IDecryption,
   KmsManagement,
-  MultichainAcl,
+  MultichainACL,
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
@@ -175,7 +175,7 @@ describe("Decryption", function () {
 
   let gatewayConfig: GatewayConfig;
   let kmsManagement: KmsManagement;
-  let multichainAcl: MultichainAcl;
+  let multichainAcl: MultichainACL;
   let ciphertextCommits: CiphertextCommits;
   let decryption: Decryption;
   let owner: Wallet;

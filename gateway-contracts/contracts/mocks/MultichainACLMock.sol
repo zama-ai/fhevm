@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 import "../shared/Structs.sol";
 
-contract MultichainAclMock {
+contract MultichainACLMock {
     event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
 
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
