@@ -370,8 +370,13 @@ impl Database {
             self.insert_computation_bytes(tx, tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
 
+        let _t = telemetry::tracer(
+            "handle_tfhe_event",
+            &log.transaction_hash.map(|h| h.to_vec()),
+        );
+
         self.record_transaction_begin(
-            &log.transaction_hash,
+            &log.transaction_hash.map(|h| h.to_vec()),
             &log.block_number,
         ).await;
 
@@ -473,7 +478,11 @@ impl Database {
     ) -> Result<(), SqlxError> {
         let data = &event.data;
 
-        self.record_transaction_begin(transaction_hash, block_number)
+        let transaction_hash = transaction_hash.map(|h| h.to_vec());
+
+        let _t = telemetry::tracer("handle_acl_event", &transaction_hash);
+
+        self.record_transaction_begin(&transaction_hash, block_number)
             .await;
 
         match data {
@@ -485,10 +494,16 @@ impl Database {
                     handle.clone(),
                     allowed.account.to_string(),
                     AllowEvents::AllowedAccount,
+                    transaction_hash.clone(),
                 )
                 .await?;
 
-                self.insert_pbs_computations(tx, &vec![handle]).await?;
+                self.insert_pbs_computations(
+                    tx,
+                    &vec![handle],
+                    transaction_hash,
+                )
+                .await?;
             }
             AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
                 let handles = allowed_for_decryption
@@ -508,11 +523,17 @@ impl Database {
                         handle,
                         "".to_string(),
                         AllowEvents::AllowedForDecryption,
+                        transaction_hash.clone(),
                     )
                     .await?;
                 }
 
-                self.insert_pbs_computations(tx, &handles).await?;
+                self.insert_pbs_computations(
+                    tx,
+                    &handles,
+                    transaction_hash.clone(),
+                )
+                .await?;
             }
             AclContractEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
@@ -578,14 +599,16 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         handles: &Vec<Vec<u8>>,
+        transaction_id: Option<Vec<u8>>,
     ) -> Result<(), SqlxError> {
         let tenant_id = self.tenant_id;
         for handle in handles {
             let query = sqlx::query!(
-                "INSERT INTO pbs_computations(tenant_id, handle) VALUES($1, $2)
-                        ON CONFLICT DO NOTHING;",
+                "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3)
+                 ON CONFLICT DO NOTHING;",
                 tenant_id,
                 handle,
+                transaction_id
             );
             query.execute(tx.deref_mut()).await?;
         }
@@ -599,15 +622,17 @@ impl Database {
         handle: Vec<u8>,
         account_address: String,
         event_type: AllowEvents,
+        transaction_id: Option<Vec<u8>>,
     ) -> Result<(), SqlxError> {
         let tenant_id = self.tenant_id;
         let query = sqlx::query!(
-            "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+            "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
                     ON CONFLICT DO NOTHING;",
             tenant_id,
             handle,
             account_address,
             event_type as i16,
+            transaction_id
         );
         query.execute(tx.deref_mut()).await?;
         Ok(())
@@ -615,7 +640,7 @@ impl Database {
 
     async fn record_transaction_begin(
         &self,
-        transaction_hash: &Option<Handle>,
+        transaction_hash: &Option<Vec<u8>>,
         block_number: &Option<u64>,
     ) {
         if let Some(txn_id) = transaction_hash {
@@ -623,7 +648,7 @@ impl Database {
             let _ = telemetry::try_begin_transaction(
                 &pool,
                 self.chain_id as i64,
-                &txn_id.to_vec(),
+                txn_id.as_ref(),
                 block_number.unwrap_or_default(),
             )
             .await;
