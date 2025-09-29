@@ -380,4 +380,4 @@ HARDHAT_NETWORK=staging CHAIN_ID_GATEWAY=54321 RPC_URL=http://localhost:8546 npx
     --use-internal-kms-management-address true
 
 
-sleep 30
+sleep 60
