@@ -224,7 +224,7 @@ impl GatewayListener<GatewayProvider, DbEventPublisher> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let publisher = DbEventPublisher::new(db_pool.clone());
 
-        let provider = connect_to_gateway(&config.gateway_url).await?;
+        let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
         let state = State::new(db_pool, provider.clone(), config.healthcheck_timeout);
         let gw_listener = GatewayListener::new(&config, provider, publisher);
         Ok((gw_listener, state))

@@ -89,6 +89,7 @@ impl GatewayInstance {
 
         let inner_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
+            .with_chain_id(*CHAIN_ID as u64)
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet)
             .connect_ws(WsConnect::new(Self::anvil_ws_endpoint_impl(
