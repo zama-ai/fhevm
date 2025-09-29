@@ -226,7 +226,7 @@ jobs:
           HARDHAT_NETWORK: hardhat
         run: |
           cp ./host-contracts/.env.example ./host-contracts/.env
-          npm --prefix ./host-contracts ci --include=optional
+          npm --workspace=host-contracts ci --include=optional
           cd host-contracts && npm install && npm run deploy:emptyProxies && npx hardhat compile
 
       - name: Run benchmarks on GPU
