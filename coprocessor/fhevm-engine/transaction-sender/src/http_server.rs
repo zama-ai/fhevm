@@ -119,6 +119,9 @@ async fn liveness_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>
 async fn metrics_handler() -> impl IntoResponse {
     let encoder = prometheus::TextEncoder::new();
     let metric_families = prometheus::gather();
+
+    info!(num_metrics = metric_families.len(), "Serving metrics");
+
     match encoder.encode_to_string(&metric_families) {
         Ok(encoded_metrics) => (StatusCode::OK, encoded_metrics),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),

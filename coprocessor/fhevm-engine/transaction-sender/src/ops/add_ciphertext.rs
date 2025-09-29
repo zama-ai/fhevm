@@ -19,7 +19,7 @@ use alloy::{
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{tenant_keys::query_tenant_info, utils::compact_hex};
+use fhevm_engine_common::{telemetry, tenant_keys::query_tenant_info, utils::compact_hex};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -202,6 +202,21 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
         )
         .execute(&self.db_pool)
         .await?;
+
+        // get transaction_id for the handle
+        let l1_transaction_id = sqlx::query!(
+            "SELECT transaction_id
+            FROM ciphertext_digest
+            WHERE handle = $1",
+            handle
+        )
+        .fetch_one(&self.db_pool)
+        .await?
+        .transaction_id
+        .unwrap_or_default();
+
+        telemetry::try_end_l1_transaction(&self.db_pool, &l1_transaction_id).await?;
+
         Ok(())
     }
 }
@@ -318,7 +333,7 @@ where
         // ciphertexts have been successfully uploaded to AWS S3 buckets.
         let rows = sqlx::query!(
             "
-            SELECT handle, ciphertext, ciphertext128, tenant_id, txn_limited_retries_count, txn_unlimited_retries_count
+            SELECT handle, ciphertext, ciphertext128, tenant_id, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
             FROM ciphertext_digest
             WHERE txn_is_sent = false
             AND ciphertext IS NOT NULL
@@ -338,8 +353,15 @@ where
 
         let maybe_has_more_work = rows.len() == self.conf.add_ciphertexts_batch_limit as usize;
 
+        // Keep track of all the tracers we create to ensure they are not dropped until the end of the join_set.
+        let mut tracers = vec![];
+
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
+            let transaction_id = row.transaction_id.clone();
+            let t = telemetry::tracer("call_add_ciphertext_l2", &transaction_id); // TODO: maybe move to the task
+            tracers.push(t);
+
             let tenant_info = match query_tenant_info(&self.db_pool, row.tenant_id).await {
                 Ok(res) => res,
                 Err(_) => {
