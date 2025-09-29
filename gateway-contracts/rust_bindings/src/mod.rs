@@ -13,7 +13,6 @@ pub mod r#erc1967_utils;
 pub mod r#empty_uups_proxy;
 pub mod r#empty_uups_proxy_gateway_config;
 pub mod r#errors;
-pub mod r#extra_data;
 pub mod r#fhe_type_bit_sizes;
 pub mod r#gateway_config;
 pub mod r#gateway_config_checks;
