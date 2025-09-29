@@ -1,5 +1,6 @@
 use crate::types::CoprocessorError;
 use crate::{db_queries::populate_cache_with_tenant_keys, types::TfheTenantKeys};
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::tfhe_ops::check_fhe_operand_types;
 use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
@@ -110,6 +111,7 @@ async fn tfhe_worker_cycle(
         let loop_span = tracer.start("worker_iteration");
         let loop_ctx = opentelemetry::Context::current_with_span(loop_span);
         let mut s = tracer.start_with_context("acquire_connection", &loop_ctx);
+        let mut span_txns = tracer.start_with_context("transactions", &loop_ctx);
         let mut conn = pool.acquire().await?;
         s.end();
         let mut s = tracer.start_with_context("begin_transaction", &loop_ctx);
