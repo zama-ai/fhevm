@@ -19,6 +19,8 @@ use tracing::{info, warn};
 pub const GLOBAL_LATENCY_METRIC_NAME_L1: &str = "coprocessor_l1_txn_latency_seconds";
 pub const GLOBAL_LATENCY_METRIC_NAME_L2: &str = "coprocessor_l2_txn_latency_seconds";
 
+pub const TXN_ID_ATTR_KEY: &str = "txn_id";
+
 pub fn setup_otlp(
     service_name: &str,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync + 'static>> {
@@ -70,35 +72,51 @@ impl OtelTracer {
 
 #[derive(Debug, PartialEq)]
 struct Handle(Vec<u8>);
+#[derive(Debug, PartialEq)]
+struct Transaction(Vec<u8>);
 
-pub fn tracer_with_handle(span_name: &'static str, handle: Vec<u8>) -> OtelTracer {
+pub fn tracer_with_handle(
+    span_name: &'static str,
+    handle: Vec<u8>,
+    transaction_id: &Option<Vec<u8>>,
+) -> OtelTracer {
     let tracer = opentelemetry::global::tracer(format!("tracer_{}", span_name));
-    let root_span = tracer.start(span_name);
+    let mut span = tracer.start(span_name);
 
-    if handle.is_empty() {
-        let ctx = Context::default().with_span(root_span);
-        OtelTracer {
-            ctx,
-            tracer: Arc::new(tracer),
-        }
-    } else {
-        // Add a short hex of the handle to the context
-        let ctx = Context::default()
-            .with_span(root_span)
-            .with_value(Handle(handle.clone()));
-
+    if !handle.is_empty() {
         let handle = compact_hex(&handle)
             .get(0..10)
             .unwrap_or_default()
             .to_owned();
 
-        ctx.span().set_attribute(KeyValue::new("handle", handle));
-
-        OtelTracer {
-            ctx,
-            tracer: Arc::new(tracer),
-        }
+        span.set_attribute(KeyValue::new("handle", handle));
     }
+
+    if let Some(transaction_id) = transaction_id {
+        set_txn_id(&mut span, transaction_id);
+    }
+
+    // Add handle and transaction_id to the context
+    // so that they can be retrieved in the application code, e.g. for logging
+    let mut ctx = Context::default().with_span(span);
+    ctx = ctx.with_value(Handle(handle.clone()));
+    ctx = ctx.with_value(Transaction(transaction_id.clone().unwrap_or_default()));
+
+    OtelTracer {
+        ctx,
+        tracer: Arc::new(tracer),
+    }
+}
+
+// Sets the txn_id attribute to the span
+// The txn_id is a shortened version of the transaction_id (first 10 characters of the hex representation)
+pub fn set_txn_id(span: &mut BoxedSpan, transaction_id: &[u8]) {
+    let txn_id_short = compact_hex(transaction_id)
+        .get(0..10)
+        .unwrap_or_default()
+        .to_owned();
+
+    span.set_attribute(KeyValue::new(TXN_ID_ATTR_KEY, txn_id_short));
 }
 
 /// Create a new span with start and end time
@@ -112,8 +130,8 @@ pub fn tracer_with_start_time(span_name: &'static str, start_time: SystemTime) -
     }
 }
 
-pub fn tracer(span_name: &'static str) -> OtelTracer {
-    tracer_with_handle(span_name, vec![])
+pub fn tracer(span_name: &'static str, transaction_id: &Option<Vec<u8>>) -> OtelTracer {
+    tracer_with_handle(span_name, vec![], transaction_id)
 }
 
 pub fn attribute(span: &mut BoxedSpan, key: &str, value: String) {

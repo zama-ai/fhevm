@@ -351,7 +351,7 @@ async fn fetch_and_execute_sns_tasks(
 
         for task in tasks.iter() {
             if let Some(transaction_id) = &task.transaction_id {
-                telemetry::try_end_l1_transaction(pool, &transaction_id).await?;
+                telemetry::try_end_l1_transaction(pool, transaction_id).await?;
             }
         }
     } else {
