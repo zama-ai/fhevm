@@ -85,7 +85,7 @@ impl ZkProofService {
         // Each worker needs at least 3 pg connections
         let max_pool_connections =
             std::cmp::max(conf.pg_pool_connections, 3 * conf.worker_thread_count);
-        let t = telemetry::tracer("init_service");
+        let t = telemetry::tracer("init_service", &None);
         let _s = t.child_span("pg_connect");
 
         let Some(pool_mngr) = PostgresPoolManager::connect_pool(
@@ -132,7 +132,7 @@ pub async fn execute_verify_proofs_loop(
         NonZero::new(MAX_CACHED_TENANT_KEYS).unwrap(),
     )));
 
-    let t = telemetry::tracer("init_workers");
+    let t = telemetry::tracer("init_workers", &None);
     let mut s = t.child_span("start_workers");
     telemetry::attribute(&mut s, "count", conf.worker_thread_count.to_string());
     let mut task_set = JoinSet::new();
@@ -226,7 +226,7 @@ async fn execute_verify_proof_routine(
 ) -> Result<(), ExecutionError> {
     let mut txn: sqlx::Transaction<'_, sqlx::Postgres> = pool.begin().await?;
     if let Ok(row) = sqlx::query(
-        "SELECT zk_proof_id, input, chain_id, contract_address, user_address
+        "SELECT zk_proof_id, input, chain_id, contract_address, user_address, transaction_id
             FROM verify_proofs
             WHERE verified IS NULL
             ORDER BY zk_proof_id ASC
@@ -240,6 +240,7 @@ async fn execute_verify_proof_routine(
         let chain_id: i64 = row.get("chain_id");
         let contract_address = row.get("contract_address");
         let user_address = row.get("user_address");
+        let transaction_id: Option<Vec<u8>> = row.get("transaction_id");
 
         info!(
             message = "Process zk-verify request",
@@ -250,7 +251,7 @@ async fn execute_verify_proof_routine(
             input_len = format!("{}", input.len()),
         );
 
-        let t = telemetry::tracer("verify_task");
+        let t: telemetry::OtelTracer = telemetry::tracer("verify_task", &transaction_id);
         t.set_attribute("request_id", request_id.to_string());
 
         let s = t.child_span("fetch_keys");
@@ -274,7 +275,7 @@ async fn execute_verify_proof_routine(
         })
         .await?;
 
-        let t = telemetry::tracer("db_insert");
+        let t = telemetry::tracer("db_insert", &transaction_id);
         t.set_attribute("request_id", request_id.to_string());
 
         let mut verified = false;
@@ -339,11 +340,11 @@ pub(crate) fn verify_proof(
     keys: &FetchTenantKeyResult,
     aux_data: &auxiliary::ZkData,
     raw_ct: &[u8],
-    t: telemetry::OtelTracer,
+    span: telemetry::OtelTracer,
 ) -> Result<(Vec<Ciphertext>, Vec<u8>), ExecutionError> {
     set_server_key(keys.server_key.clone());
 
-    let mut s = t.child_span("verify_and_expand");
+    let mut s = span.child_span("verify_and_expand");
     let mut cts = match try_verify_and_expand_ciphertext_list(request_id, raw_ct, keys, aux_data) {
         Ok(cts) => {
             telemetry::attribute(&mut s, "count", cts.len().to_string());
@@ -357,7 +358,7 @@ pub(crate) fn verify_proof(
         }
     };
 
-    let _s = t.child_span("create_ciphertext");
+    let _s = span.child_span("create_ciphertext");
 
     let mut h = Keccak256::new();
     h.update(RAW_CT_HASH_DOMAIN_SEPARATOR);
@@ -367,7 +368,7 @@ pub(crate) fn verify_proof(
     let cts = cts
         .iter_mut()
         .enumerate()
-        .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data))
+        .map(|(idx, ct)| create_ciphertext(request_id, &blob_hash, idx, ct, aux_data, &span))
         .collect::<Result<Vec<Ciphertext>, ExecutionError>>()?;
 
     Ok((cts, blob_hash))
@@ -418,6 +419,7 @@ fn create_ciphertext(
     ct_idx: usize,
     the_ct: &mut SupportedFheCiphertexts,
     aux_data: &auxiliary::ZkData,
+    span: &telemetry::OtelTracer,
 ) -> Result<Ciphertext, ExecutionError> {
     if ct_idx > MAX_INPUT_INDEX as usize {
         return Err(ExecutionError::TooManyInputs(ct_idx));
@@ -452,16 +454,17 @@ fn create_ciphertext(
     handle[30] = serialized_type as u8;
     handle[31] = current_ciphertext_version() as u8;
 
-    let t = telemetry::tracer("new_handle");
-    t.set_attribute("request_id", request_id.to_string());
-    t.set_attribute("handle", hex::encode(handle.clone()));
-    t.set_attribute("chain_id", aux_data.chain_id.to_string());
-    t.set_attribute("ct_idx", ct_idx.to_string());
-    t.set_attribute("user_address", aux_data.user_address.clone());
-    t.set_attribute("contract_address", aux_data.user_address.clone());
-    t.set_attribute("version", current_ciphertext_version().to_string());
-    t.set_attribute("type", serialized_type.to_string());
-    t.set_attribute(
+    let t = &mut span.child_span("create_handle");
+    telemetry::attribute(t, "request_id", request_id.to_string());
+    telemetry::attribute(t, "handle", hex::encode(handle.clone()));
+    telemetry::attribute(t, "chain_id", aux_data.chain_id.to_string());
+    telemetry::attribute(t, "ct_idx", ct_idx.to_string());
+    telemetry::attribute(t, "user_address", aux_data.user_address.clone());
+    telemetry::attribute(t, "contract_address", aux_data.user_address.clone());
+    telemetry::attribute(t, "version", current_ciphertext_version().to_string());
+    telemetry::attribute(t, "type", serialized_type.to_string());
+    telemetry::attribute(
+        t,
         "acl_contract_address",
         aux_data.acl_contract_address.clone(),
     );
