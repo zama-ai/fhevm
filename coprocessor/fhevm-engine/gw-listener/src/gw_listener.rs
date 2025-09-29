@@ -279,7 +279,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
 
         let _ = telemetry::try_begin_transaction(
             &db_pool,
-            chain_id,
+            chain_id as i64,
             &transaction_id,
             log.block_number.unwrap_or_default(),
         )
