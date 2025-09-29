@@ -53,7 +53,7 @@ pub async fn allow_handle(
 ) -> Result<(), sqlx::Error> {
     let account_address = String::new();
     let event_type = AllowEvents::AllowedForDecryption;
-    db.insert_allowed_handle(tx, handle.to_owned(), account_address, event_type)
+    db.insert_allowed_handle(tx, handle.to_owned(), account_address, event_type, None)
         .await
 }
 
