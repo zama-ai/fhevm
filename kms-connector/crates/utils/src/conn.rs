@@ -51,29 +51,40 @@ type DefaultFillers = JoinFill<
 >;
 
 /// The default `alloy::Provider` used to interact with the Gateway.
-pub type GatewayProvider = FillProvider<DefaultFillers, RootProvider>;
+pub type GatewayProvider = FillProvider<JoinFill<DefaultFillers, ChainIdFiller>, RootProvider>;
 
 /// The default `alloy::Provider` used to interact with the Gateway using a wallet.
 pub type WalletGatewayProvider = NonceManagedProvider<
     FillProvider<
-        JoinFill<JoinFill<Identity, FillersWithoutNonceManagement>, WalletFiller<EthereumWallet>>,
+        JoinFill<
+            JoinFill<JoinFill<Identity, ChainIdFiller>, FillersWithoutNonceManagement>,
+            WalletFiller<EthereumWallet>,
+        >,
         RootProvider,
     >,
 >;
 
 /// Tries to establish the connection with a RPC node of the Gateway.
-pub async fn connect_to_gateway(gateway_url: &str) -> anyhow::Result<GatewayProvider> {
-    connect_to_gateway_inner(gateway_url, ProviderBuilder::new).await
+pub async fn connect_to_gateway(
+    gateway_url: &str,
+    chain_id: u64,
+) -> anyhow::Result<GatewayProvider> {
+    connect_to_gateway_inner(gateway_url, || {
+        ProviderBuilder::new().with_chain_id(chain_id)
+    })
+    .await
 }
 
 /// Tries to establish the connection with a RPC node of the Gateway, with a `WalletFiller`.
 pub async fn connect_to_gateway_with_wallet(
     gateway_url: &str,
+    chain_id: u64,
     wallet: KmsWallet,
 ) -> anyhow::Result<WalletGatewayProvider> {
     let provider = connect_to_gateway_inner(gateway_url, || {
         ProviderBuilder::new()
             .disable_recommended_fillers()
+            .with_chain_id(chain_id)
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet.clone())
     })

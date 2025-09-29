@@ -129,7 +129,9 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponse
         let response_picker = DbKmsResponsePicker::connect(db_pool.clone(), &config).await?;
         let response_remover = DbKmsResponseRemover::new(db_pool.clone());
 
-        let provider = connect_to_gateway_with_wallet(&config.gateway_url, config.wallet).await?;
+        let provider =
+            connect_to_gateway_with_wallet(&config.gateway_url, config.chain_id, config.wallet)
+                .await?;
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
         let inner = TransactionSenderInner::new(
