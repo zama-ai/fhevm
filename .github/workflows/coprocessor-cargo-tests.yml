@@ -3,6 +3,8 @@ name: coprocessor-cargo-test
 on:
   pull_request:
 
+permissions: {}
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -11,9 +13,9 @@ jobs:
   check-changes:
     name: coprocessor-cargo-test/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-rust-files: ${{ steps.filter.outputs.rust-files }}
@@ -34,9 +36,9 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
     permissions:
-      contents: 'read'
-      checks: 'write'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      checks: 'write' # Required to create GitHub checks for test results
+      packages: 'read' # Required to read GitHub packages/container registry
     runs-on: large_ubuntu_16
     steps:
     - name: Checkout code
@@ -55,6 +57,7 @@ jobs:
 
     - name: Install cargo dependencies
       run: |
+        sudo apt-get update
         sudo apt-get install -y protobuf-compiler && \
         cargo install sqlx-cli
 
@@ -78,9 +81,16 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Login to GitHub Chainguard Registry
+      uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+      with:
+        registry: cgr.dev
+        username: ${{ secrets.CGR_USERNAME }}
+        password: ${{ secrets.CGR_PASSWORD }}
+
     - name: Init database
       run: make init_db
-      working-directory: coprocessor/fhevm-engine/coprocessor
+      working-directory: coprocessor/fhevm-engine/tfhe-worker
 
     - name: Use Node.js
       uses: actions/setup-node@60edb5dd545a775178f52524783378180af0d1f8 # v4.0.2

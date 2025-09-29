@@ -18,8 +18,11 @@ clean:
 test: clean
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test $(if $(GREP),--grep '$(GREP)',)
 
+coverage: clean
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat coverage
+
 get-accounts:
-	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts --num-accounts 20
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat get-accounts
 
 start-local-node: clean
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat node --port 8757
@@ -72,12 +75,26 @@ check-selectors: ensure-addresses
 update-selectors: ensure-addresses
 	DAPP_OUT=$(FORGE_DAPP_OUT) forge selectors list | tail -n +2 > ./selectors.txt
 
+# Update auto-generated files for conformance checks
+update-conformance: update-bindings update-mocks update-selectors
+
 # Conform to pre-commit checks
-conformance: prettier update-bindings update-mocks update-selectors
+conformance: prettier update-conformance
+
+# Regenerate the addresses and conform to pre-commit checks
+conformance-regenerate-addresses: prettier deploy-setup-contracts update-conformance
 
 # Deploy the empty proxy addresses
 deploy-empty-proxies:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployEmptyUUPSProxies
+
+# Deploy the pauser set contract
+deploy-pauser-set:
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat compile:specific --contract contracts/immutable
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:deployPauserSet
+
+# Deploy the contracts needed for deploying the gateway contracts
+deploy-setup-contracts: deploy-empty-proxies deploy-pauser-set
 
 # Ensure that the empty proxy addresses exists as these are required for contract compilation.
 # In addition, ensure that the addresses match the ones used in local development in order to
@@ -86,8 +103,14 @@ ensure-addresses:
 	ENV_PATH=$(ENV_PATH) npx ts-node scripts/ensure_proxy_addresses.ts
 
 # Make sure we only use allowed licenses for dependencies
+# Full list of SPDX identifiers can be found here: https://spdx.org/licenses/
+# The following packages are exceptionally excluded from the check:
+# - estraverse@1.9.3: invalid SPDX identifier (`BSD`) but licensed under `BSD-2-Clause` (https://www.npmjs.com/package/estraverse)
+# - source-map@0.2.0: invalid SPDX identifier (`BSD`) but licensed under `BSD-3-Clause` (https://www.npmjs.com/package/source-map)
+# - web3-utils@1.10.4: licensed under `LGPL-3.0 license` (https://www.npmjs.com/package/web3-utils), which we only allow for tooling
+# - @safe-global/safe-contracts@1.4.1-2: licensed under `LGPL-3.0 license` (https://www.npmjs.com/package/@safe-global/safe-contracts), which we only allow for tooling
 check-licenses:
-	output=$$(npx license-checker --onlyAllow '0BSD; Apache-2.0; BSD-2-Clause; BSD-3-Clause; CC-BY-3.0; CC0-1.0; ISC; MIT; MPL-2.0; Python-2.0; WTFPL' 2>&1); \
+	output=$$(npx license-checker --onlyAllow '0BSD; Apache-2.0; BSD-2-Clause; BSD-3-Clause; CC-BY-3.0; CC0-1.0; ISC; MIT; MPL-2.0; Python-2.0; WTFPL; PSF;' --excludePackages 'estraverse@1.9.3;source-map@0.2.0;web3-utils@1.10.4;@safe-global/safe-contracts@1.4.1-2;' 2>&1); \
 	status=$$?; \
 	if [ $$status -ne 0 ]; then \
 		printf '%s\n' "$$output"; \
@@ -105,5 +128,5 @@ prerelease:
 	git add ./rust_bindings && git commit --amend --no-edit
 
 # Get the size of the contracts
-get-contracts-sized: 
+get-contracts-sized:
 	forge build --sizes

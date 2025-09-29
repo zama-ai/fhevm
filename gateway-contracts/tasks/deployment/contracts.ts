@@ -5,15 +5,16 @@ import { task } from "hardhat/config";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import path from "path";
 
+import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../utils/loadVariables";
 import { pascalCaseToSnakeCase } from "../utils/stringOps";
-
-const ADDRESSES_DIR = path.join(__dirname, "../../addresses");
+import { GATEWAY_CONFIG_EMPTY_PROXY_NAME, REGULAR_EMPTY_PROXY_NAME } from "./utils";
 
 // Helper function to deploy a contract implementation to its proxy
 async function deployContractImplementation(
   name: string,
   hre: HardhatRuntimeEnvironment,
+  emptyProxyName: string,
   initializeArgs?: unknown[],
 ): Promise<string> {
   const { ethers, upgrades } = hre;
@@ -23,20 +24,21 @@ async function deployContractImplementation(
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
   // Get contract factories
-  const proxyImplementation = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+  const proxyImplementation = await ethers.getContractFactory(emptyProxyName, deployer);
   const newImplem = await ethers.getContractFactory(name, deployer);
 
-  // Determine env file path and env variable name
-  const nameSnakeCase = pascalCaseToSnakeCase(name);
-  const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
-  const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
-
-  // Get the proxy address
+  const envFilePath = path.join(ADDRESSES_DIR, `.env.gateway`);
   if (!fs.existsSync(envFilePath)) {
     throw new Error(`Environment file not found: ${envFilePath}`);
   }
-  const parsedEnv = dotenv.parse(fs.readFileSync(envFilePath));
-  const proxyAddress = parsedEnv[addressEnvVarName];
+  dotenv.config({ path: envFilePath, override: true });
+
+  // Determine env variable name for the proxy contract address
+  const nameSnakeCase = pascalCaseToSnakeCase(name);
+  const addressEnvVarName = `${nameSnakeCase.toUpperCase()}_ADDRESS`;
+
+  // Get the proxy address
+  const proxyAddress = getRequiredEnvVar(addressEnvVarName);
   if (!proxyAddress) {
     throw new Error(`Address variable ${addressEnvVarName} not found in ${envFilePath}`);
   }
@@ -69,9 +71,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     name: getRequiredEnvVar("PROTOCOL_NAME"),
     website: getRequiredEnvVar("PROTOCOL_WEBSITE"),
   };
-
-  // Parse the pauser address
-  const pauserAddress = getRequiredEnvVar(`PAUSER_ADDRESS`);
 
   // Parse the MPC threshold
   const mpcThreshold = getRequiredEnvVar("MPC_THRESHOLD");
@@ -112,8 +111,6 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
       encryptionKey: getRequiredEnvVar(`CUSTODIAN_ENCRYPTION_KEY_${idx}`),
     });
   }
-
-  console.log("Pauser address:", pauserAddress);
   console.log("Protocol metadata:", protocolMetadata);
   console.log("MPC threshold:", mpcThreshold);
   console.log("Public decryption threshold:", publicDecryptionThreshold);
@@ -122,8 +119,9 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   console.log("Coprocessors:", coprocessors);
   console.log("Custodians:", custodians);
 
-  await deployContractImplementation("GatewayConfig", hre, [
-    pauserAddress,
+  // The GatewayConfig contract is not deployed using the same empty proxy as the other contracts,
+  // as it is made ownable
+  await deployContractImplementation("GatewayConfig", hre, GATEWAY_CONFIG_EMPTY_PROXY_NAME, [
     protocolMetadata,
     mpcThreshold,
     publicDecryptionThreshold,
@@ -136,7 +134,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
 
 // Deploy the InputVerification contract
 task("task:deployInputVerification").setAction(async function (_, hre) {
-  await deployContractImplementation("InputVerification", hre);
+  await deployContractImplementation("InputVerification", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
 // Deploy the KmsManagement contract
@@ -147,28 +145,31 @@ task("task:deployKmsManagement").setAction(async function (_, hre) {
   console.log("FHE params name:", fheParamsName);
   console.log("FHE params digest:", fheParamsDigest);
 
-  await deployContractImplementation("KmsManagement", hre, [fheParamsName, fheParamsDigest]);
+  await deployContractImplementation("KmsManagement", hre, REGULAR_EMPTY_PROXY_NAME, [fheParamsName, fheParamsDigest]);
 });
 
 // Deploy the CiphertextCommits contract
 task("task:deployCiphertextCommits").setAction(async function (_, hre) {
-  await deployContractImplementation("CiphertextCommits", hre);
+  await deployContractImplementation("CiphertextCommits", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
-// Deploy the MultichainAcl contract
-task("task:deployMultichainAcl").setAction(async function (_, hre) {
-  await deployContractImplementation("MultichainAcl", hre);
+// Deploy the MultichainACL contract
+task("task:deployMultichainACL").setAction(async function (_, hre) {
+  await deployContractImplementation("MultichainACL", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
 // Deploy the Decryption contract
 task("task:deployDecryption").setAction(async function (_, hre) {
-  await deployContractImplementation("Decryption", hre);
+  await deployContractImplementation("Decryption", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
 // Deploy all the contracts
 task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   // Deploy the EmptyUUPS proxy contracts
   await hre.run("task:deployEmptyUUPSProxies");
+
+  await hre.run("compile:specific", { contract: "contracts/immutable" });
+  await hre.run("task:deployPauserSet");
 
   // Compile the implementation contracts
   // The deployEmptyUUPSProxies task has generated the contracts' addresses in `addresses/*.sol`.
@@ -189,8 +190,8 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   console.log("Deploy CiphertextCommits contract:");
   await hre.run("task:deployCiphertextCommits");
 
-  console.log("Deploy MultichainAcl contract:");
-  await hre.run("task:deployMultichainAcl");
+  console.log("Deploy MultichainACL contract:");
+  await hre.run("task:deployMultichainACL");
 
   console.log("Deploy Decryption contract:");
   await hre.run("task:deployDecryption");

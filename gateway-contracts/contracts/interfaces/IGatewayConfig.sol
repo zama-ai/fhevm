@@ -21,7 +21,6 @@ import "../shared/Structs.sol";
 interface IGatewayConfig {
     /**
      * @notice Emitted when the GatewayConfig initialization is completed.
-     * @param pauser Pauser address.
      * @param metadata Metadata of the protocol.
      * @param mpcThreshold The MPC threshold.
      * @param kmsNodes List of KMS nodes.
@@ -29,25 +28,12 @@ interface IGatewayConfig {
      * @param custodians List of custodians.
      */
     event InitializeGatewayConfig(
-        address pauser,
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes,
         Coprocessor[] coprocessors,
         Custodian[] custodians
     );
-
-    /**
-     * @notice Emitted when the GatewayConfigV2 reinitialization is completed.
-     * @param custodians List of custodians.
-     */
-    event ReinitializeGatewayConfigV2(Custodian[] custodians);
-
-    /**
-     * @notice Emitted when the pauser address has been updated.
-     * @param newPauser The new pauser address.
-     */
-    event UpdatePauser(address newPauser);
 
     /**
      * @notice Emitted when the MPC threshold has been updated.
@@ -73,8 +59,11 @@ interface IGatewayConfig {
      */
     event AddHostChain(HostChain hostChain);
 
-    /// @notice Error emitted when the pauser address is the null address.
-    error InvalidNullPauser();
+    /**
+     * @notice Error indicating that the given account is not a pauser.
+     * @param account The address of the account.
+     */
+    error NotPauser(address account);
 
     /// @notice Error emitted when the KMS nodes list is empty.
     error EmptyKmsNodes();
@@ -109,10 +98,14 @@ interface IGatewayConfig {
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
 
     /**
-     * @notice Error emitted when an address is not the pauser.
-     * @param pauserAddress The address that is not the pauser.
+     * @notice Emitted when all the pausable gateway contracts are paused.
      */
-    error NotPauser(address pauserAddress);
+    event PauseAllGatewayContracts();
+
+    /**
+     * @notice Emitted when all the pausable gateway contracts are unpaused.
+     */
+    event UnpauseAllGatewayContracts();
 
     /**
      * @notice Error emitted when an address is not a KMS transaction sender.
@@ -172,12 +165,6 @@ interface IGatewayConfig {
     error ChainIdNotUint64(uint256 chainId);
 
     /**
-     * @notice Update the pauser address.
-     * @param newPauser The new pauser address.
-     */
-    function updatePauser(address newPauser) external;
-
-    /**
      * @notice Add a new host chain metadata to the GatewayConfig contract.
      * @dev The associated chain ID must be non-zero and representable by a uint64.
      * @param hostChain The new host chain metadata to include.
@@ -206,10 +193,14 @@ interface IGatewayConfig {
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
 
     /**
-     * @notice Check if an address is the pauser.
-     * @param pauserAddress The address to check.
+     * @notice Pause all pausable gateway contracts.
      */
-    function checkIsPauser(address pauserAddress) external view;
+    function pauseAllGatewayContracts() external;
+
+    /**
+     * @notice Unpause all pausable gateway contracts.
+     */
+    function unpauseAllGatewayContracts() external;
 
     /**
      * @notice Check if an address is a registered KMS transaction sender.
@@ -254,10 +245,10 @@ interface IGatewayConfig {
     function checkHostChainIsRegistered(uint256 chainId) external view;
 
     /**
-     * @notice Get the pauser's address.
-     * @return The address of the pauser.
+     * @notice Check if the account is a pauser.
+     * @return Whether or not the account is a pauser.
      */
-    function getPauser() external view returns (address);
+    function isPauser(address account) external view returns (bool);
 
     /**
      * @notice Get the protocol's metadata.

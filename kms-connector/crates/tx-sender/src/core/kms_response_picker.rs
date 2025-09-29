@@ -1,12 +1,20 @@
+use crate::{
+    core::Config,
+    monitoring::metrics::{RESPONSE_RECEIVED_COUNTER, RESPONSE_RECEIVED_ERRORS},
+};
 use anyhow::anyhow;
 use connector_utils::types::KmsResponse;
-use sqlx::{Pool, Postgres, postgres::PgListener};
-use std::future::Future;
-use tracing::info;
+use sqlx::{
+    Pool, Postgres,
+    postgres::{PgListener, PgNotification},
+};
+use std::{future::Future, time::Duration};
+use tokio::select;
+use tracing::{debug, info};
 
 /// Interface used to pick KMS Core's responses from some storage.
 pub trait KmsResponsePicker {
-    fn pick_response(&mut self) -> impl Future<Output = anyhow::Result<KmsResponse>>;
+    fn pick_responses(&mut self) -> impl Future<Output = anyhow::Result<Vec<KmsResponse>>>;
 }
 
 // Postgres notifications for KMS Core's responses
@@ -20,22 +28,40 @@ pub struct DbKmsResponsePicker {
 
     /// The DB listener to watch for notifications.
     db_listener: PgListener,
+
+    /// The maximum number of responses to fetch at once.
+    responses_batch_size: u8,
+
+    /// The timeout for polling the database for responses.
+    polling_timeout: Duration,
 }
 
 impl DbKmsResponsePicker {
-    pub fn new(db_pool: Pool<Postgres>, db_listener: PgListener) -> Self {
+    pub fn new(
+        db_pool: Pool<Postgres>,
+        db_listener: PgListener,
+        response_batch_size: u8,
+        polling_timeout: Duration,
+    ) -> Self {
         Self {
             db_pool,
             db_listener,
+            responses_batch_size: response_batch_size,
+            polling_timeout,
         }
     }
 
-    pub async fn connect(db_pool: Pool<Postgres>) -> anyhow::Result<Self> {
+    pub async fn connect(db_pool: Pool<Postgres>, config: &Config) -> anyhow::Result<Self> {
         let db_listener = PgListener::connect_with(&db_pool)
             .await
             .map_err(|e| anyhow!("Failed to init Postgres Listener: {e}"))?;
 
-        let mut response_picker = DbKmsResponsePicker::new(db_pool, db_listener);
+        let mut response_picker = DbKmsResponsePicker::new(
+            db_pool,
+            db_listener,
+            config.responses_batch_size,
+            config.database_polling_timeout,
+        );
         response_picker
             .listen()
             .await
@@ -51,45 +77,98 @@ impl DbKmsResponsePicker {
 }
 
 impl KmsResponsePicker for DbKmsResponsePicker {
-    async fn pick_response(&mut self) -> anyhow::Result<KmsResponse> {
-        // Wait for notification
-        let notification = self.db_listener.recv().await?;
-        info!("Received Postgres notification: {}", notification.channel());
+    async fn pick_responses(&mut self) -> anyhow::Result<Vec<KmsResponse>> {
+        loop {
+            let responses = select! {
+                notification = self.db_listener.recv() => {
+                    let notification = notification?;
+                    info!("Received Postgres notification: {}", notification.channel());
+                    self.pick_notified_responses(notification)
+                        .await
+                        .inspect_err(|_| RESPONSE_RECEIVED_ERRORS.inc())?
+                },
+                _ = tokio::time::sleep(self.polling_timeout) => {
+                    debug!("Polling timeout, rechecking for responses");
+                    self.pick_any_responses().await.inspect_err(|_| RESPONSE_RECEIVED_ERRORS.inc())?
+                },
+            };
 
-        let response = match notification.channel() {
-            PUBLIC_DECRYPT_NOTIFICATION => pick_public_decryption_response(&self.db_pool).await?,
-            USER_DECRYPT_NOTIFICATION => pick_user_decryption_response(&self.db_pool).await?,
-            channel => return Err(anyhow!("Unexpected notification: {channel}")),
-        };
-
-        Ok(response)
+            if responses.is_empty() {
+                debug!("Responses have already been picked");
+                continue;
+            } else {
+                info!("Picked {} responses successfully", responses.len());
+                RESPONSE_RECEIVED_COUNTER.inc_by(responses.len() as u64);
+                return Ok(responses);
+            }
+        }
     }
 }
 
-async fn pick_public_decryption_response(db_pool: &Pool<Postgres>) -> sqlx::Result<KmsResponse> {
-    let row = sqlx::query(
-        "
-            SELECT decryption_id, decrypted_result, signature
-            FROM public_decryption_responses
-            LIMIT 1
-        ",
-    )
-    .fetch_one(db_pool)
-    .await?;
+impl DbKmsResponsePicker {
+    async fn pick_notified_responses(
+        &self,
+        notification: PgNotification,
+    ) -> anyhow::Result<Vec<KmsResponse>> {
+        match notification.channel() {
+            PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_responses().await,
+            USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_responses().await,
+            channel => return Err(anyhow!("Unexpected notification: {channel}")),
+        }
+        .map_err(anyhow::Error::from)
+    }
 
-    KmsResponse::from_public_decryption_row(&row)
-}
+    async fn pick_any_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
+        Ok([
+            self.pick_public_decryption_responses().await?,
+            self.pick_user_decryption_responses().await?,
+        ]
+        .concat())
+    }
 
-async fn pick_user_decryption_response(db_pool: &Pool<Postgres>) -> sqlx::Result<KmsResponse> {
-    let row = sqlx::query(
-        "
-            SELECT decryption_id, user_decrypted_shares, signature
-            FROM user_decryption_responses
-            LIMIT 1
-        ",
-    )
-    .fetch_one(db_pool)
-    .await?;
+    async fn pick_public_decryption_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                UPDATE public_decryption_responses
+                SET under_process = TRUE
+                FROM (
+                    SELECT decryption_id
+                    FROM public_decryption_responses
+                    WHERE under_process = FALSE
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE public_decryption_responses.decryption_id = resp.decryption_id
+                RETURNING resp.decryption_id, decrypted_result, signature, extra_data
+            ",
+        )
+        .bind(self.responses_batch_size as i16)
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(KmsResponse::from_public_decryption_row)
+        .collect()
+    }
 
-    KmsResponse::from_user_decryption_row(&row)
+    async fn pick_user_decryption_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                UPDATE user_decryption_responses
+                SET under_process = TRUE
+                FROM (
+                    SELECT decryption_id
+                    FROM user_decryption_responses
+                    WHERE under_process = FALSE
+                    LIMIT $1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE user_decryption_responses.decryption_id = resp.decryption_id
+                RETURNING resp.decryption_id, user_decrypted_shares, signature, extra_data
+            ",
+        )
+        .bind(self.responses_batch_size as i16)
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(KmsResponse::from_user_decryption_row)
+        .collect()
+    }
 }

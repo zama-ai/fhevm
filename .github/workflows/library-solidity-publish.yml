@@ -8,6 +8,8 @@ on:
         required: false
         default: false
 
+permissions: {}
+
 jobs:
   publish:
     name: library-solidity-publish/publish
@@ -16,9 +18,9 @@ jobs:
       run:
         working-directory: ./library-solidity
     permissions:
-      contents: 'read'
-      id-token: 'write'
-      packages: 'write'
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC authentication
+      packages: 'write' # Required to publish Docker images
     steps:
       - name: Check out repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

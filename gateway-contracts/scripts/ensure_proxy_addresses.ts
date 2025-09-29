@@ -21,7 +21,7 @@ function main(): void {
     const addressesDir = "addresses";
 
     // Get gateway config address env file
-    const gatewayConfigAddressEnv = path.join(addressesDir, ".env.gateway_config");
+    const gatewayConfigAddressEnv = path.join(addressesDir, ".env.gateway");
 
     let shouldGenerateAddresses = false;
 
@@ -58,8 +58,8 @@ function main(): void {
 
     if (shouldGenerateAddresses) {
       console.log(`Generating contract addresses in development environment.`);
-      // Deploy empty proxies and generate addresses
-      execSync(`make deploy-empty-proxies`, {
+      // Deploy the setup contracts (empty proxies, pauserSet) and generate addresses
+      execSync(`make deploy-setup-contracts`, {
         stdio: "inherit",
         env: process.env,
       });

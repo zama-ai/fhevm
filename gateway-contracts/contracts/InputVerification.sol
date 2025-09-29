@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { gatewayConfigAddress } from "../addresses/GatewayConfigAddress.sol";
+import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
-import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./interfaces/IInputVerification.sol";
-import "./interfaces/IGatewayConfig.sol";
-import "./shared/UUPSUpgradeableEmptyProxy.sol";
-import "./shared/GatewayConfigChecks.sol";
-import "./shared/Pausable.sol";
+import { IInputVerification } from "./interfaces/IInputVerification.sol";
+import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
+import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
+import { Pausable } from "./shared/Pausable.sol";
+import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { Coprocessor } from "./shared/Structs.sol";
 
 /**
  * @title InputVerification smart contract
@@ -19,8 +20,8 @@ import "./shared/Pausable.sol";
 contract InputVerification is
     IInputVerification,
     EIP712Upgradeable,
-    Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
+    GatewayOwnable,
     GatewayConfigChecks,
     Pausable
 {
@@ -38,6 +39,8 @@ contract InputVerification is
         address contractAddress;
         /// @notice The host chain's chain ID of the contract requiring the ZK Proof verification.
         uint256 contractChainId;
+        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
+        bytes extraData;
     }
 
     /// @notice The stored structure for the received ZK Proof verification request inputs.
@@ -55,7 +58,7 @@ contract InputVerification is
 
     /// @notice The definition of the CiphertextVerification structure typed data.
     string private constant EIP712_ZKPOK_TYPE =
-        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId)";
+        "CiphertextVerification(bytes32[] ctHandles,address userAddress,address contractAddress,uint256 contractChainId,bytes extraData)";
 
     /// @notice The hash of the CiphertextVerification structure typed data definition used for signature validation.
     bytes32 private constant EIP712_ZKPOK_TYPE_HASH = keccak256(bytes(EIP712_ZKPOK_TYPE));
@@ -68,29 +71,51 @@ contract InputVerification is
     uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// Constant used for making sure the version number using in the `reinitializer` modifier is
-    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+    /**
+     * @dev Constant used for making sure the version number using in the `reinitializer` modifier is
+     * identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+     * This constant does not represent the number of time a specific contract have been upgraded,
+     * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
+     */
     uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.InputVerification
     struct InputVerificationStorage {
+        // ----------------------------------------------------------------------------------------------
+        // Common state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice The counter used for the ZKPoK IDs returned in verification request events.
         uint256 zkProofIdCounter;
-        /// @notice The ZKPoK request IDs that have been verified.
-        mapping(uint256 zkProofId => bool isVerified) verifiedZKProofs;
-        /// @notice The ZKPoK request IDs that have been rejected.
-        mapping(uint256 zkProofId => bool isRejected) rejectedZKProofs;
+        /// @notice The ZKPoK request inputs to be used for signature validation in response calls.
+        mapping(uint256 zkProofId => ZKProofInput zkProofInput) zkProofInputs;
         /// @notice The validated signatures associated to a verified ZKPoK with the given ID.
         mapping(uint256 zkProofId => mapping(bytes32 digest => bytes[] signatures)) zkProofSignatures;
-        /// @notice The number of coprocessors that have rejected a ZKPoK with the given ID.
-        mapping(uint256 zkProofId => uint256 responseCounter) rejectedProofResponseCounter;
+        // prettier-ignore
+        /// @notice The coprocessor transaction senders involved in a consensus for a proof verification.
+        mapping(uint256 zkProofId =>
+            mapping(bytes32 digest => address[] coprocessorTxSenderAddresses))
+               verifyProofConsensusTxSenders;
+        // ----------------------------------------------------------------------------------------------
+        // Proof verification state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The ZKPoK request IDs that have been verified.
+        mapping(uint256 zkProofId => bool isVerified) verifiedZKProofs;
         /// @notice Whether a coprocessor has signed a ZKPoK verification.
         mapping(uint256 zkProofId => mapping(address coprocessorSigner => bool hasVerified)) signerVerifiedZKPoK;
+        /// @notice The digest of the proof verification response that reached consensus for a proof verification request.
+        mapping(uint256 zkProofId => bytes32 verifyProofConsensusDigest) verifyProofConsensusDigest;
+        // ----------------------------------------------------------------------------------------------
+        // Proof rejection state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The ZKPoK request IDs that have been rejected.
+        mapping(uint256 zkProofId => bool isRejected) rejectedZKProofs;
+        /// @notice The number of coprocessors that have rejected a ZKPoK with the given ID.
+        mapping(uint256 zkProofId => uint256 responseCounter) rejectedProofResponseCounter;
         /// @notice Whether a coprocessor has signed a ZKPoK rejection.
         mapping(uint256 zkProofId => mapping(address coprocessorSigner => bool hasRejected)) signerRejectedZKPoK;
-        /// @notice The ZKPoK request inputs to be used for signature validation in response calls.
-        mapping(uint256 zkProofId => ZKProofInput zkProofInput) _zkProofInputs;
+        /// @notice The coprocessor transaction senders involved in a consensus for a proof rejection.
+        mapping(uint256 zkProofId => address[] coprocessorTxSenderAddresses) rejectProofConsensusTxSenders;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -110,16 +135,26 @@ contract InputVerification is
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
-        __Ownable_init(owner());
         __Pausable_init();
     }
+
+    /**
+     * @notice Re-initializes the contract from V1.
+     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
+        /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
+        $.zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
+     */
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IInputVerification-verifyProofRequest}.
     function verifyProofRequest(
         uint256 contractChainId,
         address contractAddress,
         address userAddress,
-        bytes calldata ciphertextWithZKProof
+        bytes calldata ciphertextWithZKProof,
+        bytes calldata extraData
     ) external virtual onlyRegisteredHostChain(contractChainId) whenNotPaused {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
@@ -127,9 +162,16 @@ contract InputVerification is
         uint256 zkProofId = $.zkProofIdCounter;
 
         /// @dev The following stored inputs are used during response calls for the EIP712 signature validation.
-        $._zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
+        $.zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
 
-        emit VerifyProofRequest(zkProofId, contractChainId, contractAddress, userAddress, ciphertextWithZKProof);
+        emit VerifyProofRequest(
+            zkProofId,
+            contractChainId,
+            contractAddress,
+            userAddress,
+            ciphertextWithZKProof,
+            extraData
+        );
     }
 
     /**
@@ -140,19 +182,26 @@ contract InputVerification is
     function verifyProofResponse(
         uint256 zkProofId,
         bytes32[] calldata ctHandles,
-        bytes calldata signature
-    ) external virtual onlyCoprocessorTxSender whenNotPaused {
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
 
+        // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
+        if (zkProofId > $.zkProofIdCounter || zkProofId == 0) {
+            revert VerifyProofNotRequested(zkProofId);
+        }
+
         /// @dev Retrieve stored ZK Proof verification request inputs.
-        ZKProofInput memory zkProofInput = $._zkProofInputs[zkProofId];
+        ZKProofInput memory zkProofInput = $.zkProofInputs[zkProofId];
 
         /// @dev Initialize the CiphertextVerification structure for the signature validation.
         CiphertextVerification memory ciphertextVerification = CiphertextVerification(
             ctHandles,
             zkProofInput.userAddress,
             zkProofInput.contractAddress,
-            zkProofInput.contractChainId
+            zkProofInput.contractChainId,
+            extraData
         );
 
         /// @dev Compute the digest of the CiphertextVerification structure.
@@ -170,22 +219,37 @@ contract InputVerification is
         currentSignatures.push(signature);
         $.signerVerifiedZKPoK[zkProofId][signerAddress] = true;
 
-        /**
-         * @dev Send the event if and only if the consensus is reached in the current response call
-         * for a proof verification.
-         *
-         * This means a "late" response will not be reverted, just ignored.
-         */
+        // Store the coprocessor transaction sender address for the proof verification response
+        // It is important to consider the same mapping fields used for the consensus
+        // A "late" valid coprocessor transaction sender address will still be added in the list.
+        $.verifyProofConsensusTxSenders[zkProofId][digest].push(msg.sender);
+
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.verifiedZKProofs[zkProofId] && _isConsensusReached(currentSignatures.length)) {
             $.verifiedZKProofs[zkProofId] = true;
+
+            // A "late" valid coprocessor could still see its transaction sender address be added to
+            // the list after consensus. This storage variable is here to be able to retrieve this list
+            // later by only knowing the zkProofId, since a consensus can only happen once per proof
+            // verification request.
+            $.verifyProofConsensusDigest[zkProofId] = digest;
 
             emit VerifyProofResponse(zkProofId, ctHandles, currentSignatures);
         }
     }
 
     /// @dev See {IInputVerification-rejectProofResponse}.
-    function rejectProofResponse(uint256 zkProofId) external virtual onlyCoprocessorTxSender whenNotPaused {
+    function rejectProofResponse(
+        uint256 zkProofId,
+        bytes calldata /* extraData */
+    ) external virtual onlyCoprocessorTxSender {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        // Make sure the zkProofId corresponds to a generated ZK Proof verification request.
+        if (zkProofId > $.zkProofIdCounter || zkProofId == 0) {
+            revert VerifyProofNotRequested(zkProofId);
+        }
 
         /**
          * @dev Retrieve the coprocessor signer address from the GatewayConfig contract using the
@@ -203,12 +267,13 @@ contract InputVerification is
         $.rejectedProofResponseCounter[zkProofId]++;
         $.signerRejectedZKPoK[zkProofId][coprocessorSignerAddress] = true;
 
-        /**
-         * @dev Send the event if and only if the consensus is reached in the current response call
-         * for a proof rejection.
-         *
-         * This means a "late" response will not be reverted, just ignored.
-         */
+        // Store the coprocessor transaction sender address for the proof rejection response
+        // It is important to consider the same mapping fields used for the consensus
+        // A "late" valid coprocessor transaction sender address will still be added in the list.
+        $.rejectProofConsensusTxSenders[zkProofId].push(msg.sender);
+
+        // Send the event if and only if the consensus is reached in the current response call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (!$.rejectedZKProofs[zkProofId] && _isConsensusReached($.rejectedProofResponseCounter[zkProofId])) {
             $.rejectedZKProofs[zkProofId] = true;
 
@@ -232,6 +297,29 @@ contract InputVerification is
         }
     }
 
+    /**
+     * @dev See {IInputVerification-getVerifyProofConsensusTxSenders}.
+     * The list remains empty until the consensus is reached.
+     */
+    function getVerifyProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
+        InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        // Get the unique digest associated to the ZK Proof verification request in order to retrieve the
+        // list of coprocessor transaction sender address that were involved in the consensus for a
+        // proof verification.
+        // This digest remains the default value (0x0) until the consensus is reached.
+        bytes32 consensusDigest = $.verifyProofConsensusDigest[zkProofId];
+
+        return $.verifyProofConsensusTxSenders[zkProofId][consensusDigest];
+    }
+
+    /// @dev See {IDecryption-getRejectProofConsensusTxSenders}.
+    function getRejectProofConsensusTxSenders(uint256 zkProofId) external view virtual returns (address[] memory) {
+        InputVerificationStorage storage $ = _getInputVerificationStorage();
+
+        return $.rejectProofConsensusTxSenders[zkProofId];
+    }
+
     /// @dev See {IInputVerification-getVersion}.
     function getVersion() external pure virtual returns (string memory) {
         return
@@ -252,7 +340,7 @@ contract InputVerification is
      * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
      */
     // solhint-disable-next-line no-empty-blocks
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
     /**
      * @notice Checks if the coprocessor has already verified or rejected a ZKPoK verification request.
@@ -292,19 +380,11 @@ contract InputVerification is
                         keccak256(abi.encodePacked(ctVerification.ctHandles)),
                         ctVerification.userAddress,
                         ctVerification.contractAddress,
-                        ctVerification.contractChainId
+                        ctVerification.contractChainId,
+                        keccak256(abi.encodePacked(ctVerification.extraData))
                     )
                 )
             );
-    }
-
-    /**
-     * @notice Computes the hash of ctHandles
-     * @param ctHandles The ctHandles
-     * @return The hash of the ctHandles
-     */
-    function _hashCtHandles(bytes32[] calldata ctHandles) internal view virtual returns (bytes32) {
-        return keccak256(abi.encodePacked(ctHandles));
     }
 
     /**

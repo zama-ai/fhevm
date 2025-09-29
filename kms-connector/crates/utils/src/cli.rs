@@ -1,3 +1,4 @@
+use alloy::transports::http::reqwest::Url;
 use clap::{FromArgMatches, Subcommand, command};
 use std::path::PathBuf;
 
@@ -34,10 +35,6 @@ pub enum Subcommands {
         /// Configuration file path (optional if using environment variables)
         #[arg(short, long, value_name = "FILE")]
         config: Option<PathBuf>,
-
-        /// Optional instance name (overrides service_name in config)
-        #[arg(short, long)]
-        name: Option<String>,
     },
 
     /// Validate a configuration file
@@ -45,5 +42,12 @@ pub enum Subcommands {
         /// Configuration file path
         #[arg(short, long, value_name = "FILE")]
         config: PathBuf,
+    },
+
+    /// Check the health of a running instance of the component
+    Health {
+        /// Healthcheck endpoint to query (optional if using environment variable instead)
+        #[arg(short, long, value_name = "URL")]
+        endpoint: Option<Url>,
     },
 }

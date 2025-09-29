@@ -5,7 +5,8 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {fhevmExecutorAdd} from "../addresses/FHEVMExecutorAddress.sol";
+import {fhevmExecutorAdd, pauserSetAdd} from "../addresses/FHEVMHostAddresses.sol";
+import {IPauserSet} from "./interfaces/IPauserSet.sol";
 
 import {ACLEvents} from "./ACLEvents.sol";
 
@@ -39,21 +40,18 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     error NotDelegatedYet(address delegatee, address contractAddress);
 
     /// @notice Returned if the sender address is not allowed to pause the contract.
-    error NotOwnerOrPauser(address sender);
+    error NotPauser(address sender);
 
     /// @notice Returned if the sender address is not allowed for allow operations.
     /// @param sender Sender address.
     error SenderNotAllowed(address sender);
-
-    /// @notice Returned if the pauser address is set to the zero address.
-    error InvalidNullPauser();
 
     /// @custom:storage-location erc7201:fhevm.storage.ACL
     struct ACLStorage {
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
         mapping(address account => mapping(address delegatee => mapping(address contractAddress => bool isDelegate))) delegates;
-        address pauser;
+        address pauser; // TODO: DEPRECATED , to remove for mainnet
     }
 
     /// @notice Name of the contract.
@@ -63,7 +61,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 3;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -71,12 +69,15 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     /// @notice FHEVMExecutor address.
     address private constant fhevmExecutorAddress = fhevmExecutorAdd;
 
+    /// @notice PauserSet contract.
+    IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAdd);
+
     /// @notice maximum length of contractAddresses array during delegation.
     uint256 private constant MAX_NUM_CONTRACT_ADDRESSES = 10;
 
-    /// Constant used for making sure the version number using in the `reinitializer` modifier is
-    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    /// Constant used for making sure the version number used in the `reinitializer` modifier is
+    /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
@@ -88,33 +89,19 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
 
     /**
      * @notice  Initializes the contract.
-     * @param initialPauser Pauser address
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy(address initialPauser) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __Pausable_init();
-
-        if (initialPauser == address(0)) {
-            revert InvalidNullPauser();
-        }
-
-        ACLStorage storage $ = _getACLStorage();
-        $.pauser = initialPauser;
     }
 
     /**
-     * @notice Re-initializes the contract from V1, adding new storage variable pauser.
-     * @param initialPauser Pauser address
+     * @notice Re-initializes the contract from V2.
      */
-    function reinitializeV2(address initialPauser) public virtual reinitializer(REINITIALIZER_VERSION) {
-        if (initialPauser == address(0)) {
-            revert InvalidNullPauser();
-        }
-
-        ACLStorage storage $ = _getACLStorage();
-        $.pauser = initialPauser;
-    }
+    /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
+    /// @custom:oz-upgrades-validate-as-initializer
+    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Allows the use of `handle` for the address `account`.
@@ -230,14 +217,13 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
 
     /**
      * @dev Triggers stopped state.
-     * Only owner or pauser addresses can pause.
+     * Only a pauser address can pause.
      * The contract must not be paused.
      */
     function pause() external virtual {
-        if (msg.sender != owner() && msg.sender != getPauser()) {
-            revert NotOwnerOrPauser(msg.sender);
+        if (!PAUSER_SET.isPauser(msg.sender)) {
+            revert NotPauser(msg.sender);
         }
-
         _pause();
     }
 
@@ -248,23 +234,6 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
      */
     function unpause() external virtual onlyOwner {
         _unpause();
-    }
-
-    /**
-     * @notice Updates the pauser address.
-     * @dev The new pauser address must not be the zero address.
-     * @param newPauser New pauser address.
-     * @dev This function can only be called by the owner when the contract is not paused.
-     */
-    function updatePauser(address newPauser) external virtual onlyOwner whenNotPaused {
-        if (newPauser == address(0)) {
-            revert InvalidNullPauser();
-        }
-
-        ACLStorage storage $ = _getACLStorage();
-
-        $.pauser = newPauser;
-        emit UpdatePauser(newPauser);
     }
 
     /**
@@ -313,6 +282,14 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     }
 
     /**
+     * @notice Getter function for the PauserSet contract address.
+     * @return pauserSetAddress Address of the PauserSet contract.
+     */
+    function getPauserSetAddress() public view virtual returns (address) {
+        return address(PAUSER_SET);
+    }
+
+    /**
      * @notice Returns whether the account is allowed to use the `handle`, either due to
      * allowTransient() or allow().
      * @param handle Handle.
@@ -345,12 +322,11 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     }
 
     /**
-     * @notice Returns the address of the pauser.
-     * @return pauser Address of the pauser.
+     * @notice Returns wether specified account is in the set of pausers.
+     * @param account The address of the account.
      */
-    function getPauser() public view virtual returns (address pauser) {
-        ACLStorage storage $ = _getACLStorage();
-        return $.pauser;
+    function isPauser(address account) external view virtual returns (bool) {
+        return PAUSER_SET.isPauser(account);
     }
 
     /**

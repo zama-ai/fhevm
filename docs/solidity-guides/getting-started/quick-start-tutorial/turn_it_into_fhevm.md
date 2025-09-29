@@ -2,7 +2,7 @@
 
 In this tutorial, you'll learn how to take a basic Solidity smart contract and progressively upgrade it to support Fully Homomorphic Encryption using the FHEVM library by Zama.
 
-Starting with the plain `Counter.sol` contract that you build from the ["Write a simple contract" tutorial](write_a_simple_contract.md), and step-by-step, you’ll learn how to:
+Starting with the plain `Counter.sol` contract that you built from the ["Write a simple contract" tutorial](write_a_simple_contract.md), and step-by-step, you’ll learn how to:
 
 - Replace standard types with encrypted equivalents
 - Integrate zero-knowledge proof validation
@@ -76,7 +76,7 @@ import { FHE, euint32, externalEuint32 } from "@fhevm/solidity/lib/FHE.sol";
 import { SepoliaConfig } from "@fhevm/solidity/config/ZamaConfig.sol";
 ```
 
-This imports:
+These imports:
 
 - **FHE** — the core library to work with FHEVM encrypted types
 - **euint32** and **externalEuint32** — encrypted uint32 types used in FHEVM

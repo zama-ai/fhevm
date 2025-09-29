@@ -251,14 +251,14 @@ describe("FHECounter", function () {
     await tx.wait();
 
     const encryptedCountAfterDec = await fheCounterContract.getCount();
-    const clearCountAfterInc = await fhevm.userDecryptEuint(
+    const clearCountAfterDec = await fhevm.userDecryptEuint(
       FhevmType.euint32,
       encryptedCountAfterDec,
       fheCounterContractAddress,
       signers.alice,
     );
 
-    expect(clearCountAfterInc).to.eq(0);
+    expect(clearCountAfterDec).to.eq(0);
   });
 });
 ```

@@ -3,10 +3,10 @@
 pragma solidity ^0.8.24;
 
 import "@fhevm/solidity/lib/FHE.sol";
-import {E2EFHEVMConfig} from "./E2EFHEVMConfigLocal.sol";
+import {E2ECoprocessorConfig} from "./E2ECoprocessorConfigLocal.sol";
 
 /// @notice Contract for generating random encrypted numbers
-contract Rand is E2EFHEVMConfig {
+contract Rand is E2ECoprocessorConfig {
     /// @notice Encrypted unsigned integers of various sizes
     ebool public valueb;
     euint8 public value8;

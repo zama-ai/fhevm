@@ -3,13 +3,15 @@ name: coprocessor/cargo-fmt
 on:
   pull_request:
 
+permissions: {}
+
 jobs:
   check-changes:
     name: trigger
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-rust-files: ${{ steps.filter.outputs.rust-files }}
@@ -29,9 +31,9 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
     permissions:
-      contents: 'read'
-      checks: 'write'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      checks: 'write' # Required to create GitHub checks for test results
+      packages: 'read' # Required to read GitHub packages/container registry
     runs-on: large_ubuntu_16
     steps:
     - name: Checkout code
@@ -43,7 +45,7 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@a54c7afa936fefeb4456b2dd8068152669aa8203
       with:
-        toolchain: 1.85.0
+        toolchain: 1.90.0
         components: rustfmt
 
     - name: Run fmt

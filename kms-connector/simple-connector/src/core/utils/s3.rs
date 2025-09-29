@@ -1,11 +1,13 @@
 use alloy::{hex::encode, primitives::Address, providers::Provider, transports::http::reqwest};
+use chrono::Utc;
 use dashmap::DashMap;
 use fhevm_gateway_rust_bindings::gatewayconfig::GatewayConfig;
 use sha3::{Digest, Keccak256};
 use std::{
-    sync::{Arc, LazyLock},
+    sync::{Arc, LazyLock, OnceLock},
     time::Duration,
 };
+
 use tracing::{debug, info, warn};
 
 use crate::{
@@ -13,8 +15,88 @@ use crate::{
     error::{Error, Result},
 };
 
-// Global cache for coprocessor S3 bucket URLs
-static S3_BUCKET_CACHE: LazyLock<DashMap<Address, String>> = LazyLock::new(DashMap::new);
+// Cache entry with creation time for TTL cleanup
+#[derive(Debug, Clone)]
+struct CacheEntry {
+    url: String,
+    created_at: i64, // UTC timestamp in seconds (chrono::Utc)
+}
+
+// Global cache for coprocessor S3 bucket URLs with TTL support
+static S3_BUCKET_CACHE: LazyLock<DashMap<Address, CacheEntry>> = LazyLock::new(DashMap::new);
+
+// Flag to ensure cleanup task is started only once
+static CLEANUP_TASK_STARTED: OnceLock<()> = OnceLock::new();
+
+/// Non-blocking cleanup of expired S3 cache entries (single run)
+async fn cleanup_expired_s3_cache_once() -> std::result::Result<usize, String> {
+    let ttl_seconds = 24 * 60 * 60; // 24 hours TTL
+    let now = Utc::now().timestamp(); // UTC timestamp in seconds
+    let mut expired_count = 0;
+
+    // Non-blocking cleanup using DashMap's retain method
+    S3_BUCKET_CACHE.retain(|_address, entry| {
+        let is_expired = now.saturating_sub(entry.created_at) > ttl_seconds;
+        if is_expired {
+            expired_count += 1;
+        }
+        !is_expired
+    });
+
+    // Log cache state periodically
+    if !S3_BUCKET_CACHE.is_empty() {
+        debug!(
+            "S3_BUCKET_CACHE: {} active entries after cleanup",
+            S3_BUCKET_CACHE.len()
+        );
+    }
+
+    Ok(expired_count)
+}
+
+/// Start the non-blocking cleanup task (called once)
+fn start_cleanup_task_for_expired_s3_cache() {
+    CLEANUP_TASK_STARTED.get_or_init(|| {
+        let handle = tokio::spawn(async {
+            info!("S3 cache cleanup task starting...");
+
+            // Run cleanup with proper error handling
+            loop {
+                match tokio::time::timeout(
+                    Duration::from_secs(30), // 30 second timeout for cleanup operation
+                    cleanup_expired_s3_cache_once(),
+                )
+                .await
+                {
+                    Ok(Ok(cleaned_count)) => {
+                        if cleaned_count > 0 {
+                            info!(
+                                "S3 cache cleanup completed: {} entries removed",
+                                cleaned_count
+                            );
+                        } else {
+                            debug!("S3 cache cleanup completed: no expired entries");
+                        }
+                    }
+                    Ok(Err(e)) => {
+                        warn!("S3 cache cleanup failed: {}", e);
+                    }
+                    Err(_) => {
+                        warn!("S3 cache cleanup timed out after 30 seconds");
+                    }
+                }
+
+                // Wait 10 minutes before next cleanup
+                tokio::time::sleep(Duration::from_secs(10 * 60)).await;
+            }
+        });
+
+        info!(
+            "Started non-blocking S3 cache cleanup task (JoinHandle: {:?})",
+            handle.id()
+        );
+    });
+}
 
 /// Logs the current state of the S3 bucket cache
 fn log_cache_state() {
@@ -24,7 +106,7 @@ fn log_cache_state() {
     if cache_size > 0 {
         let mut cache_entries = Vec::new();
         for entry in S3_BUCKET_CACHE.iter() {
-            cache_entries.push(format!("{:?}: {}", entry.key(), entry.value()));
+            cache_entries.push(format!("{:?}: {}", entry.key(), entry.value().url));
         }
         debug!("S3_BUCKET_CACHE contents: {}", cache_entries.join(", "));
     }
@@ -41,14 +123,17 @@ pub async fn get_s3_url_from_gateway_config<P: Provider>(
         coprocessor_address
     );
 
+    // Start cleanup task if not already started (non-blocking)
+    start_cleanup_task_for_expired_s3_cache();
+
     // Try to find a cached S3 bucket URL for any of the coprocessors
-    if let Some(url) = S3_BUCKET_CACHE.get(&coprocessor_address) {
+    if let Some(entry) = S3_BUCKET_CACHE.get(&coprocessor_address) {
         info!(
             "CACHE HIT: Using cached S3 bucket URL for coprocessor {:?}: {}",
             coprocessor_address,
-            url.value()
+            entry.value().url
         );
-        return Some(url.value().clone());
+        return Some(entry.value().url.clone());
     }
 
     // If no cached URL found, query the GatewayConfig contract for the first available coprocessor
@@ -83,12 +168,19 @@ pub async fn get_s3_url_from_gateway_config<P: Provider>(
         return None;
     }
 
-    // Cache the URL for future use
-    info!(
+    // Cache the URL for future use with UTC timestamp
+    let now = Utc::now().timestamp(); // UTC timestamp in seconds
+
+    let cache_entry = CacheEntry {
+        url: s3_bucket_url.clone(),
+        created_at: now,
+    };
+
+    debug!(
         "CACHE UPDATE: Adding S3 bucket URL for coprocessor {:?}: {}",
         coprocessor_address, s3_bucket_url
     );
-    S3_BUCKET_CACHE.insert(coprocessor_address, s3_bucket_url.clone());
+    S3_BUCKET_CACHE.insert(coprocessor_address, cache_entry);
 
     // Log the updated cache state
     log_cache_state();
@@ -123,6 +215,7 @@ pub async fn retrieve_s3_ciphertext(
 
     // Direct HTTP retrieval
     let direct_url = format!("{s3_bucket_url}/{digest_hex}");
+    // let direct_url = format!("http://localhost:9000/ct128/{digest_hex}"); // HINT: Uncomment for local testing
     let ciphertext = direct_http_retrieval(&direct_url).await?;
     info!(
         "DIRECT HTTP RETRIEVAL SUCCESS: Retrieved {} bytes",
@@ -191,8 +284,6 @@ pub async fn prefetch_coprocessor_buckets<P: Provider + Clone>(
         coprocessor_addresses.len()
     );
 
-    // Log current cache state before prefetching
-    info!("S3 cache state before prefetching:");
     log_cache_state();
 
     let mut s3_urls = Vec::new();
@@ -218,8 +309,8 @@ pub async fn prefetch_coprocessor_buckets<P: Provider + Clone>(
             success_count += 1;
 
             // Add the cached URL to our result list
-            if let Some(url) = S3_BUCKET_CACHE.get(address) {
-                s3_urls.push(url.value().clone());
+            if let Some(entry) = S3_BUCKET_CACHE.get(address) {
+                s3_urls.push(entry.value().url.clone());
             }
             continue;
         }

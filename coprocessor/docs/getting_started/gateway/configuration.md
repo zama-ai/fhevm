@@ -5,12 +5,12 @@ the environment variables and gives an example of docker compose to run the gate
 
 ## Dependencies
 
-- **Zama Gateway**: Depends on **fhEVM** and **Gateway KV Store**, which is initialized with the **Zama KMS** Docker Compose command. Therefore, this is the _last_ Docker Compose command that should be run.
+- **Zama Gateway**: Depends on **FHEVM** and **Gateway KV Store**, which is initialized with the **Zama KMS** Docker Compose command. Therefore, this is the _last_ Docker Compose command that should be run.
 
 ## Prerequisites
 
 - **Docker 26+** installed on your system.
-- **fhEVM** validator running and configured.
+- **FHEVM** validator running and configured.
 - **TKMS** running and configured.
 
 ## Configuring Docker Compose Environment Variables
@@ -44,11 +44,11 @@ services:
 <!-- markdown-link-check-disable -->
 | Variable | Description | Default Value |
 | --- | --- | --- |
-| GATEWAY__ETHEREUM__CHAIN_ID | Chain ID for fhEVM | 9000 |
+| GATEWAY__ETHEREUM__CHAIN_ID | Chain ID for FHEVM | 9000 |
 | GATEWAY__ETHEREUM__LISTENER_TYPE | Listener type for Ethereum gateway | FHEVM_V1_1 |
-| GATEWAY__ETHEREUM__WSS_URL | WebSocket URL for fhEVM Ethereum. You need to run fhEVM first and set this data | ws://localhost:9090 |
-| GATEWAY__ETHEREUM__FHE_LIB_ADDRESS | FHE library address for Ethereum gateway. This should be obtained from fhEVM once it is running and configured | 000000000000000000000000000000000000005d |
-| GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS | Oracle predeploy contract address for fhEVM gateway | c8c9303Cd7F337fab769686B593B87DC3403E0cd |
+| GATEWAY__ETHEREUM__WSS_URL | WebSocket URL for FHEVM Ethereum. You need to run FHEVM first and set this data | ws://localhost:9090 |
+| GATEWAY__ETHEREUM__FHE_LIB_ADDRESS | FHE library address for Ethereum gateway. This should be obtained from FHEVM once it is running and configured | 000000000000000000000000000000000000005d |
+| GATEWAY__ETHEREUM__ORACLE_PREDEPLOY_ADDRESS | Oracle predeploy contract address for FHEVM gateway | c8c9303Cd7F337fab769686B593B87DC3403E0cd |
 | GATEWAY__KMS__ADDRESS | Address for KMS gateway | http://localhost:9090 |
 | GATEWAY__KMS__KEY_ID | Key ID for KMS gateway. Refer to the [How to Obtain KMS Key ID](#kms-key-id) section | 04a1aa8ba5e95fb4dc42e06add00b0c2ce3ea424 |
 | GATEWAY__STORAGE__URL | URL for storage gateway | http://localhost:8088 |

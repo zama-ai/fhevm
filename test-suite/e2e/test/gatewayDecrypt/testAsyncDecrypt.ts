@@ -135,14 +135,13 @@ describe('TestAsyncDecrypt', function () {
   it('test async decrypt uint32 - two requests in same block', async function () {
     const pendingNonce = await ethers.provider.getTransactionCount(this.signers.alice.address, 'pending');
 
-    const [txA, txB] = await Promise.all([
-      this.contract.requestUint32_2({
-        nonce: pendingNonce,
-      }),
-      this.contract.requestUint32_3({
-        nonce: pendingNonce + 1,
-      }),
-    ]);
+    const txA = await this.contract.requestUint32_2({
+      nonce: pendingNonce,
+    });
+    const txB = await this.contract.requestUint32_3({
+      nonce: pendingNonce + 1,
+    });
+
 
     const [receiptA, receiptB] = await Promise.all([txA.wait(), txB.wait()]);
 

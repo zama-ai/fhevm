@@ -4,10 +4,14 @@ pub mod auxiliary;
 mod tests;
 
 pub mod verifier;
-use std::io;
+use std::{io, time::Duration};
 
-use fhevm_engine_common::types::FhevmError;
+use fhevm_engine_common::{pg_pool::ServiceError, types::FhevmError};
 use thiserror::Error;
+
+/// The highest index of an input is 254,
+/// cause 255 (0xff) is reserved for handles originating from the FHE operations
+pub const MAX_INPUT_INDEX: u8 = u8::MAX - 1;
 
 #[derive(Error, Debug)]
 pub enum ExecutionError {
@@ -46,6 +50,20 @@ pub enum ExecutionError {
 
     #[error("JoinError error: {0}")]
     JoinError(#[from] tokio::task::JoinError),
+
+    #[error("Too many inputs: {0}")]
+    TooManyInputs(usize),
+}
+
+impl From<ExecutionError> for ServiceError {
+    fn from(err: ExecutionError) -> Self {
+        match err {
+            ExecutionError::DbError(e) => ServiceError::Database(e),
+
+            // collapse everything else into InternalError
+            other => ServiceError::InternalError(other.to_string()),
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone)]
@@ -55,6 +73,8 @@ pub struct Config {
     pub notify_database_channel: String,
     pub pg_pool_connections: u32,
     pub pg_polling_interval: u32,
+    pub pg_timeout: Duration,
+    pub pg_auto_explain_with_min_duration: Option<Duration>,
 
     pub worker_thread_count: u32,
 }

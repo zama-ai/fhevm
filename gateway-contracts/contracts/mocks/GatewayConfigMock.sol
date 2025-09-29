@@ -4,17 +4,12 @@ import "../shared/Structs.sol";
 
 contract GatewayConfigMock {
     event InitializeGatewayConfig(
-        address pauser,
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes,
         Coprocessor[] coprocessors,
         Custodian[] custodians
     );
-
-    event ReinitializeGatewayConfigV2(Custodian[] custodians);
-
-    event UpdatePauser(address newPauser);
 
     event UpdateMpcThreshold(uint256 newMpcThreshold);
 
@@ -24,8 +19,11 @@ contract GatewayConfigMock {
 
     event AddHostChain(HostChain hostChain);
 
+    event PauseAllGatewayContracts();
+
+    event UnpauseAllGatewayContracts();
+
     function initializeFromEmptyProxy(
-        address initialPauser,
         ProtocolMetadata memory initialMetadata,
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
@@ -34,22 +32,13 @@ contract GatewayConfigMock {
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
     ) public {
-        address pauser;
         ProtocolMetadata memory metadata;
         uint256 mpcThreshold;
         KmsNode[] memory kmsNodes = new KmsNode[](1);
         Coprocessor[] memory coprocessors = new Coprocessor[](1);
         Custodian[] memory custodians = new Custodian[](1);
 
-        emit InitializeGatewayConfig(pauser, metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
-    }
-
-    function reinitializeV2(Custodian[] memory custodians) external {
-        emit ReinitializeGatewayConfigV2(custodians);
-    }
-
-    function updatePauser(address newPauser) external {
-        emit UpdatePauser(newPauser);
+        emit InitializeGatewayConfig(metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
     }
 
     function updateMpcThreshold(uint256 newMpcThreshold) external {
@@ -66,5 +55,13 @@ contract GatewayConfigMock {
 
     function addHostChain(HostChain calldata hostChain) external {
         emit AddHostChain(hostChain);
+    }
+
+    function pauseAllGatewayContracts() external {
+        emit PauseAllGatewayContracts();
+    }
+
+    function unpauseAllGatewayContracts() external {
+        emit UnpauseAllGatewayContracts();
     }
 }

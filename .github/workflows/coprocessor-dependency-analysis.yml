@@ -1,19 +1,21 @@
 name: coprocessor-dependency-analysis
 
+permissions: {}
+
 on:
   pull_request:
 
 concurrency:
-  group: deps-analysis-${{ github.ref }}
+  group: fhevm-coprocessor-deps-analysis-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   check-changes:
     name: coprocessor-dependency-analysis/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-rust-files: ${{ steps.filter.outputs.rust-files }}
@@ -32,6 +34,9 @@ jobs:
     name: coprocessor-dependency-analysis/dependencies-check (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-rust-files == 'true' }}
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      checks: 'write' # Required to create GitHub checks for test results
     runs-on: ubuntu-latest
     steps:
 
@@ -67,7 +72,3 @@ jobs:
         run: |
           cd coprocessor/fhevm-engine
           cargo-audit audit
-
-permissions:
-  contents: 'read'
-  checks: 'write'

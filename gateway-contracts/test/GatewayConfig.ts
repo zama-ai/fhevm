@@ -4,7 +4,16 @@ import { expect } from "chai";
 import { ContractFactory, EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
-import { EmptyUUPSProxy, GatewayConfig } from "../typechain-types";
+import {
+  CiphertextCommits,
+  Decryption,
+  EmptyUUPSProxyGatewayConfig,
+  GatewayConfig,
+  InputVerification,
+  KmsManagement,
+  MultichainACL,
+  PauserSet,
+} from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
 import {
@@ -26,10 +35,13 @@ describe("GatewayConfig", function () {
 
   // Define fake values
   const fakeOwner = createRandomWallet();
+  const fakeTxSender = createRandomWallet();
+  const fakeSigner = createRandomWallet();
 
   let gatewayConfig: GatewayConfig;
+  let pauserSet: PauserSet;
   let owner: Wallet;
-  let pauser: HardhatEthersSigner;
+  let pauser: Wallet;
   let nKmsNodes: number;
   let kmsNodes: KmsNodeStruct[];
   let kmsTxSenders: HardhatEthersSigner[];
@@ -46,9 +58,11 @@ describe("GatewayConfig", function () {
     const {
       kmsTxSenders,
       kmsSigners,
+      kmsNodeIps,
       nKmsNodes,
       coprocessorTxSenders,
       coprocessorSigners,
+      coprocessorS3Buckets,
       nCoprocessors,
       custodianTxSenders,
       custodianSigners,
@@ -62,7 +76,7 @@ describe("GatewayConfig", function () {
       kmsNodes.push({
         txSenderAddress: kmsTxSenders[i].address,
         signerAddress: kmsSigners[i].address,
-        ipAddress: `127.0.0.${i}`,
+        ipAddress: kmsNodeIps[i],
       });
     }
 
@@ -72,7 +86,7 @@ describe("GatewayConfig", function () {
       coprocessors.push({
         txSenderAddress: coprocessorTxSenders[i].address,
         signerAddress: coprocessorSigners[i].address,
-        s3BucketUrl: `s3://bucket-${i}`,
+        s3BucketUrl: coprocessorS3Buckets[i],
       });
     }
 
@@ -93,6 +107,7 @@ describe("GatewayConfig", function () {
     // Initialize globally used variables before each test
     const fixtureData = await loadFixture(getInputsForDeployFixture);
     gatewayConfig = fixtureData.gatewayConfig;
+    pauserSet = fixtureData.pauserSet;
     owner = fixtureData.owner;
     pauser = fixtureData.pauser;
     nKmsNodes = fixtureData.nKmsNodes;
@@ -103,12 +118,12 @@ describe("GatewayConfig", function () {
   });
 
   describe("Deployment", function () {
-    let proxyContract: EmptyUUPSProxy;
+    let proxyContract: EmptyUUPSProxyGatewayConfig;
     let newGatewayConfigFactory: ContractFactory;
 
     beforeEach(async function () {
-      // Deploy a new proxy contract
-      const proxyImplementation = await hre.ethers.getContractFactory("EmptyUUPSProxy", owner);
+      // Deploy a new proxy contract for the GatewayConfig contract
+      const proxyImplementation = await hre.ethers.getContractFactory("EmptyUUPSProxyGatewayConfig", owner);
       proxyContract = await hre.upgrades.deployProxy(proxyImplementation, [owner.address], {
         initializer: "initialize",
         kind: "uups",
@@ -128,7 +143,6 @@ describe("GatewayConfig", function () {
         call: {
           fn: "initializeFromEmptyProxy",
           args: [
-            pauser.address,
             protocolMetadata,
             mpcThreshold,
             publicDecryptionThreshold,
@@ -151,35 +165,12 @@ describe("GatewayConfig", function () {
       // It should emit one event containing the initialization parameters
       expect(initializeGatewayConfigEvents.length).to.equal(1);
       expect(stringifiedEventArgs).to.deep.equal([
-        pauser.address,
         toValues(protocolMetadata).toString(),
         mpcThreshold,
         toValues(kmsNodes).toString(),
         toValues(coprocessors).toString(),
         toValues(custodians).toString(),
       ]);
-    });
-
-    it("Should revert because the pauser is the null address", async function () {
-      const nullPauser = hre.ethers.ZeroAddress;
-
-      await expect(
-        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
-          call: {
-            fn: "initializeFromEmptyProxy",
-            args: [
-              nullPauser,
-              protocolMetadata,
-              mpcThreshold,
-              publicDecryptionThreshold,
-              userDecryptionThreshold,
-              kmsNodes,
-              coprocessors,
-              custodians,
-            ],
-          },
-        }),
-      ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullPauser");
     });
 
     it("Should revert because the KMS nodes list is empty", async function () {
@@ -190,7 +181,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -212,7 +202,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -234,7 +223,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -257,7 +245,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               highMpcThreshold,
               publicDecryptionThreshold,
@@ -282,7 +269,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               nullPublicDecryptionThreshold,
@@ -305,7 +291,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               highPublicDecryptionThreshold,
@@ -330,7 +315,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -353,7 +337,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -375,7 +358,6 @@ describe("GatewayConfig", function () {
           call: {
             fn: "initializeFromEmptyProxy",
             args: [
-              pauser.address,
               protocolMetadata,
               mpcThreshold,
               publicDecryptionThreshold,
@@ -403,10 +385,6 @@ describe("GatewayConfig", function () {
     });
 
     describe("GatewayConfig initialization checks and getters", function () {
-      it("Should be registered as an pauser", async function () {
-        await expect(gatewayConfig.checkIsPauser(pauser)).to.not.be.reverted;
-      });
-
       it("Should be registered as KMS nodes transaction senders", async function () {
         for (const kmsTxSender of kmsTxSenders) {
           await expect(gatewayConfig.checkIsKmsTxSender(kmsTxSender.address)).to.not.be.reverted;
@@ -425,10 +403,22 @@ describe("GatewayConfig", function () {
         }
       });
 
+      it("Should not be registered as coprocessors transaction senders", async function () {
+        await expect(gatewayConfig.checkIsCoprocessorTxSender(fakeTxSender))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+          .withArgs(fakeTxSender);
+      });
+
       it("Should be registered as coprocessors signers", async function () {
         for (const coprocessorSigner of coprocessorSigners) {
           await expect(gatewayConfig.checkIsCoprocessorSigner(coprocessorSigner.address)).to.not.be.reverted;
         }
+      });
+
+      it("Should not be registered as coprocessors signers", async function () {
+        await expect(gatewayConfig.checkIsCoprocessorSigner(fakeSigner))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCoprocessorSigner")
+          .withArgs(fakeSigner);
       });
 
       it("Should be registered as custodian transaction senders", async function () {
@@ -437,16 +427,42 @@ describe("GatewayConfig", function () {
         }
       });
 
+      it("Should not be registered as custodian transaction senders", async function () {
+        await expect(gatewayConfig.checkIsCustodianTxSender(fakeTxSender))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCustodianTxSender")
+          .withArgs(fakeTxSender);
+      });
+
       it("Should be registered as custodian signers", async function () {
         for (const custodianSigner of custodianSigners) {
           await expect(gatewayConfig.checkIsCustodianSigner(custodianSigner.address)).to.not.be.reverted;
         }
       });
 
+      it("Should be registered as custodian signers", async function () {
+        await expect(gatewayConfig.checkIsCustodianSigner(fakeSigner))
+          .to.be.revertedWithCustomError(gatewayConfig, "NotCustodianSigner")
+          .withArgs(fakeSigner);
+      });
+
       it("Should be registered as host chains", async function () {
         for (const hostChainId of hostChainIds) {
           await expect(gatewayConfig.checkHostChainIsRegistered(hostChainId)).to.not.be.reverted;
         }
+      });
+
+      it("Should get the protocol metadata", async function () {
+        const metadata = await gatewayConfig.getProtocolMetadata();
+
+        // Check that the protocol metadata is correct
+        expect(metadata).to.deep.equal(toValues(protocolMetadata));
+      });
+
+      it("Should get the KMS node metadata by its transaction sender address", async function () {
+        const kmsNode = await gatewayConfig.getKmsNode(kmsNodes[0].txSenderAddress);
+
+        // Check that KMS node metadata for the given transaction sender addresses is correct
+        expect(kmsNode).to.deep.equal(toValues(kmsNodes[0]));
       });
 
       it("Should get all KMS node transaction sender addresses", async function () {
@@ -539,45 +555,14 @@ describe("GatewayConfig", function () {
           expect(hostChainIds).to.include(Number(hostChain.chainId));
         }
       });
-    });
 
-    describe("Pauser", function () {
-      it("Should return the initialized pauser address", async function () {
-        expect(await gatewayConfig.getPauser()).to.equal(pauser.address);
-      });
+      it("Should get host chain's metadata", async function () {
+        const hostChains = await gatewayConfig.getHostChains();
 
-      it("Should revert because the sender is not the owner", async function () {
-        await expect(gatewayConfig.connect(fakeOwner).updatePauser(fakeOwner.address))
-          .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
-          .withArgs(fakeOwner.address);
-      });
-
-      it("Should update the pauser", async function () {
-        const newPauser = createRandomWallet();
-
-        const tx = await gatewayConfig.connect(owner).updatePauser(newPauser.address);
-
-        await expect(tx).to.emit(gatewayConfig, "UpdatePauser").withArgs(newPauser.address);
-      });
-
-      it("Should revert because the pauser is the null address", async function () {
-        const nullPauser = hre.ethers.ZeroAddress;
-
-        await expect(gatewayConfig.connect(owner).updatePauser(nullPauser)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "InvalidNullPauser",
-        );
-      });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused update pauser
-        await expect(gatewayConfig.connect(owner).updatePauser(fakeOwner.address)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "EnforcedPause",
-        );
+        for (let i = 0; i < hostChainIds.length; i++) {
+          const hostChain = await gatewayConfig.getHostChain(i);
+          expect(hostChain).to.deep.equal(hostChains[i]);
+        }
       });
     });
 
@@ -606,17 +591,6 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(owner).updateMpcThreshold(highMpcThreshold))
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighMpcThreshold")
           .withArgs(highMpcThreshold, nKmsNodes);
-      });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused update MPC threshold
-        await expect(gatewayConfig.connect(owner).updateMpcThreshold(mpcThreshold)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "EnforcedPause",
-        );
       });
     });
 
@@ -658,16 +632,6 @@ describe("GatewayConfig", function () {
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighPublicDecryptionThreshold")
           .withArgs(highPublicDecryptionThreshold, nKmsNodes);
       });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused update public decryption threshold
-        await expect(
-          gatewayConfig.connect(owner).updatePublicDecryptionThreshold(publicDecryptionThreshold),
-        ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
-      });
     });
 
     describe("Update user decryption threshold", function () {
@@ -705,16 +669,6 @@ describe("GatewayConfig", function () {
         await expect(gatewayConfig.connect(owner).updateUserDecryptionThreshold(highUserDecryptionThreshold))
           .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
           .withArgs(highUserDecryptionThreshold, nKmsNodes);
-      });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused update user decryption threshold
-        await expect(
-          gatewayConfig.connect(owner).updateUserDecryptionThreshold(userDecryptionThreshold),
-        ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
       });
     });
 
@@ -798,21 +752,13 @@ describe("GatewayConfig", function () {
           .to.revertedWithCustomError(gatewayConfig, "HostChainAlreadyRegistered")
           .withArgs(alreadyAddedHostChainId);
       });
-
-      it("Should revert because the contract is paused", async function () {
-        // Pause the contract
-        await gatewayConfig.connect(owner).pause();
-
-        // Try calling paused add host chain
-        await expect(gatewayConfig.connect(owner).addHostChain(newHostChain)).to.be.revertedWithCustomError(
-          gatewayConfig,
-          "EnforcedPause",
-        );
-      });
     });
   });
 
   describe("Pause", async function () {
+    const fakeOwner = createRandomWallet();
+    const fakePauser = createRandomWallet();
+
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);
       gatewayConfig = fixtureData.gatewayConfig;
@@ -820,33 +766,63 @@ describe("GatewayConfig", function () {
       pauser = fixtureData.pauser;
     });
 
-    it("Should pause and unpause contract with owner address", async function () {
-      // Check that the contract is not paused
-      expect(await gatewayConfig.paused()).to.be.false;
+    describe("Pause all gateway contracts", function () {
+      let ciphertextCommits: CiphertextCommits;
+      let decryption: Decryption;
+      let inputVerification: InputVerification;
+      let kmsManagement: KmsManagement;
+      let MultichainACL: MultichainACL;
 
-      // Pause the contract with the owner address
-      await expect(gatewayConfig.connect(owner).pause()).to.emit(gatewayConfig, "Paused").withArgs(owner);
-      expect(await gatewayConfig.paused()).to.be.true;
+      before(async function () {
+        const fixtureData = await loadFixture(loadTestVariablesFixture);
+        ciphertextCommits = fixtureData.ciphertextCommits;
+        decryption = fixtureData.decryption;
+        inputVerification = fixtureData.inputVerification;
+        kmsManagement = fixtureData.kmsManagement;
+        MultichainACL = fixtureData.MultichainACL;
+      });
 
-      // Unpause the contract with the owner address
-      await expect(gatewayConfig.connect(owner).unpause()).to.emit(gatewayConfig, "Unpaused").withArgs(owner);
-      expect(await gatewayConfig.paused()).to.be.false;
-    });
+      it("Should pause all the Gateway contracts with the pauser", async function () {
+        // Check that the contracts are not paused
+        expect(await decryption.paused()).to.be.false;
+        expect(await inputVerification.paused()).to.be.false;
 
-    it("Should pause contract with pauser address", async function () {
-      // Check that the contract is not paused
-      expect(await gatewayConfig.paused()).to.be.false;
+        const txResponse = await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
 
-      // Pause the contract with the pauser address
-      await expect(gatewayConfig.connect(pauser).pause()).to.emit(gatewayConfig, "Paused").withArgs(pauser);
-      expect(await gatewayConfig.paused()).to.be.true;
-    });
+        await expect(txResponse).to.emit(gatewayConfig, "PauseAllGatewayContracts");
 
-    it("Should revert on pause because sender is not owner or pauser address", async function () {
-      const notOwnerOrPauser = createRandomWallet();
-      await expect(gatewayConfig.connect(notOwnerOrPauser).pause())
-        .to.be.revertedWithCustomError(gatewayConfig, "NotOwnerOrPauser")
-        .withArgs(notOwnerOrPauser.address);
+        // Check that the pausable contracts are paused
+        expect(await decryption.paused()).to.be.true;
+        expect(await inputVerification.paused()).to.be.true;
+      });
+
+      it("Should revert on pause all gateway contracts because the sender is not the pauser", async function () {
+        await expect(gatewayConfig.connect(fakePauser).pauseAllGatewayContracts()).to.be.revertedWithCustomError(
+          gatewayConfig,
+          "NotPauser",
+        );
+      });
+
+      it("Should unpause all the gateway contracts with the owner", async function () {
+        // Pause the contract with the pauser address
+        await gatewayConfig.connect(pauser).pauseAllGatewayContracts();
+
+        // Unpause the contract with the owner address
+        const txResponse = await gatewayConfig.connect(owner).unpauseAllGatewayContracts();
+
+        await expect(txResponse).to.emit(gatewayConfig, "UnpauseAllGatewayContracts");
+
+        // Check that the contracts are not paused anymore
+        expect(await decryption.paused()).to.be.false;
+        expect(await inputVerification.paused()).to.be.false;
+      });
+
+      it("Should revert on unpause all gateway contracts because the sender is not the owner", async function () {
+        await expect(gatewayConfig.connect(fakeOwner).unpauseAllGatewayContracts()).to.be.revertedWithCustomError(
+          gatewayConfig,
+          "OwnableUnauthorizedAccount",
+        );
+      });
     });
   });
 });

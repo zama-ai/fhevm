@@ -1,5 +1,7 @@
 name: gateway-contracts-deployment-tests
 
+permissions: {}
+
 on:
   pull_request:
 
@@ -9,11 +11,11 @@ concurrency:
 
 jobs:
   check-changes:
-    name: gateway-contracts-deploymenent-tests/check-changes
+    name: gateway-contracts-deployment-tests/check-changes
     permissions:
-      actions: 'read'
-      contents: 'read'
-      pull-requests: 'read'
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
     runs-on: ubuntu-latest
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
@@ -32,6 +34,10 @@ jobs:
     name: gateway-contracts-deployment-tests/sc-deploy (bpr)
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      checks: 'write' # Required to create GitHub checks for test results
+      packages: 'read' # Required to read GitHub packages/container registry
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -94,8 +100,3 @@ jobs:
         if: always()
         run: |
           make docker-compose-down
-
-permissions:
-  contents: 'read'
-  checks: 'write'
-  packages: 'read'

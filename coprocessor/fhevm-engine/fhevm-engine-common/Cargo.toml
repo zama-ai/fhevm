@@ -8,6 +8,8 @@ license.workspace = true
 [dependencies]
 # workspace dependencies
 anyhow = { workspace = true }
+alloy = { workspace = true, features = ["providers", "provider-ws"] }
+alloy-provider = { workspace = true }
 bigdecimal = { workspace = true }
 bincode = { workspace = true }
 hex = { workspace = true }
@@ -27,18 +29,19 @@ tokio-util = { workspace = true}
 axum = { workspace = true}
 serde_json = { workspace = true}
 http = {workspace = true}
+thiserror = { workspace = true }
+
 
 # crates.io dependencies
-paste = "1.0.15"
+lazy_static = "1.5.0"
 rand_chacha = "0.3.1"
+futures = "0.3.31"
 
 # opentelemetry support
 opentelemetry = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 opentelemetry_sdk = { workspace = true }
 opentelemetry-semantic-conventions = { workspace = true }
-
-
 
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]

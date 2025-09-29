@@ -22,10 +22,10 @@ describe('KMSVerifier', function () {
     if (process.env.HARDHAT_PARALLEL !== '1') {
       // to avoid messing up other tests if used on the real node, in parallel testing
 
-      const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+      const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).KMS_VERIFIER_CONTRACT_ADDRESS;
       const deployer = new ethers.Wallet(process.env.DEPLOYER_PRIVATE_KEY!).connect(ethers.provider);
       const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
-      expect(await kmsVerifier.getVersion()).to.equal('KMSVerifier v0.1.0');
+      expect(await kmsVerifier.getVersion()).to.equal('KMSVerifier v0.2.0');
 
       const addressSigner = process.env['KMS_SIGNER_ADDRESS_1']!;
       let setSigners = await kmsVerifier.getKmsSigners();
@@ -98,14 +98,14 @@ describe('KMSVerifier', function () {
   });
 
   it('cannot add/remove signers if not the owner', async function () {
-    const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.kmsverifier')).KMS_VERIFIER_CONTRACT_ADDRESS;
+    const origKMSAdd = dotenv.parse(fs.readFileSync('addresses/.env.host')).KMS_VERIFIER_CONTRACT_ADDRESS;
     const kmsVerifier = await this.kmsFactory.attach(origKMSAdd);
     let setSigners = await kmsVerifier.getKmsSigners();
     const randomAccount = this.signers.carol;
     setSigners = [...setSigners, randomAccount];
     await expect(kmsVerifier.connect(randomAccount).defineNewContext(setSigners, 2)).to.be.revertedWithCustomError(
       kmsVerifier,
-      'OwnableUnauthorizedAccount',
+      'NotHostOwner',
     );
   });
 });

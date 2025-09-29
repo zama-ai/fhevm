@@ -3,80 +3,85 @@ import { HardhatUpgrades } from "@openzeppelin/hardhat-upgrades";
 import { Wallet } from "ethers";
 import fs from "fs";
 import { task } from "hardhat/config";
-import type { TaskArguments } from "hardhat/types";
 import path from "path";
 
+import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../utils/loadVariables";
-import { pascalCaseToCamelCase, pascalCaseToSnakeCase } from "../utils/stringOps";
+import { GATEWAY_CONFIG_EMPTY_PROXY_NAME, REGULAR_EMPTY_PROXY_NAME } from "./utils";
 
-const ADDRESSES_DIR = path.join(__dirname, "../../addresses");
+// Deploy a new EmptyUUPSProxyGatewayConfig contract
+async function deployEmptyUUPSGatewayConfig(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
+  const factory = await ethers.getContractFactory(GATEWAY_CONFIG_EMPTY_PROXY_NAME, deployer);
 
-// Deploy a new EmptyUUPSProxy contract
-async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
-  const factory = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+  // The empty proxy for the GatewayConfig contract is owned by the deployed at first
   const UUPSEmpty = await upgrades.deployProxy(factory, [deployer.address], {
     initializer: "initialize",
     kind: "uups",
   });
   await UUPSEmpty.waitForDeployment();
   const UUPSEmptyAddress = await UUPSEmpty.getAddress();
-  console.log("EmptyUUPS proxy contract successfully deployed!\n");
+  console.log(`${GATEWAY_CONFIG_EMPTY_PROXY_NAME} proxy contract successfully deployed!`);
   return UUPSEmptyAddress;
 }
 
-// A helper task to update a contract's address in their .sol and .env file in the `addresses` directory
-task("task:setContractAddress")
-  .addParam("name", "The name of the contract (PascalCase)")
-  .addParam("address", "The address of the contract")
-  .setAction(async function (taskArguments: TaskArguments) {
-    const name = taskArguments.name;
-    const address = taskArguments.address;
+// Deploy a new EmptyUUPSProxy contract
+async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
+  const factory = await ethers.getContractFactory(REGULAR_EMPTY_PROXY_NAME, deployer);
 
-    const nameSnakeCase = pascalCaseToSnakeCase(name);
-    const envFilePath = path.join(ADDRESSES_DIR, `.env.${nameSnakeCase}`);
-    const envContent = `${nameSnakeCase.toUpperCase()}_ADDRESS=${address}\n`;
-
-    // Write the contract's address in its addresses/.env.xxx file
-    try {
-      // Ensure the ADDRESSES_DIR exists or create it
-      fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
-      fs.writeFileSync(envFilePath, envContent, { flag: "w" });
-      console.log(`${name} address ${address} written successfully!`);
-    } catch (err) {
-      console.error(`Failed to write ${name} address:`, err);
-    }
-
-    const solidityFilePath = path.join(ADDRESSES_DIR, `${name}Address.sol`);
-    const solidityTemplate =
-      `// SPDX-License-Identifier: BSD-3-Clause-Clear\n\n` +
-      `pragma solidity ^0.8.24;\n\n` +
-      `address constant ${pascalCaseToCamelCase(name)}Address = ${address};\n`;
-
-    // Write the contract's address in its addresses/xxxAddress.sol file
-    try {
-      fs.writeFileSync(solidityFilePath, solidityTemplate, {
-        encoding: "utf8",
-        flag: "w",
-      });
-      console.log(`${solidityFilePath} file generated successfully!\n`);
-    } catch (error) {
-      console.error(`Failed to write ${solidityFilePath}\n`, error);
-    }
+  // The regular empty proxies are directly owned by the GatewayConfig's owner
+  const UUPSEmpty = await upgrades.deployProxy(factory, [], {
+    initializer: "initialize",
+    kind: "uups",
   });
+  await UUPSEmpty.waitForDeployment();
+  const UUPSEmptyAddress = await UUPSEmpty.getAddress();
+  console.log(`${REGULAR_EMPTY_PROXY_NAME} proxy contract successfully deployed!`);
+  return UUPSEmptyAddress;
+}
 
 // Deploy all the EmptyUUPS proxy contracts
 task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgrades, run }) {
-  // Compile the EmptyUUPS proxy contract
-  await run("compile:specific", { contract: "contracts/emptyProxy" });
-
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
-  console.log("Deploying an EmptyUUPS proxy contract for MultichainAcl...");
-  const multichainAclAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  // Ensure the ADDRESSES_DIR exists or create it
+  fs.mkdirSync(ADDRESSES_DIR, { recursive: true });
+
+  // Empty the .env.gateway file for the subsequent tasks to append the contract addresses.
+  const envFilePath = path.join(ADDRESSES_DIR, ".env.gateway");
+  fs.writeFileSync(envFilePath, "", { flag: "w" });
+
+  // Truncate the GatewayAddresses.sol file with the Solidity header for the subsequent tasks
+  // to append the contract addresses.
+  const solidityFilePath = path.join(ADDRESSES_DIR, "GatewayAddresses.sol");
+  const solidityHeader = `// SPDX-License-Identifier: BSD-3-Clause-Clear\npragma solidity ^0.8.24;\n\n`;
+  fs.writeFileSync(solidityFilePath, solidityHeader, {
+    encoding: "utf8",
+    flag: "w",
+  });
+
+  // Compile the EmptyUUPSGatewayConfig proxy contract
+  await run("compile:specific", { contract: "contracts/emptyProxyGatewayConfig" });
+
+  // The GatewayConfig contract must be deployed first as the following contracts' empty proxies need
+  // its address in order to make them owned by the GatewayConfig contract's owner.
+  console.log("Deploying an EmptyUUPS proxy contract for GatewayConfig...");
+  const gatewayConfigAddress = await deployEmptyUUPSGatewayConfig(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "MultichainAcl",
-    address: multichainAclAddress,
+    name: "GatewayConfig",
+    address: gatewayConfigAddress,
+  });
+
+  // Compile the EmptyUUPS proxy contract
+  // The regular EmptyUUPS proxy contracts should only be compiled after the GatewayConfig address is
+  // set, as they are made owned by the GatewayConfig contract's owner.
+  await run("compile:specific", { contract: "contracts/emptyProxy" });
+
+  console.log("Deploying an EmptyUUPS proxy contract for MultichainACL...");
+  const multichainACLAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run("task:setContractAddress", {
+    name: "MultichainACL",
+    address: multichainACLAddress,
   });
 
   console.log("Deploying an EmptyUUPS proxy contract for CiphertextCommits...");
@@ -91,13 +96,6 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
   await run("task:setContractAddress", {
     name: "Decryption",
     address: decryptionAddress,
-  });
-
-  console.log("Deploying an EmptyUUPS proxy contract for GatewayConfig...");
-  const gatewayConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run("task:setContractAddress", {
-    name: "GatewayConfig",
-    address: gatewayConfigAddress,
   });
 
   console.log("Deploying an EmptyUUPS proxy contract for KmsManagement...");

@@ -19,7 +19,7 @@ This document guides you through building a web application using the `@zama-fhe
 <!---->
 <!-- ## Using the mocked coprocessor for frontend -->
 <!---->
-<!-- As an alternative to use the real coprocessor deployed on Sepolia to help you develop your dApp faster and without needing testnet tokens, you can use a mocked fhevm. Currently, we recommend you to use the `ConfidentialERC20` dApp example available on the `mockedFrontend` branch of the [React template](https://github.com/zama-ai/fhevm-react-template/tree/mockedFrontend). Follow the README on this branch, and you will be able to deploy exactly the same dApp both on Sepolia as well as on the mocked coprocessor seamlessly. -->
+<!-- As an alternative to use the real coprocessor deployed on Sepolia to help you develop your dApp faster and without needing testnet tokens, you can use a mocked FHEVM. Currently, we recommend you to use the `ConfidentialERC20` dApp example available on the `mockedFrontend` branch of the [React template](https://github.com/zama-ai/fhevm-react-template/tree/mockedFrontend). Follow the README on this branch, and you will be able to deploy exactly the same dApp both on Sepolia as well as on the mocked coprocessor seamlessly. -->
 <!---->
 
 ## Using directly the library
@@ -33,7 +33,7 @@ This document guides you through building a web application using the `@zama-fhe
 Include this line at the top of your project.
 
 ```html
-<script src="https://cdn.zama.ai/relayer-sdk-js/0.1.0-9/relayer-sdk-js.umd.cjs" type="text/javascript"></script>
+<script src="https://cdn.zama.ai/relayer-sdk-js/0.2.0/relayer-sdk-js.umd.cjs" type="text/javascript"></script>
 ```
 
 In your project, you can use the bundle import if you install `@zama-fhe/relayer-sdk` package:
@@ -48,7 +48,7 @@ If you prefer You can also use the `@zama-fhe/relayer-sdk` as a ES module:
 
 ```html
 <script type="module">
-  import { initSDK, createInstance, SepoliaConfig } from "https://cdn.zama.ai/relayer-sdk-js/0.1.0-9/relayer-sdk-js.js";
+  import { initSDK, createInstance, SepoliaConfig } from "https://cdn.zama.ai/relayer-sdk-js/0.2.0/relayer-sdk-js.js";
 
   await initSDK();
   const config = { ...SepoliaConfig, network: window.ethereum };

@@ -7,16 +7,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: 'read'
-  checks: 'write'
-  packages: 'read'
+permissions: {}
 
 jobs:
   check-changes:
+    name: gateway-contracts-mock-deployment/check-changes
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     outputs:
       changes-gw-contracts: ${{ steps.filter.outputs.gw-contracts }}
     steps:
@@ -34,6 +32,10 @@ jobs:
     needs: check-changes
     if: ${{ needs.check-changes.outputs.changes-gw-contracts == 'true' }}
     name: gateway-contracts-mock-deployment/deploy (bpr)
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      checks: 'write' # Required to create GitHub checks for test results
+      packages: 'read' # Required to read GitHub packages/container registry
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

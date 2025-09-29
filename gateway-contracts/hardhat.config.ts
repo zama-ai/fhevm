@@ -4,28 +4,33 @@ import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
 import "@typechain/hardhat";
 import dotenv from "dotenv";
+import "hardhat-dependency-compiler";
 import "hardhat-ignore-warnings";
 import { HardhatUserConfig, task, types } from "hardhat/config";
 import { resolve } from "path";
+import "solidity-coverage";
 
 import "./tasks/accounts";
 import "./tasks/addHostChains";
-import "./tasks/deployment/contracts";
-import "./tasks/deployment/empty_proxies";
-import "./tasks/deployment/mock_contracts";
+import "./tasks/addPausers";
+import "./tasks/blockExplorerVerify";
+import "./tasks/deployment/index";
 import "./tasks/getters";
+import "./tasks/pauseContracts";
+import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";
 
 const dotenvConfigPath: string = process.env.DOTENV_CONFIG_PATH || "./.env";
 dotenv.config({ path: resolve(__dirname, dotenvConfigPath) });
 
 export const NUM_ACCOUNTS = 30;
+export const ADDRESSES_DIR = resolve(__dirname, "addresses");
 
 const chainIds = {
   hardhat: 31337,
   localGateway: 123456,
   staging: 54321,
-  zwsDev: 412346,
+  devnet: 10899,
   testnet: 55815,
 };
 
@@ -57,6 +62,9 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
       // Contrary to deployment, here we consider the GatewayConfig address from the `addresses/` directory
       // for local testing
       await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
+      // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
+      // for local testing
+      await hre.run("task:addPausers", { useInternalGatewayConfigAddress: true });
     } else {
       console.log("Skipping contracts setup.");
     }
@@ -91,13 +99,13 @@ const config: HardhatUserConfig = {
       chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.staging,
       url: rpcUrl,
     },
-    zwsDev: {
+    devnet: {
       accounts: {
         count: NUM_ACCOUNTS,
         mnemonic,
         path: "m/44'/60'/0'/0",
       },
-      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.zwsDev,
+      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.devnet,
       url: rpcUrl,
     },
     testnet: {
@@ -115,16 +123,16 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: {
-      zwsDev: "empty",
+      devnet: "empty",
       testnet: "empty",
     },
     customChains: [
       {
-        network: "zwsDev",
-        chainId: chainIds.zwsDev,
+        network: "devnet",
+        chainId: chainIds.devnet,
         urls: {
-          apiURL: "http://l2-blockscout-zws-dev-blockscout-stack-blockscout-svc/api",
-          browserURL: "https://l2-explorer-zws-dev.diplodocus-boa.ts.net",
+          apiURL: "https://explorer.dev.zama.cloud/api",
+          browserURL: "https://explorer.dev.zama.cloud/",
         },
       },
       {
@@ -155,6 +163,13 @@ const config: HardhatUserConfig = {
       evmVersion: "cancun",
       viaIR: false,
     },
+  },
+  // This is necessary to have the SafeProxyFactory and Safe artifacts available during tasks execution.
+  dependencyCompiler: {
+    paths: [
+      "@safe-global/safe-contracts/contracts/proxies/SafeProxyFactory.sol",
+      "@safe-global/safe-contracts/contracts/Safe.sol",
+    ],
   },
   warnings: {
     // Turn off all warnings for mocked contracts

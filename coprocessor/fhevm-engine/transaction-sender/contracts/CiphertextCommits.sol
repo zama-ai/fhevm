@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /// @dev This contract is a mock of the CiphertextCommits contract from the Gateway.
 /// source: github.com/zama-ai/fhevm-gateway/blob/main/contracts/CiphertextCommits.sol
 contract CiphertextCommits {
-    error CoprocessorTxSenderAlreadyAdded(address coprocessorTxSenderAddress);
+    error CoprocessorAlreadyAdded(bytes32 ctHandle, address coprocessorTxSenderAddress);
 
     event AddCiphertextMaterial(
         bytes32 indexed ctHandle,
@@ -26,7 +26,7 @@ contract CiphertextCommits {
         bytes32 snsCiphertextDigest
     ) public {
         if (alreadyAddedRevert) {
-            revert CoprocessorTxSenderAlreadyAdded(msg.sender);
+            revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }
 
         emit AddCiphertextMaterial(

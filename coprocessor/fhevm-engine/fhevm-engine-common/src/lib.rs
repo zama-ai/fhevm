@@ -1,5 +1,8 @@
+#[cfg(feature = "gpu")]
+pub mod gpu_memory;
 pub mod healthz_server;
 pub mod keys;
+pub mod pg_pool;
 pub mod telemetry;
 pub mod tenant_keys;
 pub mod tfhe_ops;
