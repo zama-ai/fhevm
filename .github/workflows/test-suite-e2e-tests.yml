@@ -197,6 +197,9 @@ jobs:
           echo "::group::Host Listener"
           ./fhevm-cli logs host-listener
           echo "::endgroup::"
+          echo "::group::Gateway Listener"
+          ./fhevm-cli logs gw-listener
+          echo "::endgroup::"
 
       - name: Cleanup
         working-directory: test-suite/fhevm

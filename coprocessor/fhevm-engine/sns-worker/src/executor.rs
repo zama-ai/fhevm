@@ -154,6 +154,19 @@ impl SwitchNSquashService {
     }
 }
 
+async fn get_keyset(
+    pool: PgPool,
+    keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
+    tenant_api_key: &String,
+) -> Result<Option<KeySet>, ExecutionError> {
+    let t = telemetry::tracer("worker_loop_init");
+    let s = t.child_span("fetch_keyset");
+    let keys: Option<KeySet> = fetch_keyset(&keys_cache, &pool, tenant_api_key).await?;
+    telemetry::end_span(s);
+    t.end();
+    Ok(keys)
+}
+
 /// Executes the worker logic for the SnS task.
 pub(crate) async fn run_loop(
     conf: Config,
@@ -173,13 +186,19 @@ pub(crate) async fn run_loop(
         .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
-    let t = telemetry::tracer("worker_loop_init");
-    let s = t.child_span("fetch_keyset");
-    let keys: KeySet = fetch_keyset(&keys_cache, &pool, tenant_api_key).await?;
-    telemetry::end_span(s);
-    t.end();
-
-    info!(tenant_api_key = tenant_api_key, "Fetched keyset");
+    let mut keys = match get_keyset(pool.clone(), keys_cache.clone(), tenant_api_key).await? {
+        Some(keys) => {
+            info!(tenant_api_key = tenant_api_key, "Fetched keyset");
+            Some(keys)
+        }
+        None => {
+            warn!(
+                tenant_api_key = tenant_api_key,
+                "No keys found for the given tenant_api_key"
+            );
+            None
+        }
+    };
 
     let mut gc_ticker = interval(conf.db.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
@@ -189,7 +208,20 @@ pub(crate) async fn run_loop(
         // Continue looping until the service is cancelled or a critical error occurs
         update_last_active(last_active_at.clone()).await;
 
-        let maybe_remaining = fetch_and_execute_sns_tasks(&pool, &tx, &keys, &conf, &token).await?;
+        let Some(keys) = keys.as_ref() else {
+            warn!(
+                tenant_api_key = tenant_api_key,
+                "No keys available, retrying in 5 seconds"
+            );
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            if token.is_cancelled() {
+                return Ok(());
+            }
+            keys = get_keyset(pool.clone(), keys_cache.clone(), tenant_api_key).await?;
+            continue;
+        };
+
+        let maybe_remaining = fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token).await?;
         if maybe_remaining {
             if token.is_cancelled() {
                 return Ok(());

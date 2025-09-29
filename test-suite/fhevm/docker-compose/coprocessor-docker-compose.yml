@@ -1,21 +1,4 @@
 services:
-  ####################### DATABASE SETUP #######################
-  db:
-    container_name: fhevm-coprocessor-db
-    image: postgres:15.7
-    restart: always
-    env_file:
-      - ../env/staging/.env.coprocessor.local
-    ports:
-      - '5432:5432'
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    volumes:
-      - db:/var/lib/postgresql/data
-
   db-migration:
     container_name: fhevm-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
@@ -34,11 +17,6 @@ services:
       - /initialize_db.sh
     volumes:
       - keys-cache:/fhevm-keys
-    depends_on:
-      db:
-        condition: service_healthy
-      key-downloader:
-        condition: service_completed_successfully
 
   ####################### COPROCESSOR SERVICES #######################
   host-listener:
@@ -62,8 +40,6 @@ services:
       - --url=${RPC_URL}
       - --initial-block-time=1
     depends_on:
-      db:
-        condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
@@ -91,11 +67,10 @@ services:
       - --verify-proof-req-database-channel="event_zkpok_new_work"
       - --gw-url=${GATEWAY_WS_URL}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
+      - --kms-management-address=${KMS_MANAGEMENT_ADDRESS}
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
     depends_on:
-      db:
-        condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
@@ -122,8 +97,6 @@ services:
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
     depends_on:
-      db:
-        condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
@@ -148,8 +121,6 @@ services:
       - --pg-pool-connections=5
       - --worker-thread-count=4
     depends_on:
-      db:
-        condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
@@ -187,8 +158,6 @@ services:
       - --s3-regular-recheck-duration=120s
       - --enable-compression
     depends_on:
-      db:
-        condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
@@ -221,11 +190,8 @@ services:
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
     depends_on:
-      db:
-        condition: service_healthy
       db-migration:
         condition: service_completed_successfully
 
 volumes:
-  db:
   keys-cache:
