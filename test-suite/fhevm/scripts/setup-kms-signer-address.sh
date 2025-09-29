@@ -64,3 +64,6 @@ else
     log_warn "Failed to update KMS_SIGNER_ADDRESS_0. Please update manually in $ENV_GATEWAY"
     log_info "The value that should be set: $SIGNER_ADDRESS"
 fi
+
+log_info "KMS signer address configuration files updated successfully!"
+log_info "Signing Key ID: $KEY_SIGNER_ID"

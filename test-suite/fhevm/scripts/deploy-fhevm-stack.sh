@@ -125,7 +125,7 @@ prepare_local_config_relayer() {
 prepare_all_env_files() {
     log_info "Preparing all local environment files..."
 
-    local components=("minio" "database" "core" "gateway-node" "host-node" "gateway" "host" "connector" "coprocessor" "relayer" "test-suite")
+    local components=("minio" "database" "core" "gateway-node" "host-node" "gateway-sc" "host-sc" "kms-connector" "coprocessor" "relayer" "test-suite")
 
     for component in "${components[@]}"; do
         prepare_local_env_file "$component" > /dev/null
@@ -282,7 +282,7 @@ log_info "  kms-connector/tx-sender:${CONNECTOR_TX_SENDER_VERSION}${BUILD_TAG}"
 log_info "FHEVM Test Suite:"
 log_info "  test-suite/e2e:${TEST_SUITE_VERSION}${BUILD_TAG}"
 log_info "External Dependencies:"
-log_info "  kms-service:${CORE_VERSION}"
+log_info "  kms-core-service:${CORE_VERSION}"
 log_info "  fhevm-relayer:${RELAYER_VERSION}"
 
 run_compose "minio" "MinIO Services" \
@@ -299,7 +299,7 @@ sleep 5
 ${SCRIPT_DIR}/setup-kms-signer-address.sh
 
 # Run database shared by Coprocessor and KMS connector services
-run_compose "database" "Database service" "${PROJECT}-coprocessor-and-kms-db:running"
+run_compose "database" "Database service" "coprocessor-and-kms-db:running"
 
 if [ "$FORCE_BUILD" = true ]; then
     RUN_COMPOSE=run_compose_with_build
@@ -308,73 +308,46 @@ else
 fi
 
 # Run Host and Gateway nodes
-${RUN_COMPOSE} "host-node" "Host node service" "${PROJECT}-host-node:running"
-${RUN_COMPOSE} "gateway-node" "Gateway node service" "${PROJECT}-gateway-node:running"
+${RUN_COMPOSE} "host-node" "Host node service" "host-node:running"
+${RUN_COMPOSE} "gateway-node" "Gateway node service" "gateway-node:running"
 
-# Setup Gateway contracts and network
-${RUN_COMPOSE} "gateway" "Gateway contracts" \
-    "${PROJECT}-gateway-sc-deploy:complete" \
-    "${PROJECT}-gateway-sc-add-network:complete"
-
-sleep 5
 # Run coprocessor services
 ${RUN_COMPOSE} "coprocessor" "Coprocessor Services" \
-    "${PROJECT}-coprocessor-db:running" \
-    "${PROJECT}-db-migration:complete" \
-    "${PROJECT}-host-listener:running" \
-    "${PROJECT}-gw-listener:running" \
-    "${PROJECT}-tfhe-worker:running" \
-    "${PROJECT}-zkproof-worker:running" \
-    "${PROJECT}-sns-worker:running" \
-    "${PROJECT}-transaction-sender:running"
+    "coprocessor-and-kms-db:running" \
+    "coprocessor-db-migration:complete" \
+    "coprocessor-host-listener:running" \
+    "coprocessor-gw-listener:running" \
+    "coprocessor-tfhe-worker:running" \
+    "coprocessor-zkproof-worker:running" \
+    "coprocessor-sns-worker:running" \
+    "coprocessor-transaction-sender:running"
 
 # Run KMS connector services
-${RUN_COMPOSE} "connector" "Connector Services" \
+${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
+    "coprocessor-and-kms-db:running" \
+    "kms-connector-db-migration:complete" \
     "kms-connector-gw-listener:running" \
     "kms-connector-kms-worker:running" \
     "kms-connector-tx-sender:running"
+
+# Setup Gateway contracts, which will trigger the FHE materials generation. Note
+# that the key generation may take a few seconds to complete, meaning that executing
+# the e2e tests too soon may fail if the materials are not ready. Hence, the following
+# setup is placed here to favor proper sequencing.
+${RUN_COMPOSE} "gateway-sc" "Gateway contracts" \
+    "gateway-sc-deploy:complete" \
+    "gateway-sc-add-network:complete" \
+    "gateway-sc-trigger-keygen:complete" \
+    "gateway-sc-trigger-crsgen:complete"
+
+# Setup Host contracts
+${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete"
 
 # Run Relayer (External dependency)
 ${RUN_COMPOSE} "relayer" "Relayer Services" \
     "${PROJECT}-relayer:running"
 
-
-# Setup Host contracts
-${RUN_COMPOSE} "host" "Host contracts" "${PROJECT}-host-sc-deploy:complete"
-
 # Run Test Suite container
 ${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
 
 log_info "All services started successfully!"
-
-log_info "Starting crs & keygen"
-
-cd ${SCRIPT_DIR}/../../../gateway-contracts
-
-set -ex
-npm install nodejs
-npm install hardhat
-npm ci
-npm install
-export DOTENV_CONFIG_PATH=../test-suite/fhevm/env/staging/.env.gateway
-npx hardhat task:deployAllGatewayContracts
-echo "Current KMS_MANAGEMENT_ADDRESS:"
-grep KMS_MANAGEMENT_ADDRESS addresses/.env.gateway
-sed -i s/KMS_MANAGEMENT_ADDRESS=0xDE409109E0fCCAaE7B87De518F61d617A3fda094/KMS_MANAGEMENT_ADDRESS=0xF0bFB159C7381F7CB332586004d8247252C5b816/g addresses/.env.gateway
-echo "Fixed KMS_MANAGEMENT_ADDRESS:"
-grep KMS_MANAGEMENT_ADDRESS addresses/.env.gateway
-
-PARAM_TYPE=0 # Default/Prod, fast for centralized KMS
-
-HARDHAT_NETWORK=staging CHAIN_ID_GATEWAY=54321 RPC_URL=http://localhost:8546 npx hardhat task:triggerCrsgen \
-    --max-bit-length 2048 \
-    --params-type ${PARAM_TYPE} \
-    --use-internal-kms-management-address true
-
-sleep 5
-HARDHAT_NETWORK=staging CHAIN_ID_GATEWAY=54321 RPC_URL=http://localhost:8546 npx hardhat task:triggerKeygen \
-    --params-type ${PARAM_TYPE} \
-    --use-internal-kms-management-address true
-
-
-sleep 60

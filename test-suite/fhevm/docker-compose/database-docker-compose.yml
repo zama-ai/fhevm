@@ -1,6 +1,6 @@
 services:
   db:
-    container_name: fhevm-coprocessor-and-kms-db
+    container_name: coprocessor-and-kms-db
     image: postgres:15.7
     restart: always
     env_file:

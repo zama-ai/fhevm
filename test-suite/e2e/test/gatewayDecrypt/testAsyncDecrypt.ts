@@ -132,29 +132,30 @@ describe('TestAsyncDecrypt', function () {
     expect(y).to.equal(52); // 5+15+32
   });
 
-  // it('test async decrypt uint32 - two requests in same block', async function () {
-  //   const pendingNonce = await ethers.provider.getTransactionCount(this.signers.alice.address, 'pending');
+  // NOTICE: skipped due to recent flappy behavior: 2 transactions cannot be guaranteed to be in the same block.
+  it.skip('test async decrypt uint32 - two requests in same block', async function () {
+    const pendingNonce = await ethers.provider.getTransactionCount(this.signers.alice.address, 'pending');
 
-  //   const txA = await this.contract.requestUint32_2({
-  //     nonce: pendingNonce,
-  //   });
-  //   const txB = await this.contract.requestUint32_3({
-  //     nonce: pendingNonce + 1,
-  //   });
+    const txA = await this.contract.requestUint32_2({
+      nonce: pendingNonce,
+    });
+    const txB = await this.contract.requestUint32_3({
+      nonce: pendingNonce + 1,
+    });
 
 
-  //   const [receiptA, receiptB] = await Promise.all([txA.wait(), txB.wait()]);
+    const [receiptA, receiptB] = await Promise.all([txA.wait(), txB.wait()]);
 
-  //   console.log('txA block:', receiptA.blockNumber);
-  //   console.log('txB block:', receiptB.blockNumber);
+    console.log('txA block:', receiptA.blockNumber);
+    console.log('txB block:', receiptB.blockNumber);
 
-  //   await awaitAllDecryptionResults();
+    await awaitAllDecryptionResults();
 
-  //   const y2 = await this.contract.yUint32_2();
-  //   expect(y2).to.equal(1000);
-  //   const y3 = await this.contract.yUint32_3();
-  //   expect(y3).to.equal(2000);
-  // });
+    const y2 = await this.contract.yUint32_2();
+    expect(y2).to.equal(1000);
+    const y3 = await this.contract.yUint32_3();
+    expect(y3).to.equal(2000);
+  });
 
   it.skip('test async decrypt FAKE uint32', async function () {
     if (network.name !== 'hardhat') {

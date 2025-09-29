@@ -1,6 +1,6 @@
 services:
   host-sc-deploy:
-    container_name: fhevm-host-sc-deploy
+    container_name: host-sc-deploy
     image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
     build:
       context: ../../../host-contracts

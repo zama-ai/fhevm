@@ -1,6 +1,6 @@
 services:
-  db-migration:
-    container_name: fhevm-db-migration
+  coprocessor-db-migration:
+    container_name: coprocessor-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
     build:
       context: ../../..
@@ -19,8 +19,8 @@ services:
       - keys-cache:/fhevm-keys
 
   ####################### COPROCESSOR SERVICES #######################
-  host-listener:
-    container_name: fhevm-host-listener
+  coprocessor-host-listener:
+    container_name: coprocessor-host-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
     build:
       context: ../../..
@@ -40,11 +40,11 @@ services:
       - --url=${RPC_URL}
       - --initial-block-time=1
     depends_on:
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
-  gw-listener:
-    container_name: fhevm-gw-listener
+  coprocessor-gw-listener:
+    container_name: coprocessor-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${GW_LISTENER_VERSION}
     build:
       context: ../../..
@@ -71,11 +71,11 @@ services:
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
     depends_on:
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
-  tfhe-worker:
-    container_name: fhevm-tfhe-worker
+  coprocessor-tfhe-worker:
+    container_name: coprocessor-tfhe-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}
     build:
       context: ../../..
@@ -97,11 +97,11 @@ services:
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
     depends_on:
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
-  zkproof-worker:
-    container_name: fhevm-zkproof-worker
+  coprocessor-zkproof-worker:
+    container_name: coprocessor-zkproof-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${ZKPROOF_WORKER_VERSION}
     build:
       context: ../../..
@@ -121,11 +121,11 @@ services:
       - --pg-pool-connections=5
       - --worker-thread-count=4
     depends_on:
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
-  sns-worker:
-    container_name: fhevm-sns-worker
+  coprocessor-sns-worker:
+    container_name: coprocessor-sns-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${SNS_WORKER_VERSION}
     build:
       context: ../../..
@@ -158,11 +158,11 @@ services:
       - --s3-regular-recheck-duration=120s
       - --enable-compression
     depends_on:
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
-  transaction-sender:
-    container_name: fhevm-transaction-sender
+  coprocessor-transaction-sender:
+    container_name: coprocessor-transaction-sender
     image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${TX_SENDER_VERSION}
     build:
       context: ../../..
@@ -190,7 +190,7 @@ services:
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
     depends_on:
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
 volumes:
