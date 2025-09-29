@@ -6,12 +6,10 @@ import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
-import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
-import { Pausable } from "./shared/Pausable.sol";
+import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
 /**
@@ -21,10 +19,9 @@ import { PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE } from "./
 contract KMSManagement is
     IKMSManagement,
     EIP712Upgradeable,
-    Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
-    GatewayConfigChecks,
-    Pausable
+    GatewayOwnable,
+    GatewayConfigChecks
 {
     // ----------------------------------------------------------------------------------------------
     // EIP712 utility constants:
@@ -184,8 +181,6 @@ contract KMSManagement is
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
-        __Ownable_init(owner());
-        __Pausable_init();
 
         KmsManagementStorage storage $ = _getKmsManagementStorage();
 

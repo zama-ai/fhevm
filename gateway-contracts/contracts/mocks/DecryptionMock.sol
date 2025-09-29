@@ -22,7 +22,6 @@ contract DecryptionMock {
     struct UserDecryptRequestVerification {
         bytes publicKey;
         address[] contractAddresses;
-        uint256 contractsChainId;
         uint256 startTimestamp;
         uint256 durationDays;
         bytes extraData;
@@ -39,7 +38,6 @@ contract DecryptionMock {
         bytes publicKey;
         address[] contractAddresses;
         address delegatorAddress;
-        uint256 contractsChainId;
         uint256 startTimestamp;
         uint256 durationDays;
         bytes extraData;

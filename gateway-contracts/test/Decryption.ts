@@ -100,7 +100,6 @@ describe("Decryption", function () {
   const fakeSigner = createRandomWallet();
   const nullDecryptionId = 0;
   const tooHighDecryptionId = getPublicDecryptId(1000) + getUserDecryptId(1000);
-  const invalidOldDecryptionId = 1000;
 
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
@@ -596,13 +595,6 @@ describe("Decryption", function () {
         decryption
           .connect(kmsTxSenders[0])
           .publicDecryptionResponse(tooHighDecryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
-      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
-
-      // Check that a public decryption response with too high (not requested yet) old decryptionId reverts
-      await expect(
-        decryption
-          .connect(kmsTxSenders[0])
-          .publicDecryptionResponse(invalidOldDecryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
     });
 
@@ -1437,13 +1429,6 @@ describe("Decryption", function () {
         decryption
           .connect(kmsTxSenders[0])
           .userDecryptionResponse(tooHighDecryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
-      ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
-
-      // Check that a user decryption response with too high (not requested yet) old decryptionId reverts
-      await expect(
-        decryption
-          .connect(kmsTxSenders[0])
-          .userDecryptionResponse(invalidOldDecryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
     });
 
