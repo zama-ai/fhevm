@@ -106,12 +106,11 @@ To prevent this, always use the `FHE.isSenderAllowed()` function to verify that 
 #### Example: secure verification
 
 ```solidity
-function transfer(address to, euint64 encryptedAmount, bytes calldata inputProof) public {
+function transfer(address to, euint64 encryptedAmount) public {
   // Ensure the sender is authorized to access the encrypted amount
   require(FHE.isSenderAllowed(encryptedAmount), "Unauthorized access to encrypted amount.");
 
   // Proceed with further logic
-  euint64 amount = FHE.asEuint64(encryptedAmount);
   ...
 }
 ```
