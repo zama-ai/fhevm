@@ -27,12 +27,12 @@ use fhevm_engine_common::{tenant_keys::query_tenant_info, types::AllowEvents, ut
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
-use MultichainAcl::MultichainAclErrors;
+use MultichainACL::MultichainACLErrors;
 
 sol!(
     #[sol(rpc)]
-    MultichainAcl,
-    "artifacts/MultichainAcl.sol/MultichainAcl.json"
+    MultichainACL,
+    "artifacts/MultichainACL.sol/MultichainACL.json"
 );
 
 struct Key {
@@ -56,7 +56,7 @@ impl Display for Key {
 }
 
 #[derive(Clone)]
-pub struct MultichainAclOperation<P: Provider<Ethereum> + Clone + 'static> {
+pub struct MultichainACLOperation<P: Provider<Ethereum> + Clone + 'static> {
     multichain_acl_address: Address,
     provider: NonceManagedProvider<P>,
     conf: crate::ConfigSettings,
@@ -64,7 +64,7 @@ pub struct MultichainAclOperation<P: Provider<Ethereum> + Clone + 'static> {
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
+impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
@@ -205,10 +205,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
 
     fn already_allowed_error(&self, err: &RpcError<TransportErrorKind>) -> Option<Address> {
         err.as_error_resp()
-            .and_then(|payload| payload.as_decoded_interface_error::<MultichainAclErrors>())
+            .and_then(|payload| payload.as_decoded_interface_error::<MultichainACLErrors>())
             .map(|error| match error {
-                MultichainAclErrors::CoprocessorAlreadyAllowedAccount(c) => c.coprocessor,
-                MultichainAclErrors::CoprocessorAlreadyAllowedPublicDecrypt(c) => c.txSender,
+                MultichainACLErrors::CoprocessorAlreadyAllowedAccount(c) => c.coprocessor,
+                MultichainACLErrors::CoprocessorAlreadyAllowedPublicDecrypt(c) => c.txSender,
             })
     }
 
@@ -239,7 +239,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
     }
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
+impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
     pub fn new(
         multichain_acl_address: Address,
         provider: NonceManagedProvider<P>,
@@ -250,7 +250,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         info!(
             gas = gas.unwrap_or(0),
             multichain_acl_address = %multichain_acl_address,
-            "Creating MultichainAclOperation"
+            "Creating MultichainACLOperation"
         );
 
         Self {
@@ -349,7 +349,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
 }
 
 #[async_trait]
-impl<P> TransactionOperation<P> for MultichainAclOperation<P>
+impl<P> TransactionOperation<P> for MultichainACLOperation<P>
 where
     P: alloy::providers::Provider<Ethereum> + Clone + 'static,
 {
@@ -372,7 +372,7 @@ where
         .fetch_all(&self.db_pool)
         .await?;
 
-        let multichain_acl = MultichainAcl::new(self.multichain_acl_address, self.provider.inner());
+        let multichain_acl = MultichainACL::new(self.multichain_acl_address, self.provider.inner());
 
         info!(rows_count = rows.len(), "Selected rows to process");
 
