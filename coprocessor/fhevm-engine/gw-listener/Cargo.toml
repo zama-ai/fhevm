@@ -9,6 +9,7 @@ license.workspace = true
 # workspace dependencies
 alloy = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 axum = { workspace = true }
 aws-config = { workspace = true }
 aws-credential-types = { workspace = true }

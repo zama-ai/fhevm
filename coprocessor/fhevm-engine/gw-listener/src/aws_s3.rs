@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use async_trait::async_trait;
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::config::{Builder, ProvideCredentials};
 use aws_sdk_s3::Client;
@@ -65,6 +66,7 @@ pub async fn create_s3_client(
 #[derive(Clone)]
 pub struct AwsS3Client {}
 
+#[async_trait]
 impl AwsS3Interface for AwsS3Client {
     async fn get_bucket_key(
         &self,
@@ -86,13 +88,14 @@ impl AwsS3Interface for AwsS3Client {
     }
 }
 
-pub trait AwsS3Interface {
-    fn get_bucket_key(
+#[async_trait]
+pub trait AwsS3Interface: Send + Sync {
+    async fn get_bucket_key(
         &self,
         url: &str,
         bucket: &str,
         key: &str,
-    ) -> impl std::future::Future<Output = anyhow::Result<bytes::Bytes>>;
+    ) -> anyhow::Result<bytes::Bytes>;
 }
 
 fn split_url(s3_bucket_url: &String) -> anyhow::Result<(String, String)> {
