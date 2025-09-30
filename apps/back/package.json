@@ -2,6 +2,7 @@
   "name": "back",
   "version": "2.0.4",
   "description": "",
+  "private": true,
   "main": "app.js",
   "scripts": {
     "build": "rm -rf dist && mkdir -p dist && cp -r app.js config plugins services dist/",

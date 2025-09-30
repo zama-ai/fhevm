@@ -11,7 +11,7 @@
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\""
   },
-  "author": "",
+  "author": "Zama",
   "license": "BSD-3-Clause",
   "dependencies": {
     "@fhevm/solidity": "^0.8.0",
