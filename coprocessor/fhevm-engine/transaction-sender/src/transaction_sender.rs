@@ -59,7 +59,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
                 gas,
                 db_pool.clone(),
             )),
-            Arc::new(ops::allow_handle::MultichainAclOperation::new(
+            Arc::new(ops::allow_handle::MultichainACLOperation::new(
                 multichain_acl_address,
                 provider.clone(),
                 conf.clone(),
