@@ -1,4 +1,7 @@
-use std::time::Duration;
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use alloy::{
     network::EthereumWallet,
@@ -9,6 +12,7 @@ use alloy::{
     sol,
 };
 
+use async_trait::async_trait;
 use aws_sdk_s3::{operation::get_object::GetObjectError, Client};
 use gw_listener::{
     aws_s3::{AwsS3Client, AwsS3Interface},
@@ -22,6 +26,7 @@ use tokio::time::sleep;
 use tokio_util::bytes;
 use tokio_util::sync::CancellationToken;
 use tracing::Level;
+use tracing_subscriber::fmt::{writer::MakeWriterExt, MakeWriter};
 
 sol!(
     #[sol(rpc)]
@@ -35,6 +40,59 @@ sol!(
     "artifacts/KMSManagement.sol/KMSManagement.json"
 );
 
+#[derive(Clone)]
+struct TestLogs {
+    logs: Arc<RwLock<String>>,
+}
+
+impl TestLogs {
+    fn new() -> Self {
+        Self {
+            logs: Arc::new(RwLock::new(String::new())),
+        }
+    }
+
+    fn add(&mut self, data: &[u8]) {
+        let data = String::from_utf8_lossy(&data).to_string();
+        *self.logs.write().unwrap() += &data;
+    }
+
+    fn contains(&self, substr: &str) -> bool {
+        self.logs.read().unwrap().contains(substr)
+    }
+}
+
+struct Writer {
+    logs: TestLogs,
+}
+
+impl Writer {
+    fn new(logs: TestLogs) -> Self {
+        Self { logs }
+    }
+}
+
+impl std::io::Write for Writer {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.logs.add(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'a> MakeWriter<'a> for Writer {
+    type Writer = Self;
+
+    fn make_writer(&'a self) -> Self::Writer {
+        Self {
+            logs: self.logs.clone(),
+        }
+    }
+}
+
 struct TestEnvironment {
     wallet: EthereumWallet,
     conf: ConfigSettings,
@@ -42,15 +100,19 @@ struct TestEnvironment {
     _test_instance: Option<test_harness::instance::DBInstance>, // maintain db alive
     db_pool: Pool<Postgres>,
     anvil: AnvilInstance,
+    test_logs: TestLogs,
 }
 
 impl TestEnvironment {
     async fn new() -> anyhow::Result<Self> {
+        let test_logs = TestLogs::new();
+        let writer = Writer::new(test_logs.clone());
+
         let _ = tracing_subscriber::fmt()
-            .json()
+            .compact()
+            .with_writer(writer.and(std::io::stdout))
             .with_level(true)
-            .with_max_level(Level::DEBUG)
-            .with_test_writer()
+            .with_max_level(Level::INFO)
             .try_init();
 
         let mut conf = ConfigSettings::default();
@@ -64,6 +126,8 @@ impl TestEnvironment {
             conf.database_url = instance.db_url().to_owned();
             _test_instance = Some(instance);
         };
+        conf.error_sleep_initial_secs = 1;
+        conf.error_sleep_max_secs = 1;
         let db_pool = PgPoolOptions::new()
             .max_connections(16)
             .acquire_timeout(Duration::from_secs(5))
@@ -90,11 +154,23 @@ impl TestEnvironment {
             db_pool,
             _test_instance,
             anvil,
+            test_logs,
         })
+    }
+
+    async fn wait_for_log(&self, log: &str) -> anyhow::Result<()> {
+        for _ in 0..LOG_RETRY_COUNT {
+            if self.test_logs.contains(log) {
+                return Ok(());
+            }
+            sleep(RETRY_DELAY).await;
+        }
+        anyhow::bail!("wait_for_log() didn't find {}", log);
     }
 }
 
 const RETRY_EVENT_TO_DB: u64 = 20;
+const LOG_RETRY_COUNT: u64 = 50;
 const RETRY_DELAY: Duration = Duration::from_millis(500);
 
 #[tokio::test]
@@ -216,6 +292,7 @@ async fn has_crs(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
 #[derive(Clone)]
 pub struct AwsS3ClientMocked(Client);
 
+#[async_trait]
 impl AwsS3Interface for AwsS3ClientMocked {
     async fn get_bucket_key(
         &self,
@@ -242,12 +319,6 @@ impl AwsS3Interface for AwsS3ClientMocked {
 #[tokio::test]
 #[serial(db)]
 async fn keygen_ok() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .compact()
-        .try_init()
-        .ok();
-
     use aws_sdk_s3::operation::get_object::GetObjectOutput;
     use aws_sdk_s3::primitives::ByteStream;
     use aws_sdk_s3::Client;
@@ -355,12 +426,6 @@ async fn keygen_ok() -> anyhow::Result<()> {
 #[tokio::test]
 #[serial(db)]
 async fn keygen_compromised_key() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .compact()
-        .try_init()
-        .ok();
-
     use aws_sdk_s3::operation::get_object::GetObjectOutput;
     use aws_sdk_s3::primitives::ByteStream;
     use aws_sdk_s3::Client;
@@ -404,7 +469,7 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
 
     let env = TestEnvironment::new().await?;
     let provider = ProviderBuilder::new()
-        .wallet(env.wallet)
+        .wallet(env.wallet.clone())
         .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
         .await?;
     let aws_s3_client = AwsS3ClientMocked(s3);
@@ -419,10 +484,7 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
         aws_s3_client.clone(),
     );
 
-    let mut sleep_duration = 6_u64;
-    let db_pool = env.db_pool.clone();
-    let result =
-        tokio::spawn(async move { gw_listener.run_loop(&db_pool, &mut sleep_duration).await });
+    let result = tokio::spawn(async move { gw_listener.run().await });
 
     assert!(!has_public_key(&env.db_pool.clone()).await?);
     assert!(!has_server_key(&env.db_pool.clone()).await?);
@@ -433,30 +495,21 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
     let pending_txn = provider.send_transaction(txn_req).await?;
     let receipt = pending_txn.get_receipt().await?;
     assert!(receipt.status());
-    assert!(result.is_finished());
-    let result = result.await;
-    assert!(result.is_ok());
-    let result = result.unwrap();
-    assert!(result.is_err());
-    let err = result.unwrap_err();
-    assert!(err.to_string().contains("Invalid Key digest"));
+
+    env.wait_for_log("Invalid Key digest").await?;
 
     assert!(!has_public_key(&env.db_pool.clone()).await?);
     assert!(!has_server_key(&env.db_pool.clone()).await?);
 
     env.cancel_token.cancel();
+    result.await??;
+
     Ok(())
 }
 
 #[tokio::test]
 #[serial(db)]
 async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .compact()
-        .try_init()
-        .ok();
-
     use aws_sdk_s3::operation::get_object::GetObjectOutput;
     use aws_sdk_s3::primitives::ByteStream;
     use aws_sdk_s3::Client;
