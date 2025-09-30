@@ -1,7 +1,6 @@
 name: test-trigger-build
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - aw/ci/e2e-tests-orchestrator
@@ -11,30 +10,67 @@ permissions:
   contents: read
 
 jobs:
-  trigger-single-build:
+  trigger-test-suite:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger test-suite build
+      - name: Trigger test-suite-docker-build workflow
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const ref = '${{ github.event.inputs.target_ref }}' || context.ref.replace('refs/heads/', '');
+            const targetWorkflow = 'test-suite-docker-build.yml';
+            const targetRef = 'aw/ci/e2e-tests-orchestrator';
             
-            console.log(`Attempting to trigger test-suite-docker-build.yml on ref: ${ref}`);
+            console.log(`Triggering ${targetWorkflow} on ref: ${targetRef}`);
             
             try {
               const response = await github.rest.actions.createWorkflowDispatch({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                workflow_id: 'test-suite-docker-build.yml',
-                ref: ref
+                workflow_id: targetWorkflow,
+                ref: targetRef,
+                inputs: {
+                  ref: targetRef,
+                  trigger_source: 'test-trigger-build-workflow'
+                }
               });
               
-              console.log('✅ Successfully triggered test-suite-docker-build.yml');
-              console.log('Response status:', response.status);
+              console.log('✅ Successfully triggered test-suite-docker-build workflow');
+              console.log(`Response status: ${response.status}`);
+              
+              // Wait and check for the new run
+              console.log('\n⏳ Waiting 15 seconds to check for new run...');
+              await new Promise(resolve => setTimeout(resolve, 15000));
+              
+              const runs = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: targetWorkflow,
+                per_page: 5
+              });
+              
+              console.log(`\n📊 Recent runs for ${targetWorkflow}:`);
+              runs.data.workflow_runs.slice(0, 3).forEach((run, index) => {
+                console.log(`${index + 1}. Event: ${run.event} | Status: ${run.status} | Created: ${run.created_at}`);
+                console.log(`   URL: ${run.html_url}`);
+              });
+              
+              const recentRun = runs.data.workflow_runs.find(run => 
+                run.event === 'workflow_dispatch' && 
+                new Date(run.created_at) > new Date(Date.now() - 180000) // 3 minutes
+              );
+              
+              if (recentRun) {
+                console.log(`\n✅ Found triggered run:`);
+                console.log(`   URL: ${recentRun.html_url}`);
+                console.log(`   Status: ${recentRun.status}`);
+                console.log(`   Conclusion: ${recentRun.conclusion || 'running'}`);
+              } else {
+                console.log('\n⚠️ No recent workflow_dispatch run found');
+              }
+              
             } catch (error) {
-              console.log('❌ Failed to trigger workflow:', error.message);
-              console.log('Error details:', JSON.stringify(error.response?.data || error, null, 2));
+              console.log(`\n❌ Failed to trigger workflow: ${error.message}`);
+              console.log('Error details:', JSON.stringify(error.response?.data || {}, null, 2));
               core.setFailed(`Failed to trigger workflow: ${error.message}`);
             }

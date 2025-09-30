@@ -18,11 +18,28 @@ jobs:
       contents: 'read'
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger all build workflows via repository dispatch
+      - name: Trigger all build workflows
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
+            const workflows = [
+              'coprocessor-db-migration-docker-build.yml',
+              'coprocessor-gw-listener-docker-build.yml',
+              'coprocessor-host-listener-docker-build.yml',
+              'coprocessor-tx-sender-docker-build.yml',
+              'coprocessor-sns-worker-docker-build.yml',
+              'coprocessor-tfhe-worker-docker-build.yml',
+              'coprocessor-zkproof-worker-docker-build.yml',
+              'gateway-contracts-docker-build.yml',
+              'host-contracts-docker-build.yml',
+              'kms-connector-db-migration-docker-build.yml',
+              'kms-connector-gw-listener-docker-build.yml',
+              'kms-connector-tx-sender-docker-build.yml',
+              'kms-connector-kms-worker-docker-build.yml',
+              'test-suite-docker-build.yml'
+            ];
+
             // Determine a valid ref
             let ref;
             if (context.eventName === 'pull_request') {
@@ -40,21 +57,18 @@ jobs:
 
             console.log(`Triggering builds using ref: ${ref}`);
 
-            // Use repository_dispatch to trigger builds
-            try {
-              await github.rest.repos.createDispatchEvent({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                event_type: 'trigger-all-builds',
-                client_payload: {
-                  ref: ref,
-                  sha: context.sha,
-                  trigger_source: 'trigger-all-builds-workflow'
-                }
-              });
-              console.log('✅ Triggered repository dispatch event for all builds');
-            } catch (error) {
-              console.log(`❌ Failed to trigger repository dispatch: ${error.message}`);
+            for (const workflow of workflows) {
+              try {
+                await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: workflow,
+                  ref
+                });
+                console.log(`✅ Triggered ${workflow}`);
+              } catch (error) {
+                console.log(`❌ Failed to trigger ${workflow}: ${error.message}`);
+              }
             }
 
   collect-results:
@@ -95,10 +109,6 @@ jobs:
           workflow_to_image["kms-connector-kms-worker-docker-build"]="connector_version"
           workflow_to_image["test-suite-docker-build"]="test_suite_version"
           
-          # Wait a bit for repository dispatch to trigger workflows
-          echo "Waiting 60 seconds for repository dispatch to trigger workflows..."
-          sleep 60
-          
           # Wait for all workflows to complete and collect built images
           max_attempts=60
           attempt=1
@@ -112,10 +122,9 @@ jobs:
             for workflow_name in "${!workflow_to_image[@]}"; do
               echo "Checking workflow: ${workflow_name}"
               
-              # Get runs for this workflow from the last hour to catch repository_dispatch triggered runs
-              since_time=$(date -u -d '1 hour ago' '+%Y-%m-%dT%H:%M:%SZ')
+              # Get the latest run for this commit
               run_info=$(gh api \
-                "repos/${{ github.repository }}/actions/workflows/${workflow_name}.yml/runs?created=>=${since_time}" \
+                "repos/${{ github.repository }}/actions/workflows/${workflow_name}.yml/runs" \
                 --jq ".workflow_runs[] | select(.head_sha == \"${commit_sha}\") | {conclusion, id}" \
                 | head -1)
               
@@ -153,7 +162,7 @@ jobs:
                   all_done=false
                 fi
               else
-                echo "⚠️ No recent run found for ${workflow_name} with commit ${commit_sha}"
+                echo "⚠️ No run found for ${workflow_name} with commit ${commit_sha}"
                 all_done=false
               fi
             done
