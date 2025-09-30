@@ -133,7 +133,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface> GatewayListener
             .await?
             .into_stream()
             .fuse();
-        info!("Subscribed to KMSGeneration.ActivateKeyRequest events");
+        info!("Subscribed to KMSGeneration.ActivateCrsRequest events");
         loop {
             tokio::select! {
                 _ = self.cancel_token.cancelled() => {

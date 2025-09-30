@@ -53,8 +53,6 @@ services:
     command:
       - npx hardhat task:addPausers
     depends_on:
-      gateway-node:
-        condition: service_started
       gateway-sc-deploy:
         condition: service_completed_successfully
 
