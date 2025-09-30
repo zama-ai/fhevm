@@ -330,7 +330,7 @@ ${RUN_COMPOSE} "kms-connector" "KMS Connector Services" \
     "kms-connector-kms-worker:running" \
     "kms-connector-tx-sender:running"
 
-# Setup Gateway contracts, which will trigger the FHE materials generation. Note
+# Setup Gateway contracts, which will trigger the KMS materials generation. Note
 # that the key generation may take a few seconds to complete, meaning that executing
 # the e2e tests too soon may fail if the materials are not ready. Hence, the following
 # setup is placed here to favor proper sequencing.
@@ -351,3 +351,6 @@ ${RUN_COMPOSE} "relayer" "Relayer Services" \
 ${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
 
 log_info "All services started successfully!"
+
+# Wait a bit to ensure the KMS materials are ready before running tests.
+sleep 30
