@@ -33,6 +33,9 @@ impl KmsResponseRemover for DbKmsResponseRemover {
                 self.remove_public_decryption(r.decryption_id).await?
             }
             KmsResponse::UserDecryption(r) => self.remove_user_decryption(r.decryption_id).await?,
+            KmsResponse::PrepKeygen(r) => self.remove_prep_keygen(r.prep_keygen_id).await?,
+            KmsResponse::Keygen(r) => self.remove_keygen(r.key_id).await?,
+            KmsResponse::Crsgen(r) => self.remove_crsgen(r.crs_id).await?,
         };
 
         if query_result.rows_affected() == 1 {
@@ -54,6 +57,9 @@ impl KmsResponseRemover for DbKmsResponseRemover {
             KmsResponse::UserDecryption(r) => {
                 self.mark_user_decryption_as_pending(r.decryption_id).await
             }
+            KmsResponse::PrepKeygen(r) => self.mark_prep_keygen_as_pending(r.prep_keygen_id).await,
+            KmsResponse::Keygen(r) => self.mark_keygen_as_pending(r.key_id).await,
+            KmsResponse::Crsgen(r) => self.mark_crsgen_as_pending(r.crs_id).await,
         };
     }
 }
@@ -81,6 +87,33 @@ impl DbKmsResponseRemover {
         .await
     }
 
+    async fn remove_prep_keygen(&self, prep_keygen_id: U256) -> sqlx::Result<PgQueryResult> {
+        sqlx::query!(
+            "DELETE FROM prep_keygen_responses WHERE prep_keygen_id = $1",
+            prep_keygen_id.as_le_slice()
+        )
+        .execute(&self.db_pool)
+        .await
+    }
+
+    async fn remove_keygen(&self, key_id: U256) -> sqlx::Result<PgQueryResult> {
+        sqlx::query!(
+            "DELETE FROM keygen_responses WHERE key_id = $1",
+            key_id.as_le_slice()
+        )
+        .execute(&self.db_pool)
+        .await
+    }
+
+    async fn remove_crsgen(&self, crs_id: U256) -> sqlx::Result<PgQueryResult> {
+        sqlx::query!(
+            "DELETE FROM crsgen_responses WHERE crs_id = $1",
+            crs_id.as_le_slice()
+        )
+        .execute(&self.db_pool)
+        .await
+    }
+
     /// Sets the `under_process` field of the `PublicDecryptionResponse` as `FALSE` in the database.
     pub async fn mark_public_decryption_as_pending(&self, id: U256) {
         let query = sqlx::query!(
@@ -94,6 +127,33 @@ impl DbKmsResponseRemover {
     pub async fn mark_user_decryption_as_pending(&self, id: U256) {
         let query = sqlx::query!(
             "UPDATE user_decryption_responses SET under_process = FALSE WHERE decryption_id = $1",
+            id.as_le_slice()
+        );
+        self.execute_free_response_query(query).await;
+    }
+
+    /// Sets the `under_process` field of the `PrepKeygenResponse` as `FALSE` in the database.
+    pub async fn mark_prep_keygen_as_pending(&self, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE prep_keygen_responses SET under_process = FALSE WHERE prep_keygen_id = $1",
+            id.as_le_slice()
+        );
+        self.execute_free_response_query(query).await;
+    }
+
+    /// Sets the `under_process` field of the `KeygenResponse` as `FALSE` in the database.
+    pub async fn mark_keygen_as_pending(&self, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE keygen_responses SET under_process = FALSE WHERE key_id = $1",
+            id.as_le_slice()
+        );
+        self.execute_free_response_query(query).await;
+    }
+
+    /// Sets the `under_process` field of the `CrsgenResponse` as `FALSE` in the database.
+    pub async fn mark_crsgen_as_pending(&self, id: U256) {
+        let query = sqlx::query!(
+            "UPDATE crsgen_responses SET under_process = FALSE WHERE crs_id = $1",
             id.as_le_slice()
         );
         self.execute_free_response_query(query).await;
