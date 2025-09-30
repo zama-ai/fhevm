@@ -1136,6 +1136,7 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
      * @notice Prefer using the higher-level \`checkSignatures\` function whenever possible, in combination with \`requestDecryption\`
      * @notice This low-level function is useful in combination with the less practical \`requestDecryptionWithoutSavingHandles\`
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
+     * @notice Warning: this function never reverts, its boolean return value must be checked.
      * @dev The callback function has the following signature:
      * - requestID (static uint256)
      * - cleartexts (dynamic bytes)

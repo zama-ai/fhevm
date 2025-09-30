@@ -125,7 +125,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     if (!event) {
       throw new Error('Event is null');
     }
-    const counter =  event.args[0];
+    const counter = event.args[0];
     const requestID = event.args[1];
     const handles = event.args[2];
     const contractCaller = event.args[3];
