@@ -1,4 +1,6 @@
+# Global Prettier configuration for FHEVM project
 bracketSpacing: true
+endOfLine: "lf"
 plugins:
   - "@trivago/prettier-plugin-sort-imports"
   - "prettier-plugin-solidity"
@@ -7,20 +9,56 @@ proseWrap: "always"
 singleQuote: false
 tabWidth: 2
 trailingComma: "all"
+useTabs: false
 
 overrides:
+  # Solidity files
   - files: "*.sol"
     options:
       compiler: "0.8.24"
       parser: "solidity-parse"
       tabWidth: 4
-  - files: "*.md"
+      printWidth: 120
+      singleQuote: false
+      bracketSpacing: true
+
+  # TypeScript/JavaScript files
+  - files: ["*.ts", "*.tsx", "*.js", "*.jsx"]
     options:
-      proseWrap: preserve
-  - files: "*.ts"
-    options:
+      parser: "typescript"
       importOrder: ["<THIRD_PARTY_MODULES>", "^[./]"]
       importOrderParserPlugins: ["typescript"]
       importOrderSeparation: true
       importOrderSortSpecifiers: true
-      parser: "typescript"
+      singleQuote: false
+      tabWidth: 2
+      printWidth: 120
+
+  # Markdown files
+  - files: "*.md"
+    options:
+      proseWrap: "preserve"
+      printWidth: 80
+      tabWidth: 2
+
+  # JSON files
+  - files: "*.json"
+    options:
+      parser: "json"
+      tabWidth: 2
+      printWidth: 120
+
+  # YAML files
+  - files: ["*.yml", "*.yaml"]
+    options:
+      parser: "yaml"
+      tabWidth: 2
+      printWidth: 120
+      singleQuote: true
+
+  # Docker files
+  - files: "Dockerfile*"
+    options:
+      parser: "sh"
+      tabWidth: 2
+      printWidth: 120
