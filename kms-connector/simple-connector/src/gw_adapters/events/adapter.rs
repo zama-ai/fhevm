@@ -1,7 +1,7 @@
 use alloy::rpc::types::eth::Log as EthLog;
 use alloy::{primitives::Address, providers::Provider};
 use anyhow::{Result, anyhow};
-use fhevm_gateway_rust_bindings::{decryption::Decryption, kmsmanagement::KmsManagement};
+use fhevm_gateway_rust_bindings::{decryption::Decryption, KMSGeneration::KMSGeneration};
 use std::{
     fmt::Debug,
     sync::{
@@ -29,25 +29,25 @@ pub enum KmsCoreEvent {
     /// User decryption response
     UserDecryptionResponse(Decryption::UserDecryptionResponse),
     /// Preprocess keygen request
-    PreprocessKeygenRequest(KmsManagement::PreprocessKeygenRequest),
+    PreprocessKeygenRequest(KMSGeneration::PreprocessKeygenRequest),
     /// Preprocess keygen response
-    PreprocessKeygenResponse(KmsManagement::PreprocessKeygenResponse),
+    PreprocessKeygenResponse(KMSGeneration::PreprocessKeygenResponse),
     /// Preprocess kskgen request
-    PreprocessKskgenRequest(KmsManagement::PreprocessKskgenRequest),
+    PreprocessKskgenRequest(KMSGeneration::PreprocessKskgenRequest),
     /// Preprocess kskgen response
-    PreprocessKskgenResponse(KmsManagement::PreprocessKskgenResponse),
+    PreprocessKskgenResponse(KMSGeneration::PreprocessKskgenResponse),
     /// Keygen request
-    KeygenRequest(KmsManagement::KeygenRequest),
+    KeygenRequest(KMSGeneration::KeygenRequest),
     /// Keygen response
-    KeygenResponse(KmsManagement::KeygenResponse),
+    KeygenResponse(KMSGeneration::KeygenResponse),
     /// CRS generation request
-    CrsgenRequest(KmsManagement::CrsgenRequest),
+    CrsgenRequest(KMSGeneration::CrsgenRequest),
     /// CRS generation response
-    CrsgenResponse(KmsManagement::CrsgenResponse),
+    CrsgenResponse(KMSGeneration::CrsgenResponse),
     /// KSK generation request
-    KskgenRequest(KmsManagement::KskgenRequest),
+    KskgenRequest(KMSGeneration::KskgenRequest),
     /// KSK generation response
-    KskgenResponse(KmsManagement::KskgenResponse),
+    KskgenResponse(KMSGeneration::KskgenResponse),
 }
 
 /// Event with block timestamp for coordinated sending
@@ -291,9 +291,9 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
         event_tx: mpsc::Sender<KmsCoreEvent>,
         running: Arc<AtomicBool>,
     ) -> Result<()> {
-        info!("Starting KmsManagement event subscriptions...");
+        info!("Starting KMSGeneration event subscriptions...");
 
-        let contract = KmsManagement::new(address, provider);
+        let contract = KMSGeneration::new(address, provider);
         let preprocess_keygen_request_filter =
             contract.PreprocessKeygenRequest_filter().watch().await?;
         info!("✓ Subscribed to PreprocessKeygenRequest events");
@@ -318,11 +318,11 @@ impl<P: Provider + Clone + 'static> EventsAdapter<P> {
         let mut crsgen_request_stream = crsgen_request_filter.into_stream();
         let mut kskgen_request_stream = kskgen_request_filter.into_stream();
 
-        info!("Successfully subscribed to all KmsManagement events");
+        info!("Successfully subscribed to all KMSGeneration events");
 
         loop {
             if !running.load(Ordering::SeqCst) {
-                info!("KmsManagement event subscription stopping due to shutdown signal");
+                info!("KMSGeneration event subscription stopping due to shutdown signal");
                 break;
             }
 

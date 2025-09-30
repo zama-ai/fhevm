@@ -79,6 +79,9 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   const publicDecryptionThreshold = getRequiredEnvVar("PUBLIC_DECRYPTION_THRESHOLD");
   const userDecryptionThreshold = getRequiredEnvVar("USER_DECRYPTION_THRESHOLD");
 
+  // Parse the KMS public material generation threshold
+  const kmsGenThreshold = getRequiredEnvVar("KMS_GENERATION_THRESHOLD");
+
   // Parse the KMS nodes
   const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
   const kmsNodes = [];
@@ -87,6 +90,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
       txSenderAddress: getRequiredEnvVar(`KMS_TX_SENDER_ADDRESS_${idx}`),
       signerAddress: getRequiredEnvVar(`KMS_SIGNER_ADDRESS_${idx}`),
       ipAddress: getRequiredEnvVar(`KMS_NODE_IP_ADDRESS_${idx}`),
+      storageUrl: getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`),
     });
   }
 
@@ -126,6 +130,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     mpcThreshold,
     publicDecryptionThreshold,
     userDecryptionThreshold,
+    kmsGenThreshold,
     kmsNodes,
     coprocessors,
     custodians,
@@ -137,15 +142,9 @@ task("task:deployInputVerification").setAction(async function (_, hre) {
   await deployContractImplementation("InputVerification", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
-// Deploy the KmsManagement contract
-task("task:deployKmsManagement").setAction(async function (_, hre) {
-  const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
-  const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
-
-  console.log("FHE params name:", fheParamsName);
-  console.log("FHE params digest:", fheParamsDigest);
-
-  await deployContractImplementation("KmsManagement", hre, REGULAR_EMPTY_PROXY_NAME, [fheParamsName, fheParamsDigest]);
+// Deploy the KMSGeneration contract
+task("task:deployKMSGeneration").setAction(async function (_, hre) {
+  await deployContractImplementation("KMSGeneration", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
 // Deploy the CiphertextCommits contract
@@ -184,8 +183,8 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   console.log("Deploy InputVerification contract:");
   await hre.run("task:deployInputVerification");
 
-  console.log("Deploy KmsManagement contract:");
-  await hre.run("task:deployKmsManagement");
+  console.log("Deploy KMSGeneration contract:");
+  await hre.run("task:deployKMSGeneration");
 
   console.log("Deploy CiphertextCommits contract:");
   await hre.run("task:deployCiphertextCommits");

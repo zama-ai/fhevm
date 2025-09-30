@@ -18,7 +18,7 @@ pub struct RawConfig {
     pub gateway_url: String,
     pub chain_id: u64,
     pub decryption_contract: RawContractConfig,
-    pub kms_management_contract: RawContractConfig,
+    pub kms_generation_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
     #[serde(default = "default_task_limit")]
@@ -61,9 +61,9 @@ impl Default for RawConfig {
                 domain_name: Some("Decryption".to_string()),
                 domain_version: Some("1".to_string()),
             },
-            kms_management_contract: RawContractConfig {
+            kms_generation_contract: RawContractConfig {
                 address: "0x0000000000000000000000000000000000000000".to_string(),
-                domain_name: Some("KmsManagement".to_string()),
+                domain_name: Some("KMSGeneration".to_string()),
                 domain_version: Some("1".to_string()),
             },
             service_name: default_service_name(),

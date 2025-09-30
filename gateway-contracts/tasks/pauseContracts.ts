@@ -122,7 +122,7 @@ task("task:unpauseDecryption")
 // - CiphertextCommits
 // - MultichainACL
 // - GatewayConfig
-// In addition, the `KmsManagement` contract is not used yet, so we don't need to pause it for now.
+// In addition, the `KMSGeneration` contract is not used yet, so we don't need to pause it for now.
 // See https://github.com/zama-ai/fhevm-internal/issues/180
 task("task:pauseAllGatewayContracts")
   .addOptionalParam(

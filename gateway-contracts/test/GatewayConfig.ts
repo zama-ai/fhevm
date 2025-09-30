@@ -10,7 +10,7 @@ import {
   EmptyUUPSProxyGatewayConfig,
   GatewayConfig,
   InputVerification,
-  KmsManagement,
+  KMSGeneration,
   MultichainACL,
   PauserSet,
 } from "../typechain-types";
@@ -32,6 +32,7 @@ describe("GatewayConfig", function () {
   const mpcThreshold = 1;
   const publicDecryptionThreshold = 3;
   const userDecryptionThreshold = 3;
+  const kmsGenThreshold = 3;
 
   // Define fake values
   const fakeOwner = createRandomWallet();
@@ -59,6 +60,7 @@ describe("GatewayConfig", function () {
       kmsTxSenders,
       kmsSigners,
       kmsNodeIps,
+      kmsNodeStorageUrls,
       nKmsNodes,
       coprocessorTxSenders,
       coprocessorSigners,
@@ -77,6 +79,7 @@ describe("GatewayConfig", function () {
         txSenderAddress: kmsTxSenders[i].address,
         signerAddress: kmsSigners[i].address,
         ipAddress: kmsNodeIps[i],
+        storageUrl: kmsNodeStorageUrls[i],
       });
     }
 
@@ -147,6 +150,7 @@ describe("GatewayConfig", function () {
             mpcThreshold,
             publicDecryptionThreshold,
             userDecryptionThreshold,
+            kmsGenThreshold,
             kmsNodes,
             coprocessors,
             custodians,
@@ -185,6 +189,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               userDecryptionThreshold,
+              kmsGenThreshold,
               emptyKmsNodes,
               coprocessors,
               custodians,
@@ -206,6 +211,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               userDecryptionThreshold,
+              kmsGenThreshold,
               kmsNodes,
               emptyCoprocessors,
               custodians,
@@ -227,6 +233,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               userDecryptionThreshold,
+              kmsGenThreshold,
               kmsNodes,
               coprocessors,
               emptyCustodians,
@@ -249,6 +256,7 @@ describe("GatewayConfig", function () {
               highMpcThreshold,
               publicDecryptionThreshold,
               userDecryptionThreshold,
+              kmsGenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -273,6 +281,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               nullPublicDecryptionThreshold,
               userDecryptionThreshold,
+              kmsGenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -295,6 +304,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               highPublicDecryptionThreshold,
               userDecryptionThreshold,
+              kmsGenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -319,6 +329,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               nullUserDecryptionThreshold,
+              kmsGenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -341,6 +352,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               highUserDecryptionThreshold,
+              kmsGenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -350,6 +362,54 @@ describe("GatewayConfig", function () {
       )
         .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighUserDecryptionThreshold")
         .withArgs(highUserDecryptionThreshold, nKmsNodes);
+    });
+
+    it("Should revert because the KMS generation threshold is null", async function () {
+      // The KMS generation threshold must be greater than 0
+      const nullKmsGenThreshold = 0;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              nullKmsGenThreshold,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
+          },
+        }),
+      ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullKmsGenThreshold");
+    });
+
+    it("Should revert because the KMS generation threshold is too high", async function () {
+      // The KMS generation threshold must be less or equal to the number of KMS nodes
+      const highKmsGenThreshold = nKmsNodes + 1;
+
+      await expect(
+        hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
+          call: {
+            fn: "initializeFromEmptyProxy",
+            args: [
+              protocolMetadata,
+              mpcThreshold,
+              publicDecryptionThreshold,
+              userDecryptionThreshold,
+              highKmsGenThreshold,
+              kmsNodes,
+              coprocessors,
+              custodians,
+            ],
+          },
+        }),
+      )
+        .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighKmsGenThreshold")
+        .withArgs(highKmsGenThreshold, nKmsNodes);
     });
 
     it("Should revert because initialization is not from an empty proxy", async function () {
@@ -362,6 +422,7 @@ describe("GatewayConfig", function () {
               mpcThreshold,
               publicDecryptionThreshold,
               userDecryptionThreshold,
+              kmsGenThreshold,
               kmsNodes,
               coprocessors,
               custodians,
@@ -672,6 +733,44 @@ describe("GatewayConfig", function () {
       });
     });
 
+    describe("Update KMS generation threshold", function () {
+      it("Should revert because the sender is not the owner", async function () {
+        await expect(gatewayConfig.connect(fakeOwner).updateKmsGenThreshold(1))
+          .to.be.revertedWithCustomError(gatewayConfig, "OwnableUnauthorizedAccount")
+          .withArgs(fakeOwner.address);
+      });
+
+      it("Should update the KMS generation threshold", async function () {
+        // The KMS generation threshold must be greater than 0
+        const newKmsGenThreshold = 1;
+
+        const tx = await gatewayConfig.connect(owner).updateKmsGenThreshold(newKmsGenThreshold);
+
+        await expect(tx).to.emit(gatewayConfig, "UpdateKmsGenThreshold").withArgs(newKmsGenThreshold);
+
+        // Check that the KMS generation threshold has been updated
+        expect(await gatewayConfig.getKmsGenThreshold()).to.equal(newKmsGenThreshold);
+      });
+
+      it("Should revert because the KMS generation threshold is null", async function () {
+        // The KMS generation threshold must be greater than 0
+        const nullKmsGenThreshold = 0;
+
+        await expect(
+          gatewayConfig.connect(owner).updateKmsGenThreshold(nullKmsGenThreshold),
+        ).to.be.revertedWithCustomError(gatewayConfig, "InvalidNullKmsGenThreshold");
+      });
+
+      it("Should revert because the KMS generation threshold is too high", async function () {
+        // The KMS generation threshold must be less or equal to the number of KMS nodes
+        const highKmsGenThreshold = nKmsNodes + 1;
+
+        await expect(gatewayConfig.connect(owner).updateKmsGenThreshold(highKmsGenThreshold))
+          .to.be.revertedWithCustomError(gatewayConfig, "InvalidHighKmsGenThreshold")
+          .withArgs(highKmsGenThreshold, nKmsNodes);
+      });
+    });
+
     describe("Add host chain", function () {
       // Define a new chain ID that does not correspond to an already registered host chain
       // (since the GatewayConfig contract has already been deployed and host chains have been
@@ -770,7 +869,7 @@ describe("GatewayConfig", function () {
       let ciphertextCommits: CiphertextCommits;
       let decryption: Decryption;
       let inputVerification: InputVerification;
-      let kmsManagement: KmsManagement;
+      let kmsGeneration: KMSGeneration;
       let MultichainACL: MultichainACL;
 
       before(async function () {
@@ -778,7 +877,7 @@ describe("GatewayConfig", function () {
         ciphertextCommits = fixtureData.ciphertextCommits;
         decryption = fixtureData.decryption;
         inputVerification = fixtureData.inputVerification;
-        kmsManagement = fixtureData.kmsManagement;
+        kmsGeneration = fixtureData.kmsGeneration;
         MultichainACL = fixtureData.MultichainACL;
       });
 

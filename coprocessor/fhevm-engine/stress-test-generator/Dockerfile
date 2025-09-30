@@ -5,12 +5,15 @@ USER root
 
 WORKDIR /app
 
+COPY package.json package-lock.json ./
 COPY host-contracts ./host-contracts
+
+# Install dependencies
+RUN npm ci --include=dev
 
 # Compiled host-contracts for listeners
 WORKDIR /app/host-contracts
-RUN cp .env.example .env
-RUN npm ci --include=dev \
+RUN cp .env.example .env \
     && npm rebuild @nomicfoundation/slang --unsafe-perm \
     && HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies \
     && npx hardhat compile

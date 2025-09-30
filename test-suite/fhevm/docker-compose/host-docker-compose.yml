@@ -50,7 +50,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.host.local
+      - ../env/staging/.env.host-sc.local
     command:
       - npx hardhat task:addPausers
     depends_on:

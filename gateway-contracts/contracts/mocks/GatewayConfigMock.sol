@@ -17,6 +17,8 @@ contract GatewayConfigMock {
 
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
+    event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
+
     event AddHostChain(HostChain hostChain);
 
     event PauseAllGatewayContracts();
@@ -28,6 +30,7 @@ contract GatewayConfigMock {
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
+        uint256 initialKmsGenThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
@@ -51,6 +54,10 @@ contract GatewayConfigMock {
 
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external {
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
+    }
+
+    function updateKmsGenThreshold(uint256 newKmsGenThreshold) external {
+        emit UpdateKmsGenThreshold(newKmsGenThreshold);
     }
 
     function addHostChain(HostChain calldata hostChain) external {
