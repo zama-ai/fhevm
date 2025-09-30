@@ -1,18 +1,24 @@
-use crate::types::{GatewayEvent, KmsGrpcResponse, fhe::abi_encode_plaintexts};
-use alloy::primitives::U256;
+use crate::types::{
+    GatewayEvent, KmsGrpcResponse, db::KeyDigestDbItem, fhe::abi_encode_plaintexts,
+};
+use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
 use kms_grpc::kms::v1::{
+    CrsGenResult, KeyGenPreprocResult, KeyGenResult,
     PublicDecryptionResponse as GrpcPublicDecryptionResponse,
     UserDecryptionResponse as GrpcUserDecryptionResponse,
 };
 use sqlx::{Pool, Postgres, Row, postgres::PgRow};
 use std::fmt::Display;
-use tracing::{debug, info};
+use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum KmsResponse {
     PublicDecryption(PublicDecryptionResponse),
     UserDecryption(UserDecryptionResponse),
+    PrepKeygen(PrepKeygenResponse),
+    Keygen(KeygenResponse),
+    Crsgen(CrsgenResponse),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -31,14 +37,27 @@ pub struct UserDecryptionResponse {
     pub extra_data: Vec<u8>,
 }
 
-impl KmsResponse {
-    pub fn id(&self) -> U256 {
-        match self {
-            KmsResponse::PublicDecryption(r) => r.decryption_id,
-            KmsResponse::UserDecryption(r) => r.decryption_id,
-        }
-    }
+#[derive(Clone, Debug, PartialEq)]
+pub struct PrepKeygenResponse {
+    pub prep_keygen_id: U256,
+    pub signature: Vec<u8>,
+}
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct KeygenResponse {
+    pub key_id: U256,
+    pub key_digests: Vec<KeyDigestDbItem>,
+    pub signature: Vec<u8>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CrsgenResponse {
+    pub crs_id: U256,
+    pub crs_digest: Vec<u8>,
+    pub signature: Vec<u8>,
+}
+
+impl KmsResponse {
     /// Processes a KMS GRPC response into a `KmsResponse` enum.
     pub fn process(response: KmsGrpcResponse) -> anyhow::Result<Self> {
         match response {
@@ -52,6 +71,15 @@ impl KmsResponse {
                 grpc_response,
             } => UserDecryptionResponse::process(decryption_id, grpc_response)
                 .map(Self::UserDecryption),
+            KmsGrpcResponse::PrepKeygen(grpc_response) => {
+                PrepKeygenResponse::process(grpc_response).map(Self::PrepKeygen)
+            }
+            KmsGrpcResponse::Keygen(grpc_response) => {
+                KeygenResponse::process(grpc_response).map(Self::Keygen)
+            }
+            KmsGrpcResponse::Crsgen(grpc_response) => {
+                CrsgenResponse::process(grpc_response).map(Self::Crsgen)
+            }
         }
     }
 
@@ -73,6 +101,29 @@ impl KmsResponse {
         }))
     }
 
+    pub fn from_prep_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(KmsResponse::PrepKeygen(PrepKeygenResponse {
+            prep_keygen_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
+            signature: row.try_get("signature")?,
+        }))
+    }
+
+    pub fn from_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(KmsResponse::Keygen(KeygenResponse {
+            key_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
+            key_digests: row.try_get("key_digests")?,
+            signature: row.try_get("signature")?,
+        }))
+    }
+
+    pub fn from_crsgen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
+        Ok(KmsResponse::Crsgen(CrsgenResponse {
+            crs_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
+            crs_digest: row.try_get("crs_digest")?,
+            signature: row.try_get("signature")?,
+        }))
+    }
+
     /// Sets the `under_process` field of the event associated to this response as `FALSE` in the
     /// database.
     pub async fn mark_associated_event_as_pending(&self, db: &Pool<Postgres>) {
@@ -83,6 +134,11 @@ impl KmsResponse {
             KmsResponse::UserDecryption(r) => {
                 GatewayEvent::mark_user_decryption_as_pending(db, r.decryption_id).await
             }
+            KmsResponse::PrepKeygen(r) => {
+                GatewayEvent::mark_prep_keygen_as_pending(db, r.prep_keygen_id).await
+            }
+            KmsResponse::Keygen(r) => GatewayEvent::mark_keygen_as_pending(db, r.key_id).await,
+            KmsResponse::Crsgen(r) => GatewayEvent::mark_crsgen_as_pending(db, r.crs_id).await,
         }
     }
 }
@@ -106,11 +162,6 @@ impl PublicDecryptionResponse {
         // Encode all plaintexts using ABI encoding
         let result = abi_encode_plaintexts(&payload.plaintexts);
 
-        info!(
-            "Storing public decryption response for request {} with {} plaintexts",
-            decryption_id,
-            payload.plaintexts.len()
-        );
         Ok(PublicDecryptionResponse {
             decryption_id,
             decrypted_result: result.into(),
@@ -140,16 +191,83 @@ impl UserDecryptionResponse {
             );
         }
 
-        info!(
-            "Storing user decryption response for request {} with {} ciphertexts",
-            decryption_id,
-            payload.signcrypted_ciphertexts.len()
-        );
         Ok(UserDecryptionResponse {
             decryption_id,
             user_decrypted_shares: serialized_response_payload,
             signature: grpc_response.external_signature,
             extra_data: grpc_response.extra_data,
+        })
+    }
+}
+
+impl PrepKeygenResponse {
+    fn process(grpc_response: KeyGenPreprocResult) -> anyhow::Result<Self> {
+        let prep_keygen_id = U256::try_from_be_slice(&hex::decode(
+            &grpc_response
+                .preprocessing_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("No preprocessing id in `KeyGenPreprocResult`"))?
+                .request_id,
+        )?)
+        .ok_or_else(|| {
+            anyhow!(
+                "Failed to parse preprocessing_id: {:?}",
+                grpc_response.preprocessing_id
+            )
+        })?;
+
+        Ok(PrepKeygenResponse {
+            prep_keygen_id,
+            signature: grpc_response.external_signature,
+        })
+    }
+}
+
+impl KeygenResponse {
+    fn process(grpc_response: KeyGenResult) -> anyhow::Result<Self> {
+        let key_id = U256::try_from_be_slice(&hex::decode(
+            &grpc_response
+                .request_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("No request_id in `KeyGenResult`"))?
+                .request_id,
+        )?)
+        .ok_or_else(|| anyhow!("Failed to parse request_id: {:?}", grpc_response.request_id))?;
+
+        let key_digests = grpc_response
+            .key_digests
+            .into_iter()
+            .map(|kd| {
+                Ok(KeyDigestDbItem {
+                    key_type: kd.key_type.parse()?,
+                    digest: kd.digest,
+                })
+            })
+            .collect::<anyhow::Result<Vec<KeyDigestDbItem>>>()?;
+
+        Ok(KeygenResponse {
+            key_id,
+            key_digests,
+            signature: grpc_response.external_signature,
+        })
+    }
+}
+
+impl CrsgenResponse {
+    fn process(grpc_response: CrsGenResult) -> anyhow::Result<Self> {
+        let crs_id = U256::try_from_be_slice(&hex::decode(
+            &grpc_response
+                .request_id
+                .as_ref()
+                .ok_or_else(|| anyhow!("No request_id in `CrsGenResult`"))?
+                .request_id,
+        )?)
+        .ok_or_else(|| anyhow!("Failed to parse request_id: {:?}", grpc_response.request_id))?;
+
+        Ok(CrsgenResponse {
+            crs_id,
+            crs_digest: grpc_response.crs_digest,
+            signature: grpc_response.external_signature,
         })
     }
 }
@@ -162,6 +280,15 @@ impl Display for KmsResponse {
             }
             KmsResponse::UserDecryption(r) => {
                 write!(f, "UserDecryptionResponse #{}", r.decryption_id)
+            }
+            KmsResponse::PrepKeygen(r) => {
+                write!(f, "PrepKeygenResponse #{}", r.prep_keygen_id)
+            }
+            KmsResponse::Keygen(r) => {
+                write!(f, "KeygenResponse #{}", r.key_id)
+            }
+            KmsResponse::Crsgen(r) => {
+                write!(f, "CrsgenResponse #{}", r.crs_id)
             }
         }
     }

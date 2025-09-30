@@ -25,7 +25,7 @@ pub struct Config {
     pub chain_id: u64,
     /// The `Decryption` contract configuration.
     pub decryption_contract: ContractConfig,
-    /// The `KmsManagement` contract configuration.
+    /// The `KMSManagement` contract configuration.
     pub kms_management_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
@@ -82,7 +82,7 @@ impl Config {
         let decryption_contract =
             ContractConfig::parse("Decryption", raw_config.decryption_contract)?;
         let kms_management_contract =
-            ContractConfig::parse("KmsManagement", raw_config.kms_management_contract)?;
+            ContractConfig::parse("KMSManagement", raw_config.kms_management_contract)?;
 
         // Validate critical configuration parts
         if raw_config.gateway_url.is_empty() {

@@ -12,7 +12,7 @@ use alloy::{
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
-    kms_management::KmsManagement::{self, KmsManagementInstance},
+    kms_management::KMSManagement::{self, KMSManagementInstance},
 };
 use std::{sync::LazyLock, time::Duration};
 use testcontainers::{
@@ -46,7 +46,7 @@ pub struct GatewayInstance {
     pub provider: WalletGatewayProvider,
     pub decryption_contract: DecryptionInstance<WalletGatewayProvider>,
     pub gateway_config_contract: GatewayConfigInstance<WalletGatewayProvider>,
-    pub kms_management_contract: KmsManagementInstance<WalletGatewayProvider>,
+    pub kms_management_contract: KMSManagementInstance<WalletGatewayProvider>,
     pub anvil: ContainerAsync<GenericImage>,
     pub anvil_host_port: u16,
     pub block_time: u64,
@@ -63,7 +63,7 @@ impl GatewayInstance {
         let gateway_config_contract =
             GatewayConfig::new(GATEWAY_CONFIG_MOCK_ADDRESS, provider.clone());
         let kms_management_contract =
-            KmsManagement::new(KMS_MANAGEMENT_MOCK_ADDRESS, provider.clone());
+            KMSManagement::new(KMS_MANAGEMENT_MOCK_ADDRESS, provider.clone());
 
         GatewayInstance {
             provider,
