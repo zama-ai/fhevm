@@ -30,7 +30,7 @@ start-local-node: clean
 deploy-contracts-local:
 	cp $(ENV_PATH) .env
 	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:deployAllGatewayContracts
-	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:addHostChainsToGatewayConfig --use-internal-gateway-config-address true
+	HARDHAT_NETWORK=$(LOCAL_NETWORK_NAME) npx hardhat task:addHostChainsToGatewayConfig --use-internal-proxy-address true
 
 test-local:
 	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat test $(if $(GREP),--grep '$(GREP)',) --network localGateway --skip-setup true
