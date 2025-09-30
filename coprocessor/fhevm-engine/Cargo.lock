@@ -3844,6 +3844,7 @@ version = "0.7.0"
 dependencies = [
  "alloy",
  "anyhow",
+ "async-trait",
  "aws-config",
  "aws-credential-types",
  "aws-sdk-s3",

@@ -61,6 +61,12 @@ struct Conf {
 
     #[arg(long)]
     host_chain_id: Option<u64>,
+
+    #[arg(long, default_value = "1s", value_parser = parse_duration)]
+    get_logs_poll_interval: Duration,
+
+    #[arg(long, default_value_t = 100)]
+    get_logs_block_batch_size: u64,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -137,6 +143,8 @@ async fn main() -> anyhow::Result<()> {
         error_sleep_max_secs: conf.error_sleep_max_secs,
         health_check_port: conf.health_check_port,
         health_check_timeout: conf.health_check_timeout,
+        get_logs_poll_interval: conf.get_logs_poll_interval,
+        get_logs_block_batch_size: conf.get_logs_block_batch_size,
     };
 
     let gw_listener = GatewayListener::new(
