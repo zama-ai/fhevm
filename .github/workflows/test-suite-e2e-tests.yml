@@ -186,7 +186,7 @@ jobs:
         if: always()
         run: |
           echo "::group::Relayer Logs"
-          ./fhevm-cli logs relayer
+          ./fhevm-cli logs fhevm-relayer
           echo "::endgroup::"
           echo "::group::SNS Worker Logs"
           ./fhevm-cli logs coprocessor-sns-worker | grep -v "Selected 0 rows to process"
