@@ -6,7 +6,7 @@ pub use fhevm_gateway_bindings::{
     ciphertext_commits::CiphertextCommits,
     decryption::{Decryption, IDecryption},
     input_verification::InputVerification,
-    multichain_acl::MultichainAcl,
+    multichain_acl::MultichainACL,
 };
 
 // New version of DecryptionOracle
