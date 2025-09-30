@@ -21,11 +21,11 @@ contract KMSManagementMock {
 
     event KeygenRequest(uint256 prepKeygenId, uint256 keyId);
 
-    event ActivateKey(uint256 keyId, string[] kmsNodeS3BucketUrls, KeyDigest[] keyDigests);
+    event ActivateKey(uint256 keyId, string[] kmsNodeStorageUrls, KeyDigest[] keyDigests);
 
     event CrsgenRequest(uint256 crsId, uint256 maxBitLength, ParamsType paramsType);
 
-    event ActivateCrs(uint256 crsId, string[] kmsNodeS3BucketUrls, bytes crsDigest);
+    event ActivateCrs(uint256 crsId, string[] kmsNodeStorageUrls, bytes crsDigest);
 
     uint256 prepKeygenCounter = 3 << 248;
     uint256 keyCounter = 4 << 248;
@@ -47,9 +47,9 @@ contract KMSManagementMock {
     }
 
     function keygenResponse(uint256 keyId, KeyDigest[] calldata keyDigests, bytes calldata signature) external {
-        string[] memory kmsNodeS3BucketUrls = new string[](1);
+        string[] memory kmsNodeStorageUrls = new string[](1);
 
-        emit ActivateKey(keyId, kmsNodeS3BucketUrls, keyDigests);
+        emit ActivateKey(keyId, kmsNodeStorageUrls, keyDigests);
     }
 
     function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external {
@@ -60,8 +60,8 @@ contract KMSManagementMock {
     }
 
     function crsgenResponse(uint256 crsId, bytes calldata crsDigest, bytes calldata signature) external {
-        string[] memory kmsNodeS3BucketUrls = new string[](1);
+        string[] memory kmsNodeStorageUrls = new string[](1);
 
-        emit ActivateCrs(crsId, kmsNodeS3BucketUrls, crsDigest);
+        emit ActivateCrs(crsId, kmsNodeStorageUrls, crsDigest);
     }
 }

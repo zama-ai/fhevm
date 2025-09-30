@@ -6,7 +6,7 @@ services:
       context: ../../..
       dockerfile: kms-connector/connector-db/Dockerfile
     env_file:
-      - ../env/staging/.env.connector.local
+      - ../env/staging/.env.kms-connector.local
 
   kms-connector-gw-listener:
     container_name: kms-connector-gw-listener
@@ -19,7 +19,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.connector.local
+      - ../env/staging/.env.kms-connector.local
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
@@ -35,7 +35,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.connector.local
+      - ../env/staging/.env.kms-connector.local
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully
@@ -51,7 +51,7 @@ services:
       cache_to:
         - type=gha,mode=max
     env_file:
-      - ../env/staging/.env.connector.local
+      - ../env/staging/.env.kms-connector.local
     depends_on:
       kms-connector-db-migration:
         condition: service_completed_successfully

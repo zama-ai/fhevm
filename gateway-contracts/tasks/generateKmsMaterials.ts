@@ -35,7 +35,7 @@ task("task:triggerKeygen")
     const proxyAddress = getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS");
     const kmsManagement = await hre.ethers.getContractAt("KMSManagement", proxyAddress, deployer);
 
-    // Call keygen function.
+    // Request the key generation.
     await kmsManagement.keygen(paramsType);
 
     console.log("Keygen triggering done!");
@@ -72,7 +72,7 @@ task("task:triggerCrsgen")
     const proxyAddress = getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS");
     const kmsManagement = await hre.ethers.getContractAt("KMSManagement", proxyAddress, deployer);
 
-    // Call crsgenRequest function.
+    // Request the CRS generation.
     await kmsManagement.crsgenRequest(maxBitLength, paramsType);
 
     console.log("Crsgen triggering done!");
