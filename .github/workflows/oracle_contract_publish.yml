@@ -31,7 +31,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install --include=optional --frozen-lockfile
+        run: pnpm install --include=optional
 
       - name: Compile contracts
         run: pnpm run compile
