@@ -353,4 +353,4 @@ ${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-de
 log_info "All services started successfully!"
 
 # Wait a bit to ensure the KMS materials are ready before running tests.
-sleep 30
+sleep 60
