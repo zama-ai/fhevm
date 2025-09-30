@@ -1,0 +1,22 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            WITH\n                cipher_all AS (\n                SELECT COALESCE(BOOL_AND(COALESCE(txn_is_sent, false)), false) AS v\n                FROM ciphertext_digest\n                WHERE transaction_id = $1\n            ),\n            allowed_handles_all AS (\n                SELECT COALESCE(BOOL_AND(COALESCE(txn_is_sent, false)), false) AS v\n                FROM allowed_handles\n                WHERE transaction_id = $1\n            ),\n            pbs_all AS (\n                SELECT COALESCE(BOOL_AND(COALESCE(is_completed, false)), false) AS v\n                FROM pbs_computations\n                WHERE transaction_id = $1\n            )\n            SELECT (cipher_all.v AND allowed_handles_all.v AND pbs_all.v) AS all_ok\n            FROM cipher_all, allowed_handles_all, pbs_all",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "all_ok",
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": [
+      null
+    ]
+  },
+  "hash": "455bd359a58df1cef6d001eeb2e70381328eabdfbd9d5ba39401c634d5403b79"
+}

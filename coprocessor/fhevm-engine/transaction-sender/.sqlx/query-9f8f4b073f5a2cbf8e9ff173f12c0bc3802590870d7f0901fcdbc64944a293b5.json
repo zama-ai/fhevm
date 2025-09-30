@@ -1,0 +1,24 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT transaction_id FROM allowed_handles\n                 WHERE handle = $1\n                 AND account_address = $2\n                 AND tenant_id = $3",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "9f8f4b073f5a2cbf8e9ff173f12c0bc3802590870d7f0901fcdbc64944a293b5"
+}
