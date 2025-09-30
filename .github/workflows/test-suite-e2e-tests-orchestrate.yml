@@ -1,0 +1,164 @@
+name: test-suite-e2e-tests-orchestrate
+
+on:
+  workflow_dispatch:
+    inputs:
+      built_images:
+        description: 'JSON array of built images'
+        required: true
+        type: string
+      image_tag:
+        description: 'Image tag to use'
+        required: true
+        type: string
+      head_branch:
+        description: 'Head branch'
+        required: true
+        type: string
+  repository_dispatch:
+    types: [test-suite-e2e-tests-orchestrate]
+
+permissions: {}
+
+concurrency:
+  group: test-suite-e2e-tests-orchestrate-${{ github.event.inputs.head_branch || github.event.client_payload.head_branch }}
+  cancel-in-progress: true
+
+jobs:
+  wait-for-all-builds:
+    name: test-suite-e2e-tests-orchestrate/wait-for-all-builds
+    # Only proceed if it's from the right branch
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.head_branch == 'aw/ci/e2e-tests-orchestrator') ||
+      (github.event_name == 'repository_dispatch' && github.event.client_payload.head_branch == 'aw/ci/e2e-tests-orchestrator')
+    permissions:
+      actions: 'read'
+      contents: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      all-builds-complete: ${{ steps.check.outputs.all-builds-complete }}
+      image-tag: ${{ steps.check.outputs.image-tag }}
+      built-images: ${{ steps.check.outputs.built-images }}
+    steps:
+      - name: Extract results from inputs
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "🔍 Workflow dispatch event details:"
+            echo "Head branch: ${{ github.event.inputs.head_branch }}"
+            echo "Built images: ${{ github.event.inputs.built_images }}"
+            echo "Image tag: ${{ github.event.inputs.image_tag }}"
+            
+            # Extract values from workflow_dispatch inputs
+            echo "image-tag=${{ github.event.inputs.image_tag }}" >> $GITHUB_OUTPUT
+            echo "built-images=${{ github.event.inputs.built_images }}" >> $GITHUB_OUTPUT
+          else
+            echo "🔍 Repository dispatch event details:"
+            echo "Head branch: ${{ github.event.client_payload.head_branch }}"
+            echo "Built images: ${{ github.event.client_payload.built_images }}"
+            echo "Image tag: ${{ github.event.client_payload.image_tag }}"
+            
+            # Extract values from repository_dispatch payload
+            echo "image-tag=${{ github.event.client_payload.image_tag }}" >> $GITHUB_OUTPUT
+            echo "built-images=${{ github.event.client_payload.built_images }}" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "all-builds-complete=true" >> $GITHUB_OUTPUT
+
+  run-e2e-tests:
+    name: test-suite-e2e-tests-orchestrate/run-e2e-tests
+    needs: wait-for-all-builds
+    if: ${{ needs.wait-for-all-builds.outputs.all-builds-complete == 'true' }}
+    permissions:
+      actions: 'write'
+      contents: 'read'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call E2E Tests Workflow
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          IMAGE_TAG: ${{ needs.wait-for-all-builds.outputs.image-tag }}
+          BUILT_IMAGES: ${{ needs.wait-for-all-builds.outputs.built-images }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const imageTag = process.env.IMAGE_TAG;
+            const builtImagesStr = process.env.BUILT_IMAGES || '[]';
+            
+            console.log(`📊 Image tag: ${imageTag}`);
+            console.log(`📦 Built images string: ${builtImagesStr}`);
+            
+            let builtImages;
+            try {
+              builtImages = JSON.parse(builtImagesStr);
+            } catch (e) {
+              core.setFailed('Failed to parse BUILT_IMAGES: ' + e.message);
+              return;
+            }
+
+            if (!Array.isArray(builtImages)) {
+              core.setFailed('BUILT_IMAGES is not an array: ' + typeof builtImages);
+              return;
+            }
+            
+            console.log(`📋 Parsed built images:`, builtImages);
+
+            if (builtImages.length === 0) {
+              console.log('🔍 No built images detected.');
+              console.log('💡 This might be expected if no changes were detected in the build workflows.');
+              console.log('⏭️  Skipping E2E test dispatch.');
+              return;
+            }
+
+            // Map built images to E2E test inputs
+            const imageKeyMapping = {
+              'test_suite_version': 'test_suite_version',
+              'connector_version': 'connector_version',
+              'db_migration_version': 'db_migration_version',
+              'host_version': 'host_version',
+              'gateway_version': 'gateway_version',
+              'host_listener_version': 'host_listener_version',
+              'gateway_listener_version': 'gateway_listener_version',
+              'tx_sender_version': 'tx_sender_version',
+              'tfhe_worker_version': 'tfhe_worker_version',
+              'sns_worker_version': 'sns_worker_version',
+              'zkproof_worker_version': 'zkproof_worker_version'
+            };
+
+            const inputs = {};
+            for (const [builtImage, inputKey] of Object.entries(imageKeyMapping)) {
+              if (builtImages.includes(builtImage)) {
+                inputs[inputKey] = imageTag;
+                console.log(`✅ Mapping ${builtImage} → ${inputKey} = ${imageTag}`);
+              } else {
+                console.log(`⏭️  Skipping ${builtImage} (not built)`);
+              }
+            }
+
+            if (Object.keys(inputs).length === 0) {
+              console.log('⚠️  No matching image keys for E2E tests found.');
+              console.log('📋 Built images:', builtImages);
+              console.log('🔑 Expected keys:', Object.keys(imageKeyMapping));
+              console.log('⏭️  Skipping E2E test dispatch.');
+              return;
+            }
+
+            // Get branch from the appropriate event
+            const ref = '${{ github.event.inputs.head_branch }}' || '${{ github.event.client_payload.head_branch }}';
+            console.log(`🚀 Dispatching E2E tests on ref: ${ref}`);
+            console.log(`📝 Inputs:`, inputs);
+
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'test-suite-e2e-tests.yml',
+                ref: ref,
+                inputs: inputs
+              });
+
+              console.log('✅ E2E tests workflow dispatched successfully!');
+            } catch (error) {
+              console.log('❌ Failed to dispatch E2E tests:', error.message);
+              core.setFailed('Failed to dispatch E2E tests: ' + error.message);
+            }
