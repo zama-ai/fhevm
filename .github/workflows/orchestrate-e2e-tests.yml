@@ -18,7 +18,7 @@ jobs:
   wait-for-all-builds:
     name: orchestrate-e2e-tests/wait-for-all-builds
     # Only proceed when the triggering workflow (trigger-all-builds) succeeded
-    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     permissions:
       actions: 'read'
       contents: 'read'
@@ -35,53 +35,107 @@ jobs:
         run: |
           set -euo pipefail
           
-          # For workflow_run, get the results from trigger-all-builds workflow
+          echo "🔍 Analyzing trigger-all-builds workflow results..."
+          
+          # Get workflow run details
+          trigger_run_id="${{ github.event.workflow_run.id }}"
           commit_sha="${{ github.event.workflow_run.head_sha }}"
+          echo "Trigger run ID: ${trigger_run_id}"
+          echo "Commit SHA: ${commit_sha}"
           echo "image-tag=${commit_sha:0:7}" >> $GITHUB_OUTPUT
           
-          trigger_run_id="${{ github.event.workflow_run.id }}"
-          
+          # Get all jobs from the trigger-all-builds workflow
+          echo "📋 Fetching jobs from trigger-all-builds workflow..."
           jobs_data=$(gh api "repos/${{ github.repository }}/actions/runs/${trigger_run_id}/jobs")
-          collect_job=$(echo "$jobs_data" | jq -r '.jobs[] | select(.name == "trigger-all-builds/collect-results")')
           
-          if [[ -z "$collect_job" ]]; then
-            echo "No collect-results job found"
+          # Check trigger-builds job
+          trigger_job=$(echo "$jobs_data" | jq -r '.jobs[] | select(.name == "trigger-all-builds/trigger-builds")')
+          if [[ -z "$trigger_job" ]]; then
+            echo "❌ No trigger-builds job found"
             echo "all-builds-complete=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           
-            job_conclusion=$(echo "$collect_job" | jq -r '.conclusion')
-            if [[ "$job_conclusion" != "success" ]]; then
-              echo "collect-results job not successful (${job_conclusion})"
+          trigger_conclusion=$(echo "$trigger_job" | jq -r '.conclusion')
+          echo "🚀 Trigger-builds job conclusion: ${trigger_conclusion}"
+          
+          if [[ "$trigger_conclusion" != "success" ]]; then
+            echo "❌ Trigger-builds job failed: ${trigger_conclusion}"
+            echo "all-builds-complete=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Check collect-results job
+          collect_job=$(echo "$jobs_data" | jq -r '.jobs[] | select(.name == "trigger-all-builds/collect-results")')
+          if [[ -z "$collect_job" ]]; then
+            echo "❌ No collect-results job found"
+            echo "all-builds-complete=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          collect_conclusion=$(echo "$collect_job" | jq -r '.conclusion')
+          echo "📊 Collect-results job conclusion: ${collect_conclusion}"
+          
+          if [[ "$collect_conclusion" != "success" ]]; then
+            echo "❌ Collect-results job failed: ${collect_conclusion}"
+            echo "all-builds-complete=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Get logs from collect-results job to extract built images
+          collect_job_id=$(echo "$collect_job" | jq -r '.id')
+          echo "📄 Fetching logs from collect-results job (ID: ${collect_job_id})..."
+          
+          # Download and parse logs
+          gh api "repos/${{ github.repository }}/actions/jobs/${collect_job_id}/logs" > collect_logs.txt
+          
+          # Look for the built images output
+          if grep -q "built-images=" collect_logs.txt; then
+            # Extract the JSON from the GitHub output format
+            json_line=$(grep "built-images=" collect_logs.txt | tail -1)
+            json_array=$(echo "$json_line" | sed 's/.*built-images=//')
+            echo "📦 Found built images line: ${json_line}"
+          else
+            echo "⚠️ No built-images output found in logs"
+            echo "🔍 Searching for alternative patterns..."
+            
+            # Try to find "Final built images:" pattern as fallback
+            if grep -q "Final built images:" collect_logs.txt; then
+              json_array=$(grep "Final built images:" collect_logs.txt | tail -1 | sed 's/.*Final built images: //')
+              echo "📦 Found fallback pattern: Final built images"
+            else
+              echo "❌ Could not find built images in logs"
+              echo "📄 Last 20 lines of collect logs:"
+              tail -20 collect_logs.txt
               echo "all-builds-complete=false" >> $GITHUB_OUTPUT
               exit 1
             fi
-          
-          collect_job_id=$(echo "$collect_job" | jq -r '.id')
-          gh api "repos/${{ github.repository }}/actions/jobs/${collect_job_id}/logs" > collect_logs.txt
-          
-          if grep -q "Final built images:" collect_logs.txt; then
-            json_array=$(grep "Final built images:" collect_logs.txt | tail -1 | sed 's/.*Final built images: //')
-          else
-            echo "Could not find built images line in logs"
-            echo "all-builds-complete=false" >> $GITHUB_OUTPUT
-            exit 1
           fi
           
+          # Validate JSON
+          echo "🔍 Validating JSON: ${json_array}"
           if ! echo "$json_array" | jq empty >/dev/null 2>&1; then
-            echo "Invalid JSON for built images: $json_array"
+            echo "❌ Invalid JSON for built images: ${json_array}"
             echo "all-builds-complete=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           
-          echo "built-images=${json_array}" >> $GITHUB_OUTPUT
-          if [[ "$(echo "$json_array" | jq 'length')" -eq 0 ]]; then
-            echo "No images reported; marking incomplete."
-            echo "all-builds-complete=false" >> $GITHUB_OUTPUT
-            exit 0
+          # Check if we have any built images
+          image_count=$(echo "$json_array" | jq 'length')
+          echo "📊 Number of built images: ${image_count}"
+          
+          if [[ "$image_count" -eq 0 ]]; then
+            echo "⚠️ No images were built; this might be expected if no changes detected"
+            echo "built-images=[]" >> $GITHUB_OUTPUT
+            echo "all-builds-complete=true" >> $GITHUB_OUTPUT
+          else
+            echo "✅ Built images found: ${json_array}"
+            echo "built-images=${json_array}" >> $GITHUB_OUTPUT
+            echo "all-builds-complete=true" >> $GITHUB_OUTPUT
           fi
-          echo "Extracted built images: ${json_array}"
-          echo "all-builds-complete=true" >> $GITHUB_OUTPUT
+          
+          # Clean up
+          rm -f collect_logs.txt
 
   run-e2e-tests:
     name: orchestrate-e2e-tests/run-e2e-tests
@@ -101,44 +155,81 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const imageTag = process.env.IMAGE_TAG;
+            const builtImagesStr = process.env.BUILT_IMAGES || '[]';
+            
+            console.log(`📊 Image tag: ${imageTag}`);
+            console.log(`📦 Built images string: ${builtImagesStr}`);
+            
             let builtImages;
             try {
-              builtImages = JSON.parse(process.env.BUILT_IMAGES || '[]');
+              builtImages = JSON.parse(builtImagesStr);
             } catch (e) {
               core.setFailed('Failed to parse BUILT_IMAGES: ' + e.message);
               return;
             }
 
-            if (!Array.isArray(builtImages) || builtImages.length === 0) {
-              console.log('No built images detected, skipping E2E dispatch.');
+            if (!Array.isArray(builtImages)) {
+              core.setFailed('BUILT_IMAGES is not an array: ' + typeof builtImages);
+              return;
+            }
+            
+            console.log(`📋 Parsed built images:`, builtImages);
+
+            if (builtImages.length === 0) {
+              console.log('🔍 No built images detected.');
+              console.log('💡 This might be expected if no changes were detected in the build workflows.');
+              console.log('⏭️  Skipping E2E test dispatch.');
               return;
             }
 
-            const keys = [
-              'connector_version','db_migration_version','host_version','gateway_version',
-              'host_listener_version','gateway_listener_version','tx_sender_version',
-              'tfhe_worker_version','sns_worker_version','zkproof_worker_version'
-            ];
+            // Map built images to E2E test inputs
+            const imageKeyMapping = {
+              'test_suite_version': 'test_suite_version',
+              'connector_version': 'connector_version',
+              'db_migration_version': 'db_migration_version',
+              'host_version': 'host_version',
+              'gateway_version': 'gateway_version',
+              'host_listener_version': 'host_listener_version',
+              'gateway_listener_version': 'gateway_listener_version',
+              'tx_sender_version': 'tx_sender_version',
+              'tfhe_worker_version': 'tfhe_worker_version',
+              'sns_worker_version': 'sns_worker_version',
+              'zkproof_worker_version': 'zkproof_worker_version'
+            };
 
             const inputs = {};
-            for (const k of keys) {
-              if (builtImages.includes(k)) inputs[k] = imageTag;
+            for (const [builtImage, inputKey] of Object.entries(imageKeyMapping)) {
+              if (builtImages.includes(builtImage)) {
+                inputs[inputKey] = imageTag;
+                console.log(`✅ Mapping ${builtImage} → ${inputKey} = ${imageTag}`);
+              } else {
+                console.log(`⏭️  Skipping ${builtImage} (not built)`);
+              }
             }
 
             if (Object.keys(inputs).length === 0) {
-              console.log('No matching image keys for E2E tests, skipping dispatch.');
+              console.log('⚠️  No matching image keys for E2E tests found.');
+              console.log('📋 Built images:', builtImages);
+              console.log('🔑 Expected keys:', Object.keys(imageKeyMapping));
+              console.log('⏭️  Skipping E2E test dispatch.');
               return;
             }
 
             const ref = context.payload.workflow_run.head_branch;
-            console.log(`Dispatching E2E on ref ${ref} with inputs:`, inputs);
+            console.log(`🚀 Dispatching E2E tests on ref: ${ref}`);
+            console.log(`📝 Inputs:`, inputs);
 
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'test-suite-e2e-tests.yml',
-              ref,
-              inputs
-            });
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'test-suite-e2e-tests.yml',
+                ref: ref,
+                inputs: inputs
+              });
 
-            console.log('E2E tests workflow dispatched.')
+              console.log('✅ E2E tests workflow dispatched successfully!');
+            } catch (error) {
+              console.log('❌ Failed to dispatch E2E tests:', error.message);
+              core.setFailed('Failed to dispatch E2E tests: ' + error.message);
+            }
