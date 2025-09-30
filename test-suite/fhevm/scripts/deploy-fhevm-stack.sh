@@ -351,6 +351,3 @@ ${RUN_COMPOSE} "relayer" "Relayer Services" \
 ${RUN_COMPOSE} "test-suite" "Test Suite E2E Tests" "${PROJECT}-test-suite-e2e-debug:running"
 
 log_info "All services started successfully!"
-
-# Wait a bit to ensure the KMS materials are ready before running tests.
-sleep 60
