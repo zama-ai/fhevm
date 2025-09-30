@@ -62,6 +62,8 @@ contracts:
   decryption_oracle_address: "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
   decryption_address: "0xB8Ae44365c45A7C5256b14F607CaE23BC040c354"
   input_verification_address: "0xE61cff9C581c7c91AEF682c2C10e8632864339ab"
+  # Number of shares required for user decryption threshold consensus
+  user_decrypt_shares_threshold: 9
 
 log:
   # Choose format: compact, pretty, or json

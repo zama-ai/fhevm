@@ -15,7 +15,10 @@ use crate::{
         traits::{EventDispatcher, EventHandler},
         Orchestrator, TokioEventDispatcher,
     },
-    store::{UserDecryptRequestCacheStore, UserDecryptResponseCacheStore},
+    store::{
+        UserDecryptRequestCacheStore, UserDecryptResponseCacheStore, UserDecryptResponseStore,
+        UserDecryptionResponseShare,
+    },
     transaction::{
         fhevm::{parse_fhevm_error, retryable_error},
         helper::TransactionType,
@@ -41,6 +44,7 @@ use alloy::{
     providers::ProviderBuilder,
     rpc::types::{Log, TransactionReceipt},
 };
+use hex;
 
 use alloy::sol_types::SolEvent;
 use async_trait::async_trait;
@@ -73,6 +77,7 @@ pub struct GatewayHandler {
     dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
     user_decryption_responses_cache: Arc<UserDecryptResponseCacheStore>,
     user_decryption_requests_cache: Arc<UserDecryptRequestCacheStore>,
+    user_decrypt_response_store: Arc<UserDecryptResponseStore>,
     user_decryption_id_to_request_id: Arc<dashmap::DashMap<U256, Vec<Uuid>>>,
     tx_helper: Arc<TransactionHelper>,
     contracts: ContractConfig,
@@ -86,6 +91,7 @@ impl GatewayHandler {
         dispatcher: Arc<Orchestrator<TokioEventDispatcher<RelayerEvent>, RelayerEvent>>,
         user_decryption_responses_cache: Arc<UserDecryptResponseCacheStore>,
         user_decryption_requests_cache: Arc<UserDecryptRequestCacheStore>,
+        user_decrypt_response_store: Arc<UserDecryptResponseStore>,
         tx_service: Arc<TransactionService>,
         tx_config: TxConfig,
         contracts: ContractConfig,
@@ -102,6 +108,7 @@ impl GatewayHandler {
             )),
             user_decryption_responses_cache,
             user_decryption_requests_cache,
+            user_decrypt_response_store,
             user_decryption_id_to_request_id: Arc::new(dashmap::DashMap::new()),
             contracts,
             gateway_http_url,
@@ -251,109 +258,231 @@ impl GatewayHandler {
         }
     }
 
-    /// Extracts decryption ID from event logs.
+    /// Handles user decryption response events from the gateway.
     ///
-    /// Processes decryption response events.
+    /// Processes two types of events:
+    /// 1. Individual UserDecryptionResponse events (one per share)
+    /// 2. UserDecryptionResponseThresholdReached consensus events
     ///
-    /// This function:
-    /// 1. Extracts `decryption_public_id` from the event
-    /// 2. Retrieves original request ID using the `decryption_public_id`
-    /// 3. Creates and dispatches response event with mock data
+    /// This function assembles individual shares into the final response format
+    /// and maintains backward compatibility with existing cache and event flow.
     ///
     /// # Arguments
     /// * `event` - The [`RelayerEvent`] containing the response data
     ///
     /// # State Access
-    /// Reads from `decryption_id_to_request_id` mapping
+    /// - Reads/writes to `user_decrypt_response_store` for assembly
+    /// - Reads from `user_decryption_id_to_request_id` mapping
+    /// - Writes to `user_decryption_responses_cache` for final responses
     ///
     /// # Events
-    /// Dispatches [`RelayerEventData::DecryptionResponseRcvdFromGw`]
+    /// Dispatches [`RelayerEventData::UserDecrypt::RespRcvdFromGw`] when ready
     async fn handle_user_decrypt_response_event_log(&self, event: RelayerEvent) {
         info!("User Decryption response received: {:?}", event.request_id,);
 
         if let RelayerEventData::Generic(GenericEventData::EventLogFromGw { log }) = &event.data {
-            if let Some(topic) = log.topic0() {
-                if *topic == Decryption::UserDecryptionResponse::SIGNATURE_HASH {
-                    match Decryption::UserDecryptionResponse::decode_log_data(log.data()) {
-                        Ok(user_decrypt_response) => {
-                            let user_decryption_id = user_decrypt_response.decryptionId;
-                            info!(?user_decryption_id, "User decryption id from event");
-
-                            // Store response even if we didn't emit the request
-                            let req = user_decrypt_response.clone();
-                            if let Err(err) = self
-                                .user_decryption_responses_cache
-                                .persist_value(
-                                    user_decryption_id,
-                                    UserDecryptResponse {
-                                        gateway_request_id: user_decryption_id,
-                                        reencrypted_shares: req.userDecryptedShares,
-                                        signatures: req.signatures,
-                                        extra_data: req.extraData,
-                                    },
-                                )
-                                .await
-                            {
-                                error!(
-                                    "Error: {err} trying to store user-decrypt request for request: {}",
-                                    event.request_id
-                                );
-                            } else {
-                                debug!(
-                                    "Successfuly stored user-decrypt response for request: {}",
-                                    event.request_id
-                                );
-                            };
-
-                            // If we manage this request handle it
-                            if let Some(entry) = self
-                                .user_decryption_id_to_request_id
-                                .get(&user_decryption_id)
-                            {
-                                // For all requests that match this request-on-chain-id
-                                for original_request_id in entry.value() {
-                                    let req = user_decrypt_response.clone();
-                                    info!(
-                                        ?original_request_id,
-                                        ?user_decryption_id,
-                                        "Found original request ID for user decryption response"
-                                    );
-
-                                    let next_event_data = RelayerEventData::UserDecrypt(
-                                        UserDecryptEventData::RespRcvdFromGw {
-                                            decrypt_response: UserDecryptResponse {
-                                                gateway_request_id: user_decryption_id,
-                                                reencrypted_shares: req.userDecryptedShares,
-                                                signatures: req.signatures,
-                                                extra_data: req.extraData,
-                                            },
-                                        },
-                                    );
-
-                                    info!("Dispatching UserDecryptEventData::RespRcvdFromGw event");
-                                    // Now we can use original_request_id directly
-                                    let next_event = RelayerEvent::new(
-                                        *original_request_id,
-                                        event.api_version,
-                                        next_event_data,
-                                    );
-
-                                    let _ = self.dispatcher.dispatch_event(next_event).await;
-                                }
-                            } else {
-                                error!(
-                                    ?user_decryption_id,
-                                    "No matching request ID found for decryption ID"
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            error!(?e, "Failed to decode event data");
-                        }
-                    }
+            if let Some(topic0) = log.topic0() {
+                // Handle individual UserDecryptionResponse events
+                if *topic0 == Decryption::UserDecryptionResponse::SIGNATURE_HASH {
+                    self.handle_individual_user_decrypt_response(log, &event)
+                        .await;
+                }
+                // Handle consensus UserDecryptionResponseThresholdReached events
+                else if *topic0 == self.get_consensus_event_topic() {
+                    self.handle_user_decrypt_consensus_event(log, &event).await;
                 }
             }
         }
+    }
+
+    /// Handles individual UserDecryptionResponse events
+    async fn handle_individual_user_decrypt_response(
+        &self,
+        log: &alloy::rpc::types::Log,
+        event: &RelayerEvent,
+    ) {
+        match Decryption::UserDecryptionResponse::decode_log_data(log.data()) {
+            Ok(user_decrypt_response) => {
+                let user_decryption_id = user_decrypt_response.decryptionId;
+                info!(
+                    decryption_id = %user_decryption_id,
+                    index_share = %user_decrypt_response.indexShare,
+                    "Received individual user decrypt response share"
+                );
+
+                // Convert to our internal share structure
+                let share = UserDecryptionResponseShare {
+                    decryption_id: user_decryption_id,
+                    index_share: user_decrypt_response.indexShare,
+                    user_decrypted_share: user_decrypt_response.userDecryptedShare,
+                    signature: user_decrypt_response.signature,
+                    extra_data: user_decrypt_response.extraData,
+                };
+
+                // Add to assembly store
+                match self.user_decrypt_response_store.add_response(share) {
+                    Ok(Some(final_response)) => {
+                        // Assembly complete - process final response
+                        self.process_final_user_decrypt_response(
+                            user_decryption_id,
+                            final_response,
+                            event,
+                        )
+                        .await;
+                    }
+                    Ok(None) => {
+                        debug!(
+                            decryption_id = %user_decryption_id,
+                            "Share added, waiting for more shares or consensus"
+                        );
+                    }
+                    Err(e) => {
+                        error!(
+                            decryption_id = %user_decryption_id,
+                            error = ?e,
+                            "Failed to add individual response share"
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                error!(
+                    request_id = %event.request_id,
+                    error = ?e,
+                    "Failed to decode individual UserDecryptionResponse event data"
+                );
+            }
+        }
+    }
+
+    /// Handles UserDecryptionResponseThresholdReached consensus events
+    async fn handle_user_decrypt_consensus_event(
+        &self,
+        log: &alloy::rpc::types::Log,
+        event: &RelayerEvent,
+    ) {
+        // Extract decryption_id from the first indexed topic (after the event signature)
+        if let Some(decryption_id_topic) = log.topics().get(1) {
+            let user_decryption_id = U256::from_be_bytes::<32>(
+                decryption_id_topic
+                    .as_slice()
+                    .try_into()
+                    .unwrap_or([0u8; 32]),
+            );
+
+            info!(
+                decryption_id = %user_decryption_id,
+                "Received user decrypt consensus event"
+            );
+
+            // Mark consensus reached
+            match self
+                .user_decrypt_response_store
+                .mark_consensus(user_decryption_id)
+            {
+                Ok(Some(final_response)) => {
+                    // Assembly complete - process final response
+                    self.process_final_user_decrypt_response(
+                        user_decryption_id,
+                        final_response,
+                        event,
+                    )
+                    .await;
+                }
+                Ok(None) => {
+                    debug!(
+                        decryption_id = %user_decryption_id,
+                        "Consensus marked, waiting for more shares"
+                    );
+                }
+                Err(e) => {
+                    error!(
+                        decryption_id = %user_decryption_id,
+                        error = ?e,
+                        "Failed to mark consensus for user decrypt response"
+                    );
+                }
+            }
+        } else {
+            error!(
+                request_id = %event.request_id,
+                "UserDecryptionResponseThresholdReached event missing decryption_id topic"
+            );
+        }
+    }
+
+    /// Processes the final assembled user decrypt response
+    async fn process_final_user_decrypt_response(
+        &self,
+        user_decryption_id: U256,
+        final_response: UserDecryptResponse,
+        event: &RelayerEvent,
+    ) {
+        info!(
+            decryption_id = %user_decryption_id,
+            shares_count = final_response.reencrypted_shares.len(),
+            "Processing final assembled user decrypt response"
+        );
+
+        // Store in cache (maintain existing cache behavior)
+        if let Err(err) = self
+            .user_decryption_responses_cache
+            .persist_value(user_decryption_id, final_response.clone())
+            .await
+        {
+            error!(
+                decryption_id = %user_decryption_id,
+                error = ?err,
+                "Failed to store assembled user decrypt response in cache"
+            );
+        } else {
+            debug!(
+                decryption_id = %user_decryption_id,
+                "Successfully stored assembled user decrypt response in cache"
+            );
+        }
+
+        // Dispatch events for all matching request IDs
+        if let Some(entry) = self
+            .user_decryption_id_to_request_id
+            .get(&user_decryption_id)
+        {
+            for original_request_id in entry.value() {
+                info!(
+                    original_request_id = %original_request_id,
+                    decryption_id = %user_decryption_id,
+                    "Dispatching assembled response to original request"
+                );
+
+                let next_event_data =
+                    RelayerEventData::UserDecrypt(UserDecryptEventData::RespRcvdFromGw {
+                        decrypt_response: final_response.clone(),
+                    });
+
+                let next_event =
+                    RelayerEvent::new(*original_request_id, event.api_version, next_event_data);
+
+                if let Err(e) = self.dispatcher.dispatch_event(next_event).await {
+                    error!(
+                        original_request_id = %original_request_id,
+                        error = ?e,
+                        "Failed to dispatch assembled user decrypt response event"
+                    );
+                }
+            }
+        } else {
+            warn!(
+                decryption_id = %user_decryption_id,
+                "No matching request IDs found for assembled user decrypt response"
+            );
+        }
+
+        // Clean up the assembly store after successful processing
+        self.user_decrypt_response_store.cleanup(user_decryption_id);
+    }
+
+    fn get_consensus_event_topic(&self) -> FixedBytes<32> {
+        Decryption::UserDecryptionResponseThresholdReached::SIGNATURE_HASH
     }
 
     fn handle_user_decrypt_request_sent(&self, id: U256) {
@@ -654,17 +783,22 @@ impl EventHandler<RelayerEvent> for GatewayHandler {
             }
             RelayerEventData::Generic(GenericEventData::EventLogFromGw { ref log }) => {
                 if let Some(topic0) = log.topic0() {
-                    if FixedBytes::<32>::from_slice(topic0.as_slice())
-                        != Decryption::UserDecryptionResponse::SIGNATURE_HASH
+                    let topic0_fixed = FixedBytes::<32>::from_slice(topic0.as_slice());
+                    let individual_response_topic =
+                        Decryption::UserDecryptionResponse::SIGNATURE_HASH;
+                    let consensus_topic = self.get_consensus_event_topic();
+
+                    if topic0_fixed == individual_response_topic || topic0_fixed == consensus_topic
                     {
+                        self.handle_user_decrypt_response_event_log(event).await;
+                    } else {
                         debug!(
-                            "Ignore this event: expected event: {:?}, received {} ",
-                            log.topic0(),
-                            Decryption::UserDecryptionResponse::SIGNATURE_HASH
+                            "Ignoring event: received topic {:?}, expected individual {:?} or consensus {:?}",
+                            topic0_fixed,
+                            individual_response_topic,
+                            consensus_topic
                         );
                         self.noop_handle_decrypt_response_event_log(&event).await;
-                    } else {
-                        self.handle_user_decrypt_response_event_log(event).await;
                     }
                 };
             }

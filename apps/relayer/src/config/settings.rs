@@ -146,6 +146,8 @@ pub struct ContractConfig {
     pub decryption_oracle_address: String,
     pub decryption_address: String,
     pub input_verification_address: String,
+    /// Number of shares required for user decryption threshold consensus
+    pub user_decrypt_shares_threshold: usize,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -307,5 +309,159 @@ impl Default for LogConfig {
             show_timestamp: true,
             module_filters: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use config::{Config, File, FileFormat};
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_user_decrypt_shares_threshold_is_required() {
+        let config_content = r#"
+environment: "test"
+networks:
+  fhevm:
+    ws_url: "wss://test-fhevm.example.com"
+    http_url: "https://test-fhevm.example.com"
+    chain_id: 9000
+    retry_delay: 1000
+    max_reconnection_attempts: 3
+  gateway:
+    ws_url: "wss://test-gateway.example.com"
+    http_url: "https://test-gateway.example.com"
+    chain_id: 8009
+    retry_delay: 1000
+    max_reconnection_attempts: 3
+transaction:
+  private_key_fhevm: "0x1234567890123456789012345678901234567890123456789012345678901234"
+  private_key_gateway: "0x1234567890123456789012345678901234567890123456789012345678901234"
+  ciphertext_check_retry:
+    max_attempts: 3
+    base_delay_secs: 2
+    max_delay_secs: 60
+    mock_mode: false
+contracts:
+  decryption_oracle_address: "0x1234567890123456789012345678901234567890"
+  decryption_address: "0x1234567890123456789012345678901234567890"
+  input_verification_address: "0x1234567890123456789012345678901234567890"
+  # Note: user_decrypt_shares_threshold is missing here
+log:
+  format: "compact"
+  show_file_line: false
+  show_thread_ids: false
+  show_timestamp: true
+keyurl:
+  fhe_public_key:
+    data_id: "test-key"
+    url: "https://test.example.com/key"
+  crs:
+    data_id: "test-crs"
+    url: "https://test.example.com/crs"
+metrics_endpoint: "0.0.0.0:9898"
+http_metrics:
+  histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
+db_path_rocksdb: "/tmp/test_db"
+"#;
+
+        // Create a temporary config file
+        let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        temp_file
+            .write_all(config_content.as_bytes())
+            .expect("Failed to write config");
+
+        // Try to build config - should fail because user_decrypt_shares_threshold is missing
+        let config = Config::builder()
+            .add_source(File::from(temp_file.path()).format(FileFormat::Yaml))
+            .build()
+            .expect("Failed to build config");
+
+        let result: Result<Settings, _> = config.try_deserialize();
+
+        // This should fail with a deserialization error due to missing required field
+        assert!(
+            result.is_err(),
+            "Configuration parsing should fail when user_decrypt_shares_threshold is missing"
+        );
+
+        // Check that the error mentions the missing field
+        let error_msg = format!("{}", result.unwrap_err());
+        assert!(
+            error_msg.contains("user_decrypt_shares_threshold")
+                || error_msg.contains("missing field"),
+            "Error should mention the missing user_decrypt_shares_threshold field, got: {}",
+            error_msg
+        );
+    }
+
+    #[test]
+    fn test_user_decrypt_shares_threshold_works_when_present() {
+        let config_content = r#"
+environment: "test"
+networks:
+  fhevm:
+    ws_url: "wss://test-fhevm.example.com"
+    http_url: "https://test-fhevm.example.com"
+    chain_id: 9000
+    retry_delay: 1000
+    max_reconnection_attempts: 3
+  gateway:
+    ws_url: "wss://test-gateway.example.com"
+    http_url: "https://test-gateway.example.com"
+    chain_id: 8009
+    retry_delay: 1000
+    max_reconnection_attempts: 3
+transaction:
+  private_key_fhevm: "0x1234567890123456789012345678901234567890123456789012345678901234"
+  private_key_gateway: "0x1234567890123456789012345678901234567890123456789012345678901234"
+  ciphertext_check_retry:
+    max_attempts: 3
+    base_delay_secs: 2
+    max_delay_secs: 60
+    mock_mode: false
+contracts:
+  decryption_oracle_address: "0x1234567890123456789012345678901234567890"
+  decryption_address: "0x1234567890123456789012345678901234567890"
+  input_verification_address: "0x1234567890123456789012345678901234567890"
+  user_decrypt_shares_threshold: 9
+log:
+  format: "compact"
+  show_file_line: false
+  show_thread_ids: false
+  show_timestamp: true
+keyurl:
+  fhe_public_key:
+    data_id: "test-key"
+    url: "https://test.example.com/key"
+  crs:
+    data_id: "test-crs"
+    url: "https://test.example.com/crs"
+metrics_endpoint: "0.0.0.0:9898"
+http_metrics:
+  histogram_buckets: [0.001, 0.01, 0.1, 1.0, 10.0]
+db_path_rocksdb: "/tmp/test_db"
+"#;
+
+        // Create a temporary config file
+        let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        temp_file
+            .write_all(config_content.as_bytes())
+            .expect("Failed to write config");
+
+        // Try to build config - should succeed
+        let config = Config::builder()
+            .add_source(File::from(temp_file.path()).format(FileFormat::Yaml))
+            .build()
+            .expect("Failed to build config");
+
+        let settings: Settings = config
+            .try_deserialize()
+            .expect("Configuration parsing should succeed when expected_share_count is present");
+
+        // Verify the value was parsed correctly
+        assert_eq!(settings.contracts.user_decrypt_shares_threshold, 9);
     }
 }

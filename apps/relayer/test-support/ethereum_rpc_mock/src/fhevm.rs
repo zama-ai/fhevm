@@ -18,8 +18,16 @@ use tracing::{debug, info};
 pub use fhevm_gateway_bindings::decryption::Decryption;
 pub use fhevm_gateway_bindings::input_verification::InputVerification;
 
+// Use actual gateway binding events instead of custom ones
+// Individual responses use: Decryption::UserDecryptionResponse
+// Consensus events use the topic hash from get_consensus_event_topic()
+
 // Constants
 const RESPONSE_DELAY_MS: u64 = 500;
+const BLOCK_DELAY_1_MS: u64 = 500; // Block N+1: 3 events
+const BLOCK_DELAY_2_MS: u64 = 1000; // Block N+2: 3 events
+const BLOCK_DELAY_3_MS: u64 = 1500; // Block N+3: 3 events
+const BLOCK_DELAY_4_MS: u64 = 2000; // Block N+4: 1 consensus event
 const MOCK_CHAIN_ID: u64 = 1337;
 const MOCK_PUBLIC_KEY_SIZE: usize = 32;
 const MOCK_SIGNATURE_SIZE: usize = 65;
@@ -137,18 +145,159 @@ impl FhevmMockWrapper {
 
     // Public API methods
 
-    /// Register user decryption that succeeds with the provided result
-    pub fn on_user_decrypt_success(&self, handles: Vec<B256>, user: Address, result: Bytes) {
-        self.register_decrypt_pattern(
-            "user decryption success",
-            self.decryption_contract,
-            Decryption::userDecryptionRequestCall::SELECTOR,
-            |id, contract| {
-                let request_log = build_user_decrypt_request(contract, id, user, handles);
-                let response_log = build_user_decrypt_response(contract, id, vec![result]);
-                (request_log, response_log)
-            },
+    /// Register user decryption that succeeds with the new multi-response pattern
+    /// Emits events across multiple blocks using 3-3-3-1 pattern + consensus
+    pub fn on_user_decrypt_success(&self, handles: Vec<B256>, user: Address, _result: Bytes) {
+        let id = self.next_decryption_id();
+        debug!(
+            decryption_id = id,
+            "Registering user decryption success with multi-block pattern"
         );
+
+        // Generate mock data for 9 shares and signatures
+        let user_shares = generate_mock_user_shares(9);
+        let signatures = generate_mock_signatures(9);
+        let extra_data = Bytes::from(vec![0x00]); // Same extraData for all events in a decryption
+
+        // Build the request log (immediate response)
+        let request_log = build_user_decrypt_request(self.decryption_contract, id, user, handles);
+
+        // Build events using hard-coded 3-3-3-1 block pattern
+        let mut events = Vec::new();
+
+        // Block N+1: 3 individual events (indexShare 0, 1, 2)
+        events.push((
+            Duration::from_millis(BLOCK_DELAY_1_MS),
+            build_individual_user_decrypt_response(
+                self.decryption_contract,
+                id,
+                0,
+                user_shares[0].clone(),
+                signatures[0].clone(),
+                extra_data.clone(),
+            ),
+        ));
+        events.push((
+            Duration::from_millis(BLOCK_DELAY_1_MS),
+            build_individual_user_decrypt_response(
+                self.decryption_contract,
+                id,
+                1,
+                user_shares[1].clone(),
+                signatures[1].clone(),
+                extra_data.clone(),
+            ),
+        ));
+        events.push((
+            Duration::from_millis(BLOCK_DELAY_1_MS),
+            build_individual_user_decrypt_response(
+                self.decryption_contract,
+                id,
+                2,
+                user_shares[2].clone(),
+                signatures[2].clone(),
+                extra_data.clone(),
+            ),
+        ));
+
+        // Block N+2: 3 individual events (indexShare 3, 4, 5)
+        events.push((
+            Duration::from_millis(BLOCK_DELAY_2_MS),
+            build_individual_user_decrypt_response(
+                self.decryption_contract,
+                id,
+                3,
+                user_shares[3].clone(),
+                signatures[3].clone(),
+                extra_data.clone(),
+            ),
+        ));
+        events.push((
+            Duration::from_millis(BLOCK_DELAY_2_MS),
+            build_individual_user_decrypt_response(
+                self.decryption_contract,
+                id,
+                4,
+                user_shares[4].clone(),
+                signatures[4].clone(),
+                extra_data.clone(),
+            ),
+        ));
+        events.push((
+            Duration::from_millis(BLOCK_DELAY_2_MS),
+            build_individual_user_decrypt_response(
+                self.decryption_contract,
+                id,
+                5,
+                user_shares[5].clone(),
+                signatures[5].clone(),
+                extra_data.clone(),
+            ),
+        ));
+
+        // Block N+3: 3 individual events (indexShare 6, 7, 8)
+        events.push((
+            Duration::from_millis(BLOCK_DELAY_3_MS),
+            build_individual_user_decrypt_response(
+                self.decryption_contract,
+                id,
+                6,
+                user_shares[6].clone(),
+                signatures[6].clone(),
+                extra_data.clone(),
+            ),
+        ));
+        events.push((
+            Duration::from_millis(BLOCK_DELAY_3_MS),
+            build_individual_user_decrypt_response(
+                self.decryption_contract,
+                id,
+                7,
+                user_shares[7].clone(),
+                signatures[7].clone(),
+                extra_data.clone(),
+            ),
+        ));
+        events.push((
+            Duration::from_millis(BLOCK_DELAY_3_MS),
+            build_individual_user_decrypt_response(
+                self.decryption_contract,
+                id,
+                8,
+                user_shares[8].clone(),
+                signatures[8].clone(),
+                extra_data.clone(),
+            ),
+        ));
+
+        // Block N+4: 1 consensus event
+        events.push((
+            Duration::from_millis(BLOCK_DELAY_4_MS),
+            build_user_decrypt_threshold_reached(self.decryption_contract, id),
+        ));
+
+        // Create scheduled transaction with multiple events
+        let scheduled_tx =
+            ScheduledTransaction::with_multiple_events(Some(self.decryption_contract), events);
+
+        // Create immediate response with request log and scheduled transaction
+        let immediate_response = Response::Success {
+            hash: Some(random_hash()),
+            data: crate::mock_server::ResponseData::Logs(vec![request_log]),
+            scheduled_transactions: vec![scheduled_tx],
+        };
+
+        // Register pattern that returns immediate response with scheduled transaction
+        self.json_rpc_server.on_transaction(
+            matches_contract_and_selector(
+                self.decryption_contract,
+                Decryption::userDecryptionRequestCall::SELECTOR,
+            ),
+            immediate_response,
+            UsageLimit::Unlimited,
+        );
+
+        debug!("Registered FHEVM user decryption pattern with multi-block scheduled responses");
     }
 
     /// Register user decryption that reverts with specified reason
@@ -347,10 +496,14 @@ fn build_user_decrypt_response(
     decryption_id: u64,
     decrypted_shares: Vec<Bytes>,
 ) -> Log {
+    // For old-style responses, use the first share (or empty if none)
+    let first_share = decrypted_shares.first().cloned().unwrap_or_default();
+
     let response = Decryption::UserDecryptionResponse {
         decryptionId: U256::from(decryption_id),
-        userDecryptedShares: decrypted_shares,
-        signatures: vec![Bytes::from(vec![0u8; MOCK_SIGNATURE_SIZE])],
+        indexShare: U256::from(0), // Default to index 0 for old-style responses
+        userDecryptedShare: first_share,
+        signature: Bytes::from(vec![0u8; MOCK_SIGNATURE_SIZE]),
         extraData: Bytes::default(),
     };
 
@@ -360,6 +513,7 @@ fn build_user_decrypt_response(
         vec![
             Decryption::UserDecryptionResponse::SIGNATURE_HASH,
             B256::from(U256::from(decryption_id)),
+            B256::from(U256::from(0)), // indexShare topic
         ],
     )
 }
@@ -478,6 +632,80 @@ fn build_input_reject_response(contract: Address, request_id: u64) -> Log {
             B256::from(U256::from(request_id)),
         ],
     )
+}
+
+// New event builder functions for multi-response user decryption pattern
+
+/// Build individual user decryption response event using actual gateway bindings
+fn build_individual_user_decrypt_response(
+    contract: Address,
+    decryption_id: u64,
+    index_share: u64,
+    user_decrypted_share: Bytes,
+    signature: Bytes,
+    extra_data: Bytes,
+) -> Log {
+    let response = Decryption::UserDecryptionResponse {
+        decryptionId: U256::from(decryption_id),
+        indexShare: U256::from(index_share),
+        userDecryptedShare: user_decrypted_share,
+        signature,
+        extraData: extra_data,
+    };
+
+    build_event_log(
+        contract,
+        &response,
+        vec![
+            Decryption::UserDecryptionResponse::SIGNATURE_HASH,
+            B256::from(U256::from(decryption_id)),
+            B256::from(U256::from(index_share)),
+        ],
+    )
+}
+
+/// Build consensus threshold reached event using the expected topic hash
+fn build_user_decrypt_threshold_reached(contract: Address, decryption_id: u64) -> Log {
+    let response = Decryption::UserDecryptionResponseThresholdReached {
+        decryptionId: U256::from(decryption_id),
+    };
+
+    build_event_log(
+        contract,
+        &response,
+        vec![
+            Decryption::UserDecryptionResponseThresholdReached::SIGNATURE_HASH,
+            B256::from(U256::from(decryption_id)),
+        ],
+    )
+}
+
+/// Generate realistic mock data for user decryption shares
+fn generate_mock_user_shares(count: usize) -> Vec<Bytes> {
+    (0..count)
+        .map(|i| {
+            let mut rng = rand::rng();
+            let mut share_data = vec![0u8; 32]; // Mock 32-byte shares
+            rng.fill_bytes(&mut share_data);
+            // Make each share slightly different by setting the first byte to the index
+            share_data[0] = i as u8;
+            Bytes::from(share_data)
+        })
+        .collect()
+}
+
+/// Generate realistic mock signatures for user decryption
+fn generate_mock_signatures(count: usize) -> Vec<Bytes> {
+    (0..count)
+        .map(|i| {
+            let mut rng = rand::rng();
+            let mut sig_data = vec![0u8; MOCK_SIGNATURE_SIZE];
+            rng.fill_bytes(&mut sig_data);
+            // Make each signature slightly different by setting the first byte to the index
+            sig_data[0] = i as u8;
+            Bytes::from(sig_data)
+        })
+        .collect()
 }
 
 /// Helper to create SnsCiphertextMaterial structs from handles

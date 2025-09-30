@@ -34,7 +34,7 @@
 
 use crate::store::{
     BlockNumberStore, PublicDecryptRequestCacheStore, PublicDecryptResponseCacheStore,
-    UserDecryptRequestCacheStore, UserDecryptResponseCacheStore,
+    UserDecryptRequestCacheStore, UserDecryptResponseCacheStore, UserDecryptResponseStore,
 };
 use alloy::primitives::Address;
 use alloy::signers::Signer;
@@ -218,6 +218,11 @@ pub async fn run_fhevm_relayer(
         Arc::new(UserDecryptResponseCacheStore::new(kv_store.clone()));
     let user_decrypt_requests_cache = Arc::new(UserDecryptRequestCacheStore::new(kv_store.clone()));
 
+    // Get user decrypt shares threshold from contracts configuration (required field)
+    let user_decrypt_shares_threshold = settings.contracts.user_decrypt_shares_threshold;
+    let user_decrypt_response_store =
+        Arc::new(UserDecryptResponseStore::new(user_decrypt_shares_threshold));
+
     // Register event logging hook to capture all events
     orchestrator
         .register_pre_dispatch_hook(EventLoggingHook::new("Received relayer event".to_string()));
@@ -294,6 +299,7 @@ pub async fn run_fhevm_relayer(
             Arc::clone(&orchestrator),
             user_decrypt_responses_cache,
             user_decrypt_requests_cache,
+            user_decrypt_response_store,
             tx_service_gateway,
             tx_config,
             settings.contracts,
