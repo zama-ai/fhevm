@@ -77,7 +77,7 @@ services:
       - CHAIN_ID_GATEWAY=54321
       - RPC_URL=http://anvil-node:8546
     command:
-      - npx hardhat task:triggerKeygen --params-type 1 --use-internal-kms-management-address true
+      - npx hardhat task:triggerKeygen --params-type 1 --use-internal-proxy-address true
     depends_on:
       anvil-node:
         condition: service_started
@@ -100,7 +100,7 @@ services:
       - CHAIN_ID_GATEWAY=54321
       - RPC_URL=http://anvil-node:8546
     command:
-      - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-kms-management-address true
+      - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-proxy-address true
     depends_on:
       anvil-node:
         condition: service_started

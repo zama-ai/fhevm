@@ -1,4 +1,4 @@
 export * from "./decryption";
 export * from "./inputVerification";
 export * from "./interface";
-export * from "./kmsManagement";
+export * from "./kmsGeneration";

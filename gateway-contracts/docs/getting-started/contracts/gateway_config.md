@@ -31,7 +31,7 @@ They serve different purposes, which are described below.
 A KMS node is part of a set of multiple nodes. Often called the KMS, it refers to a Multi-Party Computation (MPC) protocol that manages Fully Homomorphic Encryption (FHE) keys in a decentralized manner. It is used to :
 
 - decrypt ciphertexts based on requests from the `Decryption` contract.
-- generate [KMS public materials](./kms_management.md#public-material-generation) based on requests from the `KmsManagement` contract.
+- generate [KMS public materials](./kms_generation.md#public-material-generation) based on requests from the `KMSGeneration` contract.
 
 Several metadata are stored for each KMS node:
 
@@ -134,8 +134,7 @@ The owner is first set as the account that deploys the contracts (the deployer).
 - upgrade the contracts
 - update the pausers (see [Pausers](./pauser_set.md))
 - add [host chains](#host-chains)
-- trigger a KMS public material generation (see [KmsManagement](./kms_management.md#public-material-generation))
-- update KMS-related parameters (see [KmsManagement](./kms_management.md#store-parameters))
+- trigger a KMS public material generation (see [KMSGeneration](./kms_generation.md#public-material-generation))
 
 The owner is handled by OpenZeppelin's `Ownable2StepUpgradeable` contract. In particular, this means that the deployer can transfer its ownership to another account in a two-step process.
 

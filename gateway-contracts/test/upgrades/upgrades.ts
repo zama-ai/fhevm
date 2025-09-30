@@ -14,8 +14,8 @@ import {
   GatewayConfig__factory,
   InputVerificationV2Example__factory,
   InputVerification__factory,
-  KMSManagementV2Example__factory,
-  KMSManagement__factory,
+  KMSGenerationV2Example__factory,
+  KMSGeneration__factory,
   MultichainACLV2Example__factory,
   MultichainACL__factory,
 } from "../../typechain-types";
@@ -33,8 +33,8 @@ describe("Upgrades", function () {
   let gatewayConfigFactoryV2: GatewayConfigV2Example__factory;
   let inputVerificationFactoryV1: InputVerification__factory;
   let inputVerificationFactoryV2: InputVerificationV2Example__factory;
-  let kmsManagementFactoryV1: KMSManagement__factory;
-  let kmsManagementFactoryV2: KMSManagementV2Example__factory;
+  let kmsGenerationFactoryV1: KMSGeneration__factory;
+  let kmsGenerationFactoryV2: KMSGenerationV2Example__factory;
   let MultichainACLFactoryV1: MultichainACL__factory;
   let MultichainACLFactoryV2: MultichainACLV2Example__factory;
 
@@ -55,8 +55,8 @@ describe("Upgrades", function () {
     inputVerificationFactoryV1 = await ethers.getContractFactory("InputVerification", owner);
     inputVerificationFactoryV2 = await ethers.getContractFactory("InputVerificationV2Example", owner);
 
-    kmsManagementFactoryV1 = await ethers.getContractFactory("KMSManagement", owner);
-    kmsManagementFactoryV2 = await ethers.getContractFactory("KMSManagementV2Example", owner);
+    kmsGenerationFactoryV1 = await ethers.getContractFactory("KMSGeneration", owner);
+    kmsGenerationFactoryV2 = await ethers.getContractFactory("KMSGenerationV2Example", owner);
 
     MultichainACLFactoryV1 = await ethers.getContractFactory("MultichainACL", owner);
     MultichainACLFactoryV2 = await ethers.getContractFactory("MultichainACLV2Example", owner);
@@ -120,17 +120,17 @@ describe("Upgrades", function () {
     expect(await gatewayConfigV2.getVersion()).to.equal("GatewayConfig v1000.0.0");
   });
 
-  it("Should deploy upgradable KMSManagement", async function () {
+  it("Should deploy upgradable KMSGeneration", async function () {
     const emptyUUPS = await upgrades.deployProxy(regularEmptyUUPSFactory, [], {
       initializer: "initialize",
       kind: "uups",
     });
-    const kmsManagement = await upgrades.upgradeProxy(emptyUUPS, kmsManagementFactoryV1);
-    await kmsManagement.waitForDeployment();
-    expect(await kmsManagement.getVersion()).to.equal("KMSManagement v0.2.0");
-    const kmsManagementV2 = await upgrades.upgradeProxy(kmsManagement, kmsManagementFactoryV2);
-    await kmsManagementV2.waitForDeployment();
-    expect(await kmsManagementV2.getVersion()).to.equal("KMSManagement v1000.0.0");
+    const kmsGeneration = await upgrades.upgradeProxy(emptyUUPS, kmsGenerationFactoryV1);
+    await kmsGeneration.waitForDeployment();
+    expect(await kmsGeneration.getVersion()).to.equal("KMSGeneration v0.1.0");
+    const kmsGenerationV2 = await upgrades.upgradeProxy(kmsGeneration, kmsGenerationFactoryV2);
+    await kmsGenerationV2.waitForDeployment();
+    expect(await kmsGenerationV2.getVersion()).to.equal("KMSGeneration v1000.0.0");
   });
 
   it("Should deploy upgradable InputVerification", async function () {

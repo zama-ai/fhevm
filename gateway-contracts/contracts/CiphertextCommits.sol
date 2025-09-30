@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import { gatewayConfigAddress, kmsManagementAddress } from "../addresses/GatewayAddresses.sol";
+import { gatewayConfigAddress, kmsGenerationAddress } from "../addresses/GatewayAddresses.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
 import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
-import { IKMSManagement } from "./interfaces/IKMSManagement.sol";
+import { IKMSGeneration } from "./interfaces/IKMSGeneration.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { HandleOps } from "./libraries/HandleOps.sol";
@@ -19,8 +19,8 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
     /// @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @notice The address of the KmsManagement contract, used for fetching information about the current key.
-    IKMSManagement private constant KMS_MANAGEMENT = IKMSManagement(kmsManagementAddress);
+    /// @notice The address of the KMSGeneration contract, used for fetching information about the current key.
+    IKMSGeneration private constant KMS_GENERATION = IKMSGeneration(kmsGenerationAddress);
 
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that

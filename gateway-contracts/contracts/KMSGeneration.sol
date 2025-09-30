@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import { IKMSManagement } from "./interfaces/IKMSManagement.sol";
+import { IKMSGeneration } from "./interfaces/IKMSGeneration.sol";
 import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -13,11 +13,11 @@ import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
 /**
- * @title KMSManagement contract
- * @dev See {IKMSManagement}.
+ * @title KMSGeneration contract
+ * @dev See {IKMSGeneration}.
  */
-contract KMSManagement is
-    IKMSManagement,
+contract KMSGeneration is
+    IKMSGeneration,
     EIP712Upgradeable,
     UUPSUpgradeableEmptyProxy,
     GatewayOwnable,
@@ -48,8 +48,8 @@ contract KMSManagement is
      *      These constants are used when computing the struct hash of each
      *      KeyDigest element inside the keyDigests[] array.
      */
-    string private constant EIP712_KEYDIGEST_TYPE = "KeyDigest(uint8 keyType,bytes digest)";
-    bytes32 private constant EIP712_KEYDIGEST_TYPE_HASH = keccak256(bytes(EIP712_KEYDIGEST_TYPE));
+    string private constant EIP712_KEY_DIGEST_TYPE = "KeyDigest(uint8 keyType,bytes digest)";
+    bytes32 private constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256(bytes(EIP712_KEY_DIGEST_TYPE));
 
     /**
      * @notice The KeygenVerification typed definition.
@@ -97,9 +97,9 @@ contract KMSManagement is
      * in order to force derived contracts to consider a different version. Note that
      * they can still define their own private constants with the same name.
      */
-    string private constant CONTRACT_NAME = "KMSManagement";
+    string private constant CONTRACT_NAME = "KMSGeneration";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -115,8 +115,21 @@ contract KMSManagement is
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
      */
-    /// @custom:storage-location erc7201:fhevm_gateway.storage.KmsManagement
-    struct KmsManagementStorage {
+    /// @custom:storage-location erc7201:fhevm_gateway.storage.KMSGeneration
+    struct KMSGenerationStorage {
+        // ----------------------------------------------------------------------------------------------
+        // Common consensus variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice Whether a KMS node has signed for a response
+        mapping(uint256 requestId => mapping(address kmsSigner => bool hasSigned)) kmsHasSignedForResponse;
+        /// @notice Whether a request has reached consensus
+        mapping(uint256 requestId => bool hasConsensusAlreadyBeenReached) isRequestDone;
+        /// @notice The KMS transaction sender addresses that propagated valid signatures for a request
+        mapping(uint256 requestId => mapping(bytes32 digest => address[] kmsTxSenderAddresses)) consensusTxSenderAddresses;
+        /// @notice The KMS nodes' storage URL that propagated valid signatures for a request
+        mapping(uint256 requestId => mapping(bytes32 digest => string[] kmsNodeStorageUrls)) consensusStorageUrls;
+        /// @notice The digest of the signed struct on which consensus was reached for a request
+        mapping(uint256 requestId => bytes32 digest) consensusDigest;
         // ----------------------------------------------------------------------------------------------
         // Pre-processing keygen state variables:
         // ----------------------------------------------------------------------------------------------
@@ -145,28 +158,18 @@ contract KMSManagement is
         /// @notice The ID of the currently active CRS
         uint256 activeCrsId;
         // ----------------------------------------------------------------------------------------------
-        // Common state variables:
+        // Parameters variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The parameters type used for the request
         mapping(uint256 requestId => ParamsType paramsType) requestParamsType;
-        /// @notice Whether a KMS node has signed for a response
-        mapping(uint256 requestId => mapping(address kmsSigner => bool hasSigned)) kmsHasSignedForResponse;
-        /// @notice Whether a request has reached consensus
-        mapping(uint256 requestId => bool hasConsensusAlreadyBeenReached) isRequestDone;
-        /// @notice The KMS transaction sender addresses that propagated valid signatures for a request
-        mapping(uint256 requestId => mapping(bytes32 digest => address[] kmsTxSenderAddresses)) consensusTxSenderAddresses;
-        /// @notice The KMS nodes' storage URL that propagated valid signatures for a request
-        mapping(uint256 requestId => mapping(bytes32 digest => string[] kmsNodeStorageUrls)) consensusStorageUrls;
-        /// @notice The digest of the signed struct on which consensus was reached for a request
-        mapping(uint256 requestId => bytes32 digest) consensusDigest;
     }
 
     /**
      * @dev Storage location has been computed using the following command:
-     * keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.KMSManagement")) - 1))
+     * keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.KMSGeneration")) - 1))
      * & ~bytes32(uint256(0xff))
      */
-    bytes32 private constant KMS_MANAGEMENT_STORAGE_LOCATION =
+    bytes32 private constant KMS_GENERATION_STORAGE_LOCATION =
         0x52e3d903674697c366245bdc532b6735f22bb42391635b8e0488806aba29452b;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -182,7 +185,7 @@ contract KMSManagement is
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
 
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Initialize the counters in order to generate globally unique requestIds per request type
         $.prepKeygenCounter = PREP_KEYGEN_COUNTER_BASE;
@@ -191,10 +194,10 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-keygen}.
+     * @dev See {IKMSGeneration-keygen}.
      */
     function keygen(ParamsType paramsType) external virtual onlyGatewayOwner {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Generate a globally unique prepKeygenId for the key generation preprocessing
         // The counter is initialized at deployment such that prepKeygenId's first byte uniquely
@@ -229,10 +232,10 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-prepKeygenResponse}.
+     * @dev See {IKMSGeneration-prepKeygenResponse}.
      */
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external virtual onlyKmsTxSender {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Compute the digest of the PrepKeygenVerification struct.
         bytes32 digest = _hashPrepKeygenVerification(prepKeygenId);
@@ -269,14 +272,14 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-keygenResponse}.
+     * @dev See {IKMSGeneration-keygenResponse}.
      */
     function keygenResponse(
         uint256 keyId,
         KeyDigest[] calldata keyDigests,
         bytes calldata signature
     ) external virtual onlyKmsTxSender {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Get the prepKeygenId associated to the keyId
         uint256 prepKeygenId = $.keygenIdPairs[keyId];
@@ -323,10 +326,10 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-crsgenRequest}.
+     * @dev See {IKMSGeneration-crsgenRequest}.
      */
     function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external virtual onlyGatewayOwner {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Generate a globally unique crsId for the CRS generation
         // The counter is initialized at deployment such that crsId's first byte uniquely
@@ -346,14 +349,14 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-crsgenResponse}.
+     * @dev See {IKMSGeneration-crsgenResponse}.
      */
     function crsgenResponse(
         uint256 crsId,
         bytes calldata crsDigest,
         bytes calldata signature
     ) external virtual onlyKmsTxSender {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         uint256 maxBitLength = $.crsMaxBitLength[crsId];
 
@@ -393,10 +396,10 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-getKeyParamsType}.
+     * @dev See {IKMSGeneration-getKeyParamsType}.
      */
     function getKeyParamsType(uint256 keyId) external view virtual returns (ParamsType) {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
@@ -409,10 +412,10 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-getCrsParamsType}.
+     * @dev See {IKMSGeneration-getCrsParamsType}.
      */
     function getCrsParamsType(uint256 crsId) external view virtual returns (ParamsType) {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         if (!$.isRequestDone[crsId]) {
             revert CrsNotGenerated(crsId);
@@ -422,27 +425,27 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-getActiveKeyId}.
+     * @dev See {IKMSGeneration-getActiveKeyId}.
      */
     function getActiveKeyId() external view virtual returns (uint256) {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         return $.activeKeyId;
     }
 
     /**
-     * @dev See {IKmsManagement-getActiveCrsId}.
+     * @dev See {IKMSGeneration-getActiveCrsId}.
      */
     function getActiveCrsId() external view virtual returns (uint256) {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
         return $.activeCrsId;
     }
 
     /**
-     * @dev See {IKmsManagement-getConsensusTxSenders}.
+     * @dev See {IKMSGeneration-getConsensusTxSenders}.
      * The returned list remains empty until the consensus is reached.
      */
     function getConsensusTxSenders(uint256 requestId) external view virtual returns (address[] memory) {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Get the unique digest associated to the request in order to retrieve the list of
         // KMS transaction sender addresses that were involved in the associated consensus
@@ -455,10 +458,10 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-getKeyMaterials}.
+     * @dev See {IKMSGeneration-getKeyMaterials}.
      */
     function getKeyMaterials(uint256 keyId) external view virtual returns (string[] memory, KeyDigest[] memory) {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
@@ -471,10 +474,10 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-getCrsMaterials}.
+     * @dev See {IKMSGeneration-getCrsMaterials}.
      */
     function getCrsMaterials(uint256 crsId) external view virtual returns (string[] memory, bytes memory) {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         if (!$.isRequestDone[crsId]) {
             revert CrsNotGenerated(crsId);
@@ -487,7 +490,7 @@ contract KMSManagement is
     }
 
     /**
-     * @dev See {IKmsManagement-getVersion}.
+     * @dev See {IKMSGeneration-getVersion}.
      */
     function getVersion() external pure virtual returns (string memory) {
         return
@@ -527,7 +530,7 @@ contract KMSManagement is
      * @return The list of storage URLs.
      */
     function _storeConsensusMaterials(uint256 requestId, bytes32 digest) internal virtual returns (string[] memory) {
-        KmsManagementStorage storage $ = _getKmsManagementStorage();
+        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
 
         // Get the KMS node's storage URL
         string memory kmsNodeStorageUrl = GATEWAY_CONFIG.getKmsNode(msg.sender).storageUrl;
@@ -589,7 +592,7 @@ contract KMSManagement is
         bytes32[] memory keyDigestHashes = new bytes32[](keyDigests.length);
         for (uint256 i = 0; i < keyDigests.length; i++) {
             keyDigestHashes[i] = keccak256(
-                abi.encode(EIP712_KEYDIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
+                abi.encode(EIP712_KEY_DIGEST_TYPE_HASH, keyDigests[i].keyType, keccak256(keyDigests[i].digest))
             );
         }
 
@@ -627,15 +630,15 @@ contract KMSManagement is
     }
 
     /**
-     * @dev Returns the KmsManagement storage location.
+     * @dev Returns the KMSGeneration storage location.
      * Note that this function is internal but not virtual: derived contracts should be able to
      * access it, but if the underlying storage struct version changes, we force them to define a new
      * getter function and use that one instead in order to avoid overriding the storage location.
      */
-    function _getKmsManagementStorage() internal pure returns (KmsManagementStorage storage $) {
+    function _getKMSGenerationStorage() internal pure returns (KMSGenerationStorage storage $) {
         // solhint-disable-next-line no-inline-assembly
         assembly {
-            $.slot := KMS_MANAGEMENT_STORAGE_LOCATION
+            $.slot := KMS_GENERATION_STORAGE_LOCATION
         }
     }
 }

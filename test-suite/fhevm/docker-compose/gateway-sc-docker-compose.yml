@@ -69,7 +69,7 @@ services:
     env_file:
       - ../env/staging/.env.gateway-sc.local
     command:
-      - npx hardhat task:triggerKeygen --params-type 1 --use-internal-kms-management-address true
+      - npx hardhat task:triggerKeygen --params-type 1
     depends_on:
       gateway-sc-add-network:
         condition: service_completed_successfully
@@ -91,7 +91,7 @@ services:
     env_file:
       - ../env/staging/.env.gateway-sc.local
     command:
-      - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-kms-management-address true
+      - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048
     depends_on:
       gateway-sc-trigger-keygen:
         condition: service_completed_successfully
