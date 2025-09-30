@@ -207,7 +207,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
         err.as_error_resp()
             .and_then(|payload| payload.as_decoded_interface_error::<MultichainACLErrors>())
             .map(|error| match error {
-                MultichainACLErrors::CoprocessorAlreadyAllowedAccount(c) => c.coprocessor,
+                MultichainACLErrors::CoprocessorAlreadyAllowedAccount(c) => c.txSender, /* coprocessor address */
                 MultichainACLErrors::CoprocessorAlreadyAllowedPublicDecrypt(c) => c.txSender,
             })
     }
