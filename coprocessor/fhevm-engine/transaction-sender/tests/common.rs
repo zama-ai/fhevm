@@ -34,8 +34,8 @@ sol!(
 
 sol!(
     #[sol(rpc)]
-    MultichainAcl,
-    "artifacts/MultichainAcl.sol/MultichainAcl.json"
+    MultichainACL,
+    "artifacts/MultichainACL.sol/MultichainACL.json"
 );
 
 pub enum SignerType {

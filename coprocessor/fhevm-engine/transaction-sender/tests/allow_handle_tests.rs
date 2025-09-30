@@ -2,7 +2,7 @@ use alloy::network::TxSigner;
 use alloy::providers::ProviderBuilder;
 use alloy::signers::local::PrivateKeySigner;
 use alloy::{primitives::Address, providers::WsConnect};
-use common::{MultichainAcl, SignerType, TestEnvironment};
+use common::{MultichainACL, SignerType, TestEnvironment};
 
 use fhevm_engine_common::types::AllowEvents;
 use rand::random;
@@ -107,7 +107,7 @@ async fn allow_call(
             .await?,
         Some(env.wallet.default_signer().address()),
     );
-    let multichain_acl = MultichainAcl::deploy(&provider_deploy, already_allowed_revert).await?;
+    let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
 
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
@@ -227,7 +227,7 @@ async fn stop_on_backend_gone(#[case] signer_type: SignerType) -> anyhow::Result
         Some(env.wallet.default_signer().address()),
     );
     let already_allowed_revert = false;
-    let multichain_acl = MultichainAcl::deploy(&provider_deploy, already_allowed_revert).await?;
+    let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
 
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
@@ -326,7 +326,7 @@ async fn retry_on_aws_kms_error(#[case] signer_type: SignerType) -> anyhow::Resu
         Some(env.wallet.default_signer().address()),
     );
     let already_allowed_revert = false;
-    let multichain_acl = MultichainAcl::deploy(&provider_deploy, already_allowed_revert).await?;
+    let multichain_acl = MultichainACL::deploy(&provider_deploy, already_allowed_revert).await?;
 
     let txn_sender = TransactionSender::new(
         PrivateKeySigner::random().address(),
