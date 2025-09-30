@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.28;
-import "contracts/interfaces/IKMSManagement.sol";
+import "contracts/interfaces/IKMSGeneration.sol";
 
 /// @dev This contract is a mock of the KmsManagement contract from the Gateway.
 /// source: github.com/zama-ai/fhevm/blob/main/gateway-contracts/contracts/KmsManagement.sol
-contract KMSManagement is IKMSManagement {
+contract KMSGeneration is IKMSGeneration {
     function keygen_public_key() external {
         uint256 keyId = 16;
         string[] memory urls = new string[](4);

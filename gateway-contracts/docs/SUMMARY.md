@@ -9,4 +9,4 @@
   - [Deploy contracts in Docker](getting-started/deployment/docker_deploy.md)
 - Contracts
   - [GatewayConfig](getting-started/contracts/gateway_config.md)
-  - [KmsManagement](getting-started/contracts/kms_management.md)
+  - [KMSGeneration](getting-started/contracts/kms_generation.md)

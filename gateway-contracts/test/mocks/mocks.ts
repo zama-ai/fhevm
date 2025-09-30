@@ -7,7 +7,7 @@ import {
   DecryptionMock,
   GatewayConfigMock,
   InputVerificationMock,
-  KMSManagementMock,
+  KMSGenerationMock,
   MultichainACLMock,
 } from "../../typechain-types";
 import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getPrepKeygenId, toValues } from "../utils";
@@ -17,7 +17,7 @@ describe("Mock contracts", function () {
   let ciphertextCommitsMock: CiphertextCommitsMock;
   let decryptionMock: DecryptionMock;
   let gatewayConfigMock: GatewayConfigMock;
-  let kmsManagementMock: KMSManagementMock;
+  let kmsGenerationMock: KMSGenerationMock;
   let inputVerificationMock: InputVerificationMock;
   let MultichainACLMock: MultichainACLMock;
 
@@ -106,8 +106,8 @@ describe("Mock contracts", function () {
     const inputVerificationFactory = await ethers.getContractFactory("InputVerificationMock");
     const inputVerificationMock = await inputVerificationFactory.deploy();
 
-    const kmsManagementFactory = await ethers.getContractFactory("KMSManagementMock");
-    const kmsManagementMock = await kmsManagementFactory.deploy();
+    const kmsGenerationFactory = await ethers.getContractFactory("KMSGenerationMock");
+    const kmsGenerationMock = await kmsGenerationFactory.deploy();
 
     const MultichainACLFactory = await ethers.getContractFactory("MultichainACLMock");
     const MultichainACLMock = await MultichainACLFactory.deploy();
@@ -117,7 +117,7 @@ describe("Mock contracts", function () {
       ciphertextCommitsMock,
       decryptionMock,
       gatewayConfigMock,
-      kmsManagementMock,
+      kmsGenerationMock,
       inputVerificationMock,
     };
   }
@@ -128,7 +128,7 @@ describe("Mock contracts", function () {
     ciphertextCommitsMock = fixture.ciphertextCommitsMock;
     decryptionMock = fixture.decryptionMock;
     gatewayConfigMock = fixture.gatewayConfigMock;
-    kmsManagementMock = fixture.kmsManagementMock;
+    kmsGenerationMock = fixture.kmsGenerationMock;
     inputVerificationMock = fixture.inputVerificationMock;
     MultichainACLMock = fixture.MultichainACLMock;
   });
@@ -306,39 +306,39 @@ describe("Mock contracts", function () {
     });
   });
 
-  describe("KMSManagementMock", async function () {
+  describe("KMSGenerationMock", async function () {
     const prepKeygenId = getPrepKeygenId(1);
     const keyId = getKeyId(1);
     const crsgenId = getCrsId(1);
     const epochId = 0;
 
     it("Should emit PrepKeygenRequest event on keygen request", async function () {
-      await expect(kmsManagementMock.keygen(DefaultParamsType))
-        .to.emit(kmsManagementMock, "PrepKeygenRequest")
+      await expect(kmsGenerationMock.keygen(DefaultParamsType))
+        .to.emit(kmsGenerationMock, "PrepKeygenRequest")
         .withArgs(prepKeygenId, epochId, DefaultParamsType);
     });
 
     it("Should emit KeygenRequest event on preprocessing keygen response", async function () {
-      await expect(kmsManagementMock.prepKeygenResponse(prepKeygenId, DefaultBytes))
-        .to.emit(kmsManagementMock, "KeygenRequest")
+      await expect(kmsGenerationMock.prepKeygenResponse(prepKeygenId, DefaultBytes))
+        .to.emit(kmsGenerationMock, "KeygenRequest")
         .withArgs(prepKeygenId, keyId);
     });
 
     it("Should emit ActivateKey event on keygen response", async function () {
-      await expect(kmsManagementMock.keygenResponse(keyId, [DefaultKmsDigest], DefaultBytes))
-        .to.emit(kmsManagementMock, "ActivateKey")
+      await expect(kmsGenerationMock.keygenResponse(keyId, [DefaultKmsDigest], DefaultBytes))
+        .to.emit(kmsGenerationMock, "ActivateKey")
         .withArgs(keyId, [DefaultString], toValues([DefaultKmsDigest]));
     });
 
     it("Should emit CrsgenRequest event on crsgen request", async function () {
-      await expect(kmsManagementMock.crsgenRequest(DefaultUint256, DefaultParamsType))
-        .to.emit(kmsManagementMock, "CrsgenRequest")
+      await expect(kmsGenerationMock.crsgenRequest(DefaultUint256, DefaultParamsType))
+        .to.emit(kmsGenerationMock, "CrsgenRequest")
         .withArgs(crsgenId, DefaultUint256, DefaultParamsType);
     });
 
     it("Should emit ActivateCrs event on crsgen request", async function () {
-      await expect(kmsManagementMock.crsgenResponse(crsgenId, DefaultBytes, DefaultBytes))
-        .to.emit(kmsManagementMock, "ActivateCrs")
+      await expect(kmsGenerationMock.crsgenResponse(crsgenId, DefaultBytes, DefaultBytes))
+        .to.emit(kmsGenerationMock, "ActivateCrs")
         .withArgs(crsgenId, [DefaultString], DefaultBytes);
     });
   });

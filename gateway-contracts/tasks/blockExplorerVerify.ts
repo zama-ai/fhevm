@@ -101,7 +101,7 @@ task("task:verifyInputVerification")
     });
   });
 
-task("task:verifyKMSManagement")
+task("task:verifyKMSGeneration")
   .addOptionalParam(
     "useInternalProxyAddress",
     "If proxy address from the /addresses directory should be used",
@@ -112,7 +112,7 @@ task("task:verifyKMSManagement")
     if (useInternalProxyAddress) {
       dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
     }
-    const proxyAddress = getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS");
+    const proxyAddress = getRequiredEnvVar("KMS_GENERATION_ADDRESS");
 
     const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
     await run("verify:verify", {
@@ -163,8 +163,8 @@ task("task:verifyAllGatewayContracts")
     console.log("Verify InputVerification contract:");
     await hre.run("task:verifyInputVerification", { useInternalProxyAddress });
 
-    console.log("Verify KMSManagement contract:");
-    await hre.run("task:verifyKMSManagement", { useInternalProxyAddress });
+    console.log("Verify KMSGeneration contract:");
+    await hre.run("task:verifyKMSGeneration", { useInternalProxyAddress });
 
     console.log("Verify CiphertextCommits contract:");
     await hre.run("task:verifyCiphertextCommits", { useInternalProxyAddress });

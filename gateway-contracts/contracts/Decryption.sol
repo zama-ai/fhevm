@@ -313,8 +313,10 @@ contract Decryption is
     ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Make sure the decryptionId corresponds to a generated decryption request.
-        if (decryptionId > $.publicDecryptionCounter || decryptionId == 0) {
+        // Make sure the decryptionId corresponds to a generated public decryption request:
+        // - it must be greater than the base counter for public decryption requests
+        // - it must be less than or equal to the current public decryption counter
+        if (decryptionId <= PUBLIC_DECRYPT_COUNTER_BASE || decryptionId > $.publicDecryptionCounter) {
             revert DecryptionNotRequested(decryptionId);
         }
 
@@ -547,8 +549,10 @@ contract Decryption is
     ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Make sure the decryptionId corresponds to a generated decryption request.
-        if (decryptionId > $.userDecryptionCounter || decryptionId == 0) {
+        // Make sure the decryptionId corresponds to a generated user decryption request:
+        // - it must be greater than the base counter for user decryption requests
+        // - it must be less than or equal to the current user decryption counter
+        if (decryptionId <= USER_DECRYPT_COUNTER_BASE || decryptionId > $.userDecryptionCounter) {
             revert DecryptionNotRequested(decryptionId);
         }
 

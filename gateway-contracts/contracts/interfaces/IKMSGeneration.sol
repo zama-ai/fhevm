@@ -2,12 +2,12 @@
 pragma solidity ^0.8.24;
 
 /**
- * @title Interface for the KmsManagement contract.
- * @notice The KmsManagement contract is responsible for managing the KMS public materials used
+ * @title Interface for the KMSGeneration contract.
+ * @notice The KMSGeneration contract is responsible for managing the KMS public materials used
  * within the fhevm protocol. These materials include FHE keys (logical, physical), KSKs (Key Switching Keys)
  * and CRS (Common Reference String).
  */
-interface IKMSManagement {
+interface IKMSGeneration {
     /**
      * @notice The type of the parameters to use for the generation requests.
      */
@@ -190,7 +190,7 @@ interface IKMSManagement {
     function getCrsMaterials(uint256 crsId) external view returns (string[] memory, bytes memory);
 
     /**
-     * @notice Returns the versions of the KmsManagement contract in SemVer format.
+     * @notice Returns the versions of the KMSGeneration contract in SemVer format.
      * @dev This is conventionally used for upgrade features.
      */
     function getVersion() external pure returns (string memory);

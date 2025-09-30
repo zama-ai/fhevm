@@ -10,7 +10,7 @@ import {
   Decryption__factory,
   GatewayConfig,
   IDecryption,
-  KMSManagement,
+  KMSGeneration,
   MultichainACL,
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
@@ -98,14 +98,14 @@ describe("Decryption", function () {
   // Define fake values
   const fakeTxSender = createRandomWallet();
   const fakeSigner = createRandomWallet();
-  const nullDecryptionId = 0;
+  const tooLowDecryptionId = 0;
   const tooHighDecryptionId = getPublicDecryptId(1000) + getUserDecryptId(1000);
 
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
 
   let gatewayConfig: GatewayConfig;
-  let kmsManagement: KMSManagement;
+  let kmsGeneration: KMSGeneration;
   let MultichainACL: MultichainACL;
   let ciphertextCommits: CiphertextCommits;
   let decryption: Decryption;
@@ -211,7 +211,7 @@ describe("Decryption", function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(preparePublicDecryptEIP712Fixture);
       gatewayConfig = fixtureData.gatewayConfig;
-      kmsManagement = fixtureData.kmsManagement;
+      kmsGeneration = fixtureData.kmsGeneration;
       MultichainACL = fixtureData.MultichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
@@ -580,17 +580,15 @@ describe("Decryption", function () {
       expect(decryptionConsensusTxSenders).to.deep.equal(expectedKmsTxSenderAddresses);
     });
 
-    // TODO: Update this test when support for old decryption requests is removed
-    // See https://github.com/zama-ai/fhevm-internal/issues/377
     it("Should revert in case of invalid decryptionId in public decryption response", async function () {
-      // Check that a public decryption response with null (invalid) decryptionId reverts
+      // Check that a public decryption response with a too low (invalid) decryptionId reverts
       await expect(
         decryption
           .connect(kmsTxSenders[0])
-          .publicDecryptionResponse(nullDecryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
+          .publicDecryptionResponse(tooLowDecryptionId, decryptedResult, kmsSignatures[0], extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
 
-      // Check that a public decryption response with too high (not requested yet) new decryptionId reverts
+      // Check that a public decryption response with too high (not requested yet) decryptionId reverts
       await expect(
         decryption
           .connect(kmsTxSenders[0])
@@ -754,7 +752,7 @@ describe("Decryption", function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
       gatewayConfig = fixtureData.gatewayConfig;
-      kmsManagement = fixtureData.kmsManagement;
+      kmsGeneration = fixtureData.kmsGeneration;
       MultichainACL = fixtureData.MultichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
@@ -1414,17 +1412,15 @@ describe("Decryption", function () {
       expect(decryptionConsensusTxSenders3).to.deep.equal(expectedKmsTxSenderAddresses3);
     });
 
-    // TODO: Update this test when support for old decryption requests is removed
-    // See https://github.com/zama-ai/fhevm-internal/issues/377
     it("Should revert in case of invalid decryptionId in user decryption response", async function () {
-      // Check that a user decryption response with null (invalid) decryptionId reverts
+      // Check that a user decryption response with a too low (invalid) decryptionId reverts
       await expect(
         decryption
           .connect(kmsTxSenders[0])
-          .userDecryptionResponse(nullDecryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
+          .userDecryptionResponse(tooLowDecryptionId, userDecryptedShares[0], kmsSignatures[0], extraDataV0),
       ).to.be.revertedWithCustomError(decryption, "DecryptionNotRequested");
 
-      // Check that a user decryption response with too high (not requested yet) new decryptionId reverts
+      // Check that a user decryption response with too high (not requested yet) decryptionId reverts
       await expect(
         decryption
           .connect(kmsTxSenders[0])
@@ -1621,7 +1617,7 @@ describe("Decryption", function () {
     beforeEach(async function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(prepareDelegatedUserDecryptEIP712Fixture);
-      kmsManagement = fixtureData.kmsManagement;
+      kmsGeneration = fixtureData.kmsGeneration;
       MultichainACL = fixtureData.MultichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;

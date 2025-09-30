@@ -10,7 +10,7 @@ import {
   EmptyUUPSProxyGatewayConfig,
   GatewayConfig,
   InputVerification,
-  KMSManagement,
+  KMSGeneration,
   MultichainACL,
   PauserSet,
 } from "../typechain-types";
@@ -19,7 +19,7 @@ import {
 import {
   CoprocessorStruct,
   CustodianStruct,
-  KmsNodeV2Struct,
+  KmsNodeStruct,
 } from "../typechain-types/contracts/interfaces/IGatewayConfig";
 import { UINT64_MAX, createRandomWallet, loadHostChainIds, loadTestVariablesFixture, toValues } from "./utils";
 
@@ -44,7 +44,7 @@ describe("GatewayConfig", function () {
   let owner: Wallet;
   let pauser: Wallet;
   let nKmsNodes: number;
-  let kmsNodes: KmsNodeV2Struct[];
+  let kmsNodes: KmsNodeStruct[];
   let kmsTxSenders: HardhatEthersSigner[];
   let kmsSigners: HardhatEthersSigner[];
   let coprocessors: CoprocessorStruct[];
@@ -178,7 +178,7 @@ describe("GatewayConfig", function () {
     });
 
     it("Should revert because the KMS nodes list is empty", async function () {
-      const emptyKmsNodes: KmsNodeV2Struct[] = [];
+      const emptyKmsNodes: KmsNodeStruct[] = [];
 
       await expect(
         hre.upgrades.upgradeProxy(proxyContract, newGatewayConfigFactory, {
@@ -869,7 +869,7 @@ describe("GatewayConfig", function () {
       let ciphertextCommits: CiphertextCommits;
       let decryption: Decryption;
       let inputVerification: InputVerification;
-      let kmsManagement: KMSManagement;
+      let kmsGeneration: KMSGeneration;
       let MultichainACL: MultichainACL;
 
       before(async function () {
@@ -877,7 +877,7 @@ describe("GatewayConfig", function () {
         ciphertextCommits = fixtureData.ciphertextCommits;
         decryption = fixtureData.decryption;
         inputVerification = fixtureData.inputVerification;
-        kmsManagement = fixtureData.kmsManagement;
+        kmsGeneration = fixtureData.kmsGeneration;
         MultichainACL = fixtureData.MultichainACL;
       });
 

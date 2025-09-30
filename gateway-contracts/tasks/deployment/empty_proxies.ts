@@ -98,11 +98,11 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
     address: decryptionAddress,
   });
 
-  console.log("Deploying an EmptyUUPS proxy contract for KMSManagement...");
-  const kmsManagementAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  console.log("Deploying an EmptyUUPS proxy contract for KMSGeneration...");
+  const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "KMSManagement",
-    address: kmsManagementAddress,
+    name: "KMSGeneration",
+    address: kmsGenerationAddress,
   });
 
   console.log("Deploying an EmptyUUPS proxy contract for InputVerification...");

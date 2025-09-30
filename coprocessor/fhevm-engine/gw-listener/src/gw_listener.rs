@@ -23,13 +23,13 @@ sol!(
 
 sol!(
     #[sol(rpc)]
-    KMSManagement,
-    "./../../../gateway-contracts/artifacts/contracts/KMSManagement.sol/KMSManagement.json"
+    KMSGeneration,
+    "./../../../gateway-contracts/artifacts/contracts/KMSGeneration.sol/KMSGeneration.json"
 );
 
 pub struct GatewayListener<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface> {
     input_verification_address: Address,
-    kms_management_address: Address,
+    kms_generation_address: Address,
     conf: ConfigSettings,
     cancel_token: CancellationToken,
     provider: P,
@@ -39,7 +39,7 @@ pub struct GatewayListener<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Inte
 impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface> GatewayListener<P, A> {
     pub fn new(
         input_verification_address: Address,
-        kms_management_address: Address,
+        kms_generation_address: Address,
         conf: ConfigSettings,
         cancel_token: CancellationToken,
         provider: P,
@@ -47,7 +47,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface> GatewayListener
     ) -> Self {
         GatewayListener {
             input_verification_address,
-            kms_management_address,
+            kms_generation_address,
             conf,
             cancel_token,
             provider,
@@ -59,7 +59,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface> GatewayListener
         info!(
             conf = ?self.conf,
             self.input_verification_address = %self.input_verification_address,
-            self.kms_management_address = %self.kms_management_address,
+            self.kms_generation_address = %self.kms_generation_address,
             "Starting Gateway Listener",
         );
         let db_pool = PgPoolOptions::new()
@@ -97,7 +97,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface> GatewayListener
         let input_verification =
             InputVerification::new(self.input_verification_address, &self.provider);
 
-        let kms_management = KMSManagement::new(self.kms_management_address, &self.provider);
+        let kms_generation = KMSGeneration::new(self.kms_generation_address, &self.provider);
 
         let mut from_block = self.get_last_block_num(db_pool).await?;
         let host_chain_id = self.conf.host_chain_id;
@@ -118,22 +118,22 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface> GatewayListener
             .into_stream()
             .fuse();
         info!("Subscribed to InputVerification.VerifyProofRequest events");
-        let mut activate_key = kms_management
+        let mut activate_key = kms_generation
             .ActivateKey_filter()
             .from_block(from_block)
             .subscribe()
             .await?
             .into_stream()
             .fuse();
-        info!("Subscribed to KMSManagement.ActivateKeyRequest events");
-        let mut activate_crs = kms_management
+        info!("Subscribed to KMSGeneration.ActivateKeyRequest events");
+        let mut activate_crs = kms_generation
             .ActivateCrs_filter()
             .from_block(from_block)
             .subscribe()
             .await?
             .into_stream()
             .fuse();
-        info!("Subscribed to KMSManagement.ActivateKeyRequest events");
+        info!("Subscribed to KMSGeneration.ActivateKeyRequest events");
         loop {
             tokio::select! {
                 _ = self.cancel_token.cancelled() => {
@@ -206,7 +206,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface> GatewayListener
     async fn activate_key(
         &self,
         db_pool: &Pool<Postgres>,
-        request: KMSManagement::ActivateKey,
+        request: KMSGeneration::ActivateKey,
         s3_client: &A,
         host_chain_id: ChainId,
     ) -> anyhow::Result<()> {
@@ -274,7 +274,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface> GatewayListener
     async fn activate_crs(
         &self,
         db_pool: &Pool<Postgres>,
-        request: KMSManagement::ActivateCrs,
+        request: KMSGeneration::ActivateCrs,
         s3_client: &A,
         host_chain_id: ChainId,
     ) -> anyhow::Result<()> {

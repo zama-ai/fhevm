@@ -142,9 +142,9 @@ task("task:deployInputVerification").setAction(async function (_, hre) {
   await deployContractImplementation("InputVerification", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
-// Deploy the KMSManagement contract
-task("task:deployKMSManagement").setAction(async function (_, hre) {
-  await deployContractImplementation("KMSManagement", hre, REGULAR_EMPTY_PROXY_NAME);
+// Deploy the KMSGeneration contract
+task("task:deployKMSGeneration").setAction(async function (_, hre) {
+  await deployContractImplementation("KMSGeneration", hre, REGULAR_EMPTY_PROXY_NAME);
 });
 
 // Deploy the CiphertextCommits contract
@@ -183,8 +183,8 @@ task("task:deployAllGatewayContracts").setAction(async function (_, hre) {
   console.log("Deploy InputVerification contract:");
   await hre.run("task:deployInputVerification");
 
-  console.log("Deploy KMSManagement contract:");
-  await hre.run("task:deployKMSManagement");
+  console.log("Deploy KMSGeneration contract:");
+  await hre.run("task:deployKMSGeneration");
 
   console.log("Deploy CiphertextCommits contract:");
   await hre.run("task:deployCiphertextCommits");
