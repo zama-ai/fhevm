@@ -38,3 +38,23 @@ services:
     depends_on:
       host-node:
         condition: service_started
+
+  host-sc-add-pausers:
+    container_name: fhevm-host-add-pausers
+    image: ghcr.io/zama-ai/fhevm/host-contracts:${HOST_VERSION}
+    build:
+      context: ../../../host-contracts
+      dockerfile: Dockerfile
+      cache_from:
+        - type=gha
+      cache_to:
+        - type=gha,mode=max
+    env_file:
+      - ../env/staging/.env.host.local
+    command:
+      - npx hardhat task:addPausers
+    depends_on:
+      host-node:
+        condition: service_started
+      host-sc-deploy:
+        condition: service_completed_successfully
