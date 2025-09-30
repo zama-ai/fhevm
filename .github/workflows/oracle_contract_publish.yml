@@ -40,7 +40,6 @@ jobs:
         if: ${{ inputs.release != 'true' }}
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
-          package: ./oracle/package.json
           tag: prerelease
           token: ${{ secrets.DEVELOPER_PLATFORM_NPM_TOKEN }}
           provenance: false
@@ -50,7 +49,6 @@ jobs:
         if: ${{ inputs.release == 'true' }}
         uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
         with:
-          package: ./oracle/package.json
           token: ${{ secrets.DEVELOPER_PLATFORM_NPM_TOKEN }}
           provenance: false
           access: public
