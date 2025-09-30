@@ -581,7 +581,11 @@ contract KMSManagement is
         uint256 keyId,
         KeyDigest[] calldata keyDigests
     ) internal view virtual returns (bytes32) {
-        // Encode each KeyDigest struct and compute its struct hash.
+        /**
+         * Encodes each KeyDigest struct and computes its struct hash.
+         * The `keyDigests` array must be ordered consistently with the KMS nodes:
+         * the first element corresponds to the Server type, and the second to the Public type.
+         */
         bytes32[] memory keyDigestHashes = new bytes32[](keyDigests.length);
         for (uint256 i = 0; i < keyDigests.length; i++) {
             keyDigestHashes[i] = keccak256(

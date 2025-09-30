@@ -15,7 +15,7 @@ import "./tasks/addHostChains";
 import "./tasks/addPausers";
 import "./tasks/blockExplorerVerify";
 import "./tasks/deployment";
-import "./tasks/generateFheMaterials";
+import "./tasks/generateKmsMaterials";
 import "./tasks/getters";
 import "./tasks/pauseContracts";
 import "./tasks/safeSmartAccounts";
