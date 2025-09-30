@@ -101,7 +101,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
     if (data.supportScalar && data.scalar && data.nonScalar) {
       switch (data.numberInputs) {
         case 1:
-          output += `    /**
+          output += `  
+        /**
         * @notice Check the homomorphic complexity units limit required for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
         * @param resultType Result type.
         * @param scalarByte Scalar byte.
@@ -114,7 +115,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
     `;
           break;
         case 2:
-          output += `    /**
+          output += `
+        /**
          * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param scalarByte Scalar byte.
@@ -133,7 +135,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
     } else if (data.supportScalar && data.scalar && !data.nonScalar) {
       switch (data.numberInputs) {
         case 2:
-          output += `    /**
+          output += `    
+        /**
          * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param scalarByte Scalar byte.
@@ -162,7 +165,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
     `;
           break;
         case 1:
-          output += `    /**
+          output += `    
+      /**
         * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
         * @param ct The only operand.
         * @param result Result.
@@ -173,7 +177,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
     `;
           break;
         case 2:
-          output += `    /**
+          output += `    
+        /**
          * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param lhs The left-hand side operand.
@@ -186,7 +191,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
     `;
           break;
         case 3:
-          output += `    /**
+          output += `    
+        /**
          * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param lhs The left-hand side operand.
@@ -232,6 +238,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
     }
     output += `
         }
+        
     `;
   }
 

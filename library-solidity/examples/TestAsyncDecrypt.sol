@@ -16,6 +16,7 @@ contract TestAsyncDecrypt {
     euint64 xUint64;
     euint64 xUint64_2;
     euint64 xUint64_3;
+    euint64 xUint64_4;
     euint128 xUint128;
     eaddress xAddress;
     eaddress xAddress2;
@@ -29,6 +30,7 @@ contract TestAsyncDecrypt {
     uint64 public yUint64;
     uint64 public yUint64_2;
     uint64 public yUint64_3;
+    uint64 public yUint64_4;
     uint128 public yUint128;
     address public yAddress;
     address public yAddress2;
@@ -60,6 +62,8 @@ contract TestAsyncDecrypt {
         FHE.allowThis(xUint64_2);
         xUint64_3 = FHE.asEuint64(6400);
         FHE.allowThis(xUint64_3);
+        xUint64_4 = FHE.asEuint64(3737);
+        FHE.allowThis(xUint64_4);
         xUint128 = FHE.asEuint128(1267650600228229401496703205443);
         FHE.allowThis(xUint128);
         xUint256 = FHE.asEuint256(27606985387162255149739023449108101809804435888681546220650096895197251);
@@ -228,6 +232,13 @@ contract TestAsyncDecrypt {
         FHE.requestDecryption(cts, this.callbackUint64.selector);
     }
 
+    /// @notice Request decryption of a 64-bit unsigned integer
+    function requestUint64WithoutSavingHandles() public {
+        bytes32[] memory cts = new bytes32[](1);
+        cts[0] = FHE.toBytes32(xUint64_4);
+        FHE.requestDecryptionWithoutSavingHandles(cts, this.callbackUint64WithoutSavingHandles.selector);
+    }
+
     /// @notice Attempt to request decryption of a fake 64-bit unsigned integer (should revert)
     function requestFakeUint64() public {
         bytes32[] memory cts = new bytes32[](1);
@@ -259,6 +270,19 @@ contract TestAsyncDecrypt {
         FHE.checkSignatures(requestID, cleartexts, decryptionProof);
         uint64 decryptedInput = abi.decode(cleartexts, (uint64));
         yUint64 = decryptedInput;
+        return decryptedInput;
+    }
+
+    function callbackUint64WithoutSavingHandles(
+        uint256 /*requestID*/,
+        bytes memory cleartexts,
+        bytes memory decryptionProof
+    ) public returns (uint64) {
+        bytes32[] memory handlesList = new bytes32[](1);
+        handlesList[0] = FHE.toBytes32(xUint64_4);
+        require(FHE.verifySignatures(handlesList, cleartexts, decryptionProof));
+        uint64 decryptedInput = abi.decode(cleartexts, (uint64));
+        yUint64_4 = decryptedInput;
         return decryptedInput;
     }
 

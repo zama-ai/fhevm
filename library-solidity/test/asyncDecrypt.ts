@@ -125,13 +125,14 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     if (!event) {
       throw new Error('Event is null');
     }
+    const counter = event.args[0];
     const requestID = event.args[1];
     const handles = event.args[2];
     const contractCaller = event.args[3];
     const callbackSelector = event.args[4];
-    const typesList = handles.map((handle) => parseInt(handle.toString(16).slice(-4, -2), 16));
+
     // if request is not already fulfilled
-    if (mocked && !toSkip.includes(requestID)) {
+    if (mocked && !toSkip.includes(counter)) {
       // in mocked mode, we trigger the decryption fulfillment manually
       await awaitCoprocessor();
 
@@ -144,46 +145,38 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       if (!allTrue(isAllowedForDec)) {
         throw new Error('Some handle is not authorized for decryption');
       }
-      const types = typesList.map((num: string | number) => CiphertextType[num]);
       const values = await Promise.all(handles.map(async (handle: string) => await getClearText(handle)));
-
-      const valuesFormatted = values.map((value, index) =>
-        types[index] === 'address' ? '0x' + BigInt(value).toString(16).padStart(40, '0') : value,
-      );
-
-      const valuesFormatted2 = valuesFormatted.map((value, index) =>
-        typesList[index] === 9 ? '0x' + BigInt(value).toString(16).padStart(128, '0') : value,
-      );
-      const valuesFormatted3 = valuesFormatted2.map((value, index) =>
-        typesList[index] === 10 ? '0x' + BigInt(value).toString(16).padStart(256, '0') : value,
-      );
-      const valuesFormatted4 = valuesFormatted3.map((value, index) =>
-        typesList[index] === 11 ? '0x' + BigInt(value).toString(16).padStart(512, '0') : value,
-      );
 
       const abiCoder = new ethers.AbiCoder();
 
       // ABI encode the decryptedResult as done in the KMS, following the format:
       // - requestId (32 bytes)
-      // - all `n` decrypted values as separate inputs
+      // - all inputs
       // - list of signatures (list of bytes)
       // For this we use the following values for getting the correct abi encoding (in particular for
       // getting the right signatures offset right after):
       // - requestId: a dummy uint256
       // - signatures: a dummy empty array of bytes
-      const encodedData = abiCoder.encode(['uint256', ...types, 'bytes[]'], [31, ...valuesFormatted4, []]);
+      const encodedData = abiCoder.encode(
+        ['uint256', ...Array(values.length).fill('uint256'), 'bytes[]'],
+        [31, ...values, []],
+      );
 
       // To get the correct value, we pop:
-      // - the `0x` prefix (but put back afterward): first byte (2 hex characters)
+      // - the `0x` prefix (put back just after): first byte (2 hex characters)
       // - the dummy requestID: next 32 bytes (64 hex characters)
       // - the length of empty bytes[]: last 32 bytes (64 hex characters)
-      // We will most likely pop the last 64 bytes (to include the empty array's offset) instead
+      // We will most likely pop the last 64 bytes (which included the empty array's offset) instead
       // of 32 bytes in the future, see https://github.com/zama-ai/fhevm-internal/issues/345
       const decryptedResult = '0x' + encodedData.slice(66, -64);
 
-      const extraDataV0 = ethers.solidityPacked(['uint8'], [0]);
+      const extraDataV0: string = ethers.solidityPacked(['uint8'], [0]);
 
-      const decryptResultsEIP712signatures = await computeDecryptSignatures(handles, decryptedResult, extraDataV0);
+      const decryptResultsEIP712signatures: string[] = await computeDecryptSignatures(
+        handles,
+        decryptedResult,
+        extraDataV0,
+      );
 
       // Build the decryptionProof as numSigners + KMS signatures + extraData
       const packedNumSigners = ethers.solidityPacked(['uint8'], [decryptResultsEIP712signatures.length]);
@@ -194,7 +187,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
       const decryptionProof = ethers.concat([packedNumSigners, packedSignatures, extraDataV0]);
 
       // ABI encode the list of values in order to pass them in the callback
-      const encodedCleartexts = abiCoder.encode([...types], [...valuesFormatted4]);
+      const encodedCleartexts = abiCoder.encode([...Array(values.length).fill('uint256')], [...values]);
 
       const calldata =
         callbackSelector +
@@ -213,7 +206,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         } else {
           console.log('Gateway fulfillment tx failed with an unknown error');
         }
-        toSkip.push(requestID);
+        toSkip.push(counter);
         throw error;
       }
     }
