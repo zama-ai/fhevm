@@ -37,6 +37,6 @@ describe.only('TestAsyncDecryptMultiContracts', function () {
     const y = await this.contractA.yUint64();
     const y2 = await this.contractB.yUint64();
     expect(y).to.equal(0); // because first decryption callback reverted
-    expect(y2).to.equal(373737); // this second decryption, on the other hand, should succeed, but currently it is not fulfilled by mocked mode due to a logic bug in mocked relayer
+    expect(y2).to.equal(373737); // this second decryption, on the other hand, should succeed
   });
 });

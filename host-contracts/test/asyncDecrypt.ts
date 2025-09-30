@@ -106,13 +106,14 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     if (!event) {
       throw new Error('Event is null');
     }
+    const counter =  event.args[0];
     const requestID = event.args[1];
     const handles = event.args[2];
     const contractCaller = event.args[3];
     const callbackSelector = event.args[4];
 
     // if request is not already fulfilled
-    if (mocked && !toSkip.includes(requestID)) {
+    if (mocked && !toSkip.includes(counter)) {
       // in mocked mode, we trigger the decryption fulfillment manually
       await awaitCoprocessor();
 
@@ -186,7 +187,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         } else {
           console.log('Gateway fulfillment tx failed with an unknown error');
         }
-        toSkip.push(requestID);
+        toSkip.push(counter);
         throw error;
       }
     }
