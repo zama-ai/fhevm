@@ -10,13 +10,13 @@ use connector_utils::{
     config::KmsWallet,
     conn::connect_to_gateway_with_wallet,
     tests::setup::{
-        CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, KMS_MANAGEMENT_MOCK_ADDRESS,
+        CHAIN_ID, DECRYPTION_MOCK_ADDRESS, DEPLOYER_PRIVATE_KEY, KMS_GENERATION_MOCK_ADDRESS,
         TestInstance, TestInstanceBuilder,
     },
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::DecryptionInstance,
-    kms_management::KMSManagement::KMSManagementInstance,
+    kms_generation::KMSGeneration::KMSGenerationInstance,
 };
 use rstest::rstest;
 use std::time::Duration;
@@ -135,7 +135,7 @@ async fn test_process_user_decryption_response() -> anyhow::Result<()> {
 async fn test_process_prep_keygen_response() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let mut keygen_filter = test_instance
-        .kms_management_contract()
+        .kms_generation_contract()
         .KeygenRequest_filter()
         .watch()
         .await?;
@@ -183,7 +183,7 @@ async fn test_process_prep_keygen_response() -> anyhow::Result<()> {
 async fn test_process_keygen_response() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let mut activate_key_filter = test_instance
-        .kms_management_contract()
+        .kms_generation_contract()
         .ActivateKey_filter()
         .watch()
         .await?;
@@ -231,7 +231,7 @@ async fn test_process_keygen_response() -> anyhow::Result<()> {
 async fn test_process_crsgen_response() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
     let mut activate_crs_filter = test_instance
-        .kms_management_contract()
+        .kms_generation_contract()
         .ActivateCrs_filter()
         .watch()
         .await?;
@@ -349,7 +349,7 @@ async fn start_test_tx_sender(
     let tx_sender_inner = TransactionSenderInner::new(
         provider.clone(),
         DecryptionInstance::new(DECRYPTION_MOCK_ADDRESS, provider.clone()),
-        KMSManagementInstance::new(KMS_MANAGEMENT_MOCK_ADDRESS, provider),
+        KMSGenerationInstance::new(KMS_GENERATION_MOCK_ADDRESS, provider),
         TransactionSenderInnerConfig {
             tx_retries: 3,
             tx_retry_interval: Duration::from_millis(100),

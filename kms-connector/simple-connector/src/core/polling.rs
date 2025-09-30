@@ -9,7 +9,7 @@ use crate::{Error, Result, core::config::Config};
 use alloy::providers::Provider;
 use chrono::Utc;
 use dashmap::DashMap;
-use fhevm_gateway_rust_bindings::{decryption::Decryption, KMSManagement::KMSManagement};
+use fhevm_gateway_rust_bindings::{decryption::Decryption, KMSGeneration::KMSGeneration};
 use std::{
     collections::BTreeMap,
     sync::{
@@ -564,7 +564,7 @@ where
     /// Process gateway config events for a specific block with proper ordering
     async fn process_gateway_events(&self, block_number: u64, block_timestamp: u64) -> Result<()> {
         // Create contract instance
-        let contract = KMSManagement::new(
+        let contract = KMSGeneration::new(
             self.config.gateway_config_address,
             Arc::clone(&self.provider),
         );

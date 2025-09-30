@@ -37,10 +37,10 @@ CREATE TABLE IF NOT EXISTS user_decryption_requests (
 
 
 --------------------------------------------------------
---           KMSManagement contract section           --
+--           KMSGeneration contract section           --
 --------------------------------------------------------
 
--- Create KMSManagement contract events tables
+-- Create KMSGeneration contract events tables
 CREATE TABLE IF NOT EXISTS preprocess_keygen_requests (
     pre_keygen_request_id BYTEA NOT NULL,
     fhe_params_digest BYTEA NOT NULL,

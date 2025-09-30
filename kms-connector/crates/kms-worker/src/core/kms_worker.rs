@@ -4,7 +4,7 @@ use crate::{
         config::Config,
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
-            DbEventProcessor, DecryptionProcessor, EventProcessor, KMSManagementProcessor,
+            DbEventProcessor, DecryptionProcessor, EventProcessor, KMSGenerationProcessor,
             KmsClient, s3::S3Service,
         },
         kms_response_publisher::DbKmsResponsePublisher,
@@ -105,11 +105,11 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
 
         let s3_service = S3Service::new(&config, provider.clone());
         let decryption_processor = DecryptionProcessor::new(&config, s3_service);
-        let kms_management_processor = KMSManagementProcessor::new(&config);
+        let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let event_processor = DbEventProcessor::new(
             kms_client.clone(),
             decryption_processor,
-            kms_management_processor,
+            kms_generation_processor,
             db_pool.clone(),
         );
         let response_publisher = DbKmsResponsePublisher::new(db_pool.clone());

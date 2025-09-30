@@ -5,7 +5,7 @@ commonConfig:
   gatewayContractAddresses:
     decryption: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
     gatewayConfig: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
-    kmsManagement: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+    kmsGeneration: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
   tracing:
     enabled: false
     endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"

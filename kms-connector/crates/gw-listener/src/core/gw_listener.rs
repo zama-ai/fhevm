@@ -14,7 +14,7 @@ use connector_utils::{
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
-    kms_management::KMSManagement::{self, KMSManagementInstance},
+    kms_generation::KMSGeneration::{self, KMSGenerationInstance},
 };
 use std::time::Duration;
 use tokio::task::JoinSet;
@@ -31,8 +31,8 @@ where
     /// The Gateway's `Decryption` contract instance which is monitored.
     decryption_contract: DecryptionInstance<Prov>,
 
-    /// The Gateway's `KMSManagement` contract instance which is monitored.
-    kms_management_contract: KMSManagementInstance<Prov>,
+    /// The Gateway's `KMSGeneration` contract instance which is monitored.
+    kms_generation_contract: KMSGenerationInstance<Prov>,
 
     /// The entity responsible of events publication to some external storage.
     publisher: Publ,
@@ -50,12 +50,12 @@ where
     pub fn new(config: &Config, provider: Prov, publisher: Publ) -> Self {
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
-        let kms_management_contract =
-            KMSManagement::new(config.kms_management_contract.address, provider);
+        let kms_generation_contract =
+            KMSGeneration::new(config.kms_generation_contract.address, provider);
 
         Self {
             decryption_contract,
-            kms_management_contract,
+            kms_generation_contract,
             publisher,
             config: config.clone(),
         }
@@ -162,7 +162,7 @@ where
     }
 
     async fn subscribe_to_prep_keygen_requests(self) {
-        let prep_keygen_filter = self.kms_management_contract.PrepKeygenRequest_filter();
+        let prep_keygen_filter = self.kms_generation_contract.PrepKeygenRequest_filter();
         self.subscribe_to_events(
             "PrepKeygenRequest",
             prep_keygen_filter,
@@ -172,7 +172,7 @@ where
     }
 
     async fn subscribe_to_keygen_requests(self) {
-        let keygen_filter = self.kms_management_contract.KeygenRequest_filter();
+        let keygen_filter = self.kms_generation_contract.KeygenRequest_filter();
         self.subscribe_to_events(
             "KeygenRequest",
             keygen_filter,
@@ -182,7 +182,7 @@ where
     }
 
     async fn subscribe_to_crsgen_requests(self) {
-        let crsgen_filter = self.kms_management_contract.CrsgenRequest_filter();
+        let crsgen_filter = self.kms_generation_contract.CrsgenRequest_filter();
         self.subscribe_to_events(
             "CrsgenRequest",
             crsgen_filter,
@@ -221,7 +221,7 @@ mod tests {
     use anyhow::Result;
     use fhevm_gateway_bindings::{
         decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-        kms_management::KMSManagement::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+        kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
     };
     use tracing_test::traced_test;
 

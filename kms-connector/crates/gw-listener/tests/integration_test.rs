@@ -7,7 +7,7 @@ use connector_utils::{
     tests::{
         rand::{rand_address, rand_public_key, rand_u256},
         setup::{
-            DECRYPTION_MOCK_ADDRESS, KMS_MANAGEMENT_MOCK_ADDRESS, TestInstance, TestInstanceBuilder,
+            DECRYPTION_MOCK_ADDRESS, KMS_GENERATION_MOCK_ADDRESS, TestInstance, TestInstanceBuilder,
         },
     },
     types::db::ParamsTypeDb,
@@ -154,7 +154,7 @@ async fn test_publish_prep_keygen() -> anyhow::Result<()> {
 
     info!("Mocking PrepKeygenRequest on Anvil...");
     let pending_tx = test_instance
-        .kms_management_contract()
+        .kms_generation_contract()
         .keygen(ParamsTypeDb::Test as u8)
         .send()
         .await?;
@@ -205,7 +205,7 @@ async fn test_publish_keygen() -> anyhow::Result<()> {
     let rand_prep_id = rand_u256();
     let rand_signature = rand_signature();
     let pending_tx = test_instance
-        .kms_management_contract()
+        .kms_generation_contract()
         .prepKeygenResponse(rand_prep_id, rand_signature.into())
         .send()
         .await?;
@@ -253,7 +253,7 @@ async fn test_publish_crsgen() -> anyhow::Result<()> {
     info!("Mocking CrsgenRequest on Anvil...");
     let rand_max_bit_length = rand_u256();
     let pending_tx = test_instance
-        .kms_management_contract()
+        .kms_generation_contract()
         .crsgenRequest(rand_max_bit_length, ParamsTypeDb::Test as u8)
         .send()
         .await?;
@@ -386,7 +386,7 @@ fn start_test_listener(
 
     let mut config = Config::default();
     config.decryption_contract.address = DECRYPTION_MOCK_ADDRESS;
-    config.kms_management_contract.address = KMS_MANAGEMENT_MOCK_ADDRESS;
+    config.kms_generation_contract.address = KMS_GENERATION_MOCK_ADDRESS;
     config.from_block_number = from_block_number;
     config.decryption_polling = Duration::from_millis(300);
     config.key_management_polling = Duration::from_millis(300);

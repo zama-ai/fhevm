@@ -28,7 +28,7 @@ use connector_utils::{
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionErrors, DecryptionInstance},
     gateway_config::GatewayConfig::GatewayConfigErrors,
-    kms_management::KMSManagement::{self, KMSManagementErrors, KMSManagementInstance},
+    kms_generation::KMSGeneration::{self, KMSGenerationErrors, KMSGenerationInstance},
 };
 use std::time::Duration;
 use thiserror::Error;
@@ -137,13 +137,13 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponse
                 .await?;
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
-        let kms_management_contract =
-            KMSManagement::new(config.kms_management_contract.address, provider.clone());
+        let kms_generation_contract =
+            KMSGeneration::new(config.kms_generation_contract.address, provider.clone());
 
         let inner = TransactionSenderInner::new(
             provider.clone(),
             decryption_contract,
-            kms_management_contract,
+            kms_generation_contract,
             TransactionSenderInnerConfig {
                 tx_retries: config.tx_retries,
                 tx_retry_interval: config.tx_retry_interval,
@@ -165,7 +165,7 @@ pub const EIP712_SIGNATURE_LENGTH: usize = 65;
 pub struct TransactionSenderInner<P: Provider> {
     provider: P,
     decryption_contract: DecryptionInstance<P>,
-    kms_management_contract: KMSManagementInstance<P>,
+    kms_generation_contract: KMSGenerationInstance<P>,
     config: TransactionSenderInnerConfig,
 }
 
@@ -181,13 +181,13 @@ impl<P: Provider> TransactionSenderInner<P> {
     pub fn new(
         provider: P,
         decryption_contract: DecryptionInstance<P>,
-        kms_management_contract: KMSManagementInstance<P>,
+        kms_generation_contract: KMSGenerationInstance<P>,
         inner_config: TransactionSenderInnerConfig,
     ) -> Self {
         Self {
             provider,
             decryption_contract,
-            kms_management_contract,
+            kms_generation_contract,
             config: inner_config,
         }
     }
@@ -274,7 +274,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         response: PrepKeygenResponse,
     ) -> Result<TransactionReceipt, Error> {
         let call_builder = self
-            .kms_management_contract
+            .kms_generation_contract
             .prepKeygenResponse(response.prep_keygen_id, response.signature.into());
         debug!("Calldata length {}", call_builder.calldata().len());
 
@@ -286,7 +286,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         &self,
         response: KeygenResponse,
     ) -> Result<TransactionReceipt, Error> {
-        let call_builder = self.kms_management_contract.keygenResponse(
+        let call_builder = self.kms_generation_contract.keygenResponse(
             response.key_id,
             response.key_digests.into_iter().map(|k| k.into()).collect(),
             response.signature.into(),
@@ -301,7 +301,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         &self,
         response: CrsgenResponse,
     ) -> Result<TransactionReceipt, Error> {
-        let call_builder = self.kms_management_contract.crsgenResponse(
+        let call_builder = self.kms_generation_contract.crsgenResponse(
             response.crs_id,
             response.crs_digest.into(),
             response.signature.into(),
@@ -409,7 +409,7 @@ impl<P: Provider + Clone> Clone for TransactionSenderInner<P> {
         Self {
             provider: self.provider.clone(),
             decryption_contract: self.decryption_contract.clone(),
-            kms_management_contract: self.kms_management_contract.clone(),
+            kms_generation_contract: self.kms_generation_contract.clone(),
             config: self.config.clone(),
         }
     }
@@ -436,11 +436,11 @@ impl From<RpcError<TransportErrorKind>> for Error {
         {
             return Self::Irrecoverable(anyhow!("{decryption_error:?}"));
         }
-        if let Some(kms_management_error) = value
+        if let Some(kms_generation_error) = value
             .as_error_resp()
-            .and_then(|e| e.as_decoded_interface_error::<KMSManagementErrors>())
+            .and_then(|e| e.as_decoded_interface_error::<KMSGenerationErrors>())
         {
-            return Self::Irrecoverable(anyhow!("{kms_management_error:?}"));
+            return Self::Irrecoverable(anyhow!("{kms_generation_error:?}"));
         }
         if let Some(gw_config_error) = value
             .as_error_resp()
@@ -495,7 +495,7 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KMSManagementInstance::new(Address::default(), mock_provider),
+            KMSGenerationInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 trace_reverted_tx: true,
@@ -531,7 +531,7 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KMSManagementInstance::new(Address::default(), mock_provider),
+            KMSGenerationInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 trace_reverted_tx: false,
                 ..Default::default()
@@ -574,7 +574,7 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KMSManagementInstance::new(Address::default(), mock_provider),
+            KMSGenerationInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 ..Default::default()
@@ -622,7 +622,7 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KMSManagementInstance::new(Address::default(), mock_provider),
+            KMSGenerationInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 ..Default::default()
@@ -670,7 +670,7 @@ mod tests {
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
-            KMSManagementInstance::new(Address::default(), mock_provider),
+            KMSGenerationInstance::new(Address::default(), mock_provider),
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 ..Default::default()

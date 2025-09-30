@@ -29,8 +29,8 @@ pub struct Config {
     pub decryption_contract: ContractConfig,
     /// The `GatewayConfig` contract configuration.
     pub gateway_config_contract: ContractConfig,
-    /// The `KMSManagement` contract configuration.
-    pub kms_management_contract: ContractConfig,
+    /// The `KMSGeneration` contract configuration.
+    pub kms_generation_contract: ContractConfig,
     /// The service name used for tracing.
     pub service_name: String,
 
@@ -88,8 +88,8 @@ impl Config {
             ContractConfig::parse("Decryption", raw_config.decryption_contract)?;
         let gateway_config_contract =
             ContractConfig::parse("GatewayConfig", raw_config.gateway_config_contract)?;
-        let kms_management_contract =
-            ContractConfig::parse("KMSManagement", raw_config.kms_management_contract)?;
+        let kms_generation_contract =
+            ContractConfig::parse("KMSGeneration", raw_config.kms_generation_contract)?;
 
         // Validate critical configuration parts
         if raw_config.gateway_url.is_empty() {
@@ -126,7 +126,7 @@ impl Config {
             chain_id: raw_config.chain_id,
             decryption_contract,
             gateway_config_contract,
-            kms_management_contract,
+            kms_generation_contract,
             service_name: raw_config.service_name,
             events_batch_size: raw_config.events_batch_size,
             grpc_request_retries: raw_config.grpc_request_retries,
@@ -167,7 +167,7 @@ mod tests {
             env::remove_var("KMS_CONNECTOR_CHAIN_ID");
             env::remove_var("KMS_CONNECTOR_DECRYPTION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS");
-            env::remove_var("KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS");
+            env::remove_var("KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS");
             env::remove_var("KMS_CONNECTOR_SERVICE_NAME");
             env::remove_var("KMS_CONNECTOR_S3_CONFIG__REGION");
             env::remove_var("KMS_CONNECTOR_S3_CONFIG__BUCKET");
@@ -262,7 +262,7 @@ mod tests {
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var(
-                "KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS",
+                "KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS",
                 "0x5fbdb2315678afecb367f032d93f642f64180aa3",
             );
             env::set_var("KMS_CONNECTOR_SERVICE_NAME", "kms-connector-test");
@@ -294,7 +294,7 @@ mod tests {
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(
-            config.kms_management_contract.address,
+            config.kms_generation_contract.address,
             Address::from_str("0x5fbdb2315678afecb367f032d93f642f64180aa3").unwrap()
         );
         assert_eq!(config.service_name, "kms-connector-test");
