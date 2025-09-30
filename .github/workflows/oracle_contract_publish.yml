@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./apps/relayer/oracle
+        working-directory: ./apps/oracle
     permissions:
       contents: read
       id-token: write
@@ -34,7 +34,7 @@ jobs:
         run: pnpm install --include=optional --frozen-lockfile
 
       - name: Compile contracts
-        run: npm run compile
+        run: pnpm run compile
 
       - name: Publish prerelease to npm
         if: ${{ inputs.release != 'true' }}
