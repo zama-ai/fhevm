@@ -170,7 +170,7 @@ contract KMSGeneration is
      * & ~bytes32(uint256(0xff))
      */
     bytes32 private constant KMS_GENERATION_STORAGE_LOCATION =
-        0x52e3d903674697c366245bdc532b6735f22bb42391635b8e0488806aba29452b;
+        0x0b8fdb1f0a6356dd20a6cbc6f9668fac23b85f96575d10e333e603faa794ac00;
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
