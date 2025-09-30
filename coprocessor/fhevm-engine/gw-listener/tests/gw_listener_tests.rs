@@ -31,8 +31,8 @@ sol!(
 
 sol!(
     #[sol(rpc)]
-    KMSManagement,
-    "artifacts/KMSManagement.sol/KMSManagement.json"
+    KMSGeneration,
+    "artifacts/KMSGeneration.sol/KMSGeneration.json"
 );
 
 struct TestEnvironment {
@@ -107,10 +107,10 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client = AwsS3Client {};
     let input_verification = InputVerification::deploy(&provider).await?;
-    let kms_management = KMSManagement::deploy(&provider).await?;
+    let kms_generation = KMSGeneration::deploy(&provider).await?;
     let gw_listener = GatewayListener::new(
         *input_verification.address(),
-        *kms_management.address(),
+        *kms_generation.address(),
         env.conf.clone(),
         env.cancel_token.clone(),
         provider.clone(),
@@ -255,7 +255,7 @@ async fn keygen_ok() -> anyhow::Result<()> {
     use aws_smithy_mocks::{mock, mock_client};
     use gw_listener::KeyType;
 
-    // see ../contracts/KMSManagement.sol
+    // see ../contracts/KMSGeneration.sol
     let buckets = [
         "test-bucket1/PUB-P1",
         "test-bucket2/PUB-P2",
@@ -309,10 +309,10 @@ async fn keygen_ok() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client = AwsS3ClientMocked(s3);
     let input_verification = InputVerification::deploy(&provider).await?;
-    let kms_management = KMSManagement::deploy(&provider).await?;
+    let kms_generation = KMSGeneration::deploy(&provider).await?;
     let gw_listener = GatewayListener::new(
         *input_verification.address(),
-        *kms_management.address(),
+        *kms_generation.address(),
         env.conf.clone(),
         env.cancel_token.clone(),
         provider.clone(),
@@ -325,7 +325,7 @@ async fn keygen_ok() -> anyhow::Result<()> {
     assert!(!has_server_key(&env.db_pool.clone()).await?);
     assert!(!has_crs(&env.db_pool.clone()).await?);
 
-    let txn_req = kms_management
+    let txn_req = kms_generation
         .keygen_public_key()
         .into_transaction_request();
     let pending_txn = provider.send_transaction(txn_req).await?;
@@ -333,7 +333,7 @@ async fn keygen_ok() -> anyhow::Result<()> {
     assert!(receipt.status());
     assert!(has_public_key(&env.db_pool.clone()).await?);
 
-    let txn_req = kms_management
+    let txn_req = kms_generation
         .keygen_server_key()
         .into_transaction_request();
     let pending_txn = provider.send_transaction(txn_req).await?;
@@ -341,7 +341,7 @@ async fn keygen_ok() -> anyhow::Result<()> {
     assert!(receipt.status());
     assert!(has_server_key(&env.db_pool.clone()).await?);
 
-    let txn_req = kms_management.crsgen().into_transaction_request();
+    let txn_req = kms_generation.crsgen().into_transaction_request();
     let pending_txn = provider.send_transaction(txn_req).await?;
     let receipt = pending_txn.get_receipt().await?;
     assert!(receipt.status());
@@ -368,7 +368,7 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
     use aws_smithy_mocks::{mock, mock_client};
     use gw_listener::KeyType;
 
-    // see ../contracts/KMSManagement.sol
+    // see ../contracts/KMSGeneration.sol
     let buckets = [
         "test-bucket1/PUB-P1",
         "test-bucket2/PUB-P2",
@@ -409,10 +409,10 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client = AwsS3ClientMocked(s3);
     let input_verification = InputVerification::deploy(&provider).await?;
-    let kms_management = KMSManagement::deploy(&provider).await?;
+    let kms_generation = KMSGeneration::deploy(&provider).await?;
     let gw_listener = GatewayListener::new(
         *input_verification.address(),
-        *kms_management.address(),
+        *kms_generation.address(),
         env.conf.clone(),
         env.cancel_token.clone(),
         provider.clone(),
@@ -427,7 +427,7 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
     assert!(!has_public_key(&env.db_pool.clone()).await?);
     assert!(!has_server_key(&env.db_pool.clone()).await?);
 
-    let txn_req = kms_management
+    let txn_req = kms_generation
         .keygen(1) // Test
         .into_transaction_request();
     let pending_txn = provider.send_transaction(txn_req).await?;
@@ -464,7 +464,7 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
     use aws_smithy_mocks::{mock, mock_client};
     use gw_listener::KeyType;
 
-    // see ../contracts/KMSManagement.sol
+    // see ../contracts/KMSGeneration.sol
     let buckets = [
         "test-bucket1/PUB-P1",
         "test-bucket2/PUB-P2",
@@ -515,10 +515,10 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
         .await?;
     let aws_s3_client = AwsS3ClientMocked(s3);
     let input_verification = InputVerification::deploy(&provider).await?;
-    let kms_management = KMSManagement::deploy(&provider).await?;
+    let kms_generation = KMSGeneration::deploy(&provider).await?;
     let gw_listener = GatewayListener::new(
         *input_verification.address(),
-        *kms_management.address(),
+        *kms_generation.address(),
         env.conf.clone(),
         env.cancel_token.clone(),
         provider.clone(),
@@ -530,7 +530,7 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
     assert!(!has_public_key(&env.db_pool.clone()).await?);
     assert!(!has_server_key(&env.db_pool.clone()).await?);
 
-    let txn_req = kms_management
+    let txn_req = kms_generation
         .keygen(1) // Test
         .into_transaction_request();
     let pending_txn = provider.send_transaction(txn_req).await?;

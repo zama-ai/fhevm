@@ -9,7 +9,7 @@ use semver::Version;
 
 fn build_contracts() {
     println!("cargo:rerun-if-changed=../../../gateway-contracts/contracts/InputVerification.sol");
-    println!("cargo:rerun-if-changed=../../../gateway-contracts/contracts/KMSManagement.sol");
+    println!("cargo:rerun-if-changed=../../../gateway-contracts/contracts/KMSGeneration.sol");
     // Step 1: Copy ../../contracts/.env.example to ../../contracts/.env
     let env_example = Path::new("../../../gateway-contracts/.env.example");
     let env_dest = Path::new("../../../gateway-contracts/.env");
