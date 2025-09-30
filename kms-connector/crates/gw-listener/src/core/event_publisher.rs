@@ -6,7 +6,7 @@ use connector_utils::types::{
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kms_management::KMSManagement::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
 use tracing::info;

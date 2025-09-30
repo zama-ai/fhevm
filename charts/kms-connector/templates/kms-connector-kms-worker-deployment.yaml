@@ -66,8 +66,8 @@ spec:
               value: {{ .Values.commonConfig.gatewayContractAddresses.decryption | quote }}
             - name: KMS_CONNECTOR_GATEWAY_CONFIG_CONTRACT__ADDRESS
               value: {{ .Values.commonConfig.gatewayContractAddresses.gatewayConfig | quote }}
-            - name: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS
-              value: {{ .Values.commonConfig.gatewayContractAddresses.kmsManagement | quote }}
+            - name: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
+              value: {{ .Values.commonConfig.gatewayContractAddresses.kmsGeneration | quote }}
           {{- if default .Values.commonConfig.tracing.enabled .Values.kmsConnectorKmsWorker.tracing.enabled }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.commonConfig.tracing.endpoint }}

@@ -12,7 +12,7 @@ use alloy::{
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
-    kms_management::KMSManagement::{self, KMSManagementInstance},
+    kms_generation::KMSGeneration::{self, KMSGenerationInstance},
 };
 use std::{sync::LazyLock, time::Duration};
 use testcontainers::{
@@ -28,7 +28,7 @@ pub const DECRYPTION_MOCK_ADDRESS: Address = Address(FixedBytes([
 pub const GATEWAY_CONFIG_MOCK_ADDRESS: Address = Address(FixedBytes([
     159, 167, 153, 249, 90, 114, 37, 140, 4, 21, 223, 237, 216, 207, 118, 210, 97, 60, 117, 15,
 ]));
-pub const KMS_MANAGEMENT_MOCK_ADDRESS: Address = Address(FixedBytes([
+pub const KMS_GENERATION_MOCK_ADDRESS: Address = Address(FixedBytes([
     200, 27, 227, 169, 24, 21, 210, 212, 9, 109, 174, 8, 26, 113, 22, 201, 250, 123, 223, 8,
 ]));
 
@@ -46,7 +46,7 @@ pub struct GatewayInstance {
     pub provider: WalletGatewayProvider,
     pub decryption_contract: DecryptionInstance<WalletGatewayProvider>,
     pub gateway_config_contract: GatewayConfigInstance<WalletGatewayProvider>,
-    pub kms_management_contract: KMSManagementInstance<WalletGatewayProvider>,
+    pub kms_generation_contract: KMSGenerationInstance<WalletGatewayProvider>,
     pub anvil: ContainerAsync<GenericImage>,
     pub anvil_host_port: u16,
     pub block_time: u64,
@@ -62,14 +62,14 @@ impl GatewayInstance {
         let decryption_contract = Decryption::new(DECRYPTION_MOCK_ADDRESS, provider.clone());
         let gateway_config_contract =
             GatewayConfig::new(GATEWAY_CONFIG_MOCK_ADDRESS, provider.clone());
-        let kms_management_contract =
-            KMSManagement::new(KMS_MANAGEMENT_MOCK_ADDRESS, provider.clone());
+        let kms_generation_contract =
+            KMSGeneration::new(KMS_GENERATION_MOCK_ADDRESS, provider.clone());
 
         GatewayInstance {
             provider,
             decryption_contract,
             gateway_config_contract,
-            kms_management_contract,
+            kms_generation_contract,
             anvil,
             anvil_host_port,
             block_time,

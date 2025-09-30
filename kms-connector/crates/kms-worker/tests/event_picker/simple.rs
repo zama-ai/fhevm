@@ -10,7 +10,7 @@ use connector_utils::{
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kms_management::KMSManagement::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
+    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
 };
 use kms_worker::core::{Config, DbEventPicker, EventPicker};
 use std::time::Duration;

@@ -1,10 +1,9 @@
-use std::str::FromStr;
-
 use alloy::primitives::{Address, U256};
 use anyhow::anyhow;
 use fhevm_gateway_bindings::{
-    decryption::Decryption::SnsCiphertextMaterial, kms_management::IKMSManagement::KeyDigest,
+    decryption::Decryption::SnsCiphertextMaterial, kms_generation::IKMSGeneration::KeyDigest,
 };
+use std::str::FromStr;
 
 /// Struct representing how `SnsCiphertextMaterial` are stored in the database.
 #[derive(sqlx::Type, Clone, Debug, Default, PartialEq)]
