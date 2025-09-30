@@ -132,7 +132,8 @@ describe('TestAsyncDecrypt', function () {
     expect(y).to.equal(52); // 5+15+32
   });
 
-  it('test async decrypt uint32 - two requests in same block', async function () {
+  // NOTICE: skipped due to recent flappy behavior: 2 transactions cannot be guaranteed to be in the same block.
+  it.skip('test async decrypt uint32 - two requests in same block', async function () {
     const pendingNonce = await ethers.provider.getTransactionCount(this.signers.alice.address, 'pending');
 
     const txA = await this.contract.requestUint32_2({

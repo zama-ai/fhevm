@@ -17,8 +17,8 @@ struct KmsNode {
     address signerAddress;
     /// @notice IP address of the KMS node
     string ipAddress;
-    /// @notice URL address of the KMS node' S3 bucket where ciphertexts are stored
-    string s3BucketUrl;
+    /// @notice URL address of the KMS node' storage where ciphertexts are stored
+    string storageUrl;
 }
 
 /// @notice Struct that represents a coprocessor
