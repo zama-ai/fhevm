@@ -1,6 +1,41 @@
+# Build outputs
 **/target/
+**/Cargo.lock
 
+# Documentation
 .gitignore
-
-design_docs
+design_docs/
 README.md
+docs/
+*.md
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+
+# Test files
+**/tests/
+**/*.rs.bk
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/

@@ -22,12 +22,20 @@ services:
       - "${MNEMONIC:-adapt mosquito move limb mobile illegal tree voyage juice mosquito burger raise father hope layer}"
     ports:
       - "8546:8546"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8546"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
 
   deploy-gateway-contracts:
     container_name: deploy-gateway-contracts
     build:
       context: .
       dockerfile: Dockerfile
+      target: prod
     env_file:
       - ./.env
     environment:
@@ -38,15 +46,17 @@ services:
       - npx hardhat task:deployAllGatewayContracts
     depends_on:
       anvil-node:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - addresses-volume:/app/addresses
+    restart: "no"
 
   add-host-chains:
     container_name: add-host-chains
     build:
       context: .
       dockerfile: Dockerfile
+      target: prod
     env_file:
       - ./.env
     environment:
@@ -57,19 +67,21 @@ services:
       - npx hardhat task:addHostChainsToGatewayConfig --use-internal-proxy-address true
     depends_on:
       anvil-node:
-        condition: service_started
+        condition: service_healthy
       deploy-gateway-contracts:
         condition: service_completed_successfully
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
       - addresses-volume:/app/addresses
+    restart: "no"
 
   trigger-keygen:
     container_name: trigger-keygen
     build:
       context: .
       dockerfile: Dockerfile
+      target: prod
     env_file:
       - ./.env
     environment:
@@ -80,19 +92,21 @@ services:
       - npx hardhat task:triggerKeygen --params-type 1 --use-internal-proxy-address true
     depends_on:
       anvil-node:
-        condition: service_started
+        condition: service_healthy
       deploy-gateway-contracts:
         condition: service_completed_successfully
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
       - addresses-volume:/app/addresses
+    restart: "no"
 
   trigger-crsgen:
     container_name: trigger-crsgen
     build:
       context: .
       dockerfile: Dockerfile
+      target: prod
     env_file:
       - ./.env
     environment:
@@ -103,19 +117,21 @@ services:
       - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-proxy-address true
     depends_on:
       anvil-node:
-        condition: service_started
+        condition: service_healthy
       deploy-gateway-contracts:
         condition: service_completed_successfully
     # Addresses needs to be mounted even though we don't use them in the task because all contracts
     # are compiled, and most of them import these addresses.
     volumes:
       - addresses-volume:/app/addresses
+    restart: "no"
 
   deploy-gateway-mock-contracts:
     container_name: deploy-gateway-mock-contracts
     build:
       context: .
       dockerfile: Dockerfile
+      target: prod
     env_file:
       - ./.env
     environment:
@@ -126,7 +142,8 @@ services:
       - npx hardhat task:deployGatewayMockContracts
     depends_on:
       anvil-node:
-        condition: service_started
+        condition: service_healthy
+    restart: "no"
 
 volumes:
   addresses-volume:
