@@ -55,18 +55,6 @@ interface IInputVerification {
     error CoprocessorAlreadyRejected(uint256 zkProofId, address txSender, address signer);
 
     /**
-     * @notice Error indicating that the ZK Proof has not been verified.
-     * @param zkProofId The ID of the ZK Proof.
-     */
-    error ProofNotVerified(uint256 zkProofId);
-
-    /**
-     * @notice Error indicating that the ZK Proof has not been rejected.
-     * @param zkProofId The ID of the ZK Proof.
-     */
-    error ProofNotRejected(uint256 zkProofId);
-
-    /**
      * @notice Error indicating that the ZK Proof is not requested yet.
      * @param zkProofId The zkProof request ID.
      */
@@ -114,16 +102,16 @@ interface IInputVerification {
     function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external;
 
     /**
-     * @notice Checks that a ZK Proof has been verified.
+     * @notice Indicate if a ZK Proof has been verified.
      * @param zkProofId The ID of the ZK Proof.
      */
-    function checkProofVerified(uint256 zkProofId) external view;
+    function isProofVerified(uint256 zkProofId) external view returns (bool);
 
     /**
-     * @notice Checks that a ZK Proof has been rejected.
+     * @notice Indicate if a ZK Proof has been rejected.
      * @param zkProofId The ID of the ZK Proof.
      */
-    function checkProofRejected(uint256 zkProofId) external view;
+    function isProofRejected(uint256 zkProofId) external view returns (bool);
 
     /**
      * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for a proof verification.

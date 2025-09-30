@@ -214,12 +214,12 @@ describe("KMSGeneration", function () {
 
       // Check that only the KMS transaction sender can send a preprocessing keygen response.
       await expect(kmsGeneration.connect(fakeOwner).prepKeygenResponse(0n, "0x"))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
+        .to.be.revertedWithCustomError(kmsGeneration, "NotKmsTxSender")
         .withArgs(fakeOwner.address);
 
       // Check that only the KMS transaction sender can trigger a keygen response.
       await expect(kmsGeneration.connect(fakeOwner).keygenResponse(0n, [], "0x"))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
+        .to.be.revertedWithCustomError(kmsGeneration, "NotKmsTxSender")
         .withArgs(fakeOwner.address);
     });
 
@@ -406,7 +406,7 @@ describe("KMSGeneration", function () {
 
       // Check that only the KMS transaction sender can send a CRS generation response.
       await expect(kmsGeneration.connect(fakeOwner).crsgenResponse(0n, "0x", "0x"))
-        .to.be.revertedWithCustomError(gatewayConfig, "NotKmsTxSender")
+        .to.be.revertedWithCustomError(kmsGeneration, "NotKmsTxSender")
         .withArgs(fakeOwner.address);
     });
 

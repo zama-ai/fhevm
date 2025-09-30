@@ -8,14 +8,11 @@ interface IMultichainACL {
         address delegatedAddress;
     }
 
-    error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress);
-    error AccountNotDelegated(uint256 chainId, DelegationAccounts delegationAccounts, address contractAddress);
     error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
     error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
     error CoprocessorAlreadyDelegated(uint256 chainId, DelegationAccounts delegationAccounts, address[] contractAddresses, address txSender);
     error EmptyContractAddresses();
-    error PublicDecryptNotAllowed(bytes32 ctHandle);
 
     event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
@@ -23,14 +20,14 @@ interface IMultichainACL {
 
     function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory extraData) external;
     function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
-    function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view;
-    function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view;
-    function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
     function delegateAccount(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external;
     function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddress) external view returns (address[] memory);
     function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view returns (address[] memory);
     function getDelegateAccountConsensusTxSenders(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view returns (address[] memory);
     function getVersion() external pure returns (string memory);
+    function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view returns (bool);
+    function isAccountDelegated(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view returns (bool);
+    function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
 }
 ```
 
@@ -77,72 +74,6 @@ interface IMultichainACL {
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
-  },
-  {
-    "type": "function",
-    "name": "checkAccountAllowed",
-    "inputs": [
-      {
-        "name": "ctHandle",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "accountAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "checkAccountDelegated",
-    "inputs": [
-      {
-        "name": "chainId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "delegationAccounts",
-        "type": "tuple",
-        "internalType": "struct DelegationAccounts",
-        "components": [
-          {
-            "name": "delegatorAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "delegatedAddress",
-            "type": "address",
-            "internalType": "address"
-          }
-        ]
-      },
-      {
-        "name": "contractAddresses",
-        "type": "address[]",
-        "internalType": "address[]"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "checkPublicDecryptAllowed",
-    "inputs": [
-      {
-        "name": "ctHandle",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -277,6 +208,90 @@ interface IMultichainACL {
     "stateMutability": "pure"
   },
   {
+    "type": "function",
+    "name": "isAccountAllowed",
+    "inputs": [
+      {
+        "name": "ctHandle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "accountAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isAccountDelegated",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "delegationAccounts",
+        "type": "tuple",
+        "internalType": "struct DelegationAccounts",
+        "components": [
+          {
+            "name": "delegatorAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "delegatedAddress",
+            "type": "address",
+            "internalType": "address"
+          }
+        ]
+      },
+      {
+        "name": "contractAddresses",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "isPublicDecryptAllowed",
+    "inputs": [
+      {
+        "name": "ctHandle",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
     "type": "event",
     "name": "AllowAccount",
     "inputs": [
@@ -344,55 +359,6 @@ interface IMultichainACL {
       }
     ],
     "anonymous": false
-  },
-  {
-    "type": "error",
-    "name": "AccountNotAllowedToUseCiphertext",
-    "inputs": [
-      {
-        "name": "ctHandle",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "accountAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "AccountNotDelegated",
-    "inputs": [
-      {
-        "name": "chainId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "delegationAccounts",
-        "type": "tuple",
-        "internalType": "struct DelegationAccounts",
-        "components": [
-          {
-            "name": "delegatorAddress",
-            "type": "address",
-            "internalType": "address"
-          },
-          {
-            "name": "delegatedAddress",
-            "type": "address",
-            "internalType": "address"
-          }
-        ]
-      },
-      {
-        "name": "contractAddress",
-        "type": "address",
-        "internalType": "address"
-      }
-    ]
   },
   {
     "type": "error",
@@ -489,17 +455,6 @@ interface IMultichainACL {
     "type": "error",
     "name": "EmptyContractAddresses",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "PublicDecryptNotAllowed",
-    "inputs": [
-      {
-        "name": "ctHandle",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
   }
 ]
 ```*/
@@ -750,204 +705,6 @@ struct DelegationAccounts { address delegatorAddress; address delegatedAddress; 
                 alloy_sol_types::abi::token::WordToken(
                     alloy_sol_types::private::keccak256(out),
                 )
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `AccountNotAllowedToUseCiphertext(bytes32,address)` and selector `0x160a2b4b`.
-```solidity
-error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct AccountNotAllowedToUseCiphertext {
-        #[allow(missing_docs)]
-        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
-        #[allow(missing_docs)]
-        pub accountAddress: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::FixedBytes<32>,
-            alloy::sol_types::sol_data::Address,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::FixedBytes<32>,
-            alloy::sol_types::private::Address,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<AccountNotAllowedToUseCiphertext>
-        for UnderlyingRustTuple<'_> {
-            fn from(value: AccountNotAllowedToUseCiphertext) -> Self {
-                (value.ctHandle, value.accountAddress)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>>
-        for AccountNotAllowedToUseCiphertext {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    ctHandle: tuple.0,
-                    accountAddress: tuple.1,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for AccountNotAllowedToUseCiphertext {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "AccountNotAllowedToUseCiphertext(bytes32,address)";
-            const SELECTOR: [u8; 4] = [22u8, 10u8, 43u8, 75u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::FixedBytes<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.accountAddress,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `AccountNotDelegated(uint256,(address,address),address)` and selector `0xc0a41015`.
-```solidity
-error AccountNotDelegated(uint256 chainId, DelegationAccounts delegationAccounts, address contractAddress);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct AccountNotDelegated {
-        #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub contractAddress: alloy::sol_types::private::Address,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Uint<256>,
-            DelegationAccounts,
-            alloy::sol_types::sol_data::Address,
-        );
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (
-            alloy::sol_types::private::primitives::aliases::U256,
-            <DelegationAccounts as alloy::sol_types::SolType>::RustType,
-            alloy::sol_types::private::Address,
-        );
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<AccountNotDelegated> for UnderlyingRustTuple<'_> {
-            fn from(value: AccountNotDelegated) -> Self {
-                (value.chainId, value.delegationAccounts, value.contractAddress)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for AccountNotDelegated {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self {
-                    chainId: tuple.0,
-                    delegationAccounts: tuple.1,
-                    contractAddress: tuple.2,
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for AccountNotDelegated {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "AccountNotDelegated(uint256,(address,address),address)";
-            const SELECTOR: [u8; 4] = [192u8, 164u8, 16u8, 21u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
-                    <DelegationAccounts as alloy_sol_types::SolType>::tokenize(
-                        &self.delegationAccounts,
-                    ),
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.contractAddress,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
             }
         }
     };
@@ -1429,86 +1186,6 @@ error EmptyContractAddresses();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
-            }
-            #[inline]
-            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
-                <Self::Parameters<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Self::new)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `PublicDecryptNotAllowed(bytes32)` and selector `0x4331a85d`.
-```solidity
-error PublicDecryptNotAllowed(bytes32 ctHandle);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct PublicDecryptNotAllowed {
-        #[allow(missing_docs)]
-        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        #[doc(hidden)]
-        type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-        #[doc(hidden)]
-        type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
-        #[cfg(test)]
-        #[allow(dead_code, unreachable_patterns)]
-        fn _type_assertion(
-            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-        ) {
-            match _t {
-                alloy_sol_types::private::AssertTypeEq::<
-                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                >(_) => {}
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<PublicDecryptNotAllowed> for UnderlyingRustTuple<'_> {
-            fn from(value: PublicDecryptNotAllowed) -> Self {
-                (value.ctHandle,)
-            }
-        }
-        #[automatically_derived]
-        #[doc(hidden)]
-        impl ::core::convert::From<UnderlyingRustTuple<'_>> for PublicDecryptNotAllowed {
-            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                Self { ctHandle: tuple.0 }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolError for PublicDecryptNotAllowed {
-            type Parameters<'a> = UnderlyingSolTuple<'a>;
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "PublicDecryptNotAllowed(bytes32)";
-            const SELECTOR: [u8; 4] = [67u8, 49u8, 168u8, 93u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::FixedBytes<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
-                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -2181,493 +1858,6 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
                 allowPublicDecryptReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `checkAccountAllowed(bytes32,address)` and selector `0x3bce498d`.
-```solidity
-function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkAccountAllowedCall {
-        #[allow(missing_docs)]
-        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
-        #[allow(missing_docs)]
-        pub accountAddress: alloy::sol_types::private::Address,
-    }
-    ///Container type for the return parameters of the [`checkAccountAllowed(bytes32,address)`](checkAccountAllowedCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkAccountAllowedReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Address,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::FixedBytes<32>,
-                alloy::sol_types::private::Address,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkAccountAllowedCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkAccountAllowedCall) -> Self {
-                    (value.ctHandle, value.accountAddress)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkAccountAllowedCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        ctHandle: tuple.0,
-                        accountAddress: tuple.1,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkAccountAllowedReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkAccountAllowedReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkAccountAllowedReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl checkAccountAllowedReturn {
-            fn _tokenize(
-                &self,
-            ) -> <checkAccountAllowedCall as alloy_sol_types::SolCall>::ReturnToken<'_> {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for checkAccountAllowedCall {
-            type Parameters<'a> = (
-                alloy::sol_types::sol_data::FixedBytes<32>,
-                alloy::sol_types::sol_data::Address,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = checkAccountAllowedReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkAccountAllowed(bytes32,address)";
-            const SELECTOR: [u8; 4] = [59u8, 206u8, 73u8, 141u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::FixedBytes<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
-                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
-                        &self.accountAddress,
-                    ),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                checkAccountAllowedReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `checkAccountDelegated(uint256,(address,address),address[])` and selector `0x51c41d0e`.
-```solidity
-function checkAccountDelegated(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkAccountDelegatedCall {
-        #[allow(missing_docs)]
-        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
-        #[allow(missing_docs)]
-        pub delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
-        #[allow(missing_docs)]
-        pub contractAddresses: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::Address,
-        >,
-    }
-    ///Container type for the return parameters of the [`checkAccountDelegated(uint256,(address,address),address[])`](checkAccountDelegatedCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkAccountDelegatedReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                DelegationAccounts,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::primitives::aliases::U256,
-                <DelegationAccounts as alloy::sol_types::SolType>::RustType,
-                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkAccountDelegatedCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkAccountDelegatedCall) -> Self {
-                    (value.chainId, value.delegationAccounts, value.contractAddresses)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkAccountDelegatedCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {
-                        chainId: tuple.0,
-                        delegationAccounts: tuple.1,
-                        contractAddresses: tuple.2,
-                    }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkAccountDelegatedReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkAccountDelegatedReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkAccountDelegatedReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl checkAccountDelegatedReturn {
-            fn _tokenize(
-                &self,
-            ) -> <checkAccountDelegatedCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for checkAccountDelegatedCall {
-            type Parameters<'a> = (
-                alloy::sol_types::sol_data::Uint<256>,
-                DelegationAccounts,
-                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = checkAccountDelegatedReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkAccountDelegated(uint256,(address,address),address[])";
-            const SELECTOR: [u8; 4] = [81u8, 196u8, 29u8, 14u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Uint<
-                        256,
-                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
-                    <DelegationAccounts as alloy_sol_types::SolType>::tokenize(
-                        &self.delegationAccounts,
-                    ),
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::Address,
-                    > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                checkAccountDelegatedReturn::_tokenize(ret)
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(Into::into)
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(Into::into)
-            }
-        }
-    };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `checkPublicDecryptAllowed(bytes32)` and selector `0x193f3f2c`.
-```solidity
-function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkPublicDecryptAllowedCall {
-        #[allow(missing_docs)]
-        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
-    }
-    ///Container type for the return parameters of the [`checkPublicDecryptAllowed(bytes32)`](checkPublicDecryptAllowedCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct checkPublicDecryptAllowedReturn {}
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkPublicDecryptAllowedCall>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkPublicDecryptAllowedCall) -> Self {
-                    (value.ctHandle,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkPublicDecryptAllowedCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { ctHandle: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = ();
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = ();
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<checkPublicDecryptAllowedReturn>
-            for UnderlyingRustTuple<'_> {
-                fn from(value: checkPublicDecryptAllowedReturn) -> Self {
-                    ()
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for checkPublicDecryptAllowedReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self {}
-                }
-            }
-        }
-        impl checkPublicDecryptAllowedReturn {
-            fn _tokenize(
-                &self,
-            ) -> <checkPublicDecryptAllowedCall as alloy_sol_types::SolCall>::ReturnToken<
-                '_,
-            > {
-                ()
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for checkPublicDecryptAllowedCall {
-            type Parameters<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = checkPublicDecryptAllowedReturn;
-            type ReturnTuple<'a> = ();
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "checkPublicDecryptAllowed(bytes32)";
-            const SELECTOR: [u8; 4] = [25u8, 63u8, 63u8, 44u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::FixedBytes<
-                        32,
-                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                checkPublicDecryptAllowedReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -3533,6 +2723,513 @@ function getVersion() external pure returns (string memory);
             }
         }
     };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isAccountAllowed(bytes32,address)` and selector `0xc6528f69`.
+```solidity
+function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isAccountAllowedCall {
+        #[allow(missing_docs)]
+        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
+        #[allow(missing_docs)]
+        pub accountAddress: alloy::sol_types::private::Address,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isAccountAllowed(bytes32,address)`](isAccountAllowedCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isAccountAllowedReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Address,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::FixedBytes<32>,
+                alloy::sol_types::private::Address,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isAccountAllowedCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isAccountAllowedCall) -> Self {
+                    (value.ctHandle, value.accountAddress)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isAccountAllowedCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        ctHandle: tuple.0,
+                        accountAddress: tuple.1,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isAccountAllowedReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isAccountAllowedReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isAccountAllowedReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isAccountAllowedCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::FixedBytes<32>,
+                alloy::sol_types::sol_data::Address,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isAccountAllowed(bytes32,address)";
+            const SELECTOR: [u8; 4] = [198u8, 82u8, 143u8, 105u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.accountAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isAccountAllowedReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isAccountAllowedReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isAccountDelegated(uint256,(address,address),address[])` and selector `0x2b13591c`.
+```solidity
+function isAccountDelegated(uint256 chainId, DelegationAccounts memory delegationAccounts, address[] memory contractAddresses) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isAccountDelegatedCall {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
+        #[allow(missing_docs)]
+        pub contractAddresses: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::Address,
+        >,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isAccountDelegated(uint256,(address,address),address[])`](isAccountDelegatedCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isAccountDelegatedReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                DelegationAccounts,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+                <DelegationAccounts as alloy::sol_types::SolType>::RustType,
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isAccountDelegatedCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isAccountDelegatedCall) -> Self {
+                    (value.chainId, value.delegationAccounts, value.contractAddresses)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isAccountDelegatedCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        chainId: tuple.0,
+                        delegationAccounts: tuple.1,
+                        contractAddresses: tuple.2,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isAccountDelegatedReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isAccountDelegatedReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isAccountDelegatedReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isAccountDelegatedCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                DelegationAccounts,
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isAccountDelegated(uint256,(address,address),address[])";
+            const SELECTOR: [u8; 4] = [43u8, 19u8, 89u8, 28u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                    <DelegationAccounts as alloy_sol_types::SolType>::tokenize(
+                        &self.delegationAccounts,
+                    ),
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contractAddresses),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isAccountDelegatedReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isAccountDelegatedReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `isPublicDecryptAllowed(bytes32)` and selector `0x0620326d`.
+```solidity
+function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isPublicDecryptAllowedCall {
+        #[allow(missing_docs)]
+        pub ctHandle: alloy::sol_types::private::FixedBytes<32>,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`isPublicDecryptAllowed(bytes32)`](isPublicDecryptAllowedCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct isPublicDecryptAllowedReturn {
+        #[allow(missing_docs)]
+        pub _0: bool,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (alloy::sol_types::private::FixedBytes<32>,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isPublicDecryptAllowedCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isPublicDecryptAllowedCall) -> Self {
+                    (value.ctHandle,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isPublicDecryptAllowedCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { ctHandle: tuple.0 }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (bool,);
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<isPublicDecryptAllowedReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: isPublicDecryptAllowedReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for isPublicDecryptAllowedReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for isPublicDecryptAllowedCall {
+            type Parameters<'a> = (alloy::sol_types::sol_data::FixedBytes<32>,);
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = bool;
+            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "isPublicDecryptAllowed(bytes32)";
+            const SELECTOR: [u8; 4] = [6u8, 32u8, 50u8, 109u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::FixedBytes<
+                        32,
+                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandle),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
+                        ret,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: isPublicDecryptAllowedReturn = r.into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: isPublicDecryptAllowedReturn = r.into();
+                        r._0
+                    })
+            }
+        }
+    };
     ///Container for all the [`IMultichainACL`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
@@ -3541,12 +3238,6 @@ function getVersion() external pure returns (string memory);
         allowAccount(allowAccountCall),
         #[allow(missing_docs)]
         allowPublicDecrypt(allowPublicDecryptCall),
-        #[allow(missing_docs)]
-        checkAccountAllowed(checkAccountAllowedCall),
-        #[allow(missing_docs)]
-        checkAccountDelegated(checkAccountDelegatedCall),
-        #[allow(missing_docs)]
-        checkPublicDecryptAllowed(checkPublicDecryptAllowedCall),
         #[allow(missing_docs)]
         delegateAccount(delegateAccountCall),
         #[allow(missing_docs)]
@@ -3559,6 +3250,12 @@ function getVersion() external pure returns (string memory);
         getDelegateAccountConsensusTxSenders(getDelegateAccountConsensusTxSendersCall),
         #[allow(missing_docs)]
         getVersion(getVersionCall),
+        #[allow(missing_docs)]
+        isAccountAllowed(isAccountAllowedCall),
+        #[allow(missing_docs)]
+        isAccountDelegated(isAccountDelegatedCall),
+        #[allow(missing_docs)]
+        isPublicDecryptAllowed(isPublicDecryptAllowedCall),
     }
     #[automatically_derived]
     impl IMultichainACLCalls {
@@ -3569,14 +3266,14 @@ function getVersion() external pure returns (string memory);
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [6u8, 32u8, 50u8, 109u8],
             [13u8, 142u8, 110u8, 44u8],
-            [25u8, 63u8, 63u8, 44u8],
             [41u8, 74u8, 135u8, 5u8],
-            [59u8, 206u8, 73u8, 141u8],
-            [81u8, 196u8, 29u8, 14u8],
+            [43u8, 19u8, 89u8, 28u8],
             [151u8, 196u8, 154u8, 64u8],
             [173u8, 139u8, 11u8, 43u8],
             [174u8, 149u8, 49u8, 134u8],
+            [198u8, 82u8, 143u8, 105u8],
             [217u8, 7u8, 36u8, 181u8],
             [244u8, 197u8, 244u8, 147u8],
         ];
@@ -3595,15 +3292,6 @@ function getVersion() external pure returns (string memory);
                 Self::allowPublicDecrypt(_) => {
                     <allowPublicDecryptCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::checkAccountAllowed(_) => {
-                    <checkAccountAllowedCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::checkAccountDelegated(_) => {
-                    <checkAccountDelegatedCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::checkPublicDecryptAllowed(_) => {
-                    <checkPublicDecryptAllowedCall as alloy_sol_types::SolCall>::SELECTOR
-                }
                 Self::delegateAccount(_) => {
                     <delegateAccountCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -3618,6 +3306,15 @@ function getVersion() external pure returns (string memory);
                 }
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::isAccountAllowed(_) => {
+                    <isAccountAllowedCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::isAccountDelegated(_) => {
+                    <isAccountDelegatedCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::isPublicDecryptAllowed(_) => {
+                    <isPublicDecryptAllowedCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -3639,6 +3336,17 @@ function getVersion() external pure returns (string memory);
                 &[u8],
             ) -> alloy_sol_types::Result<IMultichainACLCalls>] = &[
                 {
+                    fn isPublicDecryptAllowed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
+                        <isPublicDecryptAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IMultichainACLCalls::isPublicDecryptAllowed)
+                    }
+                    isPublicDecryptAllowed
+                },
+                {
                     fn getVersion(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLCalls> {
@@ -3648,17 +3356,6 @@ function getVersion() external pure returns (string memory);
                             .map(IMultichainACLCalls::getVersion)
                     }
                     getVersion
-                },
-                {
-                    fn checkPublicDecryptAllowed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
-                        <checkPublicDecryptAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMultichainACLCalls::checkPublicDecryptAllowed)
-                    }
-                    checkPublicDecryptAllowed
                 },
                 {
                     fn allowAccount(
@@ -3672,26 +3369,15 @@ function getVersion() external pure returns (string memory);
                     allowAccount
                 },
                 {
-                    fn checkAccountAllowed(
+                    fn isAccountDelegated(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLCalls> {
-                        <checkAccountAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <isAccountDelegatedCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(IMultichainACLCalls::checkAccountAllowed)
+                            .map(IMultichainACLCalls::isAccountDelegated)
                     }
-                    checkAccountAllowed
-                },
-                {
-                    fn checkAccountDelegated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
-                        <checkAccountDelegatedCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMultichainACLCalls::checkAccountDelegated)
-                    }
-                    checkAccountDelegated
+                    isAccountDelegated
                 },
                 {
                     fn getAllowPublicDecryptConsensusTxSenders(
@@ -3729,6 +3415,17 @@ function getVersion() external pure returns (string memory);
                             .map(IMultichainACLCalls::getAllowAccountConsensusTxSenders)
                     }
                     getAllowAccountConsensusTxSenders
+                },
+                {
+                    fn isAccountAllowed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
+                        <isAccountAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IMultichainACLCalls::isAccountAllowed)
+                    }
+                    isAccountAllowed
                 },
                 {
                     fn allowPublicDecrypt(
@@ -3773,6 +3470,17 @@ function getVersion() external pure returns (string memory);
                 &[u8],
             ) -> alloy_sol_types::Result<IMultichainACLCalls>] = &[
                 {
+                    fn isPublicDecryptAllowed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
+                        <isPublicDecryptAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainACLCalls::isPublicDecryptAllowed)
+                    }
+                    isPublicDecryptAllowed
+                },
+                {
                     fn getVersion(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLCalls> {
@@ -3782,17 +3490,6 @@ function getVersion() external pure returns (string memory);
                             .map(IMultichainACLCalls::getVersion)
                     }
                     getVersion
-                },
-                {
-                    fn checkPublicDecryptAllowed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
-                        <checkPublicDecryptAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMultichainACLCalls::checkPublicDecryptAllowed)
-                    }
-                    checkPublicDecryptAllowed
                 },
                 {
                     fn allowAccount(
@@ -3806,26 +3503,15 @@ function getVersion() external pure returns (string memory);
                     allowAccount
                 },
                 {
-                    fn checkAccountAllowed(
+                    fn isAccountDelegated(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLCalls> {
-                        <checkAccountAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <isAccountDelegatedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(IMultichainACLCalls::checkAccountAllowed)
+                            .map(IMultichainACLCalls::isAccountDelegated)
                     }
-                    checkAccountAllowed
-                },
-                {
-                    fn checkAccountDelegated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
-                        <checkAccountDelegatedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMultichainACLCalls::checkAccountDelegated)
-                    }
-                    checkAccountDelegated
+                    isAccountDelegated
                 },
                 {
                     fn getAllowPublicDecryptConsensusTxSenders(
@@ -3863,6 +3549,17 @@ function getVersion() external pure returns (string memory);
                             .map(IMultichainACLCalls::getAllowAccountConsensusTxSenders)
                     }
                     getAllowAccountConsensusTxSenders
+                },
+                {
+                    fn isAccountAllowed(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
+                        <isAccountAllowedCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainACLCalls::isAccountAllowed)
+                    }
+                    isAccountAllowed
                 },
                 {
                     fn allowPublicDecrypt(
@@ -3910,21 +3607,6 @@ function getVersion() external pure returns (string memory);
                         inner,
                     )
                 }
-                Self::checkAccountAllowed(inner) => {
-                    <checkAccountAllowedCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::checkAccountDelegated(inner) => {
-                    <checkAccountDelegatedCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::checkPublicDecryptAllowed(inner) => {
-                    <checkPublicDecryptAllowedCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::delegateAccount(inner) => {
                     <delegateAccountCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
@@ -3948,6 +3630,21 @@ function getVersion() external pure returns (string memory);
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
+                Self::isAccountAllowed(inner) => {
+                    <isAccountAllowedCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::isAccountDelegated(inner) => {
+                    <isAccountDelegatedCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::isPublicDecryptAllowed(inner) => {
+                    <isPublicDecryptAllowedCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
             }
         }
         #[inline]
@@ -3961,24 +3658,6 @@ function getVersion() external pure returns (string memory);
                 }
                 Self::allowPublicDecrypt(inner) => {
                     <allowPublicDecryptCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::checkAccountAllowed(inner) => {
-                    <checkAccountAllowedCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::checkAccountDelegated(inner) => {
-                    <checkAccountDelegatedCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::checkPublicDecryptAllowed(inner) => {
-                    <checkPublicDecryptAllowedCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -4013,6 +3692,24 @@ function getVersion() external pure returns (string memory);
                         out,
                     )
                 }
+                Self::isAccountAllowed(inner) => {
+                    <isAccountAllowedCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::isAccountDelegated(inner) => {
+                    <isAccountDelegatedCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::isPublicDecryptAllowed(inner) => {
+                    <isPublicDecryptAllowedCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
             }
         }
     }
@@ -4020,10 +3717,6 @@ function getVersion() external pure returns (string memory);
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Debug, PartialEq, Eq, Hash)]
     pub enum IMultichainACLErrors {
-        #[allow(missing_docs)]
-        AccountNotAllowedToUseCiphertext(AccountNotAllowedToUseCiphertext),
-        #[allow(missing_docs)]
-        AccountNotDelegated(AccountNotDelegated),
         #[allow(missing_docs)]
         ContractsMaxLengthExceeded(ContractsMaxLengthExceeded),
         #[allow(missing_docs)]
@@ -4034,8 +3727,6 @@ function getVersion() external pure returns (string memory);
         CoprocessorAlreadyDelegated(CoprocessorAlreadyDelegated),
         #[allow(missing_docs)]
         EmptyContractAddresses(EmptyContractAddresses),
-        #[allow(missing_docs)]
-        PublicDecryptNotAllowed(PublicDecryptNotAllowed),
     }
     #[automatically_derived]
     impl IMultichainACLErrors {
@@ -4048,28 +3739,19 @@ function getVersion() external pure returns (string memory);
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [12u8, 198u8, 149u8, 173u8],
             [17u8, 108u8, 174u8, 163u8],
-            [22u8, 10u8, 43u8, 75u8],
-            [67u8, 49u8, 168u8, 93u8],
             [87u8, 207u8, 162u8, 23u8],
             [102u8, 55u8, 227u8, 45u8],
             [166u8, 240u8, 77u8, 38u8],
-            [192u8, 164u8, 16u8, 21u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IMultichainACLErrors {
         const NAME: &'static str = "IMultichainACLErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 8usize;
+        const COUNT: usize = 5usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
-                Self::AccountNotAllowedToUseCiphertext(_) => {
-                    <AccountNotAllowedToUseCiphertext as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::AccountNotDelegated(_) => {
-                    <AccountNotDelegated as alloy_sol_types::SolError>::SELECTOR
-                }
                 Self::ContractsMaxLengthExceeded(_) => {
                     <ContractsMaxLengthExceeded as alloy_sol_types::SolError>::SELECTOR
                 }
@@ -4084,9 +3766,6 @@ function getVersion() external pure returns (string memory);
                 }
                 Self::EmptyContractAddresses(_) => {
                     <EmptyContractAddresses as alloy_sol_types::SolError>::SELECTOR
-                }
-                Self::PublicDecryptNotAllowed(_) => {
-                    <PublicDecryptNotAllowed as alloy_sol_types::SolError>::SELECTOR
                 }
             }
         }
@@ -4130,28 +3809,6 @@ function getVersion() external pure returns (string memory);
                     ContractsMaxLengthExceeded
                 },
                 {
-                    fn AccountNotAllowedToUseCiphertext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLErrors> {
-                        <AccountNotAllowedToUseCiphertext as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMultichainACLErrors::AccountNotAllowedToUseCiphertext)
-                    }
-                    AccountNotAllowedToUseCiphertext
-                },
-                {
-                    fn PublicDecryptNotAllowed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLErrors> {
-                        <PublicDecryptNotAllowed as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMultichainACLErrors::PublicDecryptNotAllowed)
-                    }
-                    PublicDecryptNotAllowed
-                },
-                {
                     fn EmptyContractAddresses(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLErrors> {
@@ -4185,17 +3842,6 @@ function getVersion() external pure returns (string memory);
                             )
                     }
                     CoprocessorAlreadyAllowedPublicDecrypt
-                },
-                {
-                    fn AccountNotDelegated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLErrors> {
-                        <AccountNotDelegated as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMultichainACLErrors::AccountNotDelegated)
-                    }
-                    AccountNotDelegated
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -4240,28 +3886,6 @@ function getVersion() external pure returns (string memory);
                     ContractsMaxLengthExceeded
                 },
                 {
-                    fn AccountNotAllowedToUseCiphertext(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLErrors> {
-                        <AccountNotAllowedToUseCiphertext as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMultichainACLErrors::AccountNotAllowedToUseCiphertext)
-                    }
-                    AccountNotAllowedToUseCiphertext
-                },
-                {
-                    fn PublicDecryptNotAllowed(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLErrors> {
-                        <PublicDecryptNotAllowed as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMultichainACLErrors::PublicDecryptNotAllowed)
-                    }
-                    PublicDecryptNotAllowed
-                },
-                {
                     fn EmptyContractAddresses(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLErrors> {
@@ -4296,17 +3920,6 @@ function getVersion() external pure returns (string memory);
                     }
                     CoprocessorAlreadyAllowedPublicDecrypt
                 },
-                {
-                    fn AccountNotDelegated(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLErrors> {
-                        <AccountNotDelegated as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMultichainACLErrors::AccountNotDelegated)
-                    }
-                    AccountNotDelegated
-                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -4321,16 +3934,6 @@ function getVersion() external pure returns (string memory);
         #[inline]
         fn abi_encoded_size(&self) -> usize {
             match self {
-                Self::AccountNotAllowedToUseCiphertext(inner) => {
-                    <AccountNotAllowedToUseCiphertext as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
-                Self::AccountNotDelegated(inner) => {
-                    <AccountNotDelegated as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
                 Self::ContractsMaxLengthExceeded(inner) => {
                     <ContractsMaxLengthExceeded as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -4356,28 +3959,11 @@ function getVersion() external pure returns (string memory);
                         inner,
                     )
                 }
-                Self::PublicDecryptNotAllowed(inner) => {
-                    <PublicDecryptNotAllowed as alloy_sol_types::SolError>::abi_encoded_size(
-                        inner,
-                    )
-                }
             }
         }
         #[inline]
         fn abi_encode_raw(&self, out: &mut alloy_sol_types::private::Vec<u8>) {
             match self {
-                Self::AccountNotAllowedToUseCiphertext(inner) => {
-                    <AccountNotAllowedToUseCiphertext as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::AccountNotDelegated(inner) => {
-                    <AccountNotDelegated as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
                 Self::ContractsMaxLengthExceeded(inner) => {
                     <ContractsMaxLengthExceeded as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -4404,12 +3990,6 @@ function getVersion() external pure returns (string memory);
                 }
                 Self::EmptyContractAddresses(inner) => {
                     <EmptyContractAddresses as alloy_sol_types::SolError>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::PublicDecryptNotAllowed(inner) => {
-                    <PublicDecryptNotAllowed as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -4716,47 +4296,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`checkAccountAllowed`] function.
-        pub fn checkAccountAllowed(
-            &self,
-            ctHandle: alloy::sol_types::private::FixedBytes<32>,
-            accountAddress: alloy::sol_types::private::Address,
-        ) -> alloy_contract::SolCallBuilder<&P, checkAccountAllowedCall, N> {
-            self.call_builder(
-                &checkAccountAllowedCall {
-                    ctHandle,
-                    accountAddress,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`checkAccountDelegated`] function.
-        pub fn checkAccountDelegated(
-            &self,
-            chainId: alloy::sol_types::private::primitives::aliases::U256,
-            delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
-            contractAddresses: alloy::sol_types::private::Vec<
-                alloy::sol_types::private::Address,
-            >,
-        ) -> alloy_contract::SolCallBuilder<&P, checkAccountDelegatedCall, N> {
-            self.call_builder(
-                &checkAccountDelegatedCall {
-                    chainId,
-                    delegationAccounts,
-                    contractAddresses,
-                },
-            )
-        }
-        ///Creates a new call builder for the [`checkPublicDecryptAllowed`] function.
-        pub fn checkPublicDecryptAllowed(
-            &self,
-            ctHandle: alloy::sol_types::private::FixedBytes<32>,
-        ) -> alloy_contract::SolCallBuilder<&P, checkPublicDecryptAllowedCall, N> {
-            self.call_builder(
-                &checkPublicDecryptAllowedCall {
-                    ctHandle,
-                },
-            )
-        }
         ///Creates a new call builder for the [`delegateAccount`] function.
         pub fn delegateAccount(
             &self,
@@ -4832,6 +4371,47 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             &self,
         ) -> alloy_contract::SolCallBuilder<&P, getVersionCall, N> {
             self.call_builder(&getVersionCall)
+        }
+        ///Creates a new call builder for the [`isAccountAllowed`] function.
+        pub fn isAccountAllowed(
+            &self,
+            ctHandle: alloy::sol_types::private::FixedBytes<32>,
+            accountAddress: alloy::sol_types::private::Address,
+        ) -> alloy_contract::SolCallBuilder<&P, isAccountAllowedCall, N> {
+            self.call_builder(
+                &isAccountAllowedCall {
+                    ctHandle,
+                    accountAddress,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`isAccountDelegated`] function.
+        pub fn isAccountDelegated(
+            &self,
+            chainId: alloy::sol_types::private::primitives::aliases::U256,
+            delegationAccounts: <DelegationAccounts as alloy::sol_types::SolType>::RustType,
+            contractAddresses: alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >,
+        ) -> alloy_contract::SolCallBuilder<&P, isAccountDelegatedCall, N> {
+            self.call_builder(
+                &isAccountDelegatedCall {
+                    chainId,
+                    delegationAccounts,
+                    contractAddresses,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`isPublicDecryptAllowed`] function.
+        pub fn isPublicDecryptAllowed(
+            &self,
+            ctHandle: alloy::sol_types::private::FixedBytes<32>,
+        ) -> alloy_contract::SolCallBuilder<&P, isPublicDecryptAllowedCall, N> {
+            self.call_builder(
+                &isPublicDecryptAllowedCall {
+                    ctHandle,
+                },
+            )
         }
     }
     /// Event filters.
