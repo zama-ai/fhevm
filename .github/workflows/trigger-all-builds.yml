@@ -24,19 +24,6 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const workflows = [
-              'coprocessor-db-migration-docker-build.yml',
-              'coprocessor-gw-listener-docker-build.yml',
-              'coprocessor-host-listener-docker-build.yml',
-              'coprocessor-tx-sender-docker-build.yml',
-              'coprocessor-sns-worker-docker-build.yml',
-              'coprocessor-tfhe-worker-docker-build.yml',
-              'coprocessor-zkproof-worker-docker-build.yml',
-              'gateway-contracts-docker-build.yml',
-              'host-contracts-docker-build.yml',
-              'kms-connector-db-migration-docker-build.yml',
-              'kms-connector-gw-listener-docker-build.yml',
-              'kms-connector-tx-sender-docker-build.yml',
-              'kms-connector-kms-worker-docker-build.yml',
               'test-suite-docker-build.yml'
             ];
 
@@ -58,21 +45,64 @@ jobs:
             console.log(`Triggering builds using ref: ${ref}`);
 
             for (const workflow of workflows) {
+              console.log(`\nTriggering ${workflow} on ref: ${ref}`);
+              
               try {
-                await github.rest.actions.createWorkflowDispatch({
+                const response = await github.rest.actions.createWorkflowDispatch({
                   owner: context.repo.owner,
                   repo: context.repo.repo,
                   workflow_id: workflow,
-                  ref
+                  ref: ref,
+                  inputs: {
+                    ref: ref,
+                    trigger_source: 'trigger-all-builds-workflow'
+                  }
                 });
-                console.log(`✅ Triggered ${workflow}`);
+                
+                console.log(`✅ Successfully triggered ${workflow}`);
+                console.log(`   Response status: ${response.status}`);
+                
               } catch (error) {
                 console.log(`❌ Failed to trigger ${workflow}: ${error.message}`);
+                console.log('   Error details:', JSON.stringify(error.response?.data || {}, null, 2));
+              }
+            }
+            
+            // Wait a moment for workflows to start
+            console.log('\n⏳ Waiting 15 seconds for workflows to start...');
+            await new Promise(resolve => setTimeout(resolve, 15000));
+            
+            // Check status of triggered workflows
+            console.log('\n📊 Checking status of triggered workflows:');
+            for (const workflow of workflows) {
+              try {
+                const runs = await github.rest.actions.listWorkflowRuns({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: workflow,
+                  per_page: 3
+                });
+                
+                console.log(`\n${workflow}:`);
+                const recentRun = runs.data.workflow_runs.find(run => 
+                  run.event === 'workflow_dispatch' && 
+                  new Date(run.created_at) > new Date(Date.now() - 300000) // 5 minutes
+                );
+                
+                if (recentRun) {
+                  console.log(`   ✅ Found triggered run: ${recentRun.html_url}`);
+                  console.log(`   Status: ${recentRun.status} | Conclusion: ${recentRun.conclusion || 'running'}`);
+                } else {
+                  console.log('   ⚠️ No recent workflow_dispatch run found');
+                }
+              } catch (error) {
+                console.log(`   ❌ Failed to check ${workflow}: ${error.message}`);
               }
             }
 
   collect-results:
     name: trigger-all-builds/collect-results
+    needs: trigger-builds
     # to be activated before merging this PR
     # if: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
     permissions:
@@ -94,19 +124,6 @@ jobs:
           
           # Map workflow names to image names
           declare -A workflow_to_image
-          workflow_to_image["coprocessor-db-migration-docker-build"]="db_migration_version"
-          workflow_to_image["coprocessor-gw-listener-docker-build"]="gateway_listener_version"
-          workflow_to_image["coprocessor-host-listener-docker-build"]="host_listener_version"
-          workflow_to_image["coprocessor-tx-sender-docker-build"]="tx_sender_version"
-          workflow_to_image["coprocessor-sns-worker-docker-build"]="sns_worker_version"
-          workflow_to_image["coprocessor-tfhe-worker-docker-build"]="tfhe_worker_version"
-          workflow_to_image["coprocessor-zkproof-worker-docker-build"]="zkproof_worker_version"
-          workflow_to_image["gateway-contracts-docker-build"]="gateway_version"
-          workflow_to_image["host-contracts-docker-build"]="host_version"
-          workflow_to_image["kms-connector-db-migration-docker-build"]="connector_version"
-          workflow_to_image["kms-connector-gw-listener-docker-build"]="connector_version"
-          workflow_to_image["kms-connector-tx-sender-docker-build"]="connector_version"
-          workflow_to_image["kms-connector-kms-worker-docker-build"]="connector_version"
           workflow_to_image["test-suite-docker-build"]="test_suite_version"
           
           # Wait for all workflows to complete and collect built images
@@ -114,55 +131,57 @@ jobs:
           attempt=1
           built_images=()
           
+          echo "Looking for workflow_dispatch triggered runs (not specific commit SHA)"
+          
           while [ $attempt -le $max_attempts ]; do
-            echo "Attempt $attempt/$max_attempts: Checking workflow results for commit ${commit_sha}"
+            echo "Attempt $attempt/$max_attempts: Checking workflow results"
             all_done=true
             current_built_images=()
             
             for workflow_name in "${!workflow_to_image[@]}"; do
               echo "Checking workflow: ${workflow_name}"
               
-              # Get the latest run for this commit
+              # Look for recent workflow_dispatch runs (last 30 minutes)
+              since_time=$(date -u -d '30 minutes ago' '+%Y-%m-%dT%H:%M:%SZ')
               run_info=$(gh api \
-                "repos/${{ github.repository }}/actions/workflows/${workflow_name}.yml/runs" \
-                --jq ".workflow_runs[] | select(.head_sha == \"${commit_sha}\") | {conclusion, id}" \
+                "repos/${{ github.repository }}/actions/workflows/${workflow_name}.yml/runs?created=>=${since_time}" \
+                --jq '.workflow_runs[] | select(.event == "workflow_dispatch") | {conclusion, id, status, created_at}' \
                 | head -1)
               
               if [[ -n "$run_info" ]]; then
                 conclusion=$(echo "$run_info" | jq -r '.conclusion')
+                status=$(echo "$run_info" | jq -r '.status')
                 run_id=$(echo "$run_info" | jq -r '.id')
+                created_at=$(echo "$run_info" | jq -r '.created_at')
+                
+                echo "   Found workflow_dispatch run: ID=${run_id}, Status=${status}, Conclusion=${conclusion:-null}"
                 
                 if [[ "$conclusion" == "success" ]]; then
-                  # Check if the build actually happened by looking for check-changes job output
+                  # Check if the build actually happened by looking for docker jobs
                   jobs_data=$(gh api "repos/${{ github.repository }}/actions/runs/${run_id}/jobs")
-                  check_changes_job=$(echo "$jobs_data" | jq -r '.jobs[] | select(.name | contains("check-changes"))')
+                  docker_jobs=$(echo "$jobs_data" | jq -r '.jobs[] | select(.name | contains("docker")) | .conclusion')
                   
-                  if [[ -n "$check_changes_job" ]]; then
-                    job_conclusion=$(echo "$check_changes_job" | jq -r '.conclusion')
-                    if [[ "$job_conclusion" == "success" ]]; then
-                      # Check the job steps to see if changes were detected
-                      steps=$(echo "$check_changes_job" | jq -r '.steps[] | select(.name == "Check changes") | .conclusion')
-                      if [[ "$steps" == "success" ]]; then
-                        image_name="${workflow_to_image[$workflow_name]}"
-                        current_built_images+=("${image_name}")
-                        echo "✅ ${workflow_name} built image: ${image_name}"
-                      else
-                        echo "🔶 ${workflow_name} completed but no changes detected"
-                      fi
+                  if [[ -n "$docker_jobs" ]]; then
+                    # Count successful docker jobs
+                    success_count=$(echo "$docker_jobs" | grep -c "success" || true)
+                    if [[ "$success_count" -gt 0 ]]; then
+                      image_name="${workflow_to_image[$workflow_name]}"
+                      current_built_images+=("${image_name}")
+                      echo "   ✅ ${workflow_name} built image: ${image_name} (${success_count} docker jobs succeeded)"
                     else
-                      echo "❌ ${workflow_name} check-changes job failed: ${job_conclusion}"
+                      echo "   🔶 ${workflow_name} completed but no docker jobs succeeded"
                     fi
                   else
-                    echo "⚠️ ${workflow_name} no check-changes job found"
+                    echo "   🔶 ${workflow_name} completed but no docker jobs found"
                   fi
                 elif [[ "$conclusion" == "failure" || "$conclusion" == "cancelled" ]]; then
-                  echo "❌ ${workflow_name} failed with conclusion: ${conclusion}"
-                elif [[ "$conclusion" == "null" || -z "$conclusion" ]]; then
-                  echo "⏳ ${workflow_name} still running"
+                  echo "   ❌ ${workflow_name} failed with conclusion: ${conclusion}"
+                elif [[ "$status" == "in_progress" || "$status" == "queued" || "$conclusion" == "null" ]]; then
+                  echo "   ⏳ ${workflow_name} still running (status: ${status})"
                   all_done=false
                 fi
               else
-                echo "⚠️ No run found for ${workflow_name} with commit ${commit_sha}"
+                echo "   ⚠️ No recent workflow_dispatch run found for ${workflow_name}"
                 all_done=false
               fi
             done
@@ -182,9 +201,9 @@ jobs:
             built_images=("${current_built_images[@]}")
           fi
           
-          # Remove duplicates and create JSON array
+          # Remove duplicates and create JSON array - COMPACT FORMAT
           unique_images=($(printf "%s\n" "${built_images[@]}" | sort -u))
-          json_array=$(printf '%s\n' "${unique_images[@]}" | jq -R . | jq -s .)
+          json_array=$(printf '%s\n' "${unique_images[@]}" | jq -R . | jq -s -c .)
           
           echo "built-images=${json_array}" >> $GITHUB_OUTPUT
           echo "Final built images: ${json_array}"

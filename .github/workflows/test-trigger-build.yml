@@ -1,9 +1,7 @@
 name: test-trigger-build
 
 on:
-  push:
-    branches:
-      - aw/ci/e2e-tests-orchestrator
+  workflow_dispatch:
 
 permissions:
   actions: write
