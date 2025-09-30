@@ -132,17 +132,23 @@ describe('TestAsyncDecrypt', function () {
     expect(y).to.equal(52); // 5+15+32
   });
 
-  // NOTICE: skipped due to recent flappy behavior: 2 transactions cannot be guaranteed to be in the same block.
-  it.skip('test async decrypt uint32 - two requests in same block', async function () {
+  it('test async decrypt uint32 - two requests in same block', async function () {
+    const contractAddress = await this.contract.getAddress();
     const pendingNonce = await ethers.provider.getTransactionCount(this.signers.alice.address, 'pending');
 
-    const txA = await this.contract.requestUint32_2({
-      nonce: pendingNonce,
-    });
-    const txB = await this.contract.requestUint32_3({
-      nonce: pendingNonce + 1,
+    const txA = await this.signers.alice.sendTransaction({
+      to: contractAddress,
+      data: this.contract.interface.encodeFunctionData("requestUint32_2", []),
+      gasLimit: 500_000,
+      nonce: pendingNonce
     });
 
+    const txB = await this.signers.alice.sendTransaction({
+      to: contractAddress,
+      data: this.contract.interface.encodeFunctionData("requestUint32_3", []),
+      gasLimit: 500_000,
+      nonce: pendingNonce + 1
+    });
 
     const [receiptA, receiptB] = await Promise.all([txA.wait(), txB.wait()]);
 
