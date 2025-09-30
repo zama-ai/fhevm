@@ -251,7 +251,7 @@ case $COMMAND in
     fi
 
     echo -e "${LIGHT_BLUE}[LOGS]${RESET} ${BOLD}Showing logs for $SERVICE...${RESET}"
-    docker logs "${PROJECT}-${SERVICE}"
+    docker logs "${SERVICE}"
     ;;
 
   *)
