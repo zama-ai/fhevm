@@ -54,7 +54,53 @@ services:
       - CHAIN_ID_GATEWAY=54321
       - RPC_URL=http://anvil-node:8546
     command:
-      - npx hardhat task:addHostChainsToGatewayConfig --use-internal-gateway-config-address true
+      - npx hardhat task:addHostChainsToGatewayConfig --use-internal-proxy-address true
+    depends_on:
+      anvil-node:
+        condition: service_started
+      deploy-gateway-contracts:
+        condition: service_completed_successfully
+    # Addresses needs to be mounted even though we don't use them in the task because all contracts
+    # are compiled, and most of them import these addresses.
+    volumes:
+      - addresses-volume:/app/addresses
+
+  trigger-keygen:
+    container_name: trigger-keygen
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      - HARDHAT_NETWORK=staging
+      - CHAIN_ID_GATEWAY=54321
+      - RPC_URL=http://anvil-node:8546
+    command:
+      - npx hardhat task:triggerKeygen --params-type 1 --use-internal-proxy-address true
+    depends_on:
+      anvil-node:
+        condition: service_started
+      deploy-gateway-contracts:
+        condition: service_completed_successfully
+    # Addresses needs to be mounted even though we don't use them in the task because all contracts
+    # are compiled, and most of them import these addresses.
+    volumes:
+      - addresses-volume:/app/addresses
+
+  trigger-crsgen:
+    container_name: trigger-crsgen
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      - HARDHAT_NETWORK=staging
+      - CHAIN_ID_GATEWAY=54321
+      - RPC_URL=http://anvil-node:8546
+    command:
+      - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048 --use-internal-proxy-address true
     depends_on:
       anvil-node:
         condition: service_started

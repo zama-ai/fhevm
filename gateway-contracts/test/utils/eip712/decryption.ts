@@ -1,0 +1,244 @@
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { HDNodeWallet, Wallet } from "ethers";
+import { ethers } from "hardhat";
+
+import { EIP712, getSignaturesEIP712 } from "./interface";
+
+// Create an EIP712 message for a public decryption response
+export function createEIP712ResponsePublicDecrypt(
+  chainId: number,
+  verifyingContract: string,
+  ctHandles: string[],
+  decryptedResult: string,
+  extraData: string,
+): EIP712 {
+  if (!ethers.isAddress(verifyingContract)) {
+    throw new Error("Invalid verifying contract address.");
+  }
+  return {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      PublicDecryptVerification: [
+        { name: "ctHandles", type: "bytes32[]" },
+        { name: "decryptedResult", type: "bytes" },
+        { name: "extraData", type: "bytes" },
+      ],
+    },
+    primaryType: "PublicDecryptVerification",
+    domain: {
+      name: "Decryption",
+      version: "1",
+      chainId,
+      verifyingContract,
+    },
+    message: {
+      ctHandles,
+      decryptedResult,
+      extraData,
+    },
+  };
+}
+
+// Get signatures from signers using the EIP712 message response for public decryption
+export async function getSignaturesPublicDecrypt(
+  eip712: EIP712,
+  signers: (HardhatEthersSigner | Wallet | HDNodeWallet)[],
+): Promise<string[]> {
+  return Promise.all(
+    signers.map((signer) =>
+      signer.signTypedData(
+        eip712.domain,
+        { PublicDecryptVerification: eip712.types.PublicDecryptVerification },
+        eip712.message,
+      ),
+    ),
+  );
+}
+
+// Create an EIP712 message for a user decryption request
+export function createEIP712RequestUserDecrypt(
+  verifyingContract: string,
+  publicKey: string,
+  contractAddresses: string[],
+  contractsChainId: number,
+  startTimestamp: string,
+  durationDays: string,
+  extraData: string,
+): EIP712 {
+  if (!ethers.isAddress(verifyingContract)) {
+    throw new Error("Invalid verifying contract address.");
+  }
+  return {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      UserDecryptRequestVerification: [
+        { name: "publicKey", type: "bytes" },
+        { name: "contractAddresses", type: "address[]" },
+        { name: "startTimestamp", type: "uint256" },
+        { name: "durationDays", type: "uint256" },
+        { name: "extraData", type: "bytes" },
+      ],
+    },
+    primaryType: "UserDecryptRequestVerification",
+    domain: {
+      name: "Decryption",
+      version: "1",
+      chainId: contractsChainId,
+      verifyingContract,
+    },
+    message: {
+      publicKey,
+      contractAddresses,
+      startTimestamp,
+      durationDays,
+      extraData,
+    },
+  };
+}
+
+// Get signatures from signers using the EIP712 message request for user decryption
+export async function getSignaturesUserDecryptRequest(
+  eip712: EIP712,
+  signers: (HardhatEthersSigner | Wallet | HDNodeWallet)[],
+): Promise<string[]> {
+  return Promise.all(
+    signers.map((signer) =>
+      signer.signTypedData(
+        eip712.domain,
+        { UserDecryptRequestVerification: eip712.types.UserDecryptRequestVerification },
+        eip712.message,
+      ),
+    ),
+  );
+}
+
+// Create an EIP712 message for a user decryption request
+export function createEIP712RequestDelegatedUserDecrypt(
+  verifyingContract: string,
+  publicKey: string,
+  contractAddresses: string[],
+  delegatorAddress: string,
+  contractsChainId: number,
+  startTimestamp: string,
+  durationDays: string,
+  extraData: string,
+): EIP712 {
+  if (!ethers.isAddress(verifyingContract)) {
+    throw new Error("Invalid verifying contract address.");
+  }
+  return {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      DelegatedUserDecryptRequestVerification: [
+        { name: "publicKey", type: "bytes" },
+        { name: "contractAddresses", type: "address[]" },
+        { name: "delegatorAddress", type: "address" },
+        { name: "startTimestamp", type: "uint256" },
+        { name: "durationDays", type: "uint256" },
+        { name: "extraData", type: "bytes" },
+      ],
+    },
+    primaryType: "DelegatedUserDecryptRequestVerification",
+    domain: {
+      name: "Decryption",
+      version: "1",
+      chainId: contractsChainId,
+      verifyingContract,
+    },
+    message: {
+      publicKey,
+      contractAddresses,
+      delegatorAddress,
+      startTimestamp,
+      durationDays,
+      extraData,
+    },
+  };
+}
+
+// Get signatures from signers using the EIP712 message request for user decryption
+export async function getSignaturesDelegatedUserDecryptRequest(
+  eip712: EIP712,
+  signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
+): Promise<string[]> {
+  return getSignaturesEIP712(eip712, signers);
+}
+
+// Create an EIP712 message for a user decryption response
+export function createEIP712ResponseUserDecrypt(
+  chainId: number,
+  verifyingContract: string,
+  publicKey: string,
+  ctHandles: string[],
+  userDecryptedShare: string,
+  extraData: string,
+): EIP712 {
+  if (!ethers.isAddress(verifyingContract)) {
+    throw new Error("Invalid verifying contract address.");
+  }
+  return {
+    types: {
+      EIP712Domain: [
+        { name: "name", type: "string" },
+        { name: "version", type: "string" },
+        { name: "chainId", type: "uint256" },
+        { name: "verifyingContract", type: "address" },
+      ],
+      UserDecryptResponseVerification: [
+        { name: "publicKey", type: "bytes" },
+        { name: "ctHandles", type: "bytes32[]" },
+        { name: "userDecryptedShare", type: "bytes" },
+        { name: "extraData", type: "bytes" },
+      ],
+    },
+    primaryType: "UserDecryptResponseVerification",
+    domain: {
+      name: "Decryption",
+      version: "1",
+      chainId,
+      verifyingContract,
+    },
+    message: {
+      publicKey,
+      ctHandles,
+      userDecryptedShare,
+      extraData,
+    },
+  };
+}
+
+// Get signatures for user decryption responses, pairing each EIP712 message with its corresponding signer by index.
+export async function getSignaturesUserDecryptResponse(
+  eip712s: EIP712[],
+  signers: (HardhatEthersSigner | HDNodeWallet | Wallet)[],
+): Promise<string[]> {
+  if (eip712s.length !== signers.length) {
+    throw new Error("The number of EIP712 messages must match the number of signers.");
+  }
+
+  return Promise.all(
+    signers.map((signer, index) => {
+      const primaryType = eip712s[index].primaryType;
+      return signer.signTypedData(
+        eip712s[index].domain,
+        { [primaryType]: eip712s[index].types[primaryType] },
+        eip712s[index].message,
+      );
+    }),
+  );
+}

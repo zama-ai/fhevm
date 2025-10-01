@@ -10,8 +10,7 @@ use crate::server::tfhe_worker::{
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use tonic::metadata::MetadataValue;
 use utils::{
-    allow_handle, decrypt_ciphertexts, default_api_key, random_handle,
-    wait_until_all_allowed_handles_computed,
+    decrypt_ciphertexts, default_api_key, random_handle, wait_until_all_allowed_handles_computed,
 };
 
 mod errors;
@@ -84,6 +83,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
                             input: Some(Input::Scalar(vec![0x00, 0x10])),
                         },
                     ],
+                    is_allowed: true,
                 },
                 AsyncComputation {
                     operation: FheOperation::FheAdd.into(),
@@ -97,6 +97,7 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
                             input: Some(Input::InputHandle(h2.to_vec())),
                         },
                     ],
+                    is_allowed: true,
                 },
             ],
         });
@@ -108,8 +109,6 @@ async fn test_smoke() -> Result<(), Box<dyn std::error::Error>> {
         println!("compute request: {:?}", resp);
     }
 
-    allow_handle(&h3.to_vec(), &pool).await?;
-    allow_handle(&h4.to_vec(), &pool).await?;
     println!("sleeping for computation to complete...");
     wait_until_all_allowed_handles_computed(&app).await?;
 

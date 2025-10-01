@@ -31,13 +31,14 @@ They serve different purposes, which are described below.
 A KMS node is part of a set of multiple nodes. Often called the KMS, it refers to a Multi-Party Computation (MPC) protocol that manages Fully Homomorphic Encryption (FHE) keys in a decentralized manner. It is used to :
 
 - decrypt ciphertexts based on requests from the `Decryption` contract.
-- generate [KMS public materials](./kms_management.md#public-material-generation) based on requests from the `KmsManagement` contract.
+- generate [KMS public materials](./kms_generation.md#public-material-generation) based on requests from the `KMSGeneration` contract.
 
 Several metadata are stored for each KMS node:
 
 - `txSenderAddress` : see [Sender and signer](#sender-and-signer) below. In the fhevm protocol, this account is also called the KMS connector.
 - `signerAddress` : see [Sender and signer](#sender-and-signer) below.
 - `ipAddress` : IP address of the KMS node.
+- `storageUrl` : URL of the storage where the KMS public materials are stored. In the fhevm protocol, this URL is fetched by the coprocessors in order to download the KMS public materials needed for FHE computations.
 
 The fhevm Gateway has a single KMS, which must be constituted of at least 1 node.
 
@@ -69,13 +70,24 @@ Both thresholds should be :
 
 These thresholds are set at deployment and can be updated by the owner later on, as long as the above conditions are met.
 
+#### KMS generation threshold
+
+The KMS generation threshold `kmsGenThreshold` is used to determine the minimum number of valid responses from KMS nodes required to validate a KMS public material generation (FHE key, CRS).
+
+This threshold should be :
+
+- non-null: it should require at least one vote
+- less or equal to the number of registered KMS nodes: it should not require more than the number of registered KMS nodes
+
+This threshold is set at deployment and can be updated by the owner later on, as long as the above conditions are met.
+
 ### Coprocessor
 
 A coprocessor is also part of a set of multiple coprocessors. They are used to :
 
 - perform FHE computations on ciphertexts
 - verify inputs' zero-knowledge proof of knowledge (ZKPoK) based on requests from the `InputVerification` contract
-- handle access controls to ciphertexts for all registered [host chains](#host-chains), which are centralized in the `MultichainAcl` contract
+- handle access controls to ciphertexts for all registered [host chains](#host-chains), which are centralized in the `MultichainACL` contract
 
 Several metadata are stored for each coprocessor:
 
@@ -122,8 +134,7 @@ The owner is first set as the account that deploys the contracts (the deployer).
 - upgrade the contracts
 - update the pausers (see [Pausers](./pauser_set.md))
 - add [host chains](#host-chains)
-- trigger a KMS public material generation (see [KmsManagement](./kms_management.md#public-material-generation))
-- update KMS-related parameters (see [KmsManagement](./kms_management.md#store-parameters))
+- trigger a KMS public material generation (see [KMSGeneration](./kms_generation.md#public-material-generation))
 
 The owner is handled by OpenZeppelin's `Ownable2StepUpgradeable` contract. In particular, this means that the deployer can transfer its ownership to another account in a two-step process.
 

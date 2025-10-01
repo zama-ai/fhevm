@@ -1,72 +1,74 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
-import { gatewayConfigAddress, kmsManagementAddress } from "../addresses/GatewayAddresses.sol";
-import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import { gatewayConfigAddress, kmsGenerationAddress } from "../addresses/GatewayAddresses.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./interfaces/ICiphertextCommits.sol";
-import "./interfaces/IGatewayConfig.sol";
-import "./interfaces/IKmsManagement.sol";
-import "./shared/UUPSUpgradeableEmptyProxy.sol";
-import "./shared/GatewayConfigChecks.sol";
-import "./libraries/HandleOps.sol";
-import "./shared/Pausable.sol";
+import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
+import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
+import { IKMSGeneration } from "./interfaces/IKMSGeneration.sol";
+import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
+import { HandleOps } from "./libraries/HandleOps.sol";
+import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { CiphertextMaterial, SnsCiphertextMaterial } from "./shared/Structs.sol";
 
 /**
  * @title CiphertextCommits smart contract
  * @dev See {ICiphertextCommits}.
  */
-contract CiphertextCommits is
-    ICiphertextCommits,
-    Ownable2StepUpgradeable,
-    UUPSUpgradeableEmptyProxy,
-    GatewayConfigChecks,
-    Pausable
-{
+contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, GatewayOwnable, GatewayConfigChecks {
     /// @notice The address of the GatewayConfig contract, used for fetching information about coprocessors.
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @notice The address of the KmsManagement contract, used for fetching information about the current key.
-    IKmsManagement private constant KMS_MANAGEMENT = IKmsManagement(kmsManagementAddress);
+    /// @notice The address of the KMSGeneration contract, used for fetching information about the current key.
+    IKMSGeneration private constant KMS_GENERATION = IKMSGeneration(kmsGenerationAddress);
 
     /// @dev The following constants are used for versioning the contract. They are made private
     /// @dev in order to force derived contracts to consider a different version. Note that
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "CiphertextCommits";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// Constant used for making sure the version number using in the `reinitializer` modifier is
-    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    /**
+     * @dev Constant used for making sure the version number using in the `reinitializer` modifier is
+     * identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+     * This constant does not represent the number of time a specific contract have been upgraded,
+     * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
+     */
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.CiphertextCommits
     struct CiphertextCommitsStorage {
-        /// @notice The regular ciphertext digests tied to the ciphertext handle.
-        mapping(bytes32 ctHandle => bytes32 ctDigest) _ciphertextDigests;
-        /// @notice The SNS ciphertext digests tied to the ciphertext handle.
-        mapping(bytes32 ctHandle => bytes32 snsCtDigest) _snsCiphertextDigests;
+        // ----------------------------------------------------------------------------------------------
+        // Ciphertext material state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice The key IDs used for generating the ciphertext.
         /// @dev It's necessary in case new keys are generated: we need to know what key to use for using a ciphertext.
-        mapping(bytes32 ctHandle => uint256 keyId) _keyIds;
-        /// @notice DEPRECATED
-        mapping(bytes32 ctHandle => uint256 chainId) _chainIds; // DEPRECATED
+        mapping(bytes32 ctHandle => uint256 keyId) keyIds;
+        /// @notice The regular ciphertext digests tied to the ciphertext handle.
+        mapping(bytes32 ctHandle => bytes32 ctDigest) ciphertextDigests;
+        /// @notice The SNS ciphertext digests tied to the ciphertext handle.
+        mapping(bytes32 ctHandle => bytes32 snsCtDigest) snsCiphertextDigests;
+        // ----------------------------------------------------------------------------------------------
+        // Consensus state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice The mapping of already added ciphertexts tied to the given handle.
-        mapping(bytes32 ctHandle => bool isAdded) _isCiphertextMaterialAdded;
+        mapping(bytes32 ctHandle => bool isAdded) isCiphertextMaterialAdded;
         /// @notice The counter of confirmations received for a ciphertext to be added.
-        mapping(bytes32 addCiphertextHash => uint8 counter) _addCiphertextHashCounters;
+        mapping(bytes32 addCiphertextHash => uint8 counter) addCiphertextHashCounters;
+        /// @notice The digest of the ciphertext material addition that reached consensus for a handle.
+        mapping(bytes32 ctHandle => bytes32 addCiphertextHash) ctHandleConsensusHash;
+        // ----------------------------------------------------------------------------------------------
+        // Transaction sender addresses state variables:
+        // ----------------------------------------------------------------------------------------------
         // prettier-ignore
         /// @notice The mapping of the coprocessor transaction senders that have already added the ciphertext handle.
         mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAdded)) 
-            _alreadyAddedCoprocessorTxSenders;
-        // ----------------------------------------------------------------------------------------------
-        // Transaction sender addresses from consensus state variables:
-        // ----------------------------------------------------------------------------------------------
+            alreadyAddedCoprocessorTxSenders;
         /// @notice The coprocessor transaction senders involved in a consensus for a ciphertext material addition.
-        mapping(bytes32 addCiphertextHash => address[] coprocessorTxSenderAddresses) _coprocessorTxSenderAddresses;
-        /// @notice The digest of the ciphertext material addition that reached consensus for a handle.
-        mapping(bytes32 ctHandle => bytes32 addCiphertextHash) _ctHandleConsensusHash;
+        mapping(bytes32 addCiphertextHash => address[] coprocessorTxSenderAddresses) coprocessorTxSenderAddresses;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -85,17 +87,15 @@ contract CiphertextCommits is
      * @dev This function needs to be public in order to be called by the UUPS proxy.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __Ownable_init(owner());
-        __Pausable_init();
-    }
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V1.
+     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @notice See {ICiphertextCommits-addCiphertextMaterial}.
     /// @dev This function calls the GatewayConfig contract to check that the sender address is a Coprocessor.
@@ -114,15 +114,9 @@ contract CiphertextCommits is
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
 
         // Check if the coprocessor transaction sender has already added the ciphertext handle.
-        if ($._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender]) {
+        if ($.alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAdded(ctHandle, msg.sender);
         }
-
-        // Check if the received key ID is the latest activated.
-        // TODO: Revisit the following line accordingly with key life-cycles issue
-        // See: https://github.com/zama-ai/fhevm-gateway/issues/90
-        // TODO: Re-enable this check once keys are generated through the Gateway
-        // KMS_MANAGEMENT.checkCurrentKeyId(keyId);
 
         // The addCiphertextHash is the hash of all received input arguments which means that multiple
         // Coprocessors can only have a consensus on a ciphertext material with the same information.
@@ -130,11 +124,11 @@ contract CiphertextCommits is
         // tracking the consensus on the received ciphertext material.
         // Note that chainId is not included in the hash because it is already contained in the ctHandle.
         bytes32 addCiphertextHash = keccak256(abi.encode(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest));
-        $._addCiphertextHashCounters[addCiphertextHash]++;
+        $.addCiphertextHashCounters[addCiphertextHash]++;
 
         // It is ok to only the handle can be considered here as a handle should only be added once
         // in the contract anyway
-        $._alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender] = true;
+        $.alreadyAddedCoprocessorTxSenders[ctHandle][msg.sender] = true;
 
         // Store the coprocessor transaction sender address for the ciphertext material addition
         // It's important to consider the hash and not the handle to make sure we only gather the
@@ -142,31 +136,31 @@ contract CiphertextCommits is
         // be able to retrieve all the transaction senders involved in a consensus
         // In particular, this means that a "late" (see right below) valid coprocessor transaction
         // sender address will still be added in the list
-        $._coprocessorTxSenderAddresses[addCiphertextHash].push(msg.sender);
+        $.coprocessorTxSenderAddresses[addCiphertextHash].push(msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         if (
-            !$._isCiphertextMaterialAdded[ctHandle] &&
-            _isConsensusReached($._addCiphertextHashCounters[addCiphertextHash])
+            !$.isCiphertextMaterialAdded[ctHandle] &&
+            _isConsensusReached($.addCiphertextHashCounters[addCiphertextHash])
         ) {
-            $._ciphertextDigests[ctHandle] = ciphertextDigest;
-            $._snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
-            $._keyIds[ctHandle] = keyId;
+            $.ciphertextDigests[ctHandle] = ciphertextDigest;
+            $.snsCiphertextDigests[ctHandle] = snsCiphertextDigest;
+            $.keyIds[ctHandle] = keyId;
 
             // A ciphertext handle should only be added once, ever
-            $._isCiphertextMaterialAdded[ctHandle] = true;
+            $.isCiphertextMaterialAdded[ctHandle] = true;
 
             // A "late" valid coprocessor could still see its transaction sender address be added to
             // the list after consensus. This variable is here to be able to retrieve this list later
             // by only knowing the handle, since a consensus can only happen once per handle
-            $._ctHandleConsensusHash[ctHandle] = addCiphertextHash;
+            $.ctHandleConsensusHash[ctHandle] = addCiphertextHash;
 
             emit AddCiphertextMaterial(
                 ctHandle,
                 ciphertextDigest,
                 snsCiphertextDigest,
-                $._coprocessorTxSenderAddresses[addCiphertextHash]
+                $.coprocessorTxSenderAddresses[addCiphertextHash]
             );
         }
     }
@@ -182,27 +176,15 @@ contract CiphertextCommits is
             // Check that the consensus has been reached
             checkCiphertextMaterial(ctHandles[i]);
 
-            // Get the unique hash associated to the handle in order to retrieve the list of coprocessor
+            // Get the unique hash associated to the handle and use it to get the list of coprocessor
             // transaction sender address that were involved in the consensus
-            bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandles[i]];
-
-            // If the consensus has been reached but the hash is 0x0, it means that the handle has been
-            // added in V1: the handle was used to retrieve the list of transaction sender addresses
-            // instead of the hash
-            // We therefore consider this in order to be backward compatible.
-            // To be deprecated
-            // See https://github.com/zama-ai/fhevm-internal/issues/381
-            address[] memory coprocessorTxSenderAddresses;
-            if (addCiphertextHash == bytes32(0)) {
-                coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[ctHandles[i]];
-            } else {
-                coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[addCiphertextHash];
-            }
+            bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandles[i]];
+            address[] memory coprocessorTxSenderAddresses = $.coprocessorTxSenderAddresses[addCiphertextHash];
 
             ctMaterials[i] = CiphertextMaterial(
                 ctHandles[i],
-                $._keyIds[ctHandles[i]],
-                $._ciphertextDigests[ctHandles[i]],
+                $.keyIds[ctHandles[i]],
+                $.ciphertextDigests[ctHandles[i]],
                 coprocessorTxSenderAddresses
             );
         }
@@ -221,27 +203,15 @@ contract CiphertextCommits is
             // Check that the consensus has been reached
             checkCiphertextMaterial(ctHandles[i]);
 
-            // Get the unique hash associated to the handle in order to retrieve the list of transaction
-            // sender address that participated in the consensus
-            bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandles[i]];
-
-            // If the consensus has been reached but the hash is 0x0, it means that the handle has been
-            // added in V1: the handle was used to retrieve the list of transaction sender addresses
-            // instead of the hash
-            // We therefore consider this in order to be backward compatible.
-            // To be deprecated
-            // See https://github.com/zama-ai/fhevm-internal/issues/381
-            address[] memory coprocessorTxSenderAddresses;
-            if (addCiphertextHash == bytes32(0)) {
-                coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[ctHandles[i]];
-            } else {
-                coprocessorTxSenderAddresses = $._coprocessorTxSenderAddresses[addCiphertextHash];
-            }
+            // Get the unique hash associated to the handle and use it to get the list of coprocessor
+            // transaction sender address that were involved in the consensus
+            bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandles[i]];
+            address[] memory coprocessorTxSenderAddresses = $.coprocessorTxSenderAddresses[addCiphertextHash];
 
             snsCtMaterials[i] = SnsCiphertextMaterial(
                 ctHandles[i],
-                $._keyIds[ctHandles[i]],
-                $._snsCiphertextDigests[ctHandles[i]],
+                $.keyIds[ctHandles[i]],
+                $.snsCiphertextDigests[ctHandles[i]],
                 coprocessorTxSenderAddresses
             );
         }
@@ -261,19 +231,9 @@ contract CiphertextCommits is
         // Get the unique hash associated to the handle in order to retrieve the list of transaction
         // sender address that participated in the consensus
         // This digest remains the default value (0x0) until the consensus is reached.
-        bytes32 addCiphertextHash = $._ctHandleConsensusHash[ctHandle];
+        bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandle];
 
-        // If the consensus has been reached but the hash is 0x0, it means that the handle has been
-        // added in V1: the handle was used to retrieve the list of transaction sender addresses
-        // instead of the hash
-        // We therefore consider this in order to be backward compatible.
-        // DEPRECATED: to remove before mainnet
-        // See https://github.com/zama-ai/fhevm-internal/issues/381
-        if (addCiphertextHash == bytes32(0) && $._isCiphertextMaterialAdded[ctHandle]) {
-            return $._coprocessorTxSenderAddresses[ctHandle];
-        }
-
-        return $._coprocessorTxSenderAddresses[addCiphertextHash];
+        return $.coprocessorTxSenderAddresses[addCiphertextHash];
     }
 
     /// @notice See {ICiphertextCommits-getVersion}.
@@ -295,7 +255,7 @@ contract CiphertextCommits is
     /// @notice See {ICiphertextCommits-checkCiphertextMaterial}.
     function checkCiphertextMaterial(bytes32 ctHandle) public view virtual {
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
-        if (!$._isCiphertextMaterialAdded[ctHandle]) {
+        if (!$.isCiphertextMaterialAdded[ctHandle]) {
             revert CiphertextMaterialNotFound(ctHandle);
         }
     }

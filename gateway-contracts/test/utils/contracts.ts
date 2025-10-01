@@ -62,6 +62,13 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     kmsNodeIps.push(kmsNodeIp);
   }
 
+  // Load the KMS node storage URLs
+  const kmsNodeStorageUrls = [];
+  for (let idx = 0; idx < nKmsNodes; idx++) {
+    const kmsNodeStorageUrl = getRequiredEnvVar(`KMS_NODE_STORAGE_URL_${idx}`);
+    kmsNodeStorageUrls.push(kmsNodeStorageUrl);
+  }
+
   // Load the coprocessor transaction senders
   const coprocessorTxSenders = [];
   for (let idx = 0; idx < nCoprocessors; idx++) {
@@ -114,6 +121,7 @@ async function initTestingWallets(nKmsNodes: number, nCoprocessors: number, nCus
     kmsTxSenders,
     kmsSigners,
     kmsNodeIps,
+    kmsNodeStorageUrls,
     coprocessorTxSenders,
     coprocessorSigners,
     coprocessorS3Buckets,
@@ -148,8 +156,8 @@ export async function loadTestVariablesFixture() {
     getRequiredEnvVar("INPUT_VERIFICATION_ADDRESS"),
   );
 
-  // Load the KmsManagement contract
-  const kmsManagement = await hre.ethers.getContractAt("KmsManagement", getRequiredEnvVar("KMS_MANAGEMENT_ADDRESS"));
+  // Load the KMSGeneration contract
+  const kmsGeneration = await hre.ethers.getContractAt("KMSGeneration", getRequiredEnvVar("KMS_GENERATION_ADDRESS"));
 
   // Load the CiphertextCommits contract
   const ciphertextCommits = await hre.ethers.getContractAt(
@@ -157,15 +165,11 @@ export async function loadTestVariablesFixture() {
     getRequiredEnvVar("CIPHERTEXT_COMMITS_ADDRESS"),
   );
 
-  // Load the MultichainAcl contract
-  const multichainAcl = await hre.ethers.getContractAt("MultichainAcl", getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS"));
+  // Load the MultichainACL contract
+  const MultichainACL = await hre.ethers.getContractAt("MultichainACL", getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS"));
 
   // Load the Decryption contract
   const decryption = await hre.ethers.getContractAt("Decryption", getRequiredEnvVar("DECRYPTION_ADDRESS"));
-
-  // Load the FHE parameters
-  const fheParamsName = getRequiredEnvVar("FHE_PARAMS_NAME");
-  const fheParamsDigest = getRequiredEnvVar("FHE_PARAMS_DIGEST");
 
   // Load the PauserSet contract
   const pauserSet = await hre.ethers.getContractAt("PauserSet", getRequiredEnvVar("PAUSER_SET_ADDRESS"));
@@ -173,17 +177,15 @@ export async function loadTestVariablesFixture() {
   return {
     ...fixtureData,
     gatewayConfig,
-    kmsManagement,
+    kmsGeneration,
     ciphertextCommits,
-    multichainAcl,
+    MultichainACL,
     decryption,
     inputVerification,
     chainIds,
     nKmsNodes,
     nCoprocessors,
     nCustodians,
-    fheParamsName,
-    fheParamsDigest,
     pauserSet,
   };
 }

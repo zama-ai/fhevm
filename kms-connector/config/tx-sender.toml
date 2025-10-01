@@ -30,17 +30,17 @@ address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 # ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
 # domain_version = "1"
 
-# Configuration of the KmsManagement contract (required)
-[kms_management_contract]
-# Address of the KmsManagement contract (required)
+# Configuration of the KMSGeneration contract (required)
+[kms_generation_contract]
+# Address of the KMSGeneration contract (required)
 # Format: hex string with 0x prefix
-# ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS
+# ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
 address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
-# EIP-712 domain name for KmsManagement contract (optional, defaults to "KmsManagement")
-# ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_NAME
-# domain_name = "KmsManagement"
-# EIP-712 domain version for KmsManagement contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_VERSION
+# EIP-712 domain name for KMSGeneration contract (optional, defaults to "KMSGeneration")
+# ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_NAME
+# domain_name = "KMSGeneration"
+# EIP-712 domain version for KMSGeneration contract (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
 # Private key as a hex string (optional if `aws_kms_config` is configured)

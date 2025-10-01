@@ -7,25 +7,40 @@ import path from "path";
 
 import { ADDRESSES_DIR } from "../../hardhat.config";
 import { getRequiredEnvVar } from "../utils/loadVariables";
+import { GATEWAY_CONFIG_EMPTY_PROXY_NAME, REGULAR_EMPTY_PROXY_NAME } from "./utils";
 
-// Deploy a new EmptyUUPSProxy contract
-async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
-  const factory = await ethers.getContractFactory("EmptyUUPSProxy", deployer);
+// Deploy a new EmptyUUPSProxyGatewayConfig contract
+async function deployEmptyUUPSGatewayConfig(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
+  const factory = await ethers.getContractFactory(GATEWAY_CONFIG_EMPTY_PROXY_NAME, deployer);
+
+  // The empty proxy for the GatewayConfig contract is owned by the deployed at first
   const UUPSEmpty = await upgrades.deployProxy(factory, [deployer.address], {
     initializer: "initialize",
     kind: "uups",
   });
   await UUPSEmpty.waitForDeployment();
   const UUPSEmptyAddress = await UUPSEmpty.getAddress();
-  console.log("EmptyUUPS proxy contract successfully deployed!");
+  console.log(`${GATEWAY_CONFIG_EMPTY_PROXY_NAME} proxy contract successfully deployed!`);
+  return UUPSEmptyAddress;
+}
+
+// Deploy a new EmptyUUPSProxy contract
+async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
+  const factory = await ethers.getContractFactory(REGULAR_EMPTY_PROXY_NAME, deployer);
+
+  // The regular empty proxies are directly owned by the GatewayConfig's owner
+  const UUPSEmpty = await upgrades.deployProxy(factory, [], {
+    initializer: "initialize",
+    kind: "uups",
+  });
+  await UUPSEmpty.waitForDeployment();
+  const UUPSEmptyAddress = await UUPSEmpty.getAddress();
+  console.log(`${REGULAR_EMPTY_PROXY_NAME} proxy contract successfully deployed!`);
   return UUPSEmptyAddress;
 }
 
 // Deploy all the EmptyUUPS proxy contracts
 task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgrades, run }) {
-  // Compile the EmptyUUPS proxy contract
-  await run("compile:specific", { contract: "contracts/emptyProxy" });
-
   const deployerPrivateKey = getRequiredEnvVar("DEPLOYER_PRIVATE_KEY");
   const deployer = new Wallet(deployerPrivateKey).connect(ethers.provider);
 
@@ -45,11 +60,28 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
     flag: "w",
   });
 
-  console.log("Deploying an EmptyUUPS proxy contract for MultichainAcl...");
-  const multichainAclAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  // Compile the EmptyUUPSGatewayConfig proxy contract
+  await run("compile:specific", { contract: "contracts/emptyProxyGatewayConfig" });
+
+  // The GatewayConfig contract must be deployed first as the following contracts' empty proxies need
+  // its address in order to make them owned by the GatewayConfig contract's owner.
+  console.log("Deploying an EmptyUUPS proxy contract for GatewayConfig...");
+  const gatewayConfigAddress = await deployEmptyUUPSGatewayConfig(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "MultichainAcl",
-    address: multichainAclAddress,
+    name: "GatewayConfig",
+    address: gatewayConfigAddress,
+  });
+
+  // Compile the EmptyUUPS proxy contract
+  // The regular EmptyUUPS proxy contracts should only be compiled after the GatewayConfig address is
+  // set, as they are made owned by the GatewayConfig contract's owner.
+  await run("compile:specific", { contract: "contracts/emptyProxy" });
+
+  console.log("Deploying an EmptyUUPS proxy contract for MultichainACL...");
+  const multichainACLAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  await run("task:setContractAddress", {
+    name: "MultichainACL",
+    address: multichainACLAddress,
   });
 
   console.log("Deploying an EmptyUUPS proxy contract for CiphertextCommits...");
@@ -66,18 +98,11 @@ task("task:deployEmptyUUPSProxies").setAction(async function (_, { ethers, upgra
     address: decryptionAddress,
   });
 
-  console.log("Deploying an EmptyUUPS proxy contract for GatewayConfig...");
-  const gatewayConfigAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
+  console.log("Deploying an EmptyUUPS proxy contract for KMSGeneration...");
+  const kmsGenerationAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
   await run("task:setContractAddress", {
-    name: "GatewayConfig",
-    address: gatewayConfigAddress,
-  });
-
-  console.log("Deploying an EmptyUUPS proxy contract for KmsManagement...");
-  const kmsManagementAddress = await deployEmptyUUPS(ethers, upgrades, deployer);
-  await run("task:setContractAddress", {
-    name: "KmsManagement",
-    address: kmsManagementAddress,
+    name: "KMSGeneration",
+    address: kmsGenerationAddress,
   });
 
   console.log("Deploying an EmptyUUPS proxy contract for InputVerification...");

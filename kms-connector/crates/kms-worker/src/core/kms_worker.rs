@@ -4,7 +4,8 @@ use crate::{
         config::Config,
         event_picker::{DbEventPicker, EventPicker},
         event_processor::{
-            DbEventProcessor, DecryptionProcessor, EventProcessor, KmsClient, s3::S3Service,
+            DbEventProcessor, DecryptionProcessor, EventProcessor, KMSGenerationProcessor,
+            KmsClient, s3::S3Service,
         },
         kms_response_publisher::DbKmsResponsePublisher,
     },
@@ -96,7 +97,7 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
     /// Creates a new `KmsWorker` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State<GatewayProvider>)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
-        let provider = connect_to_gateway(&config.gateway_url).await?;
+        let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
 
@@ -104,8 +105,13 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
 
         let s3_service = S3Service::new(&config, provider.clone());
         let decryption_processor = DecryptionProcessor::new(&config, s3_service);
-        let event_processor =
-            DbEventProcessor::new(kms_client.clone(), decryption_processor, db_pool.clone());
+        let kms_generation_processor = KMSGenerationProcessor::new(&config);
+        let event_processor = DbEventProcessor::new(
+            kms_client.clone(),
+            decryption_processor,
+            kms_generation_processor,
+            db_pool.clone(),
+        );
         let response_publisher = DbKmsResponsePublisher::new(db_pool.clone());
 
         let state = State::new(

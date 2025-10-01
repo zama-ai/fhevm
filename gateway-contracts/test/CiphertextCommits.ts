@@ -241,8 +241,6 @@ describe("CiphertextCommits", function () {
         .revertedWithCustomError(ciphertextCommits, "CoprocessorAlreadyAdded")
         .withArgs(ctHandle, coprocessorTxSenders[0]);
     });
-
-    // TODO: Add test checking `checkCurrentKeyId` once keys are generated through the Gateway
   });
 
   describe("Get ciphertext materials", async function () {
@@ -347,40 +345,6 @@ describe("CiphertextCommits", function () {
       await expect(ciphertextCommits.checkCiphertextMaterial(newCtHandle))
         .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
         .withArgs(newCtHandle);
-    });
-  });
-
-  describe("Pause", async function () {
-    it("Should pause the contract with the pauser and unpause with the owner", async function () {
-      // Check that the contract is not paused
-      expect(await ciphertextCommits.paused()).to.be.false;
-
-      // Pause the contract with the pauser address
-      await expect(ciphertextCommits.connect(pauser).pause()).to.emit(ciphertextCommits, "Paused").withArgs(pauser);
-      expect(await ciphertextCommits.paused()).to.be.true;
-
-      // Unpause the contract with the owner address
-      await expect(ciphertextCommits.connect(owner).unpause()).to.emit(ciphertextCommits, "Unpaused").withArgs(owner);
-      expect(await ciphertextCommits.paused()).to.be.false;
-    });
-
-    it("Should revert on pause because sender is not the pauser", async function () {
-      const fakePauser = createRandomWallet();
-
-      await expect(ciphertextCommits.connect(fakePauser).pause())
-        .to.be.revertedWithCustomError(ciphertextCommits, "NotPauserOrGatewayConfig")
-        .withArgs(fakePauser.address);
-    });
-
-    it("Should revert on unpause because sender is not the owner", async function () {
-      // Pause the contract with the pauser address
-      await ciphertextCommits.connect(pauser).pause();
-
-      const fakeOwner = createRandomWallet();
-
-      await expect(ciphertextCommits.connect(fakeOwner).unpause())
-        .to.be.revertedWithCustomError(ciphertextCommits, "NotOwnerOrGatewayConfig")
-        .withArgs(fakeOwner.address);
     });
   });
 });

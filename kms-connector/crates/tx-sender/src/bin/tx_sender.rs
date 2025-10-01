@@ -13,7 +13,7 @@ use connector_utils::{
 };
 use std::process::ExitCode;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 #[tokio::main]
 async fn main() -> ExitCode {
@@ -35,6 +35,7 @@ async fn run() -> anyhow::Result<()> {
         }
         Subcommands::Start { config } => {
             let config = Config::from_env_and_file(config.as_ref()).await?;
+            debug!("{config:?}");
             init_otlp_setup(config.service_name.clone())?;
 
             let cancel_token = CancellationToken::new();
@@ -42,7 +43,7 @@ async fn run() -> anyhow::Result<()> {
             install_signal_handlers(cancel_token.clone())?;
             let monitoring_endpoint = config.monitoring_endpoint;
 
-            info!("Starting TransactionSender with config: {:?}", config);
+            info!("Starting TransactionSender");
             let (tx_sender, state) = TransactionSender::from_config(config).await?;
             start_monitoring_server(monitoring_endpoint, state, cancel_token.clone());
             tx_sender.start(cancel_token).await;

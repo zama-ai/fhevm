@@ -78,16 +78,24 @@ interface IDecryption {
     /**
      * @notice Emitted when an public decryption response is made.
      * @param decryptionId The decryption request ID associated with the response.
-     * @param userDecryptedShares The list of decryption shares reencrypted with the user's public key.
-     * @param signatures The signatures of all the KMS connectors that responded.
+     * @param indexShare The index of the share associated with the decryption.
+     * @param userDecryptedShare The decryption share reencrypted with the user's public key.
+     * @param signature The signature of the KMS connector that responded.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event UserDecryptionResponse(
         uint256 indexed decryptionId,
-        bytes[] userDecryptedShares,
-        bytes[] signatures,
+        uint256 indexShare,
+        bytes userDecryptedShare,
+        bytes signature,
         bytes extraData
     );
+
+    /**
+     * @notice Emitted when the number of user decryption response received reaches the threshold.
+     * @param decryptionId The decryption request ID.
+     */
+    event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
 
     /// @notice Error indicating that the input list of handles is empty.
     error EmptyCtHandles();
@@ -178,8 +186,8 @@ interface IDecryption {
      * @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same.
      * @param firstSnsCtMaterial The first SNS ciphertext material in the list with the expected key ID.
      * @param invalidSnsCtMaterial The SNS ciphertext material found with a different key ID.
-     * @dev This will be removed in the future as multiple keyIds processing is implemented.
-     * See https://github.com/zama-ai/fhevm-gateway/issues/104.
+     * @dev This should be removed once batched decryption requests with different keys is support by the KMS
+     * See https://github.com/zama-ai/fhevm-internal/issues/376
      */
     error DifferentKeyIdsNotAllowed(
         SnsCiphertextMaterial firstSnsCtMaterial,
@@ -223,7 +231,7 @@ interface IDecryption {
      * @notice Requests a user decryption.
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
-     * @param contractsInfo The chain ID and contract addresses to be used in the decryption.
+     * @param contractsInfo The contracts' information (chain ID, addresses).
      * @param userAddress The user's address.
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
@@ -244,7 +252,7 @@ interface IDecryption {
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
      * @param delegationAccounts The user's address and the delegated account address for the user decryption.
-     * @param contractsInfo The chain ID and contract addresses to be used in the decryption.
+     * @param contractsInfo The contracts' information (chain ID, addresses).
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
@@ -294,7 +302,7 @@ interface IDecryption {
 
     /**
      * @notice Checks if handles are ready to be decrypted by a delegated address.
-     * @param contractsChainId The contract's chain ID.
+     * @param contractsChainId The host chain ID, where the contracts are deployed.
      * @param delegationAccounts The delegator and delegated address.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param contractAddresses The contract addresses.

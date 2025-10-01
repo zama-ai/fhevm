@@ -3,6 +3,8 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
+use gw_listener::aws_s3::AwsS3Client;
+use gw_listener::chain_id_from_env;
 use gw_listener::gw_listener::GatewayListener;
 use gw_listener::http_server::HttpServer;
 use gw_listener::ConfigSettings;
@@ -29,6 +31,9 @@ struct Conf {
     #[arg(short, long)]
     input_verification_address: Address,
 
+    #[arg(long)]
+    kms_generation_address: Address,
+
     #[arg(long, default_value = "1")]
     error_sleep_initial_secs: u16,
 
@@ -53,6 +58,9 @@ struct Conf {
         value_parser = clap::value_parser!(Level),
         default_value_t = Level::INFO)]
     log_level: Level,
+
+    #[arg(long)]
+    host_chain_id: Option<u64>,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -112,9 +120,15 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
+    let aws_s3_client = AwsS3Client {};
+
     let cancel_token = CancellationToken::new();
 
+    let Some(host_chain_id) = conf.host_chain_id.or_else(chain_id_from_env) else {
+        anyhow::bail!("--chain-id or CHAIN_ID env var is missing.")
+    };
     let config = ConfigSettings {
+        host_chain_id,
         database_url,
         database_pool_size: conf.database_pool_size,
         verify_proof_req_db_channel: conf.verify_proof_req_database_channel,
@@ -127,9 +141,11 @@ async fn main() -> anyhow::Result<()> {
 
     let gw_listener = GatewayListener::new(
         conf.input_verification_address,
+        conf.kms_generation_address,
         config.clone(),
         cancel_token.clone(),
         provider.clone(),
+        aws_s3_client.clone(),
     );
 
     // Wrap the GatewayListener in an Arc
