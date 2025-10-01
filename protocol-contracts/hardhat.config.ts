@@ -7,8 +7,6 @@ import "dotenv/config";
 
 import "hardhat-deploy";
 import "hardhat-contract-sizer";
-import '@openzeppelin/hardhat-upgrades';
-import '@nomicfoundation/hardhat-chai-matchers';
 import "@nomiclabs/hardhat-ethers";
 import "@layerzerolabs/toolbox-hardhat";
 import {
@@ -49,7 +47,7 @@ const config: HardhatUserConfig = {
   solidity: {
     compilers: [
       {
-        version: "0.8.27",
+        version: "0.8.22",
         settings: {
           optimizer: {
             enabled: true,
