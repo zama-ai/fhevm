@@ -7,11 +7,11 @@ const timeIncreaseNoMine = (duration: number) =>
   time.latest().then(clock => time.setNextBlockTimestamp(clock + duration));
 
 /* eslint-disable no-unexpected-multiline */
-describe.only('Protocol Staking', function () {
+describe('Protocol Staking', function () {
   beforeEach(async function () {
     const [staker1, staker2, admin, ...accounts] = await ethers.getSigners();
 
-    const token = await ethers.deployContract('ERC20Mock', ['StakingToken', 'ST', 18]);
+    const token = await ethers.deployContract('$ERC20Mock', ['StakingToken', 'ST', 18]);
     const mock = await ethers
       .getContractFactory('ProtocolStaking')
       .then(factory => upgrades.deployProxy(factory, ['StakedToken', 'SST', '1', token.target, admin.address]));
@@ -19,7 +19,7 @@ describe.only('Protocol Staking', function () {
     await Promise.all(
       [staker1, staker2].flatMap(account => [
         token.mint(account, ethers.parseEther('1000')),
-        token.connect(account).approve(account, mock, ethers.MaxUint256),
+        token.$_approve(account, mock, ethers.MaxUint256),
       ]),
     );
 
