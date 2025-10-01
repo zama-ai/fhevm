@@ -1457,11 +1457,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
      * @dev This function uses inline assembly to load the HCU from a specific storage location.
      */
     function _getHCUForHandle(bytes32 handle) internal view virtual returns (uint256 handleHCU) {
-        bytes32 slot = keccak256(abi.encodePacked(HCULimitStorageLocation, handle));
         assembly {
-            // Ensure the slot is properly aligned and validated before using tload.
-            // This assumes the slot is derived from a secure and deterministic process.
-            handleHCU := tload(slot)
+            handleHCU := tload(handle)
         }
     }
 
@@ -1471,10 +1468,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
      * @dev This function uses inline assembly to store the HCU in a specific storage location.
      */
     function _getHCUForTransaction() internal view virtual returns (uint256 transactionHCU) {
-        /// @dev keccak256(abi.encodePacked(HCULimitStorageLocation, "HCU"))
-        bytes32 slot = 0x9fe02aa19e370f46d43dc2b6620733ba9c3b193659e9699f55eefe911af8a4b4;
         assembly {
-            transactionHCU := tload(slot)
+            transactionHCU := tload(0)
         }
     }
 
@@ -1482,25 +1477,22 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
      * @notice Sets the HCU for a handle in the transient storage.
      * @param handle The handle for which to set the HCU.
      * @param handleHCU The HCU to set for the handle.
-     * @dev This function uses inline assembly to store the HCU in a specific storage location.
+     * @dev This function uses inline assembly to store the HCU in a specific transient storage slot.
      */
     function _setHCUForHandle(bytes32 handle, uint256 handleHCU) internal virtual {
-        bytes32 slot = keccak256(abi.encodePacked(HCULimitStorageLocation, handle));
         assembly {
-            tstore(slot, handleHCU)
+            tstore(handle, handleHCU)
         }
     }
 
     /**
      * @notice Updates the current HCU consumption for the transaction and stores it in the transient storage.
      * @param transactionHCU The total HCU for the transaction.
-     * @dev This function uses inline assembly to store the HCU in a specific storage location.
+     * @dev This function uses inline assembly to store the HCU in a specific transient storage slot.
      */
     function _setHCUForTransaction(uint256 transactionHCU) internal virtual {
-        /// @dev keccak256(abi.encodePacked(HCULimitStorageLocation, "HCU"))
-        bytes32 slot = 0x9fe02aa19e370f46d43dc2b6620733ba9c3b193659e9699f55eefe911af8a4b4;
         assembly {
-            tstore(slot, transactionHCU)
+            tstore(0, transactionHCU) // to avoid collisions with handles (see _setHCUForHandle)
         }
     }
 
