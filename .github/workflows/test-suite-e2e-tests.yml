@@ -115,21 +115,28 @@ jobs:
 
       - name: Parse component versions
         id: parse-versions
+        env:
+          COPROCESSOR_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.coprocessor || '[]' }}
+          GATEWAY_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.gateway || '' }}
+          HOST_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.host || '' }}
+          CONNECTOR_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.connector || '[]' }}
+          TEST_SUITE_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.test-suite || '' }}
+          RELAYER_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.relayer || '' }}
+          KMS_CORE_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.kms-core || '' }}
         run: |
           echo "🔧 Parsing component versions..."
           
           # Parse coprocessor array (7 elements)
-          coprocessor_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.coprocessor || '[]' }}'
-          if [[ "${coprocessor_input}" != "[]" && -n "${coprocessor_input}" ]]; then
-            echo "📊 Coprocessor array: ${coprocessor_input}"
+          if [[ "${COPROCESSOR_INPUT}" != "[]" && -n "${COPROCESSOR_INPUT}" ]]; then
+            echo "📊 Coprocessor array: ${COPROCESSOR_INPUT}"
             
-            db_migration_version=$(echo "${coprocessor_input}" | jq -r '.[0] // empty')
-            gw_listener_version=$(echo "${coprocessor_input}" | jq -r '.[1] // empty')
-            host_listener_version=$(echo "${coprocessor_input}" | jq -r '.[2] // empty')
-            tx_sender_version=$(echo "${coprocessor_input}" | jq -r '.[3] // empty')
-            tfhe_worker_version=$(echo "${coprocessor_input}" | jq -r '.[4] // empty')
-            sns_worker_version=$(echo "${coprocessor_input}" | jq -r '.[5] // empty')
-            zkproof_worker_version=$(echo "${coprocessor_input}" | jq -r '.[6] // empty')
+            db_migration_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[0] // empty')
+            gw_listener_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[1] // empty')
+            host_listener_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[2] // empty')
+            tx_sender_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[3] // empty')
+            tfhe_worker_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[4] // empty')
+            sns_worker_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[5] // empty')
+            zkproof_worker_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[6] // empty')
             
             [[ -n "${db_migration_version}" ]] && echo "DB_MIGRATION_VERSION_OVERRIDE=${db_migration_version}" >> "$GITHUB_ENV"
             [[ -n "${gw_listener_version}" ]] && echo "GW_LISTENER_VERSION_OVERRIDE=${gw_listener_version}" >> "$GITHUB_ENV"
@@ -141,22 +148,19 @@ jobs:
           fi
           
           # Parse gateway string
-          gateway_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.gateway || '' }}'
-          [[ -n "${gateway_input}" ]] && echo "GATEWAY_VERSION_OVERRIDE=${gateway_input}" >> "$GITHUB_ENV"
+          [[ -n "${GATEWAY_INPUT}" ]] && echo "GATEWAY_VERSION_OVERRIDE=${GATEWAY_INPUT}" >> "$GITHUB_ENV"
           
           # Parse host string
-          host_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.host || '' }}'
-          [[ -n "${host_input}" ]] && echo "HOST_VERSION_OVERRIDE=${host_input}" >> "$GITHUB_ENV"
+          [[ -n "${HOST_INPUT}" ]] && echo "HOST_VERSION_OVERRIDE=${HOST_INPUT}" >> "$GITHUB_ENV"
           
           # Parse connector array (4 elements)
-          connector_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.connector || '[]' }}'
-          if [[ "${connector_input}" != "[]" && -n "${connector_input}" ]]; then
-            echo "📊 Connector array: ${connector_input}"
+          if [[ "${CONNECTOR_INPUT}" != "[]" && -n "${CONNECTOR_INPUT}" ]]; then
+            echo "📊 Connector array: ${CONNECTOR_INPUT}"
             
-            connector_db_migration=$(echo "${connector_input}" | jq -r '.[0] // empty')
-            connector_gw_listener=$(echo "${connector_input}" | jq -r '.[1] // empty')
-            connector_tx_sender=$(echo "${connector_input}" | jq -r '.[2] // empty')
-            connector_kms_worker=$(echo "${connector_input}" | jq -r '.[3] // empty')
+            connector_db_migration=$(echo "${CONNECTOR_INPUT}" | jq -r '.[0] // empty')
+            connector_gw_listener=$(echo "${CONNECTOR_INPUT}" | jq -r '.[1] // empty')
+            connector_tx_sender=$(echo "${CONNECTOR_INPUT}" | jq -r '.[2] // empty')
+            connector_kms_worker=$(echo "${CONNECTOR_INPUT}" | jq -r '.[3] // empty')
             
             [[ -n "${connector_db_migration}" ]] && echo "CONNECTOR_DB_MIGRATION_VERSION_OVERRIDE=${connector_db_migration}" >> "$GITHUB_ENV"
             [[ -n "${connector_gw_listener}" ]] && echo "CONNECTOR_GW_LISTENER_VERSION_OVERRIDE=${connector_gw_listener}" >> "$GITHUB_ENV"
@@ -165,16 +169,13 @@ jobs:
           fi
           
           # Parse test-suite string
-          test_suite_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.test-suite || '' }}'
-          [[ -n "${test_suite_input}" ]] && echo "TEST_SUITE_VERSION_OVERRIDE=${test_suite_input}" >> "$GITHUB_ENV"
+          [[ -n "${TEST_SUITE_INPUT}" ]] && echo "TEST_SUITE_VERSION_OVERRIDE=${TEST_SUITE_INPUT}" >> "$GITHUB_ENV"
           
           # Parse relayer string
-          relayer_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.relayer || '' }}'
-          [[ -n "${relayer_input}" ]] && echo "RELAYER_VERSION_OVERRIDE=${relayer_input}" >> "$GITHUB_ENV"
+          [[ -n "${RELAYER_INPUT}" ]] && echo "RELAYER_VERSION_OVERRIDE=${RELAYER_INPUT}" >> "$GITHUB_ENV"
           
           # Parse kms-core string
-          kms_core_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.kms-core || '' }}'
-          [[ -n "${kms_core_input}" ]] && echo "KMS_CORE_VERSION_OVERRIDE=${kms_core_input}" >> "$GITHUB_ENV"
+          [[ -n "${KMS_CORE_INPUT}" ]] && echo "KMS_CORE_VERSION_OVERRIDE=${KMS_CORE_INPUT}" >> "$GITHUB_ENV"
           
           echo "✅ Component versions parsed successfully"
 

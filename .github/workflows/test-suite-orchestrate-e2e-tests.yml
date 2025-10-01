@@ -6,7 +6,7 @@ on:
     branches:
       - main
 
-permissions: {}
+permissions: {} # No permissions needed at workflow level
 
 concurrency:
   group: test-suite-orchestrate-e2e-tests-${{ github.ref }}
@@ -18,8 +18,8 @@ jobs:
     # to be activated before merging this PR
     # if: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
     permissions:
-      actions: 'write'
-      contents: 'read'
+      actions: 'write' # Required to trigger other workflows via workflow_dispatch
+      contents: 'read' # Required to read repository information and refs
     runs-on: ubuntu-latest
     outputs:
       built-images: ${{ steps.collect.outputs.built-images }}
@@ -179,8 +179,8 @@ jobs:
     needs: trigger-builds
     if: always()
     permissions:
-      actions: 'write'
-      contents: 'read'
+      actions: 'write' # Required to trigger E2E test workflows via workflow_dispatch
+      contents: 'read' # Required to read repository information and refs
     runs-on: ubuntu-latest
     steps:
       - name: Orchestrate E2E Tests
