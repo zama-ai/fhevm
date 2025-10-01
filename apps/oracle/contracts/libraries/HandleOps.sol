@@ -2,7 +2,7 @@
 // From: https://github.com/zama-ai/fhevm/blob/32ca2c33ffdaf41742739060194397b800434353/gateway-contracts/contracts/libraries/HandleOps.sol
 pragma solidity ^0.8.24;
 
-import "@fhevm/solidity/lib/FheType.sol";
+import {FheType} from "./FheType.sol";
 
 /// @title HandleOps library
 /// @notice Library that provides utility functions for ciphertext handles

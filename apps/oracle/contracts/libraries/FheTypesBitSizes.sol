@@ -2,7 +2,7 @@
 // From: https://github.com/zama-ai/fhevm/blob/32ca2c33ffdaf41742739060194397b800434353/gateway-contracts/contracts/libraries/FHETypeBitSizes.sol
 pragma solidity ^0.8.24;
 
-import {FheType} from "@fhevm/solidity/lib/FheType.sol";
+import {FheType} from "./FheType.sol";
 
 library FHETypeBitSizes {
     // Cleartext bit size for each FHE type.

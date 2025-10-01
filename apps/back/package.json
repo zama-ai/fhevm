@@ -22,7 +22,7 @@
     "http": "0.0.1-security",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0",
-    "moesif-nodejs": "^3.9.1",
+    "moesif-nodejs": "^3.10.0",
     "path": "^0.12.7",
     "stripe": "^14.25.0"
   },

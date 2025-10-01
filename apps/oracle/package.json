@@ -1,6 +1,6 @@
 {
   "name": "@zama-fhe/oracle-solidity",
-  "version": "0.2.0",
+  "version": "0.3.0-0",
   "description": "Oracle Solidity smart contract for public decryption",
   "main": "index.js",
   "scripts": {
@@ -14,7 +14,6 @@
   "author": "Zama",
   "license": "BSD-3-Clause",
   "dependencies": {
-    "@fhevm/solidity": "^0.8.0",
     "@openzeppelin/contracts": "5.1.0",
     "@openzeppelin/contracts-upgradeable": "5.1.0",
     "@openzeppelin/foundry-upgrades": "^0.3.8",
