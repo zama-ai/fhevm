@@ -209,12 +209,14 @@ describe("Mock contracts", function () {
         );
     });
 
-    it("Should emit UserDecryptionResponse event on user decryption response", async function () {
+    it("Should emit response and consensus events on user decryption response", async function () {
       await expect(
         decryptionMock.userDecryptionResponse(userDecryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
       )
         .to.emit(decryptionMock, "UserDecryptionResponse")
-        .withArgs(userDecryptionCounterId, [DefaultBytes], [DefaultBytes], DefaultBytes);
+        .withArgs(userDecryptionCounterId, DefaultUint256, DefaultBytes, DefaultBytes, DefaultBytes)
+        .to.emit(decryptionMock, "UserDecryptionResponseThresholdReached")
+        .withArgs(userDecryptionCounterId);
     });
   });
 

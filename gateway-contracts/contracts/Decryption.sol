@@ -207,20 +207,13 @@ contract Decryption is
                 verifiedPublicDecryptSignatures;
         /// @notice Handles of the ciphertexts requested for a public decryption
         mapping(uint256 decryptionId => bytes32[] ctHandles) publicCtHandles;
+        /// @notice The number of public decryption requests, used to generate request IDs (`decryptionId`).
+        uint256 publicDecryptionCounter;
         // ----------------------------------------------------------------------------------------------
         // User decryption state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice Verified signatures for a user decryption.
-        mapping(uint256 decryptionId => bytes[] verifiedSignatures) verifiedUserDecryptSignatures;
         /// @notice The decryption payloads stored during user decryption requests.
         mapping(uint256 decryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
-        /// @notice The user decrypted shares received from user decryption responses.
-        mapping(uint256 decryptionId => bytes[] shares) userDecryptedShares;
-        // ----------------------------------------------------------------------------------------------
-        // Decryption counters:
-        // ----------------------------------------------------------------------------------------------
-        /// @notice The number of public decryption requests, used to generate request IDs (`decryptionId`).
-        uint256 publicDecryptionCounter;
         /// @notice The number of user decryption requests, used to generate request IDs (`decryptionId`)
         /// @notice (including delegated user decryption requests).
         uint256 userDecryptionCounter;
@@ -572,37 +565,34 @@ contract Decryption is
         /// @dev KMS node that has not already signed.
         _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
 
-        /// @dev Store the signature for the user decryption response.
-        /// @dev This list is then used to check the consensus. Important: the mapping should not
-        /// @dev consider the digest (contrary to the public decryption case) as shares are expected
-        /// @dev to be different for each KMS node.
-        bytes[] storage verifiedSignatures = $.verifiedUserDecryptSignatures[decryptionId];
-        verifiedSignatures.push(signature);
-
-        /// @dev Store the user decrypted share for the user decryption response.
-        $.userDecryptedShares[decryptionId].push(userDecryptedShare);
-
         // Store the KMS transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus
         // A "late" valid KMS transaction sender address will still be added in the list.
         // We thus use a zero digest (default value for `bytes32`) to still be able to retrieve the
         // list later independently of the decryption response type (public or user).
-        $.consensusTxSenderAddresses[decryptionId][0].push(msg.sender);
+        address[] storage txSenderAddresses = $.consensusTxSenderAddresses[decryptionId][0];
+        txSenderAddresses.push(msg.sender);
+
+        // Store the user decrypted share for the user decryption response.
+        // The index of the share is the length of the txSenderAddresses - 1 so that the first response
+        // associated to this decryptionId has an index of 0.
+        emit UserDecryptionResponse(
+            decryptionId,
+            txSenderAddresses.length - 1,
+            userDecryptedShare,
+            signature,
+            extraData
+        );
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
+        if (!$.decryptionDone[decryptionId] && _isThresholdReachedUser(txSenderAddresses.length)) {
             $.decryptionDone[decryptionId] = true;
 
             // Since we use the default value for `bytes32`, this means we do not need to store the
             // digest in `decryptionConsensusDigest` here like we do for the public decryption case.
 
-            emit UserDecryptionResponse(
-                decryptionId,
-                $.userDecryptedShares[decryptionId],
-                verifiedSignatures,
-                extraData
-            );
+            emit UserDecryptionResponseThresholdReached(decryptionId);
         }
     }
 
@@ -867,20 +857,20 @@ contract Decryption is
             );
     }
 
-    /// @notice Checks if the consensus is reached among the KMS nodes.
-    /// @param kmsCounter The number of KMS nodes that agreed
-    /// @return Whether the consensus is reached
-    function _isConsensusReachedPublic(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
-        return kmsCounter >= consensusThreshold;
+    /// @notice Indicates if the consensus is reached for public decryption.
+    /// @param numVerifiedResponses The number of public decryption responses that have been verified.
+    /// @return Whether the consensus has been reached
+    function _isConsensusReachedPublic(uint256 numVerifiedResponses) internal view virtual returns (bool) {
+        uint256 publicDecryptionThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
+        return numVerifiedResponses >= publicDecryptionThreshold;
     }
 
-    /// @notice Checks if the consensus for user decryption is reached among the KMS signers.
-    /// @param verifiedSignaturesCount The number of signatures that have been verified for a user decryption.
-    /// @return Whether the consensus is reached.
-    function _isConsensusReachedUser(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getUserDecryptionThreshold();
-        return verifiedSignaturesCount >= consensusThreshold;
+    /// @notice Indicates if the number of verified user decryption responses has reached the threshold.
+    /// @param numVerifiedResponses The number of user decryption responses that have been verified.
+    /// @return Whether the threshold has been reached.
+    function _isThresholdReachedUser(uint256 numVerifiedResponses) internal view virtual returns (bool) {
+        uint256 userDecryptionThreshold = GATEWAY_CONFIG.getUserDecryptionThreshold();
+        return numVerifiedResponses >= userDecryptionThreshold;
     }
 
     /// @notice Check the handles' conformance for public decryption requests.
