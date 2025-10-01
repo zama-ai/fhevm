@@ -31,6 +31,9 @@ on:
         description: "KMS Core version"
         default: ""
         type: string
+  pull_request:
+    branches:
+      - main
 
 permissions: {}
 
