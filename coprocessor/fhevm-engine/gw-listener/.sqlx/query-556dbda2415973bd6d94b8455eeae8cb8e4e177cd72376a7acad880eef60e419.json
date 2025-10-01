@@ -1,16 +1,17 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT transaction_id\n            FROM ciphertext_digest\n            WHERE handle = $1",
+  "query": "SELECT ciphertext128 FROM ciphertexts WHERE tenant_id = $1 AND handle = $2",
   "describe": {
     "columns": [
       {
         "ordinal": 0,
-        "name": "transaction_id",
+        "name": "ciphertext128",
         "type_info": "Bytea"
       }
     ],
     "parameters": {
       "Left": [
+        "Int4",
         "Bytea"
       ]
     },
@@ -18,5 +19,5 @@
       true
     ]
   },
-  "hash": "32ec211f9730f5cb052ae110618e87d6033d0102da3168245d8d0dd459805e23"
+  "hash": "556dbda2415973bd6d94b8455eeae8cb8e4e177cd72376a7acad880eef60e419"
 }
