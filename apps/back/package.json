@@ -5,9 +5,9 @@
   "private": true,
   "main": "app.js",
   "scripts": {
-    "build": "rm -rf dist && mkdir -p dist && cp -r app.js config plugins services dist/",
-    "start": "node app.js",
-    "start:prod": "node app.js",
+    "build": "rm -rf dist && tsc",
+    "start": "ts-node src/app.ts",
+    "start:prod": "node dist/app.js",
     "test": "echo \"Error: no test specified\"",
     "test:e2e": "echo \"Error: no e2e test specified\""
   },
@@ -24,10 +24,17 @@
     "jwks-rsa": "^3.2.0",
     "moesif-nodejs": "^3.9.1",
     "path": "^0.12.7",
-    "stripe": "^8.222.0"
+    "stripe": "^14.25.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.10"
+    "@types/body-parser": "^1.19.6",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "catalog:",
+    "nodemon": "^3.1.10",
+    "ts-node": "^10.9.2",
+    "typescript": "catalog:"
   },
   "engines": {
     "node": ">=22"
