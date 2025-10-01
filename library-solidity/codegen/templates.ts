@@ -1139,20 +1139,13 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
      * @notice Warning: this function never reverts, its boolean return value must be checked.
      * @dev The callback function has the following signature:
-     * - requestID (static uint256)
-     * - cleartexts (dynamic bytes)
-     * - decryptionProof (dynamic bytes)
-     *
-     * This means that the calldata is encoded in the following way:
-     * - 4 bytes: selector
-     * - 32 bytes: requestID
-     * - 32 bytes: offset of the cleartexts
-     * - 32 bytes: offset of the decryptionProof 
-     * - 32 bytes: length of the cleartexts (total number of bytes)
-     * - n*32 bytes: the "n" cleartext values, with "n" the number of handles
-     * - 32 bytes: length of the decryptionProof (total number of bytes)
-     * - ... the data of the decryptionProof (signatures, extra data)
-     */
+     * @dev   - requestID (static uint256)
+     * @dev   - cleartexts (dynamic bytes)
+     * @dev   - decryptionProof (dynamic bytes)
+     * @dev clearTexts is the abi-encoding of the list of all decrypted values assiociated to handlesList, in same order.
+     * @dev Only static native solidity types for clear values are supported, so clearTexts is the concatenation of all clear values appended to 32 bytes.
+     * @dev decryptionProof contains KMS signatures corresponding to clearTexts and associated handlesList, and needed metadata for KMS context.
+    **/
     function verifySignatures(
         bytes32[] memory handlesList,
         bytes memory cleartexts,
