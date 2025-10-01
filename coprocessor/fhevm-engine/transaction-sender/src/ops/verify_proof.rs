@@ -120,9 +120,11 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
         current_retry_count: i32,
-        l2_transaction_id: Option<Vec<u8>>,
+        src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        info!(zk_proof_id = txn_request.0, "Processing proof");
+        info!(zk_proof_id = txn_request.0, "Processing transaction");
+        let _t = telemetry::tracer("call_verify_proof_resp", &src_transaction_id);
+
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request.1,
             self.provider.inner(),
@@ -208,7 +210,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
 
             telemetry::try_end_l2_transaction(
                 &self.db_pool,
-                &l2_transaction_id.unwrap_or_default(),
+                &src_transaction_id.unwrap_or_default(),
             )
             .await?;
         } else {
@@ -265,7 +267,7 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let _t = telemetry::tracer("call_verify_proof_resp_l2", &transaction_id); // TODO: Add more telemetry
+            let t = telemetry::tracer("prepare_verify_proof_resp", &transaction_id);
 
             let txn_request = match row.verified {
                 Some(true) => {
@@ -368,11 +370,13 @@ where
                 }
             };
 
+            t.end();
+
             let self_clone = self.clone();
-            let input_transaction = transaction_id;
+            let src_transaction_id = transaction_id;
             join_set.spawn(async move {
                 self_clone
-                    .process_proof(txn_request, row.retry_count, input_transaction)
+                    .process_proof(txn_request, row.retry_count, src_transaction_id)
                     .await
             });
         }

@@ -159,7 +159,14 @@ async fn get_keyset(
     keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
     tenant_api_key: &String,
 ) -> Result<Option<KeySet>, ExecutionError> {
-    let _t = telemetry::tracer("fetch_keyset");
+    let _t = telemetry::tracer("fetch_keyset", &None);
+    {
+        let mut cache = keys_cache.write().await;
+        if let Some(keys) = cache.get(tenant_api_key) {
+            info!(tenant_api_key = tenant_api_key, "Keyset found in cache");
+            return Ok(Some(keys.clone()));
+        }
+    }
     let keys: Option<KeySet> = fetch_keyset(&keys_cache, &pool, tenant_api_key).await?;
     Ok(keys)
 }

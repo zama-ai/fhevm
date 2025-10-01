@@ -76,10 +76,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
         txn_request: impl Into<TransactionRequest>,
         current_limited_retries_count: i32,
         current_unlimited_retries_count: i32,
+        src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         let h = compact_hex(&key.handle);
 
         info!(handle = h, "Processing transaction");
+        let _t = telemetry::tracer("call_allow_account", &src_transaction_id);
 
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request,
@@ -99,7 +101,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
                     handle = h,
                     "Coprocessor has already added the ACL entry"
                 );
-                self.set_txn_is_sent(key, None, None).await?;
+                self.set_txn_is_sent(key, None, None, src_transaction_id)
+                    .await?;
                 return Ok(());
             }
             // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
@@ -170,6 +173,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
                 key,
                 Some(receipt.transaction_hash.as_slice()),
                 receipt.block_number.map(|bn| bn as i64),
+                src_transaction_id,
             )
             .await?;
 
@@ -219,6 +223,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
         key: &Key,
         txn_hash: Option<&[u8]>,
         txn_block_number: Option<i64>,
+        src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         sqlx::query!(
             "UPDATE allowed_handles
@@ -238,21 +243,8 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
         .execute(&self.db_pool)
         .await?;
 
-        let l1_transaction_id = sqlx::query!(
-            "SELECT transaction_id FROM allowed_handles
-                 WHERE handle = $1
-                 AND account_address = $2
-                 AND tenant_id = $3",
-            key.handle,
-            key.account_addr,
-            key.tenant_id
-        )
-        .fetch_one(&self.db_pool)
-        .await?
-        .transaction_id
-        .unwrap_or_default();
-
-        telemetry::try_end_l1_transaction(&self.db_pool, &l1_transaction_id).await?;
+        telemetry::try_end_l1_transaction(&self.db_pool, &src_transaction_id.unwrap_or_default())
+            .await?;
 
         Ok(())
     }
@@ -395,16 +387,12 @@ where
 
         info!(rows_count = rows.len(), "Selected rows to process");
 
-        // Keep track of all the tracers we create to ensure they are not dropped until the end of the join_set.
-        let mut tracers = vec![];
-
         let maybe_has_more_work = rows.len() == self.conf.allow_handle_batch_limit as usize;
 
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
-            let transaction_id = row.transaction_id.clone();
-            let t = telemetry::tracer("call_allow_account_l2", &transaction_id);
-            tracers.push(t);
+            let src_transaction_id = row.transaction_id.clone();
+            let t = telemetry::tracer("prepare_allow_account", &src_transaction_id);
 
             let tenant = match query_tenant_info(&self.db_pool, row.tenant_id).await {
                 Ok(res) => res,
@@ -490,6 +478,8 @@ where
                 event_type,
             };
 
+            t.end();
+
             let operation = self.clone();
             join_set.spawn(async move {
                 operation
@@ -498,6 +488,7 @@ where
                         txn_request,
                         row.txn_limited_retries_count,
                         row.txn_unlimited_retries_count,
+                        src_transaction_id,
                     )
                     .await
             });

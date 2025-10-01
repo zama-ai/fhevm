@@ -14,7 +14,7 @@ use std::{
     time::SystemTime,
 };
 use tokio::sync::RwLock;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 pub const GLOBAL_LATENCY_METRIC_NAME_L1: &str = "coprocessor_l1_txn_latency_seconds";
 pub const GLOBAL_LATENCY_METRIC_NAME_L2: &str = "coprocessor_l2_txn_latency_seconds";
@@ -224,10 +224,10 @@ impl TransactionMetrics {
     async fn is_transaction_completed(&self, txn_hash: &[u8]) -> bool {
         let mut cache = self.completed_txns_cache.write().await;
         if cache.contains(txn_hash) {
-            false
+            true
         } else {
             cache.put(txn_hash.to_vec(), ());
-            true
+            false
         }
     }
 
@@ -278,6 +278,11 @@ impl TransactionMetrics {
         txn_id: &[u8],
         histogram: &prometheus::Histogram,
     ) -> Result<Option<f64>, sqlx::Error> {
+        debug!(
+            txn_id = %compact_hex(txn_id),
+            "Marking transaction as completed, recording latency"
+        );
+
         // Reduce DB writes by checking in-memory cache first
         if self.is_transaction_completed(txn_id).await {
             return Ok(None);
@@ -375,6 +380,11 @@ pub async fn try_end_l1_transaction(
     pool: &sqlx::PgPool,
     transaction_id: &[u8],
 ) -> Result<(), sqlx::Error> {
+    debug!(
+        txn_id = %compact_hex(transaction_id),
+        "Checking if L1 transaction can be ended"
+    );
+
     let transaction_completed = sqlx::query!(
         "
             WITH
