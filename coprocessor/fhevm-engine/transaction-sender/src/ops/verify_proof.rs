@@ -208,7 +208,7 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
             self.remove_proof_by_id(txn_request.0).await?;
             VERIFY_PROOF_SUCCESS_COUNTER.inc();
 
-            telemetry::try_end_l2_transaction(
+            telemetry::try_end_zkproof_transaction(
                 &self.db_pool,
                 &src_transaction_id.unwrap_or_default(),
             )

@@ -17,7 +17,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
 pub const GLOBAL_LATENCY_METRIC_NAME_L1: &str = "coprocessor_l1_txn_latency_seconds";
-pub const GLOBAL_LATENCY_METRIC_NAME_L2: &str = "coprocessor_l2_txn_latency_seconds";
+pub const GLOBAL_LATENCY_METRIC_NAME_ZKPROOF: &str = "coprocessor_zkproof_txn_latency_seconds";
 
 pub const TXN_ID_ATTR_KEY: &str = "txn_id";
 
@@ -175,7 +175,7 @@ pub(crate) static L1_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(
     .unwrap()
 });
 
-pub(crate) static L2_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
     let mut buckets = Vec::new();
     let mut v = 0.10;
 
@@ -186,8 +186,8 @@ pub(crate) static L2_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(
     }
 
     register_histogram!(
-        GLOBAL_LATENCY_METRIC_NAME_L2,
-        "L2 transaction latencies in seconds",
+        GLOBAL_LATENCY_METRIC_NAME_ZKPROOF,
+        "ZKProof transaction latencies in seconds",
         buckets
     )
     .unwrap()
@@ -425,14 +425,14 @@ pub async fn try_end_l1_transaction(
     Ok(())
 }
 
-// Records the end of an L2 transaction unconditionally.
+// Records the end of an zkproof transaction unconditionally.
 // This function is idempotent and can be called multiple times safely
-pub async fn try_end_l2_transaction(
+pub async fn try_end_zkproof_transaction(
     pool: &sqlx::PgPool,
     transaction_id: &[u8],
 ) -> Result<(), sqlx::Error> {
     if let Err(e) = TXN_METRICS_MANAGER
-        .end_transaction(pool, transaction_id, &L2_TXN_LATENCY_HISTOGRAM)
+        .end_transaction(pool, transaction_id, &ZKPROOF_TXN_LATENCY_HISTOGRAM)
         .await
     {
         warn!(%e, "Failed to end transaction");
