@@ -30,28 +30,130 @@ KMS can be configured to two modes:
 The test suite offers a unified CLI for all operations:
 
 ```sh
-
 cd test-suite/fhevm
+
 # Deploy the entire stack
 ./fhevm-cli deploy
+# WIP: Build images locally (when private registry not available)
+./fhevm-cli deploy --build
 
-# Run specific tests
-./fhevm-cli test input-proof
-# Trivial
-./fhevm-cli test user-decryption
-# Trivial
-./fhevm-cli test public-decryption
-./fhevm-cli test erc20
+# Run blockchain integration tests
+./fhevm-cli test input-proof        # Test input proofs
+./fhevm-cli test user-decryption    # Test user decryptions
+./fhevm-cli test public-decryption  # Test public decryptions  
+./fhevm-cli test erc20              # Test ERC20 operations
+./fhevm-cli test debug              # Debug mode testing
 
-# Upgrade a specific service
+# Database connector testing (runs gateway-stress via fhevm-cli wrapper)
+./fhevm-cli db-test --track-responses            # Test with all DB URLs from config
+./fhevm-cli db-test --duration 60s -t mixed      # Run for 60s with mixed requests
+./fhevm-cli db-test -b 100 --clear-db            # Batch size 100, clear DB first
+
+# Upgrade specific services
+./fhevm-cli upgrade host
+./fhevm-cli upgrade gateway
+./fhevm-cli upgrade connector
 ./fhevm-cli upgrade coprocessor
+./fhevm-cli upgrade relayer
+./fhevm-cli upgrade test-suite
 
-# View logs
-./fhevm-cli logs relayer
+# View logs for any service
+./fhevm-cli logs [SERVICE]
 
-# Clean up
+# Clean up all containers and volumes
 ./fhevm-cli clean
 ```
+
+### Database Connector Testing
+
+The `fhevm-cli db-test` command provides database-level stress testing:
+
+```sh
+# Implemented options:
+-n, --num-connectors NUM  # Number of DB URLs to use from config
+-t, --type TYPE           # Request type: public, user, or mixed
+-b, --batch-size SIZE     # Requests per batch
+--duration TIME           # Test duration (e.g., 30s, 5m, 1h)
+-i, --interval TIME       # Batch interval (e.g., 1s, 500ms, 2s)
+-c, --config FILE         # Path to custom config file
+--track-responses         # Enable response tracking
+--clear-db                # Clear DB tables before test
+
+# Examples:
+./fhevm-cli db-test --clear-db --track-responses         # Clear DB, then test with tracking
+./fhevm-cli db-test -n 2 -t mixed                        # Test 2 DBs with mixed requests
+./fhevm-cli db-test --duration 60s -i 500ms              # 60s test, 500ms intervals
+./fhevm-cli db-test -c custom.toml -b 100 --clear-db     # Custom config, clear DB, batch 100
+
+# Default config: test-suite/gateway-stress/config/config.toml
+```
+
+### Advanced Gateway Stress Testing
+
+For more control, use the standalone `gateway-stress` tool directly (in `test-suite/gateway-stress`):
+
+1. **Blockchain-based testing** - Sends actual transactions through the blockchain
+2. **Database-level testing** - Directly inserts requests into PostgreSQL for focused DB testing
+
+#### Blockchain-based Testing
+Sends decryption requests through the blockchain (requires deployed contracts):
+
+```sh
+cd test-suite/gateway-stress
+
+# Build the tool first
+cargo build --release
+
+# Send public decryption transactions
+./target/release/gateway-stress public
+
+# Send user decryption transactions  
+./target/release/gateway-stress user
+
+# Note: 'mixed' mode is not yet implemented
+```
+
+#### Database-level Testing  
+Bypasses blockchain and directly inserts into PostgreSQL databases:
+
+```sh
+cd test-suite/gateway-stress
+
+# Build the tool
+cargo build --release
+
+# Basic database test with default settings from config
+./target/release/gateway-stress db-connector
+
+# Override test duration and request type
+./target/release/gateway-stress db-connector --duration 60s --request-type public
+
+# Enable response tracking to verify sync across databases
+./target/release/gateway-stress db-connector --track-responses --batch-size 1000
+
+# Use custom configuration
+./target/release/gateway-stress --config custom-config.toml db-connector
+```
+
+#### Prerequisites
+- Rust toolchain (for building gateway-stress)
+- For blockchain testing: Deployed FHEVM contracts and configured ct_handles
+- For database testing: Running PostgreSQL with credentials in `config/config.toml`
+
+#### DB Connector Options
+- `--request-type <TYPE>` - Request type: `public`, `user`, or `mixed`
+- `--duration <TIME>` - Test duration (e.g., `30s`, `5m`, `1h`) 
+- `--batch-size <NUM>` - Requests per batch (for load control)
+- `--track-responses` - Monitor response processing and sync status
+
+#### Configuration File
+The tool reads from a TOML configuration file (default: `config/config.toml`):
+- Database connection strings
+- Batch intervals and sizes
+- Connection pool settings
+- Request generation parameters
+
+See `gateway-stress/README.md` for detailed configuration examples.
 
 ### WIP - Forcing Local Builds (`--build`)
 

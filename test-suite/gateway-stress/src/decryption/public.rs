@@ -61,7 +61,7 @@ pub async fn public_decryption_burst<P, S>(
     );
 
     let mut requests_tasks = JoinSet::new();
-    for index in 0..config.parallel_requests {
+    for index in 0..config.parallel_requests.unwrap_or(1) {
         requests_tasks.spawn(send_public_decryption(
             index,
             decryption_contract.clone(),
@@ -70,7 +70,7 @@ pub async fn public_decryption_burst<P, S>(
         ));
     }
 
-    for _ in 0..config.parallel_requests {
+    for _ in 0..config.parallel_requests.unwrap_or(1) {
         requests_tasks.join_next().await;
         requests_pb.inc(1);
     }
@@ -192,7 +192,7 @@ where
 
     let mut received_id_guard = RECEIVED_RESPONSES_IDS.lock().await;
     let mut listener_guard = response_listener.lock().await;
-    for _ in 0..config.parallel_requests {
+    for _ in 0..config.parallel_requests.unwrap_or(1) {
         let Some(id) = id_receiver.recv().await else {
             return Err(anyhow!(
                 "Request id channel #{burst_index} was closed unexpectedly"
@@ -224,9 +224,9 @@ where
     progress_bar.finish_with_message(format!(
         "Handled burst #{} of {} in {:.2}s. Throughput: {:.2} tps",
         burst_index,
-        config.parallel_requests,
+        config.parallel_requests.unwrap_or(1),
         elapsed,
-        config.parallel_requests as f64 / elapsed
+        config.parallel_requests.unwrap_or(1) as f64 / elapsed
     ));
 
     Ok(())

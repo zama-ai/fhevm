@@ -71,3 +71,22 @@ private_key = "3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774"
 # region = "us-east-1"
 # Optional: AWS endpoint URL for KMS (for testing or custom endpoints)
 # endpoint = "https://kms.us-east-1.amazonaws.com"
+
+## DB Connector Test Configuration
+## Used when running: ./gateway-stress -c config.toml db-connector
+[db_connector]
+# Database URLs for testing (add more for multi-connector testing)
+database_urls = [
+    "postgresql://postgres:postgres@localhost:5432/kms-connector"
+    # "postgresql://postgres:postgres@localhost:5433/kms-connector-2",
+]
+
+# Default test parameters (can be overridden via CLI)
+request_type = "mixed"        # public, user, or mixed
+duration = "30s"              # Test duration
+batch_size = 10               # Requests per batch
+batch_interval = "1s"         # Interval between batches
+
+# Connection pool settings
+pool_size = 10
+connection_timeout = 30
