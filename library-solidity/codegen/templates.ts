@@ -267,7 +267,7 @@ function coprocessorInterfaceCustomFunctions(): string {
      * @param inputType       Input type.
      * @return result         Result.
      */
-    function verifyCiphertext(bytes32 inputHandle, address callerAddress, bytes memory inputProof, FheType inputType) external returns (bytes32 result);
+    function validateInput(bytes32 inputHandle, address callerAddress, bytes memory inputProof, FheType inputType) external returns (bytes32 result);
 
     /**
      * @notice          Performs the casting to a target type.
@@ -1200,7 +1200,7 @@ function generateCustomMethodsForImpl(): string {
         FheType toType
     ) internal returns (bytes32 result) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
-        result = IFHEVMExecutor($.CoprocessorAddress).verifyCiphertext(inputHandle, msg.sender, inputProof, toType);
+        result = IFHEVMExecutor($.CoprocessorAddress).validateInput(inputHandle, msg.sender, inputProof, toType);
         IACL($.ACLAddress).allowTransient(result, msg.sender);
     }
 

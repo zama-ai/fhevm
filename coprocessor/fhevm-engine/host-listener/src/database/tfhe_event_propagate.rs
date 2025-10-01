@@ -416,7 +416,7 @@ impl Database {
             | E::OwnershipTransferStarted(_)
             | E::OwnershipTransferred(_)
             | E::Upgraded(_)
-            | E::VerifyCiphertext(_)
+            | E::ValidateInput(_)
             => Ok(()),
         }
     }
@@ -637,7 +637,7 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         | E::OwnershipTransferStarted(_)
         | E::OwnershipTransferred(_)
         | E::Upgraded(_)
-        | E::VerifyCiphertext(_) => -1,
+        | E::ValidateInput(_) => -1,
     }
 }
 
@@ -675,7 +675,7 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::OwnershipTransferStarted(_) => "OwnershipTransferStarted",
         E::OwnershipTransferred(_) => "OwnershipTransferred",
         E::Upgraded(_) => "Upgraded",
-        E::VerifyCiphertext(_) => "VerifyCiphertext",
+        E::ValidateInput(_) => "ValidateInput",
     }
 }
 
@@ -715,7 +715,7 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::OwnershipTransferStarted(_)
         | E::OwnershipTransferred(_)
         | E::Upgraded(_)
-        | E::VerifyCiphertext(_) => None,
+        | E::ValidateInput(_) => None,
     }
 }
 
