@@ -55,6 +55,11 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
     /// @notice Returned if the upper bound for generating randomness is not a power of two.
     error NotPowerOfTwo();
 
+    /// @notice Returned if `scalarByte` does not fit in a boolean
+    /// @dev today used in all implemented binary operators, but could be useful in a future where `scalarByte`
+    /// @dev could become bigger than a bool to act as a bitmask, if more than one operand can be scalar, eg in fheSub
+    error ScalarByteIsNotBoolean();
+
     /// @notice Returned if the second operand is not a scalar (for functions fheEq/fheNe).
     error SecondOperandIsNotScalar();
 
@@ -171,9 +176,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheAdd, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheAdd(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheAdd, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheAdd(lhsType, scalarByte, lhs, rhs, result);
         emit FheAdd(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -191,9 +195,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheSub, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheSub(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheSub, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheSub(lhsType, scalarByte, lhs, rhs, result);
         emit FheSub(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -211,9 +214,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheMul, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheMul(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheMul, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheMul(lhsType, scalarByte, lhs, rhs, result);
         emit FheMul(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -233,9 +235,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheDiv, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheDiv(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheDiv, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheDiv(lhsType, scalarByte, lhs, rhs, result);
         emit FheDiv(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -255,9 +256,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheRem, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheRem(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheRem, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheRem(lhsType, scalarByte, lhs, rhs, result);
         emit FheRem(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -277,9 +277,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheBitAnd, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheBitAnd(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheBitAnd, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheBitAnd(lhsType, scalarByte, lhs, rhs, result);
         emit FheBitAnd(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -299,9 +298,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheBitOr, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheBitOr(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheBitOr, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheBitOr(lhsType, scalarByte, lhs, rhs, result);
         emit FheBitOr(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -321,9 +319,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheBitXor, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheBitXor(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheBitXor, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheBitXor(lhsType, scalarByte, lhs, rhs, result);
         emit FheBitXor(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -342,9 +339,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheShl, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheShl(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheShl, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheShl(lhsType, scalarByte, lhs, rhs, result);
         emit FheShl(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -363,9 +359,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheShr, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheShr(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheShr, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheShr(lhsType, scalarByte, lhs, rhs, result);
         emit FheShr(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -384,9 +379,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheRotl, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheRotl(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheRotl, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheRotl(lhsType, scalarByte, lhs, rhs, result);
         emit FheRotl(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -405,9 +399,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint128)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheRotr, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheRotr(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheRotr, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheRotr(lhsType, scalarByte, lhs, rhs, result);
         emit FheRotr(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -428,10 +421,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint160)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-
-        result = _binaryOp(Operators.fheEq, lhs, rhs, scalar, FheType.Bool);
-        hcuLimit.checkHCUForFheEq(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheEq, lhs, rhs, scalarByte, FheType.Bool);
+        hcuLimit.checkHCUForFheEq(lhsType, scalarByte, lhs, rhs, result);
         emit FheEq(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -452,10 +443,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint160)) +
             (1 << uint8(FheType.Uint256));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-
-        result = _binaryOp(Operators.fheNe, lhs, rhs, scalar, FheType.Bool);
-        hcuLimit.checkHCUForFheNe(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheNe, lhs, rhs, scalarByte, FheType.Bool);
+        hcuLimit.checkHCUForFheNe(lhsType, scalarByte, lhs, rhs, result);
         emit FheNe(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -473,9 +462,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheGe, lhs, rhs, scalar, FheType.Bool);
-        hcuLimit.checkHCUForFheGe(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheGe, lhs, rhs, scalarByte, FheType.Bool);
+        hcuLimit.checkHCUForFheGe(lhsType, scalarByte, lhs, rhs, result);
         emit FheGe(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -493,9 +481,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheGt, lhs, rhs, scalar, FheType.Bool);
-        hcuLimit.checkHCUForFheGt(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheGt, lhs, rhs, scalarByte, FheType.Bool);
+        hcuLimit.checkHCUForFheGt(lhsType, scalarByte, lhs, rhs, result);
         emit FheGt(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -513,9 +500,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheLe, lhs, rhs, scalar, FheType.Bool);
-        hcuLimit.checkHCUForFheLe(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheLe, lhs, rhs, scalarByte, FheType.Bool);
+        hcuLimit.checkHCUForFheLe(lhsType, scalarByte, lhs, rhs, result);
         emit FheLe(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -533,9 +519,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheLt, lhs, rhs, scalar, FheType.Bool);
-        hcuLimit.checkHCUForFheLt(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheLt, lhs, rhs, scalarByte, FheType.Bool);
+        hcuLimit.checkHCUForFheLt(lhsType, scalarByte, lhs, rhs, result);
         emit FheLt(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -553,9 +538,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheMin, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheMin(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheMin, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheMin(lhsType, scalarByte, lhs, rhs, result);
         emit FheMin(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -573,9 +557,8 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
             (1 << uint8(FheType.Uint64)) +
             (1 << uint8(FheType.Uint128));
         FheType lhsType = _verifyAndReturnType(lhs, supportedTypes);
-        bytes1 scalar = scalarByte & 0x01;
-        result = _binaryOp(Operators.fheMax, lhs, rhs, scalar, lhsType);
-        hcuLimit.checkHCUForFheMax(lhsType, scalar, lhs, rhs, result);
+        result = _binaryOp(Operators.fheMax, lhs, rhs, scalarByte, lhsType);
+        hcuLimit.checkHCUForFheMax(lhsType, scalarByte, lhs, rhs, result);
         emit FheMax(msg.sender, lhs, rhs, scalarByte, result);
     }
 
@@ -841,6 +824,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
         bytes1 scalar,
         FheType resultType
     ) internal virtual returns (bytes32 result) {
+        /// @dev at the moment at most only right operand of binary ops can be scalar, so we enforce `scalar` to be bool
+        _checkBoolean(scalar);
+
         if (!acl.isAllowed(lhs, msg.sender)) revert ACLNotAllowed(lhs, msg.sender);
         if (scalar == 0x00) {
             if (!acl.isAllowed(rhs, msg.sender)) revert ACLNotAllowed(rhs, msg.sender);
@@ -920,6 +906,14 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
         result = _appendMetadataToPrehandle(result, randType);
         hcuLimit.checkHCUForFheRandBounded(randType, result);
         acl.allowTransient(result, msg.sender);
+    }
+
+    /**
+     * @notice internal function which reverts if value does not fit in a boolean.
+     * @param value Value to check.
+     */
+    function _checkBoolean(bytes1 value) internal virtual {
+        if(uint8(value)>1) revert ScalarByteIsNotBoolean();
     }
 
     /**
