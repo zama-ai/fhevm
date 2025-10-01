@@ -38,8 +38,9 @@ jobs:
 
       - name: Publish prerelease to npm
         if: ${{ inputs.release != 'true' }}
-        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
+        uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
         with:
+          package: ./apps/oracle/package.json
           tag: prerelease
           token: ${{ secrets.DEVELOPER_PLATFORM_NPM_TOKEN }}
           provenance: false
@@ -47,8 +48,9 @@ jobs:
 
       - name: Publish release to npm
         if: ${{ inputs.release == 'true' }}
-        uses: JS-DevTools/npm-publish@19c28f1ef146469e409470805ea4279d47c3d35c # v3.1.1
+        uses: JS-DevTools/npm-publish@7f8fe47b3bea1be0c3aec2b717c5ec1f3e03410b # v4.1.1
         with:
+          package: ./apps/oracle/package.json
           token: ${{ secrets.DEVELOPER_PLATFORM_NPM_TOKEN }}
           provenance: false
           access: public
