@@ -1157,37 +1157,11 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
         bytes memory cleartexts,
         bytes memory decryptionProof
     ) internal returns (bool) {
-        // Compute the signature offset
-        // This offset is computed by considering the format encoded by the KMS when creating the
-        // "decryptedResult" bytes array (see comment below), which is the following:
-        // - requestID: 32 bytes
-        // - all "n" decrypted values (which is "cleartexts" itself): n*32 bytes ("cleartexts.length" bytes)
-        // - offset of the signatures: 32 bytes
-        // - the rest of signature values (lengths, offsets, values)
-        // This means the expected offset to concatenate to the "decryptedResult" bytes array has
-        // the following value: 32 + n*32 + 32
-        // See https://docs.soliditylang.org/en/latest/abi-spec.html#use-of-dynamic-types for more details.
-        // The signature offset will most likely be removed in the future,
-        // see https://github.com/zama-ai/fhevm-internal/issues/345
-        uint256 signaturesOffset = 32 + cleartexts.length + 32;
-
-        // Built the "decryptedResult" bytes array
-        // Currently, the "decryptedResult" is encoded (by the KMS) in the following format:
-        // - n*32 bytes: the "n" decrypted values, "cleartexts" itself
-        // - 32 bytes: offset of the signatures, as explained above
-        // This is equivalent to concatenating the cleartexts and the signatures offset, which can
-        // be done using abi.encoded in a gas efficient way.
-        // The signature offset will most likely be removed in the future,
-        // see https://github.com/zama-ai/fhevm-internal/issues/345
-        // Here we can use "encodePacked" instead of "abi.encode" to save gas, as the cleartexts
-        // and the signaturesOffset are already 32 bytes aligned (ie, no padding needed).
-        bytes memory decryptedResult = abi.encodePacked(cleartexts, signaturesOffset);
-
         CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 handlesList,
-                decryptedResult,
+                cleartexts,
                 decryptionProof
             );
     }

@@ -37,6 +37,7 @@ jobs:
             e2e-docker:
               - '.github/workflows/test-suite-docker-build.yml'
               - 'test-suite/e2e/**'
+              - 'library-solidity/**'
             benchmarks-docker:
               - '.github/workflows/test-suite-docker-build.yml'
               - 'test-suite/benchmarks/**'
