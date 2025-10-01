@@ -25,25 +25,6 @@ async function getKMSSigners() {
   return kmsSigners;
 }
 
-/**
- * An object that maps numeric keys to their corresponding ciphertext types.
- * The keys represent different types of ciphertexts, and the values are their
- * respective type names as strings.
- */
-const CiphertextType = {
-  0: 'bool',
-  2: 'uint8', // corresponding to euint8
-  3: 'uint16',
-  4: 'uint32',
-  5: 'uint64',
-  6: 'uint128',
-  7: 'address',
-  8: 'uint256',
-  9: 'bytes',
-  10: 'bytes',
-  11: 'bytes',
-};
-
 let toSkip: BigInt[] = [];
 
 const currentTime = (): string => {
@@ -149,26 +130,8 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
 
       const abiCoder = new ethers.AbiCoder();
 
-      // ABI encode the decryptedResult as done in the KMS, following the format:
-      // - requestId (32 bytes)
-      // - all inputs
-      // - list of signatures (list of bytes)
-      // For this we use the following values for getting the correct abi encoding (in particular for
-      // getting the right signatures offset right after):
-      // - requestId: a dummy uint256
-      // - signatures: a dummy empty array of bytes
-      const encodedData = abiCoder.encode(
-        ['uint256', ...Array(values.length).fill('uint256'), 'bytes[]'],
-        [31, ...values, []],
-      );
-
-      // To get the correct value, we pop:
-      // - the `0x` prefix (put back just after): first byte (2 hex characters)
-      // - the dummy requestID: next 32 bytes (64 hex characters)
-      // - the length of empty bytes[]: last 32 bytes (64 hex characters)
-      // We will most likely pop the last 64 bytes (which included the empty array's offset) instead
-      // of 32 bytes in the future, see https://github.com/zama-ai/fhevm-internal/issues/345
-      const decryptedResult = '0x' + encodedData.slice(66, -64);
+      // ABI encode the decryptedResult as done in the KMS, since all decrypted values are native static types, thay have same abi-encoding as uint256:
+      const decryptedResult = abiCoder.encode(new Array(values.length).fill('uint256'), values);
 
       const extraDataV0: string = ethers.solidityPacked(['uint8'], [0]);
 
