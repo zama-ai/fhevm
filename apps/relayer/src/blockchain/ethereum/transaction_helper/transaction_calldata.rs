@@ -41,9 +41,7 @@ impl ComputeCalldata {
         req: &PublicDecryptFhevmRequestData,
         public_decryption_response: PublicDecryptResponse,
     ) -> Result<Bytes, EventProcessingError> {
-        // Remove tghe last 32 bytes from decrypted_value (its padding adding by KMS)
-        let len = public_decryption_response.decrypted_value.len();
-        let cleartexts = &public_decryption_response.decrypted_value[..len - 32].to_vec();
+        let cleartexts = &public_decryption_response.decrypted_value.to_vec();
 
         // Construct decryptionProof: numSigners (1 byte) + signatures (65 bytes each) + extraData
         let mut decryption_proof = Vec::new();
