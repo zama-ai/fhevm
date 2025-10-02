@@ -66,16 +66,16 @@ describe('InputVerifier', function () {
     });
 
     it('Should revert because the context ID is zero', async function () {
-      const zeroContextId = 0;
+      const nullContextId = 0;
       await expect(
-        inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(zeroContextId, []),
-      ).to.be.revertedWithCustomError(inputVerifier, 'ZeroContextId');
+        inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(nullContextId, []),
+      ).to.be.revertedWithCustomError(inputVerifier, 'InvalidNullContextId');
     });
 
     it('Should revert because the context signers is empty', async function () {
       const contextId = 2;
       await expect(inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(contextId, []))
-        .to.be.revertedWithCustomError(inputVerifier, 'EmptyContextSignerAddresses')
+        .to.be.revertedWithCustomError(inputVerifier, 'EmptyCoprocessorSignerAddresses')
         .withArgs(contextId);
     });
 
