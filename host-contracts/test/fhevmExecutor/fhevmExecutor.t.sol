@@ -192,7 +192,7 @@ contract MockACL {
 /// @dev It never reverts and always returns the handle back.
 contract MockInputVerifier {
     /// @dev This function is a placeholder for the actual input verification logic.
-    function validateInput(
+    function verifyInput(
         FHEVMExecutor.ContextUserInputs memory,
         bytes32 inputHandle,
         bytes memory
@@ -1851,17 +1851,17 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRandBounded(upperBound, FheType.Uint16);
     }
 
-    function test_ValidateInputWorksIfInputTypeIsAsExpected(uint8 fheType) public {
+    function test_VerifyInputWorksIfInputTypeIsAsExpected(uint8 fheType) public {
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         address userAddress = address(123);
         bytes memory mockInputProof = abi.encode("mockProof");
         bytes32 inputHandle = _generateMockHandle(FheType(fheType));
-        bytes32 result = fhevmExecutor.validateInput(inputHandle, userAddress, mockInputProof, FheType(fheType));
+        bytes32 result = fhevmExecutor.verifyInput(inputHandle, userAddress, mockInputProof, FheType(fheType));
         assertEq(result, inputHandle);
     }
 
-    function test_ValidateInputWorksIfInputTypeIsNotAsExpected(uint8 fheType, uint8 otherFheType) public {
+    function test_VerifyInputWorksIfInputTypeIsNotAsExpected(uint8 fheType, uint8 otherFheType) public {
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(otherFheType <= uint8(FheType.Int248));
@@ -1871,7 +1871,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes memory mockInputProof = abi.encode("mockProof");
         bytes32 inputHandle = _generateMockHandle(FheType(fheType));
         vm.expectRevert(FHEVMExecutor.InvalidType.selector);
-        fhevmExecutor.validateInput(inputHandle, userAddress, mockInputProof, FheType(otherFheType));
+        fhevmExecutor.verifyInput(inputHandle, userAddress, mockInputProof, FheType(otherFheType));
     }
 
     function test_FheAddRevertsIfScalarByteIsNotBoolean() public {

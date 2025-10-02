@@ -117,15 +117,15 @@ contract FHEVMExecutorTest is FHEEvents {
         emit TrivialEncrypt(msg.sender, val, toType, result);
     }
 
-    function validateInput(
+    function verifyInput(
         bytes32 inputHandle,
         address userAddress,
         bytes memory inputProof,
         FheType inputType
     ) public {
         bytes32 result = bytes32(
-            keccak256(abi.encodePacked("validateInput", inputHandle, userAddress, inputProof, inputType))
+            keccak256(abi.encodePacked("verifyInput", inputHandle, userAddress, inputProof, inputType))
         );
-        emit ValidateInput(msg.sender, inputHandle, userAddress, inputProof, inputType, result);
+        emit VerifyInput(msg.sender, inputHandle, userAddress, inputProof, inputType, result);
     }
 }

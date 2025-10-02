@@ -18,7 +18,7 @@ import {ACLChecks} from "./shared/ACLChecks.sol";
  * @title IInputVerifier.
  */
 interface IInputVerifier {
-    function validateInput(
+    function verifyInput(
         FHEVMExecutor.ContextUserInputs memory context,
         bytes32 inputHandle,
         bytes memory inputProof
@@ -108,7 +108,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
         fheMax,
         fheNeg,
         fheNot,
-        validateInput,
+        verifyInput,
         cast,
         trivialEncrypt,
         fheIfThenElse,
@@ -712,7 +712,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
      * @param inputType     Input type.
      * @return result       Result.
      */
-    function validateInput(
+    function verifyInput(
         bytes32 inputHandle,
         address userAddress,
         bytes memory inputProof,
@@ -724,9 +724,9 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
         });
         FheType typeCt = _typeOf(inputHandle);
         if (inputType != typeCt) revert InvalidType();
-        result = inputVerifier.validateInput(contextUserInputs, inputHandle, inputProof);
+        result = inputVerifier.verifyInput(contextUserInputs, inputHandle, inputProof);
         acl.allowTransient(result, msg.sender);
-        emit ValidateInput(msg.sender, inputHandle, userAddress, inputProof, inputType, result);
+        emit VerifyInput(msg.sender, inputHandle, userAddress, inputProof, inputType, result);
     }
 
     /**
