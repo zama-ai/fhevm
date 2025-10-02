@@ -18,36 +18,36 @@
 # Initializes secrets and configuration required by other components
 config:
   enabled: true
-  
+
   image:
     name: ghcr.io/zama-ai/kube-utils
     tag: 0.1.0
-  
+
   # Coprocessor cryptographic key configuration
   # TODO: this should be deprecated, to be confirmed
   coprocessorKey:
     secret:
       name: coprocessor-key
       key: coprocessor.hex
-  
+
   # API key for tenant authentication
   apiKey:
     secret:
       name: coprocessor-api-key
       key: coprocessor-api-key
-  
+
   # Database connection configuration
   database:
     secret:
       name: coprocessor-db-url
       key: coprocessor-db-url
       value: "postgresql://postgres:postgres@postgresql:5432/coprocessor"
-  
+
   # Helm hook annotations for deployment ordering
   annotations:
     # "helm.sh/hook": "pre-install"
     # "helm.sh/hook-weight": "-1"
-  
+
   resources:
     requests:
       cpu: 100m
@@ -62,17 +62,17 @@ config:
 # Sets up the database schema and initial data
 dbMigration:
   enabled: true
-  
+
   # Helm hook annotations for deployment ordering
   annotations:
     # "helm.sh/hook": "pre-install, pre-upgrade"
     # "helm.sh/hook-weight": "0"
     # "helm.sh/hook-needs": "config-setup"
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm-db-migration
     tag: v0.9.0
-  
+
   # Environment variables for migration process
   env:
     - name: CHAIN_ID
@@ -94,13 +94,13 @@ dbMigration:
       value: "http://minio:9000/kms-public/kms/PUB/ServerKey/812b602c11693dda4bfa68db78269849972b6f1920a725a98fc78cf619a6ab5f"
     - name: PP_URL
       value: "http://minio:9000/kms-public/kms/PUB/CRS/e4e3f0deef6492bde2fac3f2c698112ace878d4a3656b272197ed332391c48fa"
-  
+
   serviceAccountName:
-  
+
   # Persistent volume for migration data
   storage:
     size: 2Gi
-  
+
   resources:
     requests:
       cpu: 100m
@@ -108,10 +108,10 @@ dbMigration:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   affinity:
     enabled: false
-  
+
   tolerations:
     enabled: false
     items: []
@@ -123,13 +123,13 @@ dbMigration:
 hostListener:
   enabled: false
   nameOverride:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
-  
+
   replicas: 1
-  
+
   # Environment variables
   env:
     - name: DATABASE_URL
@@ -142,7 +142,7 @@ hostListener:
         secretKeyRef:
           name: coprocessor-api-key
           key: coprocessor-api-key
-  
+
   # Command line arguments for the host listener
   args:
     - --database-url=$(DATABASE_URL)
@@ -150,7 +150,7 @@ hostListener:
     - --url=$(ETHEREUM_RPC_URL)
     - --acl-contract-address=$(ACL_CONTRACT_ADDRESS)
     - --tfhe-contract-address=$(FHEVM_EXECUTOR_CONTRACT_ADDRESS)
-    - --initial-block-time=12 # it can switch to real blockTime when data is available
+    - --initial-block-time=12  # it can switch to real blockTime when data is available
     - --log-level=INFO
     - --health-port=8080
     - --dependence-cache-size=128
@@ -165,12 +165,12 @@ hostListener:
   ports:
     metrics: 9100
     healthcheck: 8080
-  
+
   serviceMonitor:
     enabled: false
-  
+
   serviceAccountName:
-  
+
   resources:
     requests:
       cpu: 100m
@@ -178,7 +178,7 @@ hostListener:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   # Health check probes
   probes:
     liveness:
@@ -195,14 +195,14 @@ hostListener:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
-  
+
   affinity:
     enabled: false
-  
+
   tolerations:
     enabled: false
     items: []
-  
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -216,13 +216,13 @@ hostListener:
 gwListener:
   enabled: false
   nameOverride:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
-  
+
   replicas: 1
-  
+
   env:
     # =========================================================================
     # NEW ENVIRONMENT VARIABLES
@@ -230,7 +230,7 @@ gwListener:
     # The address of the KMSGeneration contract
     - name: KMS_GENERATION_ADDRESS
       value: ""
-  
+
   # Command line arguments for the gateway listener
   args:
     - --database-url=$(DATABASE_URL)
@@ -244,17 +244,17 @@ gwListener:
     - --get-logs-block-batch-size=100
     # NEW ARG: KMS generation contract address
     - --kms-generation-address=$(KMS_GENERATION_ADDRESS)
-  
+
   # Service ports configuration
   ports:
     metrics: 9100
     healthcheck: 8080
-  
+
   serviceMonitor:
     enabled: false
-  
+
   serviceAccountName:
-  
+
   resources:
     requests:
       cpu: 100m
@@ -262,7 +262,7 @@ gwListener:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   # Health check probes
   probes:
     liveness:
@@ -279,14 +279,14 @@ gwListener:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
-  
+
   affinity:
     enabled: false
-  
+
   tolerations:
     enabled: false
     items: []
-  
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -300,13 +300,13 @@ gwListener:
 tfheWorker:
   enabled: true
   nameOverride:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
-  
+
   replicas: 1
-  
+
   # Environment variables
   env:
     - name: DATABASE_URL
@@ -323,22 +323,22 @@ tfheWorker:
       value: "0x05fD9B5EFE0a996095f42Ed7e77c390810CF660c"
     - name: INPUT_VERIFIER_ADDRESS
       value: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11"
-  
+
   # Command line arguments for TFHE worker
   args:
     - --database-url=$(DATABASE_URL)
     - --run-bg-worker=true
     - --worker-polling-interval-ms=60000
-    - --work-items-batch-size=100 # scheduling changed
+    - --work-items-batch-size=100  # scheduling changed
     - --dependence-chains-per-batch=100
     - --tenant-key-cache-size=32
-    - --coprocessor-fhe-threads=64 # scheduling changed
-    - --tokio-threads=16 # scheduling changed
+    - --coprocessor-fhe-threads=64  # scheduling changed
+    - --tokio-threads=16  # scheduling changed
     - --pg-pool-max-connections=10
     - --metrics-addr=0.0.0.0:9100
-    - --service-name="tfhe-worker" #tfhe-worker service name in OTLP traces
+    - --service-name="tfhe-worker"  # tfhe-worker service name in OTLP traces
     - --log-level=INFO
-  # Should not be used (unsafe - testing only, keep 0/false values except CI)
+    # Should not be used (unsafe - testing only, keep 0/false values except CI)
     - --run-server=false
     - --generate-fhe-keys=false
     - --server-maximum-ciphertexts-to-schedule=0
@@ -352,12 +352,12 @@ tfheWorker:
   ports:
     metrics: 9100
     healthcheck: 8080
-  
+
   serviceMonitor:
     enabled: false
-  
+
   serviceAccountName:
-  
+
   resources:
     requests:
       cpu: 100m
@@ -365,7 +365,7 @@ tfheWorker:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   # Health check probes
   probes:
     liveness:
@@ -382,26 +382,26 @@ tfheWorker:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
-  
+
   # Distributed tracing configuration
   tracing:
     enabled: false
     endpoint: ""
     service: "coprocessor_server"
-  
+
   affinity:
     enabled: false
-  
+
   tolerations:
     enabled: false
     items: []
-  
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
-  
+
   # Horizontal Pod Autoscaler configuration
   hpa:
     enabled: false
@@ -413,19 +413,19 @@ tfheWorker:
         stabilizationWindowSeconds: 60
         selectPolicy: Max
         policies:
-        - type: Percent
-          value: 100
-          periodSeconds: 15
-        - type: Pods
-          value: 2
-          periodSeconds: 60
+          - type: Percent
+            value: 100
+            periodSeconds: 15
+          - type: Pods
+            value: 2
+            periodSeconds: 60
       scaleDown:
         stabilizationWindowSeconds: 300
         selectPolicy: Min
         policies:
-        - type: Percent
-          value: 40
-          periodSeconds: 60
+          - type: Percent
+            value: 40
+            periodSeconds: 60
 
 # -----------------------------------------------------------------------------
 # ZK Proof Worker
@@ -434,13 +434,13 @@ tfheWorker:
 zkProofWorker:
   enabled: false
   nameOverride:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
-  
+
   replicas: 1
-  
+
   # Environment variables
   env:
     - name: DATABASE_URL
@@ -448,7 +448,7 @@ zkProofWorker:
         secretKeyRef:
           name: coprocessor-db-url
           key: coprocessor-db-url
-  
+
   # Command line arguments for ZK proof worker
   args:
     - --database-url=$(DATABASE_URL)
@@ -458,17 +458,17 @@ zkProofWorker:
     - --pg-pool-connections=5
     - --worker-thread-count=8
     - --service-name=coprocessor-zkpok-worker
-  
+
   # Service ports configuration
   ports:
     metrics: 9100
     healthcheck: 8080
-  
+
   serviceMonitor:
     enabled: false
-  
+
   serviceAccountName:
-  
+
   resources:
     requests:
       cpu: 100m
@@ -476,7 +476,7 @@ zkProofWorker:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   # Health check probes
   probes:
     liveness:
@@ -493,20 +493,20 @@ zkProofWorker:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
-  
+
   affinity:
     enabled: false
-  
+
   tolerations:
     enabled: false
     items: []
-  
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
-  
+
   # Horizontal Pod Autoscaler configuration
   hpa:
     enabled: false
@@ -518,19 +518,19 @@ zkProofWorker:
         stabilizationWindowSeconds: 60
         selectPolicy: Max
         policies:
-        - type: Percent
-          value: 100
-          periodSeconds: 15
-        - type: Pods
-          value: 2
-          periodSeconds: 60
+          - type: Percent
+            value: 100
+            periodSeconds: 15
+          - type: Pods
+            value: 2
+            periodSeconds: 60
       scaleDown:
         stabilizationWindowSeconds: 300
         selectPolicy: Min
         policies:
-        - type: Percent
-          value: 40
-          periodSeconds: 60
+          - type: Percent
+            value: 40
+            periodSeconds: 60
 
 # -----------------------------------------------------------------------------
 # SNS Worker
@@ -539,13 +539,13 @@ zkProofWorker:
 snsWorker:
   enabled: false
   nameOverride:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
-  
+
   replicas: 1
-  
+
   # Environment variables
   env:
     - name: DATABASE_URL
@@ -558,7 +558,7 @@ snsWorker:
         secretKeyRef:
           name: coprocessor-api-key
           key: coprocessor-api-key
-  
+
   # Command line arguments for SNS worker
   args:
     - --database-url=$(DATABASE_URL)
@@ -579,17 +579,17 @@ snsWorker:
     - --s3-max-retries-timeout=120s
     - --s3-recheck-duration=2s
     - --s3-regular-recheck-duration=120s
-  
+
   # Service ports configuration
   ports:
     metrics: 9100
     healthcheck: 8080
-  
+
   serviceMonitor:
     enabled: false
-  
+
   serviceAccountName:
-  
+
   resources:
     requests:
       cpu: 100m
@@ -597,7 +597,7 @@ snsWorker:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   # Health check probes
   probes:
     liveness:
@@ -614,20 +614,20 @@ snsWorker:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
-  
+
   affinity:
     enabled: false
-  
+
   tolerations:
     enabled: false
     items: []
-  
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
-  
+
   # Horizontal Pod Autoscaler configuration
   hpa:
     enabled: false
@@ -639,19 +639,19 @@ snsWorker:
         stabilizationWindowSeconds: 60
         selectPolicy: Max
         policies:
-        - type: Percent
-          value: 100
-          periodSeconds: 15
-        - type: Pods
-          value: 2
-          periodSeconds: 60
+          - type: Percent
+            value: 100
+            periodSeconds: 15
+          - type: Pods
+            value: 2
+            periodSeconds: 60
       scaleDown:
         stabilizationWindowSeconds: 300
         selectPolicy: Min
         policies:
-        - type: Percent
-          value: 40
-          periodSeconds: 60
+          - type: Percent
+            value: 40
+            periodSeconds: 60
 
 # -----------------------------------------------------------------------------
 # Transaction Sender
@@ -660,13 +660,13 @@ snsWorker:
 txSender:
   enabled: false
   nameOverride:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm-coprocessor
     tag: v0.9.0
-  
+
   replicas: 1
-  
+
   # Environment variables
   env:
     - name: DATABASE_URL
@@ -686,7 +686,7 @@ txSender:
         configMapKeyRef:
           name: gateway-sc-addresses
           key: fhevm.address
-  
+
   # Command line arguments for transaction sender
   args:
     - --database-url=$(DATABASE_URL)
@@ -694,17 +694,17 @@ txSender:
     - --private-key=$(TX_SENDER_PRIVATE_KEY)
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
     - --ciphertext-storage-address=$(CIPHERTEXT_STORAGE_ADDRESS)
-  
+
   # Service ports configuration
   ports:
     metrics: 9100
     healthcheck: 8080
-  
+
   serviceMonitor:
     enabled: false
-  
+
   serviceAccountName:
-  
+
   resources:
     requests:
       cpu: 100m
@@ -712,7 +712,7 @@ txSender:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   # Health check probes
   probes:
     liveness:
@@ -729,14 +729,14 @@ txSender:
         port: healthcheck
       initialDelaySeconds: 5
       periodSeconds: 10
-  
+
   affinity:
     enabled: false
-  
+
   tolerations:
     enabled: false
     items: []
-  
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:

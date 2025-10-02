@@ -18,21 +18,21 @@
 # Handles initial deployment of all required smart contracts
 scDeploy:
   enabled: true
-  
+
   # Prevent redeployment if already done for current version
   # preventRedeployment: false
-  
+
   nameOverride:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm/host-contracts
     tag: v0.9.0
-  
+
   # ConfigMap to store deployed contract addresses
   configmap:
     name: "sc-addresses"
     annotations:
-  
+
   # Environment variables for contract deployment
   env:
     # =========================================================================
@@ -42,22 +42,22 @@ scDeploy:
     # =========================================================================
     # NEW ENVIRONMENT VARIABLES
     # =========================================================================
-    
+
     # KMS generation threshold
     # Should be set to `floor(n_kms/2) + 1` with `n_kms` the number of KMS nodes
     - name: KMS_GENERATION_THRESHOLD
       value: 7
-    
+
     # S3 URL for KMS core storage (replace x with sequential number starting from 0)
     - name: KMS_NODE_STORAGE_URL_x
       value: ""
-    
+
     # Number of pausers
-    # Should be set to the number of registered operators, ie `n_kms + n_copro` with `n_kms` the 
+    # Should be set to the number of registered operators, ie `n_kms + n_copro` with `n_kms` the
     # number of KMS nodes and `n_copro` the number of coprocessors
     - name: NUM_PAUSERS
       value: 14
-    
+
     # Pauser addresses (replace x with sequential number starting from 0)
     # Each operator has its own hot wallet address used as pauser
     - name: PAUSER_ADDRESS_x
@@ -78,24 +78,24 @@ scDeploy:
     # =========================================================================
     # NEW ENVIRONMENT VARIABLES
     # =========================================================================
-    
+
     # Number of pausers
-    # Should be set to the number of registered operators, ie `n_kms + n_copro` with `n_kms` the 
+    # Should be set to the number of registered operators, ie `n_kms + n_copro` with `n_kms` the
     # number of KMS nodes and `n_copro` the number of coprocessors
     - name: NUM_PAUSERS
       value: 14
-    
+
     # Pauser addresses (replace x with sequential number starting from 0)
     # Each operator has its own hot wallet address used as pauser
     - name: PAUSER_ADDRESS_x
       value: ""
-    
+
     # =========================================================================
     # DEPRECATED ENVIRONMENT VARIABLES
     # =========================================================================
     # The following environment variables are no longer used:
     # - PAUSER_ADDRESS
-  
+
   resources:
     requests:
       cpu: 100m
@@ -103,13 +103,13 @@ scDeploy:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   # Security context for container execution
   securityContext:
     runAsNonRoot: true
     runAsUser: 10000
     fsGroup: 10001
-  
+
   # Deployment commands executed in sequence
   deployCommands:
     # =========================================================================
@@ -117,24 +117,24 @@ scDeploy:
     # =========================================================================
     # Deploy all gateway contracts
     - "npx --no-install hardhat task:deployAllGatewayContracts"
-    
+
     # Register host chains in the gateway
     - "npx --no-install hardhat task:addHostChainsToGatewayConfig"
-    
+
     # =========================================================================
     # NEW Commands
     # =========================================================================
     # Add gateway pausers for emergency stops
     - npx hardhat task:addGatewayPausers
-    
+
     # Trigger key generation for cryptographic operations
-    # Params type: 
+    # Params type:
     # - 0: Default parameters
     # - 1: Test parameters
     - npx hardhat task:triggerKeygen --params-type 1
-    
+
     # Trigger CRS (Common Reference String) generation
-    # Params type: 
+    # Params type:
     # - 0: Default parameters
     # - 1: Test parameters
     - npx hardhat task:triggerCrsgen --params-type 1 --max-bit-length 2048
@@ -150,7 +150,7 @@ scDeploy:
     # =========================================================================
     # Add host pausers for emergency stops
     - npx hardhat task:addHostPausers
-  
+
   # Contract verification on block explorers
   verifyContracts: false
 
@@ -160,15 +160,15 @@ scDeploy:
 # Handles upgrades of existing smart contracts
 scUpgrade:
   enabled: false
-  
+
   # Configuration for old contracts (used during upgrade process)
   oldContracts:
     image:
       name: ghcr.io/zama-ai/fhevm/host-contracts
       tag: v0.8.1
-  
+
   # Note: The upgrade process uses the new contracts image from scDeploy.image
-  
+
   # Upgrade commands executed during contract upgrade
   upgradeCommands:
     # Example upgrade command (uncomment and modify as needed)
@@ -212,7 +212,7 @@ scDebug:
 # Configuration for persistent volumes used during deployment
 persistence:
   enabled: true
-  
+
   volumeClaim:
     name: ""
     create: true

@@ -16,13 +16,13 @@
 commonConfig:
   # Database connection string
   databaseUrl: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/connector"
-  
+
   # Gateway WebSocket endpoint
   gatewayUrl: "ws://gateway-anvil-node:8546"
-  
+
   # Gateway chain identifier
   chainId: "54321"
-  
+
   # Gateway smart contract addresses
   gatewayContractAddresses:
     decryption: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
@@ -31,12 +31,12 @@ commonConfig:
     # NEW VARIABLES
     # =========================================================================
     kmsGeneration: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
-  
+
   # Distributed tracing configuration
   tracing:
     enabled: false
     endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
-  
+
   # Environment variables (can be overridden per component)
   env:
     # Example: Database configuration from secrets
@@ -63,11 +63,11 @@ commonConfig:
 kmsConnectorDbMigration:
   enabled: true
   annotations:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration
     tag: v0.9.0
-  
+
   # Command to run database migrations
   command:
     - "sqlx"
@@ -75,7 +75,7 @@ kmsConnectorDbMigration:
     - "run"
     - "--source"
     - "/migrations"
-  
+
   # Environment variables for database migration
   env:
     # =========================================================================
@@ -85,7 +85,7 @@ kmsConnectorDbMigration:
     - name: DATABASE_ENDPOINT
     - name: DATABASE_USERNAME
     - name: DATABASE_PASSWORD
-    
+
     # =========================================================================
     # NEW ENVIRONMENT VARIABLES
     # =========================================================================
@@ -95,13 +95,13 @@ kmsConnectorDbMigration:
       value: "postgres"
     - name: PGPASSWORD
       value: "postgres"
-  
+
   serviceAccountName:
-  
+
   # Size of the non-persistent volume for migration
   storage:
     size: 2Gi
-  
+
   resources:
     requests:
       cpu: 100m
@@ -109,7 +109,7 @@ kmsConnectorDbMigration:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   nodeSelector:
   affinity:
   tolerations:
@@ -121,35 +121,35 @@ kmsConnectorDbMigration:
 kmsConnectorGwListener:
   enabled: true
   nameOverride:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener
     tag: v0.9.0
-  
+
   replicas: 1
-  
+
   # Component-specific configuration
   config:
     # Override commonConfig.gatewayUrl if needed
     gatewayUrl:
-  
+
   # Additional environment variables
   env:
-  
+
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
-  
+
   # Service ports
   ports:
     monitoring: 9100
-  
+
   # Prometheus ServiceMonitor for metrics collection
   serviceMonitor:
     enabled: false
-  
+
   serviceAccountName:
-  
+
   resources:
     requests:
       cpu: 100m
@@ -157,7 +157,7 @@ kmsConnectorGwListener:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   # Health check probes
   probes:
     liveness:
@@ -174,11 +174,11 @@ kmsConnectorGwListener:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
-  
+
   nodeSelector:
   affinity:
   tolerations:
-  
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -192,38 +192,38 @@ kmsConnectorGwListener:
 kmsConnectorKmsWorker:
   enabled: true
   nameOverride:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker
     tag: v0.9.0
-  
+
   replicas: 1
-  
+
   # Component-specific configuration
   config:
     # KMS core endpoints for communication
     kmsCoreEndpoints: "http://kms-core:50051"
-    
+
     # Override commonConfig.gatewayUrl if needed
     gatewayUrl:
-  
+
   # Additional environment variables
   env:
-  
+
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
-  
+
   # Service ports
   ports:
     monitoring: 9100
-  
+
   # Prometheus ServiceMonitor for metrics collection
   serviceMonitor:
     enabled: false
-  
+
   serviceAccountName:
-  
+
   resources:
     requests:
       cpu: 100m
@@ -231,7 +231,7 @@ kmsConnectorKmsWorker:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   # Health check probes
   probes:
     liveness:
@@ -248,11 +248,11 @@ kmsConnectorKmsWorker:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
-  
+
   nodeSelector:
   affinity:
   tolerations:
-  
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -266,41 +266,41 @@ kmsConnectorKmsWorker:
 kmsConnectorTxSender:
   enabled: true
   nameOverride:
-  
+
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender
     tag: v0.9.0
-  
+
   replicas: 1
-  
+
   # Component-specific configuration
   config:
     # Override commonConfig.gatewayUrl if needed
     gatewayUrl:
-  
+
   # Additional environment variables
   env:
-  
+
   # Wallet configuration for transaction signing
   wallet:
     secret:
       name: kms-connector-tx-sender
       key: kms-wallet
-  
+
   # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: true
-  
+
   # Service ports
   ports:
     monitoring: 9100
-  
+
   # Prometheus ServiceMonitor for metrics collection
   serviceMonitor:
     enabled: false
-  
+
   serviceAccountName:
-  
+
   resources:
     requests:
       cpu: 100m
@@ -308,7 +308,7 @@ kmsConnectorTxSender:
     limits:
       cpu: 500m
       memory: 512Mi
-  
+
   # Health check probes
   probes:
     liveness:
@@ -325,11 +325,11 @@ kmsConnectorTxSender:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
-  
+
   nodeSelector:
   affinity:
   tolerations:
-  
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
