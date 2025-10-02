@@ -241,7 +241,15 @@ async fn verify_proof_request_inserted_into_db() -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn has_not_public_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_public_key_gen(db_pool, false).await.map(|b| !b)
+}
+
 async fn has_public_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_public_key_gen(db_pool, true).await
+}
+
+async fn has_public_key_gen(db_pool: &Pool<Postgres>, retry: bool) -> anyhow::Result<bool> {
     for _ in 0..RETRY_EVENT_TO_DB {
         sleep(RETRY_DELAY).await;
         let rows = sqlx::query!("SELECT pks_key FROM tenants WHERE chain_id = $1", 12345,)
@@ -253,11 +261,22 @@ async fn has_public_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
                 return Ok(true);
             }
         }
+        if !retry {
+            break;
+        }
     }
     Ok(false)
 }
 
+async fn has_not_server_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_server_key_gen(db_pool, false).await.map(|b| !b)
+}
+
 async fn has_server_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_server_key_gen(db_pool, true).await
+}
+
+async fn has_server_key_gen(db_pool: &Pool<Postgres>, retry: bool) -> anyhow::Result<bool> {
     for _ in 0..RETRY_EVENT_TO_DB {
         sleep(RETRY_DELAY).await;
         let rows = sqlx::query!("SELECT sks_key FROM tenants WHERE chain_id = $1", 12345,)
@@ -269,11 +288,22 @@ async fn has_server_key(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
                 return Ok(true);
             }
         }
+        if !retry {
+            break;
+        }
     }
     Ok(false)
 }
 
+async fn has_not_crs(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_crs_gen(db_pool, false).await.map(|b| !b)
+}
+
 async fn has_crs(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
+    has_crs_gen(db_pool, true).await
+}
+
+async fn has_crs_gen(db_pool: &Pool<Postgres>, retry: bool) -> anyhow::Result<bool> {
     for _ in 0..RETRY_EVENT_TO_DB {
         sleep(RETRY_DELAY).await;
         let rows = sqlx::query!(
@@ -287,6 +317,9 @@ async fn has_crs(db_pool: &Pool<Postgres>) -> anyhow::Result<bool> {
             if rows[0].public_params == expected_key_content {
                 return Ok(true);
             }
+        }
+        if !retry {
+            break;
         }
     }
     Ok(false)
@@ -395,9 +428,9 @@ async fn keygen_ok() -> anyhow::Result<()> {
 
     let listener = tokio::spawn(async move { gw_listener.run().await });
 
-    assert!(!has_public_key(&env.db_pool.clone()).await?);
-    assert!(!has_server_key(&env.db_pool.clone()).await?);
-    assert!(!has_crs(&env.db_pool.clone()).await?);
+    assert!(has_not_public_key(&env.db_pool.clone()).await?);
+    assert!(has_not_server_key(&env.db_pool.clone()).await?);
+    assert!(has_not_crs(&env.db_pool.clone()).await?);
 
     let txn_req = kms_generation
         .keygen_public_key()
@@ -489,8 +522,8 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
 
     let result = tokio::spawn(async move { gw_listener.run().await });
 
-    assert!(!has_public_key(&env.db_pool.clone()).await?);
-    assert!(!has_server_key(&env.db_pool.clone()).await?);
+    assert!(has_not_public_key(&env.db_pool.clone()).await?);
+    assert!(has_not_server_key(&env.db_pool.clone()).await?);
 
     let txn_req = kms_generation
         .keygen(1) // Test
@@ -501,8 +534,8 @@ async fn keygen_compromised_key() -> anyhow::Result<()> {
 
     env.wait_for_log("Invalid Key digest").await?;
 
-    assert!(!has_public_key(&env.db_pool.clone()).await?);
-    assert!(!has_server_key(&env.db_pool.clone()).await?);
+    assert!(has_not_public_key(&env.db_pool.clone()).await?);
+    assert!(has_not_server_key(&env.db_pool.clone()).await?);
 
     env.cancel_token.cancel();
     result.await??;
@@ -583,8 +616,8 @@ async fn keygen_bad_key_or_bucket() -> anyhow::Result<()> {
 
     let listener = tokio::spawn(async move { gw_listener.run().await });
 
-    assert!(!has_public_key(&env.db_pool.clone()).await?);
-    assert!(!has_server_key(&env.db_pool.clone()).await?);
+    assert!(has_not_public_key(&env.db_pool.clone()).await?);
+    assert!(has_not_server_key(&env.db_pool.clone()).await?);
 
     let txn_req = kms_generation
         .keygen(1) // Test
