@@ -1,7 +1,6 @@
 use ::tracing::{error, info};
 use fhevm_engine_common::healthz_server;
 use fhevm_engine_common::keys::{FhevmKeys, SerializedFhevmKeys};
-use fhevm_engine_common::telemetry;
 use tokio_util::sync::CancellationToken;
 
 use std::sync::Once;
@@ -64,10 +63,6 @@ pub async fn async_main(
     });
 
     info!(target: "async_main", args = ?args, "Starting runtime with args");
-
-    if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-        panic!("Error while initializing tracing: {:?}", err);
-    }
 
     let health_check = health_check::HealthCheck::new(
         args.database_url

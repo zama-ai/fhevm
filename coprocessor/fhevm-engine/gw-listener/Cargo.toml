@@ -28,8 +28,8 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 tower-http = { workspace = true }
-url = "2.5.7"
 
+url = "2.5.7"
 fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [build-dependencies]

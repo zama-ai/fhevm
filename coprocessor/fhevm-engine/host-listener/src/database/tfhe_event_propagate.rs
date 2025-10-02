@@ -2,6 +2,7 @@ use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
 use anyhow::Result;
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheOperations;
 use fhevm_engine_common::utils::{compact_hex, HeartBeat};
@@ -82,6 +83,7 @@ pub struct LogTfhe {
     pub event: Log<TfheContractEvents>,
     pub transaction_hash: Option<TransactionHash>,
     pub is_allowed: bool,
+    pub block_number: Option<u64>,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -367,6 +369,17 @@ impl Database {
         let insert_computation_bytes = |tx, result, dependencies_handles, dependencies_bytes, scalar_byte| {
             self.insert_computation_bytes(tx, tenant_id, result, dependencies_handles, dependencies_bytes, fhe_operation, scalar_byte, log)
         };
+
+        let _t = telemetry::tracer(
+            "handle_tfhe_event",
+            &log.transaction_hash.map(|h| h.to_vec()),
+        );
+
+        self.record_transaction_begin(
+            &log.transaction_hash.map(|h| h.to_vec()),
+            &log.block_number,
+        ).await;
+
         match &event.data {
             E::Cast(C::Cast {ct, toType, result, ..})
             => insert_computation_bytes(tx, result, &[ct], &[ty(toType)], &HAS_SCALAR).await,
@@ -460,8 +473,17 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         event: &Log<AclContractEvents>,
+        transaction_hash: &Option<Handle>,
+        block_number: &Option<u64>,
     ) -> Result<(), SqlxError> {
         let data = &event.data;
+
+        let transaction_hash = transaction_hash.map(|h| h.to_vec());
+
+        let _t = telemetry::tracer("handle_acl_event", &transaction_hash);
+
+        self.record_transaction_begin(&transaction_hash, block_number)
+            .await;
 
         match data {
             AclContractEvents::Allowed(allowed) => {
@@ -472,10 +494,16 @@ impl Database {
                     handle.clone(),
                     allowed.account.to_string(),
                     AllowEvents::AllowedAccount,
+                    transaction_hash.clone(),
                 )
                 .await?;
 
-                self.insert_pbs_computations(tx, &vec![handle]).await?;
+                self.insert_pbs_computations(
+                    tx,
+                    &vec![handle],
+                    transaction_hash,
+                )
+                .await?;
             }
             AclContractEvents::AllowedForDecryption(allowed_for_decryption) => {
                 let handles = allowed_for_decryption
@@ -495,11 +523,17 @@ impl Database {
                         handle,
                         "".to_string(),
                         AllowEvents::AllowedForDecryption,
+                        transaction_hash.clone(),
                     )
                     .await?;
                 }
 
-                self.insert_pbs_computations(tx, &handles).await?;
+                self.insert_pbs_computations(
+                    tx,
+                    &handles,
+                    transaction_hash.clone(),
+                )
+                .await?;
             }
             AclContractEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
@@ -565,14 +599,16 @@ impl Database {
         &self,
         tx: &mut Transaction<'_>,
         handles: &Vec<Vec<u8>>,
+        transaction_id: Option<Vec<u8>>,
     ) -> Result<(), SqlxError> {
         let tenant_id = self.tenant_id;
         for handle in handles {
             let query = sqlx::query!(
-                "INSERT INTO pbs_computations(tenant_id, handle) VALUES($1, $2)
-                        ON CONFLICT DO NOTHING;",
+                "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3)
+                 ON CONFLICT DO NOTHING;",
                 tenant_id,
                 handle,
+                transaction_id
             );
             query.execute(tx.deref_mut()).await?;
         }
@@ -586,18 +622,37 @@ impl Database {
         handle: Vec<u8>,
         account_address: String,
         event_type: AllowEvents,
+        transaction_id: Option<Vec<u8>>,
     ) -> Result<(), SqlxError> {
         let tenant_id = self.tenant_id;
         let query = sqlx::query!(
-            "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+            "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
                     ON CONFLICT DO NOTHING;",
             tenant_id,
             handle,
             account_address,
             event_type as i16,
+            transaction_id
         );
         query.execute(tx.deref_mut()).await?;
         Ok(())
+    }
+
+    async fn record_transaction_begin(
+        &self,
+        transaction_hash: &Option<Vec<u8>>,
+        block_number: &Option<u64>,
+    ) {
+        if let Some(txn_id) = transaction_hash {
+            let pool = self.pool.read().await.clone();
+            let _ = telemetry::try_begin_transaction(
+                &pool,
+                self.chain_id as i64,
+                txn_id.as_ref(),
+                block_number.unwrap_or_default(),
+            )
+            .await;
+        }
     }
 }
 

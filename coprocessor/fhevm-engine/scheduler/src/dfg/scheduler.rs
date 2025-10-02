@@ -12,14 +12,11 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::common::FheOperation;
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
-use opentelemetry::{
-    trace::{Span, Tracer},
-    KeyValue,
-};
+use fhevm_engine_common::{common::FheOperation, telemetry};
+use opentelemetry::trace::{Span, Tracer};
 use std::{collections::HashMap, sync::atomic::AtomicUsize};
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
@@ -502,8 +499,10 @@ async fn execute_partition(
                 *i = Some(DFGTxInput::Value(ct.0.clone()));
             }
         }
-        let mut s = tracer.start_with_context("rerandomise_inputs", loop_ctx);
+
         if !cfg!(feature = "gpu") {
+            let mut s = tracer.start_with_context("rerandomise_inputs", loop_ctx);
+            telemetry::set_txn_id(&mut s, &tid);
             // Re-randomise inputs of the transaction - this also
             // decompresses ciphertexts
             if let Err(e) = re_randomise_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
@@ -524,6 +523,8 @@ async fn execute_partition(
                 continue 'tx;
             }
         } else {
+            let mut s = tracer.start_with_context("decompress_transaction_inputs", loop_ctx);
+            telemetry::set_txn_id(&mut s, &tid);
             // If re-randomisation is not available (e.g., on GPU),
             // only decompress ciphertexts
             if let Err(e) = decompress_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
@@ -544,14 +545,11 @@ async fn execute_partition(
                 continue 'tx;
             }
         }
-        s.end();
 
         // Prime the scheduler with ready ops from the transaction's subgraph
         let mut s = tracer.start_with_context("execute_transaction", loop_ctx);
-        s.set_attribute(KeyValue::new(
-            "transaction_hash",
-            format!("0x{}", hex::encode(&tid)),
-        ));
+        telemetry::set_txn_id(&mut s, &tid);
+
         let mut set: JoinSet<(usize, OpResult)> = JoinSet::new();
         for nidx in dfg.graph.node_identifiers() {
             let Some(node) = dfg.graph.node_weight_mut(nidx) else {

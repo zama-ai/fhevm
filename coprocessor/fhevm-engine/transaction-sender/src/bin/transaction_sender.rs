@@ -18,6 +18,7 @@ use transaction_sender::{
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
+use fhevm_engine_common::telemetry;
 use humantime::parse_duration;
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
@@ -125,6 +126,10 @@ struct Conf {
 
     #[arg(long, default_value = "8s", value_parser = parse_duration)]
     graceful_shutdown_timeout: Duration,
+
+    /// service name in OTLP traces
+    #[arg(long, default_value = "txn-sender")]
+    pub service_name: String,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -168,6 +173,10 @@ async fn main() -> anyhow::Result<()> {
             return Ok(());
         }
     };
+
+    if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
+        error!(error = %err, "Failed to setup OTLP");
+    }
 
     let abstract_signer: AbstractSigner;
     match conf.signer_type {

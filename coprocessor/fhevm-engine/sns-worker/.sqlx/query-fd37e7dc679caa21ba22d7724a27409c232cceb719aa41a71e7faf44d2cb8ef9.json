@@ -62,6 +62,11 @@
         "ordinal": 11,
         "name": "txn_block_number",
         "type_info": "Int8"
+      },
+      {
+        "ordinal": 12,
+        "name": "transaction_id",
+        "type_info": "Bytea"
       }
     ],
     "parameters": {
@@ -81,6 +86,7 @@
       true,
       false,
       false,
+      true,
       true,
       true
     ]
