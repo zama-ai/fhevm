@@ -2,11 +2,7 @@ use std::time::Duration;
 
 use alloy::rpc::types::Filter;
 use alloy::sol_types::SolEventInterface;
-use alloy::{
-    eips::BlockNumberOrTag, network::Ethereum, primitives::Address, providers::Provider,
-    rpc::types::Log, sol,
-};
-use alloy::{network::Ethereum, primitives::Address, providers::Provider, sol};
+use alloy::{network::Ethereum, primitives::Address, providers::Provider, rpc::types::Log, sol};
 use fhevm_engine_common::telemetry;
 use fhevm_engine_common::utils::compact_hex;
 use futures_util::{future::join_all, StreamExt};
@@ -279,7 +275,7 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
 
         let _ = telemetry::try_begin_transaction(
             db_pool,
-            chain_id as i64,
+            chain_id,
             &transaction_id,
             log.block_number.unwrap_or_default(),
         )
