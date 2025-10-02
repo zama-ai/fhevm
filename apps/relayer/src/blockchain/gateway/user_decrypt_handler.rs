@@ -606,7 +606,7 @@ impl GatewayHandler {
 
             match decryption
                 .clone()
-                .checkUserDecryptionReady(
+                .isUserDecryptionReady(
                     user_decrypt_request.user_address,
                     contract_pairs.clone(),
                     user_decrypt_request.extra_data.clone(),
@@ -614,28 +614,26 @@ impl GatewayHandler {
                 .call()
                 .await
             {
-                Ok(_) => {
-                    info!(
-                        "Function call succeeded for user address: {:?}",
-                        user_decrypt_request.user_address
-                    );
-                }
-                Err(err) => {
-                    let fhevm_error = parse_fhevm_error(&err);
-                    should_retry = retryable_error(&fhevm_error);
-
-                    if !should_retry {
-                        warn!(
-                            "Gateway un-retriable error for {:?} error info: {:?}",
-                            user_decrypt_request.user_address, fhevm_error
+                Ok(is_ready) => {
+                    if is_ready {
+                        info!(
+                            "Function call succeeded for user address: {:?}",
+                            user_decrypt_request.user_address
                         );
-                        return Err(EventProcessingError::RequestReverted(Box::new(fhevm_error)));
                     } else {
                         info!(
-                            "Gateway not ready yet: {:?} error info: {:?}, retry={}",
-                            user_decrypt_request.user_address, fhevm_error, should_retry
+                            "Gateway not ready for handles: {:?}, retrying... ",
+                            user_decrypt_request.user_address
                         );
+                        should_retry = true;
                     }
+                }
+                Err(err) => {
+                    error!(
+                        "Check should not revert and render boolean value: {:?}, still retrying... error: {} ",
+                        user_decrypt_request.user_address, err
+                    );
+                    should_retry = true;
                 }
             }
 

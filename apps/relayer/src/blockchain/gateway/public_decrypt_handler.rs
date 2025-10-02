@@ -242,26 +242,30 @@ impl GatewayHandler {
 
             match decryption
                 .clone()
-                .checkPublicDecryptionReady(
+                .isPublicDecryptionReady(
                     handles_fixed_bytes.clone(),
                     public_decryption_request.extra_data.clone(),
                 )
                 .call()
                 .await
             {
-                Ok(_) => {
-                    info!(
-                        "Function call succeeded for handles: {:?}",
-                        handles_fixed_bytes
-                    );
+                Ok(is_ready) => {
+                    if is_ready {
+                        info!(
+                            "Function call succeeded for handles: {:?}",
+                            handles_fixed_bytes
+                        );
+                    } else {
+                        info!(
+                            "Gateway not ready for handles: {:?}, retrying... ",
+                            handles_fixed_bytes
+                        );
+                        should_retry = true;
+                    }
                 }
                 Err(err) => {
-                    info!(
-                        "Gateway not ready for handles: {:?}, retrying... ",
-                        handles_fixed_bytes
-                    );
-                    debug!(
-                        "Gateway not ready yet: {:?} error info: {}",
+                    error!(
+                        "Check should not revert and render boolean value: {:?}, still retrying... error: {} ",
                         handles_fixed_bytes, err
                     );
                     should_retry = true;
