@@ -218,6 +218,8 @@ tfheWorker:
       value: "0xa1880e99d86F081E8D3868A8C4732C8f65dfdB11"
   args:
     - --coprocessor-private-key=/accounts/coprocessor.hex
+    - --coprocessor-fhe-threads=64
+    - --tokio-threads=16
   ports:
     metrics: 9100
     healthcheck: 8080
