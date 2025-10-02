@@ -69,11 +69,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     /// @notice Returned when signatures verification fails.
     error SignaturesVerificationFailed();
 
-    /// @notice Returned when the set of signers is empty.
-    error EmptyContextSignerAddresses(uint256 contextId);
+    /// @notice Returned when the set of coprocessor signers is empty.
+    error EmptyCoprocessorSignerAddresses(uint256 contextId);
 
-    /// @notice Returned when the context ID is zero.
-    error ZeroContextId();
+    /// @notice Returned when the context ID is null.
+    error InvalidNullContextId();
 
     /// @notice Returned when the context ID is not marked as active or suspended.
     error InvalidContextId(uint256 contextId);
@@ -180,10 +180,10 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
         // Check for valid initial context ID and non-empty initial signers set.
         if (initialContextId == 0) {
-            revert ZeroContextId();
+            revert InvalidNullContextId();
         }
         if (initialContextSigners.length == 0) {
-            revert EmptyContextSignerAddresses(initialContextId);
+            revert EmptyCoprocessorSignerAddresses(initialContextId);
         }
 
         InputVerifierStorage storage $ = _getInputVerifierStorage();
@@ -205,10 +205,10 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     ) public virtual reinitializer(REINITIALIZER_VERSION) {
         // Check for valid initial context ID and non-empty initial signers set.
         if (initialContextId == 0) {
-            revert ZeroContextId();
+            revert InvalidNullContextId();
         }
         if (initialContextSigners.length == 0) {
-            revert EmptyContextSignerAddresses(initialContextId);
+            revert EmptyCoprocessorSignerAddresses(initialContextId);
         }
 
         InputVerifierStorage storage $ = _getInputVerifierStorage();
@@ -413,10 +413,10 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         address[] calldata newContextSigners
     ) public virtual onlyACLOwner {
         if (newContextId == 0) {
-            revert ZeroContextId();
+            revert InvalidNullContextId();
         }
         if (newContextSigners.length == 0) {
-            revert EmptyContextSignerAddresses(newContextId);
+            revert EmptyCoprocessorSignerAddresses(newContextId);
         }
 
         InputVerifierStorage storage $ = _getInputVerifierStorage();
