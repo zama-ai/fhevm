@@ -327,7 +327,7 @@ tfheWorker:
   # Command line arguments for TFHE worker
   args:
     - --database-url=$(DATABASE_URL)
-    - --run-bg-worker
+    - --run-bg-worker=true
     - --worker-polling-interval-ms=60000
     - --work-items-batch-size=100 # scheduling changed
     - --dependence-chains-per-batch=100
@@ -336,7 +336,18 @@ tfheWorker:
     - --tokio-threads=16 # scheduling changed
     - --pg-pool-max-connections=10
     - --metrics-addr=0.0.0.0:9100
-  
+    - --service-name="tfhe-worker" #tfhe-worker service name in OTLP traces
+    - --log-level=INFO
+  # Should not be used (unsafe - testing only, keep 0/false values except CI)
+    - --run-server=false
+    - --generate-fhe-keys=false
+    - --server-maximum-ciphertexts-to-schedule=0
+    - --server-maximum-ciphertexts-to-get=0
+    - --maximum-compact-inputs-upload=0
+    - --maximum-handles-per-input=0
+    - --server-addr=""
+    - --coprocessor-private-key=""
+
   # Service ports configuration
   ports:
     metrics: 9100
