@@ -83,7 +83,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
     /// @notice The state of a coprocessor context ID.
     enum CoprocessorContextState {
-        Unused,
+        NotInitialized,
         Active,
         Suspended,
         Deactivated
@@ -150,7 +150,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 4;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant InputVerifierStorageLocation =
@@ -172,26 +172,26 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     function initializeFromEmptyProxy(
         address verifyingContractSource,
         uint64 chainIDSource,
-        uint256 initialContextId,
-        address[] calldata initialContextSigners
+        uint256 initialCoprocessorContextId,
+        address[] calldata initialCoprocessorSigners
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __Ownable_init(owner());
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
 
         // Check for valid initial context ID and non-empty initial signers set.
-        if (initialContextId == 0) {
+        if (initialCoprocessorContextId == 0) {
             revert InvalidNullContextId();
         }
-        if (initialContextSigners.length == 0) {
-            revert EmptyCoprocessorSignerAddresses(initialContextId);
+        if (initialCoprocessorSigners.length == 0) {
+            revert EmptyCoprocessorSignerAddresses(initialCoprocessorContextId);
         }
 
         InputVerifierStorage storage $ = _getInputVerifierStorage();
 
         // Activate the initial context.
-        $.coprocessorContextStates[initialContextId] = CoprocessorContextState.Active;
-        $.coprocessorContextSigners[initialContextId] = initialContextSigners;
-        $.activeCoprocessorContextId = initialContextId;
+        $.coprocessorContextStates[initialCoprocessorContextId] = CoprocessorContextState.Active;
+        $.coprocessorContextSigners[initialCoprocessorContextId] = initialCoprocessorSigners;
+        $.activeCoprocessorContextId = initialCoprocessorContextId;
     }
 
     /**
@@ -199,24 +199,24 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4(
-        uint256 initialContextId,
-        address[] calldata initialContextSigners
+    function reinitializeV3(
+        uint256 initialCoprocessorContextId,
+        address[] calldata initialCoprocessorSigners
     ) public virtual reinitializer(REINITIALIZER_VERSION) {
         // Check for valid initial context ID and non-empty initial signers set.
-        if (initialContextId == 0) {
+        if (initialCoprocessorContextId == 0) {
             revert InvalidNullContextId();
         }
-        if (initialContextSigners.length == 0) {
-            revert EmptyCoprocessorSignerAddresses(initialContextId);
+        if (initialCoprocessorSigners.length == 0) {
+            revert EmptyCoprocessorSignerAddresses(initialCoprocessorContextId);
         }
 
         InputVerifierStorage storage $ = _getInputVerifierStorage();
 
         // Activate the initial context.
-        $.coprocessorContextStates[initialContextId] = CoprocessorContextState.Active;
-        $.coprocessorContextSigners[initialContextId] = initialContextSigners;
-        $.activeCoprocessorContextId = initialContextId;
+        $.coprocessorContextStates[initialCoprocessorContextId] = CoprocessorContextState.Active;
+        $.coprocessorContextSigners[initialCoprocessorContextId] = initialCoprocessorSigners;
+        $.activeCoprocessorContextId = initialCoprocessorContextId;
     }
 
     /**
@@ -422,7 +422,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         InputVerifierStorage storage $ = _getInputVerifierStorage();
 
         // Check that the new context ID is not already used.
-        if ($.coprocessorContextStates[newContextId] != CoprocessorContextState.Unused) {
+        if ($.coprocessorContextStates[newContextId] != CoprocessorContextState.NotInitialized) {
             revert ContextAlreadyUsed(newContextId);
         }
 
