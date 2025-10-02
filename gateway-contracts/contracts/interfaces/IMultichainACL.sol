@@ -58,19 +58,6 @@ interface IMultichainACL {
         address txSender
     );
 
-    /**
-     * @notice Error indicating that the account address is not allowed to use the ciphertext handle.
-     * @param ctHandle The ciphertext handle that the account is not allowed to use.
-     * @param accountAddress The address of the account that is not allowed to use the ciphertext handle.
-     */
-    error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress);
-
-    /**
-     * @notice Error indicating that the ciphertext handle is not allowed for public decryption.
-     * @param ctHandle The ciphertext handle that is not allowed for public decryption.
-     */
-    error PublicDecryptNotAllowed(bytes32 ctHandle);
-
     /// @notice Error indicating that the contract addresses list is empty.
     error EmptyContractAddresses();
 
@@ -80,14 +67,6 @@ interface IMultichainACL {
      * @param actualLength The actual number of contracts requested.
      */
     error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
-
-    /**
-     * @notice Error indicating that the account has not been fully delegated.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddress The address of the delegated contract.
-     */
-    error AccountNotDelegated(uint256 chainId, DelegationAccounts delegationAccounts, address contractAddress);
 
     /**
      * @notice Allows access to the ciphertext handle for public decryption.
@@ -117,29 +96,29 @@ interface IMultichainACL {
     ) external;
 
     /**
-     * @notice Checks that the ciphertext handle is allowed for public decryption.
+     * @notice Indicates if the ciphertext handle is allowed for public decryption.
      * @param ctHandle The handle of the ciphertext.
      */
-    function checkPublicDecryptAllowed(bytes32 ctHandle) external view;
+    function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
 
     /**
-     * @notice Checks that the account is allowed to use the ciphertext handle.
+     * @notice Indicates if the account is allowed to use the ciphertext handle.
      * @param ctHandle The handle of the ciphertext.
      * @param accountAddress The address of the account.
      */
-    function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view;
+    function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view returns (bool);
 
     /**
-     * @notice Checks that the delegator has delegated access to the delegate and contracts addresses.
+     * @notice Indicates if the delegator has delegated access to the delegate and contracts addresses.
      * @param chainId The chain ID of the registered host chain where the contracts are deployed.
      * @param delegationAccounts The delegator and the delegated addresses.
      * @param contractAddresses The delegated contract addresses.
      */
-    function checkAccountDelegated(
+    function isAccountDelegated(
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
-    ) external view;
+    ) external view returns (bool);
 
     /**
      * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for an allow public decrypt.

@@ -95,7 +95,7 @@ describe("MultichainACL", function () {
           extraDataV0,
         ),
       )
-        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+        .revertedWithCustomError(MultichainACL, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
@@ -183,24 +183,23 @@ describe("MultichainACL", function () {
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
       await expect(MultichainACL.connect(fakeTxSender).allowAccount(ctHandle, newAccountAddress, extraDataV0))
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+        .revertedWithCustomError(MultichainACL, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
 
-    it("Should check account is allowed to use the ciphertext", async function () {
-      await MultichainACL.connect(coprocessorTxSenders[0]).checkAccountAllowed(ctHandle, accountAddress);
+    it("Should be true because the account is allowed to use the ciphertext", async function () {
+      expect(await MultichainACL.connect(coprocessorTxSenders[0]).isAccountAllowed(ctHandle, accountAddress)).to.be
+        .true;
     });
 
-    it("Should revert because the account is not allowed to use the ciphertext", async function () {
-      await expect(MultichainACL.connect(coprocessorTxSenders[0]).checkAccountAllowed(ctHandle, newAccountAddress))
-        .to.be.revertedWithCustomError(MultichainACL, "AccountNotAllowedToUseCiphertext")
-        .withArgs(ctHandle, newAccountAddress);
+    it("Should be false because the account is not allowed to use the ciphertext", async function () {
+      expect(await MultichainACL.connect(coprocessorTxSenders[0]).isAccountAllowed(ctHandle, newAccountAddress)).to.be
+        .false;
     });
 
-    it("Should revert because the handle has not been allowed to be used by anyone", async function () {
-      await expect(MultichainACL.connect(coprocessorTxSenders[0]).checkAccountAllowed(newCtHandle, accountAddress))
-        .to.be.revertedWithCustomError(MultichainACL, "AccountNotAllowedToUseCiphertext")
-        .withArgs(newCtHandle, accountAddress);
+    it("Should be false because the handle has not been allowed to be used by anyone", async function () {
+      expect(await MultichainACL.connect(coprocessorTxSenders[0]).isAccountAllowed(newCtHandle, accountAddress)).to.be
+        .false;
     });
   });
 
@@ -214,7 +213,7 @@ describe("MultichainACL", function () {
 
     it("Should revert because the hostChainId is not registered in the GatewayConfig contract", async function () {
       await expect(MultichainACL.connect(coprocessorTxSenders[0]).allowPublicDecrypt(ctHandleFakeChainId, extraDataV0))
-        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+        .revertedWithCustomError(MultichainACL, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
@@ -290,18 +289,16 @@ describe("MultichainACL", function () {
 
     it("Should revert because the transaction sender is not a coprocessor", async function () {
       await expect(MultichainACL.connect(fakeTxSender).allowPublicDecrypt(newCtHandle, extraDataV0))
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+        .revertedWithCustomError(MultichainACL, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
 
-    it("Should check public decrypt is allowed", async function () {
-      await MultichainACL.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed(ctHandle);
+    it("Should be true because the public decrypt is allowed", async function () {
+      expect(await MultichainACL.connect(coprocessorTxSenders[0]).isPublicDecryptAllowed(ctHandle)).to.be.true;
     });
 
-    it("Should revert because the handle is not allowed to be publicly decrypted", async function () {
-      await expect(MultichainACL.connect(coprocessorTxSenders[0]).checkPublicDecryptAllowed(newCtHandle))
-        .to.be.revertedWithCustomError(MultichainACL, "PublicDecryptNotAllowed")
-        .withArgs(newCtHandle);
+    it("Should be false because the handle is not allowed to be publicly decrypted", async function () {
+      expect(await MultichainACL.connect(coprocessorTxSenders[0]).isPublicDecryptAllowed(newCtHandle)).to.be.false;
     });
   });
 
@@ -451,7 +448,7 @@ describe("MultichainACL", function () {
       await expect(
         MultichainACL.connect(fakeTxSender).delegateAccount(hostChainId, delegationAccounts, allowedContracts),
       )
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+        .revertedWithCustomError(MultichainACL, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
 
@@ -476,43 +473,60 @@ describe("MultichainACL", function () {
         .withArgs(MAX_CONTRACT_ADDRESSES, largeContractAddresses.length);
     });
 
-    it("Should check that the account is delegated", async function () {
-      await MultichainACL.checkAccountDelegated(hostChainId, delegationAccounts, allowedContracts);
+    it("Should be true because the account is delegated", async function () {
+      expect(
+        await MultichainACL.connect(coprocessorTxSenders[0]).isAccountDelegated(
+          hostChainId,
+          delegationAccounts,
+          allowedContracts,
+        ),
+      ).to.be.true;
     });
 
-    it("Should revert because the delegation has been made on a different host chain", async function () {
-      await expect(MultichainACL.checkAccountDelegated(fakeHostChainId, delegationAccounts, allowedContracts))
-        .revertedWithCustomError(MultichainACL, "AccountNotDelegated")
-        .withArgs(fakeHostChainId, toValues(delegationAccounts), allowedContracts[0]);
+    it("Should be false because the delegation has been made on a different host chain", async function () {
+      expect(
+        await MultichainACL.connect(coprocessorTxSenders[0]).isAccountDelegated(
+          fakeHostChainId,
+          delegationAccounts,
+          allowedContracts,
+        ),
+      ).to.be.false;
     });
 
-    it("Should revert because the contract addresses list is empty", async function () {
-      await expect(MultichainACL.checkAccountDelegated(hostChainId, delegationAccounts, [])).revertedWithCustomError(
-        MultichainACL,
-        "EmptyContractAddresses",
-      );
+    it("Should be false because the contract addresses list is empty", async function () {
+      expect(
+        await MultichainACL.connect(coprocessorTxSenders[0]).isAccountDelegated(hostChainId, delegationAccounts, []),
+      ).to.be.false;
     });
 
-    it("Should revert because the delegation has been made with a different delegator address", async function () {
+    it("Should be false because the delegation has been made with a different delegator address", async function () {
       const fakeDelegationAccounts: DelegationAccountsStruct = {
         delegatorAddress: newDelegator,
         delegatedAddress: delegated,
       };
 
-      await expect(MultichainACL.checkAccountDelegated(hostChainId, fakeDelegationAccounts, allowedContracts))
-        .revertedWithCustomError(MultichainACL, "AccountNotDelegated")
-        .withArgs(hostChainId, toValues(fakeDelegationAccounts), allowedContracts[0]);
+      expect(
+        await MultichainACL.connect(coprocessorTxSenders[0]).isAccountDelegated(
+          hostChainId,
+          fakeDelegationAccounts,
+          allowedContracts,
+        ),
+      ).to.be.false;
     });
 
-    it("Should revert because the delegation has been made with a different delegated address", async function () {
+    it("Should be false because the delegation has been made with a different delegated address", async function () {
       const fakeDelegationAccounts: DelegationAccountsStruct = {
         delegatorAddress: delegator,
         delegatedAddress: newDelegated,
       };
 
-      await expect(MultichainACL.checkAccountDelegated(hostChainId, fakeDelegationAccounts, allowedContracts))
-        .revertedWithCustomError(MultichainACL, "AccountNotDelegated")
-        .withArgs(hostChainId, toValues(fakeDelegationAccounts), allowedContracts[0]);
+      expect(
+        await MultichainACL.connect(coprocessorTxSenders[0]).isAccountDelegated(
+          hostChainId,
+          fakeDelegationAccounts,
+          allowedContracts,
+        ),
+      ).to.be.false;
     });
   });
 });

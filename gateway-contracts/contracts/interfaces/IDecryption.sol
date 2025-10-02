@@ -195,12 +195,6 @@ interface IDecryption {
     );
 
     /**
-     * @notice Error indicating that the (public, user, delegated user) decryption is not done.
-     * @param decryptionId The decryption request ID.
-     */
-    error DecryptionNotDone(uint256 decryptionId);
-
-    /**
      * @notice Error indicating that the (public, user, delegated user) decryption is not requested yet.
      * @param decryptionId The decryption request ID.
      */
@@ -282,45 +276,48 @@ interface IDecryption {
     ) external;
 
     /**
-     * @notice Checks if handles are ready to be decrypted publicly.
+     * @notice Indicates if handles are ready to be decrypted publicly.
      * @param ctHandles The ciphertext handles.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function checkPublicDecryptionReady(bytes32[] calldata ctHandles, bytes calldata extraData) external view;
+    function isPublicDecryptionReady(
+        bytes32[] calldata ctHandles,
+        bytes calldata extraData
+    ) external view returns (bool);
 
     /**
-     * @notice Checks if handles are ready to be decrypted by a user.
+     * @notice Indicates if handles are ready to be decrypted by a user.
      * @param userAddress The user's address.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function checkUserDecryptionReady(
+    function isUserDecryptionReady(
         address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata extraData
-    ) external view;
+    ) external view returns (bool);
 
     /**
-     * @notice Checks if handles are ready to be decrypted by a delegated address.
+     * @notice Indicates if handles are ready to be decrypted by a delegated address.
      * @param contractsChainId The host chain ID, where the contracts are deployed.
      * @param delegationAccounts The delegator and delegated address.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param contractAddresses The contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function checkDelegatedUserDecryptionReady(
+    function isDelegatedUserDecryptionReady(
         uint256 contractsChainId,
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         address[] calldata contractAddresses,
         bytes calldata extraData
-    ) external view;
+    ) external view returns (bool);
 
     /**
-     * @notice Checks if a (public, user, delegated user) decryption is done.
+     * @notice Indicates if a (public, user, delegated user) decryption is done.
      * @param decryptionId The decryption request ID.
      */
-    function checkDecryptionDone(uint256 decryptionId) external view;
+    function isDecryptionDone(uint256 decryptionId) external view returns (bool);
 
     /**
      * @notice Returns the KMS transaction sender addresses that were involved in the consensus for a decryption request.

@@ -15,6 +15,7 @@ import { IMultichainACL } from "./interfaces/IMultichainACL.sol";
 import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
+import { MultichainACLChecks } from "./shared/MultichainACLChecks.sol";
 import { FheType } from "./shared/FheType.sol";
 import { Pausable } from "./shared/Pausable.sol";
 import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
@@ -31,6 +32,7 @@ contract Decryption is
     UUPSUpgradeableEmptyProxy,
     GatewayOwnable,
     GatewayConfigChecks,
+    MultichainACLChecks,
     Pausable
 {
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
@@ -472,9 +474,9 @@ contract Decryption is
             delegationAccounts.delegatorAddress
         );
 
-        /// @dev Check that the delegated address has been granted access to the contract addresses
-        /// @dev by the delegator.
-        MULTICHAIN_ACL.checkAccountDelegated(contractsInfo.chainId, delegationAccounts, contractsInfo.addresses);
+        // Check that the delegated address has been granted access to the contract addresses by
+        // by the delegator.
+        _checkIsAccountDelegated(contractsInfo.chainId, delegationAccounts, contractsInfo.addresses);
 
         /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
         DelegatedUserDecryptRequestVerification
@@ -596,67 +598,93 @@ contract Decryption is
         }
     }
 
-    /// @dev See {IDecryption-checkPublicDecryptionReady}.
-    function checkPublicDecryptionReady(
+    /**
+     * @dev See {IDecryption-isPublicDecryptionReady}.
+     */
+    function isPublicDecryptionReady(
         bytes32[] calldata ctHandles,
         bytes calldata /* extraData */
-    ) external view virtual {
-        /// @dev Check that the handles are allowed for public decryption and that the ciphertext materials
-        /// @dev represented by them have been added.
+    ) external view virtual returns (bool) {
+        // For each handle, check that it is allowed for public decryption and that the ciphertext
+        // material represented by it has been added.
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            MULTICHAIN_ACL.checkPublicDecryptAllowed(ctHandles[i]);
-            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandles[i]);
+            if (
+                !MULTICHAIN_ACL.isPublicDecryptAllowed(ctHandles[i]) ||
+                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandles[i])
+            ) {
+                return false;
+            }
         }
+        return true;
     }
 
-    /// @dev See {IDecryption-checkUserDecryptionReady}.
-    function checkUserDecryptionReady(
+    /**
+     * @dev See {IDecryption-isUserDecryptionReady}.
+     */
+    function isUserDecryptionReady(
         address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
-    ) external view virtual {
-        /// @dev Check that the user and contracts accounts have access to the handles and that the
-        /// @dev ciphertext materials represented by them have been added.
+    ) external view virtual returns (bool) {
+        // For each handle, check that the user and contracts accounts have access to it and that the
+        // ciphertext material represented by it has been added.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress);
-            MULTICHAIN_ACL.checkAccountAllowed(
-                ctHandleContractPairs[i].ctHandle,
-                ctHandleContractPairs[i].contractAddress
-            );
-            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
+            if (
+                !MULTICHAIN_ACL.isAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress) ||
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    ctHandleContractPairs[i].contractAddress
+                ) ||
+                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
+            ) {
+                return false;
+            }
         }
+        return true;
     }
 
-    /// @dev See {IDecryption-checkDelegatedUserDecryptionReady}.
-    function checkDelegatedUserDecryptionReady(
+    /**
+     * @dev See {IDecryption-isDelegatedUserDecryptionReady}.
+     */
+    function isDelegatedUserDecryptionReady(
         uint256 contractsChainId,
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         address[] calldata contractAddresses,
         bytes calldata /* extraData */
-    ) external view virtual {
-        /// @dev Check that the delegated address has been granted access to the given contractAddresses
-        /// @dev by the delegator.
-        MULTICHAIN_ACL.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
-
-        /// @dev Check that the delegator and contract accounts have access to the handles and that the
-        /// @dev ciphertext materials represented by them have been added.
-        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, delegationAccounts.delegatorAddress);
-            MULTICHAIN_ACL.checkAccountAllowed(
-                ctHandleContractPairs[i].ctHandle,
-                ctHandleContractPairs[i].contractAddress
-            );
-            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
+    ) external view virtual returns (bool) {
+        // Check that the delegated address has been granted access to the given contractAddresses
+        // by the delegator.
+        if (!MULTICHAIN_ACL.isAccountDelegated(contractsChainId, delegationAccounts, contractAddresses)) {
+            return false;
         }
+
+        // For each handle, check that the delegator and contract accounts have access to it and that the
+        // ciphertext material represented by it has been added.
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            if (
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    delegationAccounts.delegatorAddress
+                ) ||
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    ctHandleContractPairs[i].contractAddress
+                ) ||
+                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
+            ) {
+                return false;
+            }
+        }
+        return true;
     }
 
-    /// @dev See {IDecryption-checkDecryptionDone}.
-    function checkDecryptionDone(uint256 decryptionId) external view virtual {
+    /**
+     * @dev See {IDecryption-isDecryptionDone}.
+     */
+    function isDecryptionDone(uint256 decryptionId) external view virtual returns (bool) {
         DecryptionStorage storage $ = _getDecryptionStorage();
-        if (!$.decryptionDone[decryptionId]) {
-            revert DecryptionNotDone(decryptionId);
-        }
+        return $.decryptionDone[decryptionId];
     }
 
     /**
@@ -703,8 +731,8 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
         address signer = ECDSA.recover(digest, signature);
 
-        /// @dev Check that the signer is a KMS signer.
-        GATEWAY_CONFIG.checkIsKmsSigner(signer);
+        // Check that the signer is a KMS signer.
+        _checkIsKmsSigner(signer);
 
         /// @dev Check that the signer has not already responded to the user decryption request.
         if ($.kmsNodeAlreadySigned[decryptionId][signer]) {
@@ -891,8 +919,8 @@ contract Decryption is
             /// @dev This reverts if the FHE type is invalid or not supported.
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
-            /// @dev Check that the handles are allowed for public decryption.
-            MULTICHAIN_ACL.checkPublicDecryptAllowed(ctHandle);
+            // Check that the handles are allowed for public decryption.
+            _checkIsPublicDecryptAllowed(ctHandle);
         }
 
         /// @dev Revert if the total bit size exceeds the maximum allowed.
@@ -936,11 +964,9 @@ contract Decryption is
             /// @dev This reverts if the FHE type is invalid or not supported
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
-            /// @dev Check that the allowed account has access to the handles.
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandle, allowedAddress);
-
-            /// @dev Check that the contract account has access to the handles.
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandle, contractAddress);
+            // Check that the allowed and contract accounts have access to the handles.
+            _checkIsAccountAllowed(ctHandle, allowedAddress);
+            _checkIsAccountAllowed(ctHandle, contractAddress);
 
             /// @dev Check the contract is included in the list of allowed contract addresses.
             if (!_containsContractAddress(contractAddresses, contractAddress)) {
