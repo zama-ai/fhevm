@@ -151,6 +151,20 @@ HOST_CHAIN_WEBSITE_0="https://host-chain-2025.com" # (string)
 
 `HOST_CHAIN_CHAIN_ID` must be different for all host chains, else the script will fail.
 
+- Pausers:
+
+```bash
+NUM_PAUSERS="1" # (number)
+```
+
+`NUM_PAUSERS` is the number of pausers to register in the `GatewayConfig` contract. It it not stored in it and is only used within the deployment script. The following metadata variables must be set for each pauser, indexed by a pauser number starting from 0. If not enough variables are set, the script will fail. If, on the contrary, too many variables are set, the script will succeed but the extra ones will be ignored.
+
+The number of pausers should correspond to the total number of registered operators (the number of KMS nodes + coprocessors registered in the protocol).
+
+```bash
+PAUSER_ADDRESS_0="0x6591319B97979Acc59b7191A8B4Ec381375bFc92" # (address)
+```
+
 ### Deployment settings
 
 The following settings are required for deploying the contracts through hardhat:
@@ -220,3 +234,11 @@ PAUSER_SET_ADDRESS="0xc1D733116990ce3D9e54F9eCf48a1cdD441Af4f9" # (address)
 ```
 
 This (static) address is needed for managing pausers in the PauserSet contract separately. In a proper production setting, this environment variable needs to be dynamically set after deploying the contracts.
+
+- KMSGeneration address
+
+```bash
+KMS_GENERATION_ADDRESS="0x87A5b1152AA51728258dbc1AA54B6a83DCd1d3dd" # (address)
+```
+
+This (static) address is needed for generating the FHE key and CRS through the KMSGeneration contract. In a proper production setting, this environment variable needs to be dynamically set after deploying the contracts.
