@@ -242,7 +242,6 @@ jobs:
           sbom: true
           target: ${{ env.target }}
           context: ${{ env.context }}
-          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.docker-tags.outputs.tags }}
 
   # TODO: find out why the test is failing
