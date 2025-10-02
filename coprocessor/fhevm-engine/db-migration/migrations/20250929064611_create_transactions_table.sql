@@ -25,13 +25,3 @@ CREATE TABLE transactions (
     block_number BIGINT NOT NULL,
     completed_at TIMESTAMPTZ DEFAULT NULL
 );
-
--- For completed txns
-CREATE INDEX CONCURRENTLY idx_transactions_completed_createdat
-  ON transactions (created_at)
-  WHERE completed_at IS NOT NULL;
-
--- For incomplete txns
-CREATE INDEX CONCURRENTLY idx_transactions_incomplete_createdat
-  ON transactions (created_at)
-  WHERE completed_at IS NULL;
