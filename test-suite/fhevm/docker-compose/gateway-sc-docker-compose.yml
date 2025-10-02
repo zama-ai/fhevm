@@ -51,7 +51,7 @@ services:
     env_file:
       - ../env/staging/.env.gateway-sc.local
     command:
-      - npx hardhat task:addPausers
+      - npx hardhat task:addGatewayPausers
     depends_on:
       gateway-sc-deploy:
         condition: service_completed_successfully

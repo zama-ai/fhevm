@@ -8,7 +8,7 @@ import { getRequiredEnvVar } from "./utils/loadVariables";
 // Add pausers to the PauserSet contract
 // Note: Internal PauserSet address is defined in the `addresses/` directory. It should be used
 // for local testing. By default, we use the PAUSER_SET_ADDRESS env var, as done in deployment
-task("task:addPausers")
+task("task:addGatewayPausers")
   .addParam("useInternalPauserSetAddress", "If internal PauserSet address should be used", false, types.boolean)
   .setAction(async function ({ useInternalGatewayConfigAddress }, hre) {
     await hre.run("compile:specific", { contract: "contracts/immutable" });
