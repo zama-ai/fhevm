@@ -5,6 +5,7 @@ use alloy::pubsub::SubscriptionStream;
 use alloy::rpc::types::{Block, BlockNumberOrTag, Filter, Header, Log};
 use alloy::sol_types::SolEventInterface;
 use anyhow::{anyhow, Result};
+use fhevm_engine_common::telemetry;
 use futures_util::stream::StreamExt;
 use sqlx::types::Uuid;
 
@@ -111,6 +112,10 @@ pub struct Args {
         help = "Maximum duration in blocks to detect reorgs"
     )]
     pub reorg_maximum_duration_in_blocks: u64,
+
+    /// service name in OTLP traces
+    #[arg(long, default_value = "host-listener")]
+    pub service_name: String,
 }
 
 // TODO: to merge with Levent works
@@ -920,6 +925,12 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             })?,
         )
     };
+
+    if !args.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
+    }
 
     let mut log_iter = InfiniteLogIter::new(&args);
     let chain_id = log_iter.get_chain_id().await?;

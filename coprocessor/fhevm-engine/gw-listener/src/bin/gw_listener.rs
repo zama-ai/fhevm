@@ -3,6 +3,7 @@ use std::time::Duration;
 use alloy::providers::{ProviderBuilder, WsConnect};
 use alloy::{primitives::Address, transports::http::reqwest::Url};
 use clap::Parser;
+use fhevm_engine_common::telemetry;
 use gw_listener::aws_s3::AwsS3Client;
 use gw_listener::chain_id_from_env;
 use gw_listener::gw_listener::GatewayListener;
@@ -67,6 +68,10 @@ struct Conf {
 
     #[arg(long, default_value_t = 100)]
     get_logs_block_batch_size: u64,
+
+    /// gw-listener service name in OTLP traces
+    #[arg(long, default_value = "gw-listener")]
+    pub service_name: String,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -95,6 +100,12 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     info!(conf = ?conf, "Starting gw_listener");
+
+    if !conf.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
+    }
 
     let database_url = conf
         .database_url
