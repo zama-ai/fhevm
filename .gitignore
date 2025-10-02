@@ -84,3 +84,4 @@ apps/back/config/compose.yaml
 *rustc-ice*
 
 .obsidian
+.vscode
