@@ -32,9 +32,9 @@ async function upgradeCurrentToNew(
   if (verifyContract) {
     console.log('Waiting 2 minutes before contract verification... Please wait...');
     await new Promise((resolve) => setTimeout(resolve, 2 * 60 * 1000));
-    const implementationACLAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
     await run('verify:verify', {
-      address: implementationACLAddress,
+      address: implementationAddress,
       constructorArguments: [],
     });
   }

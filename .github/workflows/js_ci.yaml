@@ -50,4 +50,4 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Test
-        run: pnpm test
+        run: cp apps/oracle/.env.example apps/oracle/.env && pnpm test

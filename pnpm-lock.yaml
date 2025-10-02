@@ -212,12 +212,25 @@ importers:
       '@openzeppelin/contracts-upgradeable':
         specifier: 5.1.0
         version: 5.1.0(@openzeppelin/contracts@5.1.0)
+    devDependencies:
+      '@nomicfoundation/hardhat-toolbox':
+        specifier: ^5.0.0
+        version: 5.0.0(37a4536c3391b2d574de8a34ec1cd4a5)
       '@openzeppelin/foundry-upgrades':
         specifier: ^0.3.8
         version: 0.3.8(@openzeppelin/defender-deploy-client-cli@0.0.1-alpha.10)(@openzeppelin/upgrades-core@1.44.1)
       '@openzeppelin/hardhat-upgrades':
         specifier: 3.5.0
         version: 3.5.0(@nomicfoundation/hardhat-ethers@3.1.0(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.6.2))(typescript@5.6.2)))(@nomicfoundation/hardhat-verify@2.1.1(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.6.2))(typescript@5.6.2)))(ethers@6.15.0)(hardhat@2.26.3(ts-node@10.9.2(@types/node@24.5.2)(typescript@5.6.2))(typescript@5.6.2))
+      '@trivago/prettier-plugin-sort-imports':
+        specifier: ^4.3.0
+        version: 4.3.0(prettier@3.6.2)
+      eslint:
+        specifier: ^8.57.1
+        version: 8.57.1
+      eslint-config-prettier:
+        specifier: ^8.10.2
+        version: 8.10.2(eslint@8.57.1)
       ethers:
         specifier: ~6.15.0
         version: 6.15.0
@@ -230,19 +243,6 @@ importers:
       hardhat-ignore-warnings:
         specifier: ^0.2.12
         version: 0.2.12
-    devDependencies:
-      '@nomicfoundation/hardhat-toolbox':
-        specifier: ^5.0.0
-        version: 5.0.0(37a4536c3391b2d574de8a34ec1cd4a5)
-      '@trivago/prettier-plugin-sort-imports':
-        specifier: ^4.3.0
-        version: 4.3.0(prettier@3.6.2)
-      eslint:
-        specifier: ^8.57.1
-        version: 8.57.1
-      eslint-config-prettier:
-        specifier: ^8.10.2
-        version: 8.10.2(eslint@8.57.1)
       prettier:
         specifier: ^3.6.2
         version: 3.6.2

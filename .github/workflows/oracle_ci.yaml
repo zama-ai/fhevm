@@ -32,4 +32,4 @@ jobs:
       - name: Test
         run: |
           pnpm hardhat compile
-          pnpm hardhat test --network hardhat
+          cp .env.example .env && pnpm hardhat test --network hardhat

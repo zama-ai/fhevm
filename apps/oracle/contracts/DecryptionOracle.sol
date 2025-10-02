@@ -76,12 +76,9 @@ contract DecryptionOracle is UUPSUpgradeable, Ownable2StepUpgradeable {
         _disableInitializers();
     }
 
-    /**
-     * @notice  Re-initializes the contract.
-     */
-    /// @custom:oz-upgrades-validate-as-initializer
-    function reinitialize() public virtual reinitializer(2) {
-        __Ownable_init(owner());
+    /// @notice Initializes the contract setting `initialOwner` as the initial owner
+    function initialize(address initialOwner) external initializer {
+        __Ownable_init(initialOwner);
     }
 
     /** @notice Requests the decryption of n ciphertexts `ctsHandles` with the result returned in a callback.
