@@ -25,7 +25,7 @@
   "author": "",
   "license": "BSD-3-Clause",
   "devDependencies": {
-    "@fhevm/sdk": "^0.7.0-21",
+    "@zama-fhe/relayer-sdk": "^0.3.0-2",
     "@nomicfoundation/hardhat-toolbox": "5.0.0",
     "@nomicfoundation/solidity-analyzer": "0.1.2",
     "@openzeppelin/contracts-upgradeable": "5.1.0",
