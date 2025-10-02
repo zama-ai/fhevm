@@ -351,7 +351,7 @@ where
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
             let transaction_id = row.transaction_id.clone();
-            let t = telemetry::tracer("prepare_add_ciphertext", &transaction_id); // TODO: maybe move to the task
+            let t = telemetry::tracer("prepare_add_ciphertext", &transaction_id);
 
             let tenant_info = match query_tenant_info(&self.db_pool, row.tenant_id).await {
                 Ok(res) => res,

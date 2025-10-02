@@ -199,6 +199,7 @@ pub(crate) static TXN_METRICS_MANAGER: LazyLock<TransactionMetrics> =
 pub struct TransactionMetrics {
     created_txns_cache: Arc<RwLock<lru::LruCache<Vec<u8>, ()>>>,
     completed_txns_cache: Arc<RwLock<lru::LruCache<Vec<u8>, ()>>>,
+    last_cleanup: RwLock<std::time::Instant>,
 }
 
 impl TransactionMetrics {
@@ -206,6 +207,7 @@ impl TransactionMetrics {
         Self {
             created_txns_cache: Arc::new(RwLock::new(lru::LruCache::new(capacity))),
             completed_txns_cache: Arc::new(RwLock::new(lru::LruCache::new(capacity))),
+            last_cleanup: RwLock::new(std::time::Instant::now()),
         }
     }
 
@@ -257,18 +259,40 @@ impl TransactionMetrics {
         .execute(pool)
         .await?;
 
-        // Do some GC
-        sqlx::query!(
-            r#"
-                DELETE FROM transactions
-                WHERE chain_id = $1 AND created_at < NOW() - INTERVAL '1 day'
-            "#,
-            chain_id
-        )
-        .execute(pool)
-        .await?;
+        // clean up old transactions on regular basis
+        self.clean_up_transactions(pool).await;
 
         Ok(true)
+    }
+
+    async fn clean_up_transactions(&self, pool: &sqlx::PgPool) {
+        let last_cleanup = self.last_cleanup.read().await.elapsed().as_secs();
+        if last_cleanup < 60 * 60 {
+            return;
+        }
+        let mut last_cleanup_write = self.last_cleanup.write().await;
+        info!("Cleaning up old transactions");
+
+        // Clean up old transactions
+        // Completed transactions older than 1 day and incomplete transactions older than 7 days
+        if let Err(err) = sqlx::query!(
+            r#"
+                DELETE FROM transactions
+                WHERE (completed_at IS NOT NULL
+                  AND created_at < NOW() - INTERVAL '1 day') OR (completed_at IS NULL
+                  AND created_at < NOW() - INTERVAL '7 day')
+            "#,
+        )
+        .execute(pool)
+        .await
+        {
+            warn!(%err, "Failed to clean up old transactions");
+            return;
+        }
+
+        info!("Cleaning up old transactions is done");
+
+        *last_cleanup_write = std::time::Instant::now();
     }
 
     /// Marks a transaction as completed
