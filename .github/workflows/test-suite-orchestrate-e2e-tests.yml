@@ -213,15 +213,7 @@ jobs:
             
             console.log(`📋 Parsed built images:`, builtImages);
 
-            // Initialize the 7 inputs that match test-suite-e2e-tests.yml exactly:
-            // 1. coprocessor (array)
-            // 2. gateway (string) 
-            // 3. host (string)
-            // 4. connector (array)
-            // 5. test-suite (string)
-            // 6. relayer (string)
-            // 7. kms-core (string)
-            
+            // Initialize the 7 inputs that match test-suite-e2e-tests.yml exactly
             const inputs = {};
             
             // Map built images to the exact 7-input structure from test-suite-e2e-tests.yml
@@ -241,49 +233,52 @@ jobs:
               'kms_core_version': { type: 'kms-core' }
             };
 
-            // Initialize arrays
+            // Initialize arrays - but only add to inputs if we have actual built images
             const coprocessorArray = new Array(7).fill(null);
             const connectorArray = new Array(4).fill(null);
-            let gateway = '';
-            let host = '';
-            let testSuite = '';
-            let relayer = '';
-            let kmsCore = '';
+            let hasCoprocessorBuilds = false;
+            let hasConnectorBuilds = false;
+            let hasGatewayBuild = false;
+            let hasHostBuild = false;
+            let hasTestSuiteBuild = false;
+            let hasRelayerBuild = false;
+            let hasKmsCoreBuild = false;
 
             // Map built images to components
-            let hasVersions = false;
             for (const builtImage of builtImages) {
               const mapping = componentMapping[builtImage];
               if (mapping) {
-                hasVersions = true;
                 console.log(`✅ Processing ${builtImage} → ${mapping.type}${mapping.index !== undefined ? `[${mapping.index}]` : ''} = ${imageTag}`);
                 
                 switch (mapping.type) {
                   case 'coprocessor':
                     coprocessorArray[mapping.index] = imageTag;
+                    hasCoprocessorBuilds = true;
                     break;
                   case 'gateway':
-                    gateway = imageTag;
+                    hasGatewayBuild = true;
                     break;
                   case 'host':
-                    host = imageTag;
+                    hasHostBuild = true;
                     break;
                   case 'connector':
                     if (mapping.index === 'all') {
                       // Set all 4 connector components: [db_migration, gw_listener, tx_sender, kms_worker]
                       connectorArray.fill(imageTag);
+                      hasConnectorBuilds = true;
                     } else {
                       connectorArray[mapping.index] = imageTag;
+                      hasConnectorBuilds = true;
                     }
                     break;
                   case 'test-suite':
-                    testSuite = imageTag;
+                    hasTestSuiteBuild = true;
                     break;
                   case 'relayer':
-                    relayer = imageTag;
+                    hasRelayerBuild = true;
                     break;
                   case 'kms-core':
-                    kmsCore = imageTag;
+                    hasKmsCoreBuild = true;
                     break;
                 }
               } else {
@@ -291,48 +286,48 @@ jobs:
               }
             }
 
-            // Build the exact 7 inputs matching test-suite-e2e-tests.yml workflow_dispatch inputs:
+            // Only add inputs for components that were actually built
             
-            // 1. coprocessor: array of 7 elements [db_migration, gw_listener, host_listener, tx_sender, tfhe_worker, sns_worker, zkproof_worker]
-            if (coprocessorArray.some(v => v !== null)) {
+            // 1. coprocessor: array of 7 elements - only if at least one coprocessor component was built
+            if (hasCoprocessorBuilds) {
               inputs.coprocessor = JSON.stringify(coprocessorArray);
               console.log(`📝 Input 1 - coprocessor: ${inputs.coprocessor}`);
             }
             
-            // 2. gateway: string
-            if (gateway) {
-              inputs.gateway = gateway;
-              console.log(`📝 Input 2 - gateway: ${gateway}`);
+            // 2. gateway: string - only if gateway was built
+            if (hasGatewayBuild) {
+              inputs.gateway = imageTag;
+              console.log(`📝 Input 2 - gateway: ${imageTag}`);
             }
             
-            // 3. host: string
-            if (host) {
-              inputs.host = host;
-              console.log(`📝 Input 3 - host: ${host}`);
+            // 3. host: string - only if host was built
+            if (hasHostBuild) {
+              inputs.host = imageTag;
+              console.log(`📝 Input 3 - host: ${imageTag}`);
             }
             
-            // 4. connector: array of 4 elements [db_migration, gw_listener, tx_sender, kms_worker]
-            if (connectorArray.some(v => v !== null)) {
+            // 4. connector: array of 4 elements - only if at least one connector component was built
+            if (hasConnectorBuilds) {
               inputs.connector = JSON.stringify(connectorArray);
               console.log(`📝 Input 4 - connector: ${inputs.connector}`);
             }
             
-            // 5. test-suite: string
-            if (testSuite) {
-              inputs['test-suite'] = testSuite;
-              console.log(`📝 Input 5 - test-suite: ${testSuite}`);
+            // 5. test-suite: string - only if test-suite was built
+            if (hasTestSuiteBuild) {
+              inputs['test-suite'] = imageTag;
+              console.log(`📝 Input 5 - test-suite: ${imageTag}`);
             }
             
-            // 6. relayer: string
-            if (relayer) {
-              inputs.relayer = relayer;
-              console.log(`📝 Input 6 - relayer: ${relayer}`);
+            // 6. relayer: string - only if relayer was built
+            if (hasRelayerBuild) {
+              inputs.relayer = imageTag;
+              console.log(`📝 Input 6 - relayer: ${imageTag}`);
             }
             
-            // 7. kms-core: string
-            if (kmsCore) {
-              inputs['kms-core'] = kmsCore;
-              console.log(`📝 Input 7 - kms-core: ${kmsCore}`);
+            // 7. kms-core: string - only if kms-core was built
+            if (hasKmsCoreBuild) {
+              inputs['kms-core'] = imageTag;
+              console.log(`📝 Input 7 - kms-core: ${imageTag}`);
             }
 
             // Determine target ref
@@ -346,11 +341,11 @@ jobs:
             console.log(`🚀 Dispatching E2E tests on ref: ${ref}`);
             console.log(`📝 Final inputs (${Object.keys(inputs).length}/7 possible):`, inputs);
 
-            // Always dispatch E2E tests, even if no built images (will use defaults)
+            // Always dispatch E2E tests
             if (Object.keys(inputs).length === 0) {
-              console.log('🔍 No built images found, dispatching E2E tests with default versions');
+              console.log('🔍 No built images found, dispatching E2E tests with all fhevm-cli defaults');
             } else {
-              console.log(`📊 Dispatching with ${Object.keys(inputs).length} component overrides`);
+              console.log(`📊 Dispatching with ${Object.keys(inputs).length} component overrides, others will use fhevm-cli defaults`);
             }
 
             try {
@@ -370,8 +365,9 @@ jobs:
                 Object.entries(inputs).forEach(([key, value]) => {
                   console.log(`   ${key}: ${value}`);
                 });
+                console.log('📋 All other components will use fhevm-cli defaults');
               } else {
-                console.log('📋 E2E tests will use all default versions from fhevm-cli');
+                console.log('📋 E2E tests will use all fhevm-cli defaults');
               }
               
             } catch (error) {

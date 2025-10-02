@@ -185,41 +185,41 @@ jobs:
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         env:
-          # Coprocessor components
-          DB_MIGRATION_VERSION: ${{ env.DB_MIGRATION_VERSION_OVERRIDE || env.DB_MIGRATION_VERSION }}
-          GW_LISTENER_VERSION: ${{ env.GW_LISTENER_VERSION_OVERRIDE || env.GW_LISTENER_VERSION }}
-          HOST_LISTENER_VERSION: ${{ env.HOST_LISTENER_VERSION_OVERRIDE || env.HOST_LISTENER_VERSION }}
-          TX_SENDER_VERSION: ${{ env.TX_SENDER_VERSION_OVERRIDE || env.TX_SENDER_VERSION }}
-          TFHE_WORKER_VERSION: ${{ env.TFHE_WORKER_VERSION_OVERRIDE || env.TFHE_WORKER_VERSION }}
-          SNS_WORKER_VERSION: ${{ env.SNS_WORKER_VERSION_OVERRIDE || env.SNS_WORKER_VERSION }}
-          ZKPROOF_WORKER_VERSION: ${{ env.ZKPROOF_WORKER_VERSION_OVERRIDE || env.ZKPROOF_WORKER_VERSION }}
+          # Coprocessor components - only set if overridden
+          DB_MIGRATION_VERSION: ${{ env.DB_MIGRATION_VERSION_OVERRIDE }}
+          GW_LISTENER_VERSION: ${{ env.GW_LISTENER_VERSION_OVERRIDE }}
+          HOST_LISTENER_VERSION: ${{ env.HOST_LISTENER_VERSION_OVERRIDE }}
+          TX_SENDER_VERSION: ${{ env.TX_SENDER_VERSION_OVERRIDE }}
+          TFHE_WORKER_VERSION: ${{ env.TFHE_WORKER_VERSION_OVERRIDE }}
+          SNS_WORKER_VERSION: ${{ env.SNS_WORKER_VERSION_OVERRIDE }}
+          ZKPROOF_WORKER_VERSION: ${{ env.ZKPROOF_WORKER_VERSION_OVERRIDE }}
           
-          # Gateway component
-          GATEWAY_VERSION: ${{ env.GATEWAY_VERSION_OVERRIDE || env.GATEWAY_VERSION }}
+          # Gateway component - only set if overridden
+          GATEWAY_VERSION: ${{ env.GATEWAY_VERSION_OVERRIDE }}
           
-          # Host component
-          HOST_VERSION: ${{ env.HOST_VERSION_OVERRIDE || env.HOST_VERSION }}
+          # Host component - only set if overridden
+          HOST_VERSION: ${{ env.HOST_VERSION_OVERRIDE }}
           
-          # Connector components
-          CONNECTOR_DB_MIGRATION_VERSION: ${{ env.CONNECTOR_DB_MIGRATION_VERSION_OVERRIDE || env.CONNECTOR_DB_MIGRATION_VERSION }}
-          CONNECTOR_GW_LISTENER_VERSION: ${{ env.CONNECTOR_GW_LISTENER_VERSION_OVERRIDE || env.CONNECTOR_GW_LISTENER_VERSION }}
-          CONNECTOR_TX_SENDER_VERSION: ${{ env.CONNECTOR_TX_SENDER_VERSION_OVERRIDE || env.CONNECTOR_TX_SENDER_VERSION }}
-          CONNECTOR_KMS_WORKER_VERSION: ${{ env.CONNECTOR_KMS_WORKER_VERSION_OVERRIDE || env.CONNECTOR_KMS_WORKER_VERSION }}
+          # Connector components - only set if overridden
+          CONNECTOR_DB_MIGRATION_VERSION: ${{ env.CONNECTOR_DB_MIGRATION_VERSION_OVERRIDE }}
+          CONNECTOR_GW_LISTENER_VERSION: ${{ env.CONNECTOR_GW_LISTENER_VERSION_OVERRIDE }}
+          CONNECTOR_TX_SENDER_VERSION: ${{ env.CONNECTOR_TX_SENDER_VERSION_OVERRIDE }}
+          CONNECTOR_KMS_WORKER_VERSION: ${{ env.CONNECTOR_KMS_WORKER_VERSION_OVERRIDE }}
         run: |
           echo "🚀 Deploying fhevm stack with versions:"
-          echo "  Coprocessor DB Migration: ${DB_MIGRATION_VERSION:-default}"
-          echo "  Coprocessor GW Listener: ${GW_LISTENER_VERSION:-default}"
-          echo "  Coprocessor Host Listener: ${HOST_LISTENER_VERSION:-default}"
-          echo "  Coprocessor TX Sender: ${TX_SENDER_VERSION:-default}"
-          echo "  Coprocessor TFHE Worker: ${TFHE_WORKER_VERSION:-default}"
-          echo "  Coprocessor SNS Worker: ${SNS_WORKER_VERSION:-default}"
-          echo "  Coprocessor ZKProof Worker: ${ZKPROOF_WORKER_VERSION:-default}"
-          echo "  Gateway: ${GATEWAY_VERSION:-default}"
-          echo "  Host: ${HOST_VERSION:-default}"
-          echo "  Connector DB Migration: ${CONNECTOR_DB_MIGRATION_VERSION:-default}"
-          echo "  Connector GW Listener: ${CONNECTOR_GW_LISTENER_VERSION:-default}"
-          echo "  Connector TX Sender: ${CONNECTOR_TX_SENDER_VERSION:-default}"
-          echo "  Connector KMS Worker: ${CONNECTOR_KMS_WORKER_VERSION:-default}"
+          echo "  Coprocessor DB Migration: ${DB_MIGRATION_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor GW Listener: ${GW_LISTENER_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor Host Listener: ${HOST_LISTENER_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor TX Sender: ${TX_SENDER_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor TFHE Worker: ${TFHE_WORKER_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor SNS Worker: ${SNS_WORKER_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor ZKProof Worker: ${ZKPROOF_WORKER_VERSION:-fhevm-cli default}"
+          echo "  Gateway: ${GATEWAY_VERSION:-fhevm-cli default}"
+          echo "  Host: ${HOST_VERSION:-fhevm-cli default}"
+          echo "  Connector DB Migration: ${CONNECTOR_DB_MIGRATION_VERSION:-fhevm-cli default}"
+          echo "  Connector GW Listener: ${CONNECTOR_GW_LISTENER_VERSION:-fhevm-cli default}"
+          echo "  Connector TX Sender: ${CONNECTOR_TX_SENDER_VERSION:-fhevm-cli default}"
+          echo "  Connector KMS Worker: ${CONNECTOR_KMS_WORKER_VERSION:-fhevm-cli default}"
           
           ./fhevm-cli deploy
 
