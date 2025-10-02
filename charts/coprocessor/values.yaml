@@ -158,8 +158,8 @@ hostListener:
     ### Catchup parameters (optional)
     # - --catchup-margin
     # - --catchup-paging
-    # - --start-at-block # To be used to catch up from a specific block
-    # - --end-at-block   # To be used to stop at a specific block
+    # - --start-at-block  # To be used to catch up from a specific block
+    # - --end-at-block    # To be used to stop at a specific block
 
   # Service ports configuration
   ports:
@@ -328,7 +328,7 @@ tfheWorker:
   args:
     - --database-url=$(DATABASE_URL)
     - --run-bg-worker=true
-    - --worker-polling-interval-ms=60000
+    - --worker-polling-interval-ms=10000
     - --work-items-batch-size=100  # scheduling changed
     - --dependence-chains-per-batch=100
     - --tenant-key-cache-size=32
@@ -336,7 +336,7 @@ tfheWorker:
     - --tokio-threads=16  # scheduling changed
     - --pg-pool-max-connections=10
     - --metrics-addr=0.0.0.0:9100
-    - --service-name="tfhe-worker"  # tfhe-worker service name in OTLP traces
+    - --service-name=tfhe-worker  # tfhe-worker service name in OTLP traces
     - --log-level=INFO
     # Should not be used (unsafe - testing only, keep 0/false values except CI)
     - --run-server=false
@@ -456,8 +456,11 @@ zkProofWorker:
     - --pg-notify-channel="event_zkpok_computed"
     - --pg-polling-interval=5
     - --pg-pool-connections=5
+    - --pg-timeout=15s
     - --worker-thread-count=8
-    - --service-name=coprocessor-zkpok-worker
+    - --service-name=zkproof-worker
+    - --log-level=INFO
+    # - --pg-auto-explain-with-min-duration="30s"
 
   # Service ports configuration
   ports:
@@ -571,6 +574,7 @@ snsWorker:
     - --work-items-batch-size=20
     - --pg-polling-interval=1
     - --pg-pool-connections=10
+    - --pg-timeout=15s
     - --bucket-name-ct64=$(S3_BUCKET_NAME)
     - --bucket-name-ct128=$(S3_BUCKET_NAME)
     - --s3-max-concurrent-uploads=100
@@ -579,6 +583,16 @@ snsWorker:
     - --s3-max-retries-timeout=120s
     - --s3-recheck-duration=2s
     - --s3-regular-recheck-duration=120s
+    - --gc-batch-size=80
+    - --cleanup-interval=120s
+    - --liveness-threshold=70s
+    - --lifo=false
+    - --enable-compssion=true
+    - --schedule-policy=rayon_parallel
+    - --service-name=sns-worker
+    - --log-level=INFO
+    # - --pg-auto-explain-with-min-duration="30s"
+    # - --keys-file-path
 
   # Service ports configuration
   ports:
