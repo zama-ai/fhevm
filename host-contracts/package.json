@@ -1,6 +1,6 @@
 {
   "name": "@fhevm/host-contracts",
-  "version": "0.9.0-0",
+  "version": "0.9.0-1",
   "description": "fhevm backend contracts",
   "repository": {
     "type": "git",
