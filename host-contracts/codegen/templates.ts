@@ -1131,7 +1131,7 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
         uint256 msgValue
     ) internal returns (uint256 requestID) {
       requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, msgValue);
-      saveRequestedHandles(requestID, ctsHandles);
+      _saveRequestedHandles(requestID, ctsHandles);
     }
 
     /**
@@ -1151,7 +1151,7 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
     /**
      * @dev Private low-level function used to link in storage an array of handles to its associated requestID.
      */
-    function saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
+    function _saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
       DecryptionRequests storage $ = Impl.getDecryptionRequests();
       if ($.requestedHandles[requestID].length != 0) {
           revert HandlesAlreadySavedForRequestID();
