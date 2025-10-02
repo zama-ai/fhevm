@@ -65,7 +65,7 @@ describe('InputVerifier', function () {
         .withArgs(fakeOwner);
     });
 
-    it('Should revert because the context ID is zero', async function () {
+    it('Should revert because the context ID is null', async function () {
       const nullContextId = 0;
       await expect(
         inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(nullContextId, []),
