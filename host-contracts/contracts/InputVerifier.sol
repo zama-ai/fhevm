@@ -77,8 +77,8 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     /// @notice Returned when the context ID is not marked as active or suspended.
     error InvalidContextId(uint256 contextId);
 
-    /// @notice Returned when the context ID is already used (i.e., not in the Unused state).
-    error ContextAlreadyUsed(uint256 contextId);
+    /// @notice Returned when the context ID has already been initialized (not in the NotInitialized state).
+    error ContextAlreadyInitialized(uint256 contextId);
 
     /// @notice The state of a coprocessor context ID.
     enum CoprocessorContextState {
@@ -404,7 +404,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
 
         // Check that the new context ID is not already used.
         if ($.coprocessorContextStates[newContextId] != CoprocessorContextState.NotInitialized) {
-            revert ContextAlreadyUsed(newContextId);
+            revert ContextAlreadyInitialized(newContextId);
         }
 
         // Suspend the current active context.

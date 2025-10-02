@@ -85,7 +85,7 @@ describe('InputVerifier', function () {
       await expect(
         inputVerifier.connect(deployer).addNewContextAndSuspendOldOne(alreadyUsedContextId, newContextSigners),
       )
-        .to.be.revertedWithCustomError(inputVerifier, 'ContextAlreadyUsed')
+        .to.be.revertedWithCustomError(inputVerifier, 'ContextAlreadyInitialized')
         .withArgs(alreadyUsedContextId);
     });
 
