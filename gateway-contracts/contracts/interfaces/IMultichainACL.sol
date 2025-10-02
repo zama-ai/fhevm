@@ -96,20 +96,20 @@ interface IMultichainACL {
     ) external;
 
     /**
-     * @notice Indicate if the ciphertext handle is allowed for public decryption.
+     * @notice Indicates if the ciphertext handle is allowed for public decryption.
      * @param ctHandle The handle of the ciphertext.
      */
     function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
 
     /**
-     * @notice Indicate if the account is allowed to use the ciphertext handle.
+     * @notice Indicates if the account is allowed to use the ciphertext handle.
      * @param ctHandle The handle of the ciphertext.
      * @param accountAddress The address of the account.
      */
     function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view returns (bool);
 
     /**
-     * @notice Indicate if the delegator has delegated access to the delegate and contracts addresses.
+     * @notice Indicates if the delegator has delegated access to the delegate and contracts addresses.
      * @param chainId The chain ID of the registered host chain where the contracts are deployed.
      * @param delegationAccounts The delegator and the delegated addresses.
      * @param contractAddresses The delegated contract addresses.

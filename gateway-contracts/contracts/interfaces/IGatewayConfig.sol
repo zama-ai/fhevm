@@ -182,43 +182,43 @@ interface IGatewayConfig {
     function unpauseAllGatewayContracts() external;
 
     /**
-     * @notice Indicate if an address is a registered KMS transaction sender.
+     * @notice Indicates if an address is a registered KMS transaction sender.
      * @param kmsTxSenderAddress The address to check.
      */
     function isKmsTxSender(address kmsTxSenderAddress) external view returns (bool);
 
     /**
-     * @notice Indicate if an address is a registered KMS signer.
+     * @notice Indicates if an address is a registered KMS signer.
      * @param signerAddress The address to check.
      */
     function isKmsSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Indicate if an address is a registered coprocessor transaction sender.
+     * @notice Indicates if an address is a registered coprocessor transaction sender.
      * @param coprocessorTxSenderAddress The address to check.
      */
     function isCoprocessorTxSender(address coprocessorTxSenderAddress) external view returns (bool);
 
     /**
-     * @notice Indicate if an address is a registered coprocessor signer.
+     * @notice Indicates if an address is a registered coprocessor signer.
      * @param signerAddress The address to check.
      */
     function isCoprocessorSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Indicate if an address is a registered custodian transaction sender.
+     * @notice Indicates if an address is a registered custodian transaction sender.
      * @param txSenderAddress The address to check.
      */
     function isCustodianTxSender(address txSenderAddress) external view returns (bool);
 
     /**
-     * @notice Indicate if an address is a registered custodian signer.
+     * @notice Indicates if an address is a registered custodian signer.
      * @param signerAddress The address to check.
      */
     function isCustodianSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Indicate if a chain ID corresponds to a registered host chain.
+     * @notice Indicates if a chain ID corresponds to a registered host chain.
      * @param chainId The chain ID to check.
      */
     function isHostChainRegistered(uint256 chainId) external view returns (bool);

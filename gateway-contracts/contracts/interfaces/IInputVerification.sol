@@ -102,13 +102,13 @@ interface IInputVerification {
     function rejectProofResponse(uint256 zkProofId, bytes calldata extraData) external;
 
     /**
-     * @notice Indicate if a ZK Proof has been verified.
+     * @notice Indicates if a ZK Proof has been verified.
      * @param zkProofId The ID of the ZK Proof.
      */
     function isProofVerified(uint256 zkProofId) external view returns (bool);
 
     /**
-     * @notice Indicate if a ZK Proof has been rejected.
+     * @notice Indicates if a ZK Proof has been rejected.
      * @param zkProofId The ID of the ZK Proof.
      */
     function isProofRejected(uint256 zkProofId) external view returns (bool);

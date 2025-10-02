@@ -314,7 +314,7 @@ interface IDecryption {
     ) external view returns (bool);
 
     /**
-     * @notice Indicate if a (public, user, delegated user) decryption is done.
+     * @notice Indicates if a (public, user, delegated user) decryption is done.
      * @param decryptionId The decryption request ID.
      */
     function isDecryptionDone(uint256 decryptionId) external view returns (bool);

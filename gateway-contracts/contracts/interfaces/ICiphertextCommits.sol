@@ -69,7 +69,7 @@ interface ICiphertextCommits {
     ) external view returns (SnsCiphertextMaterial[] memory);
 
     /**
-     * @notice Indicate if the ciphertext material represented by the handle has been added in the contract.
+     * @notice Indicates if the ciphertext material represented by the handle has been added in the contract.
      * @param ctHandle The handle to check.
      */
     function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool);
