@@ -107,6 +107,10 @@ task('task:deployEmptyUUPSProxies').setAction(async function (
   await run('compile:specific', { contract: 'fhevmTemp/contracts/emptyProxyACL' });
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
+
+  // Ensure the addresses directory exists.
+  fs.mkdirSync(path.join(__dirname, '../fhevmTemp/addresses'), { recursive: true });
+
   const aclAddress = await deployEmptyUUPSForACL(ethers, upgrades, deployer);
   await run('task:setACLAddress', { address: aclAddress });
 
