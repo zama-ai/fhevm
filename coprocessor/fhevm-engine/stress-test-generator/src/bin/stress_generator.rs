@@ -36,7 +36,7 @@ use stress_test_generator::{
 };
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() {
@@ -513,15 +513,23 @@ async fn generate_transaction(
         Some(dep) => Some(dep),
         None => match inputs.first().and_then(|v| *v) {
             Some(dep) => Some(dep),
-            None => return Err("inputs[0] is None and no dependence1 provided".into()),
+            None => {
+                warn!("inputs[0] is None and no dependence1 provided");
+                None
+            }
         },
     };
+
+    info!(target: "tool", scenario = ?scenario, inputs = ?inputs, "Inputs vector" );
 
     let dependence2 = match dependence2 {
         Some(dep) => Some(dep),
         None => match inputs.get(1).and_then(|v| *v) {
             Some(dep) => Some(dep),
-            None => return Err("inputs[1] is None and no dependence2 provided".into()),
+            None => {
+                warn!("inputs[1] is None and no dependence2 provided");
+                None
+            }
         },
     };
 
