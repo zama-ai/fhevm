@@ -97,10 +97,14 @@ interface IDecryption {
      */
     event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
 
-    /// @notice Error indicating that the input list of handles is empty.
+    /**
+     * @notice Error indicating that the input list of handles is empty.
+     */
     error EmptyCtHandles();
 
-    /// @notice Error indicating that the input list of ctHandleContractPairs is empty.
+    /**
+     * @notice Error indicating that the input list of ctHandleContractPairs is empty.
+     */
     error EmptyCtHandleContractPairs();
 
     /**
@@ -136,7 +140,9 @@ interface IDecryption {
      */
     error ContractAddressesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
 
-    /// @notice Error indicating that the durationDays of a user decryption request is 0.
+    /**
+     * @notice Error indicating that the durationDays of a user decryption request is 0.
+     */
     error InvalidNullDurationDays();
 
     /**

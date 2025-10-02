@@ -10,7 +10,9 @@ import { HandleOps } from "../libraries/HandleOps.sol";
  * @dev Contract that provides checks on top of the GatewayConfig contract
  */
 abstract contract GatewayConfigChecks {
-    /// @notice The address of the GatewayConfig contract
+    /**
+     * @notice The address of the GatewayConfig contract.
+     */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /**
@@ -43,7 +45,7 @@ abstract contract GatewayConfigChecks {
      */
     error NotCustodianTxSender(address txSenderAddress);
 
-    /*
+    /**
      * @notice Error emitted when an address is not a custodian signer.
      * @param signerAddress The address that is not a custodian signer.
      */
@@ -96,12 +98,20 @@ abstract contract GatewayConfigChecks {
         _;
     }
 
+    /**
+     * @notice Checks if the address is a KMS signer.
+     * @param signerAddress The address to check.
+     */
     function _checkIsKmsSigner(address signerAddress) internal view {
         if (!GATEWAY_CONFIG.isKmsSigner(signerAddress)) {
             revert NotKmsSigner(signerAddress);
         }
     }
 
+    /**
+     * @notice Checks if the address is a coprocessor signer.
+     * @param signerAddress The address to check.
+     */
     function _checkIsCoprocessorSigner(address signerAddress) internal view {
         if (!GATEWAY_CONFIG.isCoprocessorSigner(signerAddress)) {
             revert NotCoprocessorSigner(signerAddress);

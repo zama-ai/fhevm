@@ -58,7 +58,9 @@ interface IMultichainACL {
         address txSender
     );
 
-    /// @notice Error indicating that the contract addresses list is empty.
+    /**
+     * @notice Error indicating that the contract addresses list is empty.
+     */
     error EmptyContractAddresses();
 
     /**

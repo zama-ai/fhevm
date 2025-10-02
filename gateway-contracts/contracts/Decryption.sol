@@ -24,8 +24,10 @@ import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { SnsCiphertextMaterial, CtHandleContractPair, DelegationAccounts } from "./shared/Structs.sol";
 import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
-/// @title Decryption contract
-/// @dev See {IDecryption}.
+/**
+ * @title Decryption contract
+ * @notice See {IDecryption}.
+ */
 contract Decryption is
     IDecryption,
     EIP712Upgradeable,
@@ -35,9 +37,11 @@ contract Decryption is
     MultichainACLChecks,
     Pausable
 {
-    /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
-    /// @dev The name of this struct is not relevant for the signature validation, only the one defined
-    /// @dev EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
+    /**
+     * @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
+     * @dev The name of this struct is not relevant for the signature validation, only the one defined
+     * EIP712_PUBLIC_DECRYPT_TYPE is, but we keep it the same for clarity.
+     */
     struct PublicDecryptVerification {
         /// @notice The handles of the ciphertexts that have been decrypted.
         bytes32[] ctHandles;
@@ -47,9 +51,11 @@ contract Decryption is
         bytes extraData;
     }
 
-    /// @notice The typed data structure for the EIP712 signature to validate in user decryption requests.
-    /// @dev The name of this struct is not relevant for the signature validation, only the one defined
-    /// @dev EIP712_USER_DECRYPT_REQUEST_TYPE is, but we keep it the same for clarity.
+    /**
+     * @notice The typed data structure for the EIP712 signature to validate in user decryption requests.
+     * @dev The name of this struct is not relevant for the signature validation, only the one defined
+     * EIP712_USER_DECRYPT_REQUEST_TYPE is, but we keep it the same for clarity.
+     */
     struct UserDecryptRequestVerification {
         /// @notice The user's public key to be used for reencryption.
         bytes publicKey;
@@ -63,9 +69,11 @@ contract Decryption is
         bytes extraData;
     }
 
-    /// @notice The typed data structure for the EIP712 signature to validate in user decryption responses.
-    /// @dev The name of this struct is not relevant for the signature validation, only the one defined
-    /// @dev EIP712_USER_DECRYPT_RESPONSE_TYPE is, but we keep it the same for clarity.
+    /**
+     * @notice The typed data structure for the EIP712 signature to validate in user decryption responses.
+     * @dev The name of this struct is not relevant for the signature validation, only the one defined
+     * EIP712_USER_DECRYPT_RESPONSE_TYPE is, but we keep it the same for clarity.
+     */
     struct UserDecryptResponseVerification {
         /// @notice The user's public key used for the reencryption.
         bytes publicKey;
@@ -77,9 +85,11 @@ contract Decryption is
         bytes extraData;
     }
 
-    /// @notice The typed data structure for the EIP712 signature to validate in user decryption with delegation requests.
-    /// @dev The name of this struct is not relevant for the signature validation, only the one defined
-    /// @dev EIP712_USER_DECRYPT_DELEGATION_REQUEST_TYPE is, but we keep it the same for clarity.
+    /**
+     * @notice The typed data structure for the EIP712 signature to validate in user decryption with delegation requests.
+     * @dev The name of this struct is not relevant for the signature validation, only the one defined
+     * EIP712_USER_DECRYPT_DELEGATION_REQUEST_TYPE is, but we keep it the same for clarity.
+     */
     struct DelegatedUserDecryptRequestVerification {
         /// @notice The user's public key to be used for reencryption.
         bytes publicKey;
@@ -95,7 +105,9 @@ contract Decryption is
         bytes extraData;
     }
 
-    /// @notice The publicKey and ctHandles from user decryption requests used for validations during responses.
+    /**
+     * @notice The publicKey and ctHandles from user decryption requests used for validations during responses.
+     */
     struct UserDecryptionPayload {
         /// @notice The user's public key to be used for reencryption.
         bytes publicKey;
@@ -103,62 +115,99 @@ contract Decryption is
         bytes32[] ctHandles;
     }
 
-    /// @notice The address of the GatewayConfig contract for checking if a signer is valid
+    /**
+     * @notice The address of the GatewayConfig contract for checking if a signer is valid
+     */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @notice The address of the MultichainACL contract for checking if a decryption requests are allowed
+    /**
+     * @notice The address of the MultichainACL contract for checking if a decryption requests are allowed
+     */
     IMultichainACL private constant MULTICHAIN_ACL = IMultichainACL(multichainACLAddress);
 
-    /// @notice The address of the CiphertextCommits contract for getting ciphertext materials.
+    /**
+     * @notice The address of the CiphertextCommits contract for getting ciphertext materials.
+     */
     ICiphertextCommits private constant CIPHERTEXT_COMMITS = ICiphertextCommits(ciphertextCommitsAddress);
 
-    /// @notice The maximum number of duration days that can be requested for a user decryption.
+    /**
+     * @notice The maximum number of duration days that can be requested for a user decryption.
+     */
     uint16 internal constant MAX_USER_DECRYPT_DURATION_DAYS = 365;
 
-    /// @notice The maximum number of contracts that can request for user decryption at once.
+    /**
+     * @notice The maximum number of contracts that can request for user decryption at once.
+     */
     uint8 internal constant MAX_USER_DECRYPT_CONTRACT_ADDRESSES = 10;
 
-    /// @notice The maximum number of bits that can be decrypted in a single public/user decryption request.
+    /**
+     * @notice The maximum number of bits that can be decrypted in a single public/user decryption request.
+     */
     uint256 internal constant MAX_DECRYPTION_REQUEST_BITS = 2048;
 
+    /**
+     * @notice The hash of the EIP712Domain structure typed data definition.
+     */
     bytes32 private constant DOMAIN_TYPE_HASH =
         keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
 
-    /// @notice The definition of the PublicDecryptVerification structure typed data.
+    /**
+     * @notice The definition of the PublicDecryptVerification structure typed data.
+     */
     string private constant EIP712_PUBLIC_DECRYPT_TYPE =
         "PublicDecryptVerification(bytes32[] ctHandles,bytes decryptedResult,bytes extraData)";
 
-    /// @notice The hash of the PublicDecryptVerification structure typed data definition used for signature validation.
+    /**
+     * @notice The hash of the PublicDecryptVerification structure typed data definition used for
+     * signature validation in public decryption requests.
+     */
     bytes32 private constant EIP712_PUBLIC_DECRYPT_TYPE_HASH = keccak256(bytes(EIP712_PUBLIC_DECRYPT_TYPE));
 
-    /// @notice The definition of the UserDecryptRequestVerification structure typed data.
+    /**
+     * @notice The definition of the UserDecryptRequestVerification structure typed data.
+     */
     string private constant EIP712_USER_DECRYPT_REQUEST_TYPE =
         "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 startTimestamp,"
         "uint256 durationDays,bytes extraData)";
 
-    /// @notice The hash of the UserDecryptRequestVerification structure typed data definition
-    /// @notice used for signature validation.
+    /**
+     * @notice The hash of the UserDecryptRequestVerification structure typed data definition
+     * used for signature validation in user decryption requests.
+     */
     bytes32 private constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
 
+    /**
+     * @notice The definition of the DelegatedUserDecryptRequestVerification structure typed data.
+     */
     string private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
         "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
         "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
 
+    /**
+     * @notice The hash of the DelegatedUserDecryptRequestVerification structure typed data definition
+     * used for signature validation in delegated user decryption requests.
+     */
     bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
         keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
 
-    /// @notice The definition of the UserDecryptResponseVerification structure typed data.
+    /**
+     * @notice The definition of the UserDecryptResponseVerification structure typed data.
+     */
     string private constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
         "UserDecryptResponseVerification(bytes publicKey,bytes32[] ctHandles,bytes userDecryptedShare,bytes extraData)";
 
-    /// @notice The hash of the UserDecryptResponseVerification structure typed data definition
-    /// @notice used for signature validation.
+    /**
+     * @notice The hash of the UserDecryptResponseVerification structure typed data definition
+     * used for signature validation in user decryption responses.
+     */
     bytes32 private constant EIP712_USER_DECRYPT_RESPONSE_TYPE_HASH =
         keccak256(bytes(EIP712_USER_DECRYPT_RESPONSE_TYPE));
 
-    /// @dev The following constants are used for versioning the contract. They are made private
-    /// @dev in order to force derived contracts to consider a different version. Note that
-    /// @dev they can still define their own private constants with the same name.
+    /**
+     * @dev The following constants are used for versioning the contract. They are made private
+     * in order to force derived contracts to consider a different version. Note that
+     * they can still define their own private constants with the same name.
+     */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
@@ -172,16 +221,16 @@ contract Decryption is
      */
     uint64 private constant REINITIALIZER_VERSION = 2;
 
-    /// @notice The contract's variable storage struct (@dev see ERC-7201)
+    /**
+     * @notice The contract's variable storage struct (@dev see ERC-7201)
+     */
     /// @custom:storage-location erc7201:fhevm_gateway.storage.Decryption
     struct DecryptionStorage {
         // ----------------------------------------------------------------------------------------------
         // Common decryption state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice The number of (public, user, delegated user) decryption requests, used to
-        /// @notice generate request IDs (`decryptionId`).
-        /// @notice TODO: remove this variable for mainnet
-        uint256 _decryptionRequestCounter;
+        ///@notice DEPRECATED: To remove in next state reset.
+        uint256 _decryptionRequestCounter; // DEPRECATED
         /// @notice Whether a (public, user, delegated user) decryption is done
         mapping(uint256 decryptionId => bool decryptionDone) decryptionDone;
         // prettier-ignore
@@ -221,9 +270,11 @@ contract Decryption is
         uint256 userDecryptionCounter;
     }
 
-    /// @dev Storage location has been computed using the following command:
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.Decryption")) - 1)) &
-    /// @dev ~bytes32(uint256(0xff))
+    /**
+     * @notice Storage location has been computed using the following command:
+     * keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.Decryption")) - 1)) &
+     * ~bytes32(uint256(0xff))
+     */
     bytes32 private constant DECRYPTION_STORAGE_LOCATION =
         0x68113e68af494c6efd0210fc4bf9ba748d1ffadaa4718217fdf63548c4aee700;
 
@@ -232,9 +283,11 @@ contract Decryption is
         _disableInitializers();
     }
 
-    /// @notice Initializes the contract.
-    /// @dev Contract name and version for EIP712 signature validation are defined here
-    /// @dev This function needs to be public in order to be called by the UUPS proxy.
+    /**
+     * @notice Initializes the contract.
+     * @dev Contract name and version for EIP712 signature validation are defined here
+     * This function needs to be public in order to be called by the UUPS proxy.
+     */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
@@ -255,24 +308,26 @@ contract Decryption is
     /// @custom:oz-upgrades-validate-as-initializer
     // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
-    /// @dev See {IDecryption-publicDecryptionRequest}.
+    /**
+     * @notice See {IDecryption-publicDecryptionRequest}.
+     */
     function publicDecryptionRequest(
         bytes32[] calldata ctHandles,
         bytes calldata extraData
     ) external virtual whenNotPaused {
-        /// @dev Check that the list of handles is not empty
+        // Check that the list of handles is not empty
         if (ctHandles.length == 0) {
             revert EmptyCtHandles();
         }
 
-        /// @dev Check the handles' conformance
+        // Check the handles' conformance
         _checkCtHandlesConformancePublic(ctHandles);
 
-        /// @dev Fetch the SNS ciphertexts from the CiphertextCommits contract
-        /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
-        /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
-        /// @dev without being added to the contract first (and we currently have no ways of deleting
-        /// @dev a ciphertext from the contract).
+        // Fetch the SNS ciphertexts from the CiphertextCommits contract
+        // This call is reverted if any of the ciphertexts are not found in the contract, but
+        // this should not happen for now as a ciphertext cannot be allowed for decryption
+        // without being added to the contract first (and we currently have no ways of deleting
+        // a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
         // Check that received snsCtMaterials have the same keyId.
@@ -291,15 +346,17 @@ contract Decryption is
         $.publicDecryptionCounter++;
         uint256 publicDecryptionId = $.publicDecryptionCounter;
 
-        /// @dev The handles are used during response calls for the EIP712 signature validation.
+        // The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
         emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
     }
 
-    /// @dev See {IDecryption-publicDecryptionResponse}.
-    /// @dev We restrict this call to KMS transaction senders because, in case of reorgs, we need to
-    /// @dev prevent anyone else from copying the signature and sending it to trigger a consensus.
+    /**
+     * @notice See {IDecryption-publicDecryptionResponse}.
+     * @dev We restrict this call to KMS transaction senders because, in case of reorgs, we need to
+     * prevent anyone else from copying the signature and sending it to trigger a consensus.
+     */
     function publicDecryptionResponse(
         uint256 decryptionId,
         bytes calldata decryptedResult,
@@ -315,25 +372,25 @@ contract Decryption is
             revert DecryptionNotRequested(decryptionId);
         }
 
-        /// @dev Initialize the PublicDecryptVerification structure for the signature validation.
+        // Initialize the PublicDecryptVerification structure for the signature validation.
         PublicDecryptVerification memory publicDecryptVerification = PublicDecryptVerification(
             $.publicCtHandles[decryptionId],
             decryptedResult,
             extraData
         );
 
-        /// @dev Compute the digest of the PublicDecryptVerification structure.
+        // Compute the digest of the PublicDecryptVerification structure.
         bytes32 digest = _hashPublicDecryptVerification(publicDecryptVerification);
 
-        /// @dev Recover the signer address from the signature and validate that corresponds to a
-        /// @dev KMS node that has not already signed.
+        // Recover the signer address from the signature and validate that corresponds to a
+        // KMS node that has not already signed.
         _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
 
-        /// @dev Store the signature for the public decryption response.
-        /// @dev This list is then used to check the consensus. Important: the mapping considers
-        /// @dev the digest (contrary to the user decryption case) as the decrypted result is expected
-        /// @dev to be the same for all KMS nodes. This allows to filter out results from malicious
-        /// @dev KMS nodes.
+        // Store the signature for the public decryption response.
+        // This list is then used to check the consensus. Important: the mapping considers
+        // the digest (contrary to the user decryption case) as the decrypted result is expected
+        // to be the same for all KMS nodes. This allows to filter out results from malicious
+        // KMS nodes.
         bytes[] storage verifiedSignatures = $.verifiedPublicDecryptSignatures[decryptionId][digest];
         verifiedSignatures.push(signature);
 
@@ -357,7 +414,9 @@ contract Decryption is
         }
     }
 
-    /// @dev See {IDecryption-userDecryptionRequest}.
+    /**
+     * @notice See {IDecryption-userDecryptionRequest}.
+     */
     function userDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
         RequestValidity calldata requestValidity,
@@ -377,22 +436,22 @@ contract Decryption is
             );
         }
 
-        /// @dev Check the user decryption request is valid.
+        // Check the user decryption request is valid.
         _checkUserDecryptionRequestValidity(requestValidity);
 
-        /// @dev Check the user address is not included in the contract addresses.
+        // Check the user address is not included in the contract addresses.
         if (_containsContractAddress(contractsInfo.addresses, userAddress)) {
             revert UserAddressInContractAddresses(userAddress, contractsInfo.addresses);
         }
 
-        /// @dev - Extract the handles and check their conformance
+        // - Extract the handles and check their conformance
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
             ctHandleContractPairs,
             contractsInfo.addresses,
             userAddress
         );
 
-        /// @dev Initialize the UserDecryptRequestVerification structure for the signature validation.
+        // Initialize the UserDecryptRequestVerification structure for the signature validation.
         UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
             publicKey,
             contractsInfo.addresses,
@@ -401,7 +460,7 @@ contract Decryption is
             extraData
         );
 
-        /// @dev Validate the received EIP712 signature on the user decryption request.
+        // Validate the received EIP712 signature on the user decryption request.
         _validateUserDecryptRequestEIP712Signature(
             userDecryptRequestVerification,
             userAddress,
@@ -409,11 +468,11 @@ contract Decryption is
             contractsInfo.chainId
         );
 
-        /// @dev Fetch the ciphertexts from the CiphertextCommits contract
-        /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
-        /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
-        /// @dev without being added to the contract first (and we currently have no ways of deleting
-        /// @dev a ciphertext from the contract).
+        // Fetch the ciphertexts from the CiphertextCommits contract
+        // This call is reverted if any of the ciphertexts are not found in the contract, but
+        // this should not happen for now as a ciphertext cannot be allowed for decryption
+        // without being added to the contract first (and we currently have no ways of deleting
+        // a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
         // Check that received snsCtMaterials have the same keyId.
@@ -433,13 +492,15 @@ contract Decryption is
         $.userDecryptionCounter++;
         uint256 userDecryptionId = $.userDecryptionCounter;
 
-        /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
-    /// @dev See {IDecryption-userDecryptionWithDelegationRequest}.
+    /**
+     * @notice See {IDecryption-userDecryptionWithDelegationRequest}.
+     */
     function delegatedUserDecryptionRequest(
         CtHandleContractPair[] calldata ctHandleContractPairs,
         RequestValidity calldata requestValidity,
@@ -459,15 +520,15 @@ contract Decryption is
             );
         }
 
-        /// @dev Check the user decryption request is valid.
+        // Check the user decryption request is valid.
         _checkUserDecryptionRequestValidity(requestValidity);
 
-        /// @dev Check the delegator address is not included in the contract addresses.
+        // Check the delegator address is not included in the contract addresses.
         if (_containsContractAddress(contractsInfo.addresses, delegationAccounts.delegatorAddress)) {
             revert DelegatorAddressInContractAddresses(delegationAccounts.delegatorAddress, contractsInfo.addresses);
         }
 
-        /// @dev - Extract the handles and check their conformance
+        // - Extract the handles and check their conformance
         bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
             ctHandleContractPairs,
             contractsInfo.addresses,
@@ -478,7 +539,7 @@ contract Decryption is
         // by the delegator.
         _checkIsAccountDelegated(contractsInfo.chainId, delegationAccounts, contractsInfo.addresses);
 
-        /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
+        // Initialize the EIP712UserDecryptRequest structure for the signature validation.
         DelegatedUserDecryptRequestVerification
             memory delegatedUserDecryptRequestVerification = DelegatedUserDecryptRequestVerification(
                 publicKey,
@@ -489,7 +550,7 @@ contract Decryption is
                 extraData
             );
 
-        /// @dev Validate the received EIP712 signature on the user decryption request.
+        // Validate the received EIP712 signature on the user decryption request.
         _validateDelegatedUserDecryptRequestEIP712Signature(
             delegatedUserDecryptRequestVerification,
             delegationAccounts.delegatedAddress,
@@ -497,11 +558,11 @@ contract Decryption is
             contractsInfo.chainId
         );
 
-        /// @dev Fetch the ciphertexts from the CiphertextCommits contract
-        /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
-        /// @dev this should not happen for now as a ciphertext cannot be allowed for decryption
-        /// @dev without being added to the contract first (and we currently have no ways of deleting
-        /// @dev a ciphertext from the contract).
+        // Fetch the ciphertexts from the CiphertextCommits contract
+        // This call is reverted if any of the ciphertexts are not found in the contract, but
+        // this should not happen for now as a ciphertext cannot be allowed for decryption
+        // without being added to the contract first (and we currently have no ways of deleting
+        // a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
         // Check that received snsCtMaterials have the same keyId.
@@ -521,7 +582,7 @@ contract Decryption is
         $.userDecryptionCounter++;
         uint256 userDecryptionId = $.userDecryptionCounter;
 
-        /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
+        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         emit UserDecryptionRequest(
@@ -533,9 +594,11 @@ contract Decryption is
         );
     }
 
-    /// @dev See {IDecryption-userDecryptionResponse}.
-    /// @dev We restrict this call to KMS transaction senders because, in case of reorgs, we need to
-    /// @dev prevent anyone else from copying the signature and sending it to trigger a consensus.
+    /**
+     * @notice See {IDecryption-userDecryptionResponse}.
+     * @dev We restrict this call to KMS transaction senders because, in case of reorgs, we need to
+     * prevent anyone else from copying the signature and sending it to trigger a consensus.
+     */
     function userDecryptionResponse(
         uint256 decryptionId,
         bytes calldata userDecryptedShare,
@@ -552,7 +615,7 @@ contract Decryption is
         }
 
         UserDecryptionPayload memory userDecryptionPayload = $.userDecryptionPayloads[decryptionId];
-        /// @dev Initialize the UserDecryptResponseVerification structure for the signature validation.
+        // Initialize the UserDecryptResponseVerification structure for the signature validation.
         UserDecryptResponseVerification memory userDecryptResponseVerification = UserDecryptResponseVerification(
             userDecryptionPayload.publicKey,
             userDecryptionPayload.ctHandles,
@@ -560,11 +623,11 @@ contract Decryption is
             extraData
         );
 
-        /// @dev Compute the digest of the UserDecryptResponseVerification structure.
+        // Compute the digest of the UserDecryptResponseVerification structure.
         bytes32 digest = _hashUserDecryptResponseVerification(userDecryptResponseVerification);
 
-        /// @dev Recover the signer address from the signature and validate that it corresponds to a
-        /// @dev KMS node that has not already signed.
+        // Recover the signer address from the signature and validate that it corresponds to a
+        // KMS node that has not already signed.
         _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
 
         // Store the KMS transaction sender address for the public decryption response
@@ -680,7 +743,7 @@ contract Decryption is
     }
 
     /**
-     * @dev See {IDecryption-isDecryptionDone}.
+     * @notice See {IDecryption-isDecryptionDone}.
      */
     function isDecryptionDone(uint256 decryptionId) external view virtual returns (bool) {
         DecryptionStorage storage $ = _getDecryptionStorage();
@@ -688,7 +751,7 @@ contract Decryption is
     }
 
     /**
-     * @dev See {IDecryption-getDecryptionConsensusTxSenders}.
+     * @notice See {IDecryption-getDecryptionConsensusTxSenders}.
      * For public decryption, the returned list remains empty until the consensus is reached.
      */
     function getDecryptionConsensusTxSenders(uint256 decryptionId) external view virtual returns (address[] memory) {
@@ -703,7 +766,9 @@ contract Decryption is
         return $.consensusTxSenderAddresses[decryptionId][consensusDigest];
     }
 
-    /// @dev See {IDecryption-getVersion}.
+    /**
+     * @notice See {IDecryption-getVersion}.
+     */
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -719,10 +784,12 @@ contract Decryption is
             );
     }
 
-    /// @notice Validates the EIP712 signature for a given decryption response.
-    /// @param decryptionId The decryption request ID.
-    /// @param digest The hashed EIP712 struct.
-    /// @param signature The signature to validate.
+    /**
+     * @notice Validates the EIP712 signature for a given decryption response.
+     * @param decryptionId The decryption request ID.
+     * @param digest The hashed EIP712 struct.
+     * @param signature The signature to validate.
+     */
     function _validateDecryptionResponseEIP712Signature(
         uint256 decryptionId,
         bytes32 digest,
@@ -734,7 +801,7 @@ contract Decryption is
         // Check that the signer is a KMS signer.
         _checkIsKmsSigner(signer);
 
-        /// @dev Check that the signer has not already responded to the user decryption request.
+        // Check that the signer has not already responded to the user decryption request.
         if ($.kmsNodeAlreadySigned[decryptionId][signer]) {
             revert KmsNodeAlreadySigned(decryptionId, signer);
         }
@@ -743,17 +810,19 @@ contract Decryption is
     }
 
     /**
-     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     * @notice Checks if the sender is authorized to upgrade the contract and reverts otherwise.
      */
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
-    /// @notice Validates the EIP712 signature for a given user decryption request
-    /// @dev This function checks that the signer address is the same as the user address.
-    /// @param userDecryptRequestVerification The signed UserDecryptRequestVerification structure
-    /// @param userAddress The address of the user.
-    /// @param signature The signature to be validated
-    /// @param contractsChainId The chain ID of the contracts.
+    /**
+     * @notice Validates the EIP712 signature for a given user decryption request
+     * @dev This function checks that the signer address is the same as the user address.
+     * @param userDecryptRequestVerification The signed UserDecryptRequestVerification structure
+     * @param userAddress The address of the user.
+     * @param signature The signature to be validated
+     * @param contractsChainId The chain ID of the contracts.
+     */
     function _validateUserDecryptRequestEIP712Signature(
         UserDecryptRequestVerification memory userDecryptRequestVerification,
         address userAddress,
@@ -767,12 +836,14 @@ contract Decryption is
         }
     }
 
-    /// @notice Validates the EIP712 signature for a given user decryption request
-    /// @dev This function checks that the signer address is the same as the delegated address.
-    /// @param delegatedUserDecryptRequestVerification The signed DelegatedUserDecryptRequestVerification structure
-    /// @param delegatedAddress The address of the delegated user.
-    /// @param signature The signature to be validated
-    /// @param contractsChainId The chain ID of the contracts.
+    /**
+     * @notice Validates the EIP712 signature for a given user decryption request
+     * @dev This function checks that the signer address is the same as the delegated address.
+     * @param delegatedUserDecryptRequestVerification The signed DelegatedUserDecryptRequestVerification structure
+     * @param delegatedAddress The address of the delegated user.
+     * @param signature The signature to be validated
+     * @param contractsChainId The chain ID of the contracts.
+     */
     function _validateDelegatedUserDecryptRequestEIP712Signature(
         DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
         address delegatedAddress,
@@ -789,9 +860,11 @@ contract Decryption is
         }
     }
 
-    /// @notice Computes the hash of a given PublicDecryptVerification structured data
-    /// @param publicDecryptVerification The PublicDecryptVerification structure
-    /// @return The hash of the PublicDecryptVerification structure
+    /**
+     * @notice Computes the hash of a given PublicDecryptVerification structured data
+     * @param publicDecryptVerification The PublicDecryptVerification structure
+     * @return The hash of the PublicDecryptVerification structure
+     */
     function _hashPublicDecryptVerification(
         PublicDecryptVerification memory publicDecryptVerification
     ) internal view virtual returns (bytes32) {
@@ -808,10 +881,12 @@ contract Decryption is
             );
     }
 
-    /// @notice Computes the hash of the hashed struct using a custom chain ID for the eip712 domain
-    /// @param chainId The chain ID
-    /// @param structHash The hash of the struct
-    /// @dev This could be improved along https://github.com/zama-ai/fhevm/issues/424
+    /**
+     * @notice Computes the hash of the hashed struct using a custom chain ID for the eip712 domain
+     * @param chainId The chain ID
+     * @param structHash The hash of the struct
+     * @dev This could be improved along https://github.com/zama-ai/fhevm/issues/424
+     */
     function _hashTypedDataV4CustomChainId(
         uint256 chainId,
         bytes32 structHash
@@ -822,10 +897,12 @@ contract Decryption is
         return MessageHashUtils.toTypedDataHash(domainSeparatorV4, structHash);
     }
 
-    /// @notice Computes the hash of a given UserDecryptRequestVerification structured data.
-    /// @param userDecryptRequestVerification The UserDecryptRequestVerification structure to hash.
-    /// @param contractsChainId The chain ID of the contracts.
-    /// @return The hash of the UserDecryptRequestVerification structure.
+    /**
+     * @notice Computes the hash of a given UserDecryptRequestVerification structured data.
+     * @param userDecryptRequestVerification The UserDecryptRequestVerification structure to hash.
+     * @param contractsChainId The chain ID of the contracts.
+     * @return The hash of the UserDecryptRequestVerification structure.
+     */
     function _hashUserDecryptRequestVerification(
         UserDecryptRequestVerification memory userDecryptRequestVerification,
         uint256 contractsChainId
@@ -843,10 +920,12 @@ contract Decryption is
         return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
     }
 
-    /// @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.
-    /// @param delegatedUserDecryptRequestVerification The DelegatedUserDecryptRequestVerification structure to hash.
-    /// @param contractsChainId The chain ID of the contracts.
-    /// @return The hash of the DelegatedUserDecryptRequestVerification structure.
+    /**
+     * @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.
+     * @param delegatedUserDecryptRequestVerification The DelegatedUserDecryptRequestVerification structure to hash.
+     * @param contractsChainId The chain ID of the contracts.
+     * @return The hash of the DelegatedUserDecryptRequestVerification structure.
+     */
     function _hashDelegatedUserDecryptRequestVerification(
         DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
         uint256 contractsChainId
@@ -865,9 +944,11 @@ contract Decryption is
         return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
     }
 
-    /// @notice Computes the hash of a given UserDecryptResponseVerification structured data.
-    /// @param userDecryptResponseVerification The UserDecryptResponseVerification structure to hash.
-    /// @return The hash of the UserDecryptResponseVerification structure.
+    /**
+     * @notice Computes the hash of a given UserDecryptResponseVerification structured data.
+     * @param userDecryptResponseVerification The UserDecryptResponseVerification structure to hash.
+     * @return The hash of the UserDecryptResponseVerification structure.
+     */
     function _hashUserDecryptResponseVerification(
         UserDecryptResponseVerification memory userDecryptResponseVerification
     ) internal view virtual returns (bytes32) {
@@ -885,67 +966,75 @@ contract Decryption is
             );
     }
 
-    /// @notice Indicates if the consensus is reached for public decryption.
-    /// @param numVerifiedResponses The number of public decryption responses that have been verified.
-    /// @return Whether the consensus has been reached
+    /**
+     * @notice Indicates if the consensus is reached for public decryption.
+     * @param numVerifiedResponses The number of public decryption responses that have been verified.
+     * @return Whether the consensus has been reached
+     */
     function _isConsensusReachedPublic(uint256 numVerifiedResponses) internal view virtual returns (bool) {
         uint256 publicDecryptionThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
         return numVerifiedResponses >= publicDecryptionThreshold;
     }
 
-    /// @notice Indicates if the number of verified user decryption responses has reached the threshold.
-    /// @param numVerifiedResponses The number of user decryption responses that have been verified.
-    /// @return Whether the threshold has been reached.
+    /**
+     * @notice Indicates if the number of verified user decryption responses has reached the threshold.
+     * @param numVerifiedResponses The number of user decryption responses that have been verified.
+     * @return Whether the threshold has been reached.
+     */
     function _isThresholdReachedUser(uint256 numVerifiedResponses) internal view virtual returns (bool) {
         uint256 userDecryptionThreshold = GATEWAY_CONFIG.getUserDecryptionThreshold();
         return numVerifiedResponses >= userDecryptionThreshold;
     }
 
-    /// @notice Check the handles' conformance for public decryption requests.
-    /// @dev Checks include:
-    /// @dev - Total bit size for each handle
-    /// @dev - FHE type validity for each handle
-    /// @dev - Handles are allowed for public decryption
-    /// @param ctHandles The list of ciphertext handles
+    /**
+     * @notice Check the handles' conformance for public decryption requests.
+     * @dev Checks include:
+     * @dev - Total bit size for each handle
+     * @dev - FHE type validity for each handle
+     * @dev - Handles are allowed for public decryption
+     * @param ctHandles The list of ciphertext handles
+     */
     function _checkCtHandlesConformancePublic(bytes32[] memory ctHandles) internal view virtual {
         uint256 totalBitSize = 0;
         for (uint256 i = 0; i < ctHandles.length; i++) {
             bytes32 ctHandle = ctHandles[i];
 
-            /// @dev Extract the FHE type from the ciphertext handle
+            // Extract the FHE type from the ciphertext handle
             FheType fheType = HandleOps.extractFheType(ctHandle);
 
-            /// @dev Add the bit size of the FHE type to the total bit size
-            /// @dev This reverts if the FHE type is invalid or not supported.
+            // Add the bit size of the FHE type to the total bit size
+            // This reverts if the FHE type is invalid or not supported.
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
             // Check that the handles are allowed for public decryption.
             _checkIsPublicDecryptAllowed(ctHandle);
         }
 
-        /// @dev Revert if the total bit size exceeds the maximum allowed.
+        // Revert if the total bit size exceeds the maximum allowed.
         if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
             revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
         }
     }
 
-    /// @notice Extracts the handles and check their conformance for user decryption requests.
-    /// @dev Checks include:
-    /// @dev - Total bit size for each handle
-    /// @dev - FHE type validity for each handle
-    /// @dev - Contract addresses have access to the handles
-    /// @dev - Allowed address has access to the handles
-    /// @dev - Contract address inclusion in the list of allowed contract addresses
-    /// @param ctHandleContractPairs The list of ciphertext handles and contract addresses
-    /// @param contractAddresses The list of allowed contract addresses
-    /// @param allowedAddress The address that is allowed to access the handles
-    /// @return ctHandles The list of ciphertext handles
+    /**
+     * @notice Extracts the handles and check their conformance for user decryption requests.
+     * @dev Checks include:
+     * @dev - Total bit size for each handle
+     * @dev - FHE type validity for each handle
+     * @dev - Contract addresses have access to the handles
+     * @dev - Allowed address has access to the handles
+     * @dev - Contract address inclusion in the list of allowed contract addresses
+     * @param ctHandleContractPairs The list of ciphertext handles and contract addresses
+     * @param contractAddresses The list of allowed contract addresses
+     * @param allowedAddress The address that is allowed to access the handles
+     * @return ctHandles The list of ciphertext handles
+     */
     function _extractCtHandlesCheckConformanceUser(
         CtHandleContractPair[] calldata ctHandleContractPairs,
         address[] memory contractAddresses,
         address allowedAddress
     ) internal view virtual returns (bytes32[] memory ctHandles) {
-        /// @dev Check that the list of ctHandleContractPair is not empty
+        // Check that the list of ctHandleContractPair is not empty
         if (ctHandleContractPairs.length == 0) {
             revert EmptyCtHandleContractPairs();
         }
@@ -957,18 +1046,18 @@ contract Decryption is
             bytes32 ctHandle = ctHandleContractPairs[i].ctHandle;
             address contractAddress = ctHandleContractPairs[i].contractAddress;
 
-            /// @dev Extract the FHE type from the ciphertext handle
+            // Extract the FHE type from the ciphertext handle
             FheType fheType = HandleOps.extractFheType(ctHandle);
 
-            /// @dev Add the bit size of the FHE type to the total bit size
-            /// @dev This reverts if the FHE type is invalid or not supported
+            // Add the bit size of the FHE type to the total bit size
+            // This reverts if the FHE type is invalid or not supported
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
             // Check that the allowed and contract accounts have access to the handles.
             _checkIsAccountAllowed(ctHandle, allowedAddress);
             _checkIsAccountAllowed(ctHandle, contractAddress);
 
-            /// @dev Check the contract is included in the list of allowed contract addresses.
+            // Check the contract is included in the list of allowed contract addresses.
             if (!_containsContractAddress(contractAddresses, contractAddress)) {
                 revert ContractNotInContractAddresses(contractAddress, contractAddresses);
             }
@@ -976,42 +1065,46 @@ contract Decryption is
             ctHandles[i] = ctHandle;
         }
 
-        /// @dev Revert if the total bit size exceeds the maximum allowed.
+        // Revert if the total bit size exceeds the maximum allowed.
         if (totalBitSize > MAX_DECRYPTION_REQUEST_BITS) {
             revert MaxDecryptionRequestBitSizeExceeded(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
         }
     }
 
-    /// @notice Checks if a user decryption request's start timestamp and duration days are valid.
-    /// @param requestValidity The RequestValidity structure
+    /**
+     * @notice Checks if a user decryption request's start timestamp and duration days are valid.
+     * @param requestValidity The RequestValidity structure
+     */
     function _checkUserDecryptionRequestValidity(RequestValidity memory requestValidity) internal view virtual {
-        /// @dev Check the durationDays is not null.
+        // Check the durationDays is not null.
         if (requestValidity.durationDays == 0) {
             revert InvalidNullDurationDays();
         }
-        /// @dev Check the durationDays does not exceed the maximum allowed.
+        // Check the durationDays does not exceed the maximum allowed.
         if (requestValidity.durationDays > MAX_USER_DECRYPT_DURATION_DAYS) {
             revert MaxDurationDaysExceeded(MAX_USER_DECRYPT_DURATION_DAYS, requestValidity.durationDays);
         }
 
-        /// @dev Check the start timestamp is not set in the future. This is to prevent a user
-        /// @dev from bypassing the durationDays limit of 365 days by setting a start timestamp
-        /// @dev far in the future.
+        // Check the start timestamp is not set in the future. This is to prevent a user
+        // from bypassing the durationDays limit of 365 days by setting a start timestamp
+        // far in the future.
         if (requestValidity.startTimestamp > block.timestamp) {
             revert StartTimestampInFuture(block.timestamp, requestValidity.startTimestamp);
         }
 
-        /// @dev Check the user decryption request has not expired. A user decryption request is valid
-        /// @dev from startTimestamp for a number of days equal to durationDays.
+        // Check the user decryption request has not expired. A user decryption request is valid
+        // from startTimestamp for a number of days equal to durationDays.
         if (requestValidity.startTimestamp + requestValidity.durationDays * 1 days < block.timestamp) {
             revert UserDecryptionRequestExpired(block.timestamp, requestValidity);
         }
     }
 
-    /// @notice Checks if a given contractAddress is included in the contractAddresses list.
-    /// @param contractAddresses The list of contract addresses
-    /// @param contractAddress The contract address to check
-    /// @return Whether the contract address is included in the list
+    /**
+     * @notice Checks if a given contractAddress is included in the contractAddresses list.
+     * @param contractAddresses The list of contract addresses
+     * @param contractAddress The contract address to check
+     * @return Whether the contract address is included in the list
+     */
     function _containsContractAddress(
         address[] memory contractAddresses,
         address contractAddress
@@ -1042,8 +1135,8 @@ contract Decryption is
     }
 
     /**
-     * @dev Returns the Decryption storage location.
-     * Note that this function is internal but not virtual: derived contracts should be able to
+     * @notice Returns the Decryption storage location.
+     * @dev Note that this function is internal but not virtual: derived contracts should be able to
      * access it, but if the underlying storage struct version changes, we force them to define a new
      * getter function and use that one instead in order to avoid overriding the storage location.
      */
