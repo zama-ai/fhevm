@@ -82,7 +82,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
 
     /// @notice The state of a coprocessor context ID.
     enum CoprocessorContextState {
-        Unused,
+        NotInitialized,
         Active,
         Suspended,
         Deactivated
@@ -171,25 +171,25 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     function initializeFromEmptyProxy(
         address verifyingContractSource,
         uint64 chainIDSource,
-        uint256 initialContextId,
-        address[] calldata initialContextSigners
+        uint256 initialCoprocessorContextId,
+        address[] calldata initialCoprocessorSigners
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
 
         // Check for valid initial context ID and non-empty initial signers set.
-        if (initialContextId == 0) {
+        if (initialCoprocessorContextId == 0) {
             revert InvalidNullContextId();
         }
-        if (initialContextSigners.length == 0) {
-            revert EmptyCoprocessorSignerAddresses(initialContextId);
+        if (initialCoprocessorSigners.length == 0) {
+            revert EmptyCoprocessorSignerAddresses(initialCoprocessorContextId);
         }
 
         InputVerifierStorage storage $ = _getInputVerifierStorage();
 
         // Activate the initial context.
-        $.coprocessorContextStates[initialContextId] = CoprocessorContextState.Active;
-        $.coprocessorContextSigners[initialContextId] = initialContextSigners;
-        $.activeCoprocessorContextId = initialContextId;
+        $.coprocessorContextStates[initialCoprocessorContextId] = CoprocessorContextState.Active;
+        $.coprocessorContextSigners[initialCoprocessorContextId] = initialCoprocessorSigners;
+        $.activeCoprocessorContextId = initialCoprocessorContextId;
     }
 
     /**
@@ -403,7 +403,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
         InputVerifierStorage storage $ = _getInputVerifierStorage();
 
         // Check that the new context ID is not already used.
-        if ($.coprocessorContextStates[newContextId] != CoprocessorContextState.Unused) {
+        if ($.coprocessorContextStates[newContextId] != CoprocessorContextState.NotInitialized) {
             revert ContextAlreadyUsed(newContextId);
         }
 
