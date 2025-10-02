@@ -20,9 +20,7 @@ use crate::{
         UserDecryptionResponseShare,
     },
     transaction::{
-        fhevm::{parse_fhevm_error, retryable_error},
-        helper::TransactionType,
-        ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
+        helper::TransactionType, ReceiptProcessor, TransactionHelper, TransactionService, TxConfig,
     },
 };
 

@@ -21,9 +21,9 @@ pub enum FhevmError {
 pub fn retryable_error(err: &FhevmError) -> bool {
     match err {
         // Errors that happen when the Ciphertext wasn't created and the ACL propagated yet
-        FhevmError::AclError(value) => match value {
-            MultichainACLErrors::AccountNotAllowedToUseCiphertext(_)
-            | MultichainACLErrors::PublicDecryptNotAllowed(_) => true,
+        FhevmError::DecryptionError(value) => match value {
+            DecryptionErrors::AccountNotAllowedToUseCiphertext(_)
+            | DecryptionErrors::PublicDecryptNotAllowed(_) => true,
             _ => true,
         },
         FhevmError::CiphertextError(value) => match value {
@@ -48,9 +48,6 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
         return FhevmError::DecryptionError(DecryptionErrors::ContractNotInContractAddresses(
             value,
         ));
-    }
-    if let Some(value) = err.as_decoded_error::<Decryption::DecryptionNotDone>() {
-        return FhevmError::DecryptionError(DecryptionErrors::DecryptionNotDone(value));
     }
     if let Some(value) = err.as_decoded_error::<Decryption::DecryptionNotRequested>() {
         return FhevmError::DecryptionError(DecryptionErrors::DecryptionNotRequested(value));
@@ -157,6 +154,11 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
     if let Some(value) = err.as_decoded_error::<Decryption::UnsupportedFHEType>() {
         return FhevmError::DecryptionError(DecryptionErrors::UnsupportedFHEType(value));
     }
+    if let Some(value) = err.as_decoded_error::<Decryption::AccountNotDelegatedForContracts>() {
+        return FhevmError::DecryptionError(DecryptionErrors::AccountNotDelegatedForContracts(
+            value,
+        ));
+    }
     if let Some(value) = err.as_decoded_error::<Decryption::UserAddressInContractAddresses>() {
         return FhevmError::DecryptionError(DecryptionErrors::UserAddressInContractAddresses(
             value,
@@ -234,12 +236,6 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
             value,
         ));
     }
-    if let Some(value) = err.as_decoded_error::<InputVerification::ProofNotRejected>() {
-        return FhevmError::InputError(InputVerificationErrors::ProofNotRejected(value));
-    }
-    if let Some(value) = err.as_decoded_error::<InputVerification::ProofNotVerified>() {
-        return FhevmError::InputError(InputVerificationErrors::ProofNotVerified(value));
-    }
     if let Some(value) = err.as_decoded_error::<InputVerification::UUPSUnauthorizedCallContext>() {
         return FhevmError::InputError(InputVerificationErrors::UUPSUnauthorizedCallContext(value));
     }
@@ -253,11 +249,10 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
     }
 
     // MultichainACL Errors
-    if let Some(value) = err.as_decoded_error::<MultichainACL::AccountNotAllowedToUseCiphertext>() {
-        return FhevmError::AclError(MultichainACLErrors::AccountNotAllowedToUseCiphertext(value));
-    }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::AccountNotDelegated>() {
-        return FhevmError::AclError(MultichainACLErrors::AccountNotDelegated(value));
+    if let Some(value) = err.as_decoded_error::<Decryption::AccountNotAllowedToUseCiphertext>() {
+        return FhevmError::DecryptionError(DecryptionErrors::AccountNotAllowedToUseCiphertext(
+            value,
+        ));
     }
     if let Some(value) = err.as_decoded_error::<MultichainACL::AddressEmptyCode>() {
         return FhevmError::AclError(MultichainACLErrors::AddressEmptyCode(value));
@@ -325,8 +320,8 @@ pub fn parse_fhevm_error(err: &Error) -> FhevmError {
             value,
         ));
     }
-    if let Some(value) = err.as_decoded_error::<MultichainACL::PublicDecryptNotAllowed>() {
-        return FhevmError::AclError(MultichainACLErrors::PublicDecryptNotAllowed(value));
+    if let Some(value) = err.as_decoded_error::<Decryption::PublicDecryptNotAllowed>() {
+        return FhevmError::DecryptionError(DecryptionErrors::PublicDecryptNotAllowed(value));
     }
     if let Some(value) = err.as_decoded_error::<MultichainACL::UUPSUnauthorizedCallContext>() {
         return FhevmError::AclError(MultichainACLErrors::UUPSUnauthorizedCallContext(value));
