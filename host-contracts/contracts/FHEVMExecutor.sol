@@ -905,7 +905,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
         /// @dev Unsupported erandom type.
         if ((1 << uint8(randType)) & supportedTypes == 0) revert UnsupportedType();
         if (!_isPowerOfTwo(upperBound)) revert NotPowerOfTwo();
-        _checkBelowMaxBound(upperBound,randType);
+        _checkBelowMaxBound(upperBound, randType);
         result = keccak256(abi.encodePacked(Operators.fheRandBounded, upperBound, randType, seed));
         result = _appendMetadataToPrehandle(result, randType);
         hcuLimit.checkHCUForFheRandBounded(randType, result);
@@ -917,7 +917,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
      * @param scalarByte Value to check.
      */
     function _checkBoolean(bytes1 scalarByte) internal virtual {
-        if(uint8(scalarByte)>1) revert ScalarByteIsNotBoolean();
+        if (uint8(scalarByte) > 1) revert ScalarByteIsNotBoolean();
     }
 
     /**
@@ -926,30 +926,30 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
      * @param randType the FheType in which the upper bound should fit.
      */
     function _checkBelowMaxBound(uint256 upperBound, FheType randType) internal virtual {
-        if (randType == FheType.Uint8){
-             _revertUpperBoundAboveMaxTypeValue(upperBound,1<<8);
-             return;
+        if (randType == FheType.Uint8) {
+            _revertUpperBoundAboveMaxTypeValue(upperBound, 1 << 8);
+            return;
         }
-        if (randType == FheType.Uint16){
-             _revertUpperBoundAboveMaxTypeValue(upperBound,1<<16);
-             return;
+        if (randType == FheType.Uint16) {
+            _revertUpperBoundAboveMaxTypeValue(upperBound, 1 << 16);
+            return;
         }
-        if (randType == FheType.Uint32){
-             _revertUpperBoundAboveMaxTypeValue(upperBound,1<<32);
-             return;
+        if (randType == FheType.Uint32) {
+            _revertUpperBoundAboveMaxTypeValue(upperBound, 1 << 32);
+            return;
         }
-        if (randType == FheType.Uint64){
-             _revertUpperBoundAboveMaxTypeValue(upperBound,1<<64);
-             return;
+        if (randType == FheType.Uint64) {
+            _revertUpperBoundAboveMaxTypeValue(upperBound, 1 << 64);
+            return;
         }
-        if (randType == FheType.Uint128){
-             _revertUpperBoundAboveMaxTypeValue(upperBound,1<<128);
-             return;
+        if (randType == FheType.Uint128) {
+            _revertUpperBoundAboveMaxTypeValue(upperBound, 1 << 128);
+            return;
         } /// @dev nothing to check for Uint256, since Solidity does not handle bigger Uints
     }
 
     function _revertUpperBoundAboveMaxTypeValue(uint256 upperBound, uint256 maxTypeValue) internal virtual {
-        if(upperBound>maxTypeValue) revert UpperBoundAboveMaxTypeValue();
+        if (upperBound > maxTypeValue) revert UpperBoundAboveMaxTypeValue();
     }
 
     /**

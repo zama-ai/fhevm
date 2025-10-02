@@ -803,10 +803,38 @@ function handleSolidityTFHESelect(fheType: AdjustedFheType): string {
     *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
     */
     function select(ebool control, e${fheType.type.toLowerCase()} a, e${fheType.type.toLowerCase()} b) internal returns (e${fheType.type.toLowerCase()}) {
-        return e${fheType.type.toLowerCase()}.wrap(Impl.select(ebool.unwrap(control), e${fheType.type.toLowerCase()}.unwrap(a), e${fheType.type.toLowerCase()}.unwrap(b)));
-    }`;
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }`;
+    if (fheType.type === 'Bool') {
+      res += `
+        if (!isInitialized(a)) {
+          a = asEbool(false);
+        }
+        if (!isInitialized(b)) {
+          b = asEbool(false);
+        }`;
+    } else if (fheType.type === 'Address') {
+      res += `
+        if (!isInitialized(a)) {
+          a = asEaddress(address(0));
+        }
+        if (!isInitialized(b)) {
+          b = asEaddress(address(0));
+        }`;
+    } else {
+      res += `
+        if (!isInitialized(a)) {
+          a = asE${fheType.type.toLowerCase()}(0);
+        }
+        if (!isInitialized(b)) {
+          b = asE${fheType.type.toLowerCase()}(0);
+        }`;
+    }
+    res += `
+        return e${fheType.type.toLowerCase()}.wrap(Impl.select(ebool.unwrap(control), e${fheType.type.toLowerCase()}.unwrap(a), e${fheType.type.toLowerCase()}.unwrap(b)));}
+    `;
   }
-
   return res;
 }
 
