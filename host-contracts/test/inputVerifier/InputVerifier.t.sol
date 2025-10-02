@@ -970,7 +970,7 @@ contract InputVerifierTest is Test {
      */
     function test_OwnerCannotAddAlreadyUsedContext() public {
         _upgradeProxyWithSigners(3);
-        vm.expectPartialRevert(InputVerifier.ContextAlreadyUsed.selector);
+        vm.expectPartialRevert(InputVerifier.ContextAlreadyInitialized.selector);
         vm.prank(owner);
         address[] memory newContextSigners = new address[](1);
         newContextSigners[0] = signer0;
