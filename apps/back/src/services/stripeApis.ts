@@ -27,9 +27,11 @@ export function verifyStripeSession(checkout_session_id: string): Promise<any> {
       },
     }
   )
-    .then((res) => {
+    .then(async (res) => {
       if (!res.ok) {
-        console.warn(`Failed to verify stripe session: ${res.body}`);
+        console.warn(`Failed to verify stripe session: ${res.statusText}`);
+        const message = await res.text();
+        console.log(`Stripe error: ${message}`);
         throw new Error("Invalid session");
       }
       return res;
@@ -48,9 +50,11 @@ export function getStripeCustomer(email: string): Promise<any> {
       },
     }
   )
-    .then((res) => {
+    .then(async (res) => {
       if (!res.ok) {
-        console.warn(`Failed to retrieve stripe customer: ${res.body}`);
+        console.warn(`Failed to retrieve stripe customer: ${res.statusText}`);
+        const message = await res.text();
+        console.log(`Stripe error: ${message}`);
         throw new Error("Invalid customer");
       }
       return res;
@@ -58,7 +62,7 @@ export function getStripeCustomer(email: string): Promise<any> {
     .then((res) => res.json());
 }
 
-// Developers: you might consider have something like redis
+// Developers: you might consider having something like redis
 // make id/mapping look up easier and faster
 const EMAIL_TO_STRIPE_CUSTOMER_CACHE: Record<string, string> = {};
 

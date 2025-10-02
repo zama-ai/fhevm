@@ -36,7 +36,7 @@ export class KongProvisioningPlugin extends ProvisioningPlugin {
     });
 
     if (!response.ok) {
-      console.log(
+      console.warn(
         `KongProvisioningPlugin Failed ${method} ${url}: ${response.status}, ${response.statusText}`
       );
       throw new Error(
@@ -49,8 +49,8 @@ export class KongProvisioningPlugin extends ProvisioningPlugin {
 
   async getUser(customerId: string, email: string): Promise<any> {
     try {
-      const consumerResource = `consumers/${this.sanitizeEmail(email)}`;
-      return await this.kongAdminRequest("GET", consumerResource, undefined);
+      const resource = `consumers/${this.sanitizeEmail(email)}`;
+      return await this.kongAdminRequest("GET", resource, undefined);
     } catch (error) {
       console.error(error);
       throw new Error("KongProvisioningPlugin Failed to get user");
