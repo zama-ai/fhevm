@@ -1893,18 +1893,18 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     function test_FheRandBoundedAboveMaxTypeValueRevertAsExpected() public {
         upgradeProxyAndDeployMockContracts();
         // these should pass
-        fhevmExecutor.fheRandBounded(1<<12, FheType.Uint64);
-        fhevmExecutor.fheRandBounded(1<<64, FheType.Uint64);
-        fhevmExecutor.fheRandBounded(1<<5, FheType.Uint8);
+        fhevmExecutor.fheRandBounded(1 << 12, FheType.Uint64);
+        fhevmExecutor.fheRandBounded(1 << 64, FheType.Uint64);
+        fhevmExecutor.fheRandBounded(1 << 5, FheType.Uint8);
 
         // these should revert
         vm.expectRevert(FHEVMExecutor.UpperBoundAboveMaxTypeValue.selector);
-        fhevmExecutor.fheRandBounded(1<<65, FheType.Uint64);
+        fhevmExecutor.fheRandBounded(1 << 65, FheType.Uint64);
         vm.expectRevert(FHEVMExecutor.UpperBoundAboveMaxTypeValue.selector);
-        fhevmExecutor.fheRandBounded(1<<75, FheType.Uint64);
+        fhevmExecutor.fheRandBounded(1 << 75, FheType.Uint64);
         vm.expectRevert(FHEVMExecutor.UpperBoundAboveMaxTypeValue.selector);
-        fhevmExecutor.fheRandBounded(1<<9, FheType.Uint8);
+        fhevmExecutor.fheRandBounded(1 << 9, FheType.Uint8);
         vm.expectRevert(FHEVMExecutor.UpperBoundAboveMaxTypeValue.selector);
-        fhevmExecutor.fheRandBounded(1<<129, FheType.Uint128);
+        fhevmExecutor.fheRandBounded(1 << 129, FheType.Uint128);
     }
 }
