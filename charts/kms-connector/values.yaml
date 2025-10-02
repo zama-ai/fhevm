@@ -27,6 +27,9 @@ commonConfig:
   gatewayContractAddresses:
     decryption: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
     gatewayConfig: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
+    # =========================================================================
+    # NEW VARIABLES
+    # =========================================================================
     kmsGeneration: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
   
   # Distributed tracing configuration
@@ -52,20 +55,6 @@ commonConfig:
     #     secretKeyRef:
     #       name: connector-database
     #       key: password
-
-    # =========================================================================
-    # NEW ENVIRONMENT VARIABLES
-    # =========================================================================
-    
-    # The address of the KMSGeneration gateway contract
-    - name: KMS_GENERATION_ADDRESS
-      value: ""
-    
-    # =========================================================================
-    # DEPRECATED ENVIRONMENT VARIABLES
-    # =========================================================================
-    # The following environment variables are no longer used:
-    # - KMS_MANAGEMENT_CONTRACT_ADDRESS
 
 # -----------------------------------------------------------------------------
 # Database Migration
