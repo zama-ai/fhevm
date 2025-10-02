@@ -174,8 +174,10 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
-        error!(error = %err, "Failed to setup OTLP");
+    if !conf.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&conf.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
     }
 
     let abstract_signer: AbstractSigner;

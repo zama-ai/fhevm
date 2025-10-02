@@ -491,7 +491,7 @@ pub async fn run_all(
 
     if !config.service_name.is_empty() {
         if let Err(err) = telemetry::setup_otlp(&config.service_name) {
-            panic!("Error while initializing tracing: {:?}", err);
+            error!(error = %err, "Failed to setup OTLP");
         }
     }
 
