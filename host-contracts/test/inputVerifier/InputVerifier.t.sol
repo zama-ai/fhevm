@@ -509,7 +509,7 @@ contract InputVerifierTest is Test {
      */
     function test_OwnerCannotAddContextWithEmptySigners() public {
         _upgradeProxyWithSigners(3);
-        vm.expectPartialRevert(InputVerifier.EmptyContextSignerAddresses.selector);
+        vm.expectPartialRevert(InputVerifier.EmptyCoprocessorSignerAddresses.selector);
         vm.prank(owner);
         uint256 newContextId = initialCoprocessorContextId + 1;
         address[] memory newContextSigners = new address[](0);
@@ -1044,7 +1044,7 @@ contract InputVerifierTest is Test {
      * @dev Tests that the contract cannot be reinitialized if the initial context ID is zero.
      */
     function test_CannotReinitializeIfInitialContextIdIsZero() public {
-        vm.expectPartialRevert(InputVerifier.ZeroContextId.selector);
+        vm.expectPartialRevert(InputVerifier.InvalidNullContextId.selector);
         this.nullCoprocessorContextIdUpgrade();
     }
 
@@ -1068,7 +1068,7 @@ contract InputVerifierTest is Test {
      * @dev Tests that the contract cannot be reinitialized if the initial context signers set is empty.
      */
     function test_CannotReinitializeIfInitialContextSignersSetIsEmpty() public {
-        vm.expectPartialRevert(InputVerifier.EmptyContextSignerAddresses.selector);
+        vm.expectPartialRevert(InputVerifier.EmptyCoprocessorSignerAddresses.selector);
         this.emptyCoprocessorContextSignersUpgrade();
     }
 
