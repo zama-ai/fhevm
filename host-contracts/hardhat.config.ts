@@ -55,7 +55,7 @@ task('test', async (taskArgs, hre, runSuper) => {
     await hre.run('task:deployAllHostContracts');
     // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
     // for local testing
-    await hre.run('task:addPausers', { useInternalPauserSetAddress: true });
+    await hre.run('task:addHostPausers', { useInternalPauserSetAddress: true });
   }
   await hre.run('compile:specific', { contract: 'examples' });
   await runSuper();
