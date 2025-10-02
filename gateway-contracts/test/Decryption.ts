@@ -70,13 +70,13 @@ describe("Decryption", function () {
   const ciphertextDigest = createBytes32();
   const snsCiphertextDigest = createBytes32();
 
-  // Define the ebytes128 ctHandle (which has a bit size of 1024 bits)
-  const ebytes128CtHandle = createCtHandle(hostChainId, 10);
+  // Define an euint256 ctHandle (which has a bit size of 256 bits)
+  const euint256CtHandle = createCtHandle(hostChainId, 8);
 
   // Create ciphertext handles for the host chain ID with different TFHE-rs types
-  // Note that the list is made so that the total bit size represented by these handles (1034 bits)
+  // Note that the list is made so that the total bit size represented by these handles (2+10+256=268 bits)
   // does not exceed 2048 bits (the maximum allowed for a single list of handles)
-  const ctHandles = [createCtHandle(hostChainId, 0), createCtHandle(hostChainId, 2), ebytes128CtHandle];
+  const ctHandles = [createCtHandle(hostChainId, 0), createCtHandle(hostChainId, 2), euint256CtHandle];
   const ctHandle = ctHandles[0];
 
   // Define other valid ctHandles (they will not be added in the ciphertext commits contract and allowed for
@@ -270,11 +270,12 @@ describe("Decryption", function () {
     });
 
     it("Should revert because total bit size exceeds the maximum allowed", async function () {
-      // Create a list of 3 ebytes128 ctHandles (each has a bit size of 1024 bits)
-      const largeBitSizeCtHandles = [ebytes128CtHandle, ebytes128CtHandle, ebytes128CtHandle];
+      // Create a list of 12 euint256 ctHandles (each has a bit size of 256 bits)
+      const numCtHandles = 12;
+      const largeBitSizeCtHandles = Array(numCtHandles).fill(euint256CtHandle);
 
       // Calculate the new total bit size of this list
-      const totalBitSize = 3072;
+      const totalBitSize = numCtHandles * 256;
 
       // Check that the request fails because the total bit size exceeds the maximum allowed
       await expect(decryption.publicDecryptionRequest(largeBitSizeCtHandles, extraDataV0))
@@ -994,21 +995,18 @@ describe("Decryption", function () {
     });
 
     it("Should revert because total bit size exceeds the maximum allowed", async function () {
-      // Build a ctHandleContractPair containing the ebytes128 handle (which has a bit size of 1024 bits)
-      const ebytes128CtHandleContractPair: CtHandleContractPairStruct = {
+      // Build a ctHandleContractPair containing the euint256 handle (which has a bit size of 256 bits)
+      const euint256CtHandleContractPair: CtHandleContractPairStruct = {
         contractAddress,
-        ctHandle: ebytes128CtHandle,
+        ctHandle: euint256CtHandle,
       };
 
-      // Create a list of 3 ebytes128 ctHandles (each has a bit size of 1024 bits)
-      const largeByteSizeCtHandleContractPairs = [
-        ebytes128CtHandleContractPair,
-        ebytes128CtHandleContractPair,
-        ebytes128CtHandleContractPair,
-      ];
+      // Create a list of 12 euint256 ctHandles (each has a bit size of 256 bits)
+      const numCtHandles = 12;
+      const largeByteSizeCtHandleContractPairs = Array(numCtHandles).fill(euint256CtHandleContractPair);
 
       // Calculate the new total bit size of this list
-      const totalBitSize = 3072;
+      const totalBitSize = numCtHandles * 256;
 
       // Check that the request fails because the total bit size exceeds the maximum allowed
       // Note that the user signature is not correct here but the FHE type validity is checked first
@@ -1862,21 +1860,18 @@ describe("Decryption", function () {
     });
 
     it("Should revert because total bit size exceeds the maximum allowed", async function () {
-      // Build a ctHandleContractPair containing the ebytes128 handle (which has a bit size of 1024 bits)
-      const ebytes128CtHandleContractPair: CtHandleContractPairStruct = {
+      // Build a ctHandleContractPair containing the euint256 handle (which has a bit size of 256 bits)
+      const euint256CtHandleContractPair: CtHandleContractPairStruct = {
         contractAddress,
-        ctHandle: ebytes128CtHandle,
+        ctHandle: euint256CtHandle,
       };
 
-      // Create a list of 3 ebytes128 ctHandles (each has a bit size of 1024 bits)
-      const largeByteSizeCtHandleContractPairs = [
-        ebytes128CtHandleContractPair,
-        ebytes128CtHandleContractPair,
-        ebytes128CtHandleContractPair,
-      ];
+      // Create a list of 3 euint256 ctHandles (each has a bit size of 256 bits)
+      const numCtHandles = 12;
+      const largeByteSizeCtHandleContractPairs = Array(numCtHandles).fill(euint256CtHandleContractPair);
 
       // Calculate the new total bit size of this list
-      const totalBitSize = 3072;
+      const totalBitSize = numCtHandles * 256;
 
       // Check that the request fails because the total bit size exceeds the maximum allowed
       // Note that the user signature is not correct here but the FHE type validity is checked first
