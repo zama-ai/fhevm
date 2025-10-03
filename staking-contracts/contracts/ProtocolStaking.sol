@@ -56,6 +56,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     error EligibleAccountAlreadyExists(address account);
     error EligibleAccountDoesNotExist(address account);
     error TransferDisabled();
+    error InvalidUnstakeCooldownPeriod();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -67,12 +68,14 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         string memory symbol,
         string memory version,
         address stakingToken_,
-        address governor
+        address governor,
+        uint256 initialUnstakeCooldownPeriod
     ) public virtual initializer {
         __AccessControlDefaultAdminRules_init(0, governor);
         __ERC20_init(name, symbol);
         __EIP712_init(name, version);
         _getProtocolStakingStorage()._stakingToken = stakingToken_;
+        _setUnstakeCooldownPeriod(initialUnstakeCooldownPeriod);
     }
 
     /// @dev Stake `amount` tokens from `msg.sender`.
@@ -92,23 +95,24 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         _burn(msg.sender, amount);
 
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
-        if ($._unstakeCooldownPeriod == 0) {
-            IERC20(stakingToken()).safeTransfer(recipient, amount);
-        } else {
-            (, uint256 lastReleaseTime, uint256 totalRequestedToWithdraw) = $
-                ._unstakeRequests[recipient]
-                .latestCheckpoint();
-            uint256 releaseTime = Time.timestamp() + $._unstakeCooldownPeriod;
-            $._unstakeRequests[recipient].push(
-                uint48(Math.max(releaseTime, lastReleaseTime)),
-                uint208(totalRequestedToWithdraw + amount)
-            );
-        }
+        (, uint256 lastReleaseTime, uint256 totalRequestedToWithdraw) = $
+            ._unstakeRequests[recipient]
+            .latestCheckpoint();
+        uint256 releaseTime = Time.timestamp() + $._unstakeCooldownPeriod;
+        $._unstakeRequests[recipient].push(
+            uint48(Math.max(releaseTime, lastReleaseTime)),
+            uint208(totalRequestedToWithdraw + amount)
+        );
 
         emit TokensUnstaked(msg.sender, recipient, amount);
     }
 
-    /// @dev Releases tokens requested for unstaking after the cooldown period to `account`.
+    /**
+     * @dev Releases tokens requested for unstaking after the cooldown period to `account`.
+     *
+     * WARNING: If this contract is upgraded to add slashing, the ability to withdraw to a
+     * different address should be reconsidered.
+     */
     function release(address account) public virtual {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         uint256 totalAmountCooledDown = $._unstakeRequests[account].upperLookup(Time.timestamp());
@@ -156,9 +160,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
 
     /// @dev Sets the {unstake} cooldown period in seconds to `unstakeCooldownPeriod`. Only callable by {owner}.
     function setUnstakeCooldownPeriod(uint256 unstakeCooldownPeriod_) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
-        _getProtocolStakingStorage()._unstakeCooldownPeriod = unstakeCooldownPeriod_;
-
-        emit UnstakeCooldownPeriodSet(unstakeCooldownPeriod_);
+        _setUnstakeCooldownPeriod(unstakeCooldownPeriod_);
     }
 
     /// @dev Sets the reward recipient for `msg.sender` to `recipient`. All future rewards for `msg.sender` will be sent to `recipient`.
@@ -228,6 +230,13 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
             _updateRewards(account, weight(balanceOf(account)), 0);
         }
         return success;
+    }
+
+    function _setUnstakeCooldownPeriod(uint256 unstakeCooldownPeriod_) internal virtual {
+        if (unstakeCooldownPeriod_ == 0) revert InvalidUnstakeCooldownPeriod();
+        _getProtocolStakingStorage()._unstakeCooldownPeriod = unstakeCooldownPeriod_;
+
+        emit UnstakeCooldownPeriodSet(unstakeCooldownPeriod_);
     }
 
     function _updateRewards(address user, uint256 weightBefore, uint256 weightAfter) internal {

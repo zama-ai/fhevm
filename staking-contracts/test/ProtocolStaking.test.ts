@@ -14,7 +14,7 @@ describe('Protocol Staking', function () {
     const token = await ethers.deployContract('$ERC20Mock', ['StakingToken', 'ST', 18]);
     const mock = await ethers
       .getContractFactory('ProtocolStaking')
-      .then(factory => upgrades.deployProxy(factory, ['StakedToken', 'SST', '1', token.target, admin.address]));
+      .then(factory => upgrades.deployProxy(factory, ['StakedToken', 'SST', '1', token.target, admin.address, 1]));
 
     await Promise.all(
       [staker1, staker2].flatMap(account => [
@@ -27,7 +27,7 @@ describe('Protocol Staking', function () {
   });
 
   it('unstake cooldown period returned correctly', async function () {
-    await expect(this.mock.unstakeCooldownPeriod()).to.eventually.eq(0);
+    await expect(this.mock.unstakeCooldownPeriod()).to.eventually.eq(1);
     await this.mock.connect(this.admin).setUnstakeCooldownPeriod(100);
     await expect(this.mock.unstakeCooldownPeriod()).to.eventually.eq(100);
   });
@@ -116,13 +116,7 @@ describe('Protocol Staking', function () {
       await this.mock.connect(this.staker2).stake(ethers.parseEther('1000'));
     });
 
-    it('should transfer instantly if cooldown is 0', async function () {
-      const tx = this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('50'));
-      await expect(tx).to.changeTokenBalance(this.token, this.staker1, ethers.parseEther('50'));
-      await expect(tx).to.changeTokenBalance(this.mock, this.staker1, -ethers.parseEther('50'));
-    });
-
-    it('should not transfer if cooldown is set', async function () {
+    it('should not transfer instantly', async function () {
       await this.mock.connect(this.admin).setUnstakeCooldownPeriod(60); // 1 minute
       await expect(this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('50')))
         .to.emit(this.mock, 'Transfer')
@@ -133,7 +127,9 @@ describe('Protocol Staking', function () {
     it('should be able to unstake to someone else', async function () {
       await expect(this.mock.connect(this.staker1).unstake(this.staker2, ethers.parseEther('50')))
         .to.emit(this.mock, 'TokensUnstaked')
-        .withArgs(this.staker1, this.staker2, ethers.parseEther('50'))
+        .withArgs(this.staker1, this.staker2, ethers.parseEther('50'));
+      await mine();
+      await expect(this.mock.release(this.staker2))
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.staker2, ethers.parseEther('50'));
     });
@@ -345,6 +341,13 @@ describe('Protocol Staking', function () {
         expect(await this.mock.earned(this.staker1)).to.be.equal(ethers.parseEther('5'));
       });
     });
+  });
+
+  it('set cooldown period should revert for 0', async function () {
+    await expect(this.mock.connect(this.admin).setUnstakeCooldownPeriod(0)).to.be.revertedWithCustomError(
+      this.mock,
+      'InvalidUnstakeCooldownPeriod',
+    );
   });
 
   describe('Transfer', function () {
