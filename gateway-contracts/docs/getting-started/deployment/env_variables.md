@@ -96,7 +96,7 @@ KMS_GENERATION_THRESHOLD="3" # (uint256)
 
 `KMS_GENERATION_THRESHOLD` must be non-null and less or equal to the number of KMS nodes registered below.
 
-In practice in the FHEVM protocol, this threshold is set to `floor(2n/3) + 1` with `n` the number of KMS nodes registered below.
+In practice in the FHEVM protocol, this threshold is set to `2*t + 1` with `t` the MPC threshold.
 
 These values might change in the future.
 
