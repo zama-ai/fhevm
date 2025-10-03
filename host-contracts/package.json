@@ -6,7 +6,7 @@
     "type": "git",
     "url": "git+https://github.com/zama-ai/fhevm.git"
   },
-  "main": "index.js",
+  "main": "contracts/FHEVMExecutor.sol",
   "scripts": {
     "compile": "HARDHAT_NETWORK=hardhat npm run deploy:emptyProxies && cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile",
     "compile:decryptionOracle": "cross-env TS_NODE_TRANSPILE_ONLY=true hardhat compile:specific --contract decryptionOracle",
