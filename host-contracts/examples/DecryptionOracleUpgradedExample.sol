@@ -2,7 +2,8 @@
 
 pragma solidity ^0.8.24;
 
-import "../decryptionOracle/DecryptionOracle.sol";
+import {DecryptionOracle} from "@zama-fhe/oracle-solidity/contracts/DecryptionOracle.sol";
+
 import "@openzeppelin/contracts/utils/Strings.sol";
 
 contract DecryptionOracleUpgradedExample is DecryptionOracle {
@@ -13,6 +14,11 @@ contract DecryptionOracleUpgradedExample is DecryptionOracle {
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
+
+    // @custom:oz-upgrades-validate-as-initializer
+    function initializeUpgraded(address initialOwner) external initializer {
+        __Ownable_init(initialOwner);
+    }
 
     function lol() external pure returns (uint256) {
         return 42;

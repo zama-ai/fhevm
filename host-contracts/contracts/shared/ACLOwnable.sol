@@ -5,10 +5,11 @@ import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/acces
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 /**
- * @title ACL Checks
- * @dev Base contract that provides modifiers that checks proper registration in the ACL contract
+ * @title ACLOwnable
+ * @dev Ensures that a contract is owned by the Host/ACL owner, defined as the owner of the
+ * ACL contract
  */
-abstract contract ACLChecks {
+abstract contract ACLOwnable {
     /**
      * @notice Error emitted when an address is not the owner of the ACL contract, i.e not Host contracts owner.
      * @param sender The address that is not the owner.

@@ -53,10 +53,7 @@ export const initDecryptionOracle = async (): Promise<void> => {
     await ethers.provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }
   // this function will emit logs for every request and fulfilment of a decryption
-  decryptionOracle = await ethers.getContractAt(
-    'decryptionOracle/DecryptionOracle.sol:DecryptionOracle',
-    parsedEnv.DECRYPTION_ORACLE_ADDRESS,
-  );
+  decryptionOracle = await ethers.getContractAt('DecryptionOracle', parsedEnv.DECRYPTION_ORACLE_ADDRESS);
   decryptionOracle.on(
     'DecryptionRequest',
     async (counter, requestID, cts, contractCaller, callbackSelector, eventData) => {
@@ -69,10 +66,7 @@ export const initDecryptionOracle = async (): Promise<void> => {
 };
 
 export const awaitAllDecryptionResults = async (): Promise<void> => {
-  decryptionOracle = await ethers.getContractAt(
-    'decryptionOracle/DecryptionOracle.sol:DecryptionOracle',
-    parsedEnv.DECRYPTION_ORACLE_ADDRESS,
-  );
+  decryptionOracle = await ethers.getContractAt('DecryptionOracle', parsedEnv.DECRYPTION_ORACLE_ADDRESS);
   const provider = ethers.provider;
   if (networkName === 'hardhat' && process.env.SOLIDITY_COVERAGE !== 'true') {
     // evm_snapshot is not supported in coverage mode
