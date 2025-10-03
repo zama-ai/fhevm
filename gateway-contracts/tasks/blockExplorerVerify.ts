@@ -149,6 +149,24 @@ task("task:verifyMultichainACL")
     });
   });
 
+task("task:verifyPauserSet")
+  .addOptionalParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+    }
+    const implementationAddress = getRequiredEnvVar("PAUSER_SET_ADDRESS");
+    await run("verify:verify", {
+      address: implementationAddress,
+      constructorArguments: [],
+    });
+  });
+
 task("task:verifyAllGatewayContracts")
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -174,6 +192,9 @@ task("task:verifyAllGatewayContracts")
 
     console.log("Verify Decryption contract:");
     await hre.run("task:verifyDecryption", { useInternalProxyAddress });
+
+    console.log("Verify PauserSet contract:");
+    await hre.run("task:verifyPauserSet", { useInternalProxyAddress });
 
     console.log("Contract verification done!");
   });
