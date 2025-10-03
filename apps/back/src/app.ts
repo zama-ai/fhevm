@@ -4,9 +4,13 @@ import dotenv from "dotenv";
 import bodyParser from "body-parser";
 import moesif from "moesif-nodejs";
 import cors from "cors";
+import { traceMiddleware } from "./middlewares/trace.middleware";
+import pinoHttpMiddleware from "./middlewares/pinoHttp.middleware";
 
 // Load environment variables
 dotenv.config({ path: [".env", ".env.template"] });
+
+import "./common/instrumentation";
 
 import {
   verifyStripeSession,
@@ -28,8 +32,14 @@ import {
   getUnifiedCustomerIdCached,
 } from "./services/commonUtils";
 import { BillingProvider } from "./services/billingProvider";
+import { getLogger } from "./common/logger.context";
+import logger from "./common/logger";
+import { withSpan } from "./decorators/span";
 
 const app = express();
+app.use(pinoHttpMiddleware);
+// Add traceability middleware
+app.use(traceMiddleware);
 app.use(express.static(path.join(__dirname)));
 const port = parseInt(process.env.PORT ?? "3000", 10);
 
@@ -43,27 +53,27 @@ const templateWorkspaceIdTimeSeries =
 const jsonParser = bodyParser.json();
 
 if (!moesifApplicationId) {
-  console.error(
+  logger.fatal(
     "No MOESIF_APPLICATION_ID found. Please create an .env file with MOESIF_APPLICATION_ID."
   );
   throw new Error("No MOESIF_APPLICATION_ID found.");
 }
 
 if (!moesifManagementToken) {
-  console.error(
+  logger.fatal(
     "No MOESIF_MANAGEMENT_TOKEN found. Please create an .env file with MOESIF_MANAGEMENT_TOKEN & MOESIF_TEMPLATE_WORKSPACE_ID."
   );
 }
 
 if (!templateWorkspaceIdLiveEvent) {
-  console.error(
+  logger.fatal(
     "No MOESIF_TEMPLATE_WORKSPACE_ID found. Please create an .env file with MOESIF_MANAGEMENT_TOKEN & MOESIF_TEMPLATE_WORKSPACE_ID."
   );
 }
 
 const provisioningService = getApimProvisioningPlugin();
 if (!provisioningService) {
-  console.error("No provisioning service found!");
+  logger.fatal("No provisioning service found!");
   throw new Error("No provisioning service found!");
 }
 const customBillingProvider = new BillingProvider();
@@ -85,56 +95,68 @@ interface UserRequest extends Request {
 app.post(
   "/create-stripe-checkout-session",
   authMiddleware,
-  async (req: UserRequest, res: Response) => {
-    const priceId = req.query?.price_id as string;
-    const email = req.user?.email;
-    const quantity = req.query?.quantity as string | undefined;
+  withSpan(
+    "createStripeCheckoutSession",
+    async (req: UserRequest, res: Response) => {
+      const priceId = req.query?.price_id as string;
+      const email = req.user?.email;
+      const quantity = req.query?.quantity as string | undefined;
 
-    console.log(
-      `create-stripe-checkout-session called for ${email} priceId ${priceId} quantity ${quantity}`
-    );
+      const logger = getLogger();
 
-    if (!priceId) {
-      return res.status(400).json({ message: "price_id is required" });
-    }
-
-    try {
-      const session = await createStripeCheckoutSession(
-        email,
-        priceId,
-        quantity,
-        req?.user
+      logger.info(
+        `create-stripe-checkout-session called for ${email} priceId ${priceId} quantity ${quantity}`
       );
-      console.log("got session back from stripe session");
-      console.log(JSON.stringify(session));
 
-      res.send({ clientSecret: session.client_secret });
-    } catch (err) {
-      console.error("Failed to create stripe checkout session", err);
-      res.status(400).json({ message: "Error creating check out session" });
+      if (!priceId) {
+        return res.status(400).json({ message: "price_id is required" });
+      }
+
+      try {
+        const session = await createStripeCheckoutSession(
+          email,
+          priceId,
+          quantity,
+          req?.user
+        );
+        logger.info("got session back from stripe session");
+        logger.info(JSON.stringify(session));
+
+        res.send({ clientSecret: session.client_secret });
+      } catch (err) {
+        logger.error("Failed to create stripe checkout session", err);
+        res.status(400).json({ message: "Error creating check out session" });
+      }
     }
-  }
+  )
 );
 
-app.get("/plans", jsonParser, async (_req: Request, res: Response) => {
-  getPlansFromMoesif()
-    .then((result) => {
+app.get(
+  "/plans",
+  jsonParser,
+  withSpan("getPlans", async (_req: Request, res: Response) => {
+    const logger = getLogger();
+    try {
+      const result = await getPlansFromMoesif();
+      logger.trace(`result: ${JSON.stringify(result)}`);
       res.status(200).json(result);
-    })
-    .catch((err) => {
-      console.error("Error getting plans from Moesif", err);
+    } catch (err) {
+      logger.error("Error getting plans from Moesif", err);
       res.status(500).json({ message: "Error getting plans from Moesif" });
-    });
-});
+    }
+  })
+);
 
 app.get(
   "/subscriptions",
   authMiddleware,
   jsonParser,
-  async (req: UserRequest, res: Response) => {
+  withSpan("getSubscriptions", async (req: UserRequest, res: Response) => {
+    const logger = getLogger();
+
     const sanitizedEmail = (req.query.email as string).replace(/\n|\r/g, "");
-    console.log("query email " + sanitizedEmail);
-    console.log("verified email from claims " + req.user.email);
+    logger.info("query email " + sanitizedEmail);
+    logger.info("verified email from claims " + req.user.email);
     const email = req.user?.email;
 
     let moesifUserId: string | undefined;
@@ -148,12 +170,12 @@ app.get(
         userId: moesifUserId,
       });
 
-      console.log(
+      logger.info(
         "got subscriptions from moesif " + JSON.stringify(subscriptions)
       );
       res.status(200).json(subscriptions);
     } catch (err: any) {
-      console.error(
+      logger.error(
         "Error getting subscription from moesif for " +
           email +
           " " +
@@ -162,21 +184,32 @@ app.get(
       );
       res.status(404).json({ message: err.toString() });
     }
-  }
+  })
 );
 
 app.post(
   "/register/stripe/:checkout_session_id",
   authMiddleware,
-  function (req: UserRequest, res: Response) {
-    const checkout_session_id = req.params.checkout_session_id;
+  withSpan(
+    {
+      name: "registerStripeCheckoutSession",
+      extractAttributesFromArgs: (args) => ({
+        checkout_session_id: args[0].params.checkout_session_id,
+      }),
+    },
+    async function (req: UserRequest, res: Response) {
+      const logger = getLogger();
 
-    verifyStripeSession(checkout_session_id)
-      .then(async (result: any) => {
+      const checkout_session_id = req.params.checkout_session_id;
+      logger.debug(`checkout_session_id = ${checkout_session_id}`);
+
+      try {
+        const result = await verifyStripeSession(checkout_session_id);
         const stripeCheckOutSessionInfo = result;
-        console.log("in stripe register");
+        logger.info("in stripe register");
+
         if (result.customer && result.subscription) {
-          console.log("customer and subscription present");
+          logger.info("customer and subscription present");
           const email = result.customer_details.email;
           const stripe_customer_id = result.customer;
           const stripe_subscription_id = result.subscription;
@@ -185,7 +218,7 @@ app.post(
               process.env.MOESIF_MONETIZATION_VERSION &&
               process.env.MOESIF_MONETIZATION_VERSION.toUpperCase() === "V1"
             ) {
-              console.log("updating company and user with V1");
+              logger.info("updating company and user with V1");
               syncToMoesif({
                 companyId: stripe_subscription_id,
                 // TODO: check if we need `subscriptionId`
@@ -194,7 +227,7 @@ app.post(
                 email: email,
               });
             } else {
-              console.log("updating company and user with V2");
+              logger.info("updating company and user with V2");
               syncToMoesif({
                 companyId: stripe_customer_id,
                 // TODO: check if we need `subscriptionId`
@@ -204,7 +237,7 @@ app.post(
               });
             }
           } catch (error) {
-            console.error("Error updating user/company/sub:", error);
+            logger.error("Error updating user/company/sub:", error);
           }
 
           const user = await provisioningService.provisionUser(
@@ -212,28 +245,32 @@ app.post(
             email,
             stripe_subscription_id
           );
-          console.log("provisioned user:", JSON.stringify(user));
+          logger.info("provisioned user:", JSON.stringify(user));
         }
-        console.log(JSON.stringify(stripeCheckOutSessionInfo));
+        logger.info(JSON.stringify(stripeCheckOutSessionInfo));
         res.status(201).json(stripeCheckOutSessionInfo);
-      })
-      .catch((err: any) => {
-        console.error("Error registering user", err);
+      } catch (err) {
+        logger.error("Error registering user", err);
         res.status(500).json({
-          message: "Failed to provision user. " + err.toString(),
+          message: `Failed to provision user. ${err}`,
         });
-      });
-  }
+      }
+    }
+  )
 );
 
+// This endpoint is still active and instrumented for tracing.
+// If the custom billing provider is fully deprecated, consider removing this endpoint in the future.
 app.post(
   "/register/custom",
   authMiddleware,
   jsonParser,
-  async function (req: UserRequest, res: Response) {
+  withSpan("registerCustom", async function (req: UserRequest, res: Response) {
+    const logger = getLogger();
+
     const customerId = await getUnifiedCustomerId(req.user);
     if (!customerId) {
-      console.error(
+      logger.error(
         `No customerId found for current user ${JSON.stringify(req.user)}`
       );
       throw new Error("No customerId found");
@@ -246,7 +283,7 @@ app.post(
           ...req.body,
         });
 
-      console.log("custom subscription created", subscription);
+      logger.info("custom subscription created", subscription);
 
       syncToMoesif({
         companyId: customerId,
@@ -271,18 +308,19 @@ app.post(
       );
       res.status(201).json({ status: "provisioned" });
     } catch (err: any) {
-      console.error("Error registering user", err);
+      logger.error("Error registering user", err);
       res.status(500).json({
         message: "Failed to provision user. " + err.toString(),
       });
     }
-  }
+  })
 );
 
 app.get(
   "/stripe/customer",
   authMiddleware,
-  function (req: UserRequest, res: Response) {
+  withSpan("getStripeCustomer", function (req: UserRequest, res: Response) {
+    const logger = getLogger();
     const email = req.user?.email;
 
     getStripeCustomer(email)
@@ -294,49 +332,62 @@ app.get(
         }
       })
       .catch((err: any) => {
-        console.error("Error getting customer info from stripe", err);
+        logger.error("Error getting customer info from stripe", err);
         res.status(500).json({
           message: "Failed to retrieve customer info from stripe",
         });
       });
-  }
+  })
 );
 
 app.post(
   "/create-key",
   authMiddleware,
   jsonParser,
-  async function (req: UserRequest, res: Response) {
-    try {
-      const email = req.user?.email;
+  withSpan(
+    {
+      name: "createKey",
+      extractAttributesFromArgs: (args) => ({
+        email: args[0].user?.email,
+      }),
+    },
+    async function (req: UserRequest, res: Response) {
+      const logger = getLogger();
+      try {
+        const email = req.user?.email;
 
-      const customerId = await getUnifiedCustomerId(req.user, email);
-      if (!customerId) {
-        throw new Error(
-          `Customer Id unknown. Ensure you're subscribed to a plan. If you just subscribed, try again.`
+        const customerId = await getUnifiedCustomerId(req.user, email);
+        if (!customerId) {
+          throw new Error(
+            `Customer Id unknown. Ensure you're subscribed to a plan. If you just subscribed, try again.`
+          );
+        }
+
+        const apiKey = await provisioningService.createApiKey(
+          customerId,
+          email
         );
+        res.status(200).send({ apikey: apiKey });
+      } catch (error) {
+        logger.error("Error creating key:", error);
+        res.status(500).json({ message: "Failed to create key" });
       }
-
-      const apiKey = await provisioningService.createApiKey(customerId, email);
-      res.status(200).send({ apikey: apiKey });
-    } catch (error) {
-      console.error("Error creating key:", error);
-      res.status(500).json({ message: "Failed to create key" });
     }
-  }
+  )
 );
 
 app.get(
   "/embed-charts(/:authUserId)",
   authMiddleware,
-  async function (req: UserRequest, res: Response) {
+  withSpan("getEmbedCharts", async function (req: UserRequest, res: Response) {
+    const logger = getLogger();
     const authUserId = req.user?.sub;
     const email = req.user?.email;
 
     try {
       const customerId = await getUnifiedCustomerId(req.user, email);
       if (!customerId) {
-        console.error("Customer Id not found when fetching for " + email);
+        logger.error("Customer Id not found when fetching for " + email);
       }
 
       const embedInfoArray = await Promise.all(
@@ -350,12 +401,14 @@ app.get(
       );
       res.status(200).json(embedInfoArray);
     } catch (err) {
-      console.error("Error generating embedded templates:", err);
+      logger.error("Error generating embedded templates:", err);
       res.status(500).json({ message: "Failed to retrieve embedded template" });
     }
-  }
+  })
 );
 
 app.listen(port, () => {
-  console.log(`My Dev Portal Backend is listening at http://localhost:${port}`);
+  logger.info(
+    `Zama Developer Portal Backend is listening at http://localhost:${port}`
+  );
 });

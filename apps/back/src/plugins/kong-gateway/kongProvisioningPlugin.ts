@@ -1,3 +1,5 @@
+import { getLogger } from "../../common/logger.context";
+import { Span } from "../../decorators/span";
 import { ProvisioningPlugin } from "../provisioningPlugin";
 
 /**
@@ -20,8 +22,14 @@ export class KongProvisioningPlugin extends ProvisioningPlugin {
     resource: string,
     body?: Record<string, unknown>
   ): Promise<any> {
+    const logger = getLogger().child({
+      class: "KongProvisioningPlugin",
+      method: "kongAdminRequest",
+      httpMethod: method,
+      resource,
+    });
     const url = `${this.kongUrl}/${resource}`;
-    console.log(`KongProvisioningPlugin ${method} ${url}`);
+    logger.debug(`${method} ${url}`);
 
     const response = await fetch(url, {
       method: method,
@@ -36,9 +44,7 @@ export class KongProvisioningPlugin extends ProvisioningPlugin {
     });
 
     if (!response.ok) {
-      console.warn(
-        `KongProvisioningPlugin Failed ${method} ${url}: ${response.status}, ${response.statusText}`
-      );
+      logger.error(`Failed: ${response.status}, ${response.statusText}`);
       throw new Error(
         `KongProvisioningPlugin Failed ${method} ${url}: ${response.status}, ${response.statusText}`
       );
@@ -47,26 +53,43 @@ export class KongProvisioningPlugin extends ProvisioningPlugin {
     return await response.json();
   }
 
+  @Span()
   async getUser(customerId: string, email: string): Promise<any> {
+    const logger = getLogger().child({
+      class: "KongProvisioningPlugin",
+      method: "getUser",
+      customerId,
+      email,
+    });
+    logger.info("getUser");
     try {
       const resource = `consumers/${this.sanitizeEmail(email)}`;
       return await this.kongAdminRequest("GET", resource, undefined);
     } catch (error) {
-      console.error(error);
+      logger.error(error);
       throw new Error("KongProvisioningPlugin Failed to get user");
     }
   }
 
+  @Span()
   async provisionUser(
     customerId: string,
     email: string,
     subscriptionId: string
   ): Promise<any> {
+    const logger = getLogger().child({
+      class: "KongProvisioningPlugin",
+      method: "provisionUser",
+      customerId,
+      email,
+      subscriptionId,
+    });
     // create Consumer
     const kongConsumer = {
       username: this.sanitizeEmail(email),
       custom_id: customerId,
     };
+    logger.debug(kongConsumer);
     const consumerResponse = await this.kongAdminRequest(
       "POST",
       `consumers/`,
@@ -75,7 +98,15 @@ export class KongProvisioningPlugin extends ProvisioningPlugin {
     return consumerResponse;
   }
 
+  @Span()
   async createApiKey(customerId: string, email: string): Promise<string> {
+    const logger = getLogger().child({
+      class: "KongProvisioningPlugin",
+      method: "createApiKey",
+      customerId,
+      email,
+    });
+    logger.debug(`creating API key`);
     // get kong consumer
     const keyAuthResource = `consumers/${this.sanitizeEmail(email)}/key-auth`;
     const keyAuthResult = await this.kongAdminRequest(
@@ -83,6 +114,7 @@ export class KongProvisioningPlugin extends ProvisioningPlugin {
       keyAuthResource,
       {}
     );
+    logger.info(`KongProvisioningPlugin API Key created`);
     return keyAuthResult.key;
   }
 

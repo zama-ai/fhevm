@@ -1,5 +1,7 @@
 import crypto from "crypto";
 import { Request } from "express";
+import { getLogger } from "../common/logger.context";
+import { Span } from "../decorators/span";
 
 function getOneMonthFromNowISO(): string {
   const now = new Date(); // Get the current date and time
@@ -23,10 +25,20 @@ export interface VerifyPurchaseData {
 }
 
 export class BillingProvider {
+  @Span({
+    extractAttributesFromArgs: (args) => ({
+      plan_id: args[1]?.plan_id,
+      price_id: args[1]?.price_id,
+    }),
+  })
   verifyPurchaseAndCreateSubscription(
     req: Request,
     data: VerifyPurchaseData
   ): { subscription: Subscription } {
+    const logger = getLogger().child({
+      class: "BillingProvider",
+      method: "verifyPurchaseAndCreateSubscription",
+    });
     // use the request info to verify the purchase after checkout
     // but generally your billing provider should verify the subscription
     // and return the subscription object.
@@ -34,12 +46,13 @@ export class BillingProvider {
 
     const subscription: Subscription = {
       id: crypto.randomUUID(),
-      plan_id: data?.plan_id,
-      price_id: data?.price_id,
+      // Note: plan_id and price_id will only be included in the subscription if present in data, due to the use of the spread operator (...data)
       ...data,
       current_period_start: new Date().toISOString(),
       current_period_end: getOneMonthFromNowISO(),
     };
+
+    logger.debug(subscription);
 
     return {
       subscription,

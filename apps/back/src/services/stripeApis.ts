@@ -1,4 +1,6 @@
 import Stripe from "stripe";
+import { getLogger } from "../common/logger.context";
+import { withSpan } from "../decorators/span";
 
 // Use Stripe SDK with your secret key
 const stripe = new Stripe(process.env.STRIPE_API_KEY as string, {
@@ -10,57 +12,84 @@ const stripe = new Stripe(process.env.STRIPE_API_KEY as string, {
  * Only allow expected Stripe session IDs (e.g., cs_test_... or cs_live_...) to prevent URL manipulation.
  * Adjust this regex if Stripe changes their format.
  */
-export function verifyStripeSession(checkout_session_id: string): Promise<any> {
-  const validSessionId = /^cs_(test|live)_[a-zA-Z0-9]{20,}$/.test(
-    checkout_session_id
-  );
-  if (!validSessionId) {
-    return Promise.reject(
-      new Error("Invalid Stripe checkout_session_id format")
+export const verifyStripeSession = withSpan(
+  {
+    name: "verifyStripeSession",
+  },
+  function (checkout_session_id: string): Promise<any> {
+    const logger = getLogger().child({
+      method: "verifyStripeSession",
+      checkout_session_id,
+    });
+    const validSessionId = /^cs_(test|live)_[a-zA-Z0-9]{20,}$/.test(
+      checkout_session_id
     );
+    if (!validSessionId) {
+      logger.warn("Invalid Stripe checkout_session_id format");
+      return Promise.reject(
+        new Error("Invalid Stripe checkout_session_id format")
+      );
+    }
+    logger.debug(`fetching stripe session`);
+    return fetch(
+      `https://api.stripe.com/v1/checkout/sessions/${checkout_session_id}`,
+      {
+        headers: {
+          Authorization: `bearer ${process.env.STRIPE_API_KEY}`,
+        },
+      }
+    )
+      .then(async (res) => {
+        if (!res.ok) {
+          logger.error(`Failed to verify stripe session: ${res.statusText}`);
+          const message = await res.text();
+          logger.error(`Stripe error: ${message}`);
+          throw new Error("Invalid session");
+        }
+        return res;
+      })
+      .then((res) => res.json())
+      .then((session) => {
+        logger.trace(session);
+        return session;
+      });
   }
-  return fetch(
-    `https://api.stripe.com/v1/checkout/sessions/${checkout_session_id}`,
-    {
-      headers: {
-        Authorization: `bearer ${process.env.STRIPE_API_KEY}`,
-      },
-    }
-  )
-    .then(async (res) => {
-      if (!res.ok) {
-        console.warn(`Failed to verify stripe session: ${res.statusText}`);
-        const message = await res.text();
-        console.log(`Stripe error: ${message}`);
-        throw new Error("Invalid session");
-      }
-      return res;
-    })
-    .then((res) => res.json());
-}
+);
 
-export function getStripeCustomer(email: string): Promise<any> {
-  return fetch(
-    `https://api.stripe.com/v1/customers/search?query=email:"${encodeURIComponent(
-      email
-    )}"`,
-    {
-      headers: {
-        Authorization: `bearer ${process.env.STRIPE_API_KEY}`,
-      },
-    }
-  )
-    .then(async (res) => {
-      if (!res.ok) {
-        console.warn(`Failed to retrieve stripe customer: ${res.statusText}`);
-        const message = await res.text();
-        console.log(`Stripe error: ${message}`);
-        throw new Error("Invalid customer");
+export const getStripeCustomer = withSpan(
+  {
+    name: "getStripeCustomer",
+    logArgs: true,
+  },
+  function (email: string): Promise<any> {
+    const logger = getLogger().child({ method: "getStripeCustomer", email });
+    logger.debug(`fetching customer by email`);
+    return fetch(
+      `https://api.stripe.com/v1/customers/search?query=email:"${encodeURIComponent(
+        email
+      )}"`,
+      {
+        headers: {
+          Authorization: `bearer ${process.env.STRIPE_API_KEY}`,
+        },
       }
-      return res;
-    })
-    .then((res) => res.json());
-}
+    )
+      .then(async (res) => {
+        if (!res.ok) {
+          logger.error(`Failed to retrieve stripe customer: ${res.statusText}`);
+          const message = await res.text();
+          logger.error(`Stripe error: ${message}`);
+          throw new Error("Invalid customer");
+        }
+        return res;
+      })
+      .then((res) => res.json())
+      .then((customer) => {
+        logger.trace(customer);
+        return customer;
+      });
+  }
+);
 
 // Developers: you might consider having something like redis
 // make id/mapping look up easier and faster
@@ -72,67 +101,77 @@ export function getStripeCustomerIdFromCache(
   return EMAIL_TO_STRIPE_CUSTOMER_CACHE[email];
 }
 
-export async function getStripeCustomerId(
-  email: string
-): Promise<string | undefined> {
-  if (EMAIL_TO_STRIPE_CUSTOMER_CACHE[email]) {
-    return EMAIL_TO_STRIPE_CUSTOMER_CACHE[email];
+export const getStripeCustomerId = withSpan(
+  {
+    name: "getStripeCustomerId",
+    logArgs: true,
+  },
+  async function (email: string): Promise<string | undefined> {
+    if (EMAIL_TO_STRIPE_CUSTOMER_CACHE[email]) {
+      return EMAIL_TO_STRIPE_CUSTOMER_CACHE[email];
+    }
+
+    const stripeCustomer = await getStripeCustomer(email);
+    const stripeCustomerId =
+      stripeCustomer.data && stripeCustomer.data[0]
+        ? stripeCustomer.data[0].id
+        : undefined;
+
+    if (stripeCustomerId) {
+      EMAIL_TO_STRIPE_CUSTOMER_CACHE[email] = stripeCustomerId;
+    }
+
+    return stripeCustomerId;
   }
+);
 
-  const stripeCustomer = await getStripeCustomer(email);
-  const stripeCustomerId =
-    stripeCustomer.data && stripeCustomer.data[0]
-      ? stripeCustomer.data[0].id
-      : undefined;
+export const createStripeCheckoutSession = withSpan(
+  {
+    name: "createStripeCheckoutSession",
+    logArgs: true,
+  },
+  async function (
+    email: string,
+    priceId: string,
+    quantity?: string,
+    authUser?: { sub?: string }
+  ): Promise<Stripe.Response<Stripe.Checkout.Session>> {
+    // make sure only one stripe customer per email
+    let customerId = await getStripeCustomerId(email);
 
-  if (stripeCustomerId) {
-    EMAIL_TO_STRIPE_CUSTOMER_CACHE[email] = stripeCustomerId;
-  }
+    if (!customerId) {
+      // If no customerId exists, create a new one
+      const customer = await stripe.customers.create({
+        email: email,
+        metadata: {
+          // add the user id from identity provider to
+          // stripe metadata for customer.
+          // Because, an alternative approach is to tie
+          // the identity provider's user id to stripe customer
+          // and look up customer object using user_id instead of
+          // email.
+          ...(authUser?.sub ? { authUserId: authUser.sub } : {}),
+        },
+      });
 
-  return stripeCustomerId;
-}
+      customerId = customer.id;
+    }
 
-export async function createStripeCheckoutSession(
-  email: string,
-  priceId: string,
-  quantity?: string,
-  authUser?: { sub?: string }
-): Promise<Stripe.Response<Stripe.Checkout.Session>> {
-  // make sure only one stripe customer per email
-  let customerId = await getStripeCustomerId(email);
-
-  if (!customerId) {
-    // If no customerId exists, create a new one
-    const customer = await stripe.customers.create({
-      email: email,
-      metadata: {
-        // add the user id from identity provider to
-        // stripe metadata for customer.
-        // Because, an alternative approach is to tie
-        // the identity provider's user id to stripe customer
-        // and look up customer object using user_id instead of
-        // email.
-        ...(authUser?.sub ? { authUserId: authUser.sub } : {}),
-      },
+    const session = await stripe.checkout.sessions.create({
+      ui_mode: "embedded",
+      line_items: [
+        {
+          // Provide the exact Price ID (for example, pr_1234) of the product you want to sell
+          price: priceId,
+          // for metered billing, do NOT include quantity
+          quantity: quantity ? parseInt(quantity) || 1 : undefined,
+        },
+      ],
+      customer: customerId,
+      mode: "subscription",
+      return_url: `${process.env.FRONT_END_URL}/return?session_id={CHECKOUT_SESSION_ID}&price_id=${priceId}`,
     });
 
-    customerId = customer.id;
+    return session;
   }
-
-  const session = await stripe.checkout.sessions.create({
-    ui_mode: "embedded",
-    line_items: [
-      {
-        // Provide the exact Price ID (for example, pr_1234) of the product you want to sell
-        price: priceId,
-        // for metered billing, do NOT include quantity
-        quantity: quantity ? parseInt(quantity) || 1 : undefined,
-      },
-    ],
-    customer: customerId,
-    mode: "subscription",
-    return_url: `${process.env.FRONT_END_URL}/return?session_id={CHECKOUT_SESSION_ID}&price_id=${priceId}`,
-  });
-
-  return session;
-}
+);

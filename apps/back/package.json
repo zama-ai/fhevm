@@ -13,6 +13,13 @@
   },
   "dependencies": {
     "@okta/okta-auth-js": "^7.14.0",
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.64.6",
+    "@opentelemetry/resources": "^2.1.0",
+    "@opentelemetry/sdk-metrics": "^2.1.0",
+    "@opentelemetry/sdk-node": "^0.205.0",
+    "@opentelemetry/sdk-trace-node": "^2.1.0",
+    "@opentelemetry/semantic-conventions": "^1.37.0",
     "@stripe/stripe-js": "^1.54.2",
     "body-parser": "^1.20.3",
     "cors": "^2.8.5",
@@ -24,7 +31,11 @@
     "jwks-rsa": "^3.2.0",
     "moesif-nodejs": "^3.10.0",
     "path": "^0.12.7",
-    "stripe": "^14.25.0"
+    "pino": "catalog:",
+    "pino-http": "catalog:",
+    "pino-pretty": "catalog:",
+    "stripe": "^14.25.0",
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
     "@types/body-parser": "^1.19.6",
@@ -32,6 +43,7 @@
     "@types/express": "^5.0.3",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "catalog:",
+    "@types/pino": "^7.0.5",
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "catalog:"
