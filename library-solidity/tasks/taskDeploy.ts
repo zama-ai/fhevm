@@ -63,7 +63,7 @@ task('task:setPauserSetAddress')
 address constant pauserSetAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
+      fs.appendFileSync('../fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'a',
       });
@@ -89,7 +89,7 @@ async function deployEmptyUUPSForACL(ethers: HardhatEthersHelpers, upgrades: Har
 async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
   console.info('Deploying an EmptyUUPSProxy proxy contract...');
   const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const UUPSEmpty = await upgrades.deployProxy(factory, [deployer.address], {
+  const UUPSEmpty = await upgrades.deployProxy(factory, {
     initializer: 'initialize',
     kind: 'uups',
   });
@@ -138,14 +138,14 @@ task('task:deployDecryptionOracle').setAction(async function (_, { ethers, upgra
   const proxyAddress = await decryptionOracle.getAddress();
   console.log('DecryptionOracle code set successfully at address:', proxyAddress);
   // Ensure the addresses/ directory exists or create it
-  fs.mkdirSync('./addresses', { recursive: true });
+  fs.mkdirSync('./fhevmTemp/addresses', { recursive: true });
   const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.decryptionoracle');
   const content = `DECRYPTION_ORACLE_ADDRESS=${proxyAddress}`;
   try {
     fs.writeFileSync(envFilePath, content, { flag: 'w' });
-    console.log('decryptionOracleAddress written to addresses/.env.decryptionoracle successfully!');
+    console.log('decryptionOracleAddress written to ./fhevmTemp/addresses/.env.decryptionoracle successfully!');
   } catch (err) {
-    console.error('Failed to write to addresses/.env.decryptionoracle:', err);
+    console.error('Failed to write to ./fhevmTemp/addresses/.env.decryptionoracle:', err);
   }
 
   const solidityTemplate = `// SPDX-License-Identifier: BSD-3-Clause-Clear
@@ -156,13 +156,13 @@ address constant decryptionOracleAdd = ${proxyAddress};
 `;
 
   try {
-    fs.writeFileSync('./addresses/DecryptionOracleAddress.sol', solidityTemplate, {
+    fs.writeFileSync('./fhevmTemp/addresses/DecryptionOracleAddress.sol', solidityTemplate, {
       encoding: 'utf8',
       flag: 'w',
     });
-    console.log('addresses/DecryptionOracleAddress.sol file has been generated successfully.');
+    console.log('./fhevmTemp/addresses/DecryptionOracleAddress.sol file has been generated successfully.');
   } catch (error) {
-    console.error('Failed to write addresses/DecryptionOracleAddress.sol', error);
+    console.error('Failed to write ./fhevmTemp/addresses/DecryptionOracleAddress.sol', error);
   }
 });
 
