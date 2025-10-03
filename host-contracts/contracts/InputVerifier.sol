@@ -19,14 +19,6 @@ import {ACLChecks} from "./shared/ACLChecks.sol";
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
 contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain, ACLChecks {
-    /// @notice         Emitted when a signer is added.
-    /// @param signer   The address of the signer that was added.
-    event SignerAdded(address indexed signer);
-
-    /// @notice         Emitted when a signer is removed.
-    /// @param signer   The address of the signer that was removed.
-    event SignerRemoved(address indexed signer);
-
     /// @notice Returned if the deserializing of the input proof fails.
     error DeserializingInputProofFail();
 
@@ -44,18 +36,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
     /// @notice Returned if the handle version is not the correct one.
     error InvalidHandleVersion();
-
-    /// @notice Returned if signer is null.
-    error SignerNull();
-
-    /// @notice Returned if signer is already registered.
-    error AlreadySigner();
-
-    /// @notice Returned if no signer is already registered.
-    error AtLeastOneSignerIsRequired();
-
-    ///  @notice Returned if not a registered signer.
-    error NotASigner();
 
     /// @notice Returned in case signerRecovered is an invalid signer.
     error InvalidSigner(address signerRecovered);
@@ -165,8 +145,8 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
      * @notice  Initializes the contract.
      * @param verifyingContractSource InputVerification contract address from Gateway chain.
      * @param chainIDSource chainID of Gateway chain.
-     * @param initialContextId Initial active context ID.
-     * @param initialContextSigners Initial list of signers for the active context ID.
+     * @param initialCoprocessorContextId Initial active coprocessor context ID.
+     * @param initialCoprocessorSigners Initial list of signers for the active coprocessor context.
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
@@ -195,7 +175,9 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     }
 
     /**
-     * @notice Re-initializes the contract from V3.
+     * @notice Re-initializes the contract from V1.
+     * @param initialCoprocessorContextId Initial active coprocessor context ID.
+     * @param initialCoprocessorSigners Initial list of signers for the active coprocessor context.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
@@ -271,16 +253,16 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
             /// @dev bundleCiphertext is compressedPackedCT+ZKPOK
             ///      inputHandle is keccak256(keccak256(bundleCiphertext)+index)[0:20] + index[21] + chainId[22:29] + type[30] + version[31]
             ///      and inputProof is numHandles + numSigners + coprocessorContextId + handles + coprocessorSignatures (1 + 1 + 1 + 32*numHandles + 65*numSigners + extraData bytes)
-
-            // uint256 inputProofLen = inputProof.length;
-            if (inputProof.length == 0) revert EmptyInputProof();
+            if (inputProof.length == 0) {
+                revert EmptyInputProof();
+            }
             uint256 numHandles = uint256(uint8(inputProof[0]));
             uint256 numSigners = uint256(uint8(inputProof[1]));
 
             // Extract the coprocessor context ID from inputProof.
             uint256 coprocessorContextId;
             assembly {
-                coprocessorContextId := mload(add(inputProof, 0x22)) // 0x20 offset for array prefix + 2 bytes header
+                coprocessorContextId := mload(add(inputProof, 0x22)) // 0x20 offset for array prefix + 2 bytes for numHandles and numSigners
             }
 
             /// @dev This checks in particular that the list is non-empty.
@@ -289,20 +271,22 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
             /// @dev The extraData is the rest of the inputProof bytes after:
             ///     + numHandles (1 byte)
             ///     + numSigners (1 byte)
-            ///     + coprocesorContextId (32 bytes)
+            ///     + coprocessorContextId (32 bytes)
             ///     + handles (32 bytes each)
             ///     + coprocessorSignatures (65 bytes each)
             uint256 extraDataOffset = 34 + 32 * numHandles + 65 * numSigners;
 
             /// @dev Check that the inputProof is long enough to contain at least the numHandles + numSigners + handles + coprocessorSignatures
-            if (inputProof.length < extraDataOffset) revert DeserializingInputProofFail();
+            if (inputProof.length < extraDataOffset) {
+                revert DeserializingInputProofFail();
+            }
 
             /// @dev Deserialize handle and check that they are from the correct version.
             bytes32[] memory listHandles = new bytes32[](numHandles);
             for (uint256 i = 0; i < numHandles; i++) {
                 bytes32 element;
                 assembly {
-                    // 32 (array length) + 2 (numSigners and numHandles) + 32 (coprocessorContextId) + 32*i
+                    // 32 bytes (array length) + 2 bytes (numSigners and numHandles) + 32 bytes (coprocessorContextId) + 32 bytes * i
                     element := mload(add(inputProof, add(66, mul(i, 32))))
                 }
                 /// @dev Check that all handles are from the correct version.
@@ -364,9 +348,9 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     }
 
     /**
-     * @notice Get the threshold for signature.
+     * @notice Get the threshold for required signatures.
      * @param coprocessorContextId The coprocessor context ID of the signer addresses to get the threshold from.
-     * @return threshold Threshold for signature verification.
+     * @return threshold Threshold for number of signatures verification.
      */
     function getThreshold(uint256 coprocessorContextId) public view virtual returns (uint256) {
         address[] memory coprocessorSigners = getCoprocessorSigners(coprocessorContextId);
@@ -400,15 +384,15 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     function isCoprocessorContextActiveOrSuspended(uint256 coprocessorContextId) public view virtual returns (bool) {
         InputVerifierStorage storage $ = _getInputVerifierStorage();
         if (
-            $.coprocessorContextStates[coprocessorContextId] == CoprocessorContextState.Suspended ||
-            $.coprocessorContextStates[coprocessorContextId] == CoprocessorContextState.Active
+            $.coprocessorContextStates[coprocessorContextId] == CoprocessorContextState.Active ||
+            $.coprocessorContextStates[coprocessorContextId] == CoprocessorContextState.Suspended
         ) {
             return true;
         }
         revert InvalidContextId(coprocessorContextId);
     }
 
-    function addNewContextAndSuspendOldOne(
+    function addNewContextAndSuspendCurrentOne(
         uint256 newContextId,
         address[] calldata newContextSigners
     ) public virtual onlyACLOwner {
