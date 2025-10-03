@@ -134,7 +134,7 @@ interface IDecryption {
      * @param maxLength The maximum number of contract addresses allowed.
      * @param actualLength The actual number of contract addresses provided.
      */
-    error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
+    error ContractAddressesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
 
     /// @notice Error indicating that the durationDays of a user decryption request is 0.
     error InvalidNullDurationDays();

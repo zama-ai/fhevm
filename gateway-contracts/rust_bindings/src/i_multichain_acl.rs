@@ -8,7 +8,7 @@ interface IMultichainACL {
         address delegatedAddress;
     }
 
-    error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
+    error ContractsMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
     error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
     error CoprocessorAlreadyDelegated(uint256 chainId, DelegationAccounts delegationAccounts, address[] contractAddresses, address txSender);
@@ -366,8 +366,8 @@ interface IMultichainACL {
     "inputs": [
       {
         "name": "maxLength",
-        "type": "uint8",
-        "internalType": "uint8"
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "actualLength",
@@ -710,15 +710,15 @@ struct DelegationAccounts { address delegatorAddress; address delegatedAddress; 
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `ContractsMaxLengthExceeded(uint8,uint256)` and selector `0x116caea3`.
+    /**Custom error with signature `ContractsMaxLengthExceeded(uint256,uint256)` and selector `0xa7db2751`.
 ```solidity
-error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
+error ContractsMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ContractsMaxLengthExceeded {
         #[allow(missing_docs)]
-        pub maxLength: u8,
+        pub maxLength: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub actualLength: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -732,12 +732,12 @@ error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Uint<8>,
+            alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Uint<256>,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
-            u8,
+            alloy::sol_types::private::primitives::aliases::U256,
             alloy::sol_types::private::primitives::aliases::U256,
         );
         #[cfg(test)]
@@ -776,8 +776,8 @@ error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "ContractsMaxLengthExceeded(uint8,uint256)";
-            const SELECTOR: [u8; 4] = [17u8, 108u8, 174u8, 163u8];
+            const SIGNATURE: &'static str = "ContractsMaxLengthExceeded(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [167u8, 219u8, 39u8, 81u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -788,7 +788,7 @@ error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Uint<
-                        8,
+                        256,
                     > as alloy_sol_types::SolType>::tokenize(&self.maxLength),
                     <alloy::sol_types::sol_data::Uint<
                         256,
@@ -3738,10 +3738,10 @@ function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
             [12u8, 198u8, 149u8, 173u8],
-            [17u8, 108u8, 174u8, 163u8],
             [87u8, 207u8, 162u8, 23u8],
             [102u8, 55u8, 227u8, 45u8],
             [166u8, 240u8, 77u8, 38u8],
+            [167u8, 219u8, 39u8, 81u8],
         ];
     }
     #[automatically_derived]
@@ -3798,17 +3798,6 @@ function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
                     CoprocessorAlreadyDelegated
                 },
                 {
-                    fn ContractsMaxLengthExceeded(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLErrors> {
-                        <ContractsMaxLengthExceeded as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IMultichainACLErrors::ContractsMaxLengthExceeded)
-                    }
-                    ContractsMaxLengthExceeded
-                },
-                {
                     fn EmptyContractAddresses(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLErrors> {
@@ -3843,6 +3832,17 @@ function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
                     }
                     CoprocessorAlreadyAllowedPublicDecrypt
                 },
+                {
+                    fn ContractsMaxLengthExceeded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainACLErrors> {
+                        <ContractsMaxLengthExceeded as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IMultichainACLErrors::ContractsMaxLengthExceeded)
+                    }
+                    ContractsMaxLengthExceeded
+                },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
                 return Err(
@@ -3873,17 +3873,6 @@ function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
                             .map(IMultichainACLErrors::CoprocessorAlreadyDelegated)
                     }
                     CoprocessorAlreadyDelegated
-                },
-                {
-                    fn ContractsMaxLengthExceeded(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IMultichainACLErrors> {
-                        <ContractsMaxLengthExceeded as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IMultichainACLErrors::ContractsMaxLengthExceeded)
-                    }
-                    ContractsMaxLengthExceeded
                 },
                 {
                     fn EmptyContractAddresses(
@@ -3919,6 +3908,17 @@ function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
                             )
                     }
                     CoprocessorAlreadyAllowedPublicDecrypt
+                },
+                {
+                    fn ContractsMaxLengthExceeded(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainACLErrors> {
+                        <ContractsMaxLengthExceeded as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainACLErrors::ContractsMaxLengthExceeded)
+                    }
+                    ContractsMaxLengthExceeded
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {

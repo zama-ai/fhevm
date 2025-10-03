@@ -66,7 +66,7 @@ interface IMultichainACL {
      * @param maxLength The maximum number of contracts allowed.
      * @param actualLength The actual number of contracts requested.
      */
-    error ContractsMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
+    error ContractsMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
 
     /**
      * @notice Allows access to the ciphertext handle for public decryption.

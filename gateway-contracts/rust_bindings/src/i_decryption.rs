@@ -26,7 +26,7 @@ interface IDecryption {
         address[] coprocessorTxSenderAddresses;
     }
 
-    error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
+    error ContractAddressesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
     error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
     error DecryptionNotRequested(uint256 decryptionId);
     error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
@@ -682,8 +682,8 @@ interface IDecryption {
     "inputs": [
       {
         "name": "maxLength",
-        "type": "uint8",
-        "internalType": "uint8"
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "actualLength",
@@ -2157,15 +2157,15 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `ContractAddressesMaxLengthExceeded(uint8,uint256)` and selector `0xc5ab467e`.
+    /**Custom error with signature `ContractAddressesMaxLengthExceeded(uint256,uint256)` and selector `0xaf1f0495`.
 ```solidity
-error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
+error ContractAddressesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
     pub struct ContractAddressesMaxLengthExceeded {
         #[allow(missing_docs)]
-        pub maxLength: u8,
+        pub maxLength: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
         pub actualLength: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -2179,12 +2179,12 @@ error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
         use alloy::sol_types as alloy_sol_types;
         #[doc(hidden)]
         type UnderlyingSolTuple<'a> = (
-            alloy::sol_types::sol_data::Uint<8>,
+            alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::Uint<256>,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
-            u8,
+            alloy::sol_types::private::primitives::aliases::U256,
             alloy::sol_types::private::primitives::aliases::U256,
         );
         #[cfg(test)]
@@ -2223,8 +2223,8 @@ error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "ContractAddressesMaxLengthExceeded(uint8,uint256)";
-            const SELECTOR: [u8; 4] = [197u8, 171u8, 70u8, 126u8];
+            const SIGNATURE: &'static str = "ContractAddressesMaxLengthExceeded(uint256,uint256)";
+            const SELECTOR: [u8; 4] = [175u8, 31u8, 4u8, 149u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -2235,7 +2235,7 @@ error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
             fn tokenize(&self) -> Self::Token<'_> {
                 (
                     <alloy::sol_types::sol_data::Uint<
-                        8,
+                        256,
                     > as alloy_sol_types::SolType>::tokenize(&self.maxLength),
                     <alloy::sol_types::sol_data::Uint<
                         256,
@@ -6825,8 +6825,8 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [153u8, 236u8, 72u8, 217u8],
             [164u8, 195u8, 3u8, 145u8],
             [166u8, 166u8, 203u8, 33u8],
+            [175u8, 31u8, 4u8, 149u8],
             [195u8, 68u8, 106u8, 199u8],
-            [197u8, 171u8, 70u8, 126u8],
             [207u8, 174u8, 146u8, 31u8],
             [212u8, 138u8, 249u8, 66u8],
             [220u8, 77u8, 120u8, 177u8],
@@ -6999,17 +6999,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     EmptyCtHandleContractPairs
                 },
                 {
-                    fn DelegatorAddressInContractAddresses(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
-                        <DelegatorAddressInContractAddresses as alloy_sol_types::SolError>::abi_decode_raw(
-                                data,
-                            )
-                            .map(IDecryptionErrors::DelegatorAddressInContractAddresses)
-                    }
-                    DelegatorAddressInContractAddresses
-                },
-                {
                     fn ContractAddressesMaxLengthExceeded(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -7019,6 +7008,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::ContractAddressesMaxLengthExceeded)
                     }
                     ContractAddressesMaxLengthExceeded
+                },
+                {
+                    fn DelegatorAddressInContractAddresses(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <DelegatorAddressInContractAddresses as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IDecryptionErrors::DelegatorAddressInContractAddresses)
+                    }
+                    DelegatorAddressInContractAddresses
                 },
                 {
                     fn DifferentKeyIdsNotAllowed(
@@ -7195,17 +7195,6 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                     EmptyCtHandleContractPairs
                 },
                 {
-                    fn DelegatorAddressInContractAddresses(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
-                        <DelegatorAddressInContractAddresses as alloy_sol_types::SolError>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(IDecryptionErrors::DelegatorAddressInContractAddresses)
-                    }
-                    DelegatorAddressInContractAddresses
-                },
-                {
                     fn ContractAddressesMaxLengthExceeded(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IDecryptionErrors> {
@@ -7215,6 +7204,17 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                             .map(IDecryptionErrors::ContractAddressesMaxLengthExceeded)
                     }
                     ContractAddressesMaxLengthExceeded
+                },
+                {
+                    fn DelegatorAddressInContractAddresses(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IDecryptionErrors> {
+                        <DelegatorAddressInContractAddresses as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IDecryptionErrors::DelegatorAddressInContractAddresses)
+                    }
+                    DelegatorAddressInContractAddresses
                 },
                 {
                     fn DifferentKeyIdsNotAllowed(
