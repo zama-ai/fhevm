@@ -1033,9 +1033,9 @@ dependencies = [
 
 [[package]]
 name = "anstream"
-version = "0.6.20"
+version = "0.6.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ae563653d1938f79b1ab1b5e668c87c76a9930414574a6583a7b7e11a8e6192"
+checksum = "43d5b281e737544384e969a5ccad3f1cdd24b48086a0fc1b2a5262a26b8f4f4a"
 dependencies = [
  "anstyle",
  "anstyle-parse",
@@ -1511,9 +1511,9 @@ dependencies = [
 
 [[package]]
 name = "aws-credential-types"
-version = "1.2.6"
+version = "1.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d025db5d9f52cbc413b167136afb3d8aeea708c0d8884783cf6253be5e22f6f2"
+checksum = "799a1290207254984cb7c05245111bc77958b92a3c9bb449598044b36341cce6"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-runtime-api",
@@ -1547,9 +1547,9 @@ dependencies = [
 
 [[package]]
 name = "aws-runtime"
-version = "1.5.10"
+version = "1.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c034a1bc1d70e16e7f4e4caf7e9f7693e4c9c24cd91cf17c2a0b21abaebc7c8b"
+checksum = "2e1ed337dabcf765ad5f2fb426f13af22d576328aaf09eac8f70953530798ec0"
 dependencies = [
  "aws-credential-types",
  "aws-sigv4",
@@ -1593,9 +1593,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-sso"
-version = "1.84.0"
+version = "1.85.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "357a841807f6b52cb26123878b3326921e2a25faca412fabdd32bd35b7edd5d3"
+checksum = "2f2c741e2e439f07b5d1b33155e246742353d82167c785a2ff547275b7e32483"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -1615,9 +1615,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-ssooidc"
-version = "1.86.0"
+version = "1.87.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d1cc7fb324aa12eb4404210e6381195c5b5e9d52c2682384f295f38716dd3c7"
+checksum = "6428ae5686b18c0ee99f6f3c39d94ae3f8b42894cdc35c35d8fb2470e9db2d4c"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -1637,9 +1637,9 @@ dependencies = [
 
 [[package]]
 name = "aws-sdk-sts"
-version = "1.86.0"
+version = "1.87.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7d835f123f307cafffca7b9027c14979f1d403b417d8541d67cf252e8a21e35"
+checksum = "5871bec9a79a3e8d928c7788d654f135dde0e71d2dd98089388bab36b37ef607"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -1713,9 +1713,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-http-client"
-version = "1.1.1"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "147e8eea63a40315d704b97bf9bc9b8c1402ae94f89d5ad6f7550d963309da1b"
+checksum = "734b4282fbb7372923ac339cc2222530f8180d9d4745e582de19a18cee409fd8"
 dependencies = [
  "aws-smithy-async",
  "aws-smithy-runtime-api",
@@ -2247,9 +2247,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.39"
+version = "1.2.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1354349954c6fc9cb0deab020f27f783cf0b604e8bb754dc4658ecf0d29c35f"
+checksum = "e1d05d92f4b1fd76aad469d46cdd858ca761576082cd37df81416691e50199fb"
 dependencies = [
  "find-msvc-tools",
  "jobserver",
@@ -2416,7 +2416,7 @@ dependencies = [
  "sqlx",
  "tempfile",
  "testcontainers",
- "tfhe",
+ "tfhe 1.4.0-alpha.3 (git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main)",
  "thiserror 2.0.12",
  "tokio",
  "tokio-util",
@@ -3003,9 +3003,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.2"
+version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ced73b1dacfc750a6db6c0a0c3a3853c8b41997e2e2c563dc90804ae6867959"
+checksum = "0399f9d26e5191ce32c498bebd31e7a3ceabc2745f0ac54af3f335126c3f24b3"
 
 [[package]]
 name = "fixed-hash"
@@ -4011,8 +4011,8 @@ dependencies = [
  "serde",
  "strum",
  "strum_macros",
- "tfhe",
- "tfhe-versionable",
+ "tfhe 1.4.0-alpha.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tfhe-versionable 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "thiserror 2.0.12",
  "threshold-fhe",
  "tonic",
@@ -4697,12 +4697,11 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
 name = "pest"
-version = "2.8.2"
+version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21e0a3a33733faeaf8651dfee72dd0f388f0c8e5ad496a3478fa5a922f49cfa8"
+checksum = "989e7521a040efde50c3ab6bbadafbe15ab6dc042686926be59ac35d74607df4"
 dependencies = [
  "memchr",
- "thiserror 2.0.12",
  "ucd-trie",
 ]
 
@@ -5544,7 +5543,7 @@ dependencies = [
  "once_cell",
  "ring",
  "rustls-pki-types",
- "rustls-webpki 0.103.6",
+ "rustls-webpki 0.103.7",
  "subtle",
  "zeroize",
 ]
@@ -5613,9 +5612,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.6"
+version = "0.103.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8572f3c2cb9934231157b45499fc41e1f58c589fdfb81a844ba873265e80f8eb"
+checksum = "e10b3f4191e8a80e6b43eebabfac91e5dcecebb27a71f04e820c47ec41d314bf"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -5899,9 +5898,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.14.1"
+version = "3.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c522100790450cf78eeac1507263d0a350d4d5b30df0c8e1fe051a10c22b376e"
+checksum = "6093cd8c01b25262b84927e0f7151692158fab02d961e04c979d3903eba7ecc5"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -5910,8 +5909,7 @@ dependencies = [
  "indexmap 2.11.4",
  "schemars 0.9.0",
  "schemars 1.0.4",
- "serde",
- "serde_derive",
+ "serde_core",
  "serde_json",
  "serde_with_macros",
  "time",
@@ -5919,9 +5917,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.14.1"
+version = "3.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "327ada00f7d64abaac1e55a6911e90cf665aa051b9a561c7006c157f4633135e"
+checksum = "a7e6c180db0816026a61afa1cff5344fb7ebded7e4d3062772179f2501481c27"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -6520,11 +6518,35 @@ dependencies = [
  "serde",
  "sha3",
  "strum",
- "tfhe-csprng",
- "tfhe-fft",
- "tfhe-ntt",
- "tfhe-versionable",
+ "tfhe-csprng 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tfhe-fft 0.9.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tfhe-ntt 0.6.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tfhe-versionable 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "tfhe-zk-pok",
+]
+
+[[package]]
+name = "tfhe"
+version = "1.4.0-alpha.3"
+source = "git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main#0604d237ebbe42675519071733c7170e14556292"
+dependencies = [
+ "aligned-vec",
+ "bincode 1.3.3",
+ "blake3",
+ "bytemuck",
+ "dyn-stack",
+ "itertools 0.14.0",
+ "paste",
+ "pulp",
+ "rand_core 0.6.4",
+ "rayon",
+ "serde",
+ "sha3",
+ "strum",
+ "tfhe-csprng 0.7.0 (git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main)",
+ "tfhe-fft 0.9.0 (git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main)",
+ "tfhe-ntt 0.6.1 (git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main)",
+ "tfhe-versionable 0.6.2 (git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main)",
 ]
 
 [[package]]
@@ -6538,7 +6560,20 @@ dependencies = [
  "libc",
  "rayon",
  "serde",
- "tfhe-versionable",
+ "tfhe-versionable 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "tfhe-csprng"
+version = "0.7.0"
+source = "git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main#0604d237ebbe42675519071733c7170e14556292"
+dependencies = [
+ "aes",
+ "getrandom 0.2.15",
+ "libc",
+ "rayon",
+ "serde",
+ "tfhe-versionable 0.6.2 (git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main)",
 ]
 
 [[package]]
@@ -6546,6 +6581,20 @@ name = "tfhe-fft"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8621277f2fcbcf56e4cd0e19476854bd9ac195f17f6906476826dceff4063fc"
+dependencies = [
+ "aligned-vec",
+ "bytemuck",
+ "dyn-stack",
+ "js-sys",
+ "num-complex",
+ "pulp",
+ "serde",
+]
+
+[[package]]
+name = "tfhe-fft"
+version = "0.9.0"
+source = "git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main#0604d237ebbe42675519071733c7170e14556292"
 dependencies = [
  "aligned-vec",
  "bytemuck",
@@ -6568,6 +6617,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tfhe-ntt"
+version = "0.6.1"
+source = "git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main#0604d237ebbe42675519071733c7170e14556292"
+dependencies = [
+ "aligned-vec",
+ "bytemuck",
+ "pulp",
+]
+
+[[package]]
 name = "tfhe-versionable"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6576,7 +6635,18 @@ dependencies = [
  "aligned-vec",
  "num-complex",
  "serde",
- "tfhe-versionable-derive",
+ "tfhe-versionable-derive 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "tfhe-versionable"
+version = "0.6.2"
+source = "git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main#0604d237ebbe42675519071733c7170e14556292"
+dependencies = [
+ "aligned-vec",
+ "num-complex",
+ "serde",
+ "tfhe-versionable-derive 0.6.2 (git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main)",
 ]
 
 [[package]]
@@ -6584,6 +6654,16 @@ name = "tfhe-versionable-derive"
 version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b9a5d55a09b8aff152dee2fa3d28af8999c3af3f69a8bce728855de21638727e"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
+name = "tfhe-versionable-derive"
+version = "0.6.2"
+source = "git+https://git@github.com/zama-ai/tfhe-rs.git?branch=main#0604d237ebbe42675519071733c7170e14556292"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6605,7 +6685,7 @@ dependencies = [
  "rayon",
  "serde",
  "sha3",
- "tfhe-versionable",
+ "tfhe-versionable 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "zeroize",
 ]
 
@@ -6705,9 +6785,9 @@ dependencies = [
  "statrs",
  "strum",
  "strum_macros",
- "tfhe",
- "tfhe-csprng",
- "tfhe-versionable",
+ "tfhe 1.4.0-alpha.3 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tfhe-csprng 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "tfhe-versionable 0.6.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "tonic-build",
  "tracing",
  "zeroize",
@@ -7195,9 +7275,9 @@ dependencies = [
 
 [[package]]
 name = "typenum"
-version = "1.18.0"
+version = "1.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1dccffe3ce07af9386bfd29e80c0ab1a8205a2fc34e4bcd40364df902cfa8f3f"
+checksum = "562d481066bde0658276a35467c4af00bdc6ee726305698a55b86e61d7ad82bb"
 
 [[package]]
 name = "ucd-trie"

@@ -70,7 +70,7 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 ] }
 testcontainers = "0.24.0"
 thiserror = "2.0.12"
-tfhe = { version = "1.4.0-alpha.3", features = [
+tfhe = { git = "https://git@github.com/zama-ai/tfhe-rs.git", branch = "main", features = [
     "boolean",
     "shortint",
     "integer",
