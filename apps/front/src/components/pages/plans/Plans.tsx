@@ -7,6 +7,7 @@ function Plans() {
   useEffect(() => {
     window?.moesif?.track("viewed-plans-page");
   }, []);
+
   return (
     <PageLayout>
       <MoesifPlans />

@@ -1,59 +1,51 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 
 import useAuth from "../../../hooks/useAuth";
 import { PageLoader } from "../../page-loader";
 import { PageLayout } from "../../page-layout";
 import StripeCheckoutForm from "./StripeCheckoutForm";
-import { Navigate } from "react-router-dom";
-import CustomCheckoutForm from "./CustomCheckoutForm";
-import config from "../../../config";
+import { Navigate, useSearchParams } from "react-router-dom";
 
 function Checkout() {
   const { isLoading, user, idToken } = useAuth();
 
-  const queryString = window.location.search;
-  const urlParams = new URLSearchParams(queryString);
-  const urlPriceIdToPurchase = urlParams.get("price_id_to_purchase");
-  const urlPlanIdToPurchase = urlParams.get("plan_id_to_purchase");
-  const urlQuantity = urlParams.get("quantity");
+  const [searchParams] = useSearchParams();
+  const { priceId, planId, quantity } = useMemo(
+    () => ({
+      priceId: searchParams.get("price_id"),
+      planId: searchParams.get("plan_id"),
+      quantity: searchParams.get("quantity"),
+    }),
+    [searchParams]
+  );
 
   useEffect(() => {
     window.moesif?.track("about-to-checkout", {
-      price_id: urlPriceIdToPurchase,
-      plan_id: urlPlanIdToPurchase,
-      quantity: urlQuantity,
+      price_id: priceId,
+      plan_id: planId,
+      quantity,
     });
-  }, [urlPriceIdToPurchase, urlPlanIdToPurchase, urlQuantity]);
+  }, [priceId, planId, quantity]);
 
   if (isLoading || !idToken) {
     return <PageLoader />;
   }
 
-  if (!urlPriceIdToPurchase && !urlPlanIdToPurchase) {
-    <Navigate to="/plans" />;
+  if (!priceId) {
+    return <Navigate to="/plans" />;
   }
 
   return (
     <PageLayout>
       <h1>Subscribe</h1>
       <div className="page-layout__focus">
-        {config.paymentProvider === "custom" ? (
-          <CustomCheckoutForm
-            key={urlPriceIdToPurchase}
-            priceId={urlPriceIdToPurchase}
-            planId={urlPlanIdToPurchase}
-            user={user}
-            idToken={idToken}
-          />
-        ) : (
-          <StripeCheckoutForm
-            key={urlPriceIdToPurchase}
-            priceId={urlPriceIdToPurchase}
-            quantity={urlQuantity}
-            user={user}
-            idToken={idToken}
-          />
-        )}
+        <StripeCheckoutForm
+          key={priceId}
+          priceId={priceId}
+          quantity={quantity}
+          user={user!}
+          idToken={idToken}
+        />
       </div>
     </PageLayout>
   );

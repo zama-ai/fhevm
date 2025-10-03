@@ -9,19 +9,21 @@ import fetchEmbedChartUrls from "./fetchEmbedChartUrls";
 import config from "../../../config";
 
 const Dashboard = () => {
-  const { user, isLoading, idToken, userEmail } = useAuth();
+  const { user, isLoading, idToken } = useAuth();
 
-  const [error, setError] = useState();
-  const [embedTemplateUrls, setEmbedTemplateUrls] = useState(null);
+  const [error, setError] = useState<Error>();
+  const [embedTemplateUrls, setEmbedTemplateUrls] = useState<string[] | null>(
+    null
+  );
 
-  const email = user?.email || userEmail;
+  const email = user?.email ?? "";
 
   useEffect(() => {
     window?.moesif?.track("viewed-dashboard");
 
     if (idToken) {
       fetchEmbedChartUrls({
-        authUserId: user?.user_id || user.id || user?.sub,
+        authUserId: user?.user_id || user?.id || user?.sub,
         idToken,
         email,
       })
@@ -69,10 +71,7 @@ const Dashboard = () => {
                   Embedded Metric Docs
                 </button>
               </a>
-              <a
-                target="_blank"
-                href={config.links.docs.relayerSdk}
-              >
+              <a target="_blank" href={config.links.docs.relayerSdk}>
                 <button className="button">Relayer SDK</button>
               </a>
             </>

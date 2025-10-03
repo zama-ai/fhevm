@@ -43,11 +43,7 @@ function MoesifPlans() {
     if (isAuthenticated) {
       return (
         <Link
-          to={`/checkout?price_id_to_purchase=${encodeURIComponent(
-            price.id
-          )}&plan_id_to_purchase=${encodeURIComponent(
-            plan?.id
-          )}${quantityParam}`}
+          to={`/checkout?price_id=${price.id}&plan_id=${plan?.id}${quantityParam}`}
         >
           <button className="button__price-action">Select</button>
         </Link>

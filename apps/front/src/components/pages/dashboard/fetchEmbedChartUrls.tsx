@@ -29,10 +29,10 @@ export default async function fetchEmbedChartUrls({
   setError: _setError,
   email,
 }: {
-  stripCustomerId: string;
+  stripCustomerId?: boolean;
   authUserId: string;
   idToken: string;
-  setError: (error: any) => void;
+  setError?: (error: Error) => void;
   email: string;
 }) {
   const response = await fetch(

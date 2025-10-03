@@ -21,7 +21,9 @@ export default function useSubscriptions({
   const [subscriptionsError, setSubscriptionsError] = useState(null);
 
   useEffect(() => {
+    let controller: AbortController | undefined;
     if (user?.email && idToken) {
+      controller = new AbortController();
       fetch(
         `${config.devPortalApiServer}/subscriptions?email=${encodeURIComponent(
           user.email
@@ -39,6 +41,7 @@ export default function useSubscriptions({
             "Content-Type": `application/json`,
             Authorization: `Bearer ${idToken}`,
           },
+          signal: controller.signal,
         }
       )
         .then((res) => {
@@ -57,6 +60,11 @@ export default function useSubscriptions({
           console.error("failed to load subscriptions", err);
         });
     }
+
+    // Cleanup function to abort the request
+    return () => {
+      controller?.abort();
+    };
   }, [user, idToken]);
 
   return {

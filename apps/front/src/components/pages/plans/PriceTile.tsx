@@ -157,7 +157,7 @@ type PriceTileProps = {
   price: Price;
   plan: Plan;
   actionButton?: ReactNode;
-  subscriptionPeriod: string;
+  subscriptionPeriod?: string;
 };
 
 function PriceTile(props: PriceTileProps) {

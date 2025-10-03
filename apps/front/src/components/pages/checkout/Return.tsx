@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Navigate } from "react-router-dom";
+import { useState, useEffect, useRef, useMemo } from "react";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { PageLayout } from "../../page-layout";
 import { Link } from "react-router-dom";
 import noPriceIcon from "../../../images/icons/empty-state-price.svg";
@@ -9,7 +9,6 @@ import { moesifIdentifyUserFrontEndIfPossible } from "../../../common/utils";
 import { PageLoader } from "../../page-loader";
 import config from "../../../config";
 import usePlans from "../../../hooks/usePlans";
-import { useMemo } from "react";
 
 // used on embedded checkout example code:
 // https://docs.stripe.com/checkout/embedded/quickstart
@@ -24,58 +23,56 @@ function registerPurchaseStripe({
   setLoading,
   setProvisionError,
 }: {
-  sessionId?: string | null;
-  idToken?: string | null;
+  sessionId?: string;
+  idToken?: string;
   setStatus: (status: string) => void;
   setLoading: (loading: boolean) => void;
   setProvisionError: (error: string) => void;
 }) {
-  if (sessionId && idToken) {
-    setLoading(true);
+  setLoading(true);
 
-    fetch(`${config.devPortalApiServer}/register/stripe/${sessionId}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${idToken}`,
-      },
+  fetch(`${config.devPortalApiServer}/register/stripe/${sessionId}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+    },
+  })
+    .then(async (res) => {
+      if (!res.ok) {
+        const errorBody = await res.json();
+        throw new Error(
+          `Failed provision: ${res.status}, body: ${JSON.stringify(errorBody)}`
+        );
+      }
+      return res.json();
     })
-      .then(async (res) => {
-        if (!res.ok) {
-          const errorBody = await res.json();
-          throw new Error(
-            `Failed provision: ${res.status}, body: ${JSON.stringify(
-              errorBody
-            )}`
-          );
-        }
-        return res.json();
-      })
-      .then((data) => {
-        setStatus(data.status);
-      })
-      .catch((err) => {
-        setProvisionError(err);
-      })
-      .finally(() => {
-        setLoading(false);
-        moesifIdentifyUserFrontEndIfPossible(idToken);
-      });
-  } else {
-    console.error("no session id found for stripe");
-  }
+    .then((data) => {
+      setStatus(data.status);
+    })
+    .catch((err) => {
+      setProvisionError(err);
+    })
+    .finally(() => {
+      setLoading(false);
+      moesifIdentifyUserFrontEndIfPossible(idToken);
+    });
 }
 
 function Return() {
   const [status, setStatus] = useState<string>();
   const [loading, setLoading] = useState(false);
   const [provisionError, setProvisionError] = useState<string>();
-  const { idToken, user } = useAuth();
+  const { idToken } = useAuth();
 
-  const queryString = window.location.search;
-  const urlParams = new URLSearchParams(queryString);
-  const sessionId = urlParams.get("session_id");
-  const priceId = urlParams.get("price_id");
-  const planId = urlParams.get("plan_id");
+  const [searchParams] = useSearchParams();
+  const { sessionId, planId, priceId } = useMemo(
+    () => ({
+      sessionId: searchParams.get("session_id"),
+      planId: searchParams.get("plan_id"),
+      priceId: searchParams.get("price_id"),
+    }),
+    [searchParams]
+  );
 
   const { plans } = usePlans();
   const planName = useMemo(
@@ -83,23 +80,37 @@ function Return() {
     [plans, planId]
   );
 
+  const isPurchaseRegistered = useRef(false);
+  useEffect(() => {
+    if (sessionId && idToken) {
+      if (!isPurchaseRegistered.current) {
+        // Prevent double calls
+        isPurchaseRegistered.current = true;
+        registerPurchaseStripe({
+          sessionId,
+          idToken,
+          setStatus,
+          setLoading,
+          setProvisionError,
+        });
+      } else {
+        console.debug("request already performed");
+      }
+    } else {
+      console.error("no session id found for stripe");
+    }
+  }, [sessionId, idToken, setStatus, setLoading, setProvisionError]);
+
   useEffect(() => {
     window.moesif?.track("stripe-checkout-returned", {
       stripe_session_id: sessionId,
       price_id: priceId,
       status,
     });
-    registerPurchaseStripe({
-      sessionId,
-      idToken,
-      setStatus,
-      setLoading,
-      setProvisionError,
-    });
-  }, [sessionId, idToken, status, user, priceId, planId]);
+  }, [sessionId, priceId, status]);
 
   if (status === "open") {
-    return <Navigate to={`/checkout?price_id_to_purchase=${priceId}`} />;
+    return <Navigate to={`/checkout?price_id=${priceId}`} />;
   }
 
   // for stripe sessionId is required, but if isCustom, for developers you may have to determine
