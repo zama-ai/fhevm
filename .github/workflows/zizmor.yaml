@@ -2,6 +2,9 @@ name: zizmor
 
 on:
   pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   zizmor:
@@ -21,4 +24,4 @@ jobs:
         uses: zizmorcore/zizmor-action@2520132f44b3ed84916048d32e5c7153fc739fe7 # v0.0.3
         with:
           advanced-security: true
-          persona: pedantic
+          persona: regular

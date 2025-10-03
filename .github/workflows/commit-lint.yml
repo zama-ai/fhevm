@@ -2,6 +2,11 @@ name: commit-lint
 
 on:
   pull_request:
+permissions:
+  contents: read # required for checkout in commit validation
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   commit-lint:
@@ -12,6 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         with:
+          persist-credentials: false
           fetch-depth: 0
       - name: Install pnpm
         uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0

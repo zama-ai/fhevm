@@ -6,7 +6,10 @@ on:
       release:
         description: "Set to true for release tagging"
         required: false
-        default: false
+        default: "false"
+concurrency:
+  group: oracle-contract-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   publish:

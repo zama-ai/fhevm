@@ -9,10 +9,12 @@ on:
         required: true
       BOT_USERNAME:
         required: true
-
 permissions:
   contents: read
   checks: write
+concurrency:
+  group: rust-ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   compile-rust-unit-tests:

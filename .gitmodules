@@ -1,6 +1,6 @@
 [submodule "external/fhevm"]
 	path = external/fhevm
-	url = git@github.com:zama-ai/fhevm.git
+	url = https://github.com/zama-ai/fhevm.git
 	branch = main
 [submodule "apps/relayer/fhevm-relayer/hardhat/contracts/lib/forge-std"]
 	path = apps/relayer/fhevm-relayer/hardhat/contracts/lib/forge-std

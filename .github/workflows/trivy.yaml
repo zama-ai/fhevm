@@ -27,6 +27,9 @@ on:
 permissions:
   contents: read
   security-events: write
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   prepare:

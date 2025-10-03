@@ -3,7 +3,8 @@ name: docker-build-and-push
 on:
   # TODO: remove this when we have a proper release process
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
     inputs:
       test:
@@ -15,36 +16,33 @@ on:
   release:
     types: [created]
   pull_request:
-    types: [labeled, opened, synchronize, reopened]
+    types: [ready_for_review, review_requested, auto_merge_enabled, synchronize, opened, reopened]
 permissions:
-  contents: read
-  packages: read
-
-# TODO: migrate to zama-ai/ci-templates/.github/workflows/docker_common.yml
-
+  contents: read # required to fetch repository sources for builds
+  packages: read # allows pulling existing images and metadata from GHCR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  
 jobs:
-  # Detect which files have changed
   detect-changes:
     name: docker-build-and-push/detect-changes
     runs-on: ubuntu-latest
-    # Required permissions
     permissions:
-      pull-requests: read
-      contents: read
+      pull-requests: read # needed for paths-filter to inspect PR changes
+      contents: read # required to access repository files for analysis
     outputs:
-      # Expose matched filters as a JSON array for the matrix
-      to_run: ${{ steps.set-output.outputs.to_run }}
+      to_run: ${{ steps.select.outputs.services }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          fetch-depth: 100
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Determine the services to trigger
+      - name: Detect service changes
+        id: changes
         uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
-        id: pr
-        if: github.event_name == 'pull_request'
         with:
           token: ${{ github.token }}
           filters: |
@@ -54,7 +52,7 @@ jobs:
               - 'package.json'
               - 'pnpm-lock.yaml'
               - 'docker/back/**'
-              - '.github/workflows/docker.yaml' 
+              - '.github/workflows/docker.yaml'
             front:
               - 'apps/front/**'
               - 'packages/**'
@@ -63,96 +61,86 @@ jobs:
               - 'docker/front/**'
               - '.github/workflows/docker.yaml'
             relayer:
-              - apps/relayer/**
-              - docker/relayer/**
+              - 'apps/relayer/**'
+              - 'docker/relayer/**'
               - '.github/workflows/docker.yaml'
-            decryption-oracle-contracts:
-              - apps/oracle/**
-              - docker/oracle/**
+            oracle:
+              - 'apps/oracle/**'
+              - 'docker/oracle/**'
               - '.github/workflows/docker.yaml'
-          list-files: json
 
-      - name: Release
-        id: release
-        if: github.event_name == 'release'
-        env:
-          REF_NAME: ${{ github.ref_name }}
-        run: |
-          TO_RUN="${REF_NAME%%@*}"
-          TO_RUN="[\"$TO_RUN\"]"
-          echo "$TO_RUN"
-          echo "to_run=$TO_RUN" >> "$GITHUB_OUTPUT"
-
-      - name: Other
-        id: other
-        if: (github.event_name != 'release') && (github.event_name != 'pull_request')
-        run: |
-          # All current docker images
-          TO_RUN="[\"relayer\", \"back\", \"front\", \"decryption-oracle-contracts\"]"
-          echo "$TO_RUN"
-          echo "to_run=$TO_RUN" >> "$GITHUB_OUTPUT"
-
-      - name: Set final output
-        id: set-output
+      - name: Select services to build
+        id: select
         env:
           EVENT_NAME: ${{ github.event_name }}
-          STEPS_PR_OUTPUTS_TO_RUN: ${{ steps.pr.outputs.to_run }}
-          STEPS_RELEASE_OUTPUTS_TO_RUN: ${{ steps.release.outputs.to_run }}
-          STEPS_OTHER_OUTPUTS_TO_RUN: ${{ steps.other.outputs.to_run }}
+          REF_NAME: ${{ github.ref_name }}
+          CHANGES_JSON: ${{ steps.changes.outputs.changes }}
         run: |
-          TO_RUN=""
-          if [ "$EVENT_NAME" == "pull_request" ]; then
-            TO_RUN="${STEPS_PR_OUTPUTS_TO_RUN}"
-          elif [ "$EVENT_NAME" == "release" ]; then
-            TO_RUN="${STEPS_RELEASE_OUTPUTS_TO_RUN}"
-          else
-            TO_RUN="${STEPS_OTHER_OUTPUTS_TO_RUN}"
+          # shellcheck shell=bash
+          set -eo pipefail
+          SERVICE_MAP='{
+            "back": {"name": "back", "context": ".", "dockerfile": "docker/back/Dockerfile", "target": "runtime"},
+            "front": {"name": "front", "context": ".", "dockerfile": "docker/front/Dockerfile", "target": "runtime"},
+            "relayer": {"name": "relayer", "context": ".", "dockerfile": "docker/relayer/Dockerfile", "target": "runtime"},
+            "oracle": {"name": "oracle", "context": ".", "dockerfile": "docker/oracle/Dockerfile", "target": "prod"}
+          }'
+          if [ -z "$CHANGES_JSON" ]; then
+            CHANGES_JSON='[]'
           fi
-
-          # Ensure TO_RUN is not empty, null, or just "[]"
-          if [ -z "$TO_RUN" ] || [ "$TO_RUN" == "null" ] || [ "$TO_RUN" == "[]" ]; then
-            echo "No services detected for changes, using empty array"
-            TO_RUN="[]"
-          fi
+          case "$EVENT_NAME" in
+            pull_request)
+              TO_RUN=$(jq -nc \
+                --argjson service_map "$SERVICE_MAP" \
+                --argjson changes "$CHANGES_JSON" \
+                '$changes | map($service_map[.]) | map(select(. != null))')
+              ;;
+            release)
+              service="${REF_NAME%%@*}"
+              if [ -n "$service" ] && [ "$service" != "$REF_NAME" ]; then
+                case "$service" in
+                  back|front|relayer|oracle)
+                    TO_RUN=$(jq -nc \
+                      --arg svc "$service" \
+                      --argjson service_map "$SERVICE_MAP" \
+                      '($service_map[$svc] // empty) as $entry | (if $entry == null then [] else [$entry] end)')
+                    ;;
+                  *)
+                    echo "Release ref '$REF_NAME' does not match a known service; skipping build." >&2
+                    TO_RUN='[]'
+                    ;;
+                esac
+              else
+                TO_RUN='[]'
+              fi
+              ;;
+            *)
+              TO_RUN=$(jq -nc \
+                --argjson service_map "$SERVICE_MAP" \
+                '[
+                  $service_map.relayer,
+                  $service_map.back,
+                  $service_map.front,
+                  $service_map["oracle"]
+                ]')
+              ;;
+          esac
 
           echo "Final to_run value: $TO_RUN"
-          echo "to_run=${TO_RUN}" >> "$GITHUB_OUTPUT"
+          echo "services=${TO_RUN}" >> "$GITHUB_OUTPUT"
 
   # Build and push Docker images for services with changes
   build-docker:
     name: docker-build-and-push/build-docker (bpr)
     needs: [detect-changes]
-    if: |
-      needs.detect-changes.outputs.to_run != '[]' && (
-        (github.event_name == 'release') ||
-        (github.event_name == 'workflow_dispatch') ||
-        (github.event_name == 'pull_request') ||
-        (github.event_name == 'push') ||
-        (github.event.action == 'labeled' && github.event.label.name == 'docker')
-      )
     strategy:
+      fail-fast: true
       matrix:
-        # Use include to define matrix based on the objects in the configs output
         service: ${{ fromJSON(needs.detect-changes.outputs.to_run) }}
-      fail-fast: false
     runs-on: ubuntu-latest
     permissions:
-      packages: write # Needs to be set to be able to push images
-      contents: read
+      packages: write # required to push service images to GHCR
+      contents: read # fetch code and Dockerfiles during the build
     steps:
-      - name: Map Service Variables
-        uses: kanga333/variable-mapper@3681b75f5c6c00162721168fb91ab74925eaebcb # v0.3.0
-        id: vars
-        with:
-          key: ${{ matrix.service }}
-          map: |
-            {
-              "back":           { "context": ".", "file": "docker/back/Dockerfile", "target": "runtime"},
-              "front":          { "context": ".", "file": "docker/front/Dockerfile", "target": "runtime"},
-              "relayer":        { "context": ".", "file": "docker/relayer/Dockerfile", "target": "runtime"},
-              "decryption-oracle-contracts": {"context": ".", "file": "docker/oracle/Dockerfile", "target": "prod"}
-            }
-
       - name: Checkout Project
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -167,7 +155,6 @@ jobs:
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
-          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -175,74 +162,46 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
 
-      # Determine if we should push:
-      # - Push to main branch
-      # - Release
-      # - Workflow dispatch
-      - name: Determine if we should push
-        id: should-push
-        env:
-          REF_NAME: ${{ github.ref_name }}
-          REF: ${{ github.ref }}
-          EVENT_NAME: ${{ github.event_name }}
-          EVENT_ACTION: ${{ github.event.action }}
-          LABEL_NAME: ${{ github.event.label.name }}
-        run: |
-          SHOULD_PUSH=false
-          if [[ "$EVENT_NAME" == "push" && "$REF" == "refs/heads/main" ]]; then
-            SHOULD_PUSH=true
-          elif [[ "$EVENT_NAME" == "release" ]]; then
-            SHOULD_PUSH=true
-          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
-            SHOULD_PUSH=true
-          elif [[ "$EVENT_NAME" == "pull_request" ]]; then
-            SHOULD_PUSH=true
-          elif [[ "$EVENT_ACTION" == "labeled" && "$LABEL_NAME" == "docker" ]]; then
-            SHOULD_PUSH=true
-          fi
-          echo "push=${SHOULD_PUSH}" >> "$GITHUB_OUTPUT"
-          echo "Will push: ${SHOULD_PUSH}"
-
-      - name: Determine Docker tags
-        id: docker-tags
-        env:
-          REF_NAME: ${{ github.ref_name }}
-          REF: ${{ github.ref }}
-          EVENT_NAME: ${{ github.event_name }}
-          MATRIX_SERVICE: ${{ matrix.service }}
-        run: |
-          gitsha="$(git rev-parse --short "$GITHUB_SHA")"
-          TAGS="ghcr.io/zama-ai/console/${MATRIX_SERVICE}:${gitsha}"
-          # Only add latest tag if pushing to main branch
-          if [[ "$EVENT_NAME" == "push" && "$REF" == "refs/heads/main" ]]; then
-            TAGS="${TAGS}\nghcr.io/zama-ai/console/${MATRIX_SERVICE}:latest"
-          fi
-          if [[ "$EVENT_NAME" == "release" ]]; then
-            VERSION="${REF_NAME#*@}"
-            TAGS="${TAGS}\nghcr.io/zama-ai/console/${MATRIX_SERVICE}:${VERSION}"
-          fi
-          { echo "tags<<EOF"; echo -e "$TAGS"; echo "EOF"; } >> "$GITHUB_OUTPUT"
-
-      # Only login to the registry when we intend to push
       - name: Login to GitHub Container Registry
-        if: steps.should-push.outputs.push == 'true'
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker Build and Push with Platform Tag
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        with:
+          images: ghcr.io/zama-ai/console/${{ matrix.service.name }}
+          flavor: |
+            latest=auto
+          tags: |
+            type=sha,format=short
+            type=ref,event=tag
+            type=semver,pattern={{raw}},enable=${{ startsWith(github.ref, 'refs/tags/') }}
+          labels: |
+            org.opencontainers.image.title=${{ matrix.service.name }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: Docker Build and Push
+        id: build
         uses: docker/build-push-action@5cd11c3a4ced054e52742c5fd54dca954e0edd85 # v6.7.0
         with:
-          file: ${{ env.file }}
-          push: ${{ steps.should-push.outputs.push }}
+          file: ${{ matrix.service.dockerfile }}
+          context: ${{ matrix.service.context }}
+          target: ${{ matrix.service.target }}
+          platforms: linux/amd64
+          push: true
           pull: false
           provenance: true
           sbom: true
-          target: ${{ env.target }}
-          context: ${{ env.context }}
-          tags: ${{ steps.docker-tags.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha,scope=${{ matrix.service.name }}
+          cache-to: type=gha,scope=${{ matrix.service.name }},mode=max
+
 
   # TODO: find out why the test is failing
   integration-test:
@@ -272,6 +231,7 @@ jobs:
           password: ${{ secrets.DEVELOPER_PLATFORM_ACTIONS_TOKEN }}
       - name: Test
         run: |
+          # shellcheck shell=bash
           DOCKER_TAG=$(git rev-parse --short "$GITHUB_SHA")
           export DOCKER_TAG
           bash scripts/integration-tests-compose.sh
