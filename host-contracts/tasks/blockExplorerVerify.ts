@@ -145,7 +145,7 @@ task('task:verifyDecryptionOracle')
   )
   .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
     if (useInternalProxyAddress) {
-      dotenv.config({ path: 'addresses/.env.host', override: true });
+      dotenv.config({ path: 'addresses/.env.decryptionoracle', override: true });
     }
     const proxyAddress = getRequiredEnvVar('DECRYPTION_ORACLE_ADDRESS');
     const implementationDecryptionOracleAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
@@ -168,25 +168,52 @@ task('task:verifyAllHostContracts')
   )
   .setAction(async function ({ useInternalProxyAddress }, hre) {
     console.log('Verify ACL contract:');
+  try{ // to not panic if Etherscan throws an error due to already verified implementation
     await hre.run('task:verifyACL', { useInternalProxyAddress });
+  } catch(error) {
+    console.error('An error occurred:', error);
+  }
 
+  try{ // to not panic if Etherscan throws an error due to already verified implementation
     console.log('Verify FHEVMExecutor contract:');
     await hre.run('task:verifyFHEVMExecutor', { useInternalProxyAddress });
+  } catch(error) {
+    console.error('An error occurred:', error);
+  }
 
+  try{ // to not panic if Etherscan throws an error due to already verified implementation
     console.log('Verify KMSVerifier contract:');
     await hre.run('task:verifyKMSVerifier', { useInternalProxyAddress });
+  } catch(error) {
+    console.error('An error occurred:', error);
+  }
 
+  try{ // to not panic if Etherscan throws an error due to already verified implementation
     console.log('Verify InputVerifier contract:');
     await hre.run('task:verifyInputVerifier', { useInternalProxyAddress });
+  } catch(error) {
+    console.error('An error occurred:', error);
+  }
 
+  try{ // to not panic if Etherscan throws an error due to already verified implementation
     console.log('Verify HCULimit contract:');
     await hre.run('task:verifyHCULimit', { useInternalProxyAddress });
+  } catch(error) {
+    console.error('An error occurred:', error);
+  }
 
+  try{ // to not panic if Etherscan throws an error due to already verified implementation
     console.log('Verify PauserSet contract:');
     await hre.run('task:verifyPauserSet', { useInternalProxyAddress });
+  } catch(error) {
+    console.error('An error occurred:', error);
+  }
 
+  try{ // to not panic if Etherscan throws an error due to already verified implementation
     console.log('Verify DecryptionOracle contract:');
     await hre.run('task:verifyDecryptionOracle', { useInternalProxyAddress });
-
+  } catch(error) {
+    console.error('An error occurred:', error);
+  }
     console.log('Contract verification done!');
   });
