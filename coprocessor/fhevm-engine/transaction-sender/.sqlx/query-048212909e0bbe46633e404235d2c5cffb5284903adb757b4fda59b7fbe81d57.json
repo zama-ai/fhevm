@@ -67,6 +67,11 @@
         "ordinal": 12,
         "name": "extra_data",
         "type_info": "Bytea"
+      },
+      {
+        "ordinal": 13,
+        "name": "transaction_id",
+        "type_info": "Bytea"
       }
     ],
     "parameters": {
@@ -87,7 +92,8 @@
       true,
       true,
       false,
-      false
+      false,
+      true
     ]
   },
   "hash": "048212909e0bbe46633e404235d2c5cffb5284903adb757b4fda59b7fbe81d57"

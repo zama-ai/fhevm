@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, command};
+use clap::{Args, Parser, Subcommand, command};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -30,4 +30,22 @@ pub enum Subcommands {
 
     /// Perform tests with mixed decryptions (both public and user)
     Mixed,
+
+    /// Perform decryption benchmark
+    Benchmark(BenchmarkArgs),
+}
+
+#[derive(Args)]
+pub struct BenchmarkArgs {
+    /// CSV input file describing the benchmarks to run
+    #[arg(short, long)]
+    pub input: PathBuf,
+
+    /// CSV output file containing the benchmarks results summary
+    #[arg(short, long)]
+    pub output: PathBuf,
+
+    /// Optional CSV output file containing the full benchmarks results
+    #[arg(short, long)]
+    pub results: Option<PathBuf>,
 }

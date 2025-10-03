@@ -34,6 +34,7 @@ pub mod r#kms_generation;
 pub mod r#math;
 pub mod r#message_hash_utils;
 pub mod r#multichain_acl;
+pub mod r#multichain_acl_checks;
 pub mod r#ownable2_step_upgradeable;
 pub mod r#ownable_upgradeable;
 pub mod r#panic;

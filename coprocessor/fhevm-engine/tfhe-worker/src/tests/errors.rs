@@ -342,6 +342,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                         input: Some(Input::InputHandle(output_handle_c.clone())),
                     },
                 ],
+                is_allowed: true,
             },
             AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
@@ -355,6 +356,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                         input: Some(Input::InputHandle(output_handle_a.clone())),
                     },
                 ],
+                is_allowed: true,
             },
             AsyncComputation {
                 operation: FheOperation::FheAdd.into(),
@@ -368,6 +370,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                         input: Some(Input::InputHandle(output_handle_b.clone())),
                     },
                 ],
+                is_allowed: true,
             },
         ];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
@@ -406,6 +409,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     input: Some(Input::InputHandle(test_u16.handle.clone())),
                 },
             ],
+            is_allowed: true,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -436,6 +440,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     input: Some(Input::InputHandle(vec![])),
                 },
             ],
+            is_allowed: true,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -471,6 +476,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     input: Some(Input::InputHandle(vec![0; 257])),
                 },
             ],
+            is_allowed: true,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -511,6 +517,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     input: Some(Input::InputHandle(test_u64.handle.clone())),
                 },
             ],
+            is_allowed: true,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -548,6 +555,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     input: Some(Input::InputHandle(test_u64.handle.clone())),
                 },
             ],
+            is_allowed: true,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -585,6 +593,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     input: Some(Input::Scalar(vec![0])),
                 },
             ],
+            is_allowed: true,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -622,6 +631,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
                     input: Some(Input::InputHandle(test_bool.handle.clone())),
                 },
             ],
+            is_allowed: true,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,
@@ -647,6 +657,7 @@ async fn test_coprocessor_computation_errors() -> Result<(), Box<dyn std::error:
             inputs: vec![AsyncComputationInput {
                 input: Some(Input::InputHandle(test_bool.handle.clone())),
             }],
+            is_allowed: true,
         }];
         let mut input_request = tonic::Request::new(AsyncComputeRequest {
             computations: async_computations,

@@ -210,7 +210,8 @@ contract InputVerification is
         /// @dev Recover the signer address from the signature,
         address signerAddress = ECDSA.recover(digest, signature);
 
-        GATEWAY_CONFIG.checkIsCoprocessorSigner(signerAddress);
+        // Check that the signer is a coprocessor signer.
+        _checkIsCoprocessorSigner(signerAddress);
 
         /// @dev Check that the coprocessor has not already responded to the ZKPoK verification request.
         _checkCoprocessorAlreadyResponded(zkProofId, msg.sender, signerAddress);
@@ -281,20 +282,20 @@ contract InputVerification is
         }
     }
 
-    /// @dev See {IInputVerification-checkProofVerified}.
-    function checkProofVerified(uint256 zkProofId) external view virtual {
+    /**
+     * @dev See {IInputVerification-isProofVerified}.
+     */
+    function isProofVerified(uint256 zkProofId) external view virtual returns (bool) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
-        if (!$.verifiedZKProofs[zkProofId]) {
-            revert ProofNotVerified(zkProofId);
-        }
+        return $.verifiedZKProofs[zkProofId];
     }
 
-    /// @dev See {IInputVerification-checkProofRejected}.
-    function checkProofRejected(uint256 zkProofId) external view virtual {
+    /**
+     * @dev See {IInputVerification-isProofRejected}.
+     */
+    function isProofRejected(uint256 zkProofId) external view virtual returns (bool) {
         InputVerificationStorage storage $ = _getInputVerificationStorage();
-        if (!$.rejectedZKProofs[zkProofId]) {
-            revert ProofNotRejected(zkProofId);
-        }
+        return $.rejectedZKProofs[zkProofId];
     }
 
     /**

@@ -229,6 +229,7 @@ pub struct HandleItem {
     pub(crate) ct128: Arc<BigCiphertext>,
 
     pub otel: OtelTracer,
+    pub transaction_id: Option<Vec<u8>>,
 }
 
 impl HandleItem {
@@ -241,10 +242,11 @@ impl HandleItem {
         db_txn: &mut Transaction<'_, Postgres>,
     ) -> Result<(), ExecutionError> {
         sqlx::query!(
-            "INSERT INTO ciphertext_digest (tenant_id, handle)
-            VALUES ($1, $2) ON CONFLICT DO NOTHING",
+            "INSERT INTO ciphertext_digest (tenant_id, handle, transaction_id)
+            VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
             self.tenant_id,
             self.handle,
+            self.transaction_id
         )
         .execute(db_txn.as_mut())
         .await?;
@@ -489,7 +491,7 @@ pub async fn run_all(
 
     if !config.service_name.is_empty() {
         if let Err(err) = telemetry::setup_otlp(&config.service_name) {
-            panic!("Error while initializing tracing: {:?}", err);
+            error!(error = %err, "Failed to setup OTLP");
         }
     }
 

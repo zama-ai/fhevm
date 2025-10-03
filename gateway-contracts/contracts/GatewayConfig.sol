@@ -286,60 +286,60 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         emit UnpauseAllGatewayContracts();
     }
 
-    /// @dev See {IGatewayConfig-checkIsKmsTxSender}.
-    function checkIsKmsTxSender(address txSenderAddress) external view virtual {
+    /**
+     * @dev See {IGatewayConfig-isKmsTxSender}.
+     */
+    function isKmsTxSender(address txSenderAddress) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$.isKmsTxSender[txSenderAddress]) {
-            revert NotKmsTxSender(txSenderAddress);
-        }
+        return $.isKmsTxSender[txSenderAddress];
     }
 
-    /// @dev See {IGatewayConfig-checkIsKmsSigner}.
-    function checkIsKmsSigner(address signerAddress) external view virtual {
+    /**
+     * @dev See {IGatewayConfig-isKmsSigner}.
+     */
+    function isKmsSigner(address signerAddress) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$.isKmsSigner[signerAddress]) {
-            revert NotKmsSigner(signerAddress);
-        }
+        return $.isKmsSigner[signerAddress];
     }
 
-    /// @dev See {IGatewayConfig-checkIsCoprocessorTxSender}.
-    function checkIsCoprocessorTxSender(address txSenderAddress) external view virtual {
+    /**
+     * @dev See {IGatewayConfig-isCoprocessorTxSender}.
+     */
+    function isCoprocessorTxSender(address txSenderAddress) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$.isCoprocessorTxSender[txSenderAddress]) {
-            revert NotCoprocessorTxSender(txSenderAddress);
-        }
+        return $.isCoprocessorTxSender[txSenderAddress];
     }
 
-    /// @dev See {IGatewayConfig-checkIsCoprocessorSigner}.
-    function checkIsCoprocessorSigner(address signerAddress) external view virtual {
+    /**
+     * @dev See {IGatewayConfig-isCoprocessorSigner}.
+     */
+    function isCoprocessorSigner(address signerAddress) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$.isCoprocessorSigner[signerAddress]) {
-            revert NotCoprocessorSigner(signerAddress);
-        }
+        return $.isCoprocessorSigner[signerAddress];
     }
 
-    /// @dev See {IGatewayConfig-checkIsCustodianTxSender}.
-    function checkIsCustodianTxSender(address txSenderAddress) external view virtual {
+    /**
+     * @dev See {IGatewayConfig-isCustodianTxSender}.
+     */
+    function isCustodianTxSender(address txSenderAddress) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$.isCustodianTxSender[txSenderAddress]) {
-            revert NotCustodianTxSender(txSenderAddress);
-        }
+        return $.isCustodianTxSender[txSenderAddress];
     }
 
-    /// @dev See {IGatewayConfig-checkIsCustodianSigner}.
-    function checkIsCustodianSigner(address signerAddress) external view virtual {
+    /**
+     * @dev See {IGatewayConfig-isCustodianSigner}.
+     */
+    function isCustodianSigner(address signerAddress) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$.isCustodianSigner[signerAddress]) {
-            revert NotCustodianSigner(signerAddress);
-        }
+        return $.isCustodianSigner[signerAddress];
     }
 
-    /// @dev See {IGatewayConfig-checkHostChainIsRegistered}.
-    function checkHostChainIsRegistered(uint256 chainId) external view virtual {
+    /**
+     * @dev See {IGatewayConfig-isHostChainRegistered}.
+     */
+    function isHostChainRegistered(uint256 chainId) external view virtual returns (bool) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        if (!$.isHostChainRegistered[chainId]) {
-            revert HostChainNotRegistered(chainId);
-        }
+        return $.isHostChainRegistered[chainId];
     }
 
     /// @dev See {IGatewayConfig-getProtocolMetadata}.

@@ -14,10 +14,6 @@ library FHETypeBitSizes {
     uint16 internal constant EUINT128_SIZE = 128;
     uint16 internal constant EUINT160_SIZE = 160;
     uint16 internal constant EUINT256_SIZE = 256;
-    uint16 internal constant EBYTES64_SIZE = 512;
-    uint16 internal constant EBYTES128_SIZE = 1024;
-    uint16 internal constant EBYTES256_SIZE = 2048;
-
     /// @notice Error thrown when FHE type is not supported.
     /// @param fheType The unsupported FHE type.
     error UnsupportedFHEType(FheType fheType);
@@ -52,12 +48,6 @@ library FHETypeBitSizes {
             return EUINT160_SIZE;
         } else if (fheType == FheType.Uint256) {
             return EUINT256_SIZE;
-        } else if (fheType == FheType.Uint512) {
-            return EBYTES64_SIZE;
-        } else if (fheType == FheType.Uint1024) {
-            return EBYTES128_SIZE;
-        } else if (fheType == FheType.Uint2048) {
-            return EBYTES256_SIZE;
         } else {
             revert UnsupportedFHEType(fheType);
         }

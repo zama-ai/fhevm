@@ -1,4 +1,5 @@
 mod app;
+mod bench;
 mod blockchain;
 mod cli;
 mod config;
@@ -41,6 +42,7 @@ async fn run() -> anyhow::Result<()> {
     match cli.subcommand {
         Subcommands::Public => app.public_decryption_stress_test().await?,
         Subcommands::User => app.user_decryption_stress_test().await?,
+        Subcommands::Benchmark(args) => app.decryption_benchmark(args).await?,
         _ => todo!(),
     }
 

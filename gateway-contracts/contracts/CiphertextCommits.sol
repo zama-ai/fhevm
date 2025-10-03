@@ -7,7 +7,6 @@ import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { IKMSGeneration } from "./interfaces/IKMSGeneration.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
-import { HandleOps } from "./libraries/HandleOps.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { CiphertextMaterial, SnsCiphertextMaterial } from "./shared/Structs.sol";
 
@@ -104,13 +103,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         uint256 keyId,
         bytes32 ciphertextDigest,
         bytes32 snsCiphertextDigest
-    ) external virtual onlyCoprocessorTxSender {
-        // Extract the chainId from the ciphertext handle
-        uint256 chainId = HandleOps.extractChainId(ctHandle);
-
-        // Check that the associated host chain is registered
-        GATEWAY_CONFIG.checkHostChainIsRegistered(chainId);
-
+    ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
 
         // Check if the coprocessor transaction sender has already added the ciphertext handle.
@@ -165,6 +158,14 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         }
     }
 
+    /**
+     * @dev See {ICiphertextCommits-isCiphertextMaterialAdded}.
+     */
+    function isCiphertextMaterialAdded(bytes32 ctHandle) public view virtual returns (bool) {
+        CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
+        return $.isCiphertextMaterialAdded[ctHandle];
+    }
+
     /// @notice See {ICiphertextCommits-getCiphertextMaterials}.
     function getCiphertextMaterials(
         bytes32[] calldata ctHandles
@@ -174,7 +175,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
             // Check that the consensus has been reached
-            checkCiphertextMaterial(ctHandles[i]);
+            if (!isCiphertextMaterialAdded(ctHandles[i])) {
+                revert CiphertextMaterialNotFound(ctHandles[i]);
+            }
 
             // Get the unique hash associated to the handle and use it to get the list of coprocessor
             // transaction sender address that were involved in the consensus
@@ -201,7 +204,9 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
 
         for (uint256 i = 0; i < ctHandles.length; i++) {
             // Check that the consensus has been reached
-            checkCiphertextMaterial(ctHandles[i]);
+            if (!isCiphertextMaterialAdded(ctHandles[i])) {
+                revert CiphertextMaterialNotFound(ctHandles[i]);
+            }
 
             // Get the unique hash associated to the handle and use it to get the list of coprocessor
             // transaction sender address that were involved in the consensus
@@ -250,14 +255,6 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
                     Strings.toString(PATCH_VERSION)
                 )
             );
-    }
-
-    /// @notice See {ICiphertextCommits-checkCiphertextMaterial}.
-    function checkCiphertextMaterial(bytes32 ctHandle) public view virtual {
-        CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
-        if (!$.isCiphertextMaterialAdded[ctHandle]) {
-            revert CiphertextMaterialNotFound(ctHandle);
-        }
     }
 
     /**

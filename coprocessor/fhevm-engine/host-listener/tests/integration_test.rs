@@ -225,6 +225,7 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         health_port: 8081,
         dependence_cache_size: 128,
         reorg_maximum_duration_in_blocks: 100, // to go beyond chain start
+        service_name: "host-listener-test".to_string(),
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 

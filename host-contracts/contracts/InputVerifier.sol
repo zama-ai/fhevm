@@ -15,7 +15,7 @@ import {ACLChecks} from "./shared/ACLChecks.sol";
 /**
  * @title    InputVerifier.
  * @notice   This contract allows signature verification of user encrypted inputs.
- *           This contract is called by the FHEVMExecutor inside verifyCiphertext function
+ *           This contract is called by the FHEVMExecutor inside verifyInput function
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
 contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain, ACLChecks {
@@ -189,7 +189,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
      * @param inputProof    Input proof.
      * @return result       Result.
      */
-    function verifyCiphertext(
+    function verifyInput(
         FHEVMExecutor.ContextUserInputs memory context,
         bytes32 inputHandle,
         bytes memory inputProof
