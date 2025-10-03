@@ -14,9 +14,8 @@ export function generateSolidityHCULimit(priceData: PriceData): string {
   
   import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
   import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
-  import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
   import {fhevmExecutorAdd} from "../addresses/FHEVMHostAddresses.sol";
-  import {ACLChecks} from "./shared/ACLChecks.sol";
+  import {ACLOwnable} from "./shared/ACLOwnable.sol";
 
   import {FheType} from "./shared/FheType.sol";
 
@@ -26,7 +25,7 @@ export function generateSolidityHCULimit(priceData: PriceData): string {
    * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
    * @dev The contract is designed to be used with the FHEVMExecutor contract.
   */
-contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChecks {
+contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
@@ -49,7 +48,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 1;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -67,7 +66,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
 
     /// Constant used for making sure the version number used in the \`reinitializer\` modifier is
     /// identical between \`initializeFromEmptyProxy\` and the \`reinitializeVX\` method
-    uint64 private constant REINITIALIZER_VERSION = 5;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCULimitStorageLocation =
@@ -82,16 +81,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, ACLChec
      * @notice  Initializes the contract.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __Ownable_init(owner());
-    }
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Re-initializes the contract from V1.
+     * @dev Define a \`reinitializeVX\` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
 \n\n`;
 

@@ -4,7 +4,7 @@ import {
   createInstance as createFhevmInstance,
   generateKeypair,
   getCiphertextCallParams,
-} from '@fhevm/sdk';
+} from '@zama-fhe/relayer-sdk/node';
 import dotenv from 'dotenv';
 import { readFileSync } from 'fs';
 import * as fs from 'fs';
@@ -51,7 +51,7 @@ const createInstanceMocked = async () => {
     createEncryptedInput: createEncryptedInputMocked,
     getPublicKey: () => '0xFFAA44433',
     generateKeypair: generateKeypair,
-    createEIP712: createEIP712(gatewayChainID, verifyingContract, network.config.chainId),
+    createEIP712: createEIP712(verifyingContract, network.config.chainId),
   };
   return instance;
 };

@@ -11,7 +11,7 @@ import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {SupportedTypesConstants} from "../fhevmExecutor/fhevmExecutor.t.sol";
-import {ACLChecks} from "../../contracts/shared/ACLChecks.sol";
+import {ACLOwnable} from "../../contracts/shared/ACLOwnable.sol";
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract MockHCULimit is HCULimit {
@@ -53,22 +53,23 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * This function is executed before each test to ensure a consistent and isolated state.
      */
     function setUp() public {
+        _deployAndEtchACL();
         /// @dev It uses UnsafeUpgrades for measuring code coverage.
         proxy = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, owner)
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
         );
 
         implementation = address(new MockHCULimit());
+        vm.startPrank(owner);
         UnsafeUpgrades.upgradeProxy(
             proxy,
             implementation,
-            abi.encodeCall(hcuLimit.initializeFromEmptyProxy, ()),
-            owner
+            abi.encodeCall(hcuLimit.initializeFromEmptyProxy, ())
         );
+        vm.stopPrank();
         hcuLimit = MockHCULimit(proxy);
         fhevmExecutor = hcuLimit.getFHEVMExecutorAddress();
-        _deployAndEtchACL();
     }
 
     /**
@@ -91,8 +92,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
      * It checks that the version is correct and the owner is set to the expected address.
      */
     function test_PostProxyUpgradeCheck() public view {
-        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.3.0")));
-        assertEq(hcuLimit.owner(), owner);
+        assertEq(hcuLimit.getVersion(), string(abi.encodePacked("HCULimit v0.1.0")));
         assertEq(hcuLimit.getFHEVMExecutorAddress(), fhevmExecutorAdd);
     }
 
@@ -1178,7 +1178,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         this.upgrade(randomAccount);
     }
 

@@ -51,7 +51,6 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
         mapping(address account => mapping(address delegatee => mapping(address contractAddress => bool isDelegate))) delegates;
-        address pauser; // TODO: DEPRECATED , to remove for mainnet
     }
 
     /// @notice Name of the contract.
@@ -61,7 +60,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 1;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -77,7 +76,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
@@ -97,11 +96,12 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     }
 
     /**
-     * @notice Re-initializes the contract from V2.
+     * @notice Re-initializes the contract from V1.
+     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Allows the use of `handle` for the address `account`.

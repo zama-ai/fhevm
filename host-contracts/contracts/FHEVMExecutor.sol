@@ -2,7 +2,6 @@
 pragma solidity ^0.8.24;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 
 import {ACL} from "./ACL.sol";
@@ -12,7 +11,7 @@ import {aclAdd, hcuLimitAdd, inputVerifierAdd} from "../addresses/FHEVMHostAddre
 import {FheType} from "./shared/FheType.sol";
 import {HANDLE_VERSION} from "./shared/Constants.sol";
 import {FHEEvents} from "./FHEEvents.sol";
-import {ACLChecks} from "./shared/ACLChecks.sol";
+import {ACLOwnable} from "./shared/ACLOwnable.sol";
 
 /**
  * @title IInputVerifier.
@@ -31,7 +30,7 @@ interface IInputVerifier {
  *           main responsibilities is to deterministically generate ciphertext handles.
  * @dev      This contract is deployed using an UUPS proxy.
  */
-contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FHEEvents, ACLChecks {
+contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, FHEEvents, ACLOwnable {
     /// @notice         Returned when the handle is not allowed in the ACL for the account.
     /// @param handle   Handle.
     /// @param account  Address of the account.
@@ -123,7 +122,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 3;
+    uint256 private constant MINOR_VERSION = 1;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -139,7 +138,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.FHEVMExecutor")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant FHEVMExecutorStorageLocation =
@@ -154,16 +153,15 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
      * @notice  Initializes the contract.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __Ownable_init(owner());
-    }
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Re-initializes the contract from V1.
+     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice              Computes FHEAdd operation.
@@ -230,7 +228,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
      * @return result       Result.
      */
     function fheDiv(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        if (scalarByte & 0x01 != 0x01) revert IsNotScalar();
+        if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
         if (rhs == 0) revert DivisionByZero();
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
@@ -251,7 +249,7 @@ contract FHEVMExecutor is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, FH
      * @return result       Result.
      */
     function fheRem(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) public virtual returns (bytes32 result) {
-        if (scalarByte & 0x01 != 0x01) revert IsNotScalar();
+        if (scalarByte != 0x01) revert IsNotScalar(); /// @dev we know scalarByte is either 0x01 or 0x00 because we check it is boolean inside _binaryOp
         if (rhs == 0) revert DivisionByZero();
         uint256 supportedTypes = (1 << uint8(FheType.Uint8)) +
             (1 << uint8(FheType.Uint16)) +
