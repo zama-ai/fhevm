@@ -212,3 +212,11 @@ GATEWAY_CONFIG_ADDRESS="0xC7D45661a345eC5cA0e8521CFEF7e32FDA0Daa68" # (address)
 ```
 
 This (static) address is needed for adding host chains to the GatewayConfig contract separately. In a proper production setting, this environment variable needs to be dynamically set after deploying the contracts.
+
+- PauserSet address
+
+```bash
+PAUSER_SET_ADDRESS="0xc1D733116990ce3D9e54F9eCf48a1cdD441Af4f9" # (address)
+```
+
+This (static) address is needed for managing pausers in the PauserSet contract separately. In a proper production setting, this environment variable needs to be dynamically set after deploying the contracts.

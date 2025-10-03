@@ -338,10 +338,11 @@ ${RUN_COMPOSE} "gateway-sc" "Gateway contracts" \
     "gateway-sc-deploy:complete" \
     "gateway-sc-add-network:complete" \
     "gateway-sc-trigger-keygen:complete" \
-    "gateway-sc-trigger-crsgen:complete"
+    "gateway-sc-trigger-crsgen:complete" \
+    "gateway-sc-add-pausers:complete"
 
 # Setup Host contracts
-${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete"
+${RUN_COMPOSE} "host-sc" "Host contracts" "host-sc-deploy:complete" "host-sc-add-pausers:complete"
 
 # Run Relayer (External dependency)
 ${RUN_COMPOSE} "relayer" "Relayer Services" \

@@ -65,6 +65,29 @@ services:
     volumes:
       - addresses-volume:/app/addresses
 
+  add-pausers:
+    container_name: add-pausers
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      - HARDHAT_NETWORK=staging
+      - CHAIN_ID_GATEWAY=54321
+      - RPC_URL=http://anvil-node:8546
+    command:
+      - npx hardhat task:addGatewayPausers --use-internal-proxy-address true
+    depends_on:
+      anvil-node:
+        condition: service_started
+      deploy-gateway-contracts:
+        condition: service_completed_successfully
+    # Addresses needs to be mounted even though we don't use them in the task because all contracts
+    # are compiled, and most of them import these addresses.
+    volumes:
+      - addresses-volume:/app/addresses
+
   trigger-keygen:
     container_name: trigger-keygen
     build:

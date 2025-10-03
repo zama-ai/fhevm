@@ -40,6 +40,8 @@ COPY --chown=fhevm:fhevm host-contracts/tasks ./tasks/
 COPY --chown=fhevm:fhevm host-contracts/lib ./lib/
 COPY --chown=fhevm:fhevm host-contracts/decryptionOracle ./decryptionOracle/
 
+# Create addresses directory for storing proxy contract addresses
+RUN mkdir -p ./addresses && chown fhevm:fhevm ./addresses
 
 # Pre-compile proxy contracts
 RUN npx hardhat clean && \
