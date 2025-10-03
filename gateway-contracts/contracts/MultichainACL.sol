@@ -57,7 +57,7 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         /// @notice Accounts allowed to use the ciphertext handle.
         mapping(bytes32 ctHandle => mapping(address accountAddress => bool isAllowed)) allowedAccounts;
         /// @notice The counter used for the allowAccount consensus.
-        mapping(bytes32 ctHandle => mapping(address accountAddress => uint8 counter)) allowAccountCounters;
+        mapping(bytes32 ctHandle => mapping(address accountAddress => uint256 counter)) allowAccountCounters;
         // prettier-ignore
         /// @notice The coprocessors that have already allowed an account to use the ciphertext handle.
         mapping(bytes32 ctHandle => mapping(address accountAddress =>
@@ -69,7 +69,7 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         /// @notice Allowed public decryptions.
         mapping(bytes32 ctHandle => bool isAllowed) allowedPublicDecrypts;
         /// @notice The counter used for the public decryption consensus.
-        mapping(bytes32 ctHandle => uint8 counter) allowPublicDecryptCounters;
+        mapping(bytes32 ctHandle => uint256 counter) allowPublicDecryptCounters;
         // prettier-ignore
         /// @notice The coprocessors that have already allowed a public decryption.
         mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) 
@@ -80,7 +80,7 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         /// @notice The computed delegateAccountHash that has already been delegated.
         mapping(bytes32 delegateAccountHash => bool isDelegated) delegatedAccountHashes;
         /// @notice The number of times a delegateAccountHash has received confirmations.
-        mapping(bytes32 delegateAccountHash => uint8 counter) delegateAccountHashCounters;
+        mapping(bytes32 delegateAccountHash => uint256 counter) delegateAccountHashCounters;
         // prettier-ignore
         /// @notice The coprocessors that have already delegated an account for a given delegateAccountHash.
         mapping(bytes32 delegateAccountHash =>
@@ -342,7 +342,7 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     /// @notice Checks if the consensus is reached among the Coprocessors.
     /// @param coprocessorCounter The number of coprocessors that agreed
     /// @return Whether the consensus is reached
-    function _isConsensusReached(uint8 coprocessorCounter) internal view virtual returns (bool) {
+    function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
     }

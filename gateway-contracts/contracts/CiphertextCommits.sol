@@ -56,7 +56,7 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         /// @notice The mapping of already added ciphertexts tied to the given handle.
         mapping(bytes32 ctHandle => bool isAdded) isCiphertextMaterialAdded;
         /// @notice The counter of confirmations received for a ciphertext to be added.
-        mapping(bytes32 addCiphertextHash => uint8 counter) addCiphertextHashCounters;
+        mapping(bytes32 addCiphertextHash => uint256 counter) addCiphertextHashCounters;
         /// @notice The digest of the ciphertext material addition that reached consensus for a handle.
         mapping(bytes32 ctHandle => bytes32 addCiphertextHash) ctHandleConsensusHash;
         // ----------------------------------------------------------------------------------------------
