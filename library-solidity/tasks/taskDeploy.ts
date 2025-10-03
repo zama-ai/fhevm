@@ -89,7 +89,7 @@ async function deployEmptyUUPSForACL(ethers: HardhatEthersHelpers, upgrades: Har
 async function deployEmptyUUPS(ethers: HardhatEthersHelpers, upgrades: HardhatUpgrades, deployer: Wallet) {
   console.info('Deploying an EmptyUUPSProxy proxy contract...');
   const factory = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
-  const UUPSEmpty = await upgrades.deployProxy(factory, {
+  const UUPSEmpty = await upgrades.deployProxy(factory, [deployer.address], {
     initializer: 'initialize',
     kind: 'uups',
   });
@@ -126,7 +126,7 @@ task('task:deployEmptyUUPSProxies').setAction(async function (
   await run('task:setHCULimitAddress', { address: HCULimitAddress });
 });
 
-task('task:deployDecryptionOracle').setAction(async function (_,{ ethers, upgrades }) {
+task('task:deployDecryptionOracle').setAction(async function (_, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   const factory = await ethers.getContractFactory('DecryptionOracle', deployer);
@@ -138,7 +138,7 @@ task('task:deployDecryptionOracle').setAction(async function (_,{ ethers, upgrad
   const proxyAddress = await decryptionOracle.getAddress();
   console.log('DecryptionOracle code set successfully at address:', proxyAddress);
   // Ensure the addresses/ directory exists or create it
-  fs.mkdirSync("./addresses", { recursive: true });
+  fs.mkdirSync('./addresses', { recursive: true });
   const envFilePath = path.join(__dirname, '../fhevmTemp/addresses/.env.decryptionoracle');
   const content = `DECRYPTION_ORACLE_ADDRESS=${proxyAddress}`;
   try {
@@ -169,7 +169,7 @@ address constant decryptionOracleAdd = ${proxyAddress};
 task('task:deployACL').setAction(async function (_taskArguments: TaskArguments, { ethers, upgrades }) {
   const privateKey = getRequiredEnvVar('DEPLOYER_PRIVATE_KEY');
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
-  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxy', deployer);
+  const currentImplementation = await ethers.getContractFactory('EmptyUUPSProxyACL', deployer);
   const newImplem = await ethers.getContractFactory('ACL', deployer);
   const parsedEnv = dotenv.parse(fs.readFileSync('fhevmTemp/addresses/.env.host'));
   const proxyAddress = parsedEnv.ACL_CONTRACT_ADDRESS;
