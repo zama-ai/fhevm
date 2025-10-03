@@ -1,6 +1,45 @@
+# The handles used for user decryptions
+# ENV: USER_CT_HANDLES (format: comma separated list)
+# Example: USER_CT_HANDLES="0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500,0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500"
+user_ct_handles = [
+    "0x0a6bf88b4557e4c77ec2719ca2e26fbb5a14fbc5d1ff00000000000030390500",
+]
+
+# The handles used for public decryptions
+# ENV: PUBLIC_CT_HANDLES (format: comma separated list)
+# Example: PUBLIC_CT_HANDLES="0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500,0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500"
+public_ct_handles = [
+    "0x8a4fc6385932fd4a30a0c77fb76c3a78547c87cfa9ff00000000000030390500",
+]
+
+# The contract allowed for user decrytion on user_ct_handles
+# ENV: ALLOWED_CONTRACTS
+allowed_contract = "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08"
+
+# The time during which the tool will send requests burst to the Gateway/Connectors' DBs
+# Format documentation: https://docs.rs/humantime/latest/humantime/
+# ENV: TESTS_DURATION
+tests_duration = "500ms"
+
+# The time to wait between two requests burst
+# Format documentation: https://docs.rs/humantime/latest/humantime/
+# ENV: TESTS_INTERVAL
+tests_interval = "1s"
+
+# The number of parallel requests to send to the Gateway/Connectors' DBs, at each interval
+# ENV: PARALLEL_REQUESTS
+parallel_requests = 1
+
+# If requests burst must be sent sequentially when the previous one has been completed
+# Defaults to false, if set to true, then `tests_interval` is ignored
+# ENV: SEQUENTIAL
+# sequential = false
+
+# TODO: update every comments below
+[blockchain]
 # Gateway WebSocket RPC URL endpoint (required)
 # ENV: GATEWAY_URL
-gateway_url = "ws://localhost:8546"
+gateway_url = "http://localhost:8546"
 
 # Chain ID for the Host network (required)
 # ENV: HOST_CHAIN_ID
@@ -12,44 +51,7 @@ gateway_chain_id = 54321
 
 # Address of the Decryption contract (required)
 # ENV: DECRYPTION_ADDRESS
-decryption_address = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
-
-# The time during which the tool will send requests burst to the Gateway
-# Format documentation: https://docs.rs/humantime/latest/humantime/
-# ENV: TESTS_DURATION
-tests_duration = "500ms"
-
-# If requests burst must be sent sequentially when the previous one has been completed
-# Defaults to false, if set to true, then `tests_interval` is ignored
-# ENV: SEQUENTIAL
-# sequential = false
-
-# The interval between two requests burst
-# Format documentation: https://docs.rs/humantime/latest/humantime/
-# ENV: TESTS_INTERVAL
-tests_interval = "1s"
-
-# The number of parallel requests to send to the Gateway, at each interval
-# ENV: PARALLEL_REQUESTS
-parallel_requests = 5
-
-# The handles used for user decryptions
-# ENV: USER_CT_HANDLES (format: comma separated list)
-# Example: USER_CT_HANDLES="0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500,0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500"
-user_ct_handles = [
-    "0x7e314aadb1fe25d0eedc986529cf05604b71b717fdff00000000000030390500",
-]
-
-# The handles used for public decryptions
-# ENV: PUBLIC_CT_HANDLES (format: comma separated list)
-# Example: PUBLIC_CT_HANDLES="0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500,0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500"
-public_ct_handles = [
-    "0xcc0fe2694c954beeea00716b20dbff2f4aa3756afbff00000000000030390500",
-]
-
-# The contract allowed for user decrytion on ct_handles
-# ENV: ALLOWED_CONTRACTS
-allowed_contract = "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08"
+decryption_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 
 # Wallet's private key as a hex string (optional if `aws_kms_config` or `mnemonic` is configured)
 # ENV: PRIVATE_KEY
@@ -71,3 +73,14 @@ private_key = "24af7cb5f6cd0f29df22c6f3e2f18ee5b3949f5a489a14b0674bef8fd89bfe91"
 # region = "us-east-1"
 # Optional: AWS endpoint URL for KMS (for testing or custom endpoints)
 # endpoint = "https://kms.us-east-1.amazonaws.com"
+
+[database]
+urls = [
+    "postgresql://postgres:postgres@localhost:5432/kms-connector"
+]
+pool_size = 10
+connection_timeout = "30s"
+copro_tx_sender_addr = "0x6254a198f67ad40290a2e7b48adb2d19b71f67bd"
+ct_digest = "134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
+key_id = "1809251394333065553493296640760748560207343510400633813116524750123642650625"
+insertion_chunk_size = 10

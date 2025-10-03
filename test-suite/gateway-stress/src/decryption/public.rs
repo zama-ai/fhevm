@@ -30,6 +30,8 @@ use tokio::{
 };
 use tracing::{Instrument, debug, error, trace};
 
+pub type PublicDecryptThresholdEvent = sol_types::Result<(PublicDecryptionResponse, Log)>;
+
 /// Sends a burst of PublicDecryptionRequest.
 #[tracing::instrument(skip(
     config,

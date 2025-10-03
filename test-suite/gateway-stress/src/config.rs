@@ -1,19 +1,10 @@
-use alloy::primitives::{Address, FixedBytes};
+use alloy::primitives::{Address, FixedBytes, U256};
 use config::{Config as ConfigBuilder, Environment, File, FileFormat};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::{path::Path, str::FromStr, time::Duration};
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Config {
-    pub gateway_url: String,
-    pub host_chain_id: u64,
-    pub gateway_chain_id: u64,
-    pub decryption_address: Address,
-    pub private_key: Option<String>,
-    pub mnemonic: Option<String>,
-    #[serde(default = "default_mnemonic_index")]
-    pub mnemonic_index: usize,
-    pub aws_kms_config: Option<AwsKmsConfig>,
     #[serde(deserialize_with = "parse_ct_handles")]
     pub user_ct_handles: Vec<FixedBytes<32>>,
     #[serde(deserialize_with = "parse_ct_handles")]
@@ -26,6 +17,36 @@ pub struct Config {
     pub tests_interval: Duration,
     #[serde(default)]
     pub sequential: bool,
+    #[serde(default)]
+    pub blockchain: Option<BlockchainConfig>,
+    #[serde(default)]
+    pub database: Option<DatabaseConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct BlockchainConfig {
+    pub gateway_url: String,
+    pub host_chain_id: u64,
+    pub gateway_chain_id: u64,
+    pub decryption_address: Address,
+    pub private_key: Option<String>,
+    pub mnemonic: Option<String>,
+    #[serde(default = "default_mnemonic_index")]
+    pub mnemonic_index: usize,
+    pub aws_kms_config: Option<AwsKmsConfig>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct DatabaseConfig {
+    pub urls: Vec<String>,
+    #[serde(default = "default_pool_size")]
+    pub pool_size: u32,
+    #[serde(with = "humantime_serde", default = "default_db_connection_timeout")]
+    pub connection_timeout: Duration,
+    pub ct_digest: FixedBytes<32>,
+    pub key_id: U256,
+    pub copro_tx_sender_addr: Address,
+    pub insertion_chunk_size: usize,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -62,6 +83,14 @@ impl Config {
 
 fn default_mnemonic_index() -> usize {
     0
+}
+
+fn default_pool_size() -> u32 {
+    10
+}
+
+fn default_db_connection_timeout() -> Duration {
+    Duration::from_secs(30)
 }
 
 fn parse_ct_handles<'de, D>(d: D) -> Result<Vec<FixedBytes<32>>, D::Error>

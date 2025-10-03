@@ -1,5 +1,5 @@
 use crate::{
-    bench::{BenchAverageResult, BenchBurstResult, BenchRecordInput, DecryptionType},
+    bench::{BenchAverageResult, BenchBurstResult, BenchRecordInput},
     blockchain::{
         provider::{FillersWithoutNonceManagement, NonceManagedProvider},
         wallet::Wallet,
@@ -8,7 +8,9 @@ use crate::{
     config::Config,
     decryption::{
         EVENT_LISTENER_POLLING, init_public_decryption_response_listener,
-        init_user_decryption_response_listener, public_decryption_burst, user_decryption_burst,
+        init_user_decryption_response_listener, public::PublicDecryptThresholdEvent,
+        public_decryption_burst, types::DecryptionType, user::UserDecryptThresholdEvent,
+        user_decryption_burst,
     },
 };
 use alloy::{
@@ -18,13 +20,9 @@ use alloy::{
         Identity, ProviderBuilder, RootProvider,
         fillers::{ChainIdFiller, FillProvider, JoinFill, WalletFiller},
     },
-    rpc::types::Log,
-    sol_types,
 };
 use anyhow::anyhow;
-use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, PublicDecryptionResponse, UserDecryptionResponse,
-};
+use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use futures::Stream;
 use gateway_sdk::{FhevmSdk, FhevmSdkBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -48,7 +46,7 @@ type AppProvider = NonceManagedProvider<
 >;
 
 /// A struct used to perform the load/stress testing of the Gateway.
-pub struct App {
+pub struct GatewayTestManager {
     /// The decryption contract instance.
     decryption_contract: DecryptionInstance<AppProvider>,
 
@@ -62,7 +60,7 @@ pub struct App {
     sdk: Arc<FhevmSdk>,
 }
 
-impl App {
+impl GatewayTestManager {
     /// Connects the tool to the Gateway.
     pub async fn connect(config: Config) -> anyhow::Result<Self> {
         INSTALL_CRYPTO_PROVIDER_ONCE.call_once(|| {
@@ -72,26 +70,31 @@ impl App {
                 .unwrap()
         });
 
-        let wallet = Wallet::from_config(&config).await?;
+        let blockchain_config = config
+            .blockchain
+            .as_ref()
+            .expect("[blockchain] config section is not configured");
+
+        let wallet = Wallet::from_config(blockchain_config).await?;
         let provider = NonceManagedProvider::new(
             ProviderBuilder::new()
                 .disable_recommended_fillers()
-                .with_chain_id(config.gateway_chain_id)
+                .with_chain_id(blockchain_config.gateway_chain_id)
                 .filler(FillersWithoutNonceManagement::default())
                 .wallet(wallet.clone())
-                .connect_http(config.gateway_url.parse()?),
+                .connect_http(blockchain_config.gateway_url.parse()?),
             wallet.address(),
         );
         info!("Successfully connected to the Gateway");
-        let decryption_contract = Decryption::new(config.decryption_address, provider);
+        let decryption_contract = Decryption::new(blockchain_config.decryption_address, provider);
 
         let sdk = Arc::new(
             FhevmSdkBuilder::new()
-                .with_gateway_chain_id(config.gateway_chain_id)
-                .with_decryption_contract(&config.decryption_address.to_string())
+                .with_gateway_chain_id(blockchain_config.gateway_chain_id)
+                .with_decryption_contract(&blockchain_config.decryption_address.to_string())
                 .with_acl_contract(&Address::ZERO.to_string())
                 .with_input_verification_contract(&Address::ZERO.to_string())
-                .with_host_chain_id(config.host_chain_id)
+                .with_host_chain_id(blockchain_config.host_chain_id)
                 .build()?,
         );
 
@@ -264,14 +267,8 @@ impl App {
         user_response_listener: Arc<Mutex<US>>,
     ) -> anyhow::Result<Vec<BenchBurstResult>>
     where
-        PS: Stream<Item = sol_types::Result<(PublicDecryptionResponse, Log)>>
-            + Unpin
-            + Send
-            + 'static,
-        US: Stream<Item = sol_types::Result<(UserDecryptionResponse, Log)>>
-            + Unpin
-            + Send
-            + 'static,
+        PS: Stream<Item = PublicDecryptThresholdEvent> + Unpin + Send + 'static,
+        US: Stream<Item = UserDecryptThresholdEvent> + Unpin + Send + 'static,
     {
         let mut config = self.config.clone();
         config.parallel_requests = bench_record.parallel_requests;

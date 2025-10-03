@@ -1,6 +1,8 @@
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-use crate::decryption::BurstResult;
+use crate::decryption::{
+    BurstResult,
+    types::{DecryptionType, decryption_type_from_str, decryption_type_serialize},
+};
+use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Deserialize)]
 pub struct BenchRecordInput {
@@ -73,36 +75,6 @@ impl BenchBurstResult {
             latency: result.latency,
             throughput: result.throughput,
         }
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub enum DecryptionType {
-    Public,
-    User,
-}
-
-fn decryption_type_from_str<'de, D>(deserializer: D) -> Result<DecryptionType, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s = String::deserialize(deserializer)?.to_lowercase();
-    if s == "u" || s.starts_with("user") {
-        Ok(DecryptionType::User)
-    } else if s == "p" || s.starts_with("public") {
-        Ok(DecryptionType::Public)
-    } else {
-        Err(serde::de::Error::custom("Invalid decryption type"))
-    }
-}
-
-fn decryption_type_serialize<S>(d: &DecryptionType, s: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    match d {
-        DecryptionType::Public => s.serialize_str("public"),
-        DecryptionType::User => s.serialize_str("user"),
     }
 }
 

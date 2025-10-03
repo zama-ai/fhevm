@@ -1,8 +1,8 @@
-mod public;
+pub mod public;
+pub mod types;
 pub mod user;
 
 pub use public::{init_public_decryption_response_listener, public_decryption_burst};
-use std::time::Duration;
 pub use user::{init_user_decryption_response_listener, user_decryption_burst};
 
 use alloy::{
@@ -11,6 +11,7 @@ use alloy::{
     rpc::types::{TransactionReceipt, TransactionRequest},
 };
 use anyhow::anyhow;
+use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 use tracing::{debug, trace, warn};
 
