@@ -513,7 +513,7 @@ contract InputVerifierTest is Test {
         vm.prank(owner);
         uint256 newContextId = initialCoprocessorContextId + 1;
         address[] memory newContextSigners = new address[](0);
-        inputVerifier.addNewContextAndSuspendOldOne(newContextId, newContextSigners);
+        inputVerifier.addNewContextAndSuspendCurrentOne(newContextId, newContextSigners);
     }
 
     /**
@@ -951,7 +951,7 @@ contract InputVerifierTest is Test {
         vm.prank(randomAccount);
         uint256 newContextId = initialCoprocessorContextId + 1;
         address[] memory newContextSigners = new address[](0);
-        inputVerifier.addNewContextAndSuspendOldOne(newContextId, newContextSigners);
+        inputVerifier.addNewContextAndSuspendCurrentOne(newContextId, newContextSigners);
     }
 
     /**
@@ -974,7 +974,7 @@ contract InputVerifierTest is Test {
         vm.prank(owner);
         address[] memory newContextSigners = new address[](1);
         newContextSigners[0] = signer0;
-        inputVerifier.addNewContextAndSuspendOldOne(initialCoprocessorContextId, newContextSigners);
+        inputVerifier.addNewContextAndSuspendCurrentOne(initialCoprocessorContextId, newContextSigners);
     }
 
     /**
@@ -989,7 +989,7 @@ contract InputVerifierTest is Test {
         newContextSigners[1] = signer1;
         newContextSigners[2] = signer2;
         newContextSigners[3] = signer3;
-        inputVerifier.addNewContextAndSuspendOldOne(newContextId, newContextSigners);
+        inputVerifier.addNewContextAndSuspendCurrentOne(newContextId, newContextSigners);
 
         address[] memory signers = inputVerifier.getCoprocessorSigners(newContextId);
         assertEq(signers.length, 4);
@@ -1011,7 +1011,7 @@ contract InputVerifierTest is Test {
 
         // Add a new context which should suspend the initial one.
         vm.prank(owner);
-        inputVerifier.addNewContextAndSuspendOldOne(newContextId, newContextSigners);
+        inputVerifier.addNewContextAndSuspendCurrentOne(newContextId, newContextSigners);
 
         // Mark the suspended context as deactivated.
         vm.prank(owner);
