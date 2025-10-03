@@ -1,8 +1,8 @@
 {
   "name": "@zama-fhe/oracle-solidity",
-  "version": "0.3.0-1",
+  "version": "0.3.0-2",
   "description": "Oracle Solidity smart contract for public decryption",
-  "main": "index.js",
+  "main": "contracts/DecryptionOracle.sol",
   "scripts": {
     "compile": "hardhat compile",
     "test": "pnpm hardhat compile && pnpm hardhat test --network hardhat",
