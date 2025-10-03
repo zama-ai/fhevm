@@ -44,7 +44,7 @@ scDeploy:
     # =========================================================================
 
     # KMS generation threshold
-    # Should be set to `floor(2*n_kms/3) + 1` with `n_kms` the number of KMS nodes
+    # Should be set to `2*t + 1` with `t` the MPC threshold
     - name: KMS_GENERATION_THRESHOLD
       value: 7
 

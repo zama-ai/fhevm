@@ -60,7 +60,7 @@ The decryption thresholds are used to determine the minimum number of valid resp
 
 There are currently two thresholds:
 
-- `publicDecryptionThreshold` : the minimum number of valid responses from KMS nodes required to validate a public decryption :
+- `publicDecryptionThreshold` : the minimum number of valid responses from KMS nodes required to validate a public decryption
 - `userDecryptionThreshold` : the minimum number of valid responses from KMS nodes required to validate a user decryption
 
 Both thresholds should be :
