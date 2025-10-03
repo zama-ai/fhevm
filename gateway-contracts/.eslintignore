@@ -1,0 +1,38 @@
+# Build outputs
+artifacts/
+cache/
+coverage/
+dist/
+build/
+types/
+
+# Dependencies
+node_modules/
+
+# Environment files
+*.env
+.env*
+
+# Logs
+*.log
+logs/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Package files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Generated files
+*.d.ts
+coverage.json
+
+# Rust bindings (if any)
+rust_bindings/target/

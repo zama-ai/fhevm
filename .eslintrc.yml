@@ -6,7 +6,6 @@ extends:
 
 parser: "@typescript-eslint/parser"
 parserOptions:
-  project: "tsconfig.json"
   ecmaVersion: 2022
   sourceType: "module"
 
@@ -52,10 +51,13 @@ rules:
 
 ignorePatterns:
   - "node_modules/"
-  - "artifacts/"
-  - "cache/"
-  - "coverage/"
-  - "dist/"
-  - "types/"
-  - "*.js"
-  - "*.d.ts"
+  - "**/node_modules/"
+  - "**/artifacts/"
+  - "**/cache/"
+  - "**/coverage/"
+  - "**/dist/"
+  - "**/types/"
+  - "**/target/"
+  - "**/*.js"
+  - "**/*.d.ts"
+  - "**/rust_bindings/"

@@ -5,6 +5,16 @@
     "library-solidity",
     "test-suite/e2e"
   ],
+  "scripts": {
+    "lint": "npm run lint:prettier && npm run lint:eslint",
+    "lint:eslint": "eslint . --ext .ts,.js,.tsx,.jsx",
+    "lint:prettier": "prettier --check \"**/*.{js,json,md,sol,ts,tsx,jsx,yml,yaml}\"",
+    "lint:fix": "npm run lint:prettier:fix && npm run lint:eslint:fix",
+    "lint:eslint:fix": "eslint . --ext .ts,.js,.tsx,.jsx --fix",
+    "lint:prettier:fix": "prettier --write \"**/*.{js,json,md,sol,ts,tsx,jsx,yml,yaml}\"",
+    "format": "prettier --write \"**/*.{js,json,md,sol,ts,tsx,jsx,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{js,json,md,sol,ts,tsx,jsx,yml,yaml}\""
+  },
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "prettier": "^3.5.3",
