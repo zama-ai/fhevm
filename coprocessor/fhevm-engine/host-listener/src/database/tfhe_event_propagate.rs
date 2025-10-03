@@ -426,8 +426,6 @@ impl Database {
             => insert_computation_bytes(tx, result, &[], &[as_bytes(pt), ty(toType)], &HAS_SCALAR).await,
 
             | E::Initialized(_)
-            | E::OwnershipTransferStarted(_)
-            | E::OwnershipTransferred(_)
             | E::Upgraded(_)
             | E::VerifyInput(_)
             => Ok(()),
@@ -688,11 +686,7 @@ fn event_to_op_int(op: &TfheContractEvents) -> FheOperation {
         E::FheRand(_) => O::FheRand as i32,
         E::FheRandBounded(_) => O::FheRandBounded as i32,
         // Not tfhe ops
-        E::Initialized(_)
-        | E::OwnershipTransferStarted(_)
-        | E::OwnershipTransferred(_)
-        | E::Upgraded(_)
-        | E::VerifyInput(_) => -1,
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => -1,
     }
 }
 
@@ -727,8 +721,6 @@ pub fn event_name(op: &TfheContractEvents) -> &'static str {
         E::FheRand(_) => "FheRand",
         E::FheRandBounded(_) => "FheRandBounded",
         E::Initialized(_) => "Initialized",
-        E::OwnershipTransferStarted(_) => "OwnershipTransferStarted",
-        E::OwnershipTransferred(_) => "OwnershipTransferred",
         E::Upgraded(_) => "Upgraded",
         E::VerifyInput(_) => "VerifyInput",
     }
@@ -766,11 +758,7 @@ pub fn tfhe_result_handle(op: &TfheContractEvents) -> Option<Handle> {
         | E::FheRandBounded(C::FheRandBounded { result, .. })
         | E::TrivialEncrypt(C::TrivialEncrypt { result, .. }) => Some(*result),
 
-        E::Initialized(_)
-        | E::OwnershipTransferStarted(_)
-        | E::OwnershipTransferred(_)
-        | E::Upgraded(_)
-        | E::VerifyInput(_) => None,
+        E::Initialized(_) | E::Upgraded(_) | E::VerifyInput(_) => None,
     }
 }
 
