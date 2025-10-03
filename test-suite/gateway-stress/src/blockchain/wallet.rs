@@ -1,4 +1,4 @@
-use crate::config::{AwsKmsConfig, Config};
+use crate::config::{AwsKmsConfig, BlockchainConfig};
 use alloy::{
     hex::decode,
     network::{EthereumWallet, IntoWallet},
@@ -27,7 +27,7 @@ enum WalletSigner {
 }
 
 impl Wallet {
-    pub async fn from_config(config: &Config) -> anyhow::Result<Self> {
+    pub async fn from_config(config: &BlockchainConfig) -> anyhow::Result<Self> {
         if let Some(aws_config) = &config.aws_kms_config {
             debug!("Building wallet using AWS KMS configuration...");
             Self::from_aws_kms(aws_config.clone(), Some(config.gateway_chain_id)).await

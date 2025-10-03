@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM public_decryption_responses",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "6007239279928f6691a5284666e99fb6f020f20264c157500dbad47d7ec3dfa9"
+}

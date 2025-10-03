@@ -1,14 +1,16 @@
 use crate::{
-    bench::{BenchAverageResult, BenchBurstResult, BenchRecordInput, DecryptionType},
+    bench::{BenchAverageResult, BenchBurstResult, BenchRecordInput},
     blockchain::{
         provider::{FillersWithoutNonceManagement, NonceManagedProvider},
         wallet::Wallet,
     },
-    cli::BenchmarkArgs,
+    cli::{GwBenchmarkArgs, GwTestArgs},
     config::Config,
     decryption::{
         EVENT_LISTENER_POLLING, init_public_decryption_response_listener,
-        init_user_decryption_response_listener, public_decryption_burst, user_decryption_burst,
+        init_user_decryption_response_listener, public::PublicDecryptThresholdEvent,
+        public_decryption_burst, types::DecryptionType, user::UserDecryptThresholdEvent,
+        user_decryption_burst,
     },
 };
 use alloy::{
@@ -18,13 +20,9 @@ use alloy::{
         Identity, ProviderBuilder, RootProvider,
         fillers::{ChainIdFiller, FillProvider, JoinFill, WalletFiller},
     },
-    rpc::types::Log,
-    sol_types,
 };
 use anyhow::anyhow;
-use fhevm_gateway_bindings::decryption::Decryption::{
-    self, DecryptionInstance, PublicDecryptionResponse, UserDecryptionResponse,
-};
+use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use futures::Stream;
 use gateway_sdk::{FhevmSdk, FhevmSdkBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
@@ -48,7 +46,7 @@ type AppProvider = NonceManagedProvider<
 >;
 
 /// A struct used to perform the load/stress testing of the Gateway.
-pub struct App {
+pub struct GatewayTestManager {
     /// The decryption contract instance.
     decryption_contract: DecryptionInstance<AppProvider>,
 
@@ -62,7 +60,7 @@ pub struct App {
     sdk: Arc<FhevmSdk>,
 }
 
-impl App {
+impl GatewayTestManager {
     /// Connects the tool to the Gateway.
     pub async fn connect(config: Config) -> anyhow::Result<Self> {
         INSTALL_CRYPTO_PROVIDER_ONCE.call_once(|| {
@@ -72,26 +70,31 @@ impl App {
                 .unwrap()
         });
 
-        let wallet = Wallet::from_config(&config).await?;
+        let blockchain_config = config
+            .blockchain
+            .as_ref()
+            .expect("[blockchain] config section is not configured");
+
+        let wallet = Wallet::from_config(blockchain_config).await?;
         let provider = NonceManagedProvider::new(
             ProviderBuilder::new()
                 .disable_recommended_fillers()
-                .with_chain_id(config.gateway_chain_id)
+                .with_chain_id(blockchain_config.gateway_chain_id)
                 .filler(FillersWithoutNonceManagement::default())
                 .wallet(wallet.clone())
-                .connect_http(config.gateway_url.parse()?),
+                .connect_http(blockchain_config.gateway_url.parse()?),
             wallet.address(),
         );
         info!("Successfully connected to the Gateway");
-        let decryption_contract = Decryption::new(config.decryption_address, provider);
+        let decryption_contract = Decryption::new(blockchain_config.decryption_address, provider);
 
         let sdk = Arc::new(
             FhevmSdkBuilder::new()
-                .with_gateway_chain_id(config.gateway_chain_id)
-                .with_decryption_contract(&config.decryption_address.to_string())
+                .with_gateway_chain_id(blockchain_config.gateway_chain_id)
+                .with_decryption_contract(&blockchain_config.decryption_address.to_string())
                 .with_acl_contract(&Address::ZERO.to_string())
                 .with_input_verification_contract(&Address::ZERO.to_string())
-                .with_host_chain_id(config.host_chain_id)
+                .with_host_chain_id(blockchain_config.host_chain_id)
                 .build()?,
         );
 
@@ -103,12 +106,14 @@ impl App {
         })
     }
 
-    /// Performs the public decryption stress test.
-    pub async fn public_decryption_stress_test(&self) -> anyhow::Result<()> {
+    /// Runs a decryption stress testing session via the Gateway chain.
+    pub async fn stress_test(&self, args: GwTestArgs) -> anyhow::Result<()> {
         let progress_tracker = MultiProgress::new();
-        let response_listener =
+        let pub_response_listener =
             init_public_decryption_response_listener(self.decryption_contract.clone()).await?;
-        tokio::time::sleep(EVENT_LISTENER_POLLING).await; // Sleep for listener to be ready
+        let user_response_listener =
+            init_user_decryption_response_listener(self.decryption_contract.clone()).await?;
+        tokio::time::sleep(EVENT_LISTENER_POLLING).await; // Sleep for listeners to be ready
 
         let session_start = Instant::now();
         let mut interval = interval(self.config.tests_interval);
@@ -126,17 +131,29 @@ impl App {
             let (requests_pb, responses_pb) =
                 init_progress_bars(&self.config, &progress_tracker, burst_index)?;
 
-            burst_tasks.spawn(
-                public_decryption_burst(
+            match args.decryption_type {
+                DecryptionType::Public => burst_tasks.spawn(
+                    public_decryption_burst(
+                        burst_index,
+                        self.config.clone(),
+                        self.decryption_contract.clone(),
+                        pub_response_listener.clone(),
+                        requests_pb,
+                        responses_pb,
+                    )
+                    .in_current_span(),
+                ),
+                DecryptionType::User => burst_tasks.spawn(user_decryption_burst(
                     burst_index,
                     self.config.clone(),
                     self.decryption_contract.clone(),
-                    response_listener.clone(),
+                    Arc::clone(&self.sdk),
+                    self.wallet.address(),
+                    user_response_listener.clone(),
                     requests_pb,
                     responses_pb,
-                )
-                .in_current_span(),
-            );
+                )),
+            };
 
             burst_index += 1;
 
@@ -155,59 +172,8 @@ impl App {
         Ok(())
     }
 
-    /// Performs the user decryption stress test.
-    pub async fn user_decryption_stress_test(&self) -> anyhow::Result<()> {
-        let progress_tracker = MultiProgress::new();
-        let response_listener =
-            init_user_decryption_response_listener(self.decryption_contract.clone()).await?;
-        tokio::time::sleep(EVENT_LISTENER_POLLING).await; // Sleep for listener to be ready
-
-        let session_start = Instant::now();
-        let mut interval = interval(self.config.tests_interval);
-        let mut burst_tasks = JoinSet::new();
-        let mut burst_index = 1;
-        loop {
-            if !self.config.sequential {
-                interval.tick().await;
-            }
-
-            if session_start.elapsed() > self.config.tests_duration {
-                break;
-            }
-
-            let (requests_pb, responses_pb) =
-                init_progress_bars(&self.config, &progress_tracker, burst_index)?;
-
-            burst_tasks.spawn(user_decryption_burst(
-                burst_index,
-                self.config.clone(),
-                self.decryption_contract.clone(),
-                Arc::clone(&self.sdk),
-                self.wallet.address(),
-                response_listener.clone(),
-                requests_pb,
-                responses_pb,
-            ));
-
-            burst_index += 1;
-
-            if self.config.sequential {
-                burst_tasks.join_next().await;
-            }
-        }
-
-        burst_tasks.join_all().await;
-        let elapsed = session_start.elapsed().as_secs_f64();
-        info!(
-            "Handled all burst in {:.2}s. Throughput: {:.2} tps",
-            elapsed,
-            (self.config.parallel_requests * (burst_index - 1) as u32) as f64 / elapsed
-        );
-        Ok(())
-    }
-
-    /// Runs a decryption benchmark session.
-    pub async fn decryption_benchmark(&self, args: BenchmarkArgs) -> anyhow::Result<()> {
+    /// Runs a decryption benchmark session via the Gateway chain.
+    pub async fn decryption_benchmark(&self, args: GwBenchmarkArgs) -> anyhow::Result<()> {
         let progress_tracker = MultiProgress::new();
         let pub_response_listener =
             init_public_decryption_response_listener(self.decryption_contract.clone()).await?;
@@ -264,14 +230,8 @@ impl App {
         user_response_listener: Arc<Mutex<US>>,
     ) -> anyhow::Result<Vec<BenchBurstResult>>
     where
-        PS: Stream<Item = sol_types::Result<(PublicDecryptionResponse, Log)>>
-            + Unpin
-            + Send
-            + 'static,
-        US: Stream<Item = sol_types::Result<(UserDecryptionResponse, Log)>>
-            + Unpin
-            + Send
-            + 'static,
+        PS: Stream<Item = PublicDecryptThresholdEvent> + Unpin + Send + 'static,
+        US: Stream<Item = UserDecryptThresholdEvent> + Unpin + Send + 'static,
     {
         let mut config = self.config.clone();
         config.parallel_requests = bench_record.parallel_requests;

@@ -13,7 +13,9 @@ use alloy::{
 };
 use anyhow::anyhow;
 use fhevm_gateway_bindings::decryption::{
-    Decryption::{self, CtHandleContractPair, DecryptionInstance, UserDecryptionResponse},
+    Decryption::{
+        self, CtHandleContractPair, DecryptionInstance, UserDecryptionResponseThresholdReached,
+    },
     IDecryption::{ContractsInfo, RequestValidity},
 };
 use futures::{Stream, StreamExt};
@@ -33,6 +35,9 @@ use tokio::{
     time::Instant,
 };
 use tracing::{Instrument, debug, error, trace};
+
+pub type UserDecryptThresholdEvent =
+    sol_types::Result<(UserDecryptionResponseThresholdReached, Log)>;
 
 /// Sends a burst of UserDecryptionRequest.
 #[allow(clippy::too_many_arguments)]
@@ -57,7 +62,7 @@ pub async fn user_decryption_burst<P, S>(
 ) -> anyhow::Result<BurstResult>
 where
     P: Provider + Clone + 'static,
-    S: Stream<Item = sol_types::Result<(UserDecryptionResponse, Log)>> + Unpin + Send + 'static,
+    S: Stream<Item = UserDecryptThresholdEvent> + Unpin + Send + 'static,
 {
     debug!("Start of the burst...");
     let (id_sender, id_receiver) = mpsc::unbounded_channel();
@@ -131,14 +136,15 @@ async fn send_user_decryption_inner<P: Provider>(
         .duration_since(SystemTime::UNIX_EPOCH)?
         .as_secs();
 
+    let host_chain_id = config.blockchain.as_ref().unwrap().host_chain_id;
     let eip712 = generate_eip712(sdk, &config, timestamp)?;
     let decryption_call = decryption_contract
         .userDecryptionRequest(
             config
-                .user_ct_handles
+                .user_ct
                 .iter()
-                .map(|h| CtHandleContractPair {
-                    ctHandle: *h,
+                .map(|ct| CtHandleContractPair {
+                    ctHandle: ct.handle,
                     contractAddress: config.allowed_contract,
                 })
                 .collect(),
@@ -147,7 +153,7 @@ async fn send_user_decryption_inner<P: Provider>(
                 durationDays: U256::from(DURATION_DAYS),
             },
             ContractsInfo {
-                chainId: U256::from(config.host_chain_id),
+                chainId: U256::from(host_chain_id),
                 addresses: vec![config.allowed_contract],
             },
             user_addr,
@@ -184,18 +190,23 @@ pub async fn init_user_decryption_response_listener<P: Provider>(
 ) -> anyhow::Result<
     Arc<
         Mutex<
-            impl Stream<Item = alloy::sol_types::Result<(UserDecryptionResponse, Log)>> + Unpin + Send,
+            impl Stream<Item = alloy::sol_types::Result<(UserDecryptionResponseThresholdReached, Log)>>
+            + Unpin
+            + Send,
         >,
     >,
 > {
-    debug!("Subcribing to UserDecryptionResponse events...");
+    debug!("Subcribing to UserDecryptionResponseThresholdReached events...");
     let mut response_filter = decryption_contract
-        .UserDecryptionResponse_filter()
+        .UserDecryptionResponseThresholdReached_filter()
         .watch()
         .await
-        .map_err(|e| anyhow!("Failed to subscribe to UserDecryptionResponse {e}"))?;
+        .map_err(|e| {
+            anyhow!("Failed to subscribe to UserDecryptionResponseThresholdReached {e}")
+        })?;
     debug!(
-        "Subcribed to UserDecryptionResponse events! Can start sending UserDecryptionRequests..."
+        "Subcribed to UserDecryptionResponseThresholdReached events! \
+        Can start sending UserDecryptionRequests..."
     );
 
     response_filter.poller = response_filter
@@ -211,7 +222,13 @@ pub fn generate_eip712(
     timestamp: u64,
 ) -> anyhow::Result<Eip712Result> {
     let allowed_contract = config.allowed_contract;
-    let private_key = config.private_key.clone().unwrap();
+    let private_key = config
+        .blockchain
+        .as_ref()
+        .unwrap()
+        .private_key
+        .clone()
+        .unwrap();
 
     // Spawn in new thread otherwise panic because it blocks the async runtime
     std::thread::spawn(move || {
@@ -239,7 +256,7 @@ async fn wait_for_burst_responses<S>(
     progress_bar: ProgressBar,
 ) -> anyhow::Result<BurstResult>
 where
-    S: Stream<Item = sol_types::Result<(UserDecryptionResponse, Log)>> + Unpin,
+    S: Stream<Item = UserDecryptThresholdEvent> + Unpin,
 {
     let burst_start = Instant::now();
 
@@ -252,13 +269,16 @@ where
             ));
         };
 
-        trace!("UserDecryptionRequest #{id} was sent. Waiting for UserDecryptionResponse #{id}...");
+        trace!(
+            "UserDecryptionRequest #{id} was sent. \
+            Waiting for UserDecryptionResponseThresholdReached #{id}..."
+        );
 
         while !received_id_guard.remove(&id) {
             match listener_guard.next().await {
                 Some(Ok((response, _))) => {
                     let response_id = response.decryptionId;
-                    trace!("Received UserDecryptionResponse #{response_id}");
+                    trace!("Received UserDecryptionResponseThresholdReached #{response_id}");
                     received_id_guard.insert(response_id);
                     progress_bar.inc(1);
                 }
@@ -266,7 +286,7 @@ where
                 None => return Err(anyhow!("No more events to receive!")),
             }
         }
-        debug!("UserDecryptionResponse #{id} was successfully received!");
+        debug!("UserDecryptionResponseThresholdReached #{id} was successfully received!");
     }
     drop(received_id_guard);
     drop(listener_guard);

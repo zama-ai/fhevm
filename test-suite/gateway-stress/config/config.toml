@@ -1,73 +1,87 @@
+# The contract allowed for user decrytion on user_ct_handles
+allowed_contract = "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08"
+
+# The time during which the tool will send request bursts to the Gateway/Connectors' DBs
+# Format documentation: https://docs.rs/humantime/latest/humantime/
+tests_duration = "500ms"
+
+# The time to wait between two request bursts
+# Format documentation: https://docs.rs/humantime/latest/humantime/
+tests_interval = "1s"
+
+# The number of parallel requests to send to the Gateway/Connectors' DBs, at each interval
+parallel_requests = 1
+
+# # If requests burst must be sent sequentially only when the previous one has been completed
+# # Defaults to false, if set to true, then `tests_interval` is ignored
+# sequential = false
+
+# The ciphertexts to use for user decryptions
+[[user_ct]]
+# The handle used of the ciphertext
+handle = "0x84bbbeddcf4381289a06ea53536f250064f5759d70ff00000000000030390500"
+# The digest of the ciphertext
+digest = "134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
+
+# The ciphertexts to use for public decryptions
+[[public_ct]]
+# The handle used of the ciphertext
+handle = "0x6c38383ed44b1afbb1dd3764f3afe2c315b48a300bff00000000000030390500"
+# The digest of the ciphertext
+digest = "134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
+
+# Configuration section for stress test using the Gateway chain
+[blockchain]
 # Gateway WebSocket RPC URL endpoint (required)
-# ENV: GATEWAY_URL
-gateway_url = "ws://localhost:8546"
+gateway_url = "http://localhost:8546"
 
 # Chain ID for the Host network (required)
-# ENV: HOST_CHAIN_ID
 host_chain_id = 12345
 
 # Chain ID for the Gateway network (required)
-# ENV: GATEWAY_CHAIN_ID
 gateway_chain_id = 54321
 
 # Address of the Decryption contract (required)
-# ENV: DECRYPTION_ADDRESS
-decryption_address = "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
-
-# The time during which the tool will send requests burst to the Gateway
-# Format documentation: https://docs.rs/humantime/latest/humantime/
-# ENV: TESTS_DURATION
-tests_duration = "500ms"
-
-# If requests burst must be sent sequentially when the previous one has been completed
-# Defaults to false, if set to true, then `tests_interval` is ignored
-# ENV: SEQUENTIAL
-# sequential = false
-
-# The interval between two requests burst
-# Format documentation: https://docs.rs/humantime/latest/humantime/
-# ENV: TESTS_INTERVAL
-tests_interval = "1s"
-
-# The number of parallel requests to send to the Gateway, at each interval
-# ENV: PARALLEL_REQUESTS
-parallel_requests = 5
-
-# The handles used for user decryptions
-# ENV: USER_CT_HANDLES (format: comma separated list)
-# Example: USER_CT_HANDLES="0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500,0x408a1510fb9ebf45651a6b0d40ce34c52a4bfc6338ff00000000000030390500"
-user_ct_handles = [
-    "0x7e314aadb1fe25d0eedc986529cf05604b71b717fdff00000000000030390500",
-]
-
-# The handles used for public decryptions
-# ENV: PUBLIC_CT_HANDLES (format: comma separated list)
-# Example: PUBLIC_CT_HANDLES="0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500,0xbbb647e5a8dba46ed6f2eff8aed91d96ce9a80f537ff00000000000030390500"
-public_ct_handles = [
-    "0xcc0fe2694c954beeea00716b20dbff2f4aa3756afbff00000000000030390500",
-]
-
-# The contract allowed for user decrytion on ct_handles
-# ENV: ALLOWED_CONTRACTS
-allowed_contract = "0xa5880e99d86F081E8D3868A8C4732C8f65dfdB08"
+decryption_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 
 # Wallet's private key as a hex string (optional if `aws_kms_config` or `mnemonic` is configured)
-# ENV: PRIVATE_KEY
 private_key = "24af7cb5f6cd0f29df22c6f3e2f18ee5b3949f5a489a14b0674bef8fd89bfe91"
 
-# Wallet's mnemonic (optional if `aws_kms_config` or `private_key` is configured)
-# ENV: MNEMONIC
+# # Wallet's mnemonic (optional if `aws_kms_config` or `private_key` is configured)
 # mnemonic = "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
-
-# Wallet's mnemonic index (optional, defaults to 0)
-# ENV: MNEMONIC_INDEX
+# # Wallet's mnemonic index (optional, defaults to 0)
 # mnemonic_index = 0
 
-# Wallet's AWS KMS configuration (optional if `private_key` or `mnemonic` is configured)
+# # Wallet's AWS KMS configuration (optional if `private_key` or `mnemonic` is configured)
 # [aws_kms_config]
-# AWS KMS key ID for signing
+# # AWS KMS key ID for signing
 # key_id = "12345678-1234-1234-1234-123456789012"
-# Optional: AWS region for KMS (if not using default from AWS credentials)
+# # Optional: AWS region for KMS (if not using default from AWS credentials)
 # region = "us-east-1"
-# Optional: AWS endpoint URL for KMS (for testing or custom endpoints)
+# # Optional: AWS endpoint URL for KMS (for testing or custom endpoints)
 # endpoint = "https://kms.us-east-1.amazonaws.com"
+
+# Configuration section for stress test using the Connectors' DBs
+[database]
+# The URLs of the Connectors' DBs
+urls = [
+    "postgresql://postgres:postgres@localhost:5432/kms-connector"
+]
+
+# The pool size for each connection to a Connector's DB
+pool_size = 10
+
+# The timeout for the connection to a Connector's DB
+connection_timeout = "30s"
+
+# The number of requests to insert in one insertion query (should be smaller than the
+# `events_batch_size` setting of the KMS Workers)
+insertion_chunk_size = 10
+
+# The key ID that will be used by the inserted UserDecryptionRequest
+key_id = "1809251394333065553493296640760748560207343510400633813116524750123642650625"
+
+# The wallet address of the coprocessor's transaction sender. This is set in the inserted
+# decryption requests, to be used by the KMS Workers to fetch the S3 URL from the Gateway before
+# retrieving SnsCiphertextMaterial from S3.
+copro_tx_sender_addr = "0x6254a198f67ad40290a2e7b48adb2d19b71f67bd"
