@@ -518,7 +518,7 @@ contract KMSGeneration is
         address signer = ECDSA.recover(digest, signature);
 
         // Check that the signer is a KMS signer
-        GATEWAY_CONFIG.checkIsKmsSigner(signer);
+        _checkIsKmsSigner(signer);
 
         return signer;
     }

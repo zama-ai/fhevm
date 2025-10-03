@@ -100,7 +100,7 @@ impl<
 // Health handler returns appropriate HTTP status code based on health
 async fn health_handler<
     P: Provider<Ethereum> + Clone + Send + Sync + 'static,
-    A: AwsS3Interface,
+    A: AwsS3Interface + Clone + 'static,
 >(
     State(listener): State<Arc<GatewayListener<P, A>>>,
 ) -> impl IntoResponse {
@@ -117,7 +117,7 @@ async fn health_handler<
 
 async fn liveness_handler<
     P: Provider<Ethereum> + Clone + Send + Sync + 'static,
-    A: AwsS3Interface,
+    A: AwsS3Interface + Clone + 'static,
 >(
     State(_listener): State<Arc<GatewayListener<P, A>>>,
 ) -> impl IntoResponse {

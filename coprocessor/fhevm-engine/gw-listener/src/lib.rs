@@ -45,6 +45,9 @@ pub struct ConfigSettings {
     pub error_sleep_max_secs: u16,
     pub health_check_port: u16,
     pub health_check_timeout: Duration,
+
+    pub get_logs_poll_interval: Duration,
+    pub get_logs_block_batch_size: u64,
 }
 
 pub fn chain_id_from_env() -> Option<ChainId> {
@@ -69,6 +72,8 @@ impl Default for ConfigSettings {
             error_sleep_max_secs: 10,
             health_check_port: 8080,
             health_check_timeout: Duration::from_secs(4),
+            get_logs_poll_interval: Duration::from_secs(1),
+            get_logs_block_batch_size: 100,
         }
     }
 }

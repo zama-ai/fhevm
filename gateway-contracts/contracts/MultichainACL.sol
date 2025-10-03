@@ -237,35 +237,36 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         }
     }
 
-    /// @dev See {IMultichainACL-checkPublicDecryptAllowed}.
-    function checkPublicDecryptAllowed(bytes32 ctHandle) external view virtual {
+    /**
+     * @dev See {IMultichainACL-isPublicDecryptAllowed}.
+     */
+    function isPublicDecryptAllowed(bytes32 ctHandle) external view virtual returns (bool) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
-
-        if (!$.allowedPublicDecrypts[ctHandle]) {
-            revert PublicDecryptNotAllowed(ctHandle);
-        }
+        return $.allowedPublicDecrypts[ctHandle];
     }
 
-    /// @dev See {IMultichainACL-checkAccountAllowed}.
-    function checkAccountAllowed(bytes32 ctHandle, address accountAddress) external view virtual {
+    /**
+     * @dev See {IMultichainACL-isAccountAllowed}.
+     */
+    function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view virtual returns (bool) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
-
-        /// @dev Check that the account address is allowed to use this ciphertext.
-        if (!$.allowedAccounts[ctHandle][accountAddress]) {
-            revert AccountNotAllowedToUseCiphertext(ctHandle, accountAddress);
-        }
+        return $.allowedAccounts[ctHandle][accountAddress];
     }
 
-    /// @dev See {IMultichainACL-checkAccountDelegated}.
-    function checkAccountDelegated(
+    /**
+     * @dev See {IMultichainACL-isAccountDelegated}.
+     */
+    function isAccountDelegated(
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
         address[] calldata contractAddresses
-    ) external view virtual {
+    ) external view virtual returns (bool) {
+        // An account cannot be delegated to an empty list of contracts.
         if (contractAddresses.length == 0) {
-            revert EmptyContractAddresses();
+            return false;
         }
 
+        // Check if each contract address is delegated.
         MultichainACLStorage storage $ = _getMultichainACLStorage();
         for (uint256 i = 0; i < contractAddresses.length; i++) {
             if (
@@ -273,9 +274,10 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
                     chainId
                 ][contractAddresses[i]]
             ) {
-                revert AccountNotDelegated(chainId, delegationAccounts, contractAddresses[i]);
+                return false;
             }
         }
+        return true;
     }
 
     /// @dev See {IMultichainACL-getAllowPublicDecryptConsensusTxSenders}.

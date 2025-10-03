@@ -1,49 +1,107 @@
+# =============================================================================
+# KMS Connector Configuration
+# =============================================================================
+# This chart deploys the KMS (Key Management Service) connector components
+# that bridge between the gateway chain and KMS cores, including:
+# - Database migration
+# - Gateway listener (processes gateway events)
+# - KMS worker (communicates with KMS cores)
+# - Transaction sender (submits transactions to gateway)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Common Configuration
+# -----------------------------------------------------------------------------
+# Shared configuration across all KMS connector components
 commonConfig:
+  # Database connection string
   databaseUrl: "postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_ENDPOINT)/connector"
+
+  # Gateway WebSocket endpoint
   gatewayUrl: "ws://gateway-anvil-node:8546"
+
+  # Gateway chain identifier
   chainId: "54321"
+
+  # Gateway smart contract addresses
   gatewayContractAddresses:
     decryption: "0xc9bAE822fE6793e3B456144AdB776D5A318CB71e"
     gatewayConfig: "0xeAC2EfFA07844aB326D92d1De29E136a6793DFFA"
+    # =========================================================================
+    # NEW VARIABLES
+    # =========================================================================
     kmsGeneration: "0xF0bFB159C7381F7CB332586004d8247252C5b816"
+
+  # Distributed tracing configuration
   tracing:
     enabled: false
     endpoint: "http://otel-deployment-opentelemetry-collector.observability.svc.cluster.local:4317"
-  env:
-# E.g. Database configuration from secret
-#    - name: DATABASE_ENDPOINT
-#      valueFrom:
-#        secretKeyRef:
-#          name: connector-database
-#          key: endpoint
-#    - name: DATABASE_USERNAME
-#      valueFrom:
-#        secretKeyRef:
-#          name: connector-database
-#          key: username
-#    - name: DATABASE_PASSWORD
-#      valueFrom:
-#        secretKeyRef:
-#          name: connector-database
-#          key: password
 
+  # Environment variables (can be overridden per component)
+  env:
+    # Example: Database configuration from secrets
+    # - name: DATABASE_ENDPOINT
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: connector-database
+    #       key: endpoint
+    # - name: DATABASE_USERNAME
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: connector-database
+    #       key: username
+    # - name: DATABASE_PASSWORD
+    #   valueFrom:
+    #     secretKeyRef:
+    #       name: connector-database
+    #       key: password
+
+# -----------------------------------------------------------------------------
+# Database Migration
+# -----------------------------------------------------------------------------
+# Sets up the database schema for KMS connector
 kmsConnectorDbMigration:
   enabled: true
   annotations:
+
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/db-migration
-    tag: v0.8.0
+    tag: v0.9.0
+
+  # Command to run database migrations
   command:
     - "sqlx"
     - "migrate"
     - "run"
     - "--source"
     - "/migrations"
+
+  # Environment variables for database migration
   env:
+    # =========================================================================
+    # DEPRECATED ENVIRONMENT VARIABLES
+    # =========================================================================
+    # TODO: Apply new environment variable pattern to all services
+    - name: DATABASE_ENDPOINT
+    - name: DATABASE_USERNAME
+    - name: DATABASE_PASSWORD
+
+    # =========================================================================
+    # NEW ENVIRONMENT VARIABLES
+    # =========================================================================
+    - name: DATABASE_URL
+      value: "postgresql://$(PGUSER):$(PGPASSWORD)@db:5432/kms-connector"
+    - name: PGUSER
+      value: "postgres"
+    - name: PGPASSWORD
+      value: "postgres"
+
   serviceAccountName:
-  # Size of the non-persistent volume.
+
+  # Size of the non-persistent volume for migration
   storage:
     size: 2Gi
+
   resources:
     requests:
       cpu: 100m
@@ -51,28 +109,47 @@ kmsConnectorDbMigration:
     limits:
       cpu: 500m
       memory: 512Mi
+
   nodeSelector:
   affinity:
   tolerations:
 
+# -----------------------------------------------------------------------------
+# Gateway Listener
+# -----------------------------------------------------------------------------
+# Listens to gateway events and processes them
 kmsConnectorGwListener:
   enabled: true
   nameOverride:
+
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/gw-listener
-    tag: v0.8.0
+    tag: v0.9.0
+
   replicas: 1
+
+  # Component-specific configuration
   config:
-    # Override commonConfig.gatewayUrl
+    # Override commonConfig.gatewayUrl if needed
     gatewayUrl:
+
+  # Additional environment variables
   env:
+
+  # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
+
+  # Service ports
   ports:
     monitoring: 9100
+
+  # Prometheus ServiceMonitor for metrics collection
   serviceMonitor:
     enabled: false
+
   serviceAccountName:
+
   resources:
     requests:
       cpu: 100m
@@ -80,6 +157,8 @@ kmsConnectorGwListener:
     limits:
       cpu: 500m
       memory: 512Mi
+
+  # Health check probes
   probes:
     liveness:
       enabled: true
@@ -95,34 +174,56 @@ kmsConnectorGwListener:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
+
   nodeSelector:
   affinity:
   tolerations:
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
 
+# -----------------------------------------------------------------------------
+# KMS Worker
+# -----------------------------------------------------------------------------
+# Communicates with KMS cores to perform cryptographic operations
 kmsConnectorKmsWorker:
   enabled: true
   nameOverride:
+
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/kms-worker
-    tag: v0.8.0
+    tag: v0.9.0
+
   replicas: 1
+
+  # Component-specific configuration
   config:
+    # KMS core endpoints for communication
     kmsCoreEndpoints: "http://kms-core:50051"
-    # Override commonConfig.gatewayUrl
+
+    # Override commonConfig.gatewayUrl if needed
     gatewayUrl:
+
+  # Additional environment variables
   env:
+
+  # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: false
+
+  # Service ports
   ports:
     monitoring: 9100
+
+  # Prometheus ServiceMonitor for metrics collection
   serviceMonitor:
     enabled: false
+
   serviceAccountName:
+
   resources:
     requests:
       cpu: 100m
@@ -130,6 +231,8 @@ kmsConnectorKmsWorker:
     limits:
       cpu: 500m
       memory: 512Mi
+
+  # Health check probes
   probes:
     liveness:
       enabled: true
@@ -145,37 +248,59 @@ kmsConnectorKmsWorker:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
+
   nodeSelector:
   affinity:
   tolerations:
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
 
+# -----------------------------------------------------------------------------
+# Transaction Sender
+# -----------------------------------------------------------------------------
+# Submits transactions to the gateway chain
 kmsConnectorTxSender:
   enabled: true
   nameOverride:
+
   image:
     name: ghcr.io/zama-ai/fhevm/kms-connector/tx-sender
-    tag: v0.8.0
+    tag: v0.9.0
+
   replicas: 1
+
+  # Component-specific configuration
   config:
-    # Override commonConfig.gatewayUrl
+    # Override commonConfig.gatewayUrl if needed
     gatewayUrl:
+
+  # Additional environment variables
   env:
+
+  # Wallet configuration for transaction signing
   wallet:
     secret:
       name: kms-connector-tx-sender
       key: kms-wallet
+
+  # Distributed tracing (inherits from commonConfig but can be overridden)
   tracing:
     enabled: true
+
+  # Service ports
   ports:
     monitoring: 9100
+
+  # Prometheus ServiceMonitor for metrics collection
   serviceMonitor:
     enabled: false
+
   serviceAccountName:
+
   resources:
     requests:
       cpu: 100m
@@ -183,6 +308,8 @@ kmsConnectorTxSender:
     limits:
       cpu: 500m
       memory: 512Mi
+
+  # Health check probes
   probes:
     liveness:
       enabled: true
@@ -198,16 +325,24 @@ kmsConnectorTxSender:
         port: monitoring
       initialDelaySeconds: 5
       periodSeconds: 10
+
   nodeSelector:
   affinity:
   tolerations:
+
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
 
-# Set Pod Annotations, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
+# -----------------------------------------------------------------------------
+# Global Pod Configuration
+# -----------------------------------------------------------------------------
+# Pod annotations for additional metadata
+# See: https://kubernetes.io/docs/concepts/overview/working-with-objects/annotations/
 podAnnotations: {}
-# Set Pod Labels, see: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+
+# Pod labels for selection and organization
+# See: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
 podLabels: {}

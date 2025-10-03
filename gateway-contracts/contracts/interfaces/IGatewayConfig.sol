@@ -120,48 +120,6 @@ interface IGatewayConfig {
     event UnpauseAllGatewayContracts();
 
     /**
-     * @notice Error emitted when an address is not a KMS transaction sender.
-     * @param txSenderAddress The address that is not a KMS transaction sender.
-     */
-    error NotKmsTxSender(address txSenderAddress);
-
-    /**
-     * @notice Error emitted when an address is not a KMS signer.
-     * @param signerAddress The address that is not a KMS signer.
-     */
-    error NotKmsSigner(address signerAddress);
-
-    /**
-     * @notice Error emitted when an address is not a coprocessor transaction sender.
-     * @param txSenderAddress The address that is not a coprocessor transaction sender.
-     */
-    error NotCoprocessorTxSender(address txSenderAddress);
-
-    /**
-     * @notice Error emitted when an address is not a coprocessor signer.
-     * @param signerAddress The address that is not a coprocessor signer.
-     */
-    error NotCoprocessorSigner(address signerAddress);
-
-    /**
-     * @notice Error emitted when an address is not a custodian transaction sender.
-     * @param txSenderAddress The address that is not a custodian transaction sender.
-     */
-    error NotCustodianTxSender(address txSenderAddress);
-
-    /**
-     * @notice Error emitted when an address is not a custodian signer.
-     * @param signerAddress The address that is not a custodian signer.
-     */
-    error NotCustodianSigner(address signerAddress);
-
-    /**
-     * @notice Error emitted when a host chain is not registered.
-     * @param chainId The host chain's chain ID.
-     */
-    error HostChainNotRegistered(uint256 chainId);
-
-    /**
      * @notice Error emitted when trying to add a host chain that is already registered.
      * @param chainId The host chain's chain ID that is already registered.
      */
@@ -224,46 +182,46 @@ interface IGatewayConfig {
     function unpauseAllGatewayContracts() external;
 
     /**
-     * @notice Check if an address is a registered KMS transaction sender.
+     * @notice Indicates if an address is a registered KMS transaction sender.
      * @param kmsTxSenderAddress The address to check.
      */
-    function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
+    function isKmsTxSender(address kmsTxSenderAddress) external view returns (bool);
 
     /**
-     * @notice Check if an address is a registered KMS signer.
+     * @notice Indicates if an address is a registered KMS signer.
      * @param signerAddress The address to check.
      */
-    function checkIsKmsSigner(address signerAddress) external view;
+    function isKmsSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Check if an address is a registered coprocessor transaction sender.
+     * @notice Indicates if an address is a registered coprocessor transaction sender.
      * @param coprocessorTxSenderAddress The address to check.
      */
-    function checkIsCoprocessorTxSender(address coprocessorTxSenderAddress) external view;
+    function isCoprocessorTxSender(address coprocessorTxSenderAddress) external view returns (bool);
 
     /**
-     * @notice Check if an address is a registered coprocessor signer.
+     * @notice Indicates if an address is a registered coprocessor signer.
      * @param signerAddress The address to check.
      */
-    function checkIsCoprocessorSigner(address signerAddress) external view;
+    function isCoprocessorSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Check if an address is a registered custodian transaction sender.
+     * @notice Indicates if an address is a registered custodian transaction sender.
      * @param txSenderAddress The address to check.
      */
-    function checkIsCustodianTxSender(address txSenderAddress) external view;
+    function isCustodianTxSender(address txSenderAddress) external view returns (bool);
 
     /**
-     * @notice Check if an address is a registered custodian signer.
+     * @notice Indicates if an address is a registered custodian signer.
      * @param signerAddress The address to check.
      */
-    function checkIsCustodianSigner(address signerAddress) external view;
+    function isCustodianSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Check if a chain ID corresponds to a registered host chain.
+     * @notice Indicates if a chain ID corresponds to a registered host chain.
      * @param chainId The chain ID to check.
      */
-    function checkHostChainIsRegistered(uint256 chainId) external view;
+    function isHostChainRegistered(uint256 chainId) external view returns (bool);
 
     /**
      * @notice Check if the account is a pauser.

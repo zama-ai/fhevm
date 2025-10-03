@@ -15,6 +15,7 @@ import { IMultichainACL } from "./interfaces/IMultichainACL.sol";
 import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
+import { MultichainACLChecks } from "./shared/MultichainACLChecks.sol";
 import { FheType } from "./shared/FheType.sol";
 import { Pausable } from "./shared/Pausable.sol";
 import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
@@ -31,6 +32,7 @@ contract Decryption is
     UUPSUpgradeableEmptyProxy,
     GatewayOwnable,
     GatewayConfigChecks,
+    MultichainACLChecks,
     Pausable
 {
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
@@ -207,20 +209,13 @@ contract Decryption is
                 verifiedPublicDecryptSignatures;
         /// @notice Handles of the ciphertexts requested for a public decryption
         mapping(uint256 decryptionId => bytes32[] ctHandles) publicCtHandles;
+        /// @notice The number of public decryption requests, used to generate request IDs (`decryptionId`).
+        uint256 publicDecryptionCounter;
         // ----------------------------------------------------------------------------------------------
         // User decryption state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice Verified signatures for a user decryption.
-        mapping(uint256 decryptionId => bytes[] verifiedSignatures) verifiedUserDecryptSignatures;
         /// @notice The decryption payloads stored during user decryption requests.
         mapping(uint256 decryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
-        /// @notice The user decrypted shares received from user decryption responses.
-        mapping(uint256 decryptionId => bytes[] shares) userDecryptedShares;
-        // ----------------------------------------------------------------------------------------------
-        // Decryption counters:
-        // ----------------------------------------------------------------------------------------------
-        /// @notice The number of public decryption requests, used to generate request IDs (`decryptionId`).
-        uint256 publicDecryptionCounter;
         /// @notice The number of user decryption requests, used to generate request IDs (`decryptionId`)
         /// @notice (including delegated user decryption requests).
         uint256 userDecryptionCounter;
@@ -479,9 +474,9 @@ contract Decryption is
             delegationAccounts.delegatorAddress
         );
 
-        /// @dev Check that the delegated address has been granted access to the contract addresses
-        /// @dev by the delegator.
-        MULTICHAIN_ACL.checkAccountDelegated(contractsInfo.chainId, delegationAccounts, contractsInfo.addresses);
+        // Check that the delegated address has been granted access to the contract addresses by
+        // by the delegator.
+        _checkIsAccountDelegated(contractsInfo.chainId, delegationAccounts, contractsInfo.addresses);
 
         /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
         DelegatedUserDecryptRequestVerification
@@ -572,101 +567,124 @@ contract Decryption is
         /// @dev KMS node that has not already signed.
         _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
 
-        /// @dev Store the signature for the user decryption response.
-        /// @dev This list is then used to check the consensus. Important: the mapping should not
-        /// @dev consider the digest (contrary to the public decryption case) as shares are expected
-        /// @dev to be different for each KMS node.
-        bytes[] storage verifiedSignatures = $.verifiedUserDecryptSignatures[decryptionId];
-        verifiedSignatures.push(signature);
-
-        /// @dev Store the user decrypted share for the user decryption response.
-        $.userDecryptedShares[decryptionId].push(userDecryptedShare);
-
         // Store the KMS transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus
         // A "late" valid KMS transaction sender address will still be added in the list.
         // We thus use a zero digest (default value for `bytes32`) to still be able to retrieve the
         // list later independently of the decryption response type (public or user).
-        $.consensusTxSenderAddresses[decryptionId][0].push(msg.sender);
+        address[] storage txSenderAddresses = $.consensusTxSenderAddresses[decryptionId][0];
+        txSenderAddresses.push(msg.sender);
+
+        // Store the user decrypted share for the user decryption response.
+        // The index of the share is the length of the txSenderAddresses - 1 so that the first response
+        // associated to this decryptionId has an index of 0.
+        emit UserDecryptionResponse(
+            decryptionId,
+            txSenderAddresses.length - 1,
+            userDecryptedShare,
+            signature,
+            extraData
+        );
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
+        if (!$.decryptionDone[decryptionId] && _isThresholdReachedUser(txSenderAddresses.length)) {
             $.decryptionDone[decryptionId] = true;
 
             // Since we use the default value for `bytes32`, this means we do not need to store the
             // digest in `decryptionConsensusDigest` here like we do for the public decryption case.
 
-            emit UserDecryptionResponse(
-                decryptionId,
-                $.userDecryptedShares[decryptionId],
-                verifiedSignatures,
-                extraData
-            );
+            emit UserDecryptionResponseThresholdReached(decryptionId);
         }
     }
 
-    /// @dev See {IDecryption-checkPublicDecryptionReady}.
-    function checkPublicDecryptionReady(
+    /**
+     * @dev See {IDecryption-isPublicDecryptionReady}.
+     */
+    function isPublicDecryptionReady(
         bytes32[] calldata ctHandles,
         bytes calldata /* extraData */
-    ) external view virtual {
-        /// @dev Check that the handles are allowed for public decryption and that the ciphertext materials
-        /// @dev represented by them have been added.
+    ) external view virtual returns (bool) {
+        // For each handle, check that it is allowed for public decryption and that the ciphertext
+        // material represented by it has been added.
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            MULTICHAIN_ACL.checkPublicDecryptAllowed(ctHandles[i]);
-            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandles[i]);
+            if (
+                !MULTICHAIN_ACL.isPublicDecryptAllowed(ctHandles[i]) ||
+                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandles[i])
+            ) {
+                return false;
+            }
         }
+        return true;
     }
 
-    /// @dev See {IDecryption-checkUserDecryptionReady}.
-    function checkUserDecryptionReady(
+    /**
+     * @dev See {IDecryption-isUserDecryptionReady}.
+     */
+    function isUserDecryptionReady(
         address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
-    ) external view virtual {
-        /// @dev Check that the user and contracts accounts have access to the handles and that the
-        /// @dev ciphertext materials represented by them have been added.
+    ) external view virtual returns (bool) {
+        // For each handle, check that the user and contracts accounts have access to it and that the
+        // ciphertext material represented by it has been added.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress);
-            MULTICHAIN_ACL.checkAccountAllowed(
-                ctHandleContractPairs[i].ctHandle,
-                ctHandleContractPairs[i].contractAddress
-            );
-            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
+            if (
+                !MULTICHAIN_ACL.isAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress) ||
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    ctHandleContractPairs[i].contractAddress
+                ) ||
+                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
+            ) {
+                return false;
+            }
         }
+        return true;
     }
 
-    /// @dev See {IDecryption-checkDelegatedUserDecryptionReady}.
-    function checkDelegatedUserDecryptionReady(
+    /**
+     * @dev See {IDecryption-isDelegatedUserDecryptionReady}.
+     */
+    function isDelegatedUserDecryptionReady(
         uint256 contractsChainId,
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         address[] calldata contractAddresses,
         bytes calldata /* extraData */
-    ) external view virtual {
-        /// @dev Check that the delegated address has been granted access to the given contractAddresses
-        /// @dev by the delegator.
-        MULTICHAIN_ACL.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
-
-        /// @dev Check that the delegator and contract accounts have access to the handles and that the
-        /// @dev ciphertext materials represented by them have been added.
-        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, delegationAccounts.delegatorAddress);
-            MULTICHAIN_ACL.checkAccountAllowed(
-                ctHandleContractPairs[i].ctHandle,
-                ctHandleContractPairs[i].contractAddress
-            );
-            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
+    ) external view virtual returns (bool) {
+        // Check that the delegated address has been granted access to the given contractAddresses
+        // by the delegator.
+        if (!MULTICHAIN_ACL.isAccountDelegated(contractsChainId, delegationAccounts, contractAddresses)) {
+            return false;
         }
+
+        // For each handle, check that the delegator and contract accounts have access to it and that the
+        // ciphertext material represented by it has been added.
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            if (
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    delegationAccounts.delegatorAddress
+                ) ||
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    ctHandleContractPairs[i].contractAddress
+                ) ||
+                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
+            ) {
+                return false;
+            }
+        }
+        return true;
     }
 
-    /// @dev See {IDecryption-checkDecryptionDone}.
-    function checkDecryptionDone(uint256 decryptionId) external view virtual {
+    /**
+     * @dev See {IDecryption-isDecryptionDone}.
+     */
+    function isDecryptionDone(uint256 decryptionId) external view virtual returns (bool) {
         DecryptionStorage storage $ = _getDecryptionStorage();
-        if (!$.decryptionDone[decryptionId]) {
-            revert DecryptionNotDone(decryptionId);
-        }
+        return $.decryptionDone[decryptionId];
     }
 
     /**
@@ -713,8 +731,8 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
         address signer = ECDSA.recover(digest, signature);
 
-        /// @dev Check that the signer is a KMS signer.
-        GATEWAY_CONFIG.checkIsKmsSigner(signer);
+        // Check that the signer is a KMS signer.
+        _checkIsKmsSigner(signer);
 
         /// @dev Check that the signer has not already responded to the user decryption request.
         if ($.kmsNodeAlreadySigned[decryptionId][signer]) {
@@ -867,20 +885,20 @@ contract Decryption is
             );
     }
 
-    /// @notice Checks if the consensus is reached among the KMS nodes.
-    /// @param kmsCounter The number of KMS nodes that agreed
-    /// @return Whether the consensus is reached
-    function _isConsensusReachedPublic(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
-        return kmsCounter >= consensusThreshold;
+    /// @notice Indicates if the consensus is reached for public decryption.
+    /// @param numVerifiedResponses The number of public decryption responses that have been verified.
+    /// @return Whether the consensus has been reached
+    function _isConsensusReachedPublic(uint256 numVerifiedResponses) internal view virtual returns (bool) {
+        uint256 publicDecryptionThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
+        return numVerifiedResponses >= publicDecryptionThreshold;
     }
 
-    /// @notice Checks if the consensus for user decryption is reached among the KMS signers.
-    /// @param verifiedSignaturesCount The number of signatures that have been verified for a user decryption.
-    /// @return Whether the consensus is reached.
-    function _isConsensusReachedUser(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getUserDecryptionThreshold();
-        return verifiedSignaturesCount >= consensusThreshold;
+    /// @notice Indicates if the number of verified user decryption responses has reached the threshold.
+    /// @param numVerifiedResponses The number of user decryption responses that have been verified.
+    /// @return Whether the threshold has been reached.
+    function _isThresholdReachedUser(uint256 numVerifiedResponses) internal view virtual returns (bool) {
+        uint256 userDecryptionThreshold = GATEWAY_CONFIG.getUserDecryptionThreshold();
+        return numVerifiedResponses >= userDecryptionThreshold;
     }
 
     /// @notice Check the handles' conformance for public decryption requests.
@@ -901,8 +919,8 @@ contract Decryption is
             /// @dev This reverts if the FHE type is invalid or not supported.
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
-            /// @dev Check that the handles are allowed for public decryption.
-            MULTICHAIN_ACL.checkPublicDecryptAllowed(ctHandle);
+            // Check that the handles are allowed for public decryption.
+            _checkIsPublicDecryptAllowed(ctHandle);
         }
 
         /// @dev Revert if the total bit size exceeds the maximum allowed.
@@ -946,11 +964,9 @@ contract Decryption is
             /// @dev This reverts if the FHE type is invalid or not supported
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
-            /// @dev Check that the allowed account has access to the handles.
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandle, allowedAddress);
-
-            /// @dev Check that the contract account has access to the handles.
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandle, contractAddress);
+            // Check that the allowed and contract accounts have access to the handles.
+            _checkIsAccountAllowed(ctHandle, allowedAddress);
+            _checkIsAccountAllowed(ctHandle, contractAddress);
 
             /// @dev Check the contract is included in the list of allowed contract addresses.
             if (!_containsContractAddress(contractAddresses, contractAddress)) {

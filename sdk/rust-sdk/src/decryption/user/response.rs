@@ -8,7 +8,7 @@ use fhevm_gateway_bindings::decryption::Decryption::CtHandleContractPair;
 use kms_grpc::kms::v1::{Eip712DomainMsg, TypedPlaintext};
 use kms_grpc::rpc_types::protobuf_to_alloy_domain;
 use kms_lib::client::js_api::{new_client, new_server_id_addr};
-use kms_lib::client::{CiphertextHandle, ParsedUserDecryptionRequest};
+use kms_lib::client::user_decryption_wasm::{CiphertextHandle, ParsedUserDecryptionRequest};
 use kms_lib::consts::SAFE_SER_SIZE_LIMIT;
 use kms_lib::cryptography::internal_crypto_types::{
     PrivateEncKey, UnifiedPrivateEncKey, UnifiedPublicEncKey,
@@ -278,7 +278,7 @@ impl ResponseProcessor {
 fn create_kms_client(
     kms_signers: &[String],
     user_address: &str,
-) -> Result<kms_lib::client::Client> {
+) -> Result<kms_lib::client::client_wasm::Client> {
     // Convert string addresses to ServerIdAddr objects
     let server_id_addrs = kms_signers
         .iter()

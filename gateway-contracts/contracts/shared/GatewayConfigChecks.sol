@@ -7,33 +7,104 @@ import { HandleOps } from "../libraries/HandleOps.sol";
 
 /**
  * @title GatewayConfig Checks
- * @dev Base contract that provides modifiers that checks proper registration in the GatewayConfig contract
+ * @dev Contract that provides checks on top of the GatewayConfig contract
  */
 abstract contract GatewayConfigChecks {
     /// @notice The address of the GatewayConfig contract
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @notice Checks if the sender is a coprocessor transaction sender.
-    modifier onlyCoprocessorTxSender() {
-        GATEWAY_CONFIG.checkIsCoprocessorTxSender(msg.sender);
-        _;
-    }
+    /**
+     * @notice Error emitted when an address is not a KMS transaction sender.
+     * @param txSenderAddress The address that is not a KMS transaction sender.
+     */
+    error NotKmsTxSender(address txSenderAddress);
 
-    /// @notice Checks if the sender is a KMS transaction sender.
+    /**
+     * @notice Error emitted when an address is not a KMS signer.
+     * @param signerAddress The address that is not a KMS signer.
+     */
+    error NotKmsSigner(address signerAddress);
+
+    /**
+     * @notice Error emitted when an address is not a coprocessor transaction sender.
+     * @param txSenderAddress The address that is not a coprocessor transaction sender.
+     */
+    error NotCoprocessorTxSender(address txSenderAddress);
+
+    /**
+     * @notice Error emitted when an address is not a coprocessor signer.
+     * @param signerAddress The address that is not a coprocessor signer.
+     */
+    error NotCoprocessorSigner(address signerAddress);
+
+    /**
+     * @notice Error emitted when an address is not a custodian transaction sender.
+     * @param txSenderAddress The address that is not a custodian transaction sender.
+     */
+    error NotCustodianTxSender(address txSenderAddress);
+
+    /*
+     * @notice Error emitted when an address is not a custodian signer.
+     * @param signerAddress The address that is not a custodian signer.
+     */
+    error NotCustodianSigner(address signerAddress);
+
+    /**
+     * @notice Error emitted when a host chain is not registered in the GatewayConfig contract.
+     * @param chainId The host chain's chain ID.
+     */
+    error HostChainNotRegistered(uint256 chainId);
+
+    /**
+     * @notice Checks if the sender is a KMS transaction sender.
+     */
     modifier onlyKmsTxSender() {
-        GATEWAY_CONFIG.checkIsKmsTxSender(msg.sender);
+        if (!GATEWAY_CONFIG.isKmsTxSender(msg.sender)) {
+            revert NotKmsTxSender(msg.sender);
+        }
         _;
     }
 
-    /// @dev Check that the chain ID corresponds to a registered host chain.
+    /**
+     * @notice Checks if the sender is a coprocessor transaction sender.
+     */
+    modifier onlyCoprocessorTxSender() {
+        if (!GATEWAY_CONFIG.isCoprocessorTxSender(msg.sender)) {
+            revert NotCoprocessorTxSender(msg.sender);
+        }
+        _;
+    }
+
+    /**
+     * @notice Checks if the chain ID corresponds to a registered host chain.
+     */
     modifier onlyRegisteredHostChain(uint256 chainId) {
-        GATEWAY_CONFIG.checkHostChainIsRegistered(chainId);
+        if (!GATEWAY_CONFIG.isHostChainRegistered(chainId)) {
+            revert HostChainNotRegistered(chainId);
+        }
         _;
     }
 
-    /// @dev Check that the chain ID extracted from the handle corresponds to a registered host chain.
+    /**
+     * @notice Checks if the chain ID extracted from the handle corresponds to a registered host chain.
+     */
     modifier onlyHandleFromRegisteredHostChain(bytes32 handle) {
-        GATEWAY_CONFIG.checkHostChainIsRegistered(HandleOps.extractChainId(handle));
+        uint256 handleChainId = HandleOps.extractChainId(handle);
+        if (!GATEWAY_CONFIG.isHostChainRegistered(handleChainId)) {
+            revert HostChainNotRegistered(handleChainId);
+        }
         _;
+    }
+
+    function _checkIsKmsSigner(address signerAddress) internal view {
+        if (!GATEWAY_CONFIG.isKmsSigner(signerAddress)) {
+            revert NotKmsSigner(signerAddress);
+        }
+    }
+
+    function _checkIsCoprocessorSigner(address signerAddress) internal view {
+        if (!GATEWAY_CONFIG.isCoprocessorSigner(signerAddress)) {
+            revert NotCoprocessorSigner(signerAddress);
+        }
     }
 }

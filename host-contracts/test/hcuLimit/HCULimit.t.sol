@@ -35,10 +35,10 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
     uint256 internal MAX_HOMOMORPHIC_COMPUTE_UNITS_PER_TX = 20_000_000 - 1;
 
-    bytes32 mockLHS;
-    bytes32 mockRHS;
-    bytes32 mockMiddle;
-    bytes32 mockResult;
+    bytes32 mockLHS = bytes32(uint256(int256(-1)));
+    bytes32 mockRHS = bytes32(uint256(int256(-2)));
+    bytes32 mockMiddle = bytes32(uint256(int256(-3)));
+    bytes32 mockResult = bytes32(uint256(int256(-4)));
 
     function _isTypeSupported(FheType fheType, uint256 supportedTypes) internal pure returns (bool) {
         if ((1 << uint8(fheType)) & supportedTypes == 0) {

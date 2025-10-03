@@ -192,7 +192,7 @@ contract MockACL {
 /// @dev It never reverts and always returns the handle back.
 contract MockInputVerifier {
     /// @dev This function is a placeholder for the actual input verification logic.
-    function verifyCiphertext(
+    function verifyInput(
         FHEVMExecutor.ContextUserInputs memory,
         bytes32 inputHandle,
         bytes memory
@@ -405,7 +405,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
      * @dev The following tests will verify that only the supported types are allowed for each operation.
      */
 
-    function test_FheAddSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheAddSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
 
         vm.assume(fheType <= uint8(FheType.Int248));
@@ -434,7 +435,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheSubSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheSubSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheSub));
@@ -462,7 +464,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheMulSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheMulSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMul));
@@ -550,7 +553,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheBitAndSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheBitAndSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheBitAnd));
@@ -578,7 +582,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheBitOrSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheBitOrSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheBitOr));
@@ -606,7 +611,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheBitXorSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheBitXorSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheBitXor));
@@ -634,7 +640,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheShlSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheShlSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheShl));
@@ -662,7 +669,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheShrSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheShrSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheShr));
@@ -690,7 +698,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheRotlSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheRotlSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheRotl));
@@ -718,7 +727,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheRotrSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheRotrSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheRotr));
@@ -746,7 +756,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheEqSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheEqSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheEq));
@@ -775,7 +786,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheNeSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheNeSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheNe));
@@ -804,7 +816,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheGeSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheGeSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheGe));
@@ -833,7 +846,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheGtSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheGtSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheGt));
@@ -862,7 +876,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheLeSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheLeSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheLe));
@@ -891,7 +906,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheLtSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheLtSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheLt));
@@ -920,7 +936,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheMinSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheMinSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMin));
@@ -948,7 +965,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         assertEq(result, expectedResult);
     }
 
-    function test_FheMaxSupportedTypesWorkAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheMaxSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheMax));
@@ -1086,6 +1104,12 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         vm.assume(fheType <= uint8(FheType.Int248));
         /// @dev The upperBound must be a power of 2.
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheRandBounded));
+        if (FheType(fheType) == FheType.Uint8) vm.assume(upperBoundExponent <= 8);
+        if (FheType(fheType) == FheType.Uint16) vm.assume(upperBoundExponent <= 16);
+        if (FheType(fheType) == FheType.Uint32) vm.assume(upperBoundExponent <= 32);
+        if (FheType(fheType) == FheType.Uint64) vm.assume(upperBoundExponent <= 64);
+        if (FheType(fheType) == FheType.Uint128) vm.assume(upperBoundExponent <= 128);
+
         address sender = address(123);
 
         uint256 upperBound = 2 ** upperBoundExponent;
@@ -1173,7 +1197,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     /**
      * @dev The following tests will verify that only the supported types are allowed for each operation.
      */
-    function test_FheAddNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheAddNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheAdd));
@@ -1190,7 +1215,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheAdd(lhs, rhs, scalarByte);
     }
 
-    function test_FheSubNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheSubNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheSub));
@@ -1207,7 +1233,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheSub(lhs, rhs, scalarByte);
     }
 
-    function test_FheMulNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheMulNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheMul));
@@ -1260,7 +1287,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRem(lhs, rhs, scalarByte);
     }
 
-    function test_FheBitAndNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheBitAndNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheBitAnd));
@@ -1277,7 +1305,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheBitAnd(lhs, rhs, scalarByte);
     }
 
-    function test_FheBitOrNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheBitOrNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheBitOr));
@@ -1294,7 +1323,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheBitOr(lhs, rhs, scalarByte);
     }
 
-    function test_FheBitXorNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheBitXorNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheBitXor));
@@ -1311,7 +1341,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheBitXor(lhs, rhs, scalarByte);
     }
 
-    function test_FheShlNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheShlNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheShl));
@@ -1328,7 +1359,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheShl(lhs, rhs, scalarByte);
     }
 
-    function test_FheShrNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheShrNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheShr));
@@ -1345,7 +1377,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheShr(lhs, rhs, scalarByte);
     }
 
-    function test_FheRotlNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheRotlNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRotl));
@@ -1362,7 +1395,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRotl(lhs, rhs, scalarByte);
     }
 
-    function test_FheRotrNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheRotrNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheRotr));
@@ -1379,7 +1413,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRotr(lhs, rhs, scalarByte);
     }
 
-    function test_FheEqNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheEqNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheEq));
@@ -1396,7 +1431,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheEq(lhs, rhs, scalarByte);
     }
 
-    function test_FheNeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheNeNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheNe));
@@ -1413,7 +1449,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheNe(lhs, rhs, scalarByte);
     }
 
-    function test_FheGeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheGeNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheGe));
@@ -1430,7 +1467,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheGe(lhs, rhs, scalarByte);
     }
 
-    function test_FheGtNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheGtNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheGt));
@@ -1447,7 +1485,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheGt(lhs, rhs, scalarByte);
     }
 
-    function test_FheLeNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheLeNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheLe));
@@ -1464,7 +1503,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheLe(lhs, rhs, scalarByte);
     }
 
-    function test_FheLtNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheLtNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheLt));
@@ -1481,7 +1521,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheLt(lhs, rhs, scalarByte);
     }
 
-    function test_FheMinNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheMinNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheMin));
@@ -1498,7 +1539,8 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheMin(lhs, rhs, scalarByte);
     }
 
-    function test_FheMaxNonSupportedTypesRevertAsExpected(uint8 fheType, bytes1 scalarByte) public {
+    function test_FheMaxNonSupportedTypesRevertAsExpected(uint8 fheType, bool scalarBool) public {
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(!_isTypeSupported(FheType(fheType), supportedTypesFheMax));
@@ -1809,17 +1851,17 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         fhevmExecutor.fheRandBounded(upperBound, FheType.Uint16);
     }
 
-    function test_VerifyCiphertextWorksIfInputTypeIsAsExpected(uint8 fheType) public {
+    function test_VerifyInputWorksIfInputTypeIsAsExpected(uint8 fheType) public {
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         address userAddress = address(123);
         bytes memory mockInputProof = abi.encode("mockProof");
         bytes32 inputHandle = _generateMockHandle(FheType(fheType));
-        bytes32 result = fhevmExecutor.verifyCiphertext(inputHandle, userAddress, mockInputProof, FheType(fheType));
+        bytes32 result = fhevmExecutor.verifyInput(inputHandle, userAddress, mockInputProof, FheType(fheType));
         assertEq(result, inputHandle);
     }
 
-    function test_VerifyCiphertextWorksIfInputTypeIsNotAsExpected(uint8 fheType, uint8 otherFheType) public {
+    function test_VerifyInputWorksIfInputTypeIsNotAsExpected(uint8 fheType, uint8 otherFheType) public {
         upgradeProxyAndDeployMockContracts();
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(otherFheType <= uint8(FheType.Int248));
@@ -1829,6 +1871,40 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
         bytes memory mockInputProof = abi.encode("mockProof");
         bytes32 inputHandle = _generateMockHandle(FheType(fheType));
         vm.expectRevert(FHEVMExecutor.InvalidType.selector);
-        fhevmExecutor.verifyCiphertext(inputHandle, userAddress, mockInputProof, FheType(otherFheType));
+        fhevmExecutor.verifyInput(inputHandle, userAddress, mockInputProof, FheType(otherFheType));
+    }
+
+    function test_FheAddRevertsIfScalarByteIsNotBoolean() public {
+        upgradeProxyAndDeployMockContracts();
+        bytes32 lhs = _generateMockHandle(FheType(5));
+        bytes32 rhs = _generateMockHandle(FheType(5));
+        vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+        fhevmExecutor.fheAdd(lhs, rhs, 0x02);
+    }
+
+    function test_FheMulRevertsIfScalarByteIsNotBoolean() public {
+        upgradeProxyAndDeployMockContracts();
+        bytes32 lhs = _generateMockHandle(FheType(5));
+        bytes32 rhs = _generateMockHandle(FheType(5));
+        vm.expectRevert(FHEVMExecutor.ScalarByteIsNotBoolean.selector);
+        fhevmExecutor.fheMul(lhs, rhs, 0x42);
+    }
+
+    function test_FheRandBoundedAboveMaxTypeValueRevertAsExpected() public {
+        upgradeProxyAndDeployMockContracts();
+        // these should pass
+        fhevmExecutor.fheRandBounded(1 << 12, FheType.Uint64);
+        fhevmExecutor.fheRandBounded(1 << 64, FheType.Uint64);
+        fhevmExecutor.fheRandBounded(1 << 5, FheType.Uint8);
+
+        // these should revert
+        vm.expectRevert(FHEVMExecutor.UpperBoundAboveMaxTypeValue.selector);
+        fhevmExecutor.fheRandBounded(1 << 65, FheType.Uint64);
+        vm.expectRevert(FHEVMExecutor.UpperBoundAboveMaxTypeValue.selector);
+        fhevmExecutor.fheRandBounded(1 << 75, FheType.Uint64);
+        vm.expectRevert(FHEVMExecutor.UpperBoundAboveMaxTypeValue.selector);
+        fhevmExecutor.fheRandBounded(1 << 9, FheType.Uint8);
+        vm.expectRevert(FHEVMExecutor.UpperBoundAboveMaxTypeValue.selector);
+        fhevmExecutor.fheRandBounded(1 << 129, FheType.Uint128);
     }
 }

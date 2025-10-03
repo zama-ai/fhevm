@@ -695,9 +695,10 @@ impl CoprocessorService {
                         is_completed,
                         is_scalar,
                         dependence_chain_id,
-                        transaction_id
+                        transaction_id,
+                        is_allowed
                     )
-                    VALUES($1, $2, $3, $4, false, $5, $6, $7)
+                    VALUES($1, $2, $3, $4, false, $5, $6, $7, $8)
                     ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
                 ",
                 tenant_id,
@@ -706,7 +707,8 @@ impl CoprocessorService {
                 fhe_operation,
                 are_comps_scalar[idx],
                 computation_buckets[idx],
-                comp.transaction_id
+                comp.transaction_id,
+                comp.is_allowed
             )
             .execute(trx.as_mut())
             .await

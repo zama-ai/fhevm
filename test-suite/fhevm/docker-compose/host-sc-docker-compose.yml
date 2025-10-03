@@ -27,7 +27,7 @@ services:
     env_file:
       - ../env/staging/.env.host-sc.local
     command:
-      - npx hardhat task:addPausers
+      - npx hardhat task:addHostPausers
     depends_on:
       host-sc-deploy:
         condition: service_completed_successfully
