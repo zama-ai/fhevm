@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use host_listener::database::tfhe_event_propagate::{Database as ListenerDatabase, Handle};
 
 use sqlx::Postgres;
+use std::io::Write;
 use std::{collections::HashMap, fmt, sync::atomic::AtomicU64};
 use std::{
     ops::{Add, Sub},
@@ -18,7 +19,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 use stress_test_generator::utils::{
-    default_dependence_cache_size, Dependence, GeneratorKind, Transaction,
+    default_dependence_cache_size, get_ciphertext_digests, Dependence, GeneratorKind, Transaction,
 };
 use stress_test_generator::zk_gen::{generate_input_verification_transaction, get_inputs_vector};
 use stress_test_generator::{args::parse_args, dex::dex_swap_claim_transaction};
@@ -330,8 +331,52 @@ async fn parse_and_execute(ctx: Context) -> Result<(), Box<dyn std::error::Error
         .map(|res| res.as_ref().expect("Incorrect scenario file").clone())
         .collect();
 
-    spawn_and_wait_all(ctx, generators).await?;
+    spawn_and_wait_all(ctx, generators.clone()).await?;
 
+    // In case the generator was a GenPubDecHandles or
+    // GenUsrDecHandles, we want to also wait for ciphertext digests
+    // to be available so we can dump them in the handles file
+    let pool = sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&ecfg.evgen_db_url)
+        .await
+        .unwrap();
+    for g in generators.iter() {
+        if g.transaction == Transaction::GenPubDecHandles
+            || g.transaction == Transaction::GenUsrDecHandles
+        {
+            let file = if g.transaction == Transaction::GenPubDecHandles {
+                ecfg.output_handles_for_pub_decryption.as_str()
+            } else {
+                ecfg.output_handles_for_usr_decryption.as_str()
+            };
+            let handles = std::fs::read_to_string(file).expect("File not found");
+            let mut out_file = std::fs::OpenOptions::new()
+                .write(true)
+                .truncate(true)
+                .open(file)?;
+
+            for h in handles.lines() {
+                // Skip lines that have been already updated with the digests
+                if h.contains(" 0x") {
+                    writeln!(out_file, "{}", h,)?;
+                    continue;
+                }
+                let (digest64, digest128) = get_ciphertext_digests(
+                    &hex::decode(h.strip_prefix("0x").unwrap()).expect("Decoding failed"),
+                    &pool,
+                )
+                .await?;
+                writeln!(
+                    out_file,
+                    "{} {} {}",
+                    h,
+                    "0x".to_owned() + &hex::encode(digest64),
+                    "0x".to_owned() + &hex::encode(digest128)
+                )?;
+            }
+        }
+    }
     Ok(())
 }
 
