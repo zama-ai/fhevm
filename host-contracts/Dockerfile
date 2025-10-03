@@ -43,7 +43,7 @@ COPY --chown=fhevm:fhevm host-contracts/decryptionOracle ./decryptionOracle/
 
 # Pre-compile proxy contracts
 RUN npx hardhat clean && \
-    npx hardhat compile:specific --contract contracts/emptyProxy
+    npx hardhat compile:specific --contract contracts/emptyProxyACL
 
 ENTRYPOINT ["/bin/bash", "-c"]
 
