@@ -63,7 +63,7 @@ task('task:setPauserSetAddress')
 address constant pauserSetAdd = ${taskArguments.address};\n`;
 
     try {
-      fs.appendFileSync('../fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
+      fs.appendFileSync('./fhevmTemp/addresses/FHEVMHostAddresses.sol', solidityTemplate, {
         encoding: 'utf8',
         flag: 'a',
       });

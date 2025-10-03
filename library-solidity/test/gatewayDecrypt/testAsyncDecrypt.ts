@@ -5,7 +5,7 @@ import { awaitAllDecryptionResults, initDecryptionOracle } from '../asyncDecrypt
 import { createInstances } from '../instance';
 import { getSigners, initSigners } from '../signers';
 
-describe.only('TestAsyncDecrypt', function () {
+describe('TestAsyncDecrypt', function () {
   before(async function () {
     await initSigners(2);
     this.signers = await getSigners();
