@@ -118,6 +118,24 @@ task('task:verifyHCULimit')
     });
   });
 
+task('task:verifyPauserSet')
+  .addOptionalParam(
+    'useInternalProxyAddress',
+    'If proxy address from the /addresses directory should be used',
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      dotenv.config({ path: 'addresses/.env.host', override: true });
+    }
+    const implementationPauserSetAddress = getRequiredEnvVar('PAUSER_SET_CONTRACT_ADDRESS');
+    await run('verify:verify', {
+      address: implementationPauserSetAddress,
+      constructorArguments: [],
+    });
+  });
+
 task('task:verifyDecryptionOracle')
   .addOptionalParam(
     'useInternalProxyAddress',
@@ -163,6 +181,9 @@ task('task:verifyAllHostContracts')
 
     console.log('Verify HCULimit contract:');
     await hre.run('task:verifyHCULimit', { useInternalProxyAddress });
+
+    console.log('Verify PauserSet contract:');
+    await hre.run('task:verifyPauserSet', { useInternalProxyAddress });
 
     console.log('Verify DecryptionOracle contract:');
     await hre.run('task:verifyDecryptionOracle', { useInternalProxyAddress });
