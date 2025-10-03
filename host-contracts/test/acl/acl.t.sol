@@ -8,7 +8,7 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 import {ACL} from "../../contracts/ACL.sol";
 import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {ACLEvents} from "../../contracts/ACLEvents.sol";
-import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
+import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
 import {fhevmExecutorAdd, pauserSetAdd, aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract ACLTest is Test {
@@ -50,8 +50,8 @@ contract ACLTest is Test {
     function setUp() public {
         /// @dev It uses UnsafeUpgrades for measuring code coverage.
         proxy = UnsafeUpgrades.deployUUPSProxy(
-            address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, owner)
+            address(new EmptyUUPSProxyACL()),
+            abi.encodeCall(EmptyUUPSProxyACL.initialize, owner)
         );
         _deployMockContracts();
     }
@@ -75,7 +75,7 @@ contract ACLTest is Test {
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxy();
-        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.3.0")));
+        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.1.0")));
         assertEq(acl.owner(), owner);
         assertEq(acl.isPauser(pauser), true);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
@@ -551,7 +551,7 @@ contract ACLTest is Test {
      *      The upgrade should fail if the random account is not the owner.
      */
     function upgrade(address randomAccount) external {
-        UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxy()), "", randomAccount);
+        UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxyACL()), "", randomAccount);
     }
 
     /**
@@ -559,6 +559,6 @@ contract ACLTest is Test {
      */
     function test_OnlyOwnerCanAuthorizeUpgrade() public {
         /// @dev It does not revert since it called by the owner.
-        UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxy()), "", owner);
+        UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxyACL()), "", owner);
     }
 }

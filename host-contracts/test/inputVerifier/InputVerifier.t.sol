@@ -11,7 +11,7 @@ import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
-import {ACLChecks} from "../../contracts/shared/ACLChecks.sol";
+import {ACLOwnable} from "../../contracts/shared/ACLOwnable.sol";
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract InputVerifierTest is Test {
@@ -117,7 +117,7 @@ contract InputVerifierTest is Test {
     function _deployProxy() internal {
         proxy = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, owner)
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
         );
     }
 
@@ -415,8 +415,7 @@ contract InputVerifierTest is Test {
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxyWithSigners(3);
-        assertEq(inputVerifier.owner(), owner);
-        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.2.0")));
+        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.1.0")));
     }
 
     /**
@@ -903,7 +902,7 @@ contract InputVerifierTest is Test {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         this.upgrade(randomAccount);
     }
 
@@ -919,7 +918,7 @@ contract InputVerifierTest is Test {
     function test_OnlyOwnerCanAddSigner(address randomAccount) public {
         _upgradeProxyWithSigners(3);
         vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(randomAccount);
         inputVerifier.addSigner(randomAccount);
     }
@@ -930,7 +929,7 @@ contract InputVerifierTest is Test {
     function test_OnlyOwnerCanRemoveSigner(address randomAccount) public {
         _upgradeProxyWithSigners(3);
         vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(randomAccount);
         inputVerifier.removeSigner(randomAccount);
     }
