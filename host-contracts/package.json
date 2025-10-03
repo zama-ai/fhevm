@@ -33,7 +33,7 @@
     "@openzeppelin/hardhat-upgrades": "^3.9.1",
     "@openzeppelin/upgrades-core": "^1.44.1",
     "@trivago/prettier-plugin-sort-imports": "^4.0.0",
-    "@zama-fhe/oracle-solidity": "^0.3.0-1",
+    "@zama-fhe/oracle-solidity": "^0.3.0-2",
     "bigint-buffer": "^1.1.5",
     "cross-env": "^7.0.3",
     "dotenv": "^16.4.5",
