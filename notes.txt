@@ -1,0 +1,12 @@
+# Zama Protocol
+
+## Update README with new links
+
+This update includes refreshed links for Zama’s main resources and documentation.
+
+- 🔗 [Official Site](https://zama.ai)
+- 📚 [Docs Portal](https://docs.zama.ai)
+- 💬 [Community](https://discord.gg/zama)
+- 🧠 [GitHub](https://github.com/zama-ai)
+
+_Last updated by phongnguyen87p_
