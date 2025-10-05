@@ -597,7 +597,7 @@ impl InfiniteLogIter {
         warn!("Missing ancestors catchup done.");
     }
 
-    async fn new_log_stream(&mut self, not_initialized: bool) {
+    async fn new_log_stream(&mut self, not_initialized: bool) -> anyhow::Result<()> {
         let mut retry = 20;
         loop {
             let ws = WsConnect::new(&self.url).with_max_retries(0); // disabled, alloy skips events
@@ -625,17 +625,13 @@ impl InfiniteLogIter {
                     );
                     let _ = self.provider.write().await.replace(provider);
                     info!(contracts = ?self.contract_addresses, "Listening on contracts");
-                    return;
+                    return Ok(());
                 }
                 Err(err) => {
                     let delay = if not_initialized {
                         if retry == 0 {
-                            // TODO: remove panic and, instead, propagate the error
-                            error!(
-                                error = %err,
-                                "Cannot connect",
-                            );
-                            panic!("Cannot connect due to {err}.",)
+                            error!(error = %err, "Cannot connect");
+                            return Err(anyhow::anyhow!("Cannot connect due to {err}"));
                         }
                         5
                     } else {
@@ -719,7 +715,11 @@ impl InfiniteLogIter {
         let mut not_initialized = self.stream.is_none();
         let block_logs = loop {
             if self.stream.is_none() {
-                self.new_log_stream(not_initialized).await;
+                if let Err(e) = self.new_log_stream(not_initialized).await {
+                    error!(error = %e, "new_log_stream failed; will retry");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
                 not_initialized = false;
                 continue;
             };
@@ -989,7 +989,7 @@ pub async fn main(args: Args) -> anyhow::Result<()> {
             .map(|n| n - args.catchup_margin as i64);
     }
 
-    log_iter.new_log_stream(true).await;
+    log_iter.new_log_stream(true).await?;
 
     while let Some(block_logs) = log_iter.next().await {
         let _ = db_insert_block(
