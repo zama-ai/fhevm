@@ -513,8 +513,17 @@ fn compute_task(
 
     let s = task.otel.child_span("decompress_ct64");
 
-    let ct = decompress_ct(&task.handle, ct64_compressed).unwrap(); // TODO handle error properly
-    telemetry::end_span(s);
+    let ct = match decompress_ct(&task.handle, ct64_compressed) {
+        Ok(ct) => {
+            telemetry::end_span(s);
+            ct
+        }
+        Err(e) => {
+            telemetry::end_span_with_err(s, e.to_string());
+            error!({ handle = handle, error = %e }, "decompress_ct failed");
+            return;
+        }
+    };
 
     let ct_type = ct.type_name().to_owned();
     info!( { handle, ct_type }, "Converting ciphertext");
