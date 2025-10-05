@@ -33,7 +33,7 @@ CREATE OR REPLACE TRIGGER trigger_from_user_decryption_requests_insertions
     EXECUTE FUNCTION notify_user_decryption_request();
 
 --------------------------------------------------------
---           KmsManagement contract section           --
+--           KMSGeneration contract section           --
 --------------------------------------------------------
 
 -- Create functions to notify kms-workers when kms management requests are received

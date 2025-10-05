@@ -11,30 +11,37 @@ interface IPauserSet {
      * @notice Emitted when a new pauser is added.
      * @param account The address of the new pauser.
      */
-    event NewPauser(address account);
+    event AddPauser(address account);
 
     /**
      * @notice Emitted when an old pauser is removed.
      * @param account The address of the old pauser.
      */
-    event RemovedPauser(address account);
+    event RemovePauser(address account);
+
+    /**
+     * @notice Emitted when an a pauser is swapped.
+     * @param oldAccount The address of the old pauser.
+     * @param newAccount The address of the new pauser.
+     */
+    event SwapPauser(address oldAccount, address newAccount);
 
     /**
      * @notice Error indicating that the given account is already a pauser.
      * @param account The address of the account.
      */
-    error AccountIsAlreadyPauser(address account);
+    error AccountAlreadyPauser(address account);
 
     /**
      * @notice Error indicating that the given account is not a pauser.
      * @param account The address of the account.
      */
-    error AccountIsNotPauser(address account);
+    error AccountNotPauser(address account);
 
     /**
      * @notice Error indicating that the given account is the null address.
      */
-    error PauserCannotBeNull();
+    error InvalidNullPauser();
 
     /**
      * @notice Adds a new account as pauser.

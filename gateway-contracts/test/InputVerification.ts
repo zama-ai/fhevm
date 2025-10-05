@@ -7,7 +7,7 @@ import hre from "hardhat";
 import { GatewayConfig, InputVerification, InputVerification__factory } from "../typechain-types";
 import {
   EIP712,
-  createBytes32,
+  createByteInput,
   createCtHandles,
   createEIP712ResponseZKPoK,
   createRandomAddress,
@@ -23,7 +23,7 @@ describe("InputVerification", function () {
   // Define input values
   const contractAddress = createRandomAddress();
   const userAddress = createRandomAddress();
-  const ciphertextWithZKProof = createBytes32();
+  const ciphertextWithZKProof = createByteInput();
 
   // Expected ZK proof id (after first request)
   const zkProofId = 1;
@@ -70,7 +70,7 @@ describe("InputVerification", function () {
     let inputVerification: InputVerification;
     let contractChainId: number;
     let owner: Wallet;
-    let pauser: HardhatEthersSigner;
+    let pauser: Wallet;
 
     before(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -106,7 +106,7 @@ describe("InputVerification", function () {
           extraDataV0,
         ),
       )
-        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+        .revertedWithCustomError(inputVerification, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
@@ -119,7 +119,7 @@ describe("InputVerification", function () {
         inputVerification
           .connect(owner)
           .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0),
-      ).to.be.revertedWithCustomError(gatewayConfig, "EnforcedPause");
+      ).to.be.revertedWithCustomError(inputVerification, "EnforcedPause");
     });
   });
 
@@ -132,7 +132,7 @@ describe("InputVerification", function () {
     let inputVerificationAddress: string;
     let eip712Message: EIP712;
     let signatures: string[];
-    let pauser: HardhatEthersSigner;
+    let pauser: Wallet;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -436,7 +436,7 @@ describe("InputVerification", function () {
           .connect(coprocessorTxSenders[0])
           .verifyProofResponse(zkProofId, ctHandles, fakeSignature, extraDataV0),
       )
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorSigner")
+        .revertedWithCustomError(inputVerification, "NotCoprocessorSigner")
         .withArgs(fakeSigner.address);
     });
 
@@ -444,7 +444,7 @@ describe("InputVerification", function () {
       await expect(
         inputVerification.connect(fakeTxSender).verifyProofResponse(zkProofId, ctHandles, signatures[0], extraDataV0),
       )
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+        .revertedWithCustomError(inputVerification, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
 
@@ -456,13 +456,11 @@ describe("InputVerification", function () {
           .verifyProofResponse(zkProofId, ctHandles, signatures[i], extraDataV0);
       }
 
-      await expect(inputVerification.checkProofVerified(zkProofId)).not.to.be.reverted;
+      expect(await inputVerification.isProofVerified(zkProofId)).to.be.true;
     });
 
     it("Should check that a proof has not been verified", async function () {
-      await expect(inputVerification.checkProofVerified(fakeZkProofId))
-        .to.be.revertedWithCustomError(inputVerification, "ProofNotVerified")
-        .withArgs(fakeZkProofId);
+      expect(await inputVerification.isProofVerified(fakeZkProofId)).to.be.false;
     });
   });
 
@@ -473,7 +471,7 @@ describe("InputVerification", function () {
     let coprocessorSigners: HardhatEthersSigner[];
     let contractChainId: number;
     let inputVerificationAddress: string;
-    let pauser: HardhatEthersSigner;
+    let pauser: Wallet;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
@@ -690,7 +688,7 @@ describe("InputVerification", function () {
     it("Should revert because the sender is not a coprocessor transaction sender", async function () {
       // Check that triggering a proof response with a non-coprocessor transaction sender reverts
       await expect(inputVerification.connect(fakeTxSender).rejectProofResponse(zkProofId, extraDataV0))
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+        .revertedWithCustomError(inputVerification, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
 
@@ -700,20 +698,18 @@ describe("InputVerification", function () {
         await inputVerification.connect(coprocessorTxSenders[i]).rejectProofResponse(zkProofId, extraDataV0);
       }
 
-      await expect(inputVerification.checkProofRejected(zkProofId)).to.not.be.reverted;
+      expect(await inputVerification.isProofRejected(zkProofId)).to.be.true;
     });
 
     it("Should check that a proof has not been rejected", async function () {
-      await expect(inputVerification.checkProofRejected(fakeZkProofId))
-        .to.be.revertedWithCustomError(inputVerification, "ProofNotRejected")
-        .withArgs(fakeZkProofId);
+      expect(await inputVerification.isProofRejected(fakeZkProofId)).to.be.false;
     });
   });
 
   describe("Pause", async function () {
     let inputVerification: InputVerification;
     let owner: Wallet;
-    let pauser: HardhatEthersSigner;
+    let pauser: Wallet;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(loadTestVariablesFixture);

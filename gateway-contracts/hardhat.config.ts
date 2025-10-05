@@ -14,10 +14,10 @@ import "./tasks/accounts";
 import "./tasks/addHostChains";
 import "./tasks/addPausers";
 import "./tasks/blockExplorerVerify";
-import "./tasks/deployment/contracts";
-import "./tasks/deployment/empty_proxies";
-import "./tasks/deployment/mock_contracts";
+import "./tasks/deployment";
+import "./tasks/generateKmsMaterials";
 import "./tasks/getters";
+import "./tasks/pauseContracts";
 import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";
 
@@ -65,7 +65,7 @@ task("test", "Runs the test suite, optionally skipping setup tasks")
       await hre.run("task:addHostChainsToGatewayConfig", { useInternalGatewayConfigAddress: true });
       // Contrary to deployment, here we consider the PauserSet address from the `addresses/` directory
       // for local testing
-      await hre.run("task:addPausers", { useInternalGatewayConfigAddress: true });
+      await hre.run("task:addGatewayPausers", { useInternalGatewayConfigAddress: true });
     } else {
       console.log("Skipping contracts setup.");
     }

@@ -8,9 +8,14 @@ license.workspace = true
 # workspace dependencies
 anyhow = { workspace = true }
 daggy = { workspace = true }
+hex = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+opentelemetry_sdk = { workspace = true }
 rayon = { workspace = true }
 tfhe = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
 
 # local dependencies
 fhevm-engine-common = { path = "../fhevm-engine-common" }
@@ -18,4 +23,3 @@ fhevm-engine-common = { path = "../fhevm-engine-common" }
 [features]
 nightly-avx512 = ["tfhe/nightly-avx512"]
 gpu = ["tfhe/gpu"]
-

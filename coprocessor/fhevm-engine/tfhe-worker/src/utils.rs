@@ -189,6 +189,7 @@ fn test_invalid_handle_too_short() {
                 input: Some(Input::InputHandle(vec![2])),
             },
         ],
+        is_allowed: true,
     }];
 
     match sort_computations_by_dependencies(&comp) {
@@ -215,6 +216,7 @@ fn test_invalid_handle_too_long() {
                 input: Some(Input::InputHandle(vec![2])),
             },
         ],
+        is_allowed: true,
     }];
 
     match sort_computations_by_dependencies(&comp) {
@@ -240,6 +242,7 @@ fn test_simple_circular_dependency_detection() {
                     input: Some(Input::InputHandle(vec![2])),
                 },
             ],
+            is_allowed: true,
         },
         AsyncComputation {
             operation: 1,
@@ -253,6 +256,7 @@ fn test_simple_circular_dependency_detection() {
                     input: Some(Input::InputHandle(vec![2])),
                 },
             ],
+            is_allowed: true,
         },
     ];
 
@@ -286,6 +290,7 @@ fn test_multi_level_circular_dependency_detection() {
                     input: Some(Input::InputHandle(vec![3])),
                 },
             ],
+            is_allowed: true,
         },
         AsyncComputation {
             operation: 1,
@@ -299,6 +304,7 @@ fn test_multi_level_circular_dependency_detection() {
                     input: Some(Input::InputHandle(vec![4])),
                 },
             ],
+            is_allowed: true,
         },
         AsyncComputation {
             operation: 1,
@@ -312,6 +318,7 @@ fn test_multi_level_circular_dependency_detection() {
                     input: Some(Input::InputHandle(vec![2])),
                 },
             ],
+            is_allowed: true,
         },
     ];
 

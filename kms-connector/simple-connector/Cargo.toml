@@ -23,7 +23,7 @@ dashmap.workspace = true
 futures.workspace = true
 serde.workspace = true
 sha3.workspace = true
-tfhe.workspace = true
+tfhe = "=1.3.2"
 thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true

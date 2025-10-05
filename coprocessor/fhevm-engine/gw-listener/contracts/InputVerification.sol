@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 /// @dev This contract is a mock of the InputVerification contract from the Gateway.
-/// source: github.com/zama-ai/fhevm-gateway/blob/main/contracts/InputVerification.sol
+/// source: github.com/zama-ai/fhevm/blob/main/gateway-contracts/contracts/InputVerification.sol
 contract InputVerification {
     event VerifyProofRequest(
         uint256 indexed zkProofId,

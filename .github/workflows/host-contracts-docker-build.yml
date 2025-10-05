@@ -56,8 +56,8 @@ jobs:
       packages: 'write' # Required to publish Docker images
       id-token: 'write' # Required for OIDC authentication
     with:
-      working-directory: "host-contracts"
-      docker-context: "host-contracts"
+      working-directory: "."
+      docker-context: "."
       push_image: true
       image-name: "fhevm/host-contracts"
       docker-file: "./host-contracts/Dockerfile"

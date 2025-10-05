@@ -81,7 +81,6 @@ alloy::sol! {
     struct UserDecryptRequestVerification {
         bytes publicKey;
         address[] contractAddresses;
-        uint256 contractsChainId;
         uint256 startTimestamp;
         uint256 durationDays;
         bytes extraData;
@@ -92,7 +91,6 @@ alloy::sol! {
         bytes publicKey;
         address[] contractAddresses;
         address delegatorAddress;
-        uint256 contractsChainId;
         uint256 startTimestamp;
         uint256 durationDays;
         bytes extraData;

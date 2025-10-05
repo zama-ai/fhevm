@@ -23,7 +23,6 @@ resources:
   limits:
     cpu: 500m
     memory: 512Mi
-
 # Uncomment to use a specific node selector
 # nodeSelector:
 #   karpenter.sh/nodepool: zws-pool

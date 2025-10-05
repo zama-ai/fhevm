@@ -58,12 +58,8 @@ function main(): void {
 
     if (shouldGenerateAddresses) {
       console.log(`Generating contract addresses in development environment.`);
-      // Deploy empty proxies and generate addresses
-      execSync(`make deploy-empty-proxies`, {
-        stdio: "inherit",
-        env: process.env,
-      });
-      execSync(`make deploy-pauser-set`, {
+      // Deploy the setup contracts (empty proxies, pauserSet) and generate addresses
+      execSync(`make deploy-setup-contracts`, {
         stdio: "inherit",
         env: process.env,
       });

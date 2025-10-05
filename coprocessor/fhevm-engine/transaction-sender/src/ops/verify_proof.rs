@@ -10,6 +10,7 @@ use alloy::rpc::types::TransactionRequest;
 use alloy::sol;
 use alloy::{network::Ethereum, primitives::FixedBytes, sol_types::SolStruct};
 use async_trait::async_trait;
+use fhevm_engine_common::telemetry;
 use sqlx::{Pool, Postgres};
 use std::convert::TryInto;
 use std::time::Duration;
@@ -119,8 +120,11 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
         &self,
         txn_request: (i64, impl Into<TransactionRequest>),
         current_retry_count: i32,
+        src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
-        info!(zk_proof_id = txn_request.0, "Processing proof");
+        info!(zk_proof_id = txn_request.0, "Processing transaction");
+        let _t = telemetry::tracer("call_verify_proof_resp", &src_transaction_id);
+
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request.1,
             self.provider.inner(),
@@ -203,6 +207,12 @@ impl<P: alloy::providers::Provider<Ethereum> + Clone + 'static> VerifyProofOpera
             );
             self.remove_proof_by_id(txn_request.0).await?;
             VERIFY_PROOF_SUCCESS_COUNTER.inc();
+
+            telemetry::try_end_zkproof_transaction(
+                &self.db_pool,
+                &src_transaction_id.unwrap_or_default(),
+            )
+            .await?;
         } else {
             VERIFY_PROOF_FAIL_COUNTER.inc();
             error!(
@@ -242,7 +252,7 @@ where
             self.remove_proofs_by_retry_count().await?;
         }
         let rows = sqlx::query!(
-            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data
+            "SELECT zk_proof_id, chain_id, contract_address, user_address, handles, verified, retry_count, extra_data, transaction_id
              FROM verify_proofs
              WHERE verified IS NOT NULL AND retry_count < $1
              ORDER BY zk_proof_id
@@ -256,6 +266,9 @@ where
         let maybe_has_more_work = rows.len() == self.conf.verify_proof_resp_batch_limit as usize;
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
+            let transaction_id = row.transaction_id.clone();
+            let t = telemetry::tracer("prepare_verify_proof_resp", &transaction_id);
+
             let txn_request = match row.verified {
                 Some(true) => {
                     info!(zk_proof_id = row.zk_proof_id, "Processing verified proof");
@@ -357,9 +370,15 @@ where
                 }
             };
 
+            t.end();
+
             let self_clone = self.clone();
-            join_set
-                .spawn(async move { self_clone.process_proof(txn_request, row.retry_count).await });
+            let src_transaction_id = transaction_id;
+            join_set.spawn(async move {
+                self_clone
+                    .process_proof(txn_request, row.retry_count, src_transaction_id)
+                    .await
+            });
         }
         while let Some(res) = join_set.join_next().await {
             res??;

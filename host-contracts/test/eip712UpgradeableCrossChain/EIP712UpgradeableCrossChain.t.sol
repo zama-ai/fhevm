@@ -7,6 +7,9 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EIP712UpgradeableCrossChain} from "../../contracts/shared/EIP712UpgradeableCrossChain.sol";
+import {ACL} from "../../contracts/ACL.sol";
+import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
+
 
 contract MockEIP712UpgradeableCrossChain is UUPSUpgradeable, EIP712UpgradeableCrossChain {
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -69,6 +72,8 @@ contract EIP712UpgradeableCrossChainTest is Test {
     /// @dev Proxy and implementation variables
     address internal proxy;
     address internal owner = address(456);
+    address internal verificationContractSource = address(123);
+    uint64 internal chainIdSource = uint64(block.chainid);
 
     MockEIP712UpgradeableCrossChain internal mockEIP712UpgradeableCrossChain;
 
@@ -79,21 +84,21 @@ contract EIP712UpgradeableCrossChainTest is Test {
     function _deployProxy() internal {
         proxy = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, owner)
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
         );
     }
 
     /**
      * @dev Internal function to update the proxy contract.
      * The proxy is upgraded to a new implementation of MockEIP712UpgradeableCrossChain and reinitialized with the given parameters.
-     * @param verificationContractSource The address of the verification contract source.
-     * @param chainIdSource The chain ID source.
+     * @param _verificationContractSource The address of the verification contract source.
+     * @param _chainIdSource The chain ID source.
      */
-    function _updateProxy(address verificationContractSource, uint64 chainIdSource) internal {
+    function _updateProxy(address _verificationContractSource, uint64 _chainIdSource) internal {
         UnsafeUpgrades.upgradeProxy(
             proxy,
             address(new MockEIP712UpgradeableCrossChain()),
-            abi.encodeCall(MockEIP712UpgradeableCrossChain.reinitialize, (verificationContractSource, chainIdSource)),
+            abi.encodeCall(MockEIP712UpgradeableCrossChain.reinitialize, (_verificationContractSource, _chainIdSource)),
             owner
         );
 
@@ -102,6 +107,16 @@ contract EIP712UpgradeableCrossChainTest is Test {
 
     function setUp() public {
         _deployProxy();
+        _deployMockContracts();
+    }
+
+    function _deployMockContracts() internal {
+        vm.etch(aclAdd, address(new ACL()).code);
+        vm.store(
+            aclAdd,
+            0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300, // OwnableStorageLocation
+            bytes32(uint256(uint160(owner)))
+        ); // Mocked ACL setup
     }
 
     /**
@@ -109,8 +124,6 @@ contract EIP712UpgradeableCrossChainTest is Test {
      * It verifies that the domain separator is correctly set and that the fields are as expected.
      */
     function test_PostInitialization() public {
-        address verificationContractSource = address(123);
-        uint64 chainIdSource = uint64(block.chainid);
         _updateProxy(verificationContractSource, chainIdSource);
         (
             bytes1 fields,
@@ -177,9 +190,6 @@ contract EIP712UpgradeableCrossChainTest is Test {
      * @dev Tests that it reverts if EIP712 domain is not initialized properly
      */
     function test_CannotCallEIP712DomainIfNotInitialized() public {
-        address verificationContractSource = address(123);
-        uint64 chainIdSource = uint64(block.chainid);
-
         _updateProxy(verificationContractSource, chainIdSource);
 
         bytes32 hashedVersion;
@@ -205,8 +215,6 @@ contract EIP712UpgradeableCrossChainTest is Test {
      * @dev Tests that it returns what is expected if hashedName is set but not the name.
      */
     function test_EIP712NameHashIsCustomIfNameIsEmptyButHashedNameInStorageIfNonZero() public {
-        address verificationContractSource = address(123);
-        uint64 chainIdSource = uint64(block.chainid);
         _updateProxy(verificationContractSource, chainIdSource);
 
         bytes32 hashedVersion;
@@ -241,8 +249,6 @@ contract EIP712UpgradeableCrossChainTest is Test {
      * @dev Tests that it returns what is expected if hashedVersion is set but not the version.
      */
     function test_EIP712VersionHashIsCustomIfVersionIsEmptyButHashedVersionInStorageIfNonZero() public {
-        address verificationContractSource = address(123);
-        uint64 chainIdSource = uint64(block.chainid);
         _updateProxy(verificationContractSource, chainIdSource);
 
         bytes32 hashedVersion;

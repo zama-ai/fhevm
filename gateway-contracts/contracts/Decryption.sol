@@ -4,30 +4,35 @@ import { IDecryption } from "./interfaces/IDecryption.sol";
 import {
     ciphertextCommitsAddress,
     gatewayConfigAddress,
-    multichainAclAddress
+    multichainACLAddress
 } from "../addresses/GatewayAddresses.sol";
 import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import { EIP712Upgradeable } from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import { MessageHashUtils } from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
-import "./interfaces/IGatewayConfig.sol";
-import "./interfaces/IMultichainAcl.sol";
-import "./interfaces/ICiphertextCommits.sol";
-import "./shared/UUPSUpgradeableEmptyProxy.sol";
-import "./shared/GatewayConfigChecks.sol";
-import "./shared/FheType.sol";
-import "./shared/Pausable.sol";
-import "./libraries/FHETypeBitSizes.sol";
+import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
+import { IMultichainACL } from "./interfaces/IMultichainACL.sol";
+import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
+import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
+import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
+import { MultichainACLChecks } from "./shared/MultichainACLChecks.sol";
+import { FheType } from "./shared/FheType.sol";
+import { Pausable } from "./shared/Pausable.sol";
+import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
+import { HandleOps } from "./libraries/HandleOps.sol";
+import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { SnsCiphertextMaterial, CtHandleContractPair, DelegationAccounts } from "./shared/Structs.sol";
+import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
 /// @title Decryption contract
 /// @dev See {IDecryption}.
 contract Decryption is
     IDecryption,
     EIP712Upgradeable,
-    Ownable2StepUpgradeable,
     UUPSUpgradeableEmptyProxy,
+    GatewayOwnable,
     GatewayConfigChecks,
+    MultichainACLChecks,
     Pausable
 {
     /// @notice The typed data structure for the EIP712 signature to validate in public decryption responses.
@@ -50,8 +55,6 @@ contract Decryption is
         bytes publicKey;
         /// @notice The contract addresses that verification is requested for.
         address[] contractAddresses;
-        /// @notice The chain ID of the contract addresses.
-        uint256 contractsChainId;
         /// @notice The start timestamp of the user decryption request.
         uint256 startTimestamp;
         /// @notice The duration in days of the user decryption request after the start timestamp.
@@ -84,8 +87,6 @@ contract Decryption is
         address[] contractAddresses;
         /// @notice The address of the account that delegates access to its handles.
         address delegatorAddress;
-        /// @notice The chain ID of the contract addresses.
-        uint256 contractsChainId;
         /// @notice The start timestamp of the user decryption request.
         uint256 startTimestamp;
         /// @notice The duration in days of the user decryption request after the start timestamp.
@@ -105,8 +106,8 @@ contract Decryption is
     /// @notice The address of the GatewayConfig contract for checking if a signer is valid
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @notice The address of the MultichainAcl contract for checking if a decryption requests are allowed
-    IMultichainAcl private constant MULTICHAIN_ACL = IMultichainAcl(multichainAclAddress);
+    /// @notice The address of the MultichainACL contract for checking if a decryption requests are allowed
+    IMultichainACL private constant MULTICHAIN_ACL = IMultichainACL(multichainACLAddress);
 
     /// @notice The address of the CiphertextCommits contract for getting ciphertext materials.
     ICiphertextCommits private constant CIPHERTEXT_COMMITS = ICiphertextCommits(ciphertextCommitsAddress);
@@ -132,8 +133,8 @@ contract Decryption is
 
     /// @notice The definition of the UserDecryptRequestVerification structure typed data.
     string private constant EIP712_USER_DECRYPT_REQUEST_TYPE =
-        "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 contractsChainId,"
-        "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
+        "UserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,uint256 startTimestamp,"
+        "uint256 durationDays,bytes extraData)";
 
     /// @notice The hash of the UserDecryptRequestVerification structure typed data definition
     /// @notice used for signature validation.
@@ -141,7 +142,7 @@ contract Decryption is
 
     string private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
         "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
-        "uint256 contractsChainId,uint256 startTimestamp,uint256 durationDays,bytes extraData)";
+        "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
 
     bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
         keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
@@ -160,18 +161,26 @@ contract Decryption is
     /// @dev they can still define their own private constants with the same name.
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 4;
+    uint256 private constant MINOR_VERSION = 1;
     uint256 private constant PATCH_VERSION = 0;
 
-    /// Constant used for making sure the version number using in the `reinitializer` modifier is
-    /// identical between `initializeFromEmptyProxy` and the reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 6;
+    /**
+     * @dev Constant used for making sure the version number using in the `reinitializer` modifier is
+     * identical between `initializeFromEmptyProxy` and the reinitializeVX` method
+     * This constant does not represent the number of time a specific contract have been upgraded,
+     * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
+     */
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// @notice The contract's variable storage struct (@dev see ERC-7201)
     /// @custom:storage-location erc7201:fhevm_gateway.storage.Decryption
     struct DecryptionStorage {
+        // ----------------------------------------------------------------------------------------------
+        // Common decryption state variables:
+        // ----------------------------------------------------------------------------------------------
         /// @notice The number of (public, user, delegated user) decryption requests, used to
         /// @notice generate request IDs (`decryptionId`).
+        /// @notice TODO: remove this variable for mainnet
         uint256 _decryptionRequestCounter;
         /// @notice Whether a (public, user, delegated user) decryption is done
         mapping(uint256 decryptionId => bool decryptionDone) decryptionDone;
@@ -179,7 +188,17 @@ contract Decryption is
         /// @notice Whether KMS signer has already responded to a decryption request.
         mapping(uint256 decryptionId =>
             mapping(address kmsSigner => bool alreadyResponded))
-                _kmsNodeAlreadySigned;
+                kmsNodeAlreadySigned;
+        // ----------------------------------------------------------------------------------------------
+        // Common decryption consensus state variables:
+        // ----------------------------------------------------------------------------------------------
+        // prettier-ignore
+        /// @notice The KMS transaction senders involved in a consensus for a decryption response.
+        mapping(uint256 decryptionId =>
+            mapping(bytes32 digest => address[] kmsTxSenderAddresses))
+               consensusTxSenderAddresses;
+        /// @notice The digest of the signed struct on which consensus was reached for a decryption request.
+        mapping(uint256 decryptionId => bytes32 consensusDigest) decryptionConsensusDigest;
         // ----------------------------------------------------------------------------------------------
         // Public decryption state variables:
         // ----------------------------------------------------------------------------------------------
@@ -187,30 +206,19 @@ contract Decryption is
         /// @notice Verified signatures for a public decryption.
         mapping(uint256 decryptionId =>
             mapping(bytes32 digest => bytes[] verifiedSignatures))
-                _verifiedPublicDecryptSignatures;
+                verifiedPublicDecryptSignatures;
         /// @notice Handles of the ciphertexts requested for a public decryption
         mapping(uint256 decryptionId => bytes32[] ctHandles) publicCtHandles;
+        /// @notice The number of public decryption requests, used to generate request IDs (`decryptionId`).
+        uint256 publicDecryptionCounter;
         // ----------------------------------------------------------------------------------------------
         // User decryption state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice Verified signatures for a user decryption.
-        mapping(uint256 decryptionId => bytes[] verifiedSignatures) _verifiedUserDecryptSignatures;
         /// @notice The decryption payloads stored during user decryption requests.
         mapping(uint256 decryptionId => UserDecryptionPayload payload) userDecryptionPayloads;
-        /// @notice Whether a user decryption has been done
-        mapping(uint256 decryptionId => bool userDecryptionDone) userDecryptionDone;
-        /// @notice The user decrypted shares received from user decryption responses.
-        mapping(uint256 decryptionId => bytes[] shares) userDecryptedShares;
-        // ----------------------------------------------------------------------------------------------
-        // Transaction sender addresses from consensus state variables:
-        // ----------------------------------------------------------------------------------------------
-        // prettier-ignore
-        /// @notice The KMS transaction senders involved in a consensus for a decryption response.
-        mapping(uint256 decryptionId =>
-            mapping(bytes32 digest => address[] kmsTxSenderAddresses))
-               consensusTxSenderAddresses;
-        /// @notice The digest of the decryption response that reached consensus for a decryption request.
-        mapping(uint256 decryptionId => bytes32 consensusDigest) decryptionConsensusDigest;
+        /// @notice The number of user decryption requests, used to generate request IDs (`decryptionId`)
+        /// @notice (including delegated user decryption requests).
+        uint256 userDecryptionCounter;
     }
 
     /// @dev Storage location has been computed using the following command:
@@ -230,16 +238,22 @@ contract Decryption is
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME, "1");
-        __Ownable_init(owner());
         __Pausable_init();
+
+        DecryptionStorage storage $ = _getDecryptionStorage();
+
+        // Initialize the counters in order to generate globally unique requestIds per request type
+        $.publicDecryptionCounter = PUBLIC_DECRYPT_COUNTER_BASE;
+        $.userDecryptionCounter = USER_DECRYPT_COUNTER_BASE;
     }
 
     /**
-     * @notice Re-initializes the contract from V3.
+     * @notice Re-initializes the contract from V1.
+     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV4() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /// @dev See {IDecryption-publicDecryptionRequest}.
     function publicDecryptionRequest(
@@ -261,25 +275,26 @@ contract Decryption is
         /// @dev a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
-        /// @dev Check that received snsCtMaterials have the same keyId.
-        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
+        // Check that received snsCtMaterials have the same keyId.
+        // TODO: This should be removed once batched decryption requests with different keys is
+        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Generate a new request ID
-        // Decryption request IDs are unique across all kinds of decryption request (public, user,
-        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
+        // Generate a globally unique decryptionId for the public decryption request.
+        // The counter is initialized at deployment such that decryptionId's first byte uniquely
+        // represents a public decryption request, with format: [0000 0001 | counter_1..31]
+        // This counter is used to ensure the IDs' uniqueness, as there is no proper way
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
-        $._decryptionRequestCounter++;
-        uint256 decryptionId = $._decryptionRequestCounter;
+        $.publicDecryptionCounter++;
+        uint256 publicDecryptionId = $.publicDecryptionCounter;
 
         /// @dev The handles are used during response calls for the EIP712 signature validation.
-        $.publicCtHandles[decryptionId] = ctHandles;
+        $.publicCtHandles[publicDecryptionId] = ctHandles;
 
-        emit PublicDecryptionRequest(decryptionId, snsCtMaterials, extraData);
+        emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
     }
 
     /// @dev See {IDecryption-publicDecryptionResponse}.
@@ -293,8 +308,10 @@ contract Decryption is
     ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Make sure the decryptionId corresponds to a generated decryption request.
-        if (decryptionId > $._decryptionRequestCounter || decryptionId == 0) {
+        // Make sure the decryptionId corresponds to a generated public decryption request:
+        // - it must be greater than the base counter for public decryption requests
+        // - it must be less than or equal to the current public decryption counter
+        if (decryptionId <= PUBLIC_DECRYPT_COUNTER_BASE || decryptionId > $.publicDecryptionCounter) {
             revert DecryptionNotRequested(decryptionId);
         }
 
@@ -317,7 +334,7 @@ contract Decryption is
         /// @dev the digest (contrary to the user decryption case) as the decrypted result is expected
         /// @dev to be the same for all KMS nodes. This allows to filter out results from malicious
         /// @dev KMS nodes.
-        bytes[] storage verifiedSignatures = $._verifiedPublicDecryptSignatures[decryptionId][digest];
+        bytes[] storage verifiedSignatures = $.verifiedPublicDecryptSignatures[decryptionId][digest];
         verifiedSignatures.push(signature);
 
         // Store the KMS transaction sender address for the public decryption response
@@ -379,14 +396,18 @@ contract Decryption is
         UserDecryptRequestVerification memory userDecryptRequestVerification = UserDecryptRequestVerification(
             publicKey,
             contractsInfo.addresses,
-            contractsInfo.chainId,
             requestValidity.startTimestamp,
             requestValidity.durationDays,
             extraData
         );
 
         /// @dev Validate the received EIP712 signature on the user decryption request.
-        _validateUserDecryptRequestEIP712Signature(userDecryptRequestVerification, userAddress, signature);
+        _validateUserDecryptRequestEIP712Signature(
+            userDecryptRequestVerification,
+            userAddress,
+            signature,
+            contractsInfo.chainId
+        );
 
         /// @dev Fetch the ciphertexts from the CiphertextCommits contract
         /// @dev This call is reverted if any of the ciphertexts are not found in the contract, but
@@ -395,25 +416,27 @@ contract Decryption is
         /// @dev a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
-        /// @dev Check that received snsCtMaterials have the same keyId.
-        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
+        // Check that received snsCtMaterials have the same keyId.
+        // TODO: This should be removed once batched decryption requests with different keys is
+        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Generate a new request ID
-        // Decryption request IDs are unique across all kinds of decryption request (public, user,
-        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
+        // Generate a globally unique decryptionId for the user decryption request.
+        // The counter is initialized at deployment such that decryptionId's first byte uniquely
+        // represents a user decryption request (including delegated user decryption requests),
+        // with format: [0000 0010 | counter_1..31]
+        // This counter is used to ensure the IDs' uniqueness, as there is no proper way
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
-        $._decryptionRequestCounter++;
-        uint256 decryptionId = $._decryptionRequestCounter;
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
 
     /// @dev See {IDecryption-userDecryptionWithDelegationRequest}.
@@ -451,9 +474,9 @@ contract Decryption is
             delegationAccounts.delegatorAddress
         );
 
-        /// @dev Check that the delegated address has been granted access to the contract addresses
-        /// @dev by the delegator.
-        MULTICHAIN_ACL.checkAccountDelegated(contractsInfo.chainId, delegationAccounts, contractsInfo.addresses);
+        // Check that the delegated address has been granted access to the contract addresses by
+        // by the delegator.
+        _checkIsAccountDelegated(contractsInfo.chainId, delegationAccounts, contractsInfo.addresses);
 
         /// @dev Initialize the EIP712UserDecryptRequest structure for the signature validation.
         DelegatedUserDecryptRequestVerification
@@ -461,7 +484,6 @@ contract Decryption is
                 publicKey,
                 contractsInfo.addresses,
                 delegationAccounts.delegatorAddress,
-                contractsInfo.chainId,
                 requestValidity.startTimestamp,
                 requestValidity.durationDays,
                 extraData
@@ -471,7 +493,8 @@ contract Decryption is
         _validateDelegatedUserDecryptRequestEIP712Signature(
             delegatedUserDecryptRequestVerification,
             delegationAccounts.delegatedAddress,
-            signature
+            signature,
+            contractsInfo.chainId
         );
 
         /// @dev Fetch the ciphertexts from the CiphertextCommits contract
@@ -481,25 +504,28 @@ contract Decryption is
         /// @dev a ciphertext from the contract).
         SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
 
-        /// @dev Check that received snsCtMaterials have the same keyId.
-        /// @dev This will be removed in the future as multiple keyIds processing is implemented.
-        /// @dev See https://github.com/zama-ai/fhevm-gateway/issues/104.
+        // Check that received snsCtMaterials have the same keyId.
+        // TODO: This should be removed once batched decryption requests with different keys is
+        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
         _checkCtMaterialKeyIds(snsCtMaterials);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
-        // Generate a new request ID
-        // Decryption request IDs are unique across all kinds of decryption request (public, user,
-        // delegated user). A counter is used to ensure this uniqueness, as there is no proper ways
+
+        // Generate a globally unique decryptionId for the delegated user decryption request.
+        // The counter is initialized at deployment such that decryptionId's first byte uniquely
+        // represents a user decryption request (including delegated user decryption requests),
+        // with format: [0000 0010 | counter_1..31]
+        // This counter is used to ensure the IDs' uniqueness, as there is no proper way
         // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
         // how IDs need to be handled off-chain in case of re-org.
-        $._decryptionRequestCounter++;
-        uint256 decryptionId = $._decryptionRequestCounter;
+        $.userDecryptionCounter++;
+        uint256 userDecryptionId = $.userDecryptionCounter;
 
         /// @dev The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[decryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
         emit UserDecryptionRequest(
-            decryptionId,
+            userDecryptionId,
             snsCtMaterials,
             delegationAccounts.delegatedAddress,
             publicKey,
@@ -518,8 +544,10 @@ contract Decryption is
     ) external virtual onlyKmsTxSender {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
-        // Make sure the decryptionId corresponds to a generated decryption request.
-        if (decryptionId > $._decryptionRequestCounter || decryptionId == 0) {
+        // Make sure the decryptionId corresponds to a generated user decryption request:
+        // - it must be greater than the base counter for user decryption requests
+        // - it must be less than or equal to the current user decryption counter
+        if (decryptionId <= USER_DECRYPT_COUNTER_BASE || decryptionId > $.userDecryptionCounter) {
             revert DecryptionNotRequested(decryptionId);
         }
 
@@ -539,113 +567,137 @@ contract Decryption is
         /// @dev KMS node that has not already signed.
         _validateDecryptionResponseEIP712Signature(decryptionId, digest, signature);
 
-        /// @dev Store the signature for the user decryption response.
-        /// @dev This list is then used to check the consensus. Important: the mapping should not
-        /// @dev consider the digest (contrary to the public decryption case) as shares are expected
-        /// @dev to be different for each KMS node.
-        bytes[] storage verifiedSignatures = $._verifiedUserDecryptSignatures[decryptionId];
-        verifiedSignatures.push(signature);
-
-        /// @dev Store the user decrypted share for the user decryption response.
-        $.userDecryptedShares[decryptionId].push(userDecryptedShare);
-
         // Store the KMS transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus
         // A "late" valid KMS transaction sender address will still be added in the list.
         // We thus use a zero digest (default value for `bytes32`) to still be able to retrieve the
         // list later independently of the decryption response type (public or user).
-        $.consensusTxSenderAddresses[decryptionId][0].push(msg.sender);
+        address[] storage txSenderAddresses = $.consensusTxSenderAddresses[decryptionId][0];
+        txSenderAddresses.push(msg.sender);
+
+        // Store the user decrypted share for the user decryption response.
+        // The index of the share is the length of the txSenderAddresses - 1 so that the first response
+        // associated to this decryptionId has an index of 0.
+        emit UserDecryptionResponse(
+            decryptionId,
+            txSenderAddresses.length - 1,
+            userDecryptedShare,
+            signature,
+            extraData
+        );
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.decryptionDone[decryptionId] && _isConsensusReachedUser(verifiedSignatures.length)) {
+        if (!$.decryptionDone[decryptionId] && _isThresholdReachedUser(txSenderAddresses.length)) {
             $.decryptionDone[decryptionId] = true;
 
             // Since we use the default value for `bytes32`, this means we do not need to store the
             // digest in `decryptionConsensusDigest` here like we do for the public decryption case.
 
-            emit UserDecryptionResponse(
-                decryptionId,
-                $.userDecryptedShares[decryptionId],
-                verifiedSignatures,
-                extraData
-            );
+            emit UserDecryptionResponseThresholdReached(decryptionId);
         }
     }
 
-    /// @dev See {IDecryption-checkPublicDecryptionReady}.
-    function checkPublicDecryptionReady(
+    /**
+     * @dev See {IDecryption-isPublicDecryptionReady}.
+     */
+    function isPublicDecryptionReady(
         bytes32[] calldata ctHandles,
         bytes calldata /* extraData */
-    ) external view virtual {
-        /// @dev Check that the handles are allowed for public decryption and that the ciphertext materials
-        /// @dev represented by them have been added.
+    ) external view virtual returns (bool) {
+        // For each handle, check that it is allowed for public decryption and that the ciphertext
+        // material represented by it has been added.
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            MULTICHAIN_ACL.checkPublicDecryptAllowed(ctHandles[i]);
-            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandles[i]);
+            if (
+                !MULTICHAIN_ACL.isPublicDecryptAllowed(ctHandles[i]) ||
+                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandles[i])
+            ) {
+                return false;
+            }
         }
+        return true;
     }
 
-    /// @dev See {IDecryption-checkUserDecryptionReady}.
-    function checkUserDecryptionReady(
+    /**
+     * @dev See {IDecryption-isUserDecryptionReady}.
+     */
+    function isUserDecryptionReady(
         address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata /* extraData */
-    ) external view virtual {
-        /// @dev Check that the user and contracts accounts have access to the handles and that the
-        /// @dev ciphertext materials represented by them have been added.
+    ) external view virtual returns (bool) {
+        // For each handle, check that the user and contracts accounts have access to it and that the
+        // ciphertext material represented by it has been added.
         for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress);
-            MULTICHAIN_ACL.checkAccountAllowed(
-                ctHandleContractPairs[i].ctHandle,
-                ctHandleContractPairs[i].contractAddress
-            );
-            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
+            if (
+                !MULTICHAIN_ACL.isAccountAllowed(ctHandleContractPairs[i].ctHandle, userAddress) ||
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    ctHandleContractPairs[i].contractAddress
+                ) ||
+                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
+            ) {
+                return false;
+            }
         }
+        return true;
     }
 
-    /// @dev See {IDecryption-checkDelegatedUserDecryptionReady}.
-    function checkDelegatedUserDecryptionReady(
+    /**
+     * @dev See {IDecryption-isDelegatedUserDecryptionReady}.
+     */
+    function isDelegatedUserDecryptionReady(
         uint256 contractsChainId,
         DelegationAccounts calldata delegationAccounts,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         address[] calldata contractAddresses,
         bytes calldata /* extraData */
-    ) external view virtual {
-        /// @dev Check that the delegated address has been granted access to the given contractAddresses
-        /// @dev by the delegator.
-        MULTICHAIN_ACL.checkAccountDelegated(contractsChainId, delegationAccounts, contractAddresses);
-
-        /// @dev Check that the delegator and contract accounts have access to the handles and that the
-        /// @dev ciphertext materials represented by them have been added.
-        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandleContractPairs[i].ctHandle, delegationAccounts.delegatorAddress);
-            MULTICHAIN_ACL.checkAccountAllowed(
-                ctHandleContractPairs[i].ctHandle,
-                ctHandleContractPairs[i].contractAddress
-            );
-            CIPHERTEXT_COMMITS.checkCiphertextMaterial(ctHandleContractPairs[i].ctHandle);
+    ) external view virtual returns (bool) {
+        // Check that the delegated address has been granted access to the given contractAddresses
+        // by the delegator.
+        if (!MULTICHAIN_ACL.isAccountDelegated(contractsChainId, delegationAccounts, contractAddresses)) {
+            return false;
         }
+
+        // For each handle, check that the delegator and contract accounts have access to it and that the
+        // ciphertext material represented by it has been added.
+        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
+            if (
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    delegationAccounts.delegatorAddress
+                ) ||
+                !MULTICHAIN_ACL.isAccountAllowed(
+                    ctHandleContractPairs[i].ctHandle,
+                    ctHandleContractPairs[i].contractAddress
+                ) ||
+                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
+            ) {
+                return false;
+            }
+        }
+        return true;
     }
 
-    /// @dev See {IDecryption-checkDecryptionDone}.
-    function checkDecryptionDone(uint256 decryptionId) external view virtual {
+    /**
+     * @dev See {IDecryption-isDecryptionDone}.
+     */
+    function isDecryptionDone(uint256 decryptionId) external view virtual returns (bool) {
         DecryptionStorage storage $ = _getDecryptionStorage();
-        if (!$.decryptionDone[decryptionId]) {
-            revert DecryptionNotDone(decryptionId);
-        }
+        return $.decryptionDone[decryptionId];
     }
 
     /**
      * @dev See {IDecryption-getDecryptionConsensusTxSenders}.
-     * For public decryption, the list remains empty until the consensus is reached.
+     * For public decryption, the returned list remains empty until the consensus is reached.
      */
     function getDecryptionConsensusTxSenders(uint256 decryptionId) external view virtual returns (address[] memory) {
         DecryptionStorage storage $ = _getDecryptionStorage();
 
         // Get the unique digest associated to the decryption request in order to retrieve the list of
-        // KMS transaction sender address that were involved in the consensus
-        // For public decryption, this digest remains the default value (0x0) until the consensus is reached.
+        // KMS transaction sender addresses that were involved in the associated consensus
+        // For public decryption, this digest remains the default value (0x0) until the consensus is
+        // reached, meaning the returned list will be empty until then.
         bytes32 consensusDigest = $.decryptionConsensusDigest[decryptionId];
 
         return $.consensusTxSenderAddresses[decryptionId][consensusDigest];
@@ -679,15 +731,15 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
         address signer = ECDSA.recover(digest, signature);
 
-        /// @dev Check that the signer is a KMS signer.
-        GATEWAY_CONFIG.checkIsKmsSigner(signer);
+        // Check that the signer is a KMS signer.
+        _checkIsKmsSigner(signer);
 
         /// @dev Check that the signer has not already responded to the user decryption request.
-        if ($._kmsNodeAlreadySigned[decryptionId][signer]) {
+        if ($.kmsNodeAlreadySigned[decryptionId][signer]) {
             revert KmsNodeAlreadySigned(decryptionId, signer);
         }
 
-        $._kmsNodeAlreadySigned[decryptionId][signer] = true;
+        $.kmsNodeAlreadySigned[decryptionId][signer] = true;
     }
 
     /**
@@ -699,13 +751,16 @@ contract Decryption is
     /// @notice Validates the EIP712 signature for a given user decryption request
     /// @dev This function checks that the signer address is the same as the user address.
     /// @param userDecryptRequestVerification The signed UserDecryptRequestVerification structure
+    /// @param userAddress The address of the user.
     /// @param signature The signature to be validated
+    /// @param contractsChainId The chain ID of the contracts.
     function _validateUserDecryptRequestEIP712Signature(
         UserDecryptRequestVerification memory userDecryptRequestVerification,
         address userAddress,
-        bytes calldata signature
+        bytes calldata signature,
+        uint256 contractsChainId
     ) internal view virtual {
-        bytes32 digest = _hashUserDecryptRequestVerification(userDecryptRequestVerification);
+        bytes32 digest = _hashUserDecryptRequestVerification(userDecryptRequestVerification, contractsChainId);
         address signer = ECDSA.recover(digest, signature);
         if (signer != userAddress) {
             revert InvalidUserSignature(signature);
@@ -715,13 +770,19 @@ contract Decryption is
     /// @notice Validates the EIP712 signature for a given user decryption request
     /// @dev This function checks that the signer address is the same as the delegated address.
     /// @param delegatedUserDecryptRequestVerification The signed DelegatedUserDecryptRequestVerification structure
+    /// @param delegatedAddress The address of the delegated user.
     /// @param signature The signature to be validated
+    /// @param contractsChainId The chain ID of the contracts.
     function _validateDelegatedUserDecryptRequestEIP712Signature(
         DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
         address delegatedAddress,
-        bytes calldata signature
+        bytes calldata signature,
+        uint256 contractsChainId
     ) internal view virtual {
-        bytes32 digest = _hashDelegatedUserDecryptRequestVerification(delegatedUserDecryptRequestVerification);
+        bytes32 digest = _hashDelegatedUserDecryptRequestVerification(
+            delegatedUserDecryptRequestVerification,
+            contractsChainId
+        );
         address signer = ECDSA.recover(digest, signature);
         if (signer != delegatedAddress) {
             revert InvalidUserSignature(signature);
@@ -763,29 +824,32 @@ contract Decryption is
 
     /// @notice Computes the hash of a given UserDecryptRequestVerification structured data.
     /// @param userDecryptRequestVerification The UserDecryptRequestVerification structure to hash.
+    /// @param contractsChainId The chain ID of the contracts.
     /// @return The hash of the UserDecryptRequestVerification structure.
     function _hashUserDecryptRequestVerification(
-        UserDecryptRequestVerification memory userDecryptRequestVerification
+        UserDecryptRequestVerification memory userDecryptRequestVerification,
+        uint256 contractsChainId
     ) internal view virtual returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
                 EIP712_USER_DECRYPT_REQUEST_TYPE_HASH,
                 keccak256(userDecryptRequestVerification.publicKey),
                 keccak256(abi.encodePacked(userDecryptRequestVerification.contractAddresses)),
-                userDecryptRequestVerification.contractsChainId,
                 userDecryptRequestVerification.startTimestamp,
                 userDecryptRequestVerification.durationDays,
                 keccak256(abi.encodePacked(userDecryptRequestVerification.extraData))
             )
         );
-        return _hashTypedDataV4CustomChainId(userDecryptRequestVerification.contractsChainId, structHash);
+        return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
     }
 
     /// @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.
     /// @param delegatedUserDecryptRequestVerification The DelegatedUserDecryptRequestVerification structure to hash.
+    /// @param contractsChainId The chain ID of the contracts.
     /// @return The hash of the DelegatedUserDecryptRequestVerification structure.
     function _hashDelegatedUserDecryptRequestVerification(
-        DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification
+        DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
+        uint256 contractsChainId
     ) internal view virtual returns (bytes32) {
         bytes32 structHash = keccak256(
             abi.encode(
@@ -793,13 +857,12 @@ contract Decryption is
                 keccak256(delegatedUserDecryptRequestVerification.publicKey),
                 keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.contractAddresses)),
                 delegatedUserDecryptRequestVerification.delegatorAddress,
-                delegatedUserDecryptRequestVerification.contractsChainId,
                 delegatedUserDecryptRequestVerification.startTimestamp,
                 delegatedUserDecryptRequestVerification.durationDays,
                 keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.extraData))
             )
         );
-        return _hashTypedDataV4CustomChainId(delegatedUserDecryptRequestVerification.contractsChainId, structHash);
+        return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
     }
 
     /// @notice Computes the hash of a given UserDecryptResponseVerification structured data.
@@ -822,20 +885,20 @@ contract Decryption is
             );
     }
 
-    /// @notice Checks if the consensus is reached among the KMS nodes.
-    /// @param kmsCounter The number of KMS nodes that agreed
-    /// @return Whether the consensus is reached
-    function _isConsensusReachedPublic(uint256 kmsCounter) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
-        return kmsCounter >= consensusThreshold;
+    /// @notice Indicates if the consensus is reached for public decryption.
+    /// @param numVerifiedResponses The number of public decryption responses that have been verified.
+    /// @return Whether the consensus has been reached
+    function _isConsensusReachedPublic(uint256 numVerifiedResponses) internal view virtual returns (bool) {
+        uint256 publicDecryptionThreshold = GATEWAY_CONFIG.getPublicDecryptionThreshold();
+        return numVerifiedResponses >= publicDecryptionThreshold;
     }
 
-    /// @notice Checks if the consensus for user decryption is reached among the KMS signers.
-    /// @param verifiedSignaturesCount The number of signatures that have been verified for a user decryption.
-    /// @return Whether the consensus is reached.
-    function _isConsensusReachedUser(uint256 verifiedSignaturesCount) internal view virtual returns (bool) {
-        uint256 consensusThreshold = GATEWAY_CONFIG.getUserDecryptionThreshold();
-        return verifiedSignaturesCount >= consensusThreshold;
+    /// @notice Indicates if the number of verified user decryption responses has reached the threshold.
+    /// @param numVerifiedResponses The number of user decryption responses that have been verified.
+    /// @return Whether the threshold has been reached.
+    function _isThresholdReachedUser(uint256 numVerifiedResponses) internal view virtual returns (bool) {
+        uint256 userDecryptionThreshold = GATEWAY_CONFIG.getUserDecryptionThreshold();
+        return numVerifiedResponses >= userDecryptionThreshold;
     }
 
     /// @notice Check the handles' conformance for public decryption requests.
@@ -856,8 +919,8 @@ contract Decryption is
             /// @dev This reverts if the FHE type is invalid or not supported.
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
-            /// @dev Check that the handles are allowed for public decryption.
-            MULTICHAIN_ACL.checkPublicDecryptAllowed(ctHandle);
+            // Check that the handles are allowed for public decryption.
+            _checkIsPublicDecryptAllowed(ctHandle);
         }
 
         /// @dev Revert if the total bit size exceeds the maximum allowed.
@@ -901,11 +964,9 @@ contract Decryption is
             /// @dev This reverts if the FHE type is invalid or not supported
             totalBitSize += FHETypeBitSizes.getBitSize(fheType);
 
-            /// @dev Check that the allowed account has access to the handles.
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandle, allowedAddress);
-
-            /// @dev Check that the contract account has access to the handles.
-            MULTICHAIN_ACL.checkAccountAllowed(ctHandle, contractAddress);
+            // Check that the allowed and contract accounts have access to the handles.
+            _checkIsAccountAllowed(ctHandle, allowedAddress);
+            _checkIsAccountAllowed(ctHandle, contractAddress);
 
             /// @dev Check the contract is included in the list of allowed contract addresses.
             if (!_containsContractAddress(contractAddresses, contractAddress)) {
@@ -963,8 +1024,12 @@ contract Decryption is
         return false;
     }
 
-    /// @notice Checks that all SNS ciphertext materials have the same keyId.
-    /// @param snsCtMaterials The list of SNS ciphertext materials to check
+    /**
+     * @notice Checks that all SNS ciphertext materials have the same keyId.
+     * @param snsCtMaterials The list of SNS ciphertext materials to check
+     * @dev TODO: This should be removed once batched decryption requests with different keys is
+     * supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
+     */
     function _checkCtMaterialKeyIds(SnsCiphertextMaterial[] memory snsCtMaterials) internal pure virtual {
         if (snsCtMaterials.length <= 1) return;
 

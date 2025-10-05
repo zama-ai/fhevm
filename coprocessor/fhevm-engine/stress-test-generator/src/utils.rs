@@ -122,12 +122,14 @@ pub struct Scenario {
 pub struct Job {
     pub id: u64,
     pub scenarios: Vec<Scenario>,
+    pub cancel_token: tokio_util::sync::CancellationToken,
 }
 
 #[derive(Clone)]
 pub struct Context {
     pub args: Args,
     pub ecfg: EnvConfig,
+    pub cancel_token: tokio_util::sync::CancellationToken,
 }
 
 #[allow(dead_code)]
@@ -208,6 +210,7 @@ pub async fn generate_trivial_encrypt(
     listener_event_to_db: &mut ListenerDatabase,
     ct_type: Option<FheType>,
     ct_value: Option<u128>,
+    is_allowed: bool,
 ) -> Result<Handle, Box<dyn std::error::Error>> {
     let caller = user_address.parse().unwrap();
     let ct_type = ct_type.unwrap_or(DEF_TYPE);
@@ -223,6 +226,8 @@ pub async fn generate_trivial_encrypt(
             },
         )),
         transaction_hash: Some(transaction_hash),
+        is_allowed,
+        block_number: None,
     };
     let mut tx = listener_event_to_db.new_transaction().await?;
     listener_event_to_db
@@ -368,12 +373,15 @@ pub async fn insert_tfhe_event(
     listener_event_to_db: &ListenerDatabase,
     transaction_hash: TransactionHash,
     event: Log<TfheContractEvents>,
+    is_allowed: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = tokio::time::Instant::now();
     let mut tx = listener_event_to_db.new_transaction().await?;
     let log = LogTfhe {
         event,
         transaction_hash: Some(transaction_hash),
+        is_allowed,
+        block_number: None,
     };
     listener_event_to_db
         .insert_tfhe_event(&mut tx, &log)

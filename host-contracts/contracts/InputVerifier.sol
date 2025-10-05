@@ -5,20 +5,19 @@ import {FHEVMExecutor} from "./FHEVMExecutor.sol";
 
 // Importing OpenZeppelin contracts for cryptographic signature verification and access control.
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
 import {HANDLE_VERSION} from "./shared/Constants.sol";
-import {ACLChecks} from "./shared/ACLChecks.sol";
+import {ACLOwnable} from "./shared/ACLOwnable.sol";
 
 /**
  * @title    InputVerifier.
  * @notice   This contract allows signature verification of user encrypted inputs.
- *           This contract is called by the FHEVMExecutor inside verifyCiphertext function
+ *           This contract is called by the FHEVMExecutor inside verifyInput function
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
-contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain, ACLChecks {
+contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, ACLOwnable {
     /// @notice         Emitted when a signer is added.
     /// @param signer   The address of the signer that was added.
     event SignerAdded(address indexed signer);
@@ -106,7 +105,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 1;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -120,7 +119,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant InputVerifierStorageLocation =
@@ -143,7 +142,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
         uint64 chainIDSource,
         address[] calldata initialSigners
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __Ownable_init(owner());
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
         uint256 initialSignersLen = initialSigners.length;
         if (initialSignersLen == 0) {
@@ -156,10 +154,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
 
     /**
      * @notice Re-initializes the contract from V1.
+     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @dev This function removes the transient allowances, which could be useful for
@@ -189,7 +188,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EI
      * @param inputProof    Input proof.
      * @return result       Result.
      */
-    function verifyCiphertext(
+    function verifyInput(
         FHEVMExecutor.ContextUserInputs memory context,
         bytes32 inputHandle,
         bytes memory inputProof

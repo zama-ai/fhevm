@@ -31,21 +31,8 @@ echo "-------------- Start inserting keys for tenant: $TENANT_API_KEY ----------
 
 
 CHAIN_ID=${CHAIN_ID:-"12345"}
-PKS_FILE=${PKS_FILE:-"$KEY_DIR/pks"}
-PUBLIC_PARAMS_FILE=${PUBLIC_PARAMS_FILE:-"$KEY_DIR/pp"}
-SNS_PK_FILE=${SNS_PK_FILE:-"$KEY_DIR/sns_pk"}
-KEY_ID=${KEY_ID:-"10f49fdf75a123370ce2e2b1c5cc0615fb6e78dd829d0d850470cdbc84f15c11"}
-KEY_ID_HEX="\\x${KEY_ID}"
 
-# Extract small ServerKey from ServerKey with noise squashing keys
-SKS_FILE="/tmp/sks"
-/usr/local/bin/utils extract-sks-without-noise --src-path $SNS_PK_FILE --dst-path $SKS_FILE
-
-for file in "$PKS_FILE" "$SKS_FILE" "$PUBLIC_PARAMS_FILE" "$SNS_PK_FILE"; do
-    if [[ ! -f $file ]]; then
-        echo "Error: Key file $file not found."; exit 1;
-    fi
-done
+echo "Skip extract-sks-without-noise"
 
 if [[ -z "$DATABASE_URL" || -z "$TENANT_API_KEY" || -z "$ACL_CONTRACT_ADDRESS" || -z "$INPUT_VERIFIER_ADDRESS" ]]; then
     echo "Error: One or more required environment variables are missing."; exit 1;
@@ -58,23 +45,19 @@ if [ "$TENANT_EXISTS" = "1" ]; then
     exit 0
 fi
 
-TMP_CSV="/tmp/tenant_data.csv"
-echo "tenant_api_key,chain_id,acl_contract_address,verifying_contract_address,pks_key,sks_key,public_params,sns_pk,key_id" > $TMP_CSV
-
-
 import_large_file() {
   local file="$1"
   local db_url="$2"
   local chunk_size=8388608  # 8MB chunks
   local total_size
   total_size=$(stat -c %s "$file")
-  
+
   echo "Creating large object and importing file ($total_size bytes)..." >&2
-  
+
   # Create temp file for sending commands
   local tmpfile
   tmpfile=$(mktemp)
-  
+
   # Generate PostgreSQL script with all commands in a single session
   cat > "$tmpfile" <<EOF
 BEGIN;
@@ -121,40 +104,18 @@ EOF
   echo "$oid"
 }
 
-echo "Importing large object from $SNS_PK_FILE ($(du -h "$SNS_PK_FILE" | cut -f1))..."
-SNS_PK_OID=$(import_large_file "$SNS_PK_FILE" "$DATABASE_URL")
- 
-
-echo "$TENANT_API_KEY,$CHAIN_ID,$ACL_CONTRACT_ADDRESS,$INPUT_VERIFIER_ADDRESS,\
-\"\\x$(< "$PKS_FILE" xxd -p | tr -d '\n')\",\
-\"\\x$(< "$SKS_FILE" xxd -p | tr -d '\n')\",\
-\"\\x$(< "$PUBLIC_PARAMS_FILE" xxd -p | tr -d '\n')\",\
-$SNS_PK_OID,\"$KEY_ID_HEX\"" >> $TMP_CSV
+echo "Fake OID"
+FAKE_KEY_FILE=$(mktemp)
+touch "$FAKE_KEY_FILE"
+SNS_PK_OID=$(import_large_file "$FAKE_KEY_FILE" "$DATABASE_URL")
 
 echo "----------- Tenant data prepared for insertion: $TMP_CSV -----------"
- 
-
 
 echo "Inserting tenant data from CSV using \COPY..."
-psql "$DATABASE_URL" -c "\COPY tenants (tenant_api_key, chain_id, acl_contract_address, verifying_contract_address, pks_key, sks_key, public_params, sns_pk, key_id) FROM '$TMP_CSV' CSV HEADER;" || {
+psql "$DATABASE_URL" -c \
+  "INSERT INTO tenants (tenant_api_key, chain_id, acl_contract_address, verifying_contract_address,pks_key,sks_key,public_params,sns_pk,key_id) \
+   VALUES ('$TENANT_API_KEY',$CHAIN_ID,'$ACL_CONTRACT_ADDRESS','$INPUT_VERIFIER_ADDRESS','','','',$SNS_PK_OID,'');" || {
     echo "Error: Failed to insert tenant data."; exit 1;
 }
 
-echo "Checking large object creation..."
-psql "$DATABASE_URL" -c "SELECT loid as oid,
-                        pg_size_pretty(SUM(octet_length(data))) as size
-                     FROM pg_largeobject
-                     GROUP BY loid;"
-
-echo "Checking tenant entry references correct OID..."
-psql "$DATABASE_URL" -c "SELECT t.tenant_id,
-                        t.tenant_api_key,
-                        t.sns_pk,
-                        pg_size_pretty((SELECT SUM(octet_length(lo.data))
-                                      FROM pg_largeobject lo
-                                      WHERE lo.loid = t.sns_pk)) as sns_pk_size
-                      FROM tenants t
-                      WHERE t.tenant_api_key = '$TENANT_API_KEY';"
-
-rm -f $TMP_CSV
 echo "Database initialization keys insertion complete successfully."

@@ -158,6 +158,14 @@ describe('TestAsyncDecrypt', function () {
     expect(y).to.equal(18446744073709551600n);
   });
 
+  it('test async decrypt uint64 without saving handles', async function () {
+    const tx2 = await this.contract.connect(this.signers.carol).requestUint64WithoutSavingHandles();
+    await tx2.wait();
+    await awaitAllDecryptionResults();
+    const y = await this.contract.yUint64_4();
+    expect(y).to.equal(3737n);
+  });
+
   it('test async decrypt uint128', async function () {
     const tx2 = await this.contract.connect(this.signers.carol).requestUint128();
     await tx2.wait();

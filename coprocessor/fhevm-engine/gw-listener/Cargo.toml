@@ -9,19 +9,28 @@ license.workspace = true
 # workspace dependencies
 alloy = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
+axum = { workspace = true }
+aws-config = { workspace = true }
+aws-credential-types = { workspace = true }
+aws-sdk-s3 = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
+humantime = { workspace = true }
 rustls = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha3 = { workspace = true }
 sqlx = { workspace = true }
+tfhe = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-axum = { workspace = true }
 tower-http = { workspace = true }
-humantime = { workspace = true }
+
+url = "2.5.7"
+fhevm-engine-common = { path = "../fhevm-engine-common" }
 
 [build-dependencies]
 foundry-compilers = { workspace = true }
@@ -29,4 +38,6 @@ semver = { workspace = true }
 
 [dev-dependencies]
 alloy = { workspace = true, features = ["node-bindings"] }
+aws-smithy-mocks = "0.1.1"
 serial_test = { workspace = true }
+test-harness = { path = "../test-harness" }

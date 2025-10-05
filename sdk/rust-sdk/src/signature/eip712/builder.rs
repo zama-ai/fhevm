@@ -283,7 +283,6 @@ impl Eip712SignatureBuilder {
                 publicKey: Bytes::from(public_key_bytes.to_vec()),
                 contractAddresses: self.contract_addresses.clone(),
                 delegatorAddress: delegated_account,
-                contractsChainId: alloy::primitives::U256::from(self.config.contracts_chain_id),
                 startTimestamp: alloy::primitives::U256::from(start_timestamp),
                 durationDays: alloy::primitives::U256::from(duration_days),
                 extraData: self.extra_data.clone().into(),
@@ -293,7 +292,6 @@ impl Eip712SignatureBuilder {
             let message = super::types::UserDecryptRequestVerification {
                 publicKey: Bytes::from(public_key_bytes.to_vec()),
                 contractAddresses: self.contract_addresses.clone(),
-                contractsChainId: alloy::primitives::U256::from(self.config.contracts_chain_id),
                 startTimestamp: alloy::primitives::U256::from(start_timestamp),
                 durationDays: alloy::primitives::U256::from(duration_days),
                 extraData: self.extra_data.clone().into(),

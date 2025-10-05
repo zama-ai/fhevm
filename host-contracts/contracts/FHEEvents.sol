@@ -26,7 +26,7 @@ contract FHEEvents {
     event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result);
     event FheNeg(address indexed caller, bytes32 ct, bytes32 result);
     event FheNot(address indexed caller, bytes32 ct, bytes32 result);
-    event VerifyCiphertext(
+    event VerifyInput(
         address indexed caller,
         bytes32 inputHandle,
         address userAddress,

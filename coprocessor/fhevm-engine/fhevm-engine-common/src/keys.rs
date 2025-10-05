@@ -2,18 +2,15 @@ use std::{fs::read, sync::Arc};
 
 #[cfg(feature = "gpu")]
 use tfhe::core_crypto::gpu::get_number_of_gpus;
+#[cfg(feature = "gpu")]
+use tfhe::shortint::parameters::v1_4::meta::gpu::V1_4_META_PARAM_GPU_2_2_MULTI_BIT_GROUP_4_KS_PBS_TUNIFORM_2M128 as gpu_meta_parameters;
+use tfhe::shortint::AtomicPatternParameters;
 use tfhe::{
     set_server_key,
     shortint::parameters::{
-        v1_0::{
-            compact_public_key_only::p_fail_2_minus_128::ks_pbs::V1_0_PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
-            key_switching::p_fail_2_minus_128::ks_pbs::V1_0_PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
-            list_compression::V1_0_COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128,
-        },
-        v1_3::{self, V1_3_NOISE_SQUASHING_COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128},
-        CompactPublicKeyEncryptionParameters, CompressionParameters,
-        NoiseSquashingCompressionParameters, NoiseSquashingParameters,
-        ShortintKeySwitchingParameters,
+        meta::DedicatedCompactPublicKeyParameters,
+        v1_4::meta::cpu::V1_4_META_PARAM_CPU_2_2_KS_PBS_PKE_TO_SMALL_ZKV2_TUNIFORM_2M128 as cpu_meta_parameters,
+        CompressionParameters, MetaNoiseSquashingParameters, ShortintKeySwitchingParameters,
     },
     zk::CompactPkeCrs,
     ClientKey, CompactPublicKey, CompressedServerKey, Config, ConfigBuilder, ServerKey,
@@ -21,29 +18,37 @@ use tfhe::{
 
 use crate::utils::{safe_deserialize_key, safe_serialize_key};
 
-pub const TFHE_COMPRESSION_PARAMS: CompressionParameters =
-    V1_0_COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
-pub const TFHE_COMPACT_PK_ENCRYPTION_PARAMS: CompactPublicKeyEncryptionParameters =
-    V1_0_PARAM_PKE_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
-pub const TFHE_KS_PARAMS: ShortintKeySwitchingParameters =
-    V1_0_PARAM_KEYSWITCH_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
-pub const TFHE_NOISE_SQUASHING_PARAMS: NoiseSquashingParameters =
-    v1_3::V1_3_NOISE_SQUASHING_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
-pub const TFHE_NOISE_SQUASHING_PARAMS_COMPRESSED: NoiseSquashingCompressionParameters =
-    V1_3_NOISE_SQUASHING_COMP_PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
-
 #[cfg(not(feature = "gpu"))]
-pub const TFHE_PARAMS: tfhe::shortint::ClassicPBSParameters =
-    tfhe::shortint::parameters::PARAM_MESSAGE_2_CARRY_2_KS_PBS_TUNIFORM_2M128;
+pub const TFHE_PARAMS: AtomicPatternParameters = cpu_meta_parameters.compute_parameters;
+#[cfg(not(feature = "gpu"))]
+pub const TFHE_COMPRESSION_PARAMS: CompressionParameters = cpu_meta_parameters
+    .compression_parameters
+    .expect("Missing compression parameters");
+
+pub const TFHE_COMPACT_PK_PARAMS: DedicatedCompactPublicKeyParameters = cpu_meta_parameters
+    .dedicated_compact_public_key_parameters
+    .expect("Missing compact public key parameters");
+pub const TFHE_NOISE_SQUASHING_PARAMS: MetaNoiseSquashingParameters = cpu_meta_parameters
+    .noise_squashing_parameters
+    .expect("Missing noise squashing parameters");
+pub const TFHE_PKS_RERANDOMIZATION_PARAMS: ShortintKeySwitchingParameters = cpu_meta_parameters
+    .re_randomization_parameters
+    .expect("Missing rerandomisation parameters");
+
 #[cfg(feature = "gpu")]
-pub const TFHE_PARAMS: tfhe::shortint::parameters::MultiBitPBSParameters =
-    tfhe::shortint::parameters::PARAM_GPU_MULTI_BIT_GROUP_4_MESSAGE_2_CARRY_2_KS_PBS;
+pub const TFHE_PARAMS: AtomicPatternParameters = gpu_meta_parameters.compute_parameters;
+#[cfg(feature = "gpu")]
+pub const TFHE_COMPRESSION_PARAMS: CompressionParameters = gpu_meta_parameters
+    .compression_parameters
+    .expect("Missing compression parameters");
 
 pub const MAX_BITS_TO_PROVE: usize = 2048;
 
 #[derive(Clone)]
 pub struct FhevmKeys {
     pub server_key: ServerKey,
+    #[cfg(not(feature = "gpu"))]
+    pub server_key_without_ns: ServerKey,
     pub client_key: Option<ClientKey>,
     pub compact_public_key: CompactPublicKey,
     pub public_params: Arc<CompactPkeCrs>,
@@ -56,6 +61,8 @@ pub struct FhevmKeys {
 pub struct SerializedFhevmKeys {
     #[cfg(not(feature = "gpu"))]
     pub server_key: Vec<u8>,
+    #[cfg(not(feature = "gpu"))]
+    pub server_key_without_ns: Vec<u8>,
     pub client_key: Option<Vec<u8>>,
     pub compact_public_key: Vec<u8>,
     pub public_params: Vec<u8>,
@@ -77,8 +84,34 @@ impl FhevmKeys {
         let compact_public_key = CompactPublicKey::new(&client_key);
         let crs = CompactPkeCrs::from_config(config, MAX_BITS_TO_PROVE).expect("CRS creation");
         let compressed_server_key = CompressedServerKey::new(&client_key);
+        let server_key = compressed_server_key.clone().decompress();
+        #[cfg(not(feature = "gpu"))]
+        let (
+            sks,
+            kskm,
+            compression_key,
+            decompression_key,
+            _noise_squashing_key,
+            _noise_squashing_compression_key,
+            re_randomization_keyswitching_key,
+            tag,
+        ) = server_key.clone().into_raw_parts();
+        #[cfg(not(feature = "gpu"))]
+        let server_key_without_ns = ServerKey::from_raw_parts(
+            sks,
+            kskm,
+            compression_key,
+            decompression_key,
+            None, // noise squashing key excluded
+            None, // noise squashing compression key excluded
+            re_randomization_keyswitching_key,
+            tag,
+        );
+
         FhevmKeys {
-            server_key: compressed_server_key.clone().decompress(),
+            server_key,
+            #[cfg(not(feature = "gpu"))]
+            server_key_without_ns,
             client_key: Some(client_key),
             compact_public_key,
             public_params: Arc::new(crs.clone()),
@@ -89,7 +122,7 @@ impl FhevmKeys {
             gpu_server_key: vec![compressed_server_key.decompress_to_gpu()],
             #[cfg(feature = "gpu")]
             #[cfg(not(feature = "latency"))]
-            gpu_server_key: (0..get_number_of_gpus() as u32)
+            gpu_server_key: (0..get_number_of_gpus())
                 .map(|i| compressed_server_key.decompress_to_specific_gpu(tfhe::GpuIndex::new(i)))
                 .collect::<Vec<_>>(),
         }
@@ -97,13 +130,18 @@ impl FhevmKeys {
 
     pub fn new_config() -> Config {
         ConfigBuilder::with_custom_parameters(TFHE_PARAMS)
-            .enable_noise_squashing(TFHE_NOISE_SQUASHING_PARAMS)
-            .enable_noise_squashing_compression(TFHE_NOISE_SQUASHING_PARAMS_COMPRESSED)
+            .enable_noise_squashing(TFHE_NOISE_SQUASHING_PARAMS.parameters)
+            .enable_noise_squashing_compression(
+                TFHE_NOISE_SQUASHING_PARAMS
+                    .compression_parameters
+                    .expect("Missing noise squahing compression parameters."),
+            )
             .enable_compression(TFHE_COMPRESSION_PARAMS)
             .use_dedicated_compact_public_key_parameters((
-                TFHE_COMPACT_PK_ENCRYPTION_PARAMS,
-                TFHE_KS_PARAMS,
+                TFHE_COMPACT_PK_PARAMS.pke_params,
+                TFHE_COMPACT_PK_PARAMS.ksk_params,
             ))
+            .enable_ciphertext_re_randomization(TFHE_PKS_RERANDOMIZATION_PARAMS)
             .build()
     }
 
@@ -128,6 +166,8 @@ impl SerializedFhevmKeys {
     const PKS: &'static str = "../fhevm-keys/pks";
     #[cfg(not(feature = "gpu"))]
     const PUBLIC_PARAMS: &'static str = "../fhevm-keys/pp";
+    #[cfg(not(feature = "gpu"))]
+    const FULL_SKS: &'static str = "../fhevm-keys/sns_pk";
 
     #[cfg(feature = "gpu")]
     const GPU_CSKS: &'static str = "../fhevm-keys/gpu-csks";
@@ -145,7 +185,10 @@ impl SerializedFhevmKeys {
         #[cfg(not(feature = "gpu"))]
         {
             println!("Creating file {}", Self::SKS);
-            std::fs::write(Self::SKS, self.server_key).expect("write sks");
+            std::fs::write(Self::SKS, self.server_key_without_ns).expect("write sks");
+
+            println!("Creating file {}", Self::FULL_SKS);
+            std::fs::write(Self::FULL_SKS, self.server_key).expect("write sns_pk");
 
             if self.client_key.is_some() {
                 println!("Creating file {}", Self::CKS);
@@ -179,12 +222,14 @@ impl SerializedFhevmKeys {
 
     pub fn load_from_disk(keys_directory: &str) -> Self {
         let keys_dir = std::path::Path::new(&keys_directory);
-        let (sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
-            ("sks", "cks", "pks", "pp")
+        let (sns_pk, sks, cks, pks, pp) = if !cfg!(feature = "gpu") {
+            ("sns_pk", "sks", "cks", "pks", "pp")
         } else {
-            ("gpu-csks", "gpu-cks", "gpu-pks", "gpu-pp")
+            ("_unused_", "gpu-csks", "gpu-cks", "gpu-pks", "gpu-pp")
         };
-        let server_key = read(keys_dir.join(sks)).expect("read server key");
+        let server_key = read(keys_dir.join(sns_pk)).expect("read full server key (sns_pk)");
+        #[cfg(not(feature = "gpu"))]
+        let server_key_without_ns = read(keys_dir.join(sks)).expect("read server key");
         let client_key = read(keys_dir.join(cks)).ok();
         let compact_public_key = read(keys_dir.join(pks)).expect("read compact public key");
         let public_params = read(keys_dir.join(pp)).expect("read public params");
@@ -194,6 +239,8 @@ impl SerializedFhevmKeys {
             public_params,
             #[cfg(not(feature = "gpu"))]
             server_key,
+            #[cfg(not(feature = "gpu"))]
+            server_key_without_ns,
             #[cfg(feature = "gpu")]
             compressed_server_key: server_key,
         }
@@ -208,6 +255,8 @@ impl From<FhevmKeys> for SerializedFhevmKeys {
             public_params: safe_serialize_key(f.public_params.as_ref()),
             #[cfg(not(feature = "gpu"))]
             server_key: safe_serialize_key(&f.server_key),
+            #[cfg(not(feature = "gpu"))]
+            server_key_without_ns: safe_serialize_key(&f.server_key_without_ns),
             #[cfg(feature = "gpu")]
             compressed_server_key: safe_serialize_key(&f.compressed_server_key),
         }
@@ -232,7 +281,11 @@ impl From<SerializedFhevmKeys> for FhevmKeys {
                 safe_deserialize_key(&f.public_params).expect("deserialize public params"),
             ),
             #[cfg(not(feature = "gpu"))]
-            server_key: safe_deserialize_key(&f.server_key).expect("deserialize server key"),
+            server_key: safe_deserialize_key(&f.server_key)
+                .expect("deserialize full server key (sns_pk)"),
+            #[cfg(not(feature = "gpu"))]
+            server_key_without_ns: safe_deserialize_key(&f.server_key_without_ns)
+                .expect("deserialize server key"),
             #[cfg(feature = "gpu")]
             compressed_server_key: compressed_server_key.clone(),
             #[cfg(feature = "gpu")]
@@ -240,7 +293,7 @@ impl From<SerializedFhevmKeys> for FhevmKeys {
             gpu_server_key: vec![compressed_server_key.decompress_to_gpu()],
             #[cfg(feature = "gpu")]
             #[cfg(not(feature = "latency"))]
-            gpu_server_key: (0..get_number_of_gpus() as u32)
+            gpu_server_key: (0..get_number_of_gpus())
                 .map(|i| compressed_server_key.decompress_to_specific_gpu(tfhe::GpuIndex::new(i)))
                 .collect::<Vec<_>>(),
             #[cfg(feature = "gpu")]

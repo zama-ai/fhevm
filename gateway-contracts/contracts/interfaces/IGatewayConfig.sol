@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import "../shared/Structs.sol";
+import { ProtocolMetadata, KmsNode, Coprocessor, Custodian, HostChain } from "../shared/Structs.sol";
 
 /**
  * @title Interface for the GatewayConfig contract.
@@ -54,10 +54,22 @@ interface IGatewayConfig {
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
 
     /**
+     * @notice Emitted when the key and CRS generation threshold has been updated.
+     * @param newKmsGenThreshold The new key and CRS generation threshold.
+     */
+    event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
+
+    /**
      * @notice Emitted when a new host chain has been registered.
      * @param hostChain The new host chain metadata.
      */
     event AddHostChain(HostChain hostChain);
+
+    /**
+     * @notice Error indicating that the given account is not a pauser.
+     * @param account The address of the account.
+     */
+    error NotPauser(address account);
 
     /// @notice Error emitted when the KMS nodes list is empty.
     error EmptyKmsNodes();
@@ -91,6 +103,12 @@ interface IGatewayConfig {
     /// @param nKmsNodes The number of KMS nodes.
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
 
+    /// @notice Error emitted when the key and CRS generation threshold is null.
+    error InvalidNullKmsGenThreshold();
+
+    /// @notice Error emitted when the key and CRS generation threshold is strictly greater than the number of KMS nodes.
+    error InvalidHighKmsGenThreshold(uint256 kmsGenThreshold, uint256 nKmsNodes);
+
     /**
      * @notice Emitted when all the pausable gateway contracts are paused.
      */
@@ -102,54 +120,14 @@ interface IGatewayConfig {
     event UnpauseAllGatewayContracts();
 
     /**
-     * @notice Error emitted when an address is not a KMS transaction sender.
-     * @param txSenderAddress The address that is not a KMS transaction sender.
-     */
-    error NotKmsTxSender(address txSenderAddress);
-
-    /**
-     * @notice Error emitted when an address is not a KMS signer.
-     * @param signerAddress The address that is not a KMS signer.
-     */
-    error NotKmsSigner(address signerAddress);
-
-    /**
-     * @notice Error emitted when an address is not a coprocessor transaction sender.
-     * @param txSenderAddress The address that is not a coprocessor transaction sender.
-     */
-    error NotCoprocessorTxSender(address txSenderAddress);
-
-    /*
-     * @notice Error emitted when an address is not a coprocessor signer.
-     * @param signerAddress The address that is not a coprocessor signer.
-     */
-    error NotCoprocessorSigner(address signerAddress);
-
-    /**
-     * @notice Error emitted when an address is not a custodian transaction sender.
-     * @param txSenderAddress The address that is not a custodian transaction sender.
-     */
-    error NotCustodianTxSender(address txSenderAddress);
-
-    /*
-     * @notice Error emitted when an address is not a custodian signer.
-     * @param signerAddress The address that is not a custodian signer.
-     */
-    error NotCustodianSigner(address signerAddress);
-
-    /**
-     * @notice Error emitted when a host chain is not registered.
-     * @param chainId The host chain's chain ID.
-     */
-    error HostChainNotRegistered(uint256 chainId);
-
-    /**
      * @notice Error emitted when trying to add a host chain that is already registered.
      * @param chainId The host chain's chain ID that is already registered.
      */
     error HostChainAlreadyRegistered(uint256 chainId);
 
-    /// @notice Error indicating that a null chain ID is not allowed.
+    /**
+     * @notice Error indicating that a null chain ID is not allowed.
+     */
     error InvalidNullChainId();
 
     /**
@@ -187,6 +165,13 @@ interface IGatewayConfig {
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external;
 
     /**
+     * @notice Update the key and CRS generation threshold.
+     * @dev The new threshold must verify `1 <= t <= n`, with `n` the number of KMS nodes currently registered.
+     * @param newKmsGenThreshold The new key and CRS generation threshold.
+     */
+    function updateKmsGenThreshold(uint256 newKmsGenThreshold) external;
+
+    /**
      * @notice Pause all pausable gateway contracts.
      */
     function pauseAllGatewayContracts() external;
@@ -197,50 +182,50 @@ interface IGatewayConfig {
     function unpauseAllGatewayContracts() external;
 
     /**
-     * @notice Check if an address is a registered KMS transaction sender.
+     * @notice Indicates if an address is a registered KMS transaction sender.
      * @param kmsTxSenderAddress The address to check.
      */
-    function checkIsKmsTxSender(address kmsTxSenderAddress) external view;
+    function isKmsTxSender(address kmsTxSenderAddress) external view returns (bool);
 
     /**
-     * @notice Check if an address is a registered KMS signer.
+     * @notice Indicates if an address is a registered KMS signer.
      * @param signerAddress The address to check.
      */
-    function checkIsKmsSigner(address signerAddress) external view;
+    function isKmsSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Check if an address is a registered coprocessor transaction sender.
+     * @notice Indicates if an address is a registered coprocessor transaction sender.
      * @param coprocessorTxSenderAddress The address to check.
      */
-    function checkIsCoprocessorTxSender(address coprocessorTxSenderAddress) external view;
+    function isCoprocessorTxSender(address coprocessorTxSenderAddress) external view returns (bool);
 
     /**
-     * @notice Check if an address is a registered coprocessor signer.
+     * @notice Indicates if an address is a registered coprocessor signer.
      * @param signerAddress The address to check.
      */
-    function checkIsCoprocessorSigner(address signerAddress) external view;
+    function isCoprocessorSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Check if an address is a registered custodian transaction sender.
+     * @notice Indicates if an address is a registered custodian transaction sender.
      * @param txSenderAddress The address to check.
      */
-    function checkIsCustodianTxSender(address txSenderAddress) external view;
+    function isCustodianTxSender(address txSenderAddress) external view returns (bool);
 
     /**
-     * @notice Check if an address is a registered custodian signer.
+     * @notice Indicates if an address is a registered custodian signer.
      * @param signerAddress The address to check.
      */
-    function checkIsCustodianSigner(address signerAddress) external view;
+    function isCustodianSigner(address signerAddress) external view returns (bool);
 
     /**
-     * @notice Check if a chain ID corresponds to a registered host chain.
+     * @notice Indicates if a chain ID corresponds to a registered host chain.
      * @param chainId The chain ID to check.
      */
-    function checkHostChainIsRegistered(uint256 chainId) external view;
+    function isHostChainRegistered(uint256 chainId) external view returns (bool);
 
     /**
      * @notice Check if the account is a pauser.
-     * @return whether or not the account is a pauser.
+     * @return Whether or not the account is a pauser.
      */
     function isPauser(address account) external view returns (bool);
 
@@ -269,7 +254,13 @@ interface IGatewayConfig {
     function getUserDecryptionThreshold() external view returns (uint256);
 
     /**
-     * @notice Get the coprocessor majority threshold.
+     * @notice Get the key and CRS generation threshold
+     * @return The key and CRS generation threshold.
+     */
+    function getKmsGenThreshold() external view returns (uint256);
+
+    /**
+     * @notice Get the coprocessor majority threshold
      * @return The coprocessor majority threshold.
      */
     function getCoprocessorMajorityThreshold() external view returns (uint256);
