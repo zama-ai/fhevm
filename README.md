@@ -178,3 +178,13 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+echo "Update 1" >> README.md
+git add README.md
+git commit -m "Commit 1: Update README"
+
+echo "Update 2" >> README.md
+git add README.md
+git commit -m "Commit 2: Update README"
+
+# repeat until you have 10 commits
