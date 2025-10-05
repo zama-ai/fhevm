@@ -174,6 +174,24 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 </a>
 
 🌟 If you find this project helpful or interesting, please consider giving it a star on GitHub! Your support helps to grow the community and motivates further development.
+echo "Update 1" >> README.md
+git add README.md
+git commit -m "Commit 1: Update README"
+
+echo "Update 2" >> README.md
+git add README.md
+git commit -m "Commit 2: Update README"
+
+# repeat until you have 10 commits
+
+touch file1.txt
+git add file1.txt
+git commit -m "Commit 3: Add file1"
+
+touch file2.txt
+git add file2.txt
+git commit -m "Commit 4: Add file2"
+
 
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
