@@ -218,12 +218,15 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                     .map(|(handle, ciphertext)| {
                         let hexed_handle = hex::encode(handle);
                         let fhe_type = extract_fhe_type_from_handle(handle);
-                        info!(
-                            "UserDecryptionRequest handle: {}, retrieved S3 ciphertext of length: {}, FHE Type: {}",
-                            hexed_handle,
-                            ciphertext.len(),
-                            fhe_type_to_string(fhe_type)
-                        );
+                        if tracing::enabled!(tracing::Level::DEBUG) {
+                            debug!(
+                                "UserDecryptionRequest handle: {}, retrieved S3 ciphertext of length: {}, FHE Type: {}",
+                                hexed_handle,
+                                ciphertext.len(),
+                                fhe_type_to_string(fhe_type)
+                            );
+                        }
+
                         TypedCiphertext {
                             ciphertext: ciphertext.clone(),
                             external_handle: handle.clone(),
@@ -299,7 +302,6 @@ impl<P: Provider + Clone> DecryptionHandler<P> {
                         .unwrap_or_else(|| "unknown".to_string())
                 );
 
-                // TODO: revert to DEBUG
                 // Only log detailed ciphertext info at debug level
                 if tracing::enabled!(tracing::Level::DEBUG) {
                     for (i, ct) in request.get_ref().typed_ciphertexts.iter().enumerate() {
