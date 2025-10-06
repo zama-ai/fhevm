@@ -97,13 +97,10 @@ impl Database {
         let pool = Self::new_pool(url).await;
         let (tenant_id, chain_id) =
             Self::find_tenant_id(&pool, coprocessor_api_key).await?;
-        let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
-            std::num::NonZeroU16::new(
-                bucket_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
-            )
-            .unwrap()
-            .into(),
-        ));
+        let cap = bucket_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE);
+        let cap_nz = std::num::NonZeroU16::new(cap).expect("capacity must be > 0");
+        let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(cap_nz.into()));
+
         Ok(Database {
             url: url.into(),
             tenant_id,
@@ -126,7 +123,7 @@ impl Database {
 };
 
         let options = options.options([
-            ("statement_timeout", "5000"), // 5 seconds
+            ("statement_timeout", "10000"), // 5 seconds
         ]);
         let connect = || {
             PgPoolOptions::new()

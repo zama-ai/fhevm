@@ -97,7 +97,7 @@ impl Database {
         let pool = Self::new_pool(url).await;
         let (tenant_id, chain_id) =
             Self::find_tenant_id(&pool, coprocessor_api_key).await?;
-        let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(
+        
             std::num::NonZeroU16::new(
                 bucket_cache_size.max(MINIMUM_BUCKET_CACHE_SIZE),
             )
@@ -115,18 +115,9 @@ impl Database {
     }
 
     async fn new_pool(url: &str) -> PgPool {
-        let options: PgConnectOptions = match url.parse() {
-    Ok(o) => o,
-    Err(e) => {
-        error!(error = %e, "Bad database URL");
-        // return a default or propagate error — here we panic less aggressively by creating a minimal fallback
-        // but better: change new_pool to return Result<PgPool, Error> and propagate the parse error.
-        panic!("bad db url: {}", e);
-    }
-};
-
+        let options: PgConnectOptions = url.parse().expect("bad url");
         let options = options.options([
-            ("statement_timeout", "5000"), // 5 seconds
+            ("statement_timeout", "10000"), // 5 seconds
         ]);
         let connect = || {
             PgPoolOptions::new()
@@ -134,7 +125,7 @@ impl Database {
                 .max_lifetime(Duration::from_secs(10 * 60))
                 .max_connections(8)
                 .acquire_timeout(Duration::from_secs(5))
-                .connect_with(options.clone())
+              let bucket_cache = tokio::sync::RwLock::new(lru::LruCache::new(  .connect_with(options.clone())
         };
         let mut pool = connect().await;
         while let Err(err) = pool {
