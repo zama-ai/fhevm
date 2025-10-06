@@ -78,7 +78,7 @@ impl DatabaseTestManager {
     }
 
     pub async fn clear_databases(&self) -> anyhow::Result<()> {
-        info!("Clearing database tables before test...");
+        info!("Clearing database tables...");
 
         let mut clear_results = vec![];
         for db_connector in &self.db_connectors {
@@ -86,7 +86,7 @@ impl DatabaseTestManager {
         }
 
         if clear_results.iter().any(anyhow::Result::is_err) {
-            return Err(anyhow!("Health check failed: {clear_results:?}"));
+            return Err(anyhow!("Database clear failed: {clear_results:?}"));
         }
 
         info!("All databases tables were cleared successfully!");
@@ -265,7 +265,7 @@ async fn handle_burst(
     info!(
         latency = latency,
         throughput = throughput,
-        "Burst sucessfully processed by all connectors!",
+        "Burst successfully processed by all connectors!",
     );
     Ok(BurstResult {
         latency,

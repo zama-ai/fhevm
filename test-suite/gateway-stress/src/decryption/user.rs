@@ -132,12 +132,21 @@ async fn send_user_decryption_inner<P: Provider>(
     config: Config,
     id_sender: UnboundedSender<U256>,
 ) -> anyhow::Result<()> {
+    let blockchain_config = config
+        .blockchain
+        .as_ref()
+        .expect("Missing [blockchain] section in config file"); // Should be unreachable
+
     let timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)?
         .as_secs();
 
-    let host_chain_id = config.blockchain.as_ref().unwrap().host_chain_id;
-    let eip712 = generate_eip712(sdk, &config, timestamp)?;
+    let eip712 = generate_eip712(
+        sdk,
+        config.allowed_contract,
+        blockchain_config.private_key.clone(),
+        timestamp,
+    )?;
     let decryption_call = decryption_contract
         .userDecryptionRequest(
             config
@@ -153,7 +162,7 @@ async fn send_user_decryption_inner<P: Provider>(
                 durationDays: U256::from(DURATION_DAYS),
             },
             ContractsInfo {
-                chainId: U256::from(host_chain_id),
+                chainId: U256::from(blockchain_config.host_chain_id),
                 addresses: vec![config.allowed_contract],
             },
             user_addr,
@@ -218,18 +227,10 @@ pub async fn init_user_decryption_response_listener<P: Provider>(
 
 pub fn generate_eip712(
     sdk: Arc<FhevmSdk>,
-    config: &Config,
+    allowed_contract: Address,
+    private_key: String,
     timestamp: u64,
 ) -> anyhow::Result<Eip712Result> {
-    let allowed_contract = config.allowed_contract;
-    let private_key = config
-        .blockchain
-        .as_ref()
-        .unwrap()
-        .private_key
-        .clone()
-        .unwrap();
-
     // Spawn in new thread otherwise panic because it blocks the async runtime
     std::thread::spawn(move || {
         sdk.create_eip712_signature_builder()

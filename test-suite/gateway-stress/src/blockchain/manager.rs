@@ -70,10 +70,9 @@ impl GatewayTestManager {
                 .unwrap()
         });
 
-        let blockchain_config = config
-            .blockchain
-            .as_ref()
-            .expect("[blockchain] config section is not configured");
+        let Some(blockchain_config) = config.blockchain.as_ref() else {
+            return Err(anyhow!("Missing [blockchain] section in config file"));
+        };
 
         let wallet = Wallet::from_config(blockchain_config).await?;
         let provider = NonceManagedProvider::new(

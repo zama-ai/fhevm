@@ -19,16 +19,16 @@ parallel_requests = 1
 # The ciphertexts to use for user decryptions
 [[user_ct]]
 # The handle used of the ciphertext
-handle = "0x84bbbeddcf4381289a06ea53536f250064f5759d70ff00000000000030390500"
+handle = "0xc07ece86473ba540de4dbef63889f0233f5481dd7dff00000000000030390500"
 # The digest of the ciphertext
-digest = "134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
+digest = "0x134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
 
 # The ciphertexts to use for public decryptions
 [[public_ct]]
 # The handle used of the ciphertext
-handle = "0x6c38383ed44b1afbb1dd3764f3afe2c315b48a300bff00000000000030390500"
+handle = "0x57539e394a6ae1dc4b4f1b00248777ce265eb6d08bff00000000000030390500"
 # The digest of the ciphertext
-digest = "134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
+digest = "0x134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
 
 # Configuration section for stress test using the Gateway chain
 [blockchain]
@@ -44,22 +44,9 @@ gateway_chain_id = 54321
 # Address of the Decryption contract (required)
 decryption_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 
-# Wallet's private key as a hex string (optional if `aws_kms_config` or `mnemonic` is configured)
+# Wallet's private key as a hex string
 private_key = "24af7cb5f6cd0f29df22c6f3e2f18ee5b3949f5a489a14b0674bef8fd89bfe91"
 
-# # Wallet's mnemonic (optional if `aws_kms_config` or `private_key` is configured)
-# mnemonic = "coyote sketch defense hover finger envelope celery urge panther venue verb cheese"
-# # Wallet's mnemonic index (optional, defaults to 0)
-# mnemonic_index = 0
-
-# # Wallet's AWS KMS configuration (optional if `private_key` or `mnemonic` is configured)
-# [aws_kms_config]
-# # AWS KMS key ID for signing
-# key_id = "12345678-1234-1234-1234-123456789012"
-# # Optional: AWS region for KMS (if not using default from AWS credentials)
-# region = "us-east-1"
-# # Optional: AWS endpoint URL for KMS (for testing or custom endpoints)
-# endpoint = "https://kms.us-east-1.amazonaws.com"
 
 # Configuration section for stress test using the Connectors' DBs
 [database]

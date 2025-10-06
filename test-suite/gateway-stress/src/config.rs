@@ -33,11 +33,7 @@ pub struct BlockchainConfig {
     pub host_chain_id: u64,
     pub gateway_chain_id: u64,
     pub decryption_address: Address,
-    pub private_key: Option<String>,
-    pub mnemonic: Option<String>,
-    #[serde(default = "default_mnemonic_index")]
-    pub mnemonic_index: usize,
-    pub aws_kms_config: Option<AwsKmsConfig>,
+    pub private_key: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -52,13 +48,6 @@ pub struct DatabaseConfig {
     pub insertion_chunk_size: usize,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct AwsKmsConfig {
-    pub key_id: String,
-    pub region: Option<String>,
-    pub endpoint: Option<String>,
-}
-
 impl Config {
     pub fn from_env_and_file<P: AsRef<Path>>(path: P) -> anyhow::Result<Self> {
         let builder = ConfigBuilder::builder()
@@ -67,10 +56,6 @@ impl Config {
         let config = settings.try_deserialize()?;
         Ok(config)
     }
-}
-
-fn default_mnemonic_index() -> usize {
-    0
 }
 
 fn default_pool_size() -> u32 {

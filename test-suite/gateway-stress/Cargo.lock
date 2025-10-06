@@ -3016,7 +3016,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.9.0#6f108f405b21beed28182a180a039aa77e030b4c"
+source = "git+https://git@github.com/zama-ai/fhevm.git?tag=v0.9.0-1#bf397ab8138e1f1d6df7e2a79182c8d93b59a722"
 dependencies = [
  "alloy",
  "serde",
@@ -3025,7 +3025,7 @@ dependencies = [
 [[package]]
 name = "fhevm_gateway_bindings"
 version = "0.1.0-rc14"
-source = "git+https://git@github.com/zama-ai/fhevm.git?tag=v0.9.0-1#bf397ab8138e1f1d6df7e2a79182c8d93b59a722"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.9.1-1#ece670b96e8314e9a640f736b58e991343401b11"
 dependencies = [
  "alloy",
  "serde",
@@ -3242,7 +3242,7 @@ checksum = "312d2295c7302019c395cfb90dacd00a82a2eabd700429bba9c7a3f38dbbe11b"
 [[package]]
 name = "gateway-sdk"
 version = "0.9.0"
-source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.9.0#6f108f405b21beed28182a180a039aa77e030b4c"
+source = "git+https://github.com/zama-ai/fhevm.git?tag=v0.9.1-1#ece670b96e8314e9a640f736b58e991343401b11"
 dependencies = [
  "alloy",
  "bc2wrap",
@@ -3279,7 +3279,7 @@ dependencies = [
  "clap",
  "config",
  "csv",
- "fhevm_gateway_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.9.0)",
+ "fhevm_gateway_bindings 0.1.0-rc14 (git+https://github.com/zama-ai/fhevm.git?tag=v0.9.1-1)",
  "futures",
  "gateway-sdk",
  "humantime",
