@@ -375,10 +375,18 @@ impl Database {
             &log.transaction_hash.map(|h| h.to_vec()),
         );
 
-        self.record_transaction_begin(
-            &log.transaction_hash.map(|h| h.to_vec()),
-            &log.block_number,
-        ).await;
+        // Record the transaction if this is a computation event
+        if !matches!(
+            &event.data,
+            E::Initialized(_)
+                |  E::Upgraded(_)
+                |  E::VerifyInput(_)
+        ) {
+            self.record_transaction_begin(
+                &log.transaction_hash.map(|h| h.to_vec()),
+                &log.block_number,
+            ).await;
+        };
 
         match &event.data {
             E::Cast(C::Cast {ct, toType, result, ..})
@@ -480,8 +488,15 @@ impl Database {
 
         let _t = telemetry::tracer("handle_acl_event", &transaction_hash);
 
-        self.record_transaction_begin(&transaction_hash, block_number)
-            .await;
+        // Record only Allowed or AllowedForDecryption events
+        if matches!(
+            data,
+            AclContractEvents::Allowed(_)
+                | AclContractEvents::AllowedForDecryption(_)
+        ) {
+            self.record_transaction_begin(&transaction_hash, block_number)
+                .await;
+        }
 
         match data {
             AclContractEvents::Allowed(allowed) => {
