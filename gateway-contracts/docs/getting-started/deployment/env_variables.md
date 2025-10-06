@@ -83,10 +83,10 @@ USER_DECRYPTION_THRESHOLD="3" # (uint256)
 
 In practice in the FHEVM protocol, these thresholds are set using the following formulas:
 
-- public decryption threshold: `floor(n/2) + 1`
+- public decryption threshold: `t + 1`
 - user decryption threshold: `2*t + 1`
 
-With `n` the number of KMS nodes registered below and `t` the MPC threshold.
+With `t` the MPC threshold.
 
 These values might change in the future.
 
@@ -96,9 +96,6 @@ KMS_GENERATION_THRESHOLD="3" # (uint256)
 
 `KMS_GENERATION_THRESHOLD` must be non-null and less or equal to the number of KMS nodes registered below.
 
-In practice in the FHEVM protocol, this threshold is set to `2*t + 1` with `t` the MPC threshold.
-
-These values might change in the future.
 
 - KMS Nodes:
 
