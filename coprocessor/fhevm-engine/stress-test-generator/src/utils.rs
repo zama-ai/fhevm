@@ -275,8 +275,9 @@ pub async fn query_and_save_pks(
 pub async fn get_ciphertext_digests(
     handle: &[u8],
     pool: &sqlx::PgPool,
+    max_retries: usize,
 ) -> Result<(Vec<u8>, Vec<u8>), Box<dyn std::error::Error>> {
-    loop {
+    for _ in 0..max_retries {
         let digests = sqlx::query!(
             "
             SELECT ciphertext, ciphertext128
@@ -293,8 +294,9 @@ pub async fn get_ciphertext_digests(
                 return Ok((digests.ciphertext.unwrap(), digests.ciphertext128.unwrap()));
             }
         }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
+    Ok((vec![], vec![]))
 }
 
 /// User configuration in which benchmarks must be run.
