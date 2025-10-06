@@ -39,6 +39,8 @@ use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
+const MAX_RETRIES: usize = 500;
+
 #[tokio::main]
 async fn main() {
     let args = parse_args();
@@ -365,6 +367,7 @@ async fn parse_and_execute(ctx: Context) -> Result<(), Box<dyn std::error::Error
                 let (digest64, digest128) = get_ciphertext_digests(
                     &hex::decode(h.strip_prefix("0x").unwrap()).expect("Decoding failed"),
                     &pool,
+                    MAX_RETRIES,
                 )
                 .await?;
                 writeln!(
