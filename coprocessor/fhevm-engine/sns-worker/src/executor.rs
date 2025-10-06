@@ -154,6 +154,23 @@ impl SwitchNSquashService {
     }
 }
 
+async fn get_keyset(
+    pool: PgPool,
+    keys_cache: Arc<RwLock<lru::LruCache<String, KeySet>>>,
+    tenant_api_key: &String,
+) -> Result<Option<KeySet>, ExecutionError> {
+    let _t = telemetry::tracer("fetch_keyset", &None);
+    {
+        let mut cache = keys_cache.write().await;
+        if let Some(keys) = cache.get(tenant_api_key) {
+            info!(tenant_api_key = tenant_api_key, "Keyset found in cache");
+            return Ok(Some(keys.clone()));
+        }
+    }
+    let keys: Option<KeySet> = fetch_keyset(&keys_cache, &pool, tenant_api_key).await?;
+    Ok(keys)
+}
+
 /// Executes the worker logic for the SnS task.
 pub(crate) async fn run_loop(
     conf: Config,
@@ -173,13 +190,19 @@ pub(crate) async fn run_loop(
         .listen_all(conf.db.listen_channels.iter().map(|v| v.as_str()))
         .await?;
 
-    let t = telemetry::tracer("worker_loop_init");
-    let s = t.child_span("fetch_keyset");
-    let keys: KeySet = fetch_keyset(&keys_cache, &pool, tenant_api_key).await?;
-    telemetry::end_span(s);
-    t.end();
-
-    info!(tenant_api_key = tenant_api_key, "Fetched keyset");
+    let mut keys = match get_keyset(pool.clone(), keys_cache.clone(), tenant_api_key).await? {
+        Some(keys) => {
+            info!(tenant_api_key = tenant_api_key, "Fetched keyset");
+            Some(keys)
+        }
+        None => {
+            warn!(
+                tenant_api_key = tenant_api_key,
+                "No keys found for the given tenant_api_key"
+            );
+            None
+        }
+    };
 
     let mut gc_ticker = interval(conf.db.cleanup_interval);
     let mut gc_timestamp = SystemTime::now();
@@ -189,7 +212,20 @@ pub(crate) async fn run_loop(
         // Continue looping until the service is cancelled or a critical error occurs
         update_last_active(last_active_at.clone()).await;
 
-        let maybe_remaining = fetch_and_execute_sns_tasks(&pool, &tx, &keys, &conf, &token).await?;
+        let Some(keys) = keys.as_ref() else {
+            warn!(
+                tenant_api_key = tenant_api_key,
+                "No keys available, retrying in 5 seconds"
+            );
+            tokio::time::sleep(Duration::from_secs(5)).await;
+            if token.is_cancelled() {
+                return Ok(());
+            }
+            keys = get_keyset(pool.clone(), keys_cache.clone(), tenant_api_key).await?;
+            continue;
+        };
+
+        let maybe_remaining = fetch_and_execute_sns_tasks(&pool, &tx, keys, &conf, &token).await?;
         if maybe_remaining {
             if token.is_cancelled() {
                 return Ok(());
@@ -295,7 +331,7 @@ async fn fetch_and_execute_sns_tasks(
     if let Some(mut tasks) = query_sns_tasks(trx, conf.db.batch_limit, order).await? {
         maybe_remaining = conf.db.batch_limit as usize == tasks.len();
 
-        let t = telemetry::tracer("batch_execution");
+        let t = telemetry::tracer("batch_execution", &None);
         t.set_attribute("count", tasks.len().to_string());
 
         process_tasks(
@@ -319,6 +355,12 @@ async fn fetch_and_execute_sns_tasks(
         telemetry::end_span(s);
 
         db_txn.commit().await?;
+
+        for task in tasks.iter() {
+            if let Some(transaction_id) = &task.transaction_id {
+                telemetry::try_end_l1_transaction(pool, transaction_id).await?;
+            }
+        }
     } else {
         db_txn.rollback().await?;
     }
@@ -371,13 +413,15 @@ pub async fn query_sns_tasks(
             let tenant_id: i32 = record.try_get("tenant_id")?;
             let handle: Vec<u8> = record.try_get("handle")?;
             let ciphertext: Vec<u8> = record.try_get("ciphertext")?;
+            let transaction_id: Option<Vec<u8>> = record.try_get("transaction_id")?;
 
             Ok(HandleItem {
                 tenant_id,
                 handle: handle.clone(),
                 ct64_compressed: Arc::new(ciphertext),
                 ct128: Arc::new(BigCiphertext::default()), // to be computed
-                otel: telemetry::tracer_with_handle("task", handle),
+                otel: telemetry::tracer_with_handle("task", handle, &transaction_id),
+                transaction_id,
             })
         })
         .collect::<Result<Vec<_>, ExecutionError>>()?;
@@ -593,20 +637,6 @@ async fn update_computations_status(
                 "
                 UPDATE pbs_computations
                 SET is_completed = TRUE, completed_at = NOW()
-                WHERE handle = $1;",
-                task.handle
-            )
-            .execute(db_txn.as_mut())
-            .await?;
-            // We need to update the allowed_handles table as well for
-            // the case where an input handle (that is not the output
-            // of a FHE computation) is allowed. This means that the
-            // TFHE worker never sees this handle and therefore cannot
-            // update its computed status.
-            sqlx::query!(
-                "
-                UPDATE allowed_handles
-                SET is_computed = TRUE
                 WHERE handle = $1;",
                 task.handle
             )

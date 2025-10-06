@@ -18,8 +18,11 @@ pub fn public_decryption_req(handles: Vec<FixedBytes<32>>) -> Result<Bytes> {
     Ok(Bytes::from(calldata))
 }
 
-/// Generate calldata for user decryptÒ
-pub fn user_decryption_req(user_decrypt_request: UserDecryptRequest) -> Result<Bytes> {
+/// Generates calldata for user decryption.
+pub fn user_decryption_req(
+    user_decrypt_request: UserDecryptRequest,
+    contracts_chain_id: u64,
+) -> Result<Bytes> {
     info!("Generating user decryption request calldata");
 
     let extra_data = Bytes::new(); // Empty extra_data for now
@@ -27,7 +30,7 @@ pub fn user_decryption_req(user_decrypt_request: UserDecryptRequest) -> Result<B
         user_decrypt_request.ct_handle_contract_pairs,
         user_decrypt_request.request_validity,
         ContractsInfo {
-            chainId: U256::from(user_decrypt_request.contracts_chain_id),
+            chainId: U256::from(contracts_chain_id),
             addresses: user_decrypt_request.contract_addresses,
         },
         user_decrypt_request.user_address,

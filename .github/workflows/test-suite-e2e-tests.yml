@@ -186,16 +186,19 @@ jobs:
         if: always()
         run: |
           echo "::group::Relayer Logs"
-          ./fhevm-cli logs relayer
+          ./fhevm-cli logs fhevm-relayer
           echo "::endgroup::"
           echo "::group::SNS Worker Logs"
-          ./fhevm-cli logs sns-worker | grep -v "Selected 0 rows to process"
+          ./fhevm-cli logs coprocessor-sns-worker | grep -v "Selected 0 rows to process"
           echo "::endgroup::"
           echo "::group::Transaction Sender Logs (filtered)"
-          ./fhevm-cli logs transaction-sender | grep -v "Selected 0 rows to process"
+          ./fhevm-cli logs coprocessor-transaction-sender | grep -v "Selected 0 rows to process"
           echo "::endgroup::"
           echo "::group::Host Listener"
-          ./fhevm-cli logs host-listener
+          ./fhevm-cli logs coprocessor-host-listener
+          echo "::endgroup::"
+          echo "::group::Gateway Listener"
+          ./fhevm-cli logs coprocessor-gw-listener
           echo "::endgroup::"
 
       - name: Cleanup

@@ -77,8 +77,8 @@ pub struct Args {
     #[arg(long, default_value = "./coprocessor.key")]
     pub coprocessor_private_key: String,
 
-    /// Coprocessor service name in OTLP traces
-    #[arg(long, default_value = "coprocessor")]
+    /// tfhe-worker service name in OTLP traces
+    #[arg(long, default_value = "tfhe-worker")]
     pub service_name: String,
 
     /// Log level for the application

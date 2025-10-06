@@ -11,7 +11,7 @@ import {ACL} from "../../contracts/ACL.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {FheType} from "../../contracts/shared/FheType.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
-import {ACLChecks} from "../../contracts/shared/ACLChecks.sol";
+import {ACLOwnable} from "../../contracts/shared/ACLOwnable.sol";
 import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract InputVerifierTest is Test {
@@ -117,7 +117,7 @@ contract InputVerifierTest is Test {
     function _deployProxy() internal {
         proxy = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, owner)
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
         );
     }
 
@@ -415,8 +415,7 @@ contract InputVerifierTest is Test {
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxyWithSigners(3);
-        assertEq(inputVerifier.owner(), owner);
-        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.2.0")));
+        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.1.0")));
     }
 
     /**
@@ -489,9 +488,9 @@ contract InputVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function works as expected for one input.
+     * @dev Tests that the verifyInput function works as expected for one input.
      */
-    function test_VerifyCiphertextWorksAsExpectedForOneInput(uint64 cleartextValue) public {
+    function test_VerifyInputWorksAsExpectedForOneInput(uint64 cleartextValue) public {
         _upgradeProxyWithSigners(3);
         address userAddress = address(1111);
         address contractAddress = address(2222);
@@ -516,13 +515,13 @@ contract InputVerifierTest is Test {
                 activeSigners
             );
 
-        vm.assertEq(mockInputHandle, inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof));
+        vm.assertEq(mockInputHandle, inputVerifier.verifyInput(context, mockInputHandle, inputProof));
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function works as expected for two inputs.
+     * @dev Tests that the verifyInput function works as expected for two inputs.
      */
-    function test_VerifyCiphertextWorksAsExpectedForTwoInputs(uint64 cleartextValue, bool cleartextValue2) public {
+    function test_VerifyInputWorksAsExpectedForTwoInputs(uint64 cleartextValue, bool cleartextValue2) public {
         _upgradeProxyWithSigners(3);
 
         address userAddress = address(1111);
@@ -552,13 +551,13 @@ contract InputVerifierTest is Test {
                 activeSigners
             );
 
-        vm.assertEq(mockInputHandle, inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof));
+        vm.assertEq(mockInputHandle, inputVerifier.verifyInput(context, mockInputHandle, inputProof));
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the chainId is invalid.
+     * @dev Tests that the verifyInput function fails if the chainId is invalid.
      */
-    function test_VerifyCiphertextFailsIfInvalidChainId(uint64 invalidChainId) public {
+    function test_VerifyInputFailsIfInvalidChainId(uint64 invalidChainId) public {
         _upgradeProxyWithSigners(3);
         vm.assume(invalidChainId != block.chainid);
 
@@ -569,13 +568,13 @@ contract InputVerifierTest is Test {
         ) = _generateInputParametersWithOneMockHandle(invalidChainId, HANDLE_VERSION, activeSigners);
 
         vm.expectRevert(InputVerifier.InvalidChainId.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the inputProof is empty.
+     * @dev Tests that the verifyInput function fails if the inputProof is empty.
      */
-    function test_VerifyCiphertextFailsIfEmptyInputProof() public {
+    function test_VerifyInputFailsIfEmptyInputProof() public {
         _upgradeProxyWithSigners(3);
 
         (
@@ -587,13 +586,13 @@ contract InputVerifierTest is Test {
         inputProof = new bytes(0);
 
         vm.expectRevert(InputVerifier.EmptyInputProof.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the index is invalid since it is greater than 254.
+     * @dev Tests that the verifyInput function fails if the index is invalid since it is greater than 254.
      */
-    function test_VerifyCiphertextFailsIfInvalidIndexIfEqual255() public {
+    function test_VerifyInputFailsIfInvalidIndexIfEqual255() public {
         _upgradeProxyWithSigners(3);
 
         (
@@ -606,13 +605,13 @@ contract InputVerifierTest is Test {
         mockInputHandle = mockInputHandle | (bytes32(uint256(255)) << 80);
 
         vm.expectRevert(InputVerifier.InvalidIndex.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the index is invalid since it is greater than 254.
+     * @dev Tests that the verifyInput function fails if the index is invalid since it is greater than 254.
      */
-    function test_VerifyCiphertextFailsIfInvalidIndexIfEqual255WithProofCached() public {
+    function test_VerifyInputFailsIfInvalidIndexIfEqual255WithProofCached() public {
         _upgradeProxyWithSigners(3);
 
         (
@@ -621,19 +620,19 @@ contract InputVerifierTest is Test {
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
 
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
 
         /// @dev It is invalid since it is 255.
         mockInputHandle = mockInputHandle | (bytes32(uint256(255)) << 80);
 
         vm.expectRevert(InputVerifier.InvalidIndex.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the index is invalid if it is greater than (or equal to) the number of handles.
+     * @dev Tests that the verifyInput function fails if the index is invalid if it is greater than (or equal to) the number of handles.
      */
-    function test_VerifyCiphertextFailsIfInvalidIndexGreaterThanNumberHandles(uint8 indexHandle) public {
+    function test_VerifyInputFailsIfInvalidIndexGreaterThanNumberHandles(uint8 indexHandle) public {
         _upgradeProxyWithSigners(3);
         vm.assume(indexHandle > 0 && indexHandle < 255);
 
@@ -647,13 +646,13 @@ contract InputVerifierTest is Test {
         mockInputHandle = mockInputHandle | (bytes32(uint256(indexHandle)) << 80);
 
         vm.expectRevert(InputVerifier.InvalidIndex.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the index is invalid since it is greater than 254.
+     * @dev Tests that the verifyInput function fails if the index is invalid since it is greater than 254.
      */
-    function test_VerifyCiphertextFailsIfInvalidIndexGreaterThanNumberHandlesWithProofCached(uint8 indexHandle) public {
+    function test_VerifyInputFailsIfInvalidIndexGreaterThanNumberHandlesWithProofCached(uint8 indexHandle) public {
         _upgradeProxyWithSigners(3);
         vm.assume(indexHandle > 0 && indexHandle < 255);
 
@@ -663,19 +662,19 @@ contract InputVerifierTest is Test {
             bytes memory inputProof
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
 
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
 
         /// @dev It is invalid since it is greater than (equal to) the number of handles.
         mockInputHandle = mockInputHandle | (bytes32(uint256(indexHandle)) << 80);
 
         vm.expectRevert(InputVerifier.InvalidIndex.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the length of the input proof is invalid.
+     * @dev Tests that the verifyInput function fails if the length of the input proof is invalid.
      */
-    function test_VerifyCiphertextFailsIfDeserializingInputProofFail() public {
+    function test_VerifyInputFailsIfDeserializingInputProofFail() public {
         _upgradeProxyWithSigners(3);
 
         (
@@ -691,13 +690,13 @@ contract InputVerifierTest is Test {
         }
 
         vm.expectRevert(InputVerifier.DeserializingInputProofFail.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, truncatedInputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, truncatedInputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the handle version is not the one matching the InputVerifier's contract storage.
+     * @dev Tests that the verifyInput function fails if the handle version is not the one matching the InputVerifier's contract storage.
      */
-    function test_VerifyCiphertextFailsIfInvalidHandleVersion(uint8 handleVersion) public {
+    function test_VerifyInputFailsIfInvalidHandleVersion(uint8 handleVersion) public {
         _upgradeProxyWithSigners(3);
         vm.assume(handleVersion != HANDLE_VERSION);
 
@@ -710,13 +709,13 @@ contract InputVerifierTest is Test {
         mockInputHandle = mockInputHandle | bytes32(uint256(handleVersion));
 
         vm.expectRevert(InputVerifier.InvalidHandleVersion.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the inputHandle is invalid when the proof is not cached.
+     * @dev Tests that the verifyInput function fails if the inputHandle is invalid when the proof is not cached.
      */
-    function test_VerifyCiphertextFailsIfInvalidInputHandle() public {
+    function test_VerifyInputFailsIfInvalidInputHandle() public {
         _upgradeProxyWithSigners(3);
         address userAddress = address(1111);
         address contractAddress = address(2222);
@@ -754,13 +753,13 @@ contract InputVerifierTest is Test {
         );
 
         vm.expectRevert(InputVerifier.InvalidInputHandle.selector);
-        inputVerifier.verifyCiphertext(context, invalidInputHandle, inputProof);
+        inputVerifier.verifyInput(context, invalidInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the inputHandle is invalid when the proof is cached.
+     * @dev Tests that the verifyInput function fails if the inputHandle is invalid when the proof is cached.
      */
-    function test_VerifyCiphertextFailsIfInvalidInputHandleWithProofCached() public {
+    function test_VerifyInputFailsIfInvalidInputHandleWithProofCached() public {
         _upgradeProxyWithSigners(3);
         address userAddress = address(1111);
         address contractAddress = address(2222);
@@ -787,7 +786,7 @@ contract InputVerifierTest is Test {
                 activeSigners
             );
 
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
 
         uint64 updatedCleartextValue = 987654321;
         cleartextValues[0] = bytes32(uint256(updatedCleartextValue));
@@ -804,13 +803,13 @@ contract InputVerifierTest is Test {
         );
 
         vm.expectRevert(InputVerifier.InvalidInputHandle.selector);
-        inputVerifier.verifyCiphertext(context, invalidInputHandle, inputProof);
+        inputVerifier.verifyInput(context, invalidInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the signature threshold is not reached.
+     * @dev Tests that the verifyInput function fails if the signature threshold is not reached.
      */
-    function test_VerifyCiphertextFailsIfSignatureThresholdNotReached() public {
+    function test_VerifyInputFailsIfSignatureThresholdNotReached() public {
         _upgradeProxyWithSigners(3);
 
         /// @dev We only use one signer to generate the input parameters but the threshold is 2.
@@ -824,13 +823,13 @@ contract InputVerifierTest is Test {
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, signers);
 
         vm.expectPartialRevert(InputVerifier.SignatureThresholdNotReached.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if an invalid signer address is recovered.
+     * @dev Tests that the verifyInput function fails if an invalid signer address is recovered.
      */
-    function test_VerifyCiphertextFailsIfInvalidSignerIsRecovered() public {
+    function test_VerifyInputFailsIfInvalidSignerIsRecovered() public {
         _upgradeProxyWithSigners(3);
 
         /// @dev We use 2 signers (threshold is 2) but one of the signers is not a signer in the InputVerifier contract!
@@ -847,13 +846,13 @@ contract InputVerifierTest is Test {
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, signers);
 
         vm.expectPartialRevert(InputVerifier.InvalidSigner.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if the signatures verification fails for other reasons.
+     * @dev Tests that the verifyInput function fails if the signatures verification fails for other reasons.
      */
-    function test_VerifyCiphertextFailsIfSignaturesVerificationFailed() public {
+    function test_VerifyInputFailsIfSignaturesVerificationFailed() public {
         _upgradeProxyWithSigners(3);
 
         /// @dev We use 2 signers (threshold is 2) but it is the same signer!
@@ -868,13 +867,13 @@ contract InputVerifierTest is Test {
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, signers);
 
         vm.expectRevert(InputVerifier.SignaturesVerificationFailed.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /**
-     * @dev Tests that the verifyCiphertext function fails if no signature is provided.
+     * @dev Tests that the verifyInput function fails if no signature is provided.
      */
-    function test_VerifyCiphertextFailsIfNoSignatureIsProvided() public {
+    function test_VerifyInputFailsIfNoSignatureIsProvided() public {
         _upgradeProxyWithSigners(3);
 
         /// @dev We use 0 signer.
@@ -887,7 +886,7 @@ contract InputVerifierTest is Test {
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, signers);
 
         vm.expectRevert(InputVerifier.ZeroSignature.selector);
-        inputVerifier.verifyCiphertext(context, mockInputHandle, inputProof);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
     /// @dev This function exists for the test below to call it externally.
@@ -903,7 +902,7 @@ contract InputVerifierTest is Test {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         this.upgrade(randomAccount);
     }
 
@@ -919,7 +918,7 @@ contract InputVerifierTest is Test {
     function test_OnlyOwnerCanAddSigner(address randomAccount) public {
         _upgradeProxyWithSigners(3);
         vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(randomAccount);
         inputVerifier.addSigner(randomAccount);
     }
@@ -930,7 +929,7 @@ contract InputVerifierTest is Test {
     function test_OnlyOwnerCanRemoveSigner(address randomAccount) public {
         _upgradeProxyWithSigners(3);
         vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(ACLChecks.NotHostOwner.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(randomAccount);
         inputVerifier.removeSigner(randomAccount);
     }
@@ -1020,7 +1019,7 @@ contract InputVerifierTest is Test {
      */
     function test_AnyoneCanCallCleanTransientStorage(uint64 cleartextValue, address randomAccount) public {
         /// @dev It inherits a working test since transient storage would be cleaned up after a call in the same transaction.
-        test_VerifyCiphertextWorksAsExpectedForOneInput(cleartextValue);
+        test_VerifyInputWorksAsExpectedForOneInput(cleartextValue);
         vm.prank(randomAccount);
         inputVerifier.cleanTransientStorage();
     }

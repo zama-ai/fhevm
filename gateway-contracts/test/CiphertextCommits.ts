@@ -41,7 +41,7 @@ describe("CiphertextCommits", function () {
   let ciphertextCommits: CiphertextCommits;
   let coprocessorTxSenders: HardhatEthersSigner[];
   let owner: Wallet;
-  let pauser: HardhatEthersSigner;
+  let pauser: Wallet;
 
   async function prepareFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
@@ -101,7 +101,7 @@ describe("CiphertextCommits", function () {
           .connect(coprocessorTxSenders[0])
           .addCiphertextMaterial(ctHandleFakeChainId, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .revertedWithCustomError(gatewayConfig, "HostChainNotRegistered")
+        .revertedWithCustomError(ciphertextCommits, "HostChainNotRegistered")
         .withArgs(fakeHostChainId);
     });
 
@@ -222,7 +222,7 @@ describe("CiphertextCommits", function () {
           .connect(fakeTxSender)
           .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest),
       )
-        .revertedWithCustomError(gatewayConfig, "NotCoprocessorTxSender")
+        .revertedWithCustomError(ciphertextCommits, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
     });
 
@@ -241,8 +241,6 @@ describe("CiphertextCommits", function () {
         .revertedWithCustomError(ciphertextCommits, "CoprocessorAlreadyAdded")
         .withArgs(ctHandle, coprocessorTxSenders[0]);
     });
-
-    // TODO: Add test checking `checkCurrentKeyId` once keys are generated through the Gateway
   });
 
   describe("Get ciphertext materials", async function () {
@@ -339,48 +337,12 @@ describe("CiphertextCommits", function () {
       await loadFixture(prepareViewTestFixture);
     });
 
-    it("Should not revert as the ciphertext material have been added", async function () {
-      await expect(ciphertextCommits.checkCiphertextMaterial(ctHandle)).not.to.be.reverted;
+    it("Should be true as the ciphertext material have been added", async function () {
+      expect(await ciphertextCommits.isCiphertextMaterialAdded(ctHandle)).to.be.true;
     });
 
-    it("Should revert as the ciphertext material has not been added", async function () {
-      await expect(ciphertextCommits.checkCiphertextMaterial(newCtHandle))
-        .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
-        .withArgs(newCtHandle);
-    });
-  });
-
-  describe("Pause", async function () {
-    it("Should pause the contract with the pauser and unpause with the owner", async function () {
-      // Check that the contract is not paused
-      expect(await ciphertextCommits.paused()).to.be.false;
-
-      // Pause the contract with the pauser address
-      await expect(ciphertextCommits.connect(pauser).pause()).to.emit(ciphertextCommits, "Paused").withArgs(pauser);
-      expect(await ciphertextCommits.paused()).to.be.true;
-
-      // Unpause the contract with the owner address
-      await expect(ciphertextCommits.connect(owner).unpause()).to.emit(ciphertextCommits, "Unpaused").withArgs(owner);
-      expect(await ciphertextCommits.paused()).to.be.false;
-    });
-
-    it("Should revert on pause because sender is not the pauser", async function () {
-      const fakePauser = createRandomWallet();
-
-      await expect(ciphertextCommits.connect(fakePauser).pause())
-        .to.be.revertedWithCustomError(ciphertextCommits, "NotPauserOrGatewayConfig")
-        .withArgs(fakePauser.address);
-    });
-
-    it("Should revert on unpause because sender is not the owner", async function () {
-      // Pause the contract with the pauser address
-      await ciphertextCommits.connect(pauser).pause();
-
-      const fakeOwner = createRandomWallet();
-
-      await expect(ciphertextCommits.connect(fakeOwner).unpause())
-        .to.be.revertedWithCustomError(ciphertextCommits, "NotOwnerOrGatewayConfig")
-        .withArgs(fakeOwner.address);
+    it("Should be false as the ciphertext material has not been added", async function () {
+      expect(await ciphertextCommits.isCiphertextMaterialAdded(newCtHandle)).to.be.false;
     });
   });
 });

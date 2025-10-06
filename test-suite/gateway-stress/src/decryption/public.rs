@@ -1,6 +1,8 @@
 use crate::{
     config::Config,
-    decryption::{EVENT_LISTENER_POLLING, extract_id_from_receipt, send_tx_with_retries},
+    decryption::{
+        BurstResult, EVENT_LISTENER_POLLING, extract_id_from_receipt, send_tx_with_retries,
+    },
 };
 use alloy::{
     primitives::{FixedBytes, U256},
@@ -43,7 +45,8 @@ pub async fn public_decryption_burst<P, S>(
     response_listener: Arc<Mutex<S>>,
     requests_pb: ProgressBar,
     responses_pb: ProgressBar,
-) where
+) -> anyhow::Result<BurstResult>
+where
     P: Provider + Clone + 'static,
     S: Stream<Item = sol_types::Result<(PublicDecryptionResponse, Log)>> + Unpin + Send + 'static,
 {
@@ -62,12 +65,15 @@ pub async fn public_decryption_burst<P, S>(
 
     let mut requests_tasks = JoinSet::new();
     for index in 0..config.parallel_requests {
-        requests_tasks.spawn(send_public_decryption(
-            index,
-            decryption_contract.clone(),
-            config.public_ct_handles.clone(),
-            id_sender.clone(),
-        ));
+        requests_tasks.spawn(
+            send_public_decryption(
+                index,
+                decryption_contract.clone(),
+                config.public_ct_handles.clone(),
+                id_sender.clone(),
+            )
+            .in_current_span(),
+        );
     }
 
     for _ in 0..config.parallel_requests {
@@ -78,11 +84,12 @@ pub async fn public_decryption_burst<P, S>(
     debug!("All requests of the burst have been sent! Waiting for responses...");
 
     drop(id_sender); // Dropping last sender so `wait_for_responses` can exit properly
-    if let Err(e) = wait_response_task.await {
-        error!("{e}");
-    } else {
-        debug!("Successfully received all responses of the burst!");
-    }
+    let res = wait_response_task
+        .await
+        .inspect_err(|e| error!("{e}"))?
+        .inspect_err(|e| error!("{e}"))?;
+    debug!("Successfully received all responses of the burst!");
+    Ok(res)
 }
 
 /// Sends a PublicDecryptionRequest transaction to the Gateway.
@@ -159,32 +166,10 @@ pub async fn init_public_decryption_response_listener<P: Provider>(
 async fn wait_for_burst_responses<S>(
     burst_index: usize,
     response_listener: Arc<Mutex<S>>,
-    id_receiver: UnboundedReceiver<U256>,
-    config: Config,
-    progress_bar: ProgressBar,
-) where
-    S: Stream<Item = sol_types::Result<(PublicDecryptionResponse, Log)>> + Unpin,
-{
-    if let Err(e) = wait_for_burst_responses_inner(
-        burst_index,
-        response_listener,
-        id_receiver,
-        config,
-        progress_bar,
-    )
-    .await
-    {
-        error!("{e}");
-    }
-}
-
-async fn wait_for_burst_responses_inner<S>(
-    burst_index: usize,
-    response_listener: Arc<Mutex<S>>,
     mut id_receiver: UnboundedReceiver<U256>,
     config: Config,
     progress_bar: ProgressBar,
-) -> anyhow::Result<()>
+) -> anyhow::Result<BurstResult>
 where
     S: Stream<Item = sol_types::Result<(PublicDecryptionResponse, Log)>> + Unpin,
 {
@@ -220,16 +205,17 @@ where
     drop(received_id_guard);
     drop(listener_guard);
 
-    let elapsed = burst_start.elapsed().as_secs_f64();
+    let latency = burst_start.elapsed().as_secs_f64();
+    let result = BurstResult {
+        latency,
+        throughput: config.parallel_requests as f64 / latency,
+    };
     progress_bar.finish_with_message(format!(
         "Handled burst #{} of {} in {:.2}s. Throughput: {:.2} tps",
-        burst_index,
-        config.parallel_requests,
-        elapsed,
-        config.parallel_requests as f64 / elapsed
+        burst_index, config.parallel_requests, result.latency, result.throughput
     ));
 
-    Ok(())
+    Ok(result)
 }
 
 static RECEIVED_RESPONSES_IDS: LazyLock<Arc<Mutex<HashSet<U256>>>> =

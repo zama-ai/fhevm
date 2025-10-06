@@ -4,7 +4,6 @@ import "../shared/Structs.sol";
 
 contract GatewayConfigMock {
     event InitializeGatewayConfig(
-        address pauser,
         ProtocolMetadata metadata,
         uint256 mpcThreshold,
         KmsNode[] kmsNodes,
@@ -12,15 +11,13 @@ contract GatewayConfigMock {
         Custodian[] custodians
     );
 
-    event ReinitializeGatewayConfigV2(Custodian[] custodians);
-
-    event UpdatePauser(address newPauser);
-
     event UpdateMpcThreshold(uint256 newMpcThreshold);
 
     event UpdatePublicDecryptionThreshold(uint256 newPublicDecryptionThreshold);
 
     event UpdateUserDecryptionThreshold(uint256 newUserDecryptionThreshold);
+
+    event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
 
     event AddHostChain(HostChain hostChain);
 
@@ -29,31 +26,22 @@ contract GatewayConfigMock {
     event UnpauseAllGatewayContracts();
 
     function initializeFromEmptyProxy(
-        address initialPauser,
         ProtocolMetadata memory initialMetadata,
         uint256 initialMpcThreshold,
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
+        uint256 initialKmsGenThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
     ) public {
-        address pauser;
         ProtocolMetadata memory metadata;
         uint256 mpcThreshold;
         KmsNode[] memory kmsNodes = new KmsNode[](1);
         Coprocessor[] memory coprocessors = new Coprocessor[](1);
         Custodian[] memory custodians = new Custodian[](1);
 
-        emit InitializeGatewayConfig(pauser, metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
-    }
-
-    function reinitializeV2(Custodian[] memory custodians) public {
-        emit ReinitializeGatewayConfigV2(custodians);
-    }
-
-    function updatePauser(address newPauser) external {
-        emit UpdatePauser(newPauser);
+        emit InitializeGatewayConfig(metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
     }
 
     function updateMpcThreshold(uint256 newMpcThreshold) external {
@@ -66,6 +54,10 @@ contract GatewayConfigMock {
 
     function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) external {
         emit UpdateUserDecryptionThreshold(newUserDecryptionThreshold);
+    }
+
+    function updateKmsGenThreshold(uint256 newKmsGenThreshold) external {
+        emit UpdateKmsGenThreshold(newKmsGenThreshold);
     }
 
     function addHostChain(HostChain calldata hostChain) external {

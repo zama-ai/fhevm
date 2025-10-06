@@ -175,8 +175,11 @@ impl UserDecryptRequestBuilder {
     ///
     /// This is the final step that creates transaction calldata ready to send.
     pub fn build_and_generate_calldata(self) -> Result<Vec<u8>> {
+        let contracts_chain_id = self.contracts_chain_id.ok_or_else(|| {
+            FhevmError::InvalidParams("contracts_chain_id was not configured".to_string())
+        })?;
         let request = self.build()?;
-        let calldata = user_decryption_req(request)?;
+        let calldata = user_decryption_req(request, contracts_chain_id)?;
         Ok(calldata.to_vec())
     }
 
@@ -256,7 +259,6 @@ impl UserDecryptRequestBuilder {
         let public_key = self.public_key.unwrap();
         let start_timestamp = self.start_timestamp.unwrap();
         let duration_days = self.duration_days.unwrap();
-        let contracts_chain_id = self.contracts_chain_id.unwrap_or(1);
 
         debug!("✅ UserDecryptRequest built successfully");
         debug!("   📊 Handles: {}", self.ct_handle_contract_pairs.len());
@@ -270,7 +272,6 @@ impl UserDecryptRequestBuilder {
                 startTimestamp: U256::from(start_timestamp),
                 durationDays: U256::from(duration_days),
             },
-            contracts_chain_id,
             contract_addresses: self.contract_addresses,
             user_address,
             signature,

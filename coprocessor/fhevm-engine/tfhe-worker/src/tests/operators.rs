@@ -4,7 +4,7 @@ use crate::server::tfhe_worker::{
     AsyncComputation, AsyncComputeRequest, TrivialEncryptBatch, TrivialEncryptRequestSingle,
 };
 use crate::tests::utils::{
-    allow_handle, decrypt_ciphertexts, random_handle, wait_until_all_allowed_handles_computed,
+    decrypt_ciphertexts, random_handle, wait_until_all_allowed_handles_computed,
 };
 use crate::{
     server::tfhe_worker::{async_computation_input::Input, AsyncComputationInput},
@@ -152,8 +152,8 @@ async fn test_fhe_binary_operands() -> Result<(), Box<dyn std::error::Error>> {
             transaction_id: transaction_id.clone(),
             output_handle: output_handle.clone(),
             inputs,
+            is_allowed: true,
         });
-        allow_handle(&output_handle, &pool).await?;
     }
 
     println!("Encrypting inputs...");
@@ -263,8 +263,8 @@ async fn test_fhe_unary_operands() -> Result<(), Box<dyn std::error::Error>> {
             inputs: vec![AsyncComputationInput {
                 input: Some(Input::InputHandle(input_handle)),
             }],
+            is_allowed: true,
         });
-        allow_handle(&output_handle, &pool).await?;
     }
 
     println!("Encrypting inputs...");
@@ -400,8 +400,8 @@ async fn test_fhe_casts() -> Result<(), Box<dyn std::error::Error>> {
                         input: Some(Input::Scalar(vec![*type_to as u8])),
                     },
                 ],
+                is_allowed: true,
             });
-            allow_handle(&output_handle, &pool).await?;
         }
     }
 
@@ -519,8 +519,8 @@ async fn test_op_trivial_encrypt() -> Result<(), Box<dyn std::error::Error>> {
                     input: Some(Input::Scalar(vec![case.inp_type as u8])),
                 },
             ],
+            is_allowed: true,
         });
-        allow_handle(&output_handle, &pool).await?;
     }
 
     println!("Scheduling computations...");
@@ -673,8 +673,8 @@ async fn test_fhe_if_then_else() -> Result<(), Box<dyn std::error::Error>> {
                         input: Some(Input::InputHandle(right_handle.clone())),
                     },
                 ],
+                is_allowed: true,
             });
-            allow_handle(&output_handle, &pool).await?;
         }
     }
 

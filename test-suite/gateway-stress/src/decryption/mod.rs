@@ -33,6 +33,7 @@ where
             let decryption_id = decode_fn(log.data())?;
             debug!(
                 ?receipt.transaction_hash,
+                ?receipt.block_number,
                 "Decryption #{decryption_id} has been accepted on the Gateway!"
             );
             return Ok(decryption_id);
@@ -94,4 +95,9 @@ async fn overprovision_gas<P: Provider>(provider: &P, call: &mut TransactionRequ
     let new_gas = (current_gas as u128 * TX_GAS_INCREASE_PERCENT / 100) as u64;
     call.gas = Some(new_gas);
     trace!("Initial gas estimation for the tx: {current_gas}. Increased to {new_gas}");
+}
+
+pub struct BurstResult {
+    pub latency: f64,
+    pub throughput: f64,
 }

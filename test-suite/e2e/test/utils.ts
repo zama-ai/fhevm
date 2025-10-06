@@ -198,7 +198,7 @@ const abi = [
   'event FheMax(address indexed caller, bytes32 lhs, bytes32 rhs, bytes1 scalarByte, bytes32 result)',
   'event FheNeg(address indexed caller, bytes32 ct, bytes32 result)',
   'event FheNot(address indexed caller, bytes32 ct, bytes32 result)',
-  'event VerifyCiphertext(address indexed caller, bytes32 inputHandle, address userAddress, bytes inputProof, uint8 inputType, bytes32 result)',
+  'event VerifyInput(address indexed caller, bytes32 inputHandle, address userAddress, bytes inputProof, uint8 inputType, bytes32 result)',
   'event Cast(address indexed caller, bytes32 ct, uint8 toType, bytes32 result)',
   'event TrivialEncrypt(address indexed caller, uint256 pt, uint8 toType, bytes32 result)',
   'event TrivialEncryptBytes(address indexed caller, bytes pt, uint8 toType, bytes32 result)',
@@ -239,7 +239,7 @@ export function getTxHCUFromTxReceipt(
         topics: log.topics,
         data: log.data,
       });
-      return abi.some((item) => item.startsWith(`event ${parsedLog.name}`) && parsedLog.name !== 'VerifyCiphertext');
+      return abi.some((item) => item.startsWith(`event ${parsedLog.name}`) && parsedLog.name !== 'VerifyInput');
     } catch {
       return false;
     }

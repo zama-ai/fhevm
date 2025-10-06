@@ -140,11 +140,7 @@ task('task:upgradeACL')
     }
     const proxyAddress = getRequiredEnvVar('ACL_CONTRACT_ADDRESS');
 
-    const pauserAddress = getRequiredEnvVar('PAUSER_ADDRESS');
-
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
-      pauserAddress,
-    ]);
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
   });
 
 task('task:upgradeFHEVMExecutor')

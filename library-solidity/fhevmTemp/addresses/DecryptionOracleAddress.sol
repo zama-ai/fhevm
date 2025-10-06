@@ -2,4 +2,4 @@
 
 pragma solidity ^0.8.24;
 
-address constant decryptionOracleAdd = 0x233ff88A48c172d29F675403e6A8e302b0F032D9;
+address constant decryptionOracleAdd = 0x76EA187166191f64d48dcbfCcfaf8370E54a45C0;

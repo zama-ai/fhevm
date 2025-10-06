@@ -92,9 +92,10 @@ async fn main() {
         pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
     };
 
-    if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-        error!(error = %err, "Error while initializing tracing");
-        std::process::exit(1);
+    if !args.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
     }
 
     let cancel_token = CancellationToken::new();

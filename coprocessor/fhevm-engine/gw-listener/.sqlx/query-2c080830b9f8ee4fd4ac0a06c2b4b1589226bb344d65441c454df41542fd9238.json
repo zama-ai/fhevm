@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE tenants\n                SET\n                    pks_key = $1,\n                    key_id = $2\n                WHERE tenant_id = $3 AND chain_id = $4",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Int4",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2c080830b9f8ee4fd4ac0a06c2b4b1589226bb344d65441c454df41542fd9238"
+}

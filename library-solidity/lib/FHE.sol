@@ -7770,57 +7770,137 @@ library FHE {
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, ebool a, ebool b) internal returns (ebool) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEbool(false);
+        }
+        if (!isInitialized(b)) {
+            b = asEbool(false);
+        }
         return ebool.wrap(Impl.select(ebool.unwrap(control), ebool.unwrap(a), ebool.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint8 a, euint8 b) internal returns (euint8) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint8(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint8(0);
+        }
         return euint8.wrap(Impl.select(ebool.unwrap(control), euint8.unwrap(a), euint8.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint16 a, euint16 b) internal returns (euint16) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint16(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint16(0);
+        }
         return euint16.wrap(Impl.select(ebool.unwrap(control), euint16.unwrap(a), euint16.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint32 a, euint32 b) internal returns (euint32) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint32(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint32(0);
+        }
         return euint32.wrap(Impl.select(ebool.unwrap(control), euint32.unwrap(a), euint32.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint64 a, euint64 b) internal returns (euint64) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint64(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint64(0);
+        }
         return euint64.wrap(Impl.select(ebool.unwrap(control), euint64.unwrap(a), euint64.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint128 a, euint128 b) internal returns (euint128) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint128(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint128(0);
+        }
         return euint128.wrap(Impl.select(ebool.unwrap(control), euint128.unwrap(a), euint128.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, eaddress a, eaddress b) internal returns (eaddress) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEaddress(address(0));
+        }
+        if (!isInitialized(b)) {
+            b = asEaddress(address(0));
+        }
         return eaddress.wrap(Impl.select(ebool.unwrap(control), eaddress.unwrap(a), eaddress.unwrap(b)));
     }
+
     /**
      * @dev If 'control's value is 'true', the result has the same value as 'ifTrue'.
      *      If 'control's value is 'false', the result has the same value as 'ifFalse'.
      */
     function select(ebool control, euint256 a, euint256 b) internal returns (euint256) {
+        if (!isInitialized(control)) {
+            control = asEbool(false);
+        }
+        if (!isInitialized(a)) {
+            a = asEuint256(0);
+        }
+        if (!isInitialized(b)) {
+            b = asEuint256(0);
+        }
         return euint256.wrap(Impl.select(ebool.unwrap(control), euint256.unwrap(a), euint256.unwrap(b)));
     }
+
     /**
      * @dev Casts an encrypted integer from 'euint16' to 'euint8'.
      */
@@ -8871,6 +8951,38 @@ library FHE {
      * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
      * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
      */
+    function requestDecryptionWithoutSavingHandles(
+        bytes32[] memory ctsHandles,
+        bytes4 callbackSelector
+    ) internal returns (uint256 requestID) {
+        requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, 0);
+    }
+
+    /**
+     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles, with a custom msgValue.
+     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
+     */
+    function requestDecryptionWithoutSavingHandles(
+        bytes32[] memory ctsHandles,
+        bytes4 callbackSelector,
+        uint256 msgValue
+    ) internal returns (uint256 requestID) {
+        DecryptionRequests storage $ = Impl.getDecryptionRequests();
+        requestID = $.counterRequest;
+        CoprocessorConfig storage $$ = Impl.getCoprocessorConfig();
+        IACL($$.ACLAddress).allowForDecryption(ctsHandles);
+        IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption{value: msgValue}(
+            requestID,
+            ctsHandles,
+            callbackSelector
+        );
+        $.counterRequest++;
+    }
+
+    /**
+     * @dev     Calls the DecryptionOracle contract to request the decryption of a list of handles.
+     * @notice  Also does the needed call to ACL::allowForDecryption with requested handles.
+     */
     function requestDecryption(
         bytes32[] memory ctsHandles,
         bytes4 callbackSelector
@@ -8887,17 +8999,8 @@ library FHE {
         bytes4 callbackSelector,
         uint256 msgValue
     ) internal returns (uint256 requestID) {
-        DecryptionRequests storage $ = Impl.getDecryptionRequests();
-        requestID = $.counterRequest;
-        CoprocessorConfig storage $$ = Impl.getCoprocessorConfig();
-        IACL($$.ACLAddress).allowForDecryption(ctsHandles);
-        IDecryptionOracle($$.DecryptionOracleAddress).requestDecryption{value: msgValue}(
-            requestID,
-            ctsHandles,
-            callbackSelector
-        );
-        saveRequestedHandles(requestID, ctsHandles);
-        $.counterRequest++;
+        requestID = requestDecryptionWithoutSavingHandles(ctsHandles, callbackSelector, msgValue);
+        _saveRequestedHandles(requestID, ctsHandles);
     }
 
     /**
@@ -8917,7 +9020,7 @@ library FHE {
     /**
      * @dev Private low-level function used to link in storage an array of handles to its associated requestID.
      */
-    function saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
+    function _saveRequestedHandles(uint256 requestID, bytes32[] memory handlesList) private {
         DecryptionRequests storage $ = Impl.getDecryptionRequests();
         if ($.requestedHandles[requestID].length != 0) {
             revert HandlesAlreadySavedForRequestID();
@@ -8926,59 +9029,29 @@ library FHE {
     }
 
     /**
-     * @dev Private low-level function used to extract the decryptedResult bytes array and verify the KMS signatures.
+     * @dev Internal low-level function used to verify the KMS signatures.
+     * @notice Prefer using the higher-level `checkSignatures` function whenever possible, in combination with `requestDecryption`
+     * @notice This low-level function is useful in combination with the less practical `requestDecryptionWithoutSavingHandles`
      * @notice  Warning: MUST be called directly in the callback function called by the relayer.
+     * @notice Warning: this function never reverts, its boolean return value must be checked.
      * @dev The callback function has the following signature:
-     * - requestID (static uint256)
-     * - cleartexts (dynamic bytes)
-     * - decryptionProof (dynamic bytes)
-     *
-     * This means that the calldata is encoded in the following way:
-     * - 4 bytes: selector
-     * - 32 bytes: requestID
-     * - 32 bytes: offset of the cleartexts
-     * - 32 bytes: offset of the decryptionProof
-     * - 32 bytes: length of the cleartexts (total number of bytes)
-     * - n*32 bytes: the "n" cleartext values, with "n" the number of handles
-     * - 32 bytes: length of the decryptionProof (total number of bytes)
-     * - ... the data of the decryptionProof (signatures, extra data)
-     */
+     * @dev   - requestID (static uint256)
+     * @dev   - cleartexts (dynamic bytes)
+     * @dev   - decryptionProof (dynamic bytes)
+     * @dev clearTexts is the abi-encoding of the list of all decrypted values assiociated to handlesList, in same order.
+     * @dev Only static native solidity types for clear values are supported, so clearTexts is the concatenation of all clear values appended to 32 bytes.
+     * @dev decryptionProof contains KMS signatures corresponding to clearTexts and associated handlesList, and needed metadata for KMS context.
+     **/
     function verifySignatures(
         bytes32[] memory handlesList,
         bytes memory cleartexts,
         bytes memory decryptionProof
-    ) private returns (bool) {
-        // Compute the signature offset
-        // This offset is computed by considering the format encoded by the KMS when creating the
-        // "decryptedResult" bytes array (see comment below), which is the following:
-        // - requestID: 32 bytes
-        // - all "n" decrypted values (which is "cleartexts" itself): n*32 bytes ("cleartexts.length" bytes)
-        // - offset of the signatures: 32 bytes
-        // - the rest of signature values (lengths, offsets, values)
-        // This means the expected offset to concatenate to the "decryptedResult" bytes array has
-        // the following value: 32 + n*32 + 32
-        // See https://docs.soliditylang.org/en/latest/abi-spec.html#use-of-dynamic-types for more details.
-        // The signature offset will most likely be removed in the future,
-        // see https://github.com/zama-ai/fhevm-internal/issues/345
-        uint256 signaturesOffset = 32 + cleartexts.length + 32;
-
-        // Built the "decryptedResult" bytes array
-        // Currently, the "decryptedResult" is encoded (by the KMS) in the following format:
-        // - n*32 bytes: the "n" decrypted values, "cleartexts" itself
-        // - 32 bytes: offset of the signatures, as explained above
-        // This is equivalent to concatenating the cleartexts and the signatures offset, which can
-        // be done using abi.encoded in a gas efficient way.
-        // The signature offset will most likely be removed in the future,
-        // see https://github.com/zama-ai/fhevm-internal/issues/345
-        // Here we can use "encodePacked" instead of "abi.encode" to save gas, as the cleartexts
-        // and the signaturesOffset are already 32 bytes aligned (ie, no padding needed).
-        bytes memory decryptedResult = abi.encodePacked(cleartexts, signaturesOffset);
-
+    ) internal returns (bool) {
         CoprocessorConfig storage $ = Impl.getCoprocessorConfig();
         return
             IKMSVerifier($.KMSVerifierAddress).verifyDecryptionEIP712KMSSignatures(
                 handlesList,
-                decryptedResult,
+                cleartexts,
                 decryptionProof
             );
     }

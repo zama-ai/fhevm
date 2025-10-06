@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM prep_keygen_responses WHERE prep_keygen_id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "e1dcc890ca2f261e88d804e3ba9982a45915fd578fda8e74986aaf7cbd560310"
+}

@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { gatewayConfigAddress } from "../../addresses/GatewayAddresses.sol";
 import { Ownable2StepUpgradeable } from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import { PausableUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "../interfaces/IGatewayConfig.sol";
+import { IGatewayConfig } from "../interfaces/IGatewayConfig.sol";
 
 /**
  * @title Pausable.
@@ -13,13 +13,7 @@ import "../interfaces/IGatewayConfig.sol";
  */
 abstract contract Pausable is PausableUpgradeable {
     /// @notice The address of the GatewayConfig contract
-    IGatewayConfig private constant _GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
-
-    /**
-     * @notice Error emitted when an address is not the pauser.
-     * @param notPauser The address that is not the pauser.
-     */
-    error NotPauser(address notPauser);
+    IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /**
      * @notice Error emitted when an address is not the pauser or the gateway config.
@@ -33,13 +27,6 @@ abstract contract Pausable is PausableUpgradeable {
      */
     error NotOwnerOrGatewayConfig(address notOwnerOrGatewayConfig);
 
-    modifier onlyPauser() {
-        if (msg.sender != _GATEWAY_CONFIG.getPauser()) {
-            revert NotPauser(msg.sender);
-        }
-        _;
-    }
-
     /**
      * @dev Triggers stopped state.
      *
@@ -49,7 +36,7 @@ abstract contract Pausable is PausableUpgradeable {
      * - The contract must not be paused.
      */
     function pause() external virtual {
-        if (msg.sender != _GATEWAY_CONFIG.getPauser() && msg.sender != gatewayConfigAddress) {
+        if (!GATEWAY_CONFIG.isPauser(msg.sender) && msg.sender != gatewayConfigAddress) {
             revert NotPauserOrGatewayConfig(msg.sender);
         }
         _pause();
