@@ -54,14 +54,10 @@ type DefaultFillers = JoinFill<
 pub type GatewayProvider = FillProvider<JoinFill<DefaultFillers, ChainIdFiller>, RootProvider>;
 
 /// The default `alloy::Provider` used to interact with the Gateway using a wallet.
-pub type WalletGatewayProvider = NonceManagedProvider<
-    FillProvider<
-        JoinFill<
-            JoinFill<JoinFill<Identity, ChainIdFiller>, FillersWithoutNonceManagement>,
-            WalletFiller<EthereumWallet>,
-        >,
-        RootProvider,
-    >,
+pub type WalletGatewayProvider = NonceManagedProvider<WalletGatewayProviderFillers, RootProvider>;
+pub type WalletGatewayProviderFillers = JoinFill<
+    JoinFill<JoinFill<Identity, ChainIdFiller>, FillersWithoutNonceManagement>,
+    WalletFiller<EthereumWallet>,
 >;
 
 /// Tries to establish the connection with a RPC node of the Gateway.
