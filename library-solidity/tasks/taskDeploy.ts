@@ -19,14 +19,18 @@ task('task:deployAllHostContracts').setAction(async function (_, hre) {
   await hre.run('task:deployPauserSet');
 
   // Compile and deploy all host contracts
-  await hre.run('compile:specific', { contract: 'examples' });
   await hre.run('compile:specific', { contract: 'fhevmTemp/contracts' });
   await hre.run('task:deployACL');
   await hre.run('task:deployFHEVMExecutor');
   await hre.run('task:deployKMSVerifier');
   await hre.run('task:deployInputVerifier');
   await hre.run('task:deployHCULimit');
+
+  // Compile and deploy the DecryptionOracle contract
+  await hre.run('compile:specific', { contract: 'fhevmTemp/decryptionOracle' });
   await hre.run('task:deployDecryptionOracle');
+
+  await hre.run('compile:specific', { contract: 'examples' });
 
   console.info('Contract deployment done!');
 });
