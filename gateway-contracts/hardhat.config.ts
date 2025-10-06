@@ -31,8 +31,6 @@ const chainIds = {
   hardhat: 31337,
   localGateway: 123456,
   staging: 54321,
-  devnet_legacy: 10899,
-  testnet_legacy: 55815,
   devnet: 10900,
   testnet: 10901,
 };
