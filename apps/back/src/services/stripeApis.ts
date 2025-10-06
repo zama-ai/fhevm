@@ -5,7 +5,7 @@ import { withSpan } from "../decorators/span";
 // Use Stripe SDK with your secret key
 const stripe = new Stripe(process.env.STRIPE_API_KEY as string, {
   // NOTE: apiVersion 2023-10-16 refers to v14, while the last release is v18
-  apiVersion: "2023-10-16",
+  apiVersion: "2025-09-30.clover",
 });
 
 /**
@@ -16,7 +16,9 @@ export const verifyStripeSession = withSpan(
   {
     name: "verifyStripeSession",
   },
-  function (checkout_session_id: string): Promise<any> {
+  async function (
+    checkout_session_id: string
+  ): Promise<Stripe.Checkout.Session> {
     const logger = getLogger().child({
       method: "verifyStripeSession",
       checkout_session_id,
@@ -26,33 +28,14 @@ export const verifyStripeSession = withSpan(
     );
     if (!validSessionId) {
       logger.warn("Invalid Stripe checkout_session_id format");
-      return Promise.reject(
-        new Error("Invalid Stripe checkout_session_id format")
-      );
+      throw new Error("Invalid Stripe checkout_session_id format");
     }
     logger.debug(`fetching stripe session`);
-    return fetch(
-      `https://api.stripe.com/v1/checkout/sessions/${checkout_session_id}`,
-      {
-        headers: {
-          Authorization: `bearer ${process.env.STRIPE_API_KEY}`,
-        },
-      }
-    )
-      .then(async (res) => {
-        if (!res.ok) {
-          logger.error(`Failed to verify stripe session: ${res.statusText}`);
-          const message = await res.text();
-          logger.error(`Stripe error: ${message}`);
-          throw new Error("Invalid session");
-        }
-        return res;
-      })
-      .then((res) => res.json())
-      .then((session) => {
-        logger.trace(session);
-        return session;
-      });
+    const session = await stripe.checkout.sessions.retrieve(
+      checkout_session_id
+    );
+    logger.trace(session);
+    return session;
   }
 );
 
@@ -61,33 +44,21 @@ export const getStripeCustomer = withSpan(
     name: "getStripeCustomer",
     logArgs: true,
   },
-  function (email: string): Promise<any> {
+  async function (email: string): Promise<Stripe.Customer | null> {
     const logger = getLogger().child({ method: "getStripeCustomer", email });
     logger.debug(`fetching customer by email`);
-    return fetch(
-      `https://api.stripe.com/v1/customers/search?query=email:"${encodeURIComponent(
-        email
-      )}"`,
-      {
-        headers: {
-          Authorization: `bearer ${process.env.STRIPE_API_KEY}`,
-        },
-      }
-    )
-      .then(async (res) => {
-        if (!res.ok) {
-          logger.error(`Failed to retrieve stripe customer: ${res.statusText}`);
-          const message = await res.text();
-          logger.error(`Stripe error: ${message}`);
-          throw new Error("Invalid customer");
-        }
-        return res;
-      })
-      .then((res) => res.json())
-      .then((customer) => {
-        logger.trace(customer);
-        return customer;
-      });
+    const response = await stripe.customers.search({
+      query: `email:"${encodeURIComponent(email)}"`,
+    });
+    if (!response.data.length) {
+      logger.warn(`no customer found with email=${email}`);
+      return null;
+    } else if (response.data.length > 1) {
+      logger.warn(
+        `found ${response.data.length} customers, returning the first one`
+      );
+    }
+    return response.data[0];
   }
 );
 
@@ -112,10 +83,7 @@ export const getStripeCustomerId = withSpan(
     }
 
     const stripeCustomer = await getStripeCustomer(email);
-    const stripeCustomerId =
-      stripeCustomer.data && stripeCustomer.data[0]
-        ? stripeCustomer.data[0].id
-        : undefined;
+    const stripeCustomerId = stripeCustomer?.id;
 
     if (stripeCustomerId) {
       EMAIL_TO_STRIPE_CUSTOMER_CACHE[email] = stripeCustomerId;

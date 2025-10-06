@@ -204,15 +204,27 @@ app.post(
       logger.debug(`checkout_session_id = ${checkout_session_id}`);
 
       try {
-        const result = await verifyStripeSession(checkout_session_id);
-        const stripeCheckOutSessionInfo = result;
+        const session = await verifyStripeSession(checkout_session_id);
+        const stripeCheckOutSessionInfo = session;
         logger.info("in stripe register");
 
-        if (result.customer && result.subscription) {
+        if (session.customer && session.subscription) {
           logger.info("customer and subscription present");
-          const email = result.customer_details.email;
-          const stripe_customer_id = result.customer;
-          const stripe_subscription_id = result.subscription;
+          const email = session.customer_details?.email;
+          if (!email) {
+            logger.error(
+              `email is ${typeof email === "string" ? "empty" : email}`
+            );
+            throw new Error(`email not found`);
+          }
+          const stripe_customer_id =
+            typeof session.customer === "object"
+              ? session.customer.id
+              : session.customer;
+          const stripe_subscription_id =
+            typeof session.subscription === "object"
+              ? session.subscription.id
+              : session.subscription;
           try {
             if (
               process.env.MOESIF_MONETIZATION_VERSION &&
@@ -233,7 +245,7 @@ app.post(
                 // TODO: check if we need `subscriptionId`
                 // subscriptionId: stripe_subscription_id,
                 userId: stripe_customer_id,
-                email: email,
+                email,
               });
             }
           } catch (error) {

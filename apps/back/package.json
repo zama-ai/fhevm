@@ -34,7 +34,7 @@
     "pino": "catalog:",
     "pino-http": "catalog:",
     "pino-pretty": "catalog:",
-    "stripe": "^14.25.0",
+    "stripe": "^19.1.0",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
