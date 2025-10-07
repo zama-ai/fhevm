@@ -60,7 +60,7 @@ describe('InputVerifier', function () {
   describe('Coprocessor context', function () {
     it('Should revert because the sender is not the host owner', async function () {
       const fakeOwner = signers.alice;
-      await expect(inputVerifier.connect(fakeOwner).addNewContextAndSuspendCurrentOne(2, []))
+      await expect(inputVerifier.connect(fakeOwner).addCoprocessorContext(2, []))
         .to.be.revertedWithCustomError(inputVerifier, 'NotHostOwner')
         .withArgs(fakeOwner);
     });
@@ -68,13 +68,13 @@ describe('InputVerifier', function () {
     it('Should revert because the context ID is null', async function () {
       const nullContextId = 0;
       await expect(
-        inputVerifier.connect(deployer).addNewContextAndSuspendCurrentOne(nullContextId, []),
+        inputVerifier.connect(deployer).addCoprocessorContext(nullContextId, []),
       ).to.be.revertedWithCustomError(inputVerifier, 'InvalidNullContextId');
     });
 
     it('Should revert because the context signers is empty', async function () {
       const contextId = 2;
-      await expect(inputVerifier.connect(deployer).addNewContextAndSuspendCurrentOne(contextId, []))
+      await expect(inputVerifier.connect(deployer).addCoprocessorContext(contextId, []))
         .to.be.revertedWithCustomError(inputVerifier, 'EmptyCoprocessorSignerAddresses')
         .withArgs(contextId);
     });
@@ -82,9 +82,7 @@ describe('InputVerifier', function () {
     it('Should revert because the context ID is already used', async function () {
       const alreadyUsedContextId = 1;
       const newContextSigners = [signers.alice.address, signers.bob.address];
-      await expect(
-        inputVerifier.connect(deployer).addNewContextAndSuspendCurrentOne(alreadyUsedContextId, newContextSigners),
-      )
+      await expect(inputVerifier.connect(deployer).addCoprocessorContext(alreadyUsedContextId, newContextSigners))
         .to.be.revertedWithCustomError(inputVerifier, 'ContextAlreadyInitialized')
         .withArgs(alreadyUsedContextId);
     });
@@ -93,21 +91,26 @@ describe('InputVerifier', function () {
       const previousContextId = 1;
       const newContextId = 2;
       const newContextSigners = [signers.alice.address, signers.bob.address];
-      await expect(inputVerifier.connect(deployer).addNewContextAndSuspendCurrentOne(newContextId, newContextSigners))
-        .to.be.fulfilled;
+      const addCoprocessorTx = await inputVerifier
+        .connect(deployer)
+        .addCoprocessorContext(newContextId, newContextSigners);
+
+      // Activate and suspend events should be emitted.
+      await expect(addCoprocessorTx).to.emit(inputVerifier, 'ActivateCoprocessorContext').withArgs(newContextId);
+      await expect(addCoprocessorTx).to.emit(inputVerifier, 'SuspendCoprocessorContext').withArgs(previousContextId);
 
       // New context signers should contain the new signers.
-      const contextSigners = await inputVerifier.getCoprocessorSigners(newContextId);
+      const [contextSigners, isOperating] = await inputVerifier.getCoprocessorSigners(newContextId);
       expect(contextSigners.length).to.equal(2);
       expect(contextSigners[0]).to.equal(signers.alice.address);
       expect(contextSigners[1]).to.equal(signers.bob.address);
+      expect(isOperating).to.equal(true);
 
       // Previous context should be marked as suspended.
-      const isSuspended = await inputVerifier.isCoprocessorContextActiveOrSuspended(previousContextId);
-      expect(isSuspended).to.equal(true);
+      expect(await inputVerifier.getCoprocessorContextStatus(previousContextId)).to.be.equal(2);
 
       // Threshold should be half + 1.
-      const threshold = await inputVerifier.getThreshold(newContextId);
+      const threshold = await inputVerifier.getCoprocessorThreshold(newContextId);
       expect(threshold).to.equal(newContextSigners.length / 2 + 1);
 
       // The address should be a signer for the context ID.
@@ -118,17 +121,18 @@ describe('InputVerifier', function () {
       const previousContextId = 1;
       const newContextId = 2;
       const newContextSigners = [signers.alice.address, signers.bob.address];
-      await inputVerifier.connect(deployer).addNewContextAndSuspendCurrentOne(newContextId, newContextSigners);
+      await inputVerifier.connect(deployer).addCoprocessorContext(newContextId, newContextSigners);
 
-      // Previous context should be marked as suspended.
-      expect(await inputVerifier.isCoprocessorContextActiveOrSuspended(previousContextId)).to.be.equal(true);
+      // Deactivate the previous context which is suspended.
+      const deactivateCoprocessorTx = await inputVerifier.connect(deployer).deactivateSuspendedCoprocessorContext();
 
-      await expect(inputVerifier.connect(deployer).removeSuspendedCoprocessorContext()).to.be.fulfilled;
+      // Deactivate event should be emitted.
+      await expect(deactivateCoprocessorTx)
+        .to.emit(inputVerifier, 'DeactivateCoprocessorContext')
+        .withArgs(previousContextId);
 
       // Previous context should be marked as deactivated.
-      await expect(inputVerifier.isCoprocessorContextActiveOrSuspended(previousContextId))
-        .to.revertedWithCustomError(inputVerifier, 'InvalidContextId')
-        .withArgs(previousContextId);
+      expect(await inputVerifier.getCoprocessorContextStatus(previousContextId)).to.be.equal(3);
     });
   });
 
@@ -189,7 +193,7 @@ describe('InputVerifier', function () {
         // Add new context with 2 signers, so threshold becomes 2.
         const newContextId = 2;
         const newContextSigners = [signers.alice.address, signers.bob.address];
-        await inputVerifier.connect(deployer).addNewContextAndSuspendCurrentOne(newContextId, newContextSigners);
+        await inputVerifier.connect(deployer).addCoprocessorContext(newContextId, newContextSigners);
 
         const testInputAddress = await testInput.getAddress();
 

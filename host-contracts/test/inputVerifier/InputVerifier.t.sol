@@ -157,14 +157,14 @@ contract InputVerifierTest is Test {
      *    - `owner`: The owner of the proxy.
      * 3. Updates the `inputVerifier` reference to point to the proxy.
      */
-    function _upgradeProxy(uint256 contextId, address[] memory contextSigners) internal {
+    function _upgradeProxy(address[] memory contextSigners) internal {
         implementation = address(new InputVerifier());
         UnsafeUpgrades.upgradeProxy(
             proxy,
             implementation,
             abi.encodeCall(
                 InputVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, uint64(block.chainid), contextId, contextSigners)
+                (verifyingContractSource, uint64(block.chainid), contextSigners)
             ),
             owner
         );
@@ -412,7 +412,7 @@ contract InputVerifierTest is Test {
             initialCoprocessorContextSigners.push(signer4);
         }
 
-        _upgradeProxy(initialCoprocessorContextId, initialCoprocessorContextSigners);
+        _upgradeProxy(initialCoprocessorContextSigners);
     }
 
     /**
@@ -430,7 +430,7 @@ contract InputVerifierTest is Test {
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxyWithSigners(3);
-        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.1.0")));
+        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.2.0")));
     }
 
     /**
@@ -439,13 +439,14 @@ contract InputVerifierTest is Test {
     function test_GetCoprocessorSigners() public {
         uint256 numberSigners = 3;
         _upgradeProxyWithSigners(numberSigners);
-        address[] memory signers = inputVerifier.getCoprocessorSigners(initialCoprocessorContextId);
+        (address[] memory signers, bool isOperating) = inputVerifier.getCoprocessorSigners(initialCoprocessorContextId);
         assertEq(signers.length, numberSigners);
         assertEq(signers[0], signer0);
         assertEq(signers[1], signer1);
         for (uint256 i = 0; i < numberSigners; i++) {
             assertTrue(inputVerifier.isSigner(initialCoprocessorContextId, signers[i]));
         }
+        assertTrue(isOperating);
     }
 
     /**
@@ -455,7 +456,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(1);
 
         /// @dev The threshold is 1 since we have 1 signers.
-        uint256 threshold = inputVerifier.getThreshold(initialCoprocessorContextId);
+        uint256 threshold = inputVerifier.getCoprocessorThreshold(initialCoprocessorContextId);
         assertEq(threshold, 1);
     }
 
@@ -466,7 +467,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(2);
 
         /// @dev The threshold is 2 since we have 2 signers.
-        uint256 threshold = inputVerifier.getThreshold(initialCoprocessorContextId);
+        uint256 threshold = inputVerifier.getCoprocessorThreshold(initialCoprocessorContextId);
         assertEq(threshold, 2);
     }
 
@@ -477,7 +478,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(3);
 
         /// @dev The threshold is 2 since we have 3 signers.
-        uint256 threshold = inputVerifier.getThreshold(initialCoprocessorContextId);
+        uint256 threshold = inputVerifier.getCoprocessorThreshold(initialCoprocessorContextId);
         assertEq(threshold, 2);
     }
 
@@ -488,21 +489,22 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(4);
 
         /// @dev The threshold is 3 since we have 4 signers.
-        uint256 threshold = inputVerifier.getThreshold(initialCoprocessorContextId);
+        uint256 threshold = inputVerifier.getCoprocessorThreshold(initialCoprocessorContextId);
         assertEq(threshold, 3);
     }
 
     /**
-     * @dev Tests that the contract owner cannot add a null address as a signer.
+     * @dev Tests that the contract owner cannot add a context with null ID.
      */
-    /*
-    function test_OwnerCannotAddNullAddressAsSigner() public {
+    function test_OwnerCannotAddContextWithNullId() public {
         _upgradeProxyWithSigners(3);
-        vm.expectPartialRevert(InputVerifier.SignerNull.selector);
+        vm.expectPartialRevert(InputVerifier.InvalidNullContextId.selector);
         vm.prank(owner);
-        inputVerifier.addSigner(address(0));
+        uint256 nullContextId = 0;
+        address[] memory newContextSigners = new address[](1);
+        newContextSigners[0] = signer0;
+        inputVerifier.addCoprocessorContext(nullContextId, newContextSigners);
     }
-    */
 
     /**
      * @dev Tests that the contract owner cannot add a context with empty signers.
@@ -513,7 +515,7 @@ contract InputVerifierTest is Test {
         vm.prank(owner);
         uint256 newContextId = initialCoprocessorContextId + 1;
         address[] memory newContextSigners = new address[](0);
-        inputVerifier.addNewContextAndSuspendCurrentOne(newContextId, newContextSigners);
+        inputVerifier.addCoprocessorContext(newContextId, newContextSigners);
     }
 
     /**
@@ -951,7 +953,7 @@ contract InputVerifierTest is Test {
         vm.prank(randomAccount);
         uint256 newContextId = initialCoprocessorContextId + 1;
         address[] memory newContextSigners = new address[](0);
-        inputVerifier.addNewContextAndSuspendCurrentOne(newContextId, newContextSigners);
+        inputVerifier.addCoprocessorContext(newContextId, newContextSigners);
     }
 
     /**
@@ -962,7 +964,7 @@ contract InputVerifierTest is Test {
         vm.assume(randomAccount != owner);
         vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(randomAccount);
-        inputVerifier.removeSuspendedCoprocessorContext();
+        inputVerifier.deactivateSuspendedCoprocessorContext();
     }
 
     /**
@@ -974,7 +976,7 @@ contract InputVerifierTest is Test {
         vm.prank(owner);
         address[] memory newContextSigners = new address[](1);
         newContextSigners[0] = signer0;
-        inputVerifier.addNewContextAndSuspendCurrentOne(initialCoprocessorContextId, newContextSigners);
+        inputVerifier.addCoprocessorContext(initialCoprocessorContextId, newContextSigners);
     }
 
     /**
@@ -989,20 +991,21 @@ contract InputVerifierTest is Test {
         newContextSigners[1] = signer1;
         newContextSigners[2] = signer2;
         newContextSigners[3] = signer3;
-        inputVerifier.addNewContextAndSuspendCurrentOne(newContextId, newContextSigners);
+        inputVerifier.addCoprocessorContext(newContextId, newContextSigners);
 
-        address[] memory signers = inputVerifier.getCoprocessorSigners(newContextId);
+        (address[] memory signers, bool isOperating) = inputVerifier.getCoprocessorSigners(newContextId);
         assertEq(signers.length, 4);
         assertEq(signers[0], signer0);
         assertEq(signers[1], signer1);
         assertEq(signers[2], signer2);
         assertEq(signers[3], signer3);
+        assertTrue(isOperating);
     }
 
     /**
-     * @dev Tests that the owner can remove a suspended coprocessor context.
+     * @dev Tests that the owner can deactivate a suspended coprocessor context.
      */
-    function test_OwnerCanRemoveSuspendedContext() public {
+    function test_OwnerCanDeactivateSuspendedContext() public {
         _upgradeProxyWithSigners(3);
 
         uint256 newContextId = initialCoprocessorContextId + 1;
@@ -1011,41 +1014,17 @@ contract InputVerifierTest is Test {
 
         // Add a new context which should suspend the initial one.
         vm.prank(owner);
-        inputVerifier.addNewContextAndSuspendCurrentOne(newContextId, newContextSigners);
+        inputVerifier.addCoprocessorContext(newContextId, newContextSigners);
 
         // Mark the suspended context as deactivated.
         vm.prank(owner);
-        inputVerifier.removeSuspendedCoprocessorContext();
+        inputVerifier.deactivateSuspendedCoprocessorContext();
 
         // Check that the suspended context is no longer active or suspended.
-        vm.expectPartialRevert(InputVerifier.InvalidContextId.selector);
-        inputVerifier.isCoprocessorContextActiveOrSuspended(initialCoprocessorContextId);
-    }
-
-    /// @dev This function exists for the test below to call it externally.
-    function nullCoprocessorContextIdUpgrade() public {
-        address[] memory emptySigners = new address[](0);
-        implementation = address(new InputVerifier());
-
-        uint256 nullContextId;
-
-        UnsafeUpgrades.upgradeProxy(
-            proxy,
-            implementation,
-            abi.encodeCall(
-                InputVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, uint64(block.chainid), nullContextId, emptySigners)
-            ),
-            owner
+        InputVerifier.CoprocessorContextStatus status = inputVerifier.getCoprocessorContextStatus(
+            initialCoprocessorContextId
         );
-    }
-
-    /**
-     * @dev Tests that the contract cannot be reinitialized if the initial context ID is zero.
-     */
-    function test_CannotReinitializeIfInitialContextIdIsZero() public {
-        vm.expectPartialRevert(InputVerifier.InvalidNullContextId.selector);
-        this.nullCoprocessorContextIdUpgrade();
+        assertEq(uint8(status), uint8(InputVerifier.CoprocessorContextStatus.Deactivated));
     }
 
     /// @dev This function exists for the test below to call it externally.
@@ -1058,7 +1037,7 @@ contract InputVerifierTest is Test {
             implementation,
             abi.encodeCall(
                 InputVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, uint64(block.chainid), initialCoprocessorContextId, emptySigners)
+                (verifyingContractSource, uint64(block.chainid), emptySigners)
             ),
             owner
         );
