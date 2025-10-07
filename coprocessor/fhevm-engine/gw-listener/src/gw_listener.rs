@@ -111,9 +111,13 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             let s = self.clone();
             let d = db_pool.clone();
             tokio::spawn(async move {
+                let mut catchup_kms_generation_from = s.conf.catchup_kms_generation_from_block;
                 let mut sleep_duration = s.conf.error_sleep_initial_secs as u64;
                 loop {
-                    match s.run_get_logs(&d, &mut sleep_duration).await {
+                    match s
+                        .run_get_logs(&d, &mut sleep_duration, &mut catchup_kms_generation_from)
+                        .await
+                    {
                         Ok(_) => {
                             info!("run_get_logs() stopped");
                             break;
@@ -182,9 +186,26 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         &self,
         db_pool: &Pool<Postgres>,
         sleep_duration: &mut u64,
+        catchup_kms_generation_from: &mut Option<i64>,
     ) -> anyhow::Result<()> {
         let mut ticker = tokio::time::interval(self.conf.get_logs_poll_interval);
         let mut last_processed_block_num = self.get_last_processed_block_num(db_pool).await?;
+        if let Some(from_block) = *catchup_kms_generation_from {
+            info!(from_block, "Catchup on KMSGeneration, start");
+            let from_block = if from_block >= 0 {
+                // start from specified block
+                from_block
+            } else if let Some(last) = last_processed_block_num {
+                // go N block in past from processed
+                last as i64 + from_block
+            } else {
+                // go N block in past
+                let current_block = self.provider.get_block_number().await?;
+                current_block as i64 + from_block
+            };
+            // note, we cannot catchup block 0
+            last_processed_block_num = Some(from_block.try_into().unwrap_or(0));
+        }
 
         loop {
             tokio::select! {
@@ -217,6 +238,9 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         .to_block(to_block);
 
                     let logs = self.provider.get_logs(&filter).await?;
+                    if catchup_kms_generation_from.is_some() && from_block < current_block {
+                        info!(from_block, to_block, nb_events=logs.len(), "Catchup on KMSGeneration, get_logs");
+                    }
                     for log in logs {
                         if let Ok(event) = KMSGeneration::KMSGenerationEvents::decode_log(&log.inner) {
                             match event.data {
@@ -246,6 +270,16 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                         }
                     }
                     last_processed_block_num = Some(to_block);
+                    if catchup_kms_generation_from.is_some() {
+                        if to_block == current_block {
+                            info!("Catchup on KMSGeneration, finished");
+                            *catchup_kms_generation_from = None;
+                        } else {
+                            // if an error happens catchup will restart here
+                            *catchup_kms_generation_from = Some(to_block as i64 + 1);
+                            info!(catchup_kms_generation_from, "Catchup on KMSGeneration continue");
+                        }
+                    }
                     self.update_last_block_num(db_pool, last_processed_block_num).await?;
                     if to_block < current_block {
                         debug!(to_block = to_block,

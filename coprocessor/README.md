@@ -160,6 +160,8 @@ Options:
           [default: 1]
       --error-sleep-max-secs <ERROR_SLEEP_MAX_SECS>
           [default: 10]
+      --catchup-kms-generation-from-block <BLOCK_NUMBER OR BLOCKS IN PAST>
+          [default: None]
   -h, --help
           Print help
   -V, --version
