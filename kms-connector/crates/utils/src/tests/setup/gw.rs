@@ -3,7 +3,6 @@ use crate::{
     conn::WalletGatewayProvider,
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
     tests::setup::{ROOT_CARGO_TOML, pick_free_port},
-    // tests::setup::{ROOT_CARGO_TOML, pick_free_port},
 };
 use alloy::{
     primitives::{Address, ChainId, FixedBytes},
