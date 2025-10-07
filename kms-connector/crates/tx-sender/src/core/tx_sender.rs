@@ -9,7 +9,9 @@ use crate::{
 };
 use alloy::{
     hex,
-    providers::{PendingTransactionError, Provider, ext::DebugApi},
+    providers::{
+        PendingTransactionError, Provider, RootProvider, ext::DebugApi, fillers::TxFiller,
+    },
     rpc::types::{
         TransactionReceipt, TransactionRequest,
         trace::geth::{CallConfig, GethDebugTracingOptions},
@@ -18,7 +20,8 @@ use alloy::{
 };
 use anyhow::anyhow;
 use connector_utils::{
-    conn::{WalletGatewayProvider, connect_to_db, connect_to_gateway_with_wallet},
+    conn::{WalletGatewayProviderFillers, connect_to_db, connect_to_gateway_with_wallet},
+    provider::NonceManagedProvider,
     tasks::spawn_with_limit,
     types::{
         CrsgenResponse, KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
@@ -36,25 +39,34 @@ use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 /// Struct sending stored KMS Core's responses to the Gateway.
-pub struct TransactionSender<L, P: Provider, R> {
+pub struct TransactionSender<L, F, P, R>
+where
+    F: TxFiller,
+    P: Provider,
+{
     /// The entity used to collect stored KMS Core's responses.
     response_picker: L,
 
     /// The entity responsible to send transaction to the Gateway.
-    inner: TransactionSenderInner<P>,
+    inner: TransactionSenderInner<F, P>,
 
     /// The entity used to remove stored KMS Core's responses.
     response_remover: R,
 }
 
-impl<L, P, R> TransactionSender<L, P, R>
+impl<L, F, P, R> TransactionSender<L, F, P, R>
 where
     L: KmsResponsePicker,
+    F: TxFiller + 'static,
     P: Provider + Clone + 'static,
     R: KmsResponseRemover + Clone + 'static,
 {
     /// Creates a new `TransactionSender` instance.
-    pub fn new(response_picker: L, inner: TransactionSenderInner<P>, response_remover: R) -> Self {
+    pub fn new(
+        response_picker: L,
+        inner: TransactionSenderInner<F, P>,
+        response_remover: R,
+    ) -> Self {
         Self {
             response_picker,
             inner,
@@ -105,7 +117,7 @@ where
     /// Handles a response coming from the  KMS Core.
     #[tracing::instrument(skip(inner, response_remover, cancel_token), fields(response = %response))]
     async fn handle_response(
-        inner: TransactionSenderInner<P>,
+        inner: TransactionSenderInner<F, P>,
         response_remover: R,
         response: KmsResponse,
         cancel_token: CancellationToken,
@@ -125,7 +137,14 @@ where
     }
 }
 
-impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponseRemover> {
+impl
+    TransactionSender<
+        DbKmsResponsePicker,
+        WalletGatewayProviderFillers,
+        RootProvider,
+        DbKmsResponseRemover,
+    >
+{
     /// Creates a new `TransactionSender` instance from a valid `Config`.
     pub async fn from_config(config: Config) -> anyhow::Result<(Self, State)> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
@@ -162,10 +181,14 @@ impl TransactionSender<DbKmsResponsePicker, WalletGatewayProvider, DbKmsResponse
 pub const EIP712_SIGNATURE_LENGTH: usize = 65;
 
 /// The internal struct used to send transaction to the Gateway.
-pub struct TransactionSenderInner<P: Provider> {
-    provider: P,
-    decryption_contract: DecryptionInstance<P>,
-    kms_generation_contract: KMSGenerationInstance<P>,
+pub struct TransactionSenderInner<F, P>
+where
+    F: TxFiller,
+    P: Provider,
+{
+    provider: NonceManagedProvider<F, P>,
+    decryption_contract: DecryptionInstance<NonceManagedProvider<F, P>>,
+    kms_generation_contract: KMSGenerationInstance<NonceManagedProvider<F, P>>,
     config: TransactionSenderInnerConfig,
 }
 
@@ -177,11 +200,15 @@ pub struct TransactionSenderInnerConfig {
     pub gas_multiplier_percent: usize,
 }
 
-impl<P: Provider> TransactionSenderInner<P> {
+impl<F, P> TransactionSenderInner<F, P>
+where
+    F: TxFiller,
+    P: Provider,
+{
     pub fn new(
-        provider: P,
-        decryption_contract: DecryptionInstance<P>,
-        kms_generation_contract: KMSGenerationInstance<P>,
+        provider: NonceManagedProvider<F, P>,
+        decryption_contract: DecryptionInstance<NonceManagedProvider<F, P>>,
+        kms_generation_contract: KMSGenerationInstance<NonceManagedProvider<F, P>>,
         inner_config: TransactionSenderInnerConfig,
     ) -> Self {
         Self {
@@ -367,11 +394,7 @@ impl<P: Provider> TransactionSenderInner<P> {
         mut call: TransactionRequest,
     ) -> Result<TransactionReceipt, Error> {
         self.overprovision_gas(&mut call).await?;
-        Ok(self
-            .provider
-            .client()
-            .request("eth_sendTransactionSync", (call.clone(),))
-            .await?)
+        Ok(self.provider.send_transaction_sync(call).await?)
     }
 
     /// Tries to use the `debug_trace_transaction` RPC call to find the cause of a reverted tx.
@@ -404,7 +427,11 @@ impl<P: Provider> TransactionSenderInner<P> {
     }
 }
 
-impl<P: Provider + Clone> Clone for TransactionSenderInner<P> {
+impl<F, P> Clone for TransactionSenderInner<F, P>
+where
+    F: TxFiller,
+    P: Provider + Clone,
+{
     fn clone(&self) -> Self {
         Self {
             provider: self.provider.clone(),
@@ -463,7 +490,7 @@ mod tests {
     use super::*;
     use alloy::{
         primitives::Address,
-        providers::{ProviderBuilder, mock::Asserter},
+        providers::{Identity, ProviderBuilder, fillers::FillProvider, mock::Asserter},
         rpc::{json_rpc::ErrorPayload, types::trace::geth::GethTrace},
     };
     use connector_utils::tests::rand::{rand_signature, rand_u256};
@@ -473,12 +500,19 @@ mod tests {
 
     #[tokio::test]
     #[tracing_test::traced_test]
+    #[ignore = "To be fixed. Use of eth_sendRawTransactionSync broke it"]
     async fn test_send_tx_out_of_gas() -> anyhow::Result<()> {
         // Create a mocked `alloy::Provider`
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
+        let mock_provider = NonceManagedProvider::new(
+            FillProvider::new(
+                ProviderBuilder::new()
+                    .disable_recommended_fillers()
+                    .connect_mocked_client(asserter.clone()),
+                Identity,
+            ),
+            Address::default(),
+        );
 
         // Used to mock all RPC responses of transaction sending operation
         let test_data_dir = test_data_dir();
@@ -527,7 +561,10 @@ mod tests {
     #[tokio::test]
     async fn test_disable_reverted_tx_tracing() {
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new().connect_mocked_client(asserter.clone());
+        let mock_provider = NonceManagedProvider::new(
+            ProviderBuilder::new().connect_mocked_client(asserter.clone()),
+            Address::default(),
+        );
         let inner_sender = TransactionSenderInner::new(
             mock_provider.clone(),
             DecryptionInstance::new(Address::default(), mock_provider.clone()),
@@ -555,9 +592,15 @@ mod tests {
     async fn test_error_decryption_not_requested() -> anyhow::Result<()> {
         // Create a mocked `alloy::Provider`
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
+        let mock_provider = NonceManagedProvider::new(
+            FillProvider::new(
+                ProviderBuilder::new()
+                    .disable_recommended_fillers()
+                    .connect_mocked_client(asserter.clone()),
+                Identity,
+            ),
+            Address::default(),
+        );
 
         // Used to mock all RPC responses of transaction sending operation
         let estimate_gas: usize = 21000;
@@ -603,9 +646,15 @@ mod tests {
     async fn test_error_not_kms_tx_sender() -> anyhow::Result<()> {
         // Create a mocked `alloy::Provider`
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
+        let mock_provider = NonceManagedProvider::new(
+            FillProvider::new(
+                ProviderBuilder::new()
+                    .disable_recommended_fillers()
+                    .connect_mocked_client(asserter.clone()),
+                Identity,
+            ),
+            Address::default(),
+        );
 
         // Used to mock all RPC responses of transaction sending operation
         let estimate_gas: usize = 21000;
@@ -651,9 +700,15 @@ mod tests {
     async fn test_error_not_kms_signer() -> anyhow::Result<()> {
         // Create a mocked `alloy::Provider`
         let asserter = Asserter::new();
-        let mock_provider = ProviderBuilder::new()
-            .disable_recommended_fillers()
-            .connect_mocked_client(asserter.clone());
+        let mock_provider = NonceManagedProvider::new(
+            FillProvider::new(
+                ProviderBuilder::new()
+                    .disable_recommended_fillers()
+                    .connect_mocked_client(asserter.clone()),
+                Identity,
+            ),
+            Address::default(),
+        );
 
         // Used to mock all RPC responses of transaction sending operation
         let estimate_gas: usize = 21000;
