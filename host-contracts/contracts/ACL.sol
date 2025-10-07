@@ -18,11 +18,6 @@ import {ACLEvents} from "./ACLEvents.sol";
  */
 contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgradeable, ACLEvents, Multicall {
     /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
-    /// @param delegatee delegatee address.
-    /// @param contractAddress contract address.
-    error AlreadyDelegated(address delegatee, address contractAddress);
-
-    /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
     /// @param delegator delegator address.
     /// @param delegatee delegatee address.
     /// @param contractAddress contract address.
