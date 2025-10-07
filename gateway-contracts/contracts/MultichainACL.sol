@@ -11,18 +11,26 @@ import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
 import { DelegationAccounts } from "./shared/Structs.sol";
 
-/// @title MultichainACL smart contract
-/// @dev See {IMultichainACL}
+/**
+ * @title MultichainACL smart contract
+ * @notice See {IMultichainACL}
+ */
 contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwnable, GatewayConfigChecks {
-    /// @notice The address of the GatewayConfig contract for protocol state calls.
+    /**
+     * @notice The address of the GatewayConfig contract for protocol state calls.
+     */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
-    /// @notice The maximum number of contracts that can be requested for delegation.
+    /**
+     * @notice The maximum number of contracts that can be requested for delegation.
+     */
     uint8 internal constant MAX_CONTRACT_ADDRESSES = 10;
 
-    /// @dev The following constants are used for versioning the contract. They are made private
-    /// @dev in order to force derived contracts to consider a different version. Note that
-    /// @dev they can still define their own private constants with the same name.
+    /**
+     * @dev The following constants are used for versioning the contract. They are made private
+     * in order to force derived contracts to consider a different version. Note that
+     * they can still define their own private constants with the same name.
+     */
     string private constant CONTRACT_NAME = "MultichainACL";
     uint256 private constant MAJOR_VERSION = 0;
     uint256 private constant MINOR_VERSION = 1;
@@ -36,7 +44,9 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
      */
     uint64 private constant REINITIALIZER_VERSION = 2;
 
-    /// @notice The contract's variable storage struct (@dev see ERC-7201)
+    /**
+     * @notice The contract's variable storage struct (@dev see ERC-7201)
+     */
     /// @custom:storage-location erc7201:fhevm_gateway.storage.MultichainACL
     struct MultichainACLStorage {
         // ----------------------------------------------------------------------------------------------
@@ -93,9 +103,11 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
                 delegatedContracts;
     }
 
-    /// @dev Storage location has been computed using the following command:
-    /// @dev keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.MultichainACL")) - 1))
-    /// @dev & ~bytes32(uint256(0xff))
+    /**
+     * @dev Storage location has been computed using the following command:
+     * keccak256(abi.encode(uint256(keccak256("fhevm_gateway.storage.MultichainACL")) - 1))
+     * & ~bytes32(uint256(0xff))
+     */
     bytes32 private constant MULTICHAIN_ACL_STORAGE_LOCATION =
         0x7f733a54a70114addd729bcd827932a6c402ccf3920960665917bc2e6640f400;
 
@@ -104,8 +116,10 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         _disableInitializers();
     }
 
-    /// @notice Initializes the contract.
-    /// @dev This function needs to be public in order to be called by the UUPS proxy.
+    /**
+     * @notice Initializes the contract.
+     * @dev This function needs to be public in order to be called by the UUPS proxy.
+     */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
@@ -117,18 +131,18 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     /// @custom:oz-upgrades-validate-as-initializer
     // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
-    /// @dev See {IMultichainACL-allowPublicDecrypt}.
+    /**
+     * @notice See {IMultichainACL-allowPublicDecrypt}.
+     */
     function allowPublicDecrypt(
         bytes32 ctHandle,
         bytes calldata /* extraData */
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        /**
-         * @dev Check if the coprocessor has already allowed the ciphertext handle for public decryption.
-         * A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
-         * the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
-         */
+        // Check if the coprocessor has already allowed the ciphertext handle for public decryption.
+        // A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
+        // the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
         if ($.allowPublicDecryptCoprocessors[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
         }
@@ -148,7 +162,9 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         }
     }
 
-    /// @dev See {IMultichainACL-allowAccount}.
+    /**
+     * @notice See {IMultichainACL-allowAccount}.
+     */
     function allowAccount(
         bytes32 ctHandle,
         address accountAddress,
@@ -156,11 +172,9 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        /**
-         * @dev Check if the coprocessor has already allowed the account to use the ciphertext handle.
-         * A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
-         * the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
-         */
+        // Check if the coprocessor has already allowed the account to use the ciphertext handle.
+        // A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
+        // the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
         if ($.allowAccountCoprocessors[ctHandle][accountAddress][msg.sender]) {
             revert CoprocessorAlreadyAllowedAccount(ctHandle, accountAddress, msg.sender);
         }
@@ -183,7 +197,9 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         }
     }
 
-    /// @dev See {IMultichainACL-delegateAccount}.
+    /**
+     * @notice See {IMultichainACL-delegateAccount}.
+     */
     function delegateAccount(
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
@@ -198,16 +214,16 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
 
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        /// @dev The delegateAccountHash is the hash of all input arguments.
-        /// @dev This hash is used to track the delegation consensus over the whole contractAddresses list,
-        /// @dev and assumes that the Coprocessors will delegate the same list of contracts and keep the same order.
+        // The delegateAccountHash is the hash of all input arguments.
+        // This hash is used to track the delegation consensus over the whole contractAddresses list,
+        // and assumes that the Coprocessors will delegate the same list of contracts and keep the same order.
         bytes32 delegateAccountHash = _getDelegateAccountHash(chainId, delegationAccounts, contractAddresses);
 
         mapping(address => bool) storage alreadyDelegatedCoprocessors = $.alreadyDelegatedCoprocessors[
             delegateAccountHash
         ];
 
-        /// @dev Check if the coprocessor has already delegated the account.
+        // Check if the coprocessor has already delegated the account.
         if (alreadyDelegatedCoprocessors[msg.sender]) {
             revert CoprocessorAlreadyDelegated(chainId, delegationAccounts, contractAddresses, msg.sender);
         }
@@ -238,7 +254,7 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     }
 
     /**
-     * @dev See {IMultichainACL-isPublicDecryptAllowed}.
+     * @notice See {IMultichainACL-isPublicDecryptAllowed}.
      */
     function isPublicDecryptAllowed(bytes32 ctHandle) external view virtual returns (bool) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
@@ -246,7 +262,7 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     }
 
     /**
-     * @dev See {IMultichainACL-isAccountAllowed}.
+     * @notice See {IMultichainACL-isAccountAllowed}.
      */
     function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view virtual returns (bool) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
@@ -254,7 +270,7 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     }
 
     /**
-     * @dev See {IMultichainACL-isAccountDelegated}.
+     * @notice See {IMultichainACL-isAccountDelegated}.
      */
     function isAccountDelegated(
         uint256 chainId,
@@ -280,7 +296,9 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         return true;
     }
 
-    /// @dev See {IMultichainACL-getAllowPublicDecryptConsensusTxSenders}.
+    /**
+     * @notice See {IMultichainACL-getAllowPublicDecryptConsensusTxSenders}.
+     */
     function getAllowPublicDecryptConsensusTxSenders(
         bytes32 ctHandle
     ) external view virtual returns (address[] memory) {
@@ -289,7 +307,9 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         return $.allowPublicDecryptConsensusTxSenders[ctHandle];
     }
 
-    /// @dev See {IMultichainACL-getAllowAccountConsensusTxSenders}.
+    /**
+     * @notice See {IMultichainACL-getAllowAccountConsensusTxSenders}.
+     */
     function getAllowAccountConsensusTxSenders(
         bytes32 ctHandle,
         address accountAddress
@@ -300,9 +320,9 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     }
 
     /**
-     * @dev See {IMultichainACL-getDelegateAccountConsensusTxSenders}.
-     * The contract address list needs to be provided in the same order as when the consensus was reached
-     * in order to be able to retrieve the coprocessor transaction senders associated to it.
+     * @notice See {IMultichainACL-getDelegateAccountConsensusTxSenders}.
+     * @dev The contract address list needs to be provided in the same order as when the consensus
+     * was reached in order to be able to retrieve the coprocessor transaction senders associated to it.
      */
     function getDelegateAccountConsensusTxSenders(
         uint256 chainId,
@@ -317,7 +337,9 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         return $.delegateAccountConsensusTxSenders[delegateAccountHash];
     }
 
-    /// @dev See {IMultichainACL-getVersion}.
+    /**
+     * @notice See {IMultichainACL-getVersion}.
+     */
     function getVersion() external pure virtual returns (string memory) {
         return
             string(
@@ -334,20 +356,24 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     }
 
     /**
-     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     * @notice Checks if the sender is authorized to upgrade the contract and reverts otherwise.
      */
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
 
-    /// @notice Checks if the consensus is reached among the Coprocessors.
-    /// @param coprocessorCounter The number of coprocessors that agreed
-    /// @return Whether the consensus is reached
+    /**
+     * @notice Checks if the consensus is reached among the Coprocessors.
+     * @param coprocessorCounter The number of coprocessors that agreed
+     * @return Whether the consensus is reached
+     */
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
     }
 
-    /// @dev Returns the hash of a delegate account's inputs.
+    /**
+     * @notice Returns the hash of a delegate account's inputs.
+     */
     function _getDelegateAccountHash(
         uint256 chainId,
         DelegationAccounts calldata delegationAccounts,
@@ -357,8 +383,8 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     }
 
     /**
-     * @dev Returns the MultichainACL storage location.
-     * Note that this function is internal but not virtual: derived contracts should be able to
+     * @notice Returns the MultichainACL storage location.
+     * @dev Note that this function is internal but not virtual: derived contracts should be able to
      * access it, but if the underlying storage struct version changes, we force them to define a new
      * getter function and use that one instead in order to avoid overriding the storage location.
      */

@@ -71,13 +71,19 @@ interface IGatewayConfig {
      */
     error NotPauser(address account);
 
-    /// @notice Error emitted when the KMS nodes list is empty.
+    /**
+     * @notice Error emitted when the KMS nodes list is empty.
+     */
     error EmptyKmsNodes();
 
-    /// @notice Error emitted when the coprocessors list is empty.
+    /**
+     * @notice Error emitted when the coprocessors list is empty.
+     */
     error EmptyCoprocessors();
 
-    /// @notice Error emitted when the custodians list is empty.
+    /**
+     * @notice Error emitted when the custodians list is empty.
+     */
     error EmptyCustodians();
 
     /**
@@ -87,26 +93,40 @@ interface IGatewayConfig {
      */
     error InvalidHighMpcThreshold(uint256 mpcThreshold, uint256 nKmsNodes);
 
-    /// @notice Error emitted when the public decryption threshold is null.
+    /**
+     * @notice Error emitted when the public decryption threshold is null.
+     */
     error InvalidNullPublicDecryptionThreshold();
 
-    /// @notice Error emitted when the public decryption threshold is strictly greater than the number of KMS nodes.
-    /// @param publicDecryptionThreshold The public decryption threshold.
-    /// @param nKmsNodes The number of KMS nodes.
+    /**
+     * @notice Error emitted when the public decryption threshold is strictly greater than the number of KMS nodes.
+     * @param publicDecryptionThreshold The public decryption threshold.
+     * @param nKmsNodes The number of KMS nodes.
+     */
     error InvalidHighPublicDecryptionThreshold(uint256 publicDecryptionThreshold, uint256 nKmsNodes);
 
-    /// @notice Error emitted when the user decryption threshold is null.
+    /**
+     * @notice Error emitted when the user decryption threshold is null.
+     */
     error InvalidNullUserDecryptionThreshold();
 
-    /// @notice Error emitted when the user decryption threshold is strictly greater than the number of KMS nodes.
-    /// @param userDecryptionThreshold The user decryption threshold.
-    /// @param nKmsNodes The number of KMS nodes.
+    /**
+     * @notice Error emitted when the user decryption threshold is strictly greater than the number of KMS nodes.
+     * @param userDecryptionThreshold The user decryption threshold.
+     * @param nKmsNodes The number of KMS nodes.
+     */
     error InvalidHighUserDecryptionThreshold(uint256 userDecryptionThreshold, uint256 nKmsNodes);
 
-    /// @notice Error emitted when the key and CRS generation threshold is null.
+    /**
+     * @notice Error emitted when the key and CRS generation threshold is null.
+     */
     error InvalidNullKmsGenThreshold();
 
-    /// @notice Error emitted when the key and CRS generation threshold is strictly greater than the number of KMS nodes.
+    /**
+     * @notice Error emitted when the key and CRS generation threshold is strictly greater than the number of KMS nodes.
+     * @param kmsGenThreshold The key and CRS generation threshold.
+     * @param nKmsNodes The number of KMS nodes.
+     */
     error InvalidHighKmsGenThreshold(uint256 kmsGenThreshold, uint256 nKmsNodes);
 
     /**
