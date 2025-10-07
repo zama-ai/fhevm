@@ -75,6 +75,9 @@ struct Conf {
     /// gw-listener service name in OTLP traces
     #[arg(long, default_value = "gw-listener")]
     pub service_name: String,
+
+    #[arg(long, default_value = None, help = "Can be negative from last processed block", allow_hyphen_values = true)]
+    pub catchup_kms_generation_from_block: Option<i64>,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -145,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
     let cancel_token = CancellationToken::new();
 
     let Some(host_chain_id) = conf.host_chain_id.or_else(chain_id_from_env) else {
-        anyhow::bail!("--chain-id or CHAIN_ID env var is missing.")
+        anyhow::bail!("--host-chain-id or CHAIN_ID env var is missing.")
     };
     let config = ConfigSettings {
         host_chain_id,
@@ -159,6 +162,7 @@ async fn main() -> anyhow::Result<()> {
         health_check_timeout: conf.health_check_timeout,
         get_logs_poll_interval: conf.get_logs_poll_interval,
         get_logs_block_batch_size: conf.get_logs_block_batch_size,
+        catchup_kms_generation_from_block: conf.catchup_kms_generation_from_block,
     };
 
     let gw_listener = GatewayListener::new(
