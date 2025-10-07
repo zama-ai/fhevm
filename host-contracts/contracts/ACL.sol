@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {Strings, Multicall} from "@openzeppelin/contracts/utils/Strings.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
@@ -16,31 +16,56 @@ import {ACLEvents} from "./ACLEvents.sol";
  * or decrypt encrypted values in fhEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains
  * secure while still being usable within authorized contexts.
  */
-contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgradeable, ACLEvents {
+contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgradeable, ACLEvents, Multicall {
     /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
     /// @param delegatee delegatee address.
     /// @param contractAddress contract address.
     error AlreadyDelegated(address delegatee, address contractAddress);
 
-    /// @notice Returned if the sender is the delegatee address.
-    error SenderCannotBeContractAddress(address contractAddress);
-
-    /// @notice Returned if the contractAddresses array is empty.
-    error ContractAddressesIsEmpty();
-
-    /// @notice Maximum length of contractAddresses array exceeded.
-    error ContractAddressesMaxLengthExceeded();
-
-    /// @notice Returned if the handlesList array is empty.
-    error HandlesListIsEmpty();
-
-    /// @notice Returned if the the delegatee contract is not already delegatee for sender & delegator addresses.
+    /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
+    /// @param delegator delegator address.
     /// @param delegatee delegatee address.
     /// @param contractAddress contract address.
-    error NotDelegatedYet(address delegatee, address contractAddress);
+    error AlreadyDelegatedOrRevokedInSameBlock(address delegator, address delegatee, address contractAddress);
+
+    /// @notice Returned if the delegatee is the contract address.
+    /// @param contractAddress contract address.
+    error DelegateeCannotBeContractAddress(address contractAddress);
+
+    /// @notice Returned if the requested expiry date array is after the next year.
+    error ExpiryDateAfterOneYear();
+
+    /// @notice Returned if the requested expiry date was already set to same expiry for (delegatee,contractAddress).
+    /// @param delegator the delegator address.
+    /// @param delegatee the delegatee address.
+    /// @param contractAddress contract address.
+    /// @param expiryDate the expiry date.
+    error ExpiryDateAlreadySetToSameValue(
+        address delegator,
+        address delegatee,
+        address contractAddress,
+        uint256 expiryDate
+    );
+
+    /// @notice Returned if the requested expiry date array is before the next hour.
+    error ExpiryDateBeforeOneHour();
+
+    /// @notice Returned if the the delegatee contract is not already delegatee for sender & delegator addresses.
+    /// @param delegator delegator address.
+    /// @param delegatee delegatee address.
+    /// @param contractAddress contract address.
+    error NotDelegatedYet(address delegator, address delegatee, address contractAddress);
 
     /// @notice Returned if the sender address is not allowed to pause the contract.
     error NotPauser(address sender);
+
+    /// @notice Returned if the sender is the contract address.
+    /// @param contractAddress contract address.
+    error SenderCannotBeContractAddress(address contractAddress);
+
+    /// @notice Returned if the sender is the delegatee address.
+    /// @param delegatee delegatee address.
+    error SenderCannotBeDelegatee(address delegatee);
 
     /// @notice Returned if the sender address is not allowed for allow operations.
     /// @param sender Sender address.
@@ -50,7 +75,11 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     struct ACLStorage {
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
+        /// @notice: TODO deprecate delegates mapping for mainnet
         mapping(address account => mapping(address delegatee => mapping(address contractAddress => bool isDelegate))) delegates;
+        /// @notice: TODO: pack following two mappings (expiryDates and lastBlockDelegateOrRevoke) to save gas
+        mapping(address account => mapping(address delegatee => mapping(address contractAddress => uint256 expiryDate))) expiryDates;
+        mapping(address account => mapping(address delegatee => mapping(address contractAddress => uint256 expiryDate))) lastBlockDelegateOrRevoke;
     }
 
     /// @notice Name of the contract.
@@ -60,7 +89,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -71,12 +100,9 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     /// @notice PauserSet contract.
     IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAdd);
 
-    /// @notice maximum length of contractAddresses array during delegation.
-    uint256 private constant MAX_NUM_CONTRACT_ADDRESSES = 10;
-
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.ACL")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant ACLStorageLocation = 0xa688f31953c2015baaf8c0a488ee1ee22eb0e05273cc1fd31ea4cbee42febc00;
@@ -101,7 +127,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Allows the use of `handle` for the address `account`.
@@ -163,56 +189,65 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     }
 
     /**
-     * @notice Delegates the access of handles in the context of account abstraction for issuing
-     * reencryption requests from a smart contract account.
+     * @notice Delegates the access of handles, for instance, in the context of account
+     *  abstraction for issuing user decryption requests from a smart contract account.
      * @param delegatee Delegatee address.
-     * @param contractAddresses Contract addresses.
+     * @param contractAddress Contract address.
+     * @param expiryDate Expiry date in seconds, between 1 hour and 1 year in the future.
      */
-    function delegateAccount(address delegatee, address[] memory contractAddresses) public virtual whenNotPaused {
-        uint256 lengthContractAddresses = contractAddresses.length;
-        if (lengthContractAddresses == 0) {
-            revert ContractAddressesIsEmpty();
-        }
-        if (lengthContractAddresses > MAX_NUM_CONTRACT_ADDRESSES) {
-            revert ContractAddressesMaxLengthExceeded();
-        }
+    function delegateAccount(
+        address delegatee,
+        address contractAddress,
+        uint256 expiryDate
+    ) public virtual whenNotPaused {
+        if (expiryDate < block.timestamp) revert ExpiryDateBeforeOneHour();
+        if (expiryDate > block.timestamp + 1 years) revert DeadlineAfterOneYear();
 
         ACLStorage storage $ = _getACLStorage();
-        for (uint256 k = 0; k < lengthContractAddresses; k++) {
-            if (contractAddresses[k] == msg.sender) {
-                revert SenderCannotBeContractAddress(contractAddresses[k]);
-            }
-            if ($.delegates[msg.sender][delegatee][contractAddresses[k]]) {
-                revert AlreadyDelegated(delegatee, contractAddresses[k]);
-            }
-            $.delegates[msg.sender][delegatee][contractAddresses[k]] = true;
+
+        if ($.lastBlockDelegateOrRevoke[msg.sender][delegatee][contractAddress] == block.number) {
+            revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegatee, contractAddress);
+        }
+        $.lastBlockDelegateOrRevok[msg.sender][delegatee][contractAddress] = block.number;
+
+        if (contractAddress == msg.sender) {
+            revert SenderCannotBeContractAddress(contractAddress);
+        }
+        if (delegatee == msg.sender) {
+            revert SenderCannotBeDelegatee(delegatee);
+        }
+        if (delegatee == contractAddress) {
+            revert DelegateeCannotBeContractAddress(contractAddress);
         }
 
-        emit NewDelegation(msg.sender, delegatee, contractAddresses);
+        uint256 newExpiryDate = block.timestamp + expiryDate;
+        if ($.expiryDates[msg.sender][delegatee][contractAddress] == newExpiryDate) {
+            revert ExpiryDateAlreadySetToSameValue(msg.sender, delegatee, contractAddress, newExpiryDate);
+        }
+        $.expiryDates[msg.sender][delegatee][contractAddress] = newExpiryDate;
+
+        emit NewDelegation(msg.sender, delegatee, contractAddress, newExpiryDate);
     }
 
     /**
-     * @notice Revokes delegated access of handles in the context of account abstraction for issuing
-     * reencryption requests from a smart contract account.
+     * @notice Revokes delegated access of handles
      * @param delegatee Delegatee address.
-     * @param contractAddresses Contract addresses.
+     * @param contractAddress Contract address.
      */
-    function revokeDelegation(address delegatee, address[] memory contractAddresses) public virtual whenNotPaused {
-        uint256 lengthContractAddresses = contractAddresses.length;
-        if (lengthContractAddresses == 0) {
-            revert ContractAddressesIsEmpty();
-        }
-
+    function revokeDelegation(address delegatee, address contractAddress) public virtual whenNotPaused {
         ACLStorage storage $ = _getACLStorage();
 
-        for (uint256 k = 0; k < lengthContractAddresses; k++) {
-            if (!$.delegates[msg.sender][delegatee][contractAddresses[k]]) {
-                revert NotDelegatedYet(delegatee, contractAddresses[k]);
-            }
-            $.delegates[msg.sender][delegatee][contractAddresses[k]] = false;
+        if ($.lastBlockDelegateOrRevoke[msg.sender][delegatee][contractAddress] == block.number) {
+            revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegatee, contractAddress);
         }
+        $.lastBlockDelegateOrRevok[msg.sender][delegatee][contractAddress] = block.number;
 
-        emit RevokedDelegation(msg.sender, delegatee, contractAddresses);
+        if ($.expiryDates[msg.sender][delegatee][contractAddress] == 0) {
+            revert NotDelegatedYet(msg.sender, delegatee, contractAddress);
+        }
+        $.expiryDates[msg.sender][delegatee][contractAddress] = 0;
+
+        emit RevokedDelegation(msg.sender, delegatee, contractAddress);
     }
 
     /**
@@ -254,7 +289,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
         return
             $.persistedAllowedPairs[handle][account] &&
             $.persistedAllowedPairs[handle][contractAddress] &&
-            $.delegates[account][delegatee][contractAddress];
+            $.expiryDates[account][delegatee][contractAddress];
     }
 
     /**
