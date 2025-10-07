@@ -12,11 +12,16 @@
     "start": "pnpm --parallel -r run start",
     "build": "pnpm --stream -r run build",
     "lint": "pnpm --stream -r run lint",
-    "prisma:generate": "pnpm --stream -r run prisma:generate"
+    "commitlint": "commitlint --config .github/config/commitlint.config.mjs"
   },
   "keywords": [],
   "author": "",
   "packageManager": "pnpm@10.17.1+sha512.17c560fca4867ae9473a3899ad84a88334914f379be46d455cbf92e5cf4b39d34985d452d2583baf19967fa76cb5c17bc9e245529d0b98745721aa7200ecaf7a",
+  "devDependencies": {
+    "@commitlint/cli": "^18.6.1",
+    "@commitlint/config-conventional": "^18.6.3",
+    "@commitlint/types": "^18.6.1"
+  },
   "pnpm": {
     "overrides": {
       "braces@<2.3.1": ">=2.3.1",

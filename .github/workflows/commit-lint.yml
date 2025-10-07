@@ -13,25 +13,13 @@ jobs:
     name: commit-lint/commit-lint (bpr)
     permissions:
       contents: read
+      pull-requests: read
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         with:
           persist-credentials: false
-          fetch-depth: 0
-      - name: Install pnpm
-        uses: pnpm/action-setup@a7487c7e89a18df4991f7f222e4898a00d66ddda # v4.1.0
-      - name: Setup Node
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+      - name: Validate PR commits
+        uses: wagoid/commitlint-github-action@b948419dd99f3fd78a6548d48f94e3df7f6bf3ed # v6.2.1
         with:
-          node-version: 22
-      - name: Install commitlint
-        run: |
-          # NOTE: we need to remove `package.json` because `catalog` use in package.json breaks NPM
-          # and for some reason unknown to me `npm i -g` parses `package.json`
-          rm package.json
-          npm install --force --no-package-lock --no-save @commitlint/config-conventional@^18 conventional-changelog-atom @commitlint/types@^18
-          npm install --force --no-package-lock --no-save -g @commitlint/cli@^18
-      # TODO: Re-enable once fhevm-relayer is merged
-      # - name: Validate all commits from PR
-      #   run: npx commitlint --config .github/config/commitlint.config.js --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }} --verbose
+          configFile: .github/config/commitlint.config.mjs
