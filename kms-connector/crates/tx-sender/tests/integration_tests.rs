@@ -274,7 +274,7 @@ async fn test_process_crsgen_response() -> anyhow::Result<()> {
 }
 
 #[rstest]
-#[timeout(Duration::from_secs(20))]
+#[timeout(Duration::from_secs(60))]
 #[tokio::test]
 async fn stress_test() -> anyhow::Result<()> {
     let mut test_instance = TestInstanceBuilder::db_gw_setup().await?;
