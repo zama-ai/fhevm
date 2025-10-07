@@ -44,7 +44,6 @@ scDeploy:
     # =========================================================================
 
     # KMS generation threshold
-    # Should be set to `floor(n_kms/2) + 1` with `n_kms` the number of KMS nodes
     - name: KMS_GENERATION_THRESHOLD
       value: 7
 

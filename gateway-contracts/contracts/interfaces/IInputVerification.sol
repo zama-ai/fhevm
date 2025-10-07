@@ -3,7 +3,8 @@ pragma solidity ^0.8.24;
 
 /**
  * @title Interface for the InputVerification contract.
- * @dev The InputVerification contract handles Zero-Knowledge Proof of Knowledge (ZKPoK) verifications for inputs.
+ * @notice The InputVerification contract handles Zero-Knowledge Proof of Knowledge (ZKPoK)
+ * verifications for inputs.
  */
 interface IInputVerification {
     /**
