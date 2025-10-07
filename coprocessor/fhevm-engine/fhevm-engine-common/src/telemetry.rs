@@ -157,15 +157,19 @@ pub fn end_span_with_err(mut span: BoxedSpan, desc: String) {
     span.end();
 }
 
-pub(crate) static L1_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+pub fn gen_buckets(step: f64, max_bucket: f64) -> Vec<f64> {
     let mut buckets = Vec::new();
-    let mut v = 0.10;
-
-    // Minimum bucket is 30mins
-    while v <= 30.0 * 60.0 {
+    let mut v = step;
+    while v <= max_bucket * 60.0 {
         buckets.push(v);
-        v += 0.10;
+        v += step;
     }
+    buckets
+}
+
+pub(crate) static L1_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    // Max TPS: 100 => 1 txn per 0.01 second
+    let buckets = gen_buckets(0.01, 10.0);
 
     register_histogram!(
         GLOBAL_LATENCY_METRIC_NAME_L1,
@@ -176,14 +180,7 @@ pub(crate) static L1_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(
 });
 
 pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    let mut buckets = Vec::new();
-    let mut v = 0.10;
-
-    // Minimum bucket is 30mins
-    while v <= 30.0 * 60.0 {
-        buckets.push(v);
-        v += 0.10;
-    }
+    let buckets = gen_buckets(0.01, 10.0);
 
     register_histogram!(
         GLOBAL_LATENCY_METRIC_NAME_ZKPROOF,
