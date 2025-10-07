@@ -48,6 +48,7 @@ pub struct ConfigSettings {
 
     pub get_logs_poll_interval: Duration,
     pub get_logs_block_batch_size: u64,
+    pub catchup_kms_generation_from_block: Option<i64>,
 }
 
 pub fn chain_id_from_env() -> Option<ChainId> {
@@ -74,6 +75,7 @@ impl Default for ConfigSettings {
             health_check_timeout: Duration::from_secs(4),
             get_logs_poll_interval: Duration::from_secs(1),
             get_logs_block_batch_size: 100,
+            catchup_kms_generation_from_block: None,
         }
     }
 }
