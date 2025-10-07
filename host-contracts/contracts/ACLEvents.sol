@@ -13,17 +13,31 @@ contract ACLEvents {
     /// @param handlesList  List of handles allowed for decryption.
     event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
 
-    /// @notice                 Emitted when a new delegatee address is added.
-    /// @param caller           caller address
+    /// @notice                 Emitted when a new delegation is requested.
+    /// @param delegator        Delegator address.
     /// @param delegatee        Delegatee address.
-    /// @param contractAddresses  Contract addresses.
-    event NewDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
+    /// @param contractAddress  Contract address.
+    /// @param oldExpiryData    Previous Expiry Date.
+    /// @param newExpiryData    New Expiry Date.
+    event NewDelegation(
+        address indexed delegator,
+        address indexed delegatee,
+        address contractAddress,
+        uint256 oldExpiryData,
+        uint256 newExpiryData
+    );
 
-    /// @notice                 Emitted when a delegatee address is revoked.
-    /// @param caller           caller address
+    /// @notice                 Emitted when a delegation is revoked.
+    /// @param delegator        Delegator address.
     /// @param delegatee        Delegatee address.
-    /// @param contractAddresses  Contract addresses.
-    event RevokedDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
+    /// @param contractAddress  Contract address.
+    /// @param oldExpiryData    Previous Expiry Date.
+    event RevokedDelegation(
+        address indexed delegator,
+        address indexed delegatee,
+        address contractAddress,
+        uint256 oldExpiryData
+    );
 
     /// @notice Emitted when the pauser address is updated.
     /// @param newPauser New pauser address.

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-import {Strings, Multicall} from "@openzeppelin/contracts/utils/Strings.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
@@ -44,6 +45,9 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
 
     /// @notice Returned if the requested expiry date array is before the next hour.
     error ExpiryDateBeforeOneHour();
+
+    /// @notice Returned if the handlesList array is empty.
+    error HandlesListIsEmpty();
 
     /// @notice Returned if the the delegatee contract is not already delegatee for sender & delegator addresses.
     /// @param delegator delegator address.
@@ -195,15 +199,15 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
         address contractAddress,
         uint256 expiryDate
     ) public virtual whenNotPaused {
-        if (expiryDate < block.timestamp) revert ExpiryDateBeforeOneHour();
-        if (expiryDate > block.timestamp + 1 years) revert DeadlineAfterOneYear();
+        if (expiryDate < block.timestamp + 1 hours) revert ExpiryDateBeforeOneHour();
+        if (expiryDate > block.timestamp + 365 days) revert ExpiryDateAfterOneYear();
 
         ACLStorage storage $ = _getACLStorage();
 
         if ($.lastBlockDelegateOrRevoke[msg.sender][delegatee][contractAddress] == block.number) {
             revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegatee, contractAddress);
         }
-        $.lastBlockDelegateOrRevok[msg.sender][delegatee][contractAddress] = block.number;
+        $.lastBlockDelegateOrRevoke[msg.sender][delegatee][contractAddress] = block.number;
 
         if (contractAddress == msg.sender) {
             revert SenderCannotBeContractAddress(contractAddress);
@@ -216,12 +220,13 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
         }
 
         uint256 newExpiryDate = block.timestamp + expiryDate;
-        if ($.expiryDates[msg.sender][delegatee][contractAddress] == newExpiryDate) {
-            revert ExpiryDateAlreadySetToSameValue(msg.sender, delegatee, contractAddress, newExpiryDate);
+        uint256 oldExpiryData = $.expiryDates[msg.sender][delegatee][contractAddress];
+        if (oldExpiryData == newExpiryDate) {
+            revert ExpiryDateAlreadySetToSameValue(msg.sender, delegatee, contractAddress, oldExpiryData);
         }
         $.expiryDates[msg.sender][delegatee][contractAddress] = newExpiryDate;
 
-        emit NewDelegation(msg.sender, delegatee, contractAddress, newExpiryDate);
+        emit NewDelegation(msg.sender, delegatee, contractAddress, oldExpiryData, newExpiryDate);
     }
 
     /**
@@ -235,14 +240,15 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
         if ($.lastBlockDelegateOrRevoke[msg.sender][delegatee][contractAddress] == block.number) {
             revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegatee, contractAddress);
         }
-        $.lastBlockDelegateOrRevok[msg.sender][delegatee][contractAddress] = block.number;
+        $.lastBlockDelegateOrRevoke[msg.sender][delegatee][contractAddress] = block.number;
 
-        if ($.expiryDates[msg.sender][delegatee][contractAddress] == 0) {
+        uint256 oldExpiryData = $.expiryDates[msg.sender][delegatee][contractAddress];
+        if (oldExpiryData == 0) {
             revert NotDelegatedYet(msg.sender, delegatee, contractAddress);
         }
         $.expiryDates[msg.sender][delegatee][contractAddress] = 0;
 
-        emit RevokedDelegation(msg.sender, delegatee, contractAddress);
+        emit RevokedDelegation(msg.sender, delegatee, contractAddress, oldExpiryData);
     }
 
     /**
@@ -284,7 +290,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
         return
             $.persistedAllowedPairs[handle][account] &&
             $.persistedAllowedPairs[handle][contractAddress] &&
-            $.expiryDates[account][delegatee][contractAddress];
+            $.expiryDates[account][delegatee][contractAddress] >= block.timestamp;
     }
 
     /**
