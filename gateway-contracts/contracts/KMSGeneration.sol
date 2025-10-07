@@ -14,7 +14,7 @@ import { PREP_KEYGEN_COUNTER_BASE, KEY_COUNTER_BASE, CRS_COUNTER_BASE } from "./
 
 /**
  * @title KMSGeneration contract
- * @dev See {IKMSGeneration}.
+ * @notice See {IKMSGeneration}.
  */
 contract KMSGeneration is
     IKMSGeneration,
@@ -40,22 +40,24 @@ contract KMSGeneration is
 
     /**
      * @notice The EIP-712 type definition for the KeyDigest struct.
-     * @dev keyType: The type of the generated key.
-     * @dev digest: The digest of the generated key.
-     * @dev Required because EIP-712 mandates that each nested struct type
-     *      used in a primary type (e.g. KeygenVerification) must be explicitly
-     *      declared with its own type string and type hash.
-     *      These constants are used when computing the struct hash of each
-     *      KeyDigest element inside the keyDigests[] array.
+     * @dev The following fields are used for the KeyDigest struct:
+     * - keyType: The type of the generated key.
+     * - digest: The digest of the generated key.
+     * Required because EIP-712 mandates that each nested struct type
+     * used in a primary type (e.g. KeygenVerification) must be explicitly
+     * declared with its own type string and type hash.
+     * These constants are used when computing the struct hash of each
+     * KeyDigest element inside the keyDigests[] array.
      */
     string private constant EIP712_KEY_DIGEST_TYPE = "KeyDigest(uint8 keyType,bytes digest)";
     bytes32 private constant EIP712_KEY_DIGEST_TYPE_HASH = keccak256(bytes(EIP712_KEY_DIGEST_TYPE));
 
     /**
      * @notice The KeygenVerification typed definition.
-     * @dev prepKeygenId: The ID of the preprocessing keygen request.
-     * @dev keyId: The ID of the generated key.
-     * @dev keyDigests: The digests of the generated key.
+     * @dev The following fields are used for the KeygenVerification struct:
+     * - prepKeygenId: The ID of the preprocessing keygen request.
+     * - keyId: The ID of the generated key.
+     * - keyDigests: The digests of the generated key.
      */
     string private constant EIP712_KEYGEN_TYPE =
         "KeygenVerification(uint256 prepKeygenId,uint256 keyId,KeyDigest[] keyDigests)KeyDigest(uint8 keyType,bytes digest)";
@@ -67,9 +69,10 @@ contract KMSGeneration is
 
     /**
      * @notice The CrsgenVerification typed definition.
-     * @dev crsId: The ID of the generated CRS.
-     * @dev maxBitLength: The max bit length of the generated CRS.
-     * @dev crsDigest: The digest of the generated CRS.
+     * @dev The following fields are used for the CrsgenVerification struct:
+     * - crsId: The ID of the generated CRS.
+     * - maxBitLength: The max bit length of the generated CRS.
+     * - crsDigest: The digest of the generated CRS.
      */
     string private constant EIP712_CRSGEN_TYPE =
         "CrsgenVerification(uint256 crsId,uint256 maxBitLength,bytes crsDigest)";
@@ -194,7 +197,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-keygen}.
+     * @notice See {IKMSGeneration-keygen}.
      */
     function keygen(ParamsType paramsType) external virtual onlyGatewayOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -232,7 +235,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-prepKeygenResponse}.
+     * @notice See {IKMSGeneration-prepKeygenResponse}.
      */
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external virtual onlyKmsTxSender {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -272,7 +275,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-keygenResponse}.
+     * @notice See {IKMSGeneration-keygenResponse}.
      */
     function keygenResponse(
         uint256 keyId,
@@ -326,7 +329,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-crsgenRequest}.
+     * @notice See {IKMSGeneration-crsgenRequest}.
      */
     function crsgenRequest(uint256 maxBitLength, ParamsType paramsType) external virtual onlyGatewayOwner {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -349,7 +352,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-crsgenResponse}.
+     * @notice See {IKMSGeneration-crsgenResponse}.
      */
     function crsgenResponse(
         uint256 crsId,
@@ -396,7 +399,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-getKeyParamsType}.
+     * @notice See {IKMSGeneration-getKeyParamsType}.
      */
     function getKeyParamsType(uint256 keyId) external view virtual returns (ParamsType) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -412,7 +415,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-getCrsParamsType}.
+     * @notice See {IKMSGeneration-getCrsParamsType}.
      */
     function getCrsParamsType(uint256 crsId) external view virtual returns (ParamsType) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -425,7 +428,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-getActiveKeyId}.
+     * @notice See {IKMSGeneration-getActiveKeyId}.
      */
     function getActiveKeyId() external view virtual returns (uint256) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -433,7 +436,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-getActiveCrsId}.
+     * @notice See {IKMSGeneration-getActiveCrsId}.
      */
     function getActiveCrsId() external view virtual returns (uint256) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -441,7 +444,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-getConsensusTxSenders}.
+     * @notice See {IKMSGeneration-getConsensusTxSenders}.
      * The returned list remains empty until the consensus is reached.
      */
     function getConsensusTxSenders(uint256 requestId) external view virtual returns (address[] memory) {
@@ -458,7 +461,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-getKeyMaterials}.
+     * @notice See {IKMSGeneration-getKeyMaterials}.
      */
     function getKeyMaterials(uint256 keyId) external view virtual returns (string[] memory, KeyDigest[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -474,7 +477,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-getCrsMaterials}.
+     * @notice See {IKMSGeneration-getCrsMaterials}.
      */
     function getCrsMaterials(uint256 crsId) external view virtual returns (string[] memory, bytes memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
@@ -490,7 +493,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev See {IKMSGeneration-getVersion}.
+     * @notice See {IKMSGeneration-getVersion}.
      */
     function getVersion() external pure virtual returns (string memory) {
         return
@@ -548,7 +551,7 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev Should revert when `msg.sender` is not authorized to upgrade the contract.
+     * @notice Checks if the sender is authorized to upgrade the contract and reverts otherwise.
      */
     // solhint-disable-next-line no-empty-blocks
     function _authorizeUpgrade(address _newImplementation) internal virtual override onlyGatewayOwner {}
@@ -584,11 +587,9 @@ contract KMSGeneration is
         uint256 keyId,
         KeyDigest[] calldata keyDigests
     ) internal view virtual returns (bytes32) {
-        /**
-         * Encodes each KeyDigest struct and computes its struct hash.
-         * The `keyDigests` array must be ordered consistently with the KMS nodes:
-         * the first element corresponds to the Server type, and the second to the Public type.
-         */
+        // Encodes each KeyDigest struct and computes its struct hash.
+        // The `keyDigests` array must be ordered consistently with the KMS nodes:
+        // the first element corresponds to the Server type, and the second to the Public type.
         bytes32[] memory keyDigestHashes = new bytes32[](keyDigests.length);
         for (uint256 i = 0; i < keyDigests.length; i++) {
             keyDigestHashes[i] = keccak256(
@@ -630,8 +631,8 @@ contract KMSGeneration is
     }
 
     /**
-     * @dev Returns the KMSGeneration storage location.
-     * Note that this function is internal but not virtual: derived contracts should be able to
+     * @notice Returns the KMSGeneration storage location.
+     * @dev Note that this function is internal but not virtual: derived contracts should be able to
      * access it, but if the underlying storage struct version changes, we force them to define a new
      * getter function and use that one instead in order to avoid overriding the storage location.
      */

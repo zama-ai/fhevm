@@ -96,7 +96,6 @@ KMS_GENERATION_THRESHOLD="3" # (uint256)
 
 `KMS_GENERATION_THRESHOLD` must be non-null and less or equal to the number of KMS nodes registered below.
 
-
 - KMS Nodes:
 
 ```bash

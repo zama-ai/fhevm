@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 pragma solidity ^0.8.24;
 
-// Define the KMS request types
-// The old decryption request (a mix of public and user decryption requests) is deprecated. Is it kept
-// in order to stay backward compatible and avoid overlaps between the old and new decryption request IDs.
-// See `Decryption.sol` for more details.
+/**
+ * @notice The KMS request types.
+ * @dev The first request type is deprecated.
+ * See `Decryption.sol` for more details.
+ */
 enum RequestType {
-    _deprecated_, // 0: DEPRECATED (old decryption requests)
+    _deprecated_, // 0: DEPRECATED
     PublicDecrypt, // 1
     UserDecrypt, // 2
     PrepKeygen, // 3
