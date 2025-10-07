@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
-import {Multicall} from "@openzeppelin/contracts/utils/Multicall.sol";
+import {MulticallUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
@@ -17,7 +17,7 @@ import {ACLEvents} from "./ACLEvents.sol";
  * or decrypt encrypted values in fhEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains
  * secure while still being usable within authorized contexts.
  */
-contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgradeable, ACLEvents, Multicall {
+contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgradeable, ACLEvents, MulticallUpgradeable {
     /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
     /// @param delegator delegator address.
     /// @param delegatee delegatee address.
