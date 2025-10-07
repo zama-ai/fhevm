@@ -1,6 +1,6 @@
 use alloy_primitives::Address;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::telemetry::{self, gen_buckets};
 use fhevm_engine_common::tenant_keys::TfheTenantKeys;
 use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
@@ -9,6 +9,7 @@ use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use hex::encode;
 use lru::LruCache;
+use prometheus::{register_histogram, Histogram};
 use sha3::Digest;
 use sha3::Keccak256;
 use sqlx::{postgres::PgListener, PgPool, Row};
@@ -22,7 +23,7 @@ use tokio::task::JoinSet;
 use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX};
 use anyhow::Result;
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::SystemTime;
 use tfhe::set_server_key;
 
@@ -37,6 +38,17 @@ const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
 const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
 const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
+
+pub(crate) static ZKPROOF_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    let buckets = gen_buckets(0.01, 10.0);
+
+    register_histogram!(
+        "coprocessor_zkverify_latency_seconds",
+        "ZKProof verification latencies in seconds",
+        buckets
+    )
+    .unwrap()
+});
 
 pub(crate) struct Ciphertext {
     handle: Vec<u8>,
@@ -235,6 +247,7 @@ async fn execute_verify_proof_routine(
     .fetch_one(&mut *txn)
     .await
     {
+        let started_at = SystemTime::now();
         let request_id: i64 = row.get("zk_proof_id");
         let input: Vec<u8> = row.get("input");
         let chain_id: i64 = row.get("chain_id");
@@ -280,7 +293,7 @@ async fn execute_verify_proof_routine(
 
         let mut verified = false;
         let mut handles_bytes = vec![];
-        match res {
+        match res.as_ref() {
             Ok((cts, blob_hash)) => {
                 info!(
                     message = "Proof verification successful",
@@ -328,6 +341,13 @@ async fn execute_verify_proof_routine(
             .await?;
 
         txn.commit().await?;
+
+        if res.is_ok() {
+            let elapsed = started_at.elapsed().unwrap_or_default().as_secs_f64();
+            if elapsed > 0.0 {
+                ZKPROOF_LATENCY_HISTOGRAM.observe(elapsed);
+            }
+        }
 
         info!(message = "Completed", request_id);
     }
@@ -504,8 +524,8 @@ async fn get_remaining_tasks(pool: &PgPool) -> Result<i64, ExecutionError> {
 pub(crate) async fn insert_ciphertexts(
     db_txn: &mut Transaction<'_, Postgres>,
     tenant_id: i32,
-    cts: Vec<Ciphertext>,
-    blob_hash: Vec<u8>,
+    cts: &[Ciphertext],
+    blob_hash: &Vec<u8>,
 ) -> Result<(), ExecutionError> {
     for (i, ct) in cts.iter().enumerate() {
         sqlx::query!(
