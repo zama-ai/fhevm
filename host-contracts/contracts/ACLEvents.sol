@@ -17,26 +17,30 @@ contract ACLEvents {
     /// @param delegator        Delegator address.
     /// @param delegatee        Delegatee address.
     /// @param contractAddress  Contract address.
-    /// @param oldExpiryData    Previous Expiry Date.
-    /// @param newExpiryData    New Expiry Date.
+    /// @param delegationCounter    Delegation counter.
+    /// @param oldExpiryDate    Previous Expiry Date.
+    /// @param newExpiryDate    New Expiry Date.
     event NewDelegation(
         address indexed delegator,
         address indexed delegatee,
         address contractAddress,
-        uint256 oldExpiryData,
-        uint256 newExpiryData
+        uint64 delegationCounter,
+        uint64 oldExpiryDate,
+        uint64 newExpiryDate
     );
 
     /// @notice                 Emitted when a delegation is revoked.
     /// @param delegator        Delegator address.
     /// @param delegatee        Delegatee address.
     /// @param contractAddress  Contract address.
-    /// @param oldExpiryData    Previous Expiry Date.
+    /// @param delegationCounter    Delegation counter.
+    /// @param oldExpiryDate    Previous Expiry Date.
     event RevokedDelegation(
         address indexed delegator,
         address indexed delegatee,
         address contractAddress,
-        uint256 oldExpiryData
+        uint64 delegationCounter,
+        uint64 oldExpiryDate
     );
 
     /// @notice Emitted when the pauser address is updated.
