@@ -116,12 +116,12 @@ contract Decryption is
     }
 
     /**
-     * @notice The address of the GatewayConfig contract for checking if a signer is valid
+     * @notice The address of the GatewayConfig contract for checking if a signer is valid.
      */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
 
     /**
-     * @notice The address of the MultichainACL contract for checking if a decryption requests are allowed
+     * @notice The address of the MultichainACL contract for checking if a decryption requests are allowed.
      */
     IMultichainACL private constant MULTICHAIN_ACL = IMultichainACL(multichainACLAddress);
 
@@ -229,7 +229,7 @@ contract Decryption is
         // ----------------------------------------------------------------------------------------------
         // Common decryption state variables:
         // ----------------------------------------------------------------------------------------------
-        ///@notice DEPRECATED: To remove in next state reset.
+        /// @notice DEPRECATED: To remove in next state reset.
         uint256 _decryptionRequestCounter; // DEPRECATED
         /// @notice Whether a (public, user, delegated user) decryption is done
         mapping(uint256 decryptionId => bool decryptionDone) decryptionDone;
