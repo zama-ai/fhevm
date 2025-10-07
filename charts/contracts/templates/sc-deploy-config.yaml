@@ -83,7 +83,7 @@ data:
     {{ . | nindent 4 }}
     {{- end }}
 
-    for envfile in /app/addresses/.env.*; do
+    for envfile in addresses/.env.*; do
       echo "---"
       echo "Updating configmap: ${CONFIGMAP_NAME} for the following contract addresses:"
 
