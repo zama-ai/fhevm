@@ -21,7 +21,7 @@ import { Pausable } from "./shared/Pausable.sol";
 import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
 import { HandleOps } from "./libraries/HandleOps.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
-import { SnsCiphertextMaterial, CtHandleContractPair, DelegationAccounts } from "./shared/Structs.sol";
+import { SnsCiphertextMaterial, CtHandleContractPair } from "./shared/Structs.sol";
 import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
 /**
@@ -81,26 +81,6 @@ contract Decryption is
         bytes32[] ctHandles;
         /// @notice The partial decryption share reencrypted with the user's public key.
         bytes userDecryptedShare;
-        /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
-        bytes extraData;
-    }
-
-    /**
-     * @notice The typed data structure for the EIP712 signature to validate in user decryption with delegation requests.
-     * @dev The name of this struct is not relevant for the signature validation, only the one defined
-     * EIP712_USER_DECRYPT_DELEGATION_REQUEST_TYPE is, but we keep it the same for clarity.
-     */
-    struct DelegatedUserDecryptRequestVerification {
-        /// @notice The user's public key to be used for reencryption.
-        bytes publicKey;
-        /// @notice The contract addresses that verification is requested for.
-        address[] contractAddresses;
-        /// @notice The address of the account that delegates access to its handles.
-        address delegatorAddress;
-        /// @notice The start timestamp of the user decryption request.
-        uint256 startTimestamp;
-        /// @notice The duration in days of the user decryption request after the start timestamp.
-        uint256 durationDays;
         /// @notice Generic bytes metadata for versioned payloads. First byte is for the version.
         bytes extraData;
     }
@@ -177,20 +157,6 @@ contract Decryption is
     bytes32 private constant EIP712_USER_DECRYPT_REQUEST_TYPE_HASH = keccak256(bytes(EIP712_USER_DECRYPT_REQUEST_TYPE));
 
     /**
-     * @notice The definition of the DelegatedUserDecryptRequestVerification structure typed data.
-     */
-    string private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE =
-        "DelegatedUserDecryptRequestVerification(bytes publicKey,address[] contractAddresses,address delegatorAddress,"
-        "uint256 startTimestamp,uint256 durationDays,bytes extraData)";
-
-    /**
-     * @notice The hash of the DelegatedUserDecryptRequestVerification structure typed data definition
-     * used for signature validation in delegated user decryption requests.
-     */
-    bytes32 private constant EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH =
-        keccak256(bytes(EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE));
-
-    /**
      * @notice The definition of the UserDecryptResponseVerification structure typed data.
      */
     string private constant EIP712_USER_DECRYPT_RESPONSE_TYPE =
@@ -229,9 +195,7 @@ contract Decryption is
         // ----------------------------------------------------------------------------------------------
         // Common decryption state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice DEPRECATED: To remove in next state reset.
-        uint256 _decryptionRequestCounter; // DEPRECATED
-        /// @notice Whether a (public, user, delegated user) decryption is done
+        /// @notice Whether a (public, user) decryption is done
         mapping(uint256 decryptionId => bool decryptionDone) decryptionDone;
         // prettier-ignore
         /// @notice Whether KMS signer has already responded to a decryption request.
@@ -499,102 +463,6 @@ contract Decryption is
     }
 
     /**
-     * @notice See {IDecryption-userDecryptionWithDelegationRequest}.
-     */
-    function delegatedUserDecryptionRequest(
-        CtHandleContractPair[] calldata ctHandleContractPairs,
-        RequestValidity calldata requestValidity,
-        DelegationAccounts calldata delegationAccounts,
-        ContractsInfo calldata contractsInfo,
-        bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) external virtual whenNotPaused {
-        if (contractsInfo.addresses.length == 0) {
-            revert EmptyContractAddresses();
-        }
-        if (contractsInfo.addresses.length > MAX_USER_DECRYPT_CONTRACT_ADDRESSES) {
-            revert ContractAddressesMaxLengthExceeded(
-                MAX_USER_DECRYPT_CONTRACT_ADDRESSES,
-                contractsInfo.addresses.length
-            );
-        }
-
-        // Check the user decryption request is valid.
-        _checkUserDecryptionRequestValidity(requestValidity);
-
-        // Check the delegator address is not included in the contract addresses.
-        if (_containsContractAddress(contractsInfo.addresses, delegationAccounts.delegatorAddress)) {
-            revert DelegatorAddressInContractAddresses(delegationAccounts.delegatorAddress, contractsInfo.addresses);
-        }
-
-        // - Extract the handles and check their conformance
-        bytes32[] memory ctHandles = _extractCtHandlesCheckConformanceUser(
-            ctHandleContractPairs,
-            contractsInfo.addresses,
-            delegationAccounts.delegatorAddress
-        );
-
-        // Check that the delegated address has been granted access to the contract addresses by
-        // by the delegator.
-        _checkIsAccountDelegated(contractsInfo.chainId, delegationAccounts, contractsInfo.addresses);
-
-        // Initialize the EIP712UserDecryptRequest structure for the signature validation.
-        DelegatedUserDecryptRequestVerification
-            memory delegatedUserDecryptRequestVerification = DelegatedUserDecryptRequestVerification(
-                publicKey,
-                contractsInfo.addresses,
-                delegationAccounts.delegatorAddress,
-                requestValidity.startTimestamp,
-                requestValidity.durationDays,
-                extraData
-            );
-
-        // Validate the received EIP712 signature on the user decryption request.
-        _validateDelegatedUserDecryptRequestEIP712Signature(
-            delegatedUserDecryptRequestVerification,
-            delegationAccounts.delegatedAddress,
-            signature,
-            contractsInfo.chainId
-        );
-
-        // Fetch the ciphertexts from the CiphertextCommits contract
-        // This call is reverted if any of the ciphertexts are not found in the contract, but
-        // this should not happen for now as a ciphertext cannot be allowed for decryption
-        // without being added to the contract first (and we currently have no ways of deleting
-        // a ciphertext from the contract).
-        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
-
-        // Check that received snsCtMaterials have the same keyId.
-        // TODO: This should be removed once batched decryption requests with different keys is
-        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
-        _checkCtMaterialKeyIds(snsCtMaterials);
-
-        DecryptionStorage storage $ = _getDecryptionStorage();
-
-        // Generate a globally unique decryptionId for the delegated user decryption request.
-        // The counter is initialized at deployment such that decryptionId's first byte uniquely
-        // represents a user decryption request (including delegated user decryption requests),
-        // with format: [0000 0010 | counter_1..31]
-        // This counter is used to ensure the IDs' uniqueness, as there is no proper way
-        // of generating truly pseudo-random numbers on-chain on Arbitrum. This has some impact on
-        // how IDs need to be handled off-chain in case of re-org.
-        $.userDecryptionCounter++;
-        uint256 userDecryptionId = $.userDecryptionCounter;
-
-        // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
-        $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
-
-        emit UserDecryptionRequest(
-            userDecryptionId,
-            snsCtMaterials,
-            delegationAccounts.delegatedAddress,
-            publicKey,
-            extraData
-        );
-    }
-
-    /**
      * @notice See {IDecryption-userDecryptionResponse}.
      * @dev We restrict this call to KMS transaction senders because, in case of reorgs, we need to
      * prevent anyone else from copying the signature and sending it to trigger a consensus.
@@ -707,42 +575,6 @@ contract Decryption is
     }
 
     /**
-     * @dev See {IDecryption-isDelegatedUserDecryptionReady}.
-     */
-    function isDelegatedUserDecryptionReady(
-        uint256 contractsChainId,
-        DelegationAccounts calldata delegationAccounts,
-        CtHandleContractPair[] calldata ctHandleContractPairs,
-        address[] calldata contractAddresses,
-        bytes calldata /* extraData */
-    ) external view virtual returns (bool) {
-        // Check that the delegated address has been granted access to the given contractAddresses
-        // by the delegator.
-        if (!MULTICHAIN_ACL.isAccountDelegated(contractsChainId, delegationAccounts, contractAddresses)) {
-            return false;
-        }
-
-        // For each handle, check that the delegator and contract accounts have access to it and that the
-        // ciphertext material represented by it has been added.
-        for (uint256 i = 0; i < ctHandleContractPairs.length; i++) {
-            if (
-                !MULTICHAIN_ACL.isAccountAllowed(
-                    ctHandleContractPairs[i].ctHandle,
-                    delegationAccounts.delegatorAddress
-                ) ||
-                !MULTICHAIN_ACL.isAccountAllowed(
-                    ctHandleContractPairs[i].ctHandle,
-                    ctHandleContractPairs[i].contractAddress
-                ) ||
-                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
-            ) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
      * @notice See {IDecryption-isDecryptionDone}.
      */
     function isDecryptionDone(uint256 decryptionId) external view virtual returns (bool) {
@@ -837,30 +669,6 @@ contract Decryption is
     }
 
     /**
-     * @notice Validates the EIP712 signature for a given user decryption request
-     * @dev This function checks that the signer address is the same as the delegated address.
-     * @param delegatedUserDecryptRequestVerification The signed DelegatedUserDecryptRequestVerification structure
-     * @param delegatedAddress The address of the delegated user.
-     * @param signature The signature to be validated
-     * @param contractsChainId The chain ID of the contracts.
-     */
-    function _validateDelegatedUserDecryptRequestEIP712Signature(
-        DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
-        address delegatedAddress,
-        bytes calldata signature,
-        uint256 contractsChainId
-    ) internal view virtual {
-        bytes32 digest = _hashDelegatedUserDecryptRequestVerification(
-            delegatedUserDecryptRequestVerification,
-            contractsChainId
-        );
-        address signer = ECDSA.recover(digest, signature);
-        if (signer != delegatedAddress) {
-            revert InvalidUserSignature(signature);
-        }
-    }
-
-    /**
      * @notice Computes the hash of a given PublicDecryptVerification structured data
      * @param publicDecryptVerification The PublicDecryptVerification structure
      * @return The hash of the PublicDecryptVerification structure
@@ -915,30 +723,6 @@ contract Decryption is
                 userDecryptRequestVerification.startTimestamp,
                 userDecryptRequestVerification.durationDays,
                 keccak256(abi.encodePacked(userDecryptRequestVerification.extraData))
-            )
-        );
-        return _hashTypedDataV4CustomChainId(contractsChainId, structHash);
-    }
-
-    /**
-     * @notice Computes the hash of a given DelegatedUserDecryptRequestVerification structured data.
-     * @param delegatedUserDecryptRequestVerification The DelegatedUserDecryptRequestVerification structure to hash.
-     * @param contractsChainId The chain ID of the contracts.
-     * @return The hash of the DelegatedUserDecryptRequestVerification structure.
-     */
-    function _hashDelegatedUserDecryptRequestVerification(
-        DelegatedUserDecryptRequestVerification memory delegatedUserDecryptRequestVerification,
-        uint256 contractsChainId
-    ) internal view virtual returns (bytes32) {
-        bytes32 structHash = keccak256(
-            abi.encode(
-                EIP712_DELEGATED_USER_DECRYPT_REQUEST_TYPE_HASH,
-                keccak256(delegatedUserDecryptRequestVerification.publicKey),
-                keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.contractAddresses)),
-                delegatedUserDecryptRequestVerification.delegatorAddress,
-                delegatedUserDecryptRequestVerification.startTimestamp,
-                delegatedUserDecryptRequestVerification.durationDays,
-                keccak256(abi.encodePacked(delegatedUserDecryptRequestVerification.extraData))
             )
         );
         return _hashTypedDataV4CustomChainId(contractsChainId, structHash);

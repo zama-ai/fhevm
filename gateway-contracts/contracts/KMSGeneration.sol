@@ -300,13 +300,16 @@ contract KMSGeneration is
 
         $.kmsHasSignedForResponse[keyId][kmsSigner] = true;
 
-        // Store the KMS transaction sender address and the storage URL for the keygen response,
-        // event if the consensus has already been reached
-        string[] memory consensusUrls = _storeConsensusMaterials(keyId, digest);
+        // Store the KMS transaction sender address for the keygen response
+        // A "late" valid KMS transaction sender address or storage URL will still be added in the list
+        address[] storage consensusTxSenders = $.consensusTxSenderAddresses[keyId][digest];
+        consensusTxSenders.push(msg.sender);
+
+        uint256 consensusTxSendersLength = consensusTxSenders.length;
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.isRequestDone[keyId] && _isKmsConsensusReached(consensusUrls.length)) {
+        if (!$.isRequestDone[keyId] && _isKmsConsensusReached(consensusTxSendersLength)) {
             $.isRequestDone[keyId] = true;
 
             // Store the digests of the generated keys in order to retrieve them later
@@ -323,6 +326,10 @@ contract KMSGeneration is
 
             // Set the active keyId
             $.activeKeyId = keyId;
+            string[] memory consensusUrls = new string[](consensusTxSendersLength);
+            for (uint256 i = 0; i < consensusTxSendersLength; i++) {
+                consensusUrls[i] = GATEWAY_CONFIG.getKmsNode(consensusTxSenders).storageUrl;
+            }
 
             emit ActivateKey(keyId, consensusUrls, keyDigests);
         }
@@ -376,13 +383,16 @@ contract KMSGeneration is
 
         $.kmsHasSignedForResponse[crsId][kmsSigner] = true;
 
-        // Store the KMS transaction sender address and the storage URL for the crsgen response,
-        // event if the consensus has already been reached
-        string[] memory consensusUrls = _storeConsensusMaterials(crsId, digest);
+        // Store the KMS transaction sender address for the crsgen response
+        // A "late" valid KMS transaction sender address or storage URL will still be added in the list
+        address[] storage consensusTxSenders = $.consensusTxSenderAddresses[crsId][digest];
+        consensusTxSenders.push(msg.sender);
+
+        uint256 consensusTxSendersLength = consensusTxSenders.length;
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.isRequestDone[crsId] && _isKmsConsensusReached(consensusUrls.length)) {
+        if (!$.isRequestDone[crsId] && _isKmsConsensusReached(consensusTxSendersLength)) {
             $.isRequestDone[crsId] = true;
 
             // Store the digest of the generated CRS in order to retrieve it later
@@ -394,6 +404,10 @@ contract KMSGeneration is
             // Set the active CRS ID
             $.activeCrsId = crsId;
 
+            string[] memory consensusUrls = new string[](consensusTxSendersLength);
+            for (uint256 i = 0; i < consensusTxSendersLength; i++) {
+                consensusUrls[i] = GATEWAY_CONFIG.getKmsNode(consensusTxSenders[i]).storageUrl;
+            }
             emit ActivateCrs(crsId, consensusUrls, crsDigest);
         }
     }
@@ -524,30 +538,6 @@ contract KMSGeneration is
         _checkIsKmsSigner(signer);
 
         return signer;
-    }
-
-    /**
-     * @notice Stores the KMS transaction sender address and the storage URL for the keygen response
-     * @param requestId The ID of the request.
-     * @param digest The digest of the request.
-     * @return The list of storage URLs.
-     */
-    function _storeConsensusMaterials(uint256 requestId, bytes32 digest) internal virtual returns (string[] memory) {
-        KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
-        // Get the KMS node's storage URL
-        string memory kmsNodeStorageUrl = GATEWAY_CONFIG.getKmsNode(msg.sender).storageUrl;
-
-        // Store the KMS transaction sender address and the storage URL for the keygen response
-        // It is important to consider the same mapping fields used for the consensus
-        // A "late" valid KMS transaction sender address or storage URL will still be added in the list
-        address[] storage consensusTxSenders = $.consensusTxSenderAddresses[requestId][digest];
-        consensusTxSenders.push(msg.sender);
-
-        string[] storage consensusUrls = $.consensusStorageUrls[requestId][digest];
-        consensusUrls.push(kmsNodeStorageUrl);
-
-        return consensusUrls;
     }
 
     /**
