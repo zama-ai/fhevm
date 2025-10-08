@@ -191,7 +191,7 @@ task('task:deployInputVerifier')
     const verifyingContractSource = process.env.INPUT_VERIFICATION_ADDRESS!;
     const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
 
-    // Load the initial coprocessor context from environment variables.
+    // Load the initial coprocessor context signers from environment variables.
     let initialCoprocessorContextSigners: string[] = [];
     const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
     for (let idx = 0; idx < parseInt(numSigners); idx++) {

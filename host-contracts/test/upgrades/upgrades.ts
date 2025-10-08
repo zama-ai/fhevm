@@ -42,6 +42,26 @@ describe('Upgrades', function () {
     expect(aclAddress).to.equal(await acl2.getAddress());
   });
 
+  it('deploy upgradeable InputVerifier', async function () {
+    const inputVerifierFactory = await ethers.getContractFactory('InputVerifier', this.signers.fred);
+    const inputVerifierFactoryUpgraded = await ethers.getContractFactory(
+      'InputVerifierUpgradedExample',
+      this.signers.fred,
+    ); // because account[5] is set in `.env to be owner of ACL/Host
+    const emptyUUPS = await upgrades.deployProxy(this.emptyUUPSFactory, {
+      initializer: 'initialize',
+      kind: 'uups',
+    });
+    const inputVerifier = await upgrades.upgradeProxy(emptyUUPS, inputVerifierFactory, {
+      unsafeAllow: ['missing-initializer'],
+    });
+    await inputVerifier.waitForDeployment();
+    expect(await inputVerifier.getVersion()).to.equal('InputVerifier v0.2.0');
+    const inputVerifier2 = await upgrades.upgradeProxy(inputVerifier, inputVerifierFactoryUpgraded);
+    await inputVerifier2.waitForDeployment();
+    expect(await inputVerifier2.getVersion()).to.equal('InputVerifier v1000.0.0');
+  });
+
   it('deploy upgradeable KMSVerifier', async function () {
     const kmsFactory = await ethers.getContractFactory('KMSVerifier', this.signers.fred);
     const kmsFactoryUpgraded = await ethers.getContractFactory('KMSVerifierUpgradedExample', this.signers.fred); // because account[5] is set in `.env to be owner of ACL/Host
