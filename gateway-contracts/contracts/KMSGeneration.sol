@@ -129,8 +129,6 @@ contract KMSGeneration is
         mapping(uint256 requestId => bool hasConsensusAlreadyBeenReached) isRequestDone;
         /// @notice The KMS transaction sender addresses that propagated valid signatures for a request
         mapping(uint256 requestId => mapping(bytes32 digest => address[] kmsTxSenderAddresses)) consensusTxSenderAddresses;
-        /// @notice The KMS nodes' storage URL that propagated valid signatures for a request
-        mapping(uint256 requestId => mapping(bytes32 digest => string[] kmsNodeStorageUrls)) consensusStorageUrls;
         /// @notice The digest of the signed struct on which consensus was reached for a request
         mapping(uint256 requestId => bytes32 digest) consensusDigest;
         // ----------------------------------------------------------------------------------------------
@@ -479,15 +477,19 @@ contract KMSGeneration is
      */
     function getKeyMaterials(uint256 keyId) external view virtual returns (string[] memory, KeyDigest[] memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
         if (!$.isRequestDone[keyId]) {
             revert KeyNotGenerated(keyId);
         }
-
-        // Get the unique digest associated to the keygen request
         bytes32 digest = $.consensusDigest[keyId];
+        address[] memory consensusTxSenders = $.consensusTxSenderAddresses[keyId][digest];
+        uint256 consensusTxSendersLength = consensusTxSenders.length;
 
-        return ($.consensusStorageUrls[keyId][digest], $.keyDigests[keyId]);
+        string[] memory consensusUrls = new string[](consensusTxSendersLength);
+        for (uint256 i = 0; i < consensusTxSendersLength; i++) {
+            consensusUrls[i] = GATEWAY_CONFIG.getKmsNode(consensusTxSenders[i]).storageUrl;
+        }
+
+        return (consensusUrls, $.keyDigests[keyId]);
     }
 
     /**
@@ -495,15 +497,19 @@ contract KMSGeneration is
      */
     function getCrsMaterials(uint256 crsId) external view virtual returns (string[] memory, bytes memory) {
         KMSGenerationStorage storage $ = _getKMSGenerationStorage();
-
         if (!$.isRequestDone[crsId]) {
             revert CrsNotGenerated(crsId);
         }
-
-        // Get the unique digest associated to the crsgen request
         bytes32 digest = $.consensusDigest[crsId];
+        address[] memory consensusTxSenders = $.consensusTxSenderAddresses[crsId][digest];
+        uint256 consensusTxSendersLength = consensusTxSenders.length;
 
-        return ($.consensusStorageUrls[crsId][digest], $.crsDigests[crsId]);
+        string[] memory consensusUrls = new string[](consensusTxSendersLength);
+        for (uint256 i = 0; i < consensusTxSendersLength; i++) {
+            consensusUrls[i] = GATEWAY_CONFIG.getKmsNode(consensusTxSenders[i]).storageUrl;
+        }
+
+        return (consensusUrls, $.crsDigests[crsId]);
     }
 
     /**
