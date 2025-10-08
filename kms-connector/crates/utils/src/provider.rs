@@ -11,8 +11,8 @@ use alloy::{
         PendingTransaction, PendingTransactionBuilder, PendingTransactionConfig,
         PendingTransactionError, Provider, ProviderCall, RootProvider, RpcWithBlock, SendableTx,
         fillers::{
-            BlobGasFiller, CachedNonceManager, ChainIdFiller, FillProvider, GasFiller, JoinFill,
-            NonceManager, TxFiller,
+            BlobGasFiller, CachedNonceManager, FillProvider, GasFiller, JoinFill, NonceManager,
+            TxFiller,
         },
     },
     rpc::{
@@ -31,8 +31,7 @@ use futures::lock::Mutex;
 use serde_json::value::RawValue;
 use std::{borrow::Cow, sync::Arc};
 
-pub type FillersWithoutNonceManagement =
-    JoinFill<GasFiller, JoinFill<BlobGasFiller, ChainIdFiller>>;
+pub type FillersWithoutNonceManagement = JoinFill<GasFiller, BlobGasFiller>;
 
 /// A wrapper around an `alloy` provider that recovers its nonce manager on error.
 ///
