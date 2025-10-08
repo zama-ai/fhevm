@@ -28,6 +28,8 @@ COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 
 WORKDIR /app/coprocessor/fhevm-engine
 
+RUN apk update && apk add libssl3 libcrypto3
+
 # Build gw_listener binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo fetch && \
@@ -36,6 +38,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
+COPY --from=builder /usr/lib/libssl.so.3 /usr/lib/libssl.so.3
+COPY --from=builder /usr/lib/libcrypto.so.3 /usr/lib/libcrypto.so.3
 COPY --from=builder /etc/group /etc/group
 COPY --from=builder /etc/passwd /etc/passwd
 COPY --from=builder --chown=fhevm:fhevm /app/coprocessor/fhevm-engine/target/release/gw_listener /usr/local/bin/gw_listener

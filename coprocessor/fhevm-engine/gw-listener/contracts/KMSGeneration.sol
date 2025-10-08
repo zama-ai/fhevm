@@ -18,6 +18,16 @@ contract KMSGeneration is IKMSGeneration {
         emit ActivateKey(keyId, urls, digests);
     }
 
+    function keygen_public_key_non_s3() external {
+        uint256 keyId = 16;
+        string[] memory urls = new string[](1);
+        urls[0] = "https://s3.amazonaws.test-bucket1.com";
+        KeyDigest[] memory digests = new KeyDigest[](1);
+        // python: bytes([..]) hash for "key_bytes"
+        digests[0] = KeyDigest({ keyType: KeyType.Public, digest: "]\xe8\xc3\xa0e\xd7H\xb7\xb7\xaf)\x1f\xc3\x0cR\x85\x00m\xaf\xbe\xad\x9e\xd5\x1e\xb7\xd4\xdd\xebN\xb2JV"});
+        emit ActivateKey(keyId, urls, digests);
+    }
+
     function keygen_server_key() external {
         uint256 keyId = 16;
         string[] memory urls = new string[](4);

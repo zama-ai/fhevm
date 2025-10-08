@@ -17,6 +17,7 @@ aws-sdk-s3 = { workspace = true }
 clap = { workspace = true }
 futures-util = { workspace = true }
 humantime = { workspace = true }
+reqwest = { version = "0.12", features = ["default"] }
 rustls = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

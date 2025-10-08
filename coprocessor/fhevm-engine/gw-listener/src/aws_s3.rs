@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::config::{Builder, ProvideCredentials};
 use aws_sdk_s3::Client;
+use reqwest;
 use tokio_util::bytes;
 use tracing::{error, info, warn};
 
@@ -74,6 +75,18 @@ impl AwsS3Interface for AwsS3Client {
         bucket: &str,
         key: &str,
     ) -> anyhow::Result<bytes::Bytes> {
+        if bucket.is_empty() {
+            // devnet temporary workaround, problem with PUB -> PUB-p1 + no bucket name
+            let full_url = format!("{}/{}", url, key);
+            let full_url = full_url.replace("PUB", "PUB-p1");
+            warn!(full_url, "Empty bucket name, download without S3");
+            let response = reqwest::get(full_url).await?;
+            if !response.status().is_success() {
+                anyhow::bail!("Download failed");
+            }
+            let body = response.text().await?;
+            return Ok(bytes::Bytes::from(body));
+        }
         Ok(create_s3_client(&S3Policy::DEFAULT, url)
             .await?
             .get_object()
@@ -100,9 +113,9 @@ pub trait AwsS3Interface: Send + Sync {
 
 fn split_url(s3_bucket_url: &String) -> anyhow::Result<(String, String)> {
     let parsed_url_and_bucket = url::Url::parse(s3_bucket_url)?;
-    let bucket = parsed_url_and_bucket.path();
+    let bucket = parsed_url_and_bucket.path().trim_start_matches('/').to_owned();
     let host = s3_bucket_url
-        .replace(bucket, "")
+        .replace(&bucket, "")
         .trim_end_matches('/')
         .to_owned();
     let host = if host.contains("minio:9000") {

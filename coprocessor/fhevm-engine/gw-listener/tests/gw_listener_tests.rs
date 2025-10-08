@@ -332,10 +332,17 @@ pub struct AwsS3ClientMocked(Client);
 impl AwsS3Interface for AwsS3ClientMocked {
     async fn get_bucket_key(
         &self,
-        _url: &str,
+        url: &str,
         bucket: &str,
         key: &str,
     ) -> anyhow::Result<bytes::Bytes> {
+        if bucket.is_empty() {
+            // devnet, problem with PUB -> PUB-p1 + no bucket name
+            let full_url = format!("{}/{}", url, key);
+            let full_url = full_url.replace("PUB", "PUB-p1");
+            eprintln!("Empty bucket name, download without S3 {full_url}");
+            return Ok(bytes::Bytes::from_static(b"key_bytes"))
+        }
         Ok(self
             .0
             .get_object()
@@ -352,6 +359,97 @@ impl AwsS3Interface for AwsS3ClientMocked {
 
 // test bad bucket
 // test bad key
+#[tokio::test]
+#[serial(db)]
+async fn keygen_ok_non_s3() -> anyhow::Result<()> {
+    use aws_sdk_s3::operation::get_object::GetObjectOutput;
+    use aws_sdk_s3::primitives::ByteStream;
+    use aws_sdk_s3::Client;
+    use aws_smithy_mocks::RuleMode;
+    use aws_smithy_mocks::{mock, mock_client};
+    use gw_listener::KeyType;
+
+    // see ../contracts/KMSGeneration.sol
+    let buckets = [
+        "test-bucket1/PUB-P1",
+        "test-bucket2/PUB-P2",
+        "test-bucket3/PUB-P3",
+        "test-bucket4/PUB-P4",
+    ];
+
+    let keys_digests = [KeyType::PublicKey, KeyType::ServerKey];
+
+    let key_id = U256::from(16);
+
+    let mut rules = vec![];
+    for &bucket in &buckets {
+        for key_type in &keys_digests {
+            let key_type_str: &str = to_bucket_key_prefix(*key_type);
+            let key_id_no_0x = key_id_to_key_bucket(key_id);
+            let key = format!("{}/{}", key_type_str, key_id_no_0x);
+            eprintln!("Adding {}/{}", bucket, key);
+            let get_object_rule = mock!(Client::get_object)
+                .match_requests(move |req| req.bucket() == Some(bucket) && req.key() == Some(&key))
+                .then_output(|| {
+                    GetObjectOutput::builder()
+                        .body(ByteStream::from_static(b"key_bytes"))
+                        .build()
+                });
+            rules.push(get_object_rule);
+        }
+    }
+    for &bucket in &buckets {
+        let key_id_no_0x = &format!("{key_id:064X}");
+        let key = format!("PUB/CRS/{key_id_no_0x}");
+        eprintln!("Adding {}/{}", bucket, key);
+        let get_object_rule = mock!(Client::get_object)
+            .match_requests(move |req| req.bucket() == Some(bucket) && req.key() == Some(&key))
+            .then_output(|| {
+                GetObjectOutput::builder()
+                    .body(ByteStream::from_static(b"key_bytes"))
+                    .build()
+            });
+        rules.push(get_object_rule);
+    }
+    let rules_ref: Vec<_> = rules.iter().collect();
+
+    // Create a mocked client with the rule
+    let s3 = mock_client!(aws_sdk_s3, RuleMode::MatchAny, &rules_ref);
+
+    let env = TestEnvironment::new().await?;
+    let provider = ProviderBuilder::new()
+        .wallet(env.wallet)
+        .connect_ws(WsConnect::new(env.anvil.ws_endpoint_url()))
+        .await?;
+    let aws_s3_client = AwsS3ClientMocked(s3);
+    let input_verification = InputVerification::deploy(&provider).await?;
+    let kms_generation = KMSGeneration::deploy(&provider).await?;
+    let gw_listener = GatewayListener::new(
+        *input_verification.address(),
+        *kms_generation.address(),
+        env.conf.clone(),
+        env.cancel_token.clone(),
+        provider.clone(),
+        aws_s3_client.clone(),
+    );
+
+    let listener = tokio::spawn(async move { gw_listener.run().await });
+
+    assert!(has_not_public_key(&env.db_pool.clone()).await?);
+
+    let txn_req = kms_generation
+        .keygen_public_key_non_s3()
+        .into_transaction_request();
+    let pending_txn = provider.send_transaction(txn_req).await?;
+    let receipt = pending_txn.get_receipt().await?;
+    assert!(receipt.status());
+    assert!(has_public_key(&env.db_pool.clone()).await?);
+
+    env.cancel_token.cancel();
+    listener.abort();
+    Ok(())
+}
+
 #[tokio::test]
 #[serial(db)]
 async fn keygen_ok() -> anyhow::Result<()> {

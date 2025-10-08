@@ -3856,6 +3856,7 @@ dependencies = [
  "foundry-compilers",
  "futures-util",
  "humantime",
+ "reqwest",
  "rustls 0.23.31",
  "semver 1.0.27",
  "serde",
