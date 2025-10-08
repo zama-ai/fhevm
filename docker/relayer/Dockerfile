@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 # Base from https://docs.docker.com/guides/rust/develop/
-ARG RUST_VERSION=1.87.0
+ARG RUST_VERSION=1.90.0
 ARG APP_NAME=fhevm-relayer
 
-FROM rust:${RUST_VERSION}-slim-bullseye AS build
+FROM cgr.dev/zama.ai/rust:${RUST_VERSION}-dev AS build
 ARG APP_NAME
 WORKDIR /app
 
@@ -14,6 +14,7 @@ WORKDIR /app
 # Leverage a bind mount to the src directory to avoid having to copy the
 # source code into the container. Once built, copy the executable to an
 # output directory before the cache mounted /app/target is unmounted.
+USER root
 RUN --mount=type=bind,source=apps/relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=apps/relayer/Cargo.lock,target=Cargo.lock \
     --mount=type=bind,source=apps/relayer/build.rs,target=build.rs \
@@ -26,27 +27,19 @@ RUN --mount=type=bind,source=apps/relayer/Cargo.toml,target=Cargo.toml \
     --mount=type=bind,source=apps/relayer/artifacts/contract-abis,target=artifacts/contract-abis \
     --mount=type=cache,target=/app/target/ \
     --mount=type=cache,target=/usr/local/cargo/registry/ \
-    <<EOF
-set -e
+    apk add --no-cache openssl-dev clang sqlite-dev && \
+    ls -R && cargo build --locked --release && \
+    cp ./target/release/$APP_NAME /bin/server
 
-apt-get update && apt-get install build-essential libclang-dev libssl-dev libpq-dev libsqlite3-dev ca-certificates gettext git musl-dev pkg-config curl -y --no-install-recommends && rm -rf /var/lib/apt/lists/*
-ls -R && cargo build --locked --release
-cp ./target/release/$APP_NAME /bin/server
-EOF
 
 ################################################################################
 # Create a new stage for running the application that contains the minimal
 # runtime dependencies for the application. This often uses a different base
 # image from the build stage where the necessary files are copied from the build
 # stage.
-#
-# The example below uses the debian bullseye image as the foundation for    running the app.
-# By specifying the "bullseye-slim" tag, it will also use whatever happens to    be the
-# most recent version of that tag when you build your Dockerfile. If
-# reproducibility is important, consider using a digest
-# (e.g.,    debian@sha256:ac707220fbd7b67fc19b112cee8170b41a9e97f703f588b2cdbbcdcecdd8af57).
-FROM debian:bullseye-slim AS runtime
-RUN apt-get update && apt-get install libssl-dev libpq-dev libsqlite3-dev ca-certificates gettext git musl-dev pkg-config -y --no-install-recommends && update-ca-certificates && rm -rf /var/lib/apt/lists/*
+FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0-dev AS runtime
+USER root
+RUN apk add --no-cache ca-certificates
 
 # Create a non-privileged user that the app will run under.
 # See https://docs.docker.com/develop/develop-images/dockerfile_best-practices/   #user
