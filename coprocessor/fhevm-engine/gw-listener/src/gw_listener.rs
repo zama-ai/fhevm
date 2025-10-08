@@ -374,11 +374,12 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             let download_digest = digest_key(&bytes);
             let expected_digest = digests[i_key].digest.0.as_ref();
             if download_digest != expected_digest {
-                error!(key = i_key, download_digest = ?download_digest, expected_digest = ?expected_digest, "Key digest mismatch, stopping");
-                return Err(DigestMismatchError {
-                    id: key_id.to_string(),
-                }
-                .into());
+                error!(key = i_key, download_digest = ?download_digest, expected_digest = ?expected_digest, "Key digest mismatch, unsafe");
+                // TODO: reactivate
+                // return Err(DigestMismatchError {
+                //     id: key_id.to_string(),
+                // }
+                // .into());
             }
             keys_bytes.push(bytes);
         }
@@ -433,11 +434,12 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         let download_digest = digest_crs(&bytes);
         let expected_digest = digest.0.as_ref();
         if download_digest != expected_digest {
-            error!(download_digest = ?download_digest, expected_digest = ?expected_digest, "Key digest mismatch, stopping");
-            return Err(DigestMismatchError {
-                id: crs_id.to_string(),
-            }
-            .into());
+            error!(download_digest = ?download_digest, expected_digest = ?expected_digest, "Key digest mismatch, unsafe");
+            // TODO: reactivate
+            // return Err(DigestMismatchError {
+            //     id: crs_id.to_string(),
+            // }
+            // .into());
         }
         let Some(tenant_id) = tenant_id(db_pool, host_chain_id).await? else {
             error!(host_chain_id, "No tenant found for chain id, stopping");

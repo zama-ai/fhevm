@@ -38,6 +38,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
 # Stage 2: Runtime image
 FROM cgr.dev/zama.ai/glibc-dynamic:15.2.0 AS prod
 
+# workaround, to remove
 COPY --from=builder /usr/lib/libssl.so.3 /usr/lib/libssl.so.3
 COPY --from=builder /usr/lib/libcrypto.so.3 /usr/lib/libcrypto.so.3
 COPY --from=builder /etc/group /etc/group
