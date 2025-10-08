@@ -298,6 +298,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                 },
                                 _ => {}
                             }
+                        } else {
+                            error!(log = ?log, "Failed to decode KMSGeneration event log");
                         }
                     }
                     last_processed_block_num = Some(to_block);
@@ -401,9 +403,9 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
         let mut key_types = vec![];
         for (i_key, key_digest) in digests.iter().enumerate() {
             let key_type: KeyType = key_digest.keyType.try_into()?;
-            let key_type_path: &str = to_bucket_key_prefix(key_type);
+            let key_type_path: &str = to_key_prefix(key_type);
             key_types.push(key_type);
-            let key_id_no_0x = key_id_to_key_bucket(key_id);
+            let key_id_no_0x = key_id_to_aws_key(key_id);
             let key_path = format!("{key_type_path}/{key_id_no_0x}");
             let download = download_key_from_s3(s3_client, &s3_bucket_urls, key_path, i_key);
             downloads.push(download);
@@ -468,9 +470,10 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
             "Received ActivateCrs event"
         );
         // Download keys from S3
-        let crs_id_no_0x = key_id_to_key_bucket(crs_id);
-        let key_path = format!("PUB/CRS/{crs_id_no_0x}");
-        let Ok(bytes) = download_key_from_s3(s3_client, &s3_bucket_urls, key_path, 0).await else {
+        let crs_id_no_0x = key_id_to_aws_key(crs_id);
+        let key_path_suffix = format!("/CRS/{crs_id_no_0x}");
+        let Ok(bytes) = download_key_from_s3(s3_client, &s3_bucket_urls, key_path_suffix, 0).await
+        else {
             error!(key_id = ?crs_id, "Failed to download crs, stopping");
             anyhow::bail!("Failed to download crs key id:{crs_id}");
         };
@@ -615,22 +618,21 @@ fn key_id_to_database_bytes(key_id: KeyId) -> [u8; 32] {
     key_id.to_be_bytes()
 }
 
-pub fn to_bucket_key_prefix(val: KeyType) -> &'static str {
+pub fn to_key_prefix(val: KeyType) -> &'static str {
     match val {
-        // TODO: configurable
-        KeyType::ServerKey => "PUB/ServerKey",
-        KeyType::PublicKey => "PUB/PublicKey",
+        KeyType::ServerKey => "/ServerKey",
+        KeyType::PublicKey => "/PublicKey",
     }
 }
 
-pub fn key_id_to_key_bucket(key_id: KeyId) -> String {
+pub fn key_id_to_aws_key(key_id: KeyId) -> String {
     format!("{:064x}", key_id).to_owned()
 }
 
 mod test {
     #[test]
     fn test_key_id_consistency() {
-        use super::{key_id_to_database_bytes, key_id_to_key_bucket};
+        use super::{key_id_to_aws_key, key_id_to_database_bytes};
         use alloy::hex;
         use alloy::primitives::U256;
 
@@ -638,7 +640,7 @@ mod test {
         let database_bytes = key_id_to_database_bytes(key_id);
         assert_eq!(
             hex::encode(database_bytes),
-            key_id_to_key_bucket(key_id).as_str(),
+            key_id_to_aws_key(key_id).as_str(),
         )
     }
 }
