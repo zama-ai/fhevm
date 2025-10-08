@@ -1,8 +1,7 @@
-import { HardhatUpgrades } from '@openzeppelin/hardhat-upgrades';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import { task, types } from 'hardhat/config';
-import type { RunTaskFunction, TaskArguments } from 'hardhat/types';
+import type { HardhatRuntimeEnvironment, TaskArguments } from 'hardhat/types';
 
 function stripContractName(input: string): string {
   const colonIndex = input.lastIndexOf('/');
@@ -18,10 +17,9 @@ async function upgradeCurrentToNew(
   currentImplem: string,
   newImplem: string,
   verifyContract: boolean,
-  upgrades: HardhatUpgrades,
-  run: RunTaskFunction,
-  ethers: any,
+  hre: HardhatRuntimeEnvironment,
 ) {
+  const { ethers, run, upgrades } = hre;
   const deployer = new ethers.Wallet(privateKey).connect(ethers.provider);
   await run('compile:specific', { contract: stripContractName(currentImplem) });
   await run('compile:specific', { contract: stripContractName(newImplem) });
@@ -56,7 +54,7 @@ task('task:upgradeDecryptionOracleContract')
     false,
     types.boolean,
   )
-  .setAction(async function (taskArguments: TaskArguments, { ethers, upgrades, run }) {
+  .setAction(async function (taskArguments: TaskArguments, hre) {
     const parsedEnv = dotenv.parse(fs.readFileSync('addresses/.env.decryptionoracle'));
     const proxyAddress = parsedEnv.DECRYPTION_ORACLE_ADDRESS;
     await upgradeCurrentToNew(
@@ -65,8 +63,6 @@ task('task:upgradeDecryptionOracleContract')
       taskArguments.currentImplementation,
       taskArguments.newImplementation,
       taskArguments.verifyContract,
-      upgrades,
-      run,
-      ethers,
+      hre,
     );
   });

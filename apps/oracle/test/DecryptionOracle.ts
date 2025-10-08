@@ -1,7 +1,6 @@
-import { anyValue } from '@nomicfoundation/hardhat-chai-matchers/withArgs';
-import { loadFixture, time } from '@nomicfoundation/hardhat-toolbox/network-helpers';
+import { loadFixture } from '@nomicfoundation/hardhat-toolbox/network-helpers';
 import { expect } from 'chai';
-import hre from "hardhat";
+import hre from 'hardhat';
 
 // Define the maximum value for a uint64
 const UINT64_MAX = (BigInt(1) << BigInt(64)) - BigInt(1);
@@ -27,10 +26,10 @@ export function createBytes32s(length: number): string[] {
 // [21 first random bytes from hashing] | index_21 | chainID_22...29 | fheType_30 | version_31
 export function createCtHandle(chainId: number = 0, fheType: number = 0): string {
   if (chainId < 0 || chainId > UINT64_MAX) {
-    throw new Error("chainId must be a valid uint64");
+    throw new Error('chainId must be a valid uint64');
   }
   if (fheType < 0 || fheType > 255) {
-    throw new Error("fheType must be a valid uint8");
+    throw new Error('fheType must be a valid uint8');
   }
 
   const ctHandle = hre.ethers.randomBytes(32);
@@ -49,9 +48,9 @@ export function createCtHandle(chainId: number = 0, fheType: number = 0): string
   return hre.ethers.hexlify(ctHandle);
 }
 
-const HOST_CHAIN_ID = 12345
+const HOST_CHAIN_ID = 12345;
 
-describe('DecryptionOracle', function() {
+describe('DecryptionOracle', function () {
   // We define a fixture to reuse the same setup in every test.
   // We use loadFixture to run this setup once, snapshot that state,
   // and reset Hardhat Network to that snapshot in every test.
@@ -66,14 +65,14 @@ describe('DecryptionOracle', function() {
   }
 
   const ebytes128CtHandle = createCtHandle(HOST_CHAIN_ID, 10);
-  describe('Deployment', function() {
-    it('Should deploy DecryptionOracle', async function() {
+  describe('Deployment', function () {
+    it('Should deploy DecryptionOracle', async function () {
       const { decryptionOracle } = await loadFixture(deployDecryptionOracleFixture);
 
       expect(await decryptionOracle.getVersion()).to.equal('DecryptionOracle v0.1.0');
     });
 
-    it("Should revert because total bit size exceeds the maximum allowed", async function() {
+    it('Should revert because total bit size exceeds the maximum allowed', async function () {
       const { decryptionOracle } = await loadFixture(deployDecryptionOracleFixture);
       // Create a list of 3 ebytes128 ctHandles (each has a bit size of 1024 bits)
       const largeBitSizeCtHandles = [ebytes128CtHandle, ebytes128CtHandle, ebytes128CtHandle];
@@ -83,10 +82,9 @@ describe('DecryptionOracle', function() {
 
       // Check that the request fails because the total bit size exceeds the maximum allowed
       // NOTE: using dummy selector
-      await expect(decryptionOracle.requestDecryption(0, largeBitSizeCtHandles, "0xad3cb1cc"))
-        .to.be.revertedWithCustomError(decryptionOracle, "MaxDecryptionRequestBitSizeExceeded")
+      await expect(decryptionOracle.requestDecryption(0, largeBitSizeCtHandles, '0xad3cb1cc'))
+        .to.be.revertedWithCustomError(decryptionOracle, 'MaxDecryptionRequestBitSizeExceeded')
         .withArgs(MAX_DECRYPTION_REQUEST_BITS, totalBitSize);
     });
-
   });
 });
