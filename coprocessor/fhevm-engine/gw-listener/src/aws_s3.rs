@@ -84,7 +84,7 @@ impl AwsS3Interface for AwsS3Client {
             if !response.status().is_success() {
                 anyhow::bail!("Download failed");
             }
-            let body = response.text().await?;
+            let body = response.bytes().await?;
             return Ok(bytes::Bytes::from(body));
         }
         Ok(create_s3_client(&S3Policy::DEFAULT, url)
