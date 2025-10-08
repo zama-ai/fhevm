@@ -267,6 +267,8 @@ impl<P: Provider<Ethereum> + Clone + 'static, A: AwsS3Interface + Clone + 'stati
                                 },
                                 _ => {}
                             }
+                        } else {
+                            error!(log = ?log, "Failed to decode KMSGeneration event log");
                         }
                     }
                     last_processed_block_num = Some(to_block);
