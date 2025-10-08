@@ -9,8 +9,9 @@ use crate::{
 use alloy::{contract::Event, network::Ethereum, providers::Provider, sol_types::SolEvent};
 use connector_utils::{
     conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    monitoring::otlp::PropagationContext,
     tasks::spawn_with_limit,
-    types::GatewayEvent,
+    types::{GatewayEvent, GatewayEventKind},
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
@@ -21,6 +22,7 @@ use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct monitoring and storing Gateway's events.
 #[derive(Clone)]
@@ -93,7 +95,7 @@ where
         mut event_filter: Event<&'a Prov, E>,
         poll_interval: Duration,
     ) where
-        E: Into<GatewayEvent> + SolEvent + Send + Sync + 'static,
+        E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
     {
         info!(
             "Starting {} event subscriptions from block {}...",
@@ -131,13 +133,20 @@ where
             EVENT_RECEIVED_COUNTER.inc();
 
             let publisher = self.publisher.clone();
-            spawn_with_limit(async move {
-                if let Err(err) = publisher.publish(event.into()).await {
-                    error!("Failed to publish {event_name}: {err}");
-                    EVENT_STORAGE_ERRORS.inc();
-                }
-            })
-            .await;
+            spawn_with_limit(Self::handle_gateway_event(publisher, event.into())).await;
+        }
+    }
+
+    /// Main function used to trace a single event handling across all Connector's services.
+    #[tracing::instrument(skip(publisher), fields(event = %event_kind))]
+    async fn handle_gateway_event(publisher: Publ, event_kind: GatewayEventKind) {
+        let event = GatewayEvent::new(
+            event_kind,
+            PropagationContext::inject(&tracing::Span::current().context()),
+        );
+        if let Err(err) = publisher.publish(event).await {
+            error!("Failed to publish event: {err}");
+            EVENT_STORAGE_ERRORS.inc();
         }
     }
 
@@ -219,6 +228,7 @@ mod tests {
         },
     };
     use anyhow::Result;
+    use connector_utils::types::{GatewayEvent, GatewayEventKind};
     use fhevm_gateway_bindings::{
         decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
         kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
@@ -372,12 +382,14 @@ mod tests {
 
     impl EventPublisher for MockPublisher {
         async fn publish(&self, event: GatewayEvent) -> Result<()> {
-            match event {
-                GatewayEvent::PublicDecryption(_) => info!("PublicDecryptionRequest published!"),
-                GatewayEvent::UserDecryption(_) => info!("UserDecryptionRequest published!"),
-                GatewayEvent::PrepKeygen(_) => info!("PrepKeygenRequest published!"),
-                GatewayEvent::Keygen(_) => info!("KeygenRequest published!"),
-                GatewayEvent::Crsgen(_) => info!("CrsgenRequest published!"),
+            match event.kind {
+                GatewayEventKind::PublicDecryption(_) => {
+                    info!("PublicDecryptionRequest published!")
+                }
+                GatewayEventKind::UserDecryption(_) => info!("UserDecryptionRequest published!"),
+                GatewayEventKind::PrepKeygen(_) => info!("PrepKeygenRequest published!"),
+                GatewayEventKind::Keygen(_) => info!("KeygenRequest published!"),
+                GatewayEventKind::Crsgen(_) => info!("CrsgenRequest published!"),
             }
             Ok(())
         }
