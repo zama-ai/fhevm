@@ -137,6 +137,27 @@ describe('InputVerifier', function () {
   });
 
   describe('Non-trivial inputs', function () {
+    it('Should revert because the context ID is not active or suspended', async function () {
+      // To avoid messing up other tests if used on the real node, in parallel testing.
+      if (process.env.HARDHAT_PARALLEL !== '1') {
+        const notOperatingContextId = 333;
+
+        const testInputAddress = await testInput.getAddress();
+        const inputAlice = instances.alice.createEncryptedInput(
+          testInputAddress,
+          signers.alice.address,
+          notOperatingContextId,
+        );
+        inputAlice.add64(18446744073709550042n);
+        const encryptedAmount = await inputAlice.encrypt();
+
+        // Should revert due to a not operating context ID included in input proof.
+        await expect(testInput.requestUint64NonTrivial(encryptedAmount.handles[0], encryptedAmount.inputProof))
+          .to.revertedWithCustomError(inputVerifier, 'CoprocessorContextNotOperating')
+          .withArgs(notOperatingContextId);
+      }
+    });
+
     it('Should handle uint64 non-trivial input correctly', async function () {
       // To avoid messing up other tests if used on the real node, in parallel testing.
       if (process.env.HARDHAT_PARALLEL !== '1') {
@@ -198,9 +219,9 @@ describe('InputVerifier', function () {
         const testInputAddress = await testInput.getAddress();
 
         // Prepare uint64 non-trivial input.
-        const inputAlice = instances.alice.createEncryptedInput(testInputAddress, signers.alice.address);
+        const inputAlice = instances.alice.createEncryptedInput(testInputAddress, signers.alice.address, newContextId);
         inputAlice.add64(18446744073709550042n);
-        const aliceEncryptedAmount = await inputAlice.encrypt(newContextId);
+        const aliceEncryptedAmount = await inputAlice.encrypt();
 
         // Should revert due to not enough signatures for uint64 non-trivial input.
         await expect(
@@ -210,11 +231,11 @@ describe('InputVerifier', function () {
           .withArgs(1n);
 
         // Prepare mixed non-trivial inputs.
-        const inputBob = instances.alice.createEncryptedInput(testInputAddress, signers.bob.address);
+        const inputBob = instances.alice.createEncryptedInput(testInputAddress, signers.bob.address, newContextId);
         inputBob.addBool(true);
         inputBob.add8(42);
         inputBob.addAddress('0x1E69D5aa8750Ff56c556C164fE6feaE71BBA9a09');
-        const bobEncryptedAmount = await inputBob.encrypt(newContextId);
+        const bobEncryptedAmount = await inputBob.encrypt();
 
         // Should revert due to not enough signatures for mixed non-trivial input.
         await expect(

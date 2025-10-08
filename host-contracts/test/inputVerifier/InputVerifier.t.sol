@@ -263,7 +263,7 @@ contract InputVerifierTest is Test {
      * @param handles Handles included in the digest.
      * @param userAddress User's address.
      * @param contractAddress Contract's address.
-     * @param signers Signers' addresses.
+     * @param coprocessorSigners Coprocessor signers' addresses.
      * @param chainId Blockchain network ID.
      * @param extraData Generic bytes metadata for versioned payloads.
      * @return signatures Array of generated signatures.
@@ -272,14 +272,14 @@ contract InputVerifierTest is Test {
         bytes32[] memory handles,
         address userAddress,
         address contractAddress,
-        address[] memory signers,
+        address[] memory coprocessorSigners,
         uint256 chainId,
         bytes memory extraData
     ) internal view returns (bytes[] memory signatures) {
-        signatures = new bytes[](signers.length);
-        for (uint256 i = 0; i < signers.length; i++) {
+        signatures = new bytes[](coprocessorSigners.length);
+        for (uint256 i = 0; i < coprocessorSigners.length; i++) {
             /// @dev The signer address must have its private key in the mapping.
-            assert(signerPrivateKeys[signers[i]] != 0);
+            assert(signerPrivateKeys[coprocessorSigners[i]] != 0);
             bytes32 digest = _computeDigest(
                 handles,
                 userAddress,
@@ -288,7 +288,7 @@ contract InputVerifierTest is Test {
                 initialCoprocessorContextId,
                 extraData
             );
-            signatures[i] = _computeSignature(signerPrivateKeys[signers[i]], digest);
+            signatures[i] = _computeSignature(signerPrivateKeys[coprocessorSigners[i]], digest);
         }
     }
 
@@ -302,7 +302,7 @@ contract InputVerifierTest is Test {
      * @param chainId Blockchain ID.
      * @param extraData Generic bytes metadata for versioned payloads.
      * @param handleVersion Handle version.
-     * @param signers Signers' addresses.
+     * @param coprocessorSigners Coprocessor signers' addresses.
      *
      * @return context Context with user and contract addresses.
      * @return mockInputHandle Computed input handle.
@@ -318,7 +318,7 @@ contract InputVerifierTest is Test {
         uint256 chainId,
         bytes memory extraData,
         uint8 handleVersion,
-        address[] memory signers
+        address[] memory coprocessorSigners
     )
         internal
         view
@@ -338,7 +338,7 @@ contract InputVerifierTest is Test {
             handles,
             userAddress,
             contractAddress,
-            signers,
+            coprocessorSigners,
             chainId,
             extraData
         );
@@ -352,7 +352,7 @@ contract InputVerifierTest is Test {
      * @dev Generates input parameters with a single mock handle for testing.
      * @param chainId Blockchain ID.
      * @param handleVersion Handle version.
-     * @param signers Signers' addresses.
+     * @param coprocessorSigners Coprocessor signers' addresses.
      * @return context Context with user and contract addresses.
      * @return mockInputHandle Mock input handle.
      * @return inputProof Input proof.
@@ -360,7 +360,7 @@ contract InputVerifierTest is Test {
     function _generateInputParametersWithOneMockHandle(
         uint256 chainId,
         uint8 handleVersion,
-        address[] memory signers
+        address[] memory coprocessorSigners
     )
         internal
         view
@@ -382,7 +382,7 @@ contract InputVerifierTest is Test {
                 chainId,
                 hex"00",
                 handleVersion,
-                signers
+                coprocessorSigners
             );
     }
 
@@ -917,6 +917,28 @@ contract InputVerifierTest is Test {
         ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, signers);
 
         vm.expectRevert(InputVerifier.ZeroSignature.selector);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
+    }
+
+    /**
+     * @dev Tests that the verifyInput function fails if the coprocessor context is not operating.
+     */
+    function test_VerifyInputFailsIfCoprocessorContextIsNotOperating() public {
+        _upgradeProxyWithSigners(3);
+
+        (
+            FHEVMExecutor.ContextUserInputs memory context,
+            bytes32 mockInputHandle,
+            bytes memory inputProof
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, initialCoprocessorContextSigners);
+
+        // Alter the context ID from the inputProof with a not operating one.
+        uint256 notOperatingContextId = 333;
+        assembly {
+            mstore(add(inputProof, 0x22), notOperatingContextId)
+        }
+
+        vm.expectPartialRevert(InputVerifier.CoprocessorContextNotOperating.selector);
         inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 

@@ -223,7 +223,7 @@ export const userDecryptRequestMocked =
     );
   };
 
-export const createEncryptedInputMocked = (contractAddress: string, userAddress: string) => {
+export const createEncryptedInputMocked = (contractAddress: string, userAddress: string, coprocessorContextId = 1) => {
   if (!isAddress(contractAddress)) {
     throw new Error('Contract address is not a valid address.');
   }
@@ -346,7 +346,7 @@ export const createEncryptedInputMocked = (contractAddress: string, userAddress:
       bits.length = 0;
       return this;
     },
-    async encrypt(coprocessorContextId = 1) {
+    async encrypt() {
       let encrypted = Buffer.alloc(0);
 
       bits.map((v, i) => {

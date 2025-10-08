@@ -72,8 +72,8 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     /// @notice Returned when the context ID is null.
     error InvalidNullContextId();
 
-    /// @notice Returned when the context ID is not marked as active or suspended.
-    error InvalidContextId(uint256 contextId);
+    /// @notice Returned when the context ID is not in active or suspended status.
+    error CoprocessorContextNotOperating(uint256 contextId);
 
     /// @notice Returned when the context ID has already been initialized (not in the NotInitialized state).
     error ContextAlreadyInitialized(uint256 contextId);
@@ -553,9 +553,9 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     }
 
     function _verifyEIP712(CiphertextVerification memory ctVerif, bytes[] memory signatures) internal virtual {
-        // Ensure the coprocessorContextId is a valid active or suspended.
+        // Ensure the coprocessorContextId is a valid active or suspended one.
         if (!_isCoprocessorContextActiveOrSuspended(ctVerif.coprocessorContextId)) {
-            revert InvalidContextId(ctVerif.coprocessorContextId);
+            revert CoprocessorContextNotOperating(ctVerif.coprocessorContextId);
         }
 
         // Verify the signatures for the given coprocessorContextId.
