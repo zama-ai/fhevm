@@ -328,7 +328,7 @@ contract KMSGeneration is
             $.activeKeyId = keyId;
             string[] memory consensusUrls = new string[](consensusTxSendersLength);
             for (uint256 i = 0; i < consensusTxSendersLength; i++) {
-                consensusUrls[i] = GATEWAY_CONFIG.getKmsNode(consensusTxSenders).storageUrl;
+                consensusUrls[i] = GATEWAY_CONFIG.getKmsNode(consensusTxSenders[i]).storageUrl;
             }
 
             emit ActivateKey(keyId, consensusUrls, keyDigests);

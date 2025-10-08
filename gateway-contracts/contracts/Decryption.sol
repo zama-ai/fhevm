@@ -195,7 +195,7 @@ contract Decryption is
         // ----------------------------------------------------------------------------------------------
         // Common decryption state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice Whether a (public, user) decryption is done
+        /// @notice Whether a (public, user, delegated user) decryption is done
         mapping(uint256 decryptionId => bool decryptionDone) decryptionDone;
         // prettier-ignore
         /// @notice Whether KMS signer has already responded to a decryption request.
