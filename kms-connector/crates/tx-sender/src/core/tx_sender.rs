@@ -348,7 +348,7 @@ where
         let current_gas = match call.gas {
             Some(gas) => gas,
             None => self
-                .decryption_contract
+                .kms_generation_contract
                 .provider()
                 .estimate_gas(call.clone())
                 .await
