@@ -130,3 +130,15 @@ prerelease:
 # Get the size of the contracts
 get-contracts-sized:
 	forge build --sizes
+
+# Get the list of coprocessor signers from the active coprocessor context registered in the gateway
+get-coprocessor-signers:
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:getCoprocessorSigners --use-internal-proxy-address true --network localGateway
+
+# Get the list of KMS signers registered in the gateway
+get-kms-signers:
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:getKmsSigners --use-internal-proxy-address true --network localGateway
+
+# Get the list of host chains registered in the gateway
+get-host-chains:
+	DOTENV_CONFIG_PATH=$(ENV_PATH) npx hardhat task:getHostChains --use-internal-proxy-address true --network localGateway

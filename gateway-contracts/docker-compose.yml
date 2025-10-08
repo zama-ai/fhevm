@@ -134,6 +134,29 @@ services:
     volumes:
       - addresses-volume:/app/addresses
 
+  getters:
+    container_name: getters
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      - HARDHAT_NETWORK=staging
+      - CHAIN_ID_GATEWAY=54321
+      - RPC_URL=http://anvil-node:8546
+    command:
+      - npx hardhat task:getAllRegisteredEntities --use-internal-proxy-address true
+    depends_on:
+      anvil-node:
+        condition: service_started
+      add-host-chains:
+        condition: service_completed_successfully
+    # Addresses needs to be mounted even though we don't use them in the task because all contracts
+    # are compiled, and most of them import these addresses.
+    volumes:
+      - addresses-volume:/app/addresses
+
   deploy-gateway-mock-contracts:
     container_name: deploy-gateway-mock-contracts
     build:
