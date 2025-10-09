@@ -3,7 +3,6 @@ pragma solidity ^0.8.24;
 
 import { multichainACLAddress } from "../../addresses/GatewayAddresses.sol";
 import { IMultichainACL } from "../interfaces/IMultichainACL.sol";
-import { DelegationAccounts } from "../shared/Structs.sol";
 
 /**
  * @title MultichainACL Checks
@@ -29,18 +28,6 @@ abstract contract MultichainACLChecks {
     error AccountNotAllowedToUseCiphertext(bytes32 ctHandle, address accountAddress);
 
     /**
-     * @notice Error indicating that the account has not been fully delegated.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The addresses of the delegated contracts.
-     */
-    error AccountNotDelegatedForContracts(
-        uint256 chainId,
-        DelegationAccounts delegationAccounts,
-        address[] contractAddresses
-    );
-
-    /**
      * @notice Checks if the ciphertext handle is allowed for public decryption.
      * @param ctHandle The ciphertext handle to check.
      */
@@ -58,22 +45,6 @@ abstract contract MultichainACLChecks {
     function _checkIsAccountAllowed(bytes32 ctHandle, address accountAddress) internal view {
         if (!MULTICHAIN_ACL.isAccountAllowed(ctHandle, accountAddress)) {
             revert AccountNotAllowedToUseCiphertext(ctHandle, accountAddress);
-        }
-    }
-
-    /**
-     * @notice Checks if the account is delegated to the contracts.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The addresses of the delegated contracts.
-     */
-    function _checkIsAccountDelegated(
-        uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) internal view {
-        if (!MULTICHAIN_ACL.isAccountDelegated(chainId, delegationAccounts, contractAddresses)) {
-            revert AccountNotDelegatedForContracts(chainId, delegationAccounts, contractAddresses);
         }
     }
 }

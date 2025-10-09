@@ -9,7 +9,6 @@ import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
-import { DelegationAccounts } from "./shared/Structs.sol";
 
 /**
  * @title MultichainACL smart contract
@@ -20,11 +19,6 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
      * @notice The address of the GatewayConfig contract for protocol state calls.
      */
     IGatewayConfig private constant GATEWAY_CONFIG = IGatewayConfig(gatewayConfigAddress);
-
-    /**
-     * @notice The maximum number of contracts that can be requested for delegation.
-     */
-    uint8 internal constant MAX_CONTRACT_ADDRESSES = 10;
 
     /**
      * @dev The following constants are used for versioning the contract. They are made private
@@ -59,8 +53,6 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         mapping(bytes32 ctHandle => mapping(address accountAddress =>
             address[] coprocessorTxSenderAddresses))
                allowAccountConsensusTxSenders;
-        /// @notice The coprocessor transaction senders involved in a consensus for delegating an account.
-        mapping(bytes32 delegateAccountHash => address[] coprocessorTxSenderAddresses) delegateAccountConsensusTxSenders;
         // ----------------------------------------------------------------------------------------------
         // Allow account state variables:
         // ----------------------------------------------------------------------------------------------
@@ -84,23 +76,6 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         /// @notice The coprocessors that have already allowed a public decryption.
         mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) 
             allowPublicDecryptCoprocessors;
-        // ----------------------------------------------------------------------------------------------
-        // Delegate account state variables:
-        // ----------------------------------------------------------------------------------------------
-        /// @notice The computed delegateAccountHash that has already been delegated.
-        mapping(bytes32 delegateAccountHash => bool isDelegated) delegatedAccountHashes;
-        /// @notice The number of times a delegateAccountHash has received confirmations.
-        mapping(bytes32 delegateAccountHash => uint256 counter) delegateAccountHashCounters;
-        // prettier-ignore
-        /// @notice The coprocessors that have already delegated an account for a given delegateAccountHash.
-        mapping(bytes32 delegateAccountHash =>
-            mapping(address coprocessorTxSenderAddress => bool hasDelegated))
-                alreadyDelegatedCoprocessors;
-        // prettier-ignore
-        /// @notice The account delegations for a given contract after reaching consensus.
-        mapping(address delegator => mapping(address delegated =>
-            mapping(uint256 chainId => mapping(address contractAddress => bool isDelegated))))
-                delegatedContracts;
     }
 
     /**
@@ -198,62 +173,6 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     }
 
     /**
-     * @notice See {IMultichainACL-delegateAccount}.
-     */
-    function delegateAccount(
-        uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) external virtual onlyCoprocessorTxSender {
-        if (contractAddresses.length == 0) {
-            revert EmptyContractAddresses();
-        }
-        if (contractAddresses.length > MAX_CONTRACT_ADDRESSES) {
-            revert ContractsMaxLengthExceeded(MAX_CONTRACT_ADDRESSES, contractAddresses.length);
-        }
-
-        MultichainACLStorage storage $ = _getMultichainACLStorage();
-
-        // The delegateAccountHash is the hash of all input arguments.
-        // This hash is used to track the delegation consensus over the whole contractAddresses list,
-        // and assumes that the Coprocessors will delegate the same list of contracts and keep the same order.
-        bytes32 delegateAccountHash = _getDelegateAccountHash(chainId, delegationAccounts, contractAddresses);
-
-        mapping(address => bool) storage alreadyDelegatedCoprocessors = $.alreadyDelegatedCoprocessors[
-            delegateAccountHash
-        ];
-
-        // Check if the coprocessor has already delegated the account.
-        if (alreadyDelegatedCoprocessors[msg.sender]) {
-            revert CoprocessorAlreadyDelegated(chainId, delegationAccounts, contractAddresses, msg.sender);
-        }
-
-        $.delegateAccountHashCounters[delegateAccountHash]++;
-        alreadyDelegatedCoprocessors[msg.sender] = true;
-
-        // Store the coprocessor transaction sender address for the delegate account response
-        // It is important to consider the same mapping fields used for the consensus
-        // A "late" valid coprocessor transaction sender address will still be added in the list.
-        $.delegateAccountConsensusTxSenders[delegateAccountHash].push(msg.sender);
-
-        // Send the event if and only if the consensus is reached in the current response call.
-        // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (
-            !$.delegatedAccountHashes[delegateAccountHash] &&
-            _isConsensusReached($.delegateAccountHashCounters[delegateAccountHash])
-        ) {
-            mapping(address => bool) storage delegatedContracts = $.delegatedContracts[
-                delegationAccounts.delegatorAddress
-            ][delegationAccounts.delegatedAddress][chainId];
-            for (uint256 i = 0; i < contractAddresses.length; i++) {
-                delegatedContracts[contractAddresses[i]] = true;
-            }
-            $.delegatedAccountHashes[delegateAccountHash] = true;
-            emit DelegateAccount(chainId, delegationAccounts, contractAddresses);
-        }
-    }
-
-    /**
      * @notice See {IMultichainACL-isPublicDecryptAllowed}.
      */
     function isPublicDecryptAllowed(bytes32 ctHandle) external view virtual returns (bool) {
@@ -267,33 +186,6 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view virtual returns (bool) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
         return $.allowedAccounts[ctHandle][accountAddress];
-    }
-
-    /**
-     * @notice See {IMultichainACL-isAccountDelegated}.
-     */
-    function isAccountDelegated(
-        uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) external view virtual returns (bool) {
-        // An account cannot be delegated to an empty list of contracts.
-        if (contractAddresses.length == 0) {
-            return false;
-        }
-
-        // Check if each contract address is delegated.
-        MultichainACLStorage storage $ = _getMultichainACLStorage();
-        for (uint256 i = 0; i < contractAddresses.length; i++) {
-            if (
-                !$.delegatedContracts[delegationAccounts.delegatorAddress][delegationAccounts.delegatedAddress][
-                    chainId
-                ][contractAddresses[i]]
-            ) {
-                return false;
-            }
-        }
-        return true;
     }
 
     /**
@@ -317,24 +209,6 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
         return $.allowAccountConsensusTxSenders[ctHandle][accountAddress];
-    }
-
-    /**
-     * @notice See {IMultichainACL-getDelegateAccountConsensusTxSenders}.
-     * @dev The contract address list needs to be provided in the same order as when the consensus
-     * was reached in order to be able to retrieve the coprocessor transaction senders associated to it.
-     */
-    function getDelegateAccountConsensusTxSenders(
-        uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) external view virtual returns (address[] memory) {
-        MultichainACLStorage storage $ = _getMultichainACLStorage();
-
-        // Get the hash of the delegate account's inputs used to track the consensus.
-        bytes32 delegateAccountHash = _getDelegateAccountHash(chainId, delegationAccounts, contractAddresses);
-
-        return $.delegateAccountConsensusTxSenders[delegateAccountHash];
     }
 
     /**
@@ -369,17 +243,6 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
-    }
-
-    /**
-     * @notice Returns the hash of a delegate account's inputs.
-     */
-    function _getDelegateAccountHash(
-        uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) internal pure virtual returns (bytes32) {
-        return keccak256(abi.encode(chainId, delegationAccounts, contractAddresses));
     }
 
     /**
