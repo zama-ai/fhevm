@@ -75,6 +75,11 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
             alreadyAddedCoprocessorTxSenders;
         /// @notice The coprocessor transaction senders involved in a consensus for a ciphertext material addition.
         mapping(bytes32 addCiphertextHash => address[] coprocessorTxSenderAddresses) coprocessorTxSenderAddresses;
+        // ----------------------------------------------------------------------------------------------
+        // Coprocessor context state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The coprocessor context ID associated to the add ciphertext
+        mapping(bytes32 addCiphertextHash => uint256 contextId) addCiphertextContextId;
     }
 
     /**
@@ -128,6 +133,12 @@ contract CiphertextCommits is ICiphertextCommits, UUPSUpgradeableEmptyProxy, Gat
         // Note that chainId is not included in the hash because it is already contained in the ctHandle.
         bytes32 addCiphertextHash = keccak256(abi.encode(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest));
         $.addCiphertextHashCounters[addCiphertextHash]++;
+
+        // Associate the handle to coprocessor context ID 1 to anticipate their introduction in V2.
+        // Only set the context ID if it hasn't been set yet to avoid multiple identical SSTOREs.
+        if ($.addCiphertextContextId[addCiphertextHash] == 0) {
+            $.addCiphertextContextId[addCiphertextHash] = 1;
+        }
 
         // It is ok to only the handle can be considered here as a handle should only be added once
         // in the contract anyway
