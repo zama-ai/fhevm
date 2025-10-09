@@ -4,7 +4,7 @@ use alloy::{
 };
 use connector_utils::tests::{
     rand::rand_u256,
-    setup::{S3_CT, S3Instance, TestInstance},
+    setup::{S3_CT_DIGEST, S3_CT_HANDLE, S3Instance, TestInstance},
 };
 use kms_worker::core::{Config, event_processor::s3::S3Service};
 
@@ -16,11 +16,15 @@ async fn test_get_ciphertext_from_s3() -> anyhow::Result<()> {
     let config = Config::default();
     let mock_provider = ProviderBuilder::new().connect_mocked_client(Asserter::new());
 
-    let handle = rand_u256().to_be_bytes_vec(); // dummy handle
     let bucket_url = format!("{}/ct128", test_instance.s3_url());
     let s3_service = S3Service::new(&config, mock_provider);
     s3_service
-        .retrieve_s3_ciphertext_with_retry(vec![bucket_url], &handle, &hex::decode(S3_CT)?, S3_CT)
+        .retrieve_s3_ciphertext_with_retry(
+            vec![bucket_url],
+            &hex::decode(S3_CT_HANDLE)?,
+            &hex::decode(S3_CT_DIGEST)?,
+            S3_CT_DIGEST,
+        )
         .await
         .unwrap();
 

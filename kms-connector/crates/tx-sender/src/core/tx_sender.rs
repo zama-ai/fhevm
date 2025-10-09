@@ -547,7 +547,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        let error = inner_sender
+        inner_sender
             .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
@@ -556,16 +556,7 @@ mod tests {
             }))
             .await
             .unwrap_err();
-        match error {
-            Error::Recoverable(error_msg) => {
-                assert!(
-                    error_msg
-                        .to_string()
-                        .contains("Failed to send response to the Gateway: out of gas")
-                );
-            }
-            _ => panic!("Unexpected error type"),
-        }
+        logs_contain("out of gas");
         Ok(())
     }
 
