@@ -137,6 +137,7 @@ pub async fn allow_handle(
     handle: &Vec<u8>,
     event_type: AllowEvents,
     account_address: String,
+    transaction_id: TransactionHash,
     pool: &sqlx::Pool<Postgres>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = std::time::Instant::now();
@@ -144,18 +145,20 @@ pub async fn allow_handle(
     let ecfg = EnvConfig::new();
     let _query =
             sqlx::query!(
-                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
+                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type, transaction_id) VALUES($1, $2, $3, $4, $5)
                      ON CONFLICT DO NOTHING;",
                 ecfg.tenant_id,
                 handle,
                 account_address,
                 event_type as i16,
+                transaction_id.to_vec(),
             ).execute(pool).await?;
     let _query = sqlx::query!(
-        "INSERT INTO pbs_computations(tenant_id, handle) VALUES($1, $2) 
+        "INSERT INTO pbs_computations(tenant_id, handle, transaction_id) VALUES($1, $2, $3) 
                      ON CONFLICT DO NOTHING;",
         ecfg.tenant_id,
         handle,
+        transaction_id.to_vec()
     )
     .execute(pool)
     .await?;

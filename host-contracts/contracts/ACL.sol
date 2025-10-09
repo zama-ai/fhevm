@@ -17,7 +17,13 @@ import {ACLEvents} from "./ACLEvents.sol";
  * or decrypt encrypted values in fhEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains
  * secure while still being usable within authorized contexts.
  */
-contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgradeable, ACLEvents, MulticallUpgradeable {
+contract ACL is
+    UUPSUpgradeableEmptyProxy,
+    Ownable2StepUpgradeable,
+    PausableUpgradeable,
+    ACLEvents,
+    MulticallUpgradeable
+{
     /// @notice Returned if the delegate contract is already delegate for sender & delegator addresses.
     /// @param delegator delegator address.
     /// @param delegate delegate address.
@@ -80,9 +86,7 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     struct ACLStorage {
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
-        /// @notice: TODO deprecate delegates mapping for mainnet
-        mapping(address account => mapping(address delegate => mapping(address contractAddress => bool isDelegate))) delegates;
-        mapping(address account => mapping(address delegate => mapping(address contractAddress => Delegation delegation))) delegations;    
+        mapping(address account => mapping(address delegate => mapping(address contractAddress => Delegation delegation))) delegations;
     }
 
     /// @notice Name of the contract.
@@ -230,7 +234,14 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
             revert ExpiryDateAlreadySetToSameValue(msg.sender, delegate, contractAddress, oldExpiryDate);
         }
 
-        emit NewDelegation(msg.sender, delegate, contractAddress, delegation.delegationCounter++, oldExpiryDate, newExpiryDate);
+        emit NewDelegation(
+            msg.sender,
+            delegate,
+            contractAddress,
+            delegation.delegationCounter++,
+            oldExpiryDate,
+            newExpiryDate
+        );
     }
 
     /**

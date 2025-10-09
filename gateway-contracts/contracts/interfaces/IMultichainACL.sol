@@ -22,14 +22,6 @@ interface IMultichainACL {
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
 
     /**
-     * @notice Emitted when an account delegates its access to another account.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The addresses of the delegated contracts.
-     */
-    event DelegateAccount(uint256 indexed chainId, DelegationAccounts delegationAccounts, address[] contractAddresses);
-
-    /**
      * @notice Error indicating that the coprocessor has already allowed public decryption to the ciphertext.
      * @param ctHandle The ciphertext handle that the coprocessor has already allowed access to.
      * @param txSender The transaction sender address of the coprocessor that has already allowed access.
@@ -45,20 +37,8 @@ interface IMultichainACL {
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
 
     /**
-     * @notice Error indicating that the coprocessor has already delegated access to another account.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The addresses of the contracts that the coprocessor has already delegated.
-     * @param txSender The transaction sender address of the coprocessor that has already confirmed delegation.
+     * @notice Error indicating that the contract addresses list is empty.
      */
-    error CoprocessorAlreadyDelegated(
-        uint256 chainId,
-        DelegationAccounts delegationAccounts,
-        address[] contractAddresses,
-        address txSender
-    );
-
-    /// @notice Error indicating that the contract addresses list is empty.
     error EmptyContractAddresses();
 
     /**
@@ -84,18 +64,6 @@ interface IMultichainACL {
     function allowAccount(bytes32 ctHandle, address accountAddress, bytes calldata extraData) external;
 
     /**
-     * @notice Delegates the access to the delegated and contract addresses.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The contract addresses to delegate access to.
-     */
-    function delegateAccount(
-        uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) external;
-
-    /**
      * @notice Indicates if the ciphertext handle is allowed for public decryption.
      * @param ctHandle The handle of the ciphertext.
      */
@@ -107,18 +75,6 @@ interface IMultichainACL {
      * @param accountAddress The address of the account.
      */
     function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view returns (bool);
-
-    /**
-     * @notice Indicates if the delegator has delegated access to the delegate and contracts addresses.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The delegated contract addresses.
-     */
-    function isAccountDelegated(
-        uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
-    ) external view returns (bool);
 
     /**
      * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for an allow public decrypt.
@@ -134,18 +90,6 @@ interface IMultichainACL {
     function getAllowAccountConsensusTxSenders(
         bytes32 ctHandle,
         address accountAddress
-    ) external view returns (address[] memory);
-
-    /**
-     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus for a delegate account.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The delegated contract addresses.
-     */
-    function getDelegateAccountConsensusTxSenders(
-        uint256 chainId,
-        DelegationAccounts calldata delegationAccounts,
-        address[] calldata contractAddresses
     ) external view returns (address[] memory);
 
     /**
