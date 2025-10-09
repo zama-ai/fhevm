@@ -12,20 +12,4 @@ contract ACLEvents {
     /// @param caller       account calling the allowForDecryption function.
     /// @param handlesList  List of handles allowed for decryption.
     event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
-
-    /// @notice                 Emitted when a new delegatee address is added.
-    /// @param caller           caller address
-    /// @param delegatee        Delegatee address.
-    /// @param contractAddresses  Contract addresses.
-    event NewDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
-
-    /// @notice                 Emitted when a delegatee address is revoked.
-    /// @param caller           caller address
-    /// @param delegatee        Delegatee address.
-    /// @param contractAddresses  Contract addresses.
-    event RevokedDelegation(address indexed caller, address indexed delegatee, address[] contractAddresses);
-
-    /// @notice Emitted when the pauser address is updated.
-    /// @param newPauser New pauser address.
-    event UpdatePauser(address indexed newPauser);
 }

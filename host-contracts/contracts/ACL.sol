@@ -17,27 +17,8 @@ import {ACLEvents} from "./ACLEvents.sol";
  * secure while still being usable within authorized contexts.
  */
 contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgradeable, ACLEvents {
-    /// @notice Returned if the delegatee contract is already delegatee for sender & delegator addresses.
-    /// @param delegatee delegatee address.
-    /// @param contractAddress contract address.
-    error AlreadyDelegated(address delegatee, address contractAddress);
-
-    /// @notice Returned if the sender is the delegatee address.
-    error SenderCannotBeContractAddress(address contractAddress);
-
-    /// @notice Returned if the contractAddresses array is empty.
-    error ContractAddressesIsEmpty();
-
-    /// @notice Maximum length of contractAddresses array exceeded.
-    error ContractAddressesMaxLengthExceeded();
-
     /// @notice Returned if the handlesList array is empty.
     error HandlesListIsEmpty();
-
-    /// @notice Returned if the the delegatee contract is not already delegatee for sender & delegator addresses.
-    /// @param delegatee delegatee address.
-    /// @param contractAddress contract address.
-    error NotDelegatedYet(address delegatee, address contractAddress);
 
     /// @notice Returned if the sender address is not allowed to pause the contract.
     error NotPauser(address sender);
@@ -50,7 +31,6 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     struct ACLStorage {
         mapping(bytes32 handle => mapping(address account => bool isAllowed)) persistedAllowedPairs;
         mapping(bytes32 handle => bool isAllowedForDecryption) allowedForDecryption;
-        mapping(address account => mapping(address delegatee => mapping(address contractAddress => bool isDelegate))) delegates;
     }
 
     /// @notice Name of the contract.
@@ -70,9 +50,6 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
 
     /// @notice PauserSet contract.
     IPauserSet private constant PAUSER_SET = IPauserSet(pauserSetAdd);
-
-    /// @notice maximum length of contractAddresses array during delegation.
-    uint256 private constant MAX_NUM_CONTRACT_ADDRESSES = 10;
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
@@ -163,59 +140,6 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
     }
 
     /**
-     * @notice Delegates the access of handles in the context of account abstraction for issuing
-     * reencryption requests from a smart contract account.
-     * @param delegatee Delegatee address.
-     * @param contractAddresses Contract addresses.
-     */
-    function delegateAccount(address delegatee, address[] memory contractAddresses) public virtual whenNotPaused {
-        uint256 lengthContractAddresses = contractAddresses.length;
-        if (lengthContractAddresses == 0) {
-            revert ContractAddressesIsEmpty();
-        }
-        if (lengthContractAddresses > MAX_NUM_CONTRACT_ADDRESSES) {
-            revert ContractAddressesMaxLengthExceeded();
-        }
-
-        ACLStorage storage $ = _getACLStorage();
-        for (uint256 k = 0; k < lengthContractAddresses; k++) {
-            if (contractAddresses[k] == msg.sender) {
-                revert SenderCannotBeContractAddress(contractAddresses[k]);
-            }
-            if ($.delegates[msg.sender][delegatee][contractAddresses[k]]) {
-                revert AlreadyDelegated(delegatee, contractAddresses[k]);
-            }
-            $.delegates[msg.sender][delegatee][contractAddresses[k]] = true;
-        }
-
-        emit NewDelegation(msg.sender, delegatee, contractAddresses);
-    }
-
-    /**
-     * @notice Revokes delegated access of handles in the context of account abstraction for issuing
-     * reencryption requests from a smart contract account.
-     * @param delegatee Delegatee address.
-     * @param contractAddresses Contract addresses.
-     */
-    function revokeDelegation(address delegatee, address[] memory contractAddresses) public virtual whenNotPaused {
-        uint256 lengthContractAddresses = contractAddresses.length;
-        if (lengthContractAddresses == 0) {
-            revert ContractAddressesIsEmpty();
-        }
-
-        ACLStorage storage $ = _getACLStorage();
-
-        for (uint256 k = 0; k < lengthContractAddresses; k++) {
-            if (!$.delegates[msg.sender][delegatee][contractAddresses[k]]) {
-                revert NotDelegatedYet(delegatee, contractAddresses[k]);
-            }
-            $.delegates[msg.sender][delegatee][contractAddresses[k]] = false;
-        }
-
-        emit RevokedDelegation(msg.sender, delegatee, contractAddresses);
-    }
-
-    /**
      * @dev Triggers stopped state.
      * Only a pauser address can pause.
      * The contract must not be paused.
@@ -234,27 +158,6 @@ contract ACL is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, PausableUpgr
      */
     function unpause() external virtual onlyOwner {
         _unpause();
-    }
-
-    /**
-     * @notice Returns whether the delegatee is allowed to access the handle.
-     * @param delegatee Delegatee address.
-     * @param handle Handle.
-     * @param contractAddress Contract address.
-     * @param account Address of the account.
-     * @return isAllowed Whether the handle can be accessed.
-     */
-    function allowedOnBehalf(
-        address delegatee,
-        bytes32 handle,
-        address contractAddress,
-        address account
-    ) public view virtual returns (bool) {
-        ACLStorage storage $ = _getACLStorage();
-        return
-            $.persistedAllowedPairs[handle][account] &&
-            $.persistedAllowedPairs[handle][contractAddress] &&
-            $.delegates[account][delegatee][contractAddress];
     }
 
     /**
