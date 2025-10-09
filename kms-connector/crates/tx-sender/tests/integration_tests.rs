@@ -340,7 +340,7 @@ async fn start_test_tx_sender(
         DbKmsResponsePicker::connect(test_instance.db().clone(), &Config::default().await).await?;
     let response_remover = DbKmsResponseRemover::new(test_instance.db().clone());
     let provider = connect_to_gateway_with_wallet(
-        &test_instance.anvil_ws_endpoint(),
+        test_instance.anvil_http_endpoint().as_str(),
         *CHAIN_ID as u64,
         KmsWallet::from_private_key_str(DEPLOYER_PRIVATE_KEY, Some(*CHAIN_ID as u64))?,
     )
