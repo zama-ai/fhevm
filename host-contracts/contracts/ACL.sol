@@ -32,7 +32,7 @@ contract ACL is
 
     /// @notice Returned if the delegate is the contract address.
     /// @param contractAddress contract address.
-    error DelegateeCannotBeContractAddress(address contractAddress);
+    error DelegateCannotBeContractAddress(address contractAddress);
 
     /// @notice Returned if the requested expiry date array is after the next year.
     error ExpiryDateAfterOneYear();
@@ -70,7 +70,7 @@ contract ACL is
 
     /// @notice Returned if the sender is the delegate address.
     /// @param delegate delegate address.
-    error SenderCannotBeDelegatee(address delegate);
+    error SenderCannotBeDelegate(address delegate);
 
     /// @notice Returned if the sender address is not allowed for allow operations.
     /// @param sender Sender address.
@@ -198,8 +198,8 @@ contract ACL is
     /**
      * @notice Delegates the access of handles, for instance, in the context of account
      *  abstraction for issuing user decryption requests from a smart contract account.
-     * @param delegate Delegatee address.
-     * @param contractAddress Contract address.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The contract address to delegate access to.
      * @param expiryDate Expiry date in seconds, between 1 hour and 1 year in the future.
      */
     function delegateAccount(
@@ -216,16 +216,18 @@ contract ACL is
         if (delegation.lastBlockDelegateOrRevoke == block.number) {
             revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegate, contractAddress);
         }
+
+        // Set the last block where the delegation happened.
         delegation.lastBlockDelegateOrRevoke = uint64(block.number);
 
         if (contractAddress == msg.sender) {
             revert SenderCannotBeContractAddress(contractAddress);
         }
         if (delegate == msg.sender) {
-            revert SenderCannotBeDelegatee(delegate);
+            revert SenderCannotBeDelegate(delegate);
         }
         if (delegate == contractAddress) {
-            revert DelegateeCannotBeContractAddress(contractAddress);
+            revert DelegateCannotBeContractAddress(contractAddress);
         }
 
         uint64 newExpiryDate = uint64(block.timestamp) + expiryDate;
@@ -233,6 +235,9 @@ contract ACL is
         if (oldExpiryDate == newExpiryDate) {
             revert ExpiryDateAlreadySetToSameValue(msg.sender, delegate, contractAddress, oldExpiryDate);
         }
+
+        // Set the delegation expiry date.
+        delegation.expiryDate = newExpiryDate;
 
         emit NewDelegation(
             msg.sender,
@@ -246,8 +251,8 @@ contract ACL is
 
     /**
      * @notice Revokes delegated access of handles
-     * @param delegate Delegatee address.
-     * @param contractAddress Contract address.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The contract address to delegate access to.
      */
     function revokeDelegation(address delegate, address contractAddress) public virtual whenNotPaused {
         ACLStorage storage $ = _getACLStorage();
@@ -290,10 +295,10 @@ contract ACL is
 
     /**
      * @notice Returns whether the delegate is allowed to access the handle via delegated user decryption.
-     * @param delegate Delegatee address.
-     * @param delegator Delegator address.
+     * @param delegate The address of the account that receives the delegation.
+     * @param delegator The address of the account that delegates access to its handles.
      * @param handle Handle.
-     * @param contractAddress Contract address.
+     * @param contractAddress The contract address to delegate access to.
      * @return isAllowed Whether the handle can be accessed.
      */
     function allowedOnBehalf(
@@ -303,7 +308,7 @@ contract ACL is
         bytes32 handle
     ) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
-        Delegation storage delegation = $.delegations[msg.sender][delegate][contractAddress];
+        Delegation storage delegation = $.delegations[delegator][delegate][contractAddress];
         return
             $.persistedAllowedPairs[handle][delegator] &&
             $.persistedAllowedPairs[handle][contractAddress] &&
@@ -312,9 +317,9 @@ contract ACL is
 
     /**
      * @notice Get the delegation expiry date.
-     * @param delegate Delegatee address.
-     * @param delegator Delegator address.
-     * @param contractAddress Contract address.
+     * @param delegate The address of the account that receives the delegation.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param contractAddress The contract address to delegate access to.
      * @return expiryDate the expiryDate (0 means delegation is inactive).
      */
     function getDelegationExpiryDate(
