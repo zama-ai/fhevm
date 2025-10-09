@@ -1,4 +1,4 @@
-import { Moesif } from "moesif-browser-js";
+import { type Moesif } from "moesif-browser-js";
 
 declare global {
   interface Window {

@@ -1,4 +1,4 @@
-import express, { Request, Response, NextFunction } from "express";
+import express, { Request, Response } from "express";
 import path from "path";
 import dotenv from "dotenv";
 import bodyParser from "body-parser";
@@ -10,7 +10,7 @@ import pinoHttpMiddleware from "./middlewares/pinoHttp.middleware";
 // Load environment variables
 dotenv.config({ path: [".env", ".env.template"] });
 
-import "./common/instrumentation";
+// import "./common/instrumentation";
 
 import {
   verifyStripeSession,
@@ -26,7 +26,6 @@ import {
 } from "./services/moesifApis";
 
 import { authMiddleware } from "./services/authPlugin";
-import { getApimProvisioningPlugin } from "./config/pluginLoader";
 import {
   getUnifiedCustomerId,
   getUnifiedCustomerIdCached,
@@ -35,6 +34,9 @@ import { BillingProvider } from "./services/billingProvider";
 import { getLogger } from "./common/logger.context";
 import logger from "./common/logger";
 import { withSpan } from "./decorators/span";
+
+// Routes
+import keys from "./routes/api-keys.route";
 
 const app = express();
 app.use(pinoHttpMiddleware);
@@ -71,7 +73,7 @@ if (!templateWorkspaceIdLiveEvent) {
   );
 }
 
-const provisioningService = getApimProvisioningPlugin();
+import provisioningService from "./services/kong-provisioning.service";
 if (!provisioningService) {
   logger.fatal("No provisioning service found!");
   throw new Error("No provisioning service found!");
@@ -87,19 +89,14 @@ const moesifMiddleware = moesif({
 
 app.use(moesifMiddleware, cors());
 
-// Extend Express Request type to include user
-interface UserRequest extends Request {
-  user?: any;
-}
-
 app.post(
   "/create-stripe-checkout-session",
   authMiddleware,
   withSpan(
     "createStripeCheckoutSession",
-    async (req: UserRequest, res: Response) => {
+    async (req: Request, res: Response) => {
       const priceId = req.query?.price_id as string;
-      const email = req.user?.email;
+      const email = req.user!.email;
       const quantity = req.query?.quantity as string | undefined;
 
       const logger = getLogger();
@@ -151,13 +148,13 @@ app.get(
   "/subscriptions",
   authMiddleware,
   jsonParser,
-  withSpan("getSubscriptions", async (req: UserRequest, res: Response) => {
+  withSpan("getSubscriptions", async (req: Request, res: Response) => {
     const logger = getLogger();
 
     const sanitizedEmail = (req.query.email as string).replace(/\n|\r/g, "");
     logger.info("query email " + sanitizedEmail);
-    logger.info("verified email from claims " + req.user.email);
-    const email = req.user?.email;
+    logger.info("verified email from claims " + req.user!.email);
+    const email = req.user!.email;
 
     let moesifUserId: string | undefined;
     try {
@@ -197,7 +194,7 @@ app.post(
         checkout_session_id: args[0].params.checkout_session_id,
       }),
     },
-    async function (req: UserRequest, res: Response) {
+    async function (req: Request, res: Response) {
       const logger = getLogger();
 
       const checkout_session_id = req.params.checkout_session_id;
@@ -277,7 +274,7 @@ app.post(
   "/register/custom",
   authMiddleware,
   jsonParser,
-  withSpan("registerCustom", async function (req: UserRequest, res: Response) {
+  withSpan("registerCustom", async function (req: Request, res: Response) {
     const logger = getLogger();
 
     const customerId = await getUnifiedCustomerId(req.user);
@@ -287,7 +284,7 @@ app.post(
       );
       throw new Error("No customerId found");
     }
-    const email = req.user?.email;
+    const email = req.user!.email;
     try {
       const { subscription } =
         await customBillingProvider.verifyPurchaseAndCreateSubscription(req, {
@@ -331,9 +328,9 @@ app.post(
 app.get(
   "/stripe/customer",
   authMiddleware,
-  withSpan("getStripeCustomer", function (req: UserRequest, res: Response) {
+  withSpan("getStripeCustomer", function (req: Request, res: Response) {
     const logger = getLogger();
-    const email = req.user?.email;
+    const email = req.user!.email;
 
     getStripeCustomer(email)
       .then((result: any) => {
@@ -352,46 +349,10 @@ app.get(
   })
 );
 
-app.post(
-  "/create-key",
-  authMiddleware,
-  jsonParser,
-  withSpan(
-    {
-      name: "createKey",
-      extractAttributesFromArgs: (args) => ({
-        email: args[0].user?.email,
-      }),
-    },
-    async function (req: UserRequest, res: Response) {
-      const logger = getLogger();
-      try {
-        const email = req.user?.email;
-
-        const customerId = await getUnifiedCustomerId(req.user, email);
-        if (!customerId) {
-          throw new Error(
-            `Customer Id unknown. Ensure you're subscribed to a plan. If you just subscribed, try again.`
-          );
-        }
-
-        const apiKey = await provisioningService.createApiKey(
-          customerId,
-          email
-        );
-        res.status(200).send({ apikey: apiKey });
-      } catch (error) {
-        logger.error("Error creating key:", error);
-        res.status(500).json({ message: "Failed to create key" });
-      }
-    }
-  )
-);
-
 app.get(
   "/embed-charts(/:authUserId)",
   authMiddleware,
-  withSpan("getEmbedCharts", async function (req: UserRequest, res: Response) {
+  withSpan("getEmbedCharts", async function (req: Request, res: Response) {
     const logger = getLogger();
     const authUserId = req.user?.sub;
     const email = req.user?.email;
@@ -418,6 +379,8 @@ app.get(
     }
   })
 );
+
+app.use("/api-keys", keys);
 
 app.listen(port, () => {
   logger.info(

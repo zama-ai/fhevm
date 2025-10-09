@@ -4,12 +4,11 @@ import SVG from "react-inlinesvg";
 import copy from "copy-to-clipboard";
 
 import { PageLayout } from "../../page-layout";
-import { PageLoader } from "../../page-loader";
-import copyIcon from "../../../images/icons/copy.svg";
-import successIcon from "../../../images/icons/success.svg";
+import CopyIcon from "../../../images/icons/copy";
+import SuccessIcon from "../../../images/icons/success";
 import apiKeyIcon from "../../../images/icons/api-key.svg";
-import useAuth from "../../../hooks/useAuth";
-import config from "../../../config";
+import { useCreateApiKey } from "../../../hooks/useCreateApiKey";
+import { KeyTable } from "./key-table";
 
 const customStyles = {
   content: {
@@ -23,7 +22,7 @@ const customStyles = {
 };
 
 const Keys = () => {
-  const { user, isLoading, idToken } = useAuth();
+  const { createApiKey } = useCreateApiKey();
 
   const [APIKey, setAPIKey] = useState("");
   const [modalIsOpen, setIsOpen] = useState(false);
@@ -32,35 +31,15 @@ const Keys = () => {
   Modal.setAppElement("#root");
 
   async function createKey() {
-    fetch(`${config.devPortalApiServer}/create-key`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({
-        email: user?.email,
-      }),
-    })
-      .then((res) => {
-        if (!res.ok) {
-          throw new Error("Failed to create key");
-        }
-        return res.json();
-      })
-      .then((result) => {
-        console.log(result);
-        setAPIKey(result.apikey);
-        openModal(setIsOpen);
-      })
-      .catch((error) => {
-        setAPIKey(
-          `Error creating key: ${
-            error.response?.body?.message || error.toString()
-          }`
-        );
-        openModal(setIsOpen);
-      });
+    try {
+      const apiKey = await createApiKey({});
+
+      setAPIKey(apiKey.key);
+    } catch (e: any) {
+      setAPIKey(e?.message ?? "Failed to create API Key");
+    } finally {
+      openModal();
+    }
   }
 
   function openModal() {
@@ -71,34 +50,29 @@ const Keys = () => {
     setIsOpen(false);
   }
 
-  if (isLoading) {
-    return <PageLoader />;
-  }
-
   return (
     <PageLayout>
       <div className="keys-description">
         <h1>My API Keys</h1>
-        <p className="description">
-          On this page, you can generate an API key to access{"\n"}the APIs
-          you&apos;re subscribed to.
-        </p>
-        <div>
-          <p>
-            To create an API key, you must be subscribed to an API plan first.
-          </p>
+        <div className="flex align-stretch">
+          <div className="description flex-1">
+            <p>
+              On this page, you can generate an API key to access the APIs
+              you&apos;re subscribed to.
+            </p>
+            <p>
+              To create an API key, you must be subscribed to an API plan first.
+            </p>
+          </div>
+          <div className="page-action flex-1">
+            <button className="button__purp" onClick={createKey}>
+              Create Key
+            </button>
+          </div>
         </div>
-        <div className="page-action">
-          <button className="button__purp" onClick={createKey}>
-            Create Key
-          </button>
-        </div>
-        <p>
-          <strong>Note: </strong>
-          Make sure to store the key somewhere safe as you will not be{"\n"}
-          able to retrieve it once you close the modal.
-        </p>
       </div>
+
+      <KeyTable />
 
       <Modal
         isOpen={modalIsOpen}
@@ -124,12 +98,11 @@ const Keys = () => {
                 }
               }}
             >
-              <SVG
-                className="icon"
-                style={{ width: "15px", height: "13.5px" }}
-                fill="currentcolor"
-                src={isCopied ? successIcon : copyIcon}
-              />
+              {isCopied ? (
+                <SuccessIcon width="15px" height="13.5px" />
+              ) : (
+                <CopyIcon width="15px" height="13.5px" />
+              )}
             </button>
           </div>
           {APIKey?.includes("Error") && (

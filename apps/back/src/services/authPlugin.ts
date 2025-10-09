@@ -2,17 +2,13 @@ import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
 import { getLogger } from "../common/logger.context";
-import { Span, withSpan } from "../decorators/span";
-
-// Extend Express Request type to include user
-export interface UserRequest extends Request {
-  user?: any;
-}
+import { withSpan } from "../decorators/span";
+import { User } from "../types/user";
 
 // In order auth0 setup you may have set up symmetric key.
 export const verifyTokenJWTSymmetricKey = withSpan(
   "verifyTokenJWTSymmetricKey",
-  (req: UserRequest, res: Response, next: NextFunction) => {
+  (req: Request, res: Response, next: NextFunction) => {
     const logger = getLogger().child({ method: "verifyTokenJWTSymmetricKey" });
     const token = req.headers.authorization;
 
@@ -32,7 +28,7 @@ export const verifyTokenJWTSymmetricKey = withSpan(
       const decoded = jwt.verify(
         token,
         process.env.PORTAL_JWT_CLIENT_SECRET as string
-      ) as JwtPayload;
+      ) as User;
       req.user = decoded;
       // the sub is usually the user id in tokens.
       req.user.id = decoded.id || decoded.sub;
@@ -55,7 +51,7 @@ export const verifyTokenJWTSymmetricKey = withSpan(
 
 export const verifyTokenJWTPublicKey = withSpan(
   "verifyTokenJWTPublicKey",
-  async (req: UserRequest, res: Response, next: NextFunction) => {
+  async (req: Request, res: Response, next: NextFunction) => {
     const logger = getLogger().child({ method: "verifyTokenJWTPublicKey" });
     const authHeader = req.headers.authorization;
     const token = authHeader?.split(" ")[1]; // Extract Bearer token
@@ -111,7 +107,7 @@ export const verifyTokenJWTPublicKey = withSpan(
       const verifiedClaims = jwt.verify(token, publicKey, {
         algorithms: ["RS256"],
         issuer,
-      }) as JwtPayload;
+      }) as User;
 
       req.user = verifiedClaims;
 
@@ -128,18 +124,6 @@ export const verifyTokenJWTPublicKey = withSpan(
       logger.warn("error from jwt verify", err);
       return res.status(401).json({ message: "Invalid token", error: err });
     }
-  }
-);
-
-export const skipAuthCheck = withSpan(
-  "skipAuthCheck",
-  (req: UserRequest, _res: Response, next: NextFunction) => {
-    const logger = getLogger().child({ method: "skipAuthCheck" });
-    logger.info(
-      "skip authentication check in dev portal apis, enable by configure AUTH_PROVIDER in .env."
-    );
-    req.user = {};
-    next();
   }
 );
 

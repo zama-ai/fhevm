@@ -42,6 +42,14 @@
 
 .page-action {
   width: 100%;
+  display: flex;
+  flex-direction: row;
+  justify-content: flex-end;
+}
+
+.page-action .button__purp {
+  width: initial;
+  padding: 0.8rem 1.6rem;
 }
 
 @media screen and (min-width: 500px) {
