@@ -34,15 +34,6 @@ contract DecryptionMock {
         bytes extraData;
     }
 
-    struct DelegatedUserDecryptRequestVerification {
-        bytes publicKey;
-        address[] contractAddresses;
-        address delegatorAddress;
-        uint256 startTimestamp;
-        uint256 durationDays;
-        bytes extraData;
-    }
-
     struct UserDecryptionPayload {
         bytes publicKey;
         bytes32[] ctHandles;
@@ -113,23 +104,6 @@ contract DecryptionMock {
         userDecryptionCounter++;
         uint256 decryptionId = userDecryptionCounter;
         SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
-
-        emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
-    }
-
-    function delegatedUserDecryptionRequest(
-        CtHandleContractPair[] calldata ctHandleContractPairs,
-        RequestValidity calldata requestValidity,
-        DelegationAccounts calldata delegationAccounts,
-        ContractsInfo calldata contractsInfo,
-        bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) external {
-        userDecryptionCounter++;
-        uint256 decryptionId = userDecryptionCounter;
-        SnsCiphertextMaterial[] memory snsCtMaterials = new SnsCiphertextMaterial[](1);
-        address userAddress;
 
         emit UserDecryptionRequest(decryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }
