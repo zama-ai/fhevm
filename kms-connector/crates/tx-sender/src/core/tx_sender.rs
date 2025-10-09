@@ -400,27 +400,7 @@ where
         // Force a fresh gas estimation on each attempt to account for state drift
         call.gas = None;
         self.overprovision_gas(&mut call).await?;
-        let receipt = self.provider.send_transaction_sync(call).await?;
-        if receipt.status() {
-            return Ok(receipt);
-        }
-
-        // Only retry when the revert is due to an out-of-gas condition
-        let mut should_retry = false;
-        if self.config.trace_reverted_tx
-            && let Ok(reason) = self.get_revert_reason(&receipt).await
-        {
-            debug!("Reverted tx reason: {}", reason);
-            let r = reason.to_ascii_lowercase();
-            if r.contains("out of gas") || r.contains("out-of-gas") || r.contains("oog") {
-                should_retry = true;
-            }
-        }
-
-        if should_retry {
-            return Err(Error::Recoverable(anyhow!("out of gas")));
-        }
-        Ok(receipt)
+        Ok(self.provider.send_transaction_sync(call).await?)
     }
 
     /// Tries to use the `debug_trace_transaction` RPC call to find the cause of a reverted tx.
