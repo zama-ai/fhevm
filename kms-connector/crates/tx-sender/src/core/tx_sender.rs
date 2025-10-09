@@ -348,7 +348,7 @@ where
         let current_gas = match call.gas {
             Some(gas) => gas,
             None => self
-                .decryption_contract
+                .kms_generation_contract
                 .provider()
                 .estimate_gas(call.clone())
                 .await
@@ -397,6 +397,8 @@ where
         &self,
         mut call: TransactionRequest,
     ) -> Result<TransactionReceipt, Error> {
+        // Force a fresh gas estimation on each attempt to account for state drift
+        call.gas = None;
         self.overprovision_gas(&mut call).await?;
         Ok(self.provider.send_transaction_sync(call).await?)
     }
