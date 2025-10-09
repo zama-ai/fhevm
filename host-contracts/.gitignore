@@ -28,3 +28,4 @@ ignition/deployments/chain-31337
 lcov.info
 /report
 lib/forge-std
+foundry.lock
