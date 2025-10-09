@@ -12,7 +12,7 @@ import {IPauserSet} from "./interfaces/IPauserSet.sol";
 import {ACLEvents} from "./ACLEvents.sol";
 
 /**
- * @title  ACL
+ * @title ACL.
  * @notice The ACL (Access Control List) is a permission management system designed to control who can access, compute on,
  * or decrypt encrypted values in fhEVM. By defining and enforcing these permissions, the ACL ensures that encrypted data remains
  * secure while still being usable within authorized contexts.
@@ -24,24 +24,36 @@ contract ACL is
     ACLEvents,
     MulticallUpgradeable
 {
-    /// @notice Returned if the delegate contract is already delegate for sender & delegator addresses.
-    /// @param delegator delegator address.
-    /// @param delegate delegate address.
-    /// @param contractAddress contract address.
-    error AlreadyDelegatedOrRevokedInSameBlock(address delegator, address delegate, address contractAddress);
+    /**
+     * @notice Returned if a delegation or revoke has already been done in a same block.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The contract address to delegate access to.
+     * @param blockNumber The block number.
+     */
+    error AlreadyDelegatedOrRevokedInSameBlock(
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint256 blockNumber
+    );
 
-    /// @notice Returned if the delegate is the contract address.
-    /// @param contractAddress contract address.
+    /**
+     * @notice Returned if the delegate address is the same as the contract address.
+     * @param contractAddress The contract address to delegate access to.
+     */
     error DelegateCannotBeContractAddress(address contractAddress);
 
-    /// @notice Returned if the requested expiry date array is after the next year.
+    /// @notice Returned if the requested expiry date for delegation is after the next year.
     error ExpiryDateAfterOneYear();
 
-    /// @notice Returned if the requested expiry date was already set to same expiry for (delegate,contractAddress).
-    /// @param delegator the delegator address.
-    /// @param delegate the delegate address.
-    /// @param contractAddress contract address.
-    /// @param expiryDate the expiry date.
+    /**
+     * @notice Returned if the requested expiry date was already set to same expiry for (delegate,contractAddress).
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The contract address to delegate access to.
+     * @param expiryDate The expiration date for the intended delegation.
+     */
     error ExpiryDateAlreadySetToSameValue(
         address delegator,
         address delegate,
@@ -55,30 +67,46 @@ contract ACL is
     /// @notice Returned if the handlesList array is empty.
     error HandlesListIsEmpty();
 
-    /// @notice Returned if the the delegate contract is not already delegate for sender & delegator addresses.
-    /// @param delegator delegator address.
-    /// @param delegate delegate address.
-    /// @param contractAddress contract address.
+    /**
+     * @notice Returned if the the delegate contract is not already delegate for sender & delegator addresses.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
+     * @param contractAddress The contract address to delegate access to.
+     */
     error NotDelegatedYet(address delegator, address delegate, address contractAddress);
 
     /// @notice Returned if the sender address is not allowed to pause the contract.
     error NotPauser(address sender);
 
-    /// @notice Returned if the sender is the contract address.
-    /// @param contractAddress contract address.
+    /**
+     * @notice Returned if the sender address is the same as the contract address.
+     * @param contractAddress The contract address to delegate access to.
+     */
     error SenderCannotBeContractAddress(address contractAddress);
 
-    /// @notice Returned if the sender is the delegate address.
-    /// @param delegate delegate address.
+    /**
+     * @notice Returned if the sender address is the same as the delegate address.
+     * @param delegate The address of the account that receives the delegation.
+     */
     error SenderCannotBeDelegate(address delegate);
 
-    /// @notice Returned if the sender address is not allowed for allow operations.
-    /// @param sender Sender address.
+    /**
+     * @notice Returned if the sender address is not allowed for allow operations.
+     * @param sender The address of the account that is not allowed.
+     */
     error SenderNotAllowed(address sender);
 
+    /**
+     * @notice Struct that represents a delegation.
+     * @dev The `delegationCounter` is incremented at each delegation or revocation
+     *      to allow off-chain clients to track changes.
+     */
     struct Delegation {
+        /// @notice Date when the delegation expires.
         uint64 expiryDate;
+        /// @notice The last block number when a delegation or revocation happened.
         uint64 lastBlockDelegateOrRevoke;
+        /// @notice Counter that tracks the order of each delegation or revocation.
         uint64 delegationCounter;
     }
 
@@ -207,18 +235,23 @@ contract ACL is
         address contractAddress,
         uint64 expiryDate
     ) public virtual whenNotPaused {
-        if (expiryDate < block.timestamp + 1 hours) revert ExpiryDateBeforeOneHour();
-        if (expiryDate > block.timestamp + 365 days) revert ExpiryDateAfterOneYear();
+        if (expiryDate < block.timestamp + 1 hours) {
+            revert ExpiryDateBeforeOneHour();
+        }
+        if (expiryDate > block.timestamp + 365 days) {
+            revert ExpiryDateAfterOneYear();
+        }
 
         ACLStorage storage $ = _getACLStorage();
         Delegation storage delegation = $.delegations[msg.sender][delegate][contractAddress];
+        uint256 blockNumber = block.number;
 
-        if (delegation.lastBlockDelegateOrRevoke == block.number) {
-            revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegate, contractAddress);
+        if (delegation.lastBlockDelegateOrRevoke == blockNumber) {
+            revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegate, contractAddress, blockNumber);
         }
 
         // Set the last block where the delegation happened.
-        delegation.lastBlockDelegateOrRevoke = uint64(block.number);
+        delegation.lastBlockDelegateOrRevoke = uint64(blockNumber);
 
         if (contractAddress == msg.sender) {
             revert SenderCannotBeContractAddress(contractAddress);
@@ -250,23 +283,28 @@ contract ACL is
     }
 
     /**
-     * @notice Revokes delegated access of handles
+     * @notice Revokes delegated access to handles.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
      */
     function revokeDelegation(address delegate, address contractAddress) public virtual whenNotPaused {
         ACLStorage storage $ = _getACLStorage();
         Delegation storage delegation = $.delegations[msg.sender][delegate][contractAddress];
+        uint256 blockNumber = block.number;
 
-        if (delegation.lastBlockDelegateOrRevoke == block.number) {
-            revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegate, contractAddress);
+        if (delegation.lastBlockDelegateOrRevoke == blockNumber) {
+            revert AlreadyDelegatedOrRevokedInSameBlock(msg.sender, delegate, contractAddress, blockNumber);
         }
-        delegation.lastBlockDelegateOrRevoke = uint64(block.number);
+
+        // Set the last block where the revocation happened.
+        delegation.lastBlockDelegateOrRevoke = uint64(blockNumber);
 
         uint64 oldExpiryDate = delegation.expiryDate;
         if (oldExpiryDate == 0) {
             revert NotDelegatedYet(msg.sender, delegate, contractAddress);
         }
+
+        // Reset the delegation expiry date.
         delegation.expiryDate = 0;
 
         emit RevokedDelegation(msg.sender, delegate, contractAddress, delegation.delegationCounter++, oldExpiryDate);

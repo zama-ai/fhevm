@@ -234,7 +234,13 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectRevert(
-            abi.encodeWithSelector(ACL.AlreadyDelegatedOrRevokedInSameBlock.selector, sender, delegate, contractAddress)
+            abi.encodeWithSelector(
+                ACL.AlreadyDelegatedOrRevokedInSameBlock.selector,
+                sender,
+                delegate,
+                contractAddress,
+                block.number
+            )
         );
         acl.delegateAccount(delegate, contractAddress, expiryDate);
     }

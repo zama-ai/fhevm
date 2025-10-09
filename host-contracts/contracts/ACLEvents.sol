@@ -42,8 +42,4 @@ contract ACLEvents {
         uint64 delegationCounter,
         uint64 oldExpiryDate
     );
-
-    /// @notice Emitted when the pauser address is updated.
-    /// @param newPauser New pauser address.
-    event UpdatePauser(address indexed newPauser);
 }
