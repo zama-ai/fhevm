@@ -91,11 +91,6 @@ describe("Mock contracts", function () {
     addresses: [DefaultAddress],
   };
 
-  const DefaultDelegationAccounts = {
-    delegatorAddress: DefaultAddress,
-    delegatedAddress: DefaultAddress,
-  };
-
   const DefaultParamsType = ParamsTypeEnum.Default;
 
   const DefaultKmsDigest = {

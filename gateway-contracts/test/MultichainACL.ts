@@ -8,7 +8,6 @@ import { CoprocessorContexts, GatewayConfig, MultichainACL, MultichainACL__facto
 import { CoprocessorContextTimePeriodsStruct } from "../typechain-types/contracts/interfaces/ICoprocessorContexts";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IMultichainACL interface
-import { DelegationAccountsStruct } from "../typechain-types/contracts/interfaces/IMultichainACL";
 import {
   ContextStatus,
   addNewCoprocessorContext,

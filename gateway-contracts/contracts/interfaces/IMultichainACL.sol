@@ -63,24 +63,6 @@ interface IMultichainACL {
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
 
     /**
-     * @notice Error indicating that the coprocessor context is no longer valid for delegating access
-     * to another account.
-     * A context is valid if it is active or suspended.
-     * @param chainId The chain ID of the registered host chain where the contracts are deployed.
-     * @param delegationAccounts The delegator and the delegated addresses.
-     * @param contractAddresses The addresses of the contracts that the coprocessor has already delegated.
-     * @param contextId The context ID of the coprocessor.
-     * @param contextStatus The status of the coprocessor context.
-     */
-    error InvalidCoprocessorContextDelegateAccount(
-        uint256 chainId,
-        DelegationAccounts delegationAccounts,
-        address[] contractAddresses,
-        uint256 contextId,
-        ContextStatus contextStatus
-    );
-
-    /**
      * @notice Error indicating that the contract addresses list is empty.
      */
     error EmptyContractAddresses();

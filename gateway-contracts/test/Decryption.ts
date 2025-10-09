@@ -17,7 +17,6 @@ import {
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
 import {
   CtHandleContractPairStruct,
-  DelegationAccountsStruct,
   SnsCiphertextMaterialStruct,
 } from "../typechain-types/contracts/interfaces/IDecryption";
 import {

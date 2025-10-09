@@ -13,27 +13,6 @@ contract DecryptionMock {
         uint256 durationDays;
     }
 
-    struct PublicDecryptVerification {
-        bytes32[] ctHandles;
-        bytes decryptedResult;
-        bytes extraData;
-    }
-
-    struct UserDecryptRequestVerification {
-        bytes publicKey;
-        address[] contractAddresses;
-        uint256 startTimestamp;
-        uint256 durationDays;
-        bytes extraData;
-    }
-
-    struct UserDecryptResponseVerification {
-        bytes publicKey;
-        bytes32[] ctHandles;
-        bytes userDecryptedShare;
-        bytes extraData;
-    }
-
     struct UserDecryptionPayload {
         bytes publicKey;
         bytes32[] ctHandles;

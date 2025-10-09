@@ -3,8 +3,8 @@ import { task, types } from "hardhat/config";
 import type { HardhatEthersHelpers } from "hardhat/types";
 import path from "path";
 
-import { CoprocessorContexts, GatewayConfig } from "../typechain-types";
 import { ADDRESSES_DIR } from "../hardhat.config";
+import { CoprocessorContexts, GatewayConfig } from "../typechain-types";
 import { getRequiredEnvVar } from "./utils/loadVariables";
 
 async function loadGatewayConfigContract(ethers: HardhatEthersHelpers): Promise<GatewayConfig> {
@@ -73,12 +73,7 @@ task("task:getCoprocessorSigners")
     const contextId = coprocessorContextId || (await coprocessorContexts.getActiveCoprocessorContextId());
     const listCurrentCoprocessorSigners = await coprocessorContexts.getCoprocessorSigners(contextId);
 
-    console.log(
-      "Registered coprocessor signers for context ID ",
-      contextId,
-      ": ",
-      listCurrentCoprocessorSigners,
-    );
+    console.log("Registered coprocessor signers for context ID ", contextId, ": ", listCurrentCoprocessorSigners);
   });
 
 task("task:getHostChains")

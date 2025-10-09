@@ -147,9 +147,7 @@ contract MultichainACL is
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
         // Besides, consensus only considers the coprocessors of the same context
-        if (
-            !$.isAllowed[ctHandle] && _isConsensusReached(contextId, $.allowCounters[ctHandle])
-        ) {
+        if (!$.isAllowed[ctHandle] && _isConsensusReached(contextId, $.allowCounters[ctHandle])) {
             $.isAllowed[ctHandle] = true;
             emit AllowPublicDecrypt(ctHandle);
         }
@@ -165,16 +163,19 @@ contract MultichainACL is
     ) external virtual onlyHandleFromRegisteredHostChain(ctHandle) refreshCoprocessorContextStatuses {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
+        // Compute the hash of the allow call, unique across all types of allow calls.
+        bytes32 allowHash = _getAllowAccountHash(ctHandle, accountAddress);
+
         // Get the context ID from the allow account context ID mapping
         // This ID may be 0 (invalid) if this is the first allowAccount call for this
         // addCiphertextHash (see right below)
-        uint256 contextId = $.allowContextId[ctHandle][accountAddress];
+        uint256 contextId = $.allowContextId[allowHash];
 
         // If the context ID is null, get the active coprocessor context's ID and associate it to
         // this account allow
         if (contextId == 0) {
             contextId = COPROCESSOR_CONTEXTS.getActiveCoprocessorContextId();
-            $.allowContextId[ctHandle][accountAddress] = contextId;
+            $.allowContextId[allowHash] = contextId;
 
             // Else, that means a coprocessor already started to allow the account and we need to check
             // that the context is active or suspended
@@ -203,10 +204,7 @@ contract MultichainACL is
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (
-            !$.isAllowed[allowHash] &&
-            _isConsensusReached(contextId, $.allowCounters[allowHash])
-        ) {
+        if (!$.isAllowed[allowHash] && _isConsensusReached(contextId, $.allowCounters[allowHash])) {
             $.isAllowed[allowHash] = true;
             emit AllowAccount(ctHandle, accountAddress);
         }
