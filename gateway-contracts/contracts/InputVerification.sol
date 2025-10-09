@@ -128,6 +128,11 @@ contract InputVerification is
         mapping(uint256 zkProofId => mapping(address coprocessorSigner => bool hasRejected)) signerRejectedZKPoK;
         /// @notice The coprocessor transaction senders involved in a consensus for a proof rejection.
         mapping(uint256 zkProofId => address[] coprocessorTxSenderAddresses) rejectProofConsensusTxSenders;
+        // ----------------------------------------------------------------------------------------------
+        // Context state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The coprocessor context ID associated to the input verification request
+        mapping(uint256 zkProofId => uint256 contextId) inputVerificationContextId;
     }
 
     /**
@@ -181,6 +186,9 @@ contract InputVerification is
 
         // The following stored inputs are used during response calls for the EIP712 signature validation.
         $.zkProofInputs[zkProofId] = ZKProofInput(contractChainId, contractAddress, userAddress);
+
+        // Associate the request to coprocessor context ID 1 to anticipate their introduction in V2.
+        $.inputVerificationContextId[zkProofId] = 1;
 
         emit VerifyProofRequest(
             zkProofId,
