@@ -5,16 +5,17 @@ use crate::{
 use alloy::{
     network::EthereumWallet,
     providers::{
-        Identity, ProviderBuilder, ProviderLayer, RootProvider, WsConnect,
+        Identity, ProviderBuilder, ProviderLayer, RootProvider,
         fillers::{
             BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, TxFiller,
             WalletFiller,
         },
     },
+    transports::http::reqwest::Url,
 };
 use anyhow::anyhow;
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
-use std::{sync::Once, time::Duration};
+use std::{str::FromStr, sync::Once, time::Duration};
 use tracing::{info, warn};
 
 /// The number of connection retry to connect to the database or the Gateway RPC node.
@@ -104,23 +105,11 @@ where
             .unwrap()
     });
 
-    for i in 1..=CONNECTION_RETRY_NUMBER {
-        info!("Attempting connection to Gateway... ({i}/{CONNECTION_RETRY_NUMBER})");
-
-        let ws_endpoint = WsConnect::new(gateway_url);
-        match provider_builder_new().connect_ws(ws_endpoint).await {
-            Ok(provider) => {
-                info!("Connected to Gateway's RPC node successfully");
-                return Ok(provider);
-            }
-            Err(e) => warn!("Gateway connection attempt #{i} failed: {e}"),
-        }
-
-        if i != CONNECTION_RETRY_NUMBER {
-            tokio::time::sleep(CONNECTION_RETRY_DELAY).await;
-        }
-    }
-    Err(anyhow!("Could not connect to Gateway at url {gateway_url}"))
+    let gateway_url =
+        Url::from_str(gateway_url).map_err(|e| anyhow!("Invalid Gateway URL: {e}"))?;
+    let provider = provider_builder_new().connect_http(gateway_url);
+    info!("Connected to Gateway's RPC node successfully");
+    Ok(provider)
 }
 
 static INSTALL_CRYPTO_PROVIDER_ONCE: Once = Once::new();
