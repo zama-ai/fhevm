@@ -12,12 +12,16 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
 use fhevm_engine_common::{common::FheOperation, telemetry};
+use fhevm_engine_common::{telemetry::gen_buckets, tfhe_ops::perform_fhe_operation};
 use opentelemetry::trace::{Span, Tracer};
-use std::{collections::HashMap, sync::atomic::AtomicUsize};
+use prometheus::{register_histogram, Histogram};
+use std::{
+    collections::HashMap,
+    sync::{atomic::AtomicUsize, LazyLock},
+};
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -26,6 +30,28 @@ use super::{DFGraph, DFTxGraph, OpNode};
 
 const TRANSACTION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
+
+pub(crate) static RERAND_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    let buckets = gen_buckets(0.001, 1.0);
+
+    register_histogram!(
+        "coprocessor_rerand_latency_seconds",
+        "Re-randomization latencies per transaction in seconds",
+        buckets
+    )
+    .unwrap()
+});
+
+pub(crate) static FHE_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    let buckets = gen_buckets(0.001, 1.0);
+
+    register_histogram!(
+        "coprocessor_fhe_batch_latency_seconds",
+        "The latency of FHE operations within a single transaction, in seconds",
+        buckets
+    )
+    .unwrap()
+});
 
 struct ExecNode {
     df_nodes: Vec<NodeIndex>,
@@ -503,6 +529,7 @@ async fn execute_partition(
         if !cfg!(feature = "gpu") {
             let mut s = tracer.start_with_context("rerandomise_inputs", loop_ctx);
             telemetry::set_txn_id(&mut s, &tid);
+            let started_at = std::time::Instant::now();
             // Re-randomise inputs of the transaction - this also
             // decompresses ciphertexts
             if let Err(e) = re_randomise_transaction_inputs(tx_inputs, &tid, gpu_idx, cpk.clone()) {
@@ -522,6 +549,9 @@ async fn execute_partition(
                 }
                 continue 'tx;
             }
+
+            let elapsed = started_at.elapsed();
+            RERAND_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
         } else {
             let mut s = tracer.start_with_context("decompress_transaction_inputs", loop_ctx);
             telemetry::set_txn_id(&mut s, &tid);
@@ -549,6 +579,7 @@ async fn execute_partition(
         // Prime the scheduler with ready ops from the transaction's subgraph
         let mut s = tracer.start_with_context("execute_transaction", loop_ctx);
         telemetry::set_txn_id(&mut s, &tid);
+        let started_at = std::time::Instant::now();
 
         let mut set: JoinSet<(usize, OpResult)> = JoinSet::new();
         for nidx in dfg.graph.node_identifiers() {
@@ -605,6 +636,8 @@ async fn execute_partition(
             }
         }
         s.end();
+        let elapsed = started_at.elapsed();
+        FHE_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     (res, task_id)
 }
