@@ -1,50 +1,34 @@
 name: test-suite-e2e-tests
 
-# Github does not support more than 10 inputs for workflow_dispatch:
-# https://docs.github.com/en/actions/reference/events-that-trigger-workflows#providing-inputs
-# Core, relayer and test-suite will use the default versions defined in the `fhevm-cli` script
 on:
   workflow_dispatch:
     inputs:
-      connector_version:
-        description: "Connector Version"
+      coprocessor:
+        description: "Coprocessor versions array: [db_migration, gw_listener, host_listener, tx_sender, tfhe_worker, sns_worker, zkproof_worker]"
+        default: "[]"
+        type: string
+      gateway:
+        description: "Gateway version"
         default: ""
         type: string
-      db_migration_version:
-        description: "Coprocessor DB Migration Image Version"
+      host:
+        description: "Host version"
         default: ""
         type: string
-      host_version:
-        description: "Host Image Version"
+      connector:
+        description: "Connector versions array: [db_migration, gw_listener, tx_sender, kms_worker]"
+        default: "[]"
+        type: string
+      test-suite:
+        description: "Test suite version"
         default: ""
         type: string
-      gateway_version:
-        description: "Gateway Image Version"
-        required: false
+      relayer:
+        description: "Relayer version"
         default: ""
         type: string
-      host_listener_version:
-        description: "Host Listener Image Version"
-        default: ""
-        type: string
-      gateway_listener_version:
-        description: "Gateway Listener Image Version"
-        default: ""
-        type: string
-      tx_sender_version:
-        description: "Transaction Sender Image Version"
-        default: ""
-        type: string
-      tfhe_worker_version:
-        description: "TFHE Worker Image Version"
-        default: ""
-        type: string
-      sns_worker_version:
-        description: "SNS Worker Image Version"
-        default: ""
-        type: string
-      zkproof_worker_version:
-        description: "ZKProof Worker Image Version"
+      kms-core:
+        description: "KMS Core version"
         default: ""
         type: string
   pull_request:
@@ -132,23 +116,111 @@ jobs:
         env:
           GH_REF_NAME: ${{ github.ref_name }}
 
+      - name: Parse component versions
+        id: parse-versions
+        env:
+          COPROCESSOR_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.coprocessor || '[]' }}
+          GATEWAY_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.gateway || '' }}
+          HOST_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.host || '' }}
+          CONNECTOR_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.connector || '[]' }}
+          TEST_SUITE_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.test-suite || '' }}
+          RELAYER_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.relayer || '' }}
+          KMS_CORE_INPUT: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.kms-core || '' }}
+        run: |
+          echo "🔧 Parsing component versions..."
+          
+          # Parse coprocessor array (7 elements)
+          if [[ "${COPROCESSOR_INPUT}" != "[]" && -n "${COPROCESSOR_INPUT}" ]]; then
+            echo "📊 Coprocessor array: ${COPROCESSOR_INPUT}"
+            
+            db_migration_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[0] // empty')
+            gw_listener_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[1] // empty')
+            host_listener_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[2] // empty')
+            tx_sender_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[3] // empty')
+            tfhe_worker_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[4] // empty')
+            sns_worker_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[5] // empty')
+            zkproof_worker_version=$(echo "${COPROCESSOR_INPUT}" | jq -r '.[6] // empty')
+            
+            [[ -n "${db_migration_version}" ]] && echo "DB_MIGRATION_VERSION_OVERRIDE=${db_migration_version}" >> "$GITHUB_ENV"
+            [[ -n "${gw_listener_version}" ]] && echo "GW_LISTENER_VERSION_OVERRIDE=${gw_listener_version}" >> "$GITHUB_ENV"
+            [[ -n "${host_listener_version}" ]] && echo "HOST_LISTENER_VERSION_OVERRIDE=${host_listener_version}" >> "$GITHUB_ENV"
+            [[ -n "${tx_sender_version}" ]] && echo "TX_SENDER_VERSION_OVERRIDE=${tx_sender_version}" >> "$GITHUB_ENV"
+            [[ -n "${tfhe_worker_version}" ]] && echo "TFHE_WORKER_VERSION_OVERRIDE=${tfhe_worker_version}" >> "$GITHUB_ENV"
+            [[ -n "${sns_worker_version}" ]] && echo "SNS_WORKER_VERSION_OVERRIDE=${sns_worker_version}" >> "$GITHUB_ENV"
+            [[ -n "${zkproof_worker_version}" ]] && echo "ZKPROOF_WORKER_VERSION_OVERRIDE=${zkproof_worker_version}" >> "$GITHUB_ENV"
+          fi
+          
+          # Parse gateway string
+          [[ -n "${GATEWAY_INPUT}" ]] && echo "GATEWAY_VERSION_OVERRIDE=${GATEWAY_INPUT}" >> "$GITHUB_ENV"
+          
+          # Parse host string
+          [[ -n "${HOST_INPUT}" ]] && echo "HOST_VERSION_OVERRIDE=${HOST_INPUT}" >> "$GITHUB_ENV"
+          
+          # Parse connector array (4 elements)
+          if [[ "${CONNECTOR_INPUT}" != "[]" && -n "${CONNECTOR_INPUT}" ]]; then
+            echo "📊 Connector array: ${CONNECTOR_INPUT}"
+            
+            connector_db_migration=$(echo "${CONNECTOR_INPUT}" | jq -r '.[0] // empty')
+            connector_gw_listener=$(echo "${CONNECTOR_INPUT}" | jq -r '.[1] // empty')
+            connector_tx_sender=$(echo "${CONNECTOR_INPUT}" | jq -r '.[2] // empty')
+            connector_kms_worker=$(echo "${CONNECTOR_INPUT}" | jq -r '.[3] // empty')
+            
+            [[ -n "${connector_db_migration}" ]] && echo "CONNECTOR_DB_MIGRATION_VERSION_OVERRIDE=${connector_db_migration}" >> "$GITHUB_ENV"
+            [[ -n "${connector_gw_listener}" ]] && echo "CONNECTOR_GW_LISTENER_VERSION_OVERRIDE=${connector_gw_listener}" >> "$GITHUB_ENV"
+            [[ -n "${connector_tx_sender}" ]] && echo "CONNECTOR_TX_SENDER_VERSION_OVERRIDE=${connector_tx_sender}" >> "$GITHUB_ENV"
+            [[ -n "${connector_kms_worker}" ]] && echo "CONNECTOR_KMS_WORKER_VERSION_OVERRIDE=${connector_kms_worker}" >> "$GITHUB_ENV"
+          fi
+          
+          # Parse test-suite string
+          [[ -n "${TEST_SUITE_INPUT}" ]] && echo "TEST_SUITE_VERSION_OVERRIDE=${TEST_SUITE_INPUT}" >> "$GITHUB_ENV"
+          
+          # Parse relayer string
+          [[ -n "${RELAYER_INPUT}" ]] && echo "RELAYER_VERSION_OVERRIDE=${RELAYER_INPUT}" >> "$GITHUB_ENV"
+          
+          # Parse kms-core string
+          [[ -n "${KMS_CORE_INPUT}" ]] && echo "KMS_CORE_VERSION_OVERRIDE=${KMS_CORE_INPUT}" >> "$GITHUB_ENV"
+          
+          echo "✅ Component versions parsed successfully"
+
       - name: Deploy fhevm Stack
         working-directory: test-suite/fhevm
         env:
-          CONNECTOR_DB_MIGRATION_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_DB_MIGRATION_VERSION }}
-          CONNECTOR_GW_LISTENER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_GW_LISTENER_VERSION }}
-          CONNECTOR_KMS_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_KMS_WORKER_VERSION }}
-          CONNECTOR_TX_SENDER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.connector_version || env.CONNECTOR_TX_SENDER_VERSION }}
-          DB_MIGRATION_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.db_migration_version || env.DB_MIGRATION_VERSION }}
-          GATEWAY_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.gateway_version || env.GATEWAY_VERSION }}
-          HOST_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.host_version || env.HOST_VERSION }}
-          HOST_LISTENER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.host_listener_version || env.HOST_LISTENER_VERSION }}
-          GW_LISTENER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.gateway_listener_version || env.GW_LISTENER_VERSION }}
-          TX_SENDER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tx_sender_version || env.TX_SENDER_VERSION }}
-          TFHE_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.tfhe_worker_version || env.TFHE_WORKER_VERSION }}
-          SNS_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.sns_worker_version || env.SNS_WORKER_VERSION }}
-          ZKPROOF_WORKER_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.zkproof_worker_version || env.ZKPROOF_WORKER_VERSION }}
+          # Coprocessor components - only set if overridden
+          DB_MIGRATION_VERSION: ${{ env.DB_MIGRATION_VERSION_OVERRIDE }}
+          GW_LISTENER_VERSION: ${{ env.GW_LISTENER_VERSION_OVERRIDE }}
+          HOST_LISTENER_VERSION: ${{ env.HOST_LISTENER_VERSION_OVERRIDE }}
+          TX_SENDER_VERSION: ${{ env.TX_SENDER_VERSION_OVERRIDE }}
+          TFHE_WORKER_VERSION: ${{ env.TFHE_WORKER_VERSION_OVERRIDE }}
+          SNS_WORKER_VERSION: ${{ env.SNS_WORKER_VERSION_OVERRIDE }}
+          ZKPROOF_WORKER_VERSION: ${{ env.ZKPROOF_WORKER_VERSION_OVERRIDE }}
+          
+          # Gateway component - only set if overridden
+          GATEWAY_VERSION: ${{ env.GATEWAY_VERSION_OVERRIDE }}
+          
+          # Host component - only set if overridden
+          HOST_VERSION: ${{ env.HOST_VERSION_OVERRIDE }}
+          
+          # Connector components - only set if overridden
+          CONNECTOR_DB_MIGRATION_VERSION: ${{ env.CONNECTOR_DB_MIGRATION_VERSION_OVERRIDE }}
+          CONNECTOR_GW_LISTENER_VERSION: ${{ env.CONNECTOR_GW_LISTENER_VERSION_OVERRIDE }}
+          CONNECTOR_TX_SENDER_VERSION: ${{ env.CONNECTOR_TX_SENDER_VERSION_OVERRIDE }}
+          CONNECTOR_KMS_WORKER_VERSION: ${{ env.CONNECTOR_KMS_WORKER_VERSION_OVERRIDE }}
         run: |
+          echo "🚀 Deploying fhevm stack with versions:"
+          echo "  Coprocessor DB Migration: ${DB_MIGRATION_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor GW Listener: ${GW_LISTENER_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor Host Listener: ${HOST_LISTENER_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor TX Sender: ${TX_SENDER_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor TFHE Worker: ${TFHE_WORKER_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor SNS Worker: ${SNS_WORKER_VERSION:-fhevm-cli default}"
+          echo "  Coprocessor ZKProof Worker: ${ZKPROOF_WORKER_VERSION:-fhevm-cli default}"
+          echo "  Gateway: ${GATEWAY_VERSION:-fhevm-cli default}"
+          echo "  Host: ${HOST_VERSION:-fhevm-cli default}"
+          echo "  Connector DB Migration: ${CONNECTOR_DB_MIGRATION_VERSION:-fhevm-cli default}"
+          echo "  Connector GW Listener: ${CONNECTOR_GW_LISTENER_VERSION:-fhevm-cli default}"
+          echo "  Connector TX Sender: ${CONNECTOR_TX_SENDER_VERSION:-fhevm-cli default}"
+          echo "  Connector KMS Worker: ${CONNECTOR_KMS_WORKER_VERSION:-fhevm-cli default}"
+          
           ./fhevm-cli deploy
 
       - name: Input proof test (uint64)

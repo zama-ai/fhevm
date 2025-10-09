@@ -1,6 +1,18 @@
 name: test-suite-docker-build
 
 on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch/ref to build'
+        required: false
+        default: 'main'
+        type: string
+      trigger_source:
+        description: 'Source that triggered this workflow'
+        required: false
+        default: 'manual'
+        type: string
   pull_request:
   push:
     branches:
