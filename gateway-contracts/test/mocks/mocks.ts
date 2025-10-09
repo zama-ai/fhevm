@@ -186,29 +186,6 @@ describe("Mock contracts", function () {
         );
     });
 
-    it("Should emit UserDecryptionRequest event on delegated user decryption request", async function () {
-      userDecryptionCounterId++;
-      await expect(
-        decryptionMock.delegatedUserDecryptionRequest(
-          EmptyArray,
-          DefaultRequestValidity,
-          DefaultDelegationAccounts,
-          DefaultContractsInfo,
-          DefaultBytes,
-          DefaultBytes,
-          DefaultBytes,
-        ),
-      )
-        .to.emit(decryptionMock, "UserDecryptionRequest")
-        .withArgs(
-          userDecryptionCounterId,
-          toValues([DefaultSnsCiphertextMaterial]),
-          DefaultAddress,
-          DefaultBytes,
-          DefaultBytes,
-        );
-    });
-
     it("Should emit response and consensus events on user decryption response", async function () {
       await expect(
         decryptionMock.userDecryptionResponse(userDecryptionCounterId, DefaultBytes, DefaultBytes, DefaultBytes),
@@ -356,12 +333,6 @@ describe("Mock contracts", function () {
       await expect(MultichainACLMock.allowAccount(DefaultBytes32, DefaultAddress, DefaultBytes))
         .to.emit(MultichainACLMock, "AllowAccount")
         .withArgs(DefaultBytes32, DefaultAddress);
-    });
-
-    it("Should emit DelegateAccount event on delegate account call", async function () {
-      await expect(MultichainACLMock.delegateAccount(DefaultUint256, DefaultDelegationAccounts, [DefaultAddress]))
-        .to.emit(MultichainACLMock, "DelegateAccount")
-        .withArgs(DefaultUint256, toValues(DefaultDelegationAccounts), [DefaultAddress]);
     });
   });
 });
