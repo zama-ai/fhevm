@@ -536,12 +536,6 @@ impl Database {
             AclContractEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
             }
-            AclContractEvents::NewDelegation(new_delegation) => {
-                warn!(
-                    event = ?new_delegation,
-                    "unhandled Acl::NewDelegation event"
-                );
-            }
             AclContractEvents::OwnershipTransferStarted(
                 ownership_transfer_started,
             ) => {
@@ -554,12 +548,6 @@ impl Database {
                 warn!(
                     event = ?ownership_transferred,
                     "unhandled Acl::OwnershipTransferred event"
-                );
-            }
-            AclContractEvents::RevokedDelegation(revoked_delegation) => {
-                warn!(
-                    event = ?revoked_delegation,
-                    "unhandled Acl::RevokedDelegation event"
                 );
             }
             AclContractEvents::Upgraded(upgraded) => {
@@ -578,12 +566,6 @@ impl Database {
                 warn!(
                     event = ?unpaused,
                     "unhandled Acl::Unpaused event"
-                );
-            }
-            AclContractEvents::UpdatePauser(update_pauser) => {
-                warn!(
-                    event = ?update_pauser,
-                    "unhandled Acl::UpdatePauser event"
                 );
             }
         }
@@ -770,13 +752,10 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
             allowed_for_decryption.handlesList.clone()
         }
         AclContractEvents::Initialized(_)
-        | AclContractEvents::NewDelegation(_)
         | AclContractEvents::OwnershipTransferStarted(_)
         | AclContractEvents::OwnershipTransferred(_)
-        | AclContractEvents::RevokedDelegation(_)
         | AclContractEvents::Upgraded(_)
         | AclContractEvents::Paused(_)
-        | AclContractEvents::Unpaused(_)
-        | AclContractEvents::UpdatePauser(_) => vec![],
+        | AclContractEvents::Unpaused(_) => vec![],
     }
 }
