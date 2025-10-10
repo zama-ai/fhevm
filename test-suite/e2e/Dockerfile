@@ -19,16 +19,12 @@ RUN addgroup -g 10001 fhevm && \
 
 # Copy only necessary files
 COPY package.json package-lock.json ./
-COPY library-solidity/package.json ./library-solidity/
-COPY test-suite/e2e/package.json ./test-suite/e2e/
+COPY library-solidity ./library-solidity
+COPY test-suite/e2e ./test-suite/e2e
 
 # Install dependencies
 RUN npm ci && \
     npm prune
-
-# Copy the application files
-COPY library-solidity ./library-solidity
-COPY test-suite/e2e ./test-suite/e2e
 
 WORKDIR /app/test-suite/e2e
 
