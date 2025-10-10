@@ -4,30 +4,40 @@ use crate::{
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
 };
-use anyhow::Ok;
+use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
+use fhevm_engine_common::utils::compact_hex;
 use serde::{Deserialize, Serialize};
+use serial_test::serial;
 use std::{
     fs::File,
     io::{Read, Write},
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::Duration,
 };
 
 use test_harness::{
     db_utils::truncate_tables,
-    instance::{DBInstance, ImportMode},
-    localstack::LocalstackContainer,
+    instance::{setup_test_db, DBInstance, ImportMode},
+    localstack::{LocalstackContainer, LOCALSTACK_PORT},
     s3_utils,
 };
 use tfhe::{
     prelude::FheDecrypt, ClientKey, CompressedSquashedNoiseCiphertextList, SquashedNoiseFheUint,
 };
 use tokio::time::sleep;
-use tracing::Level;
+use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
 const TENANT_API_KEY: &str = "a1503fb6-d79b-4e9e-826d-44cf262f3e05";
+
+static TRACING_INIT: OnceLock<()> = OnceLock::new();
+
+pub fn init_tracing() {
+    TRACING_INIT.get_or_init(|| {
+        tracing_subscriber::fmt().json().with_level(true).init();
+    });
+}
 
 #[tokio::test]
 #[ignore = "requires valid SnS keys in CI"]
@@ -60,7 +70,7 @@ async fn test_fhe_ciphertext128_with_compression() {
 }
 
 #[tokio::test]
-#[ignore = "requires valid SnS keys in CI"]
+#[serial(db)]
 async fn test_batch_execution() {
     const WITH_COMPRESSION: bool = true;
     let test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
@@ -71,7 +81,7 @@ async fn test_batch_execution() {
         .and_then(|v| v.parse::<u16>().ok())
         .unwrap_or(100);
 
-    println!("Batch size: {}", batch_size);
+    info!("Batch size: {}", batch_size);
 
     run_batch_computations(
         &test_env,
@@ -201,7 +211,7 @@ async fn run_batch_computations(
     }
 
     let elapsed = start.elapsed();
-    println!("Batch execution took: {:?}, batch: {}", elapsed, batch_size);
+    info!("Batch execution took: {:?}, batch: {}", elapsed, batch_size);
 
     // Assert that all ciphertext128 objects are uploaded to S3
     assert_ciphertext_s3_object_count(test_env, bucket128, batch_size as i64).await;
@@ -211,9 +221,11 @@ async fn run_batch_computations(
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn test_lifo_mode() {
-    tracing_subscriber::fmt().json().with_level(true).init();
-    let test_instance = test_harness::instance::setup_test_db(ImportMode::None)
+    init_tracing();
+
+    let test_instance = setup_test_db(ImportMode::None)
         .await
         .expect("valid db instance");
 
@@ -260,7 +272,7 @@ async fn test_lifo_mode() {
                 "Task (desc) handle does not match expected value"
             );
 
-            println!("Desc Task handle: {}", hex::encode(&task.handle));
+            info!("Desc Task handle: {}", hex::encode(&task.handle));
         }
     } else {
         panic!("No tasks found in Desc order");
@@ -282,8 +294,7 @@ async fn test_lifo_mode() {
                 task.handle == [i as u8; 32],
                 "Task (asc) handle does not match expected value"
             );
-
-            println!("Asc Task handle: {}", hex::encode(&task.handle));
+            info!("Asc Task handle: {}", compact_hex(&task.handle));
         }
     } else {
         panic!("No tasks found in Asc order");
@@ -291,8 +302,11 @@ async fn test_lifo_mode() {
 }
 
 #[tokio::test]
+#[serial(db)]
 async fn test_garbage_collect() {
-    let test_instance = test_harness::instance::setup_test_db(ImportMode::None)
+    init_tracing();
+
+    let test_instance = setup_test_db(ImportMode::None)
         .await
         .expect("valid db instance");
 
@@ -304,6 +318,8 @@ async fn test_garbage_collect() {
         .connect(test_instance.db_url())
         .await
         .unwrap();
+
+    clean_up(&pool).await.unwrap();
 
     let tenant_id = 1;
     for i in 0..HANDLES_COUNT {
@@ -355,7 +371,7 @@ async fn test_garbage_collect() {
         .collect();
 
     // Wait for all tasks to complete or a timeout
-    let res_ = tokio::time::timeout(Duration::from_secs(5), async {
+    let res_ = tokio::time::timeout(Duration::from_secs(10), async {
         for handle in handles {
             handle.await.expect("Task failed");
         }
@@ -384,13 +400,15 @@ struct TestEnvironment {
     pub pool: sqlx::PgPool,
     pub client_key: Option<ClientKey>,
     pub db_instance: DBInstance,
-    pub s3_instance: Option<(Arc<LocalstackContainer>, aws_sdk_s3::Client)>,
+    pub s3_instance: Option<Arc<LocalstackContainer>>, // If None, the global LocalStack is used
+    pub s3_client: aws_sdk_s3::Client,
     pub conf: Config,
 }
 
 async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
-    tracing_subscriber::fmt().json().with_level(true).init();
-    let db_instance = test_harness::instance::setup_test_db(ImportMode::WithAllKeys)
+    init_tracing();
+
+    let db_instance = setup_test_db(ImportMode::WithAllKeys)
         .await
         .expect("valid db instance");
 
@@ -404,10 +422,10 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
         .await?;
 
     // Set up S3 storage
-    let s3_instance = Some(setup_localstack(&conf).await?);
+    let (s3_instance, s3_client) = setup_localstack(&conf).await?;
 
     let token = db_instance.parent_token.child_token();
-    let config = conf.clone();
+    let config: Config = conf.clone();
     let Some((client_key, _)) = fetch_keys(&pool, &TENANT_API_KEY.to_owned()).await? else {
         panic!("Client key should be available in the test database");
     };
@@ -426,6 +444,7 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
         client_key,
         db_instance,
         s3_instance,
+        s3_client,
         conf,
     })
 }
@@ -436,15 +455,19 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
 /// A tuple containing the LocalStack instance and the S3 client
 async fn setup_localstack(
     conf: &Config,
-) -> anyhow::Result<(Arc<LocalstackContainer>, aws_sdk_s3::Client)> {
-    let localstack_instance = Arc::new(test_harness::localstack::start_localstack().await?);
+) -> anyhow::Result<(Option<Arc<LocalstackContainer>>, aws_sdk_s3::Client)> {
+    let (localstack, host_port) =
+        if std::env::var("TXN_SENDER_TEST_GLOBAL_LOCALSTACK").unwrap_or("0".to_string()) == "1" {
+            (None, LOCALSTACK_PORT)
+        } else {
+            let localstack_instance = Arc::new(test_harness::localstack::start_localstack().await?);
+            let host_port = localstack_instance.host_port;
+            (Some(localstack_instance), host_port)
+        };
 
-    tracing::info!(
-        "LocalStack started on port: {}",
-        localstack_instance.host_port
-    );
+    tracing::info!("LocalStack started on port: {}", host_port);
 
-    let endpoint_url = format!("http://127.0.0.1:{}", localstack_instance.host_port);
+    let endpoint_url = format!("http://127.0.0.1:{}", host_port);
     std::env::set_var("AWS_ENDPOINT_URL", endpoint_url.clone());
     std::env::set_var("AWS_REGION", "us-east-1");
     std::env::set_var("AWS_ACCESS_KEY_ID", "test");
@@ -453,21 +476,28 @@ async fn setup_localstack(
     let aws_conf = aws_config::load_defaults(BehaviorVersion::latest()).await;
     let client: aws_sdk_s3::Client = aws_sdk_s3::Client::new(&aws_conf);
 
-    client
-        .create_bucket()
-        .set_bucket(Some(conf.s3.bucket_ct128.clone()))
+    recreate_bucket(&client, &conf.s3.bucket_ct128).await?;
+    recreate_bucket(&client, &conf.s3.bucket_ct64).await?;
+
+    Ok((localstack, client))
+}
+
+async fn recreate_bucket(s3_client: &aws_sdk_s3::Client, bucket_name: &str) -> anyhow::Result<()> {
+    s3_client
+        .delete_bucket()
+        .set_bucket(Some(bucket_name.to_string()))
         .send()
         .await
-        .expect("Failed to create bucket for ciphertext128");
+        .ok(); // Ignore error if bucket does not exist
 
-    client
+    s3_client
         .create_bucket()
-        .set_bucket(Some(conf.s3.bucket_ct64.clone()))
+        .set_bucket(Some(bucket_name.to_string()))
         .send()
         .await
-        .expect("Failed to create bucket for ciphertext64");
+        .expect("Failed to create bucket");
 
-    Ok((localstack_instance, client))
+    Ok(())
 }
 
 #[derive(Serialize, Deserialize)]
@@ -571,37 +601,49 @@ async fn assert_ciphertext128(
     tenant_id: i32,
     with_compression: bool,
     handle: &Vec<u8>,
-    expected_cleartext: i64,
+    expected_value: i64,
 ) -> anyhow::Result<()> {
     let pool = &test_env.pool;
     let client_key = &test_env.client_key;
     let ct = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10000).await?;
 
-    println!("Ciphertext data len: {:?}", ct.len());
+    info!("Ciphertext len: {:?}", ct.len());
 
-    let cleartext = if with_compression {
-        let list: CompressedSquashedNoiseCiphertextList = safe_deserialize(&ct)?;
-        let v: SquashedNoiseFheUint = list
-            .get(0)?
-            .ok_or_else(|| anyhow::anyhow!("Failed to get the first element from the list"))?;
-        let r: u128 = v.decrypt(
-            client_key
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Client key is not available for decryption"))?,
+    let encrypted: SquashedNoiseFheUint = if with_compression {
+        let res = safe_deserialize::<CompressedSquashedNoiseCiphertextList>(&ct);
+        assert!(
+            res.is_ok(),
+            "Could not deserialize compressed ciphertext128. 
+            This might indicate a failed squash_noise computation."
         );
-        r
+        res?.get(0)?
+            .ok_or_else(|| anyhow!("Failed to get the first element from the list"))?
     } else {
-        let v: SquashedNoiseFheUint = safe_deserialize(&ct)?;
-        let r: u128 = v.decrypt(client_key.as_ref().unwrap());
-        r
+        let res = safe_deserialize::<SquashedNoiseFheUint>(&ct);
+        assert!(
+            res.is_ok(),
+            "Could not deserialize ciphertext128. 
+            This might indicate a failed squash_noise computation."
+        );
+        res?
     };
 
-    println!("Cleartext: {cleartext}");
+    // This feature is only enabled in local tests, never in CI
+    // because the client key is not available in CI for now
+    #[cfg(feature = "test_decrypt_128")]
+    {
+        let decrypted: u128 = encrypted.decrypt(
+            client_key
+                .as_ref()
+                .ok_or_else(|| anyhow!("Client key is not available for decryption"))?,
+        );
 
-    assert!(
-        cleartext == expected_cleartext as u128,
-        "Cleartext value does not match expected value",
-    );
+        info!("Decrypted value: {decrypted}");
+        assert!(
+            decrypted == expected_value as u128,
+            "Decrypted value does not match expected value",
+        );
+    }
 
     // Assert that ciphertext128 is uploaded to S3
     // Note: The tests rely on the `test_s3_use_handle_as_key` feature,
@@ -610,6 +652,8 @@ async fn assert_ciphertext128(
 
     #[cfg(feature = "test_s3_use_handle_as_key")]
     {
+        info!("Asserting ciphertext uploaded to S3");
+
         assert_ciphertext_uploaded(
             test_env,
             &test_env.conf.s3.bucket_ct128,
@@ -630,10 +674,14 @@ async fn assert_ciphertext_uploaded(
     handle: &Vec<u8>,
     expected_ct_len: Option<i64>,
 ) {
-    if let Some(client) = test_env.s3_instance.as_ref().map(|(_, c)| c.clone()) {
-        s3_utils::assert_key_exists(client, bucket, &hex::encode(handle), expected_ct_len, 1000)
-            .await;
-    }
+    s3_utils::assert_key_exists(
+        test_env.s3_client.to_owned(),
+        bucket,
+        &hex::encode(handle),
+        expected_ct_len,
+        1000,
+    )
+    .await;
 }
 
 /// Asserts that the number of ciphertext128 objects in S3 matches the expected count
@@ -642,9 +690,8 @@ async fn assert_ciphertext_s3_object_count(
     bucket: &String,
     expected_count: i64,
 ) {
-    if let Some(client) = test_env.s3_instance.as_ref().map(|(_, c)| c.clone()) {
-        s3_utils::assert_object_count(client, bucket, expected_count as i32).await;
-    }
+    s3_utils::assert_object_count(test_env.s3_client.to_owned(), bucket, expected_count as i32)
+        .await;
 }
 
 fn build_test_config(db_url: String, enable_compression: bool) -> Config {

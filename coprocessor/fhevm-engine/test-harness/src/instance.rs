@@ -3,6 +3,7 @@ use std::sync::Arc;
 use crate::db_utils::setup_test_user;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio_util::sync::CancellationToken;
+use tracing::info;
 
 #[derive(Clone)]
 pub struct DBInstance {
@@ -38,16 +39,22 @@ impl DBInstance {
 /// }
 /// ```
 pub async fn setup_test_db(mode: ImportMode) -> Result<DBInstance, Box<dyn std::error::Error>> {
-    let is_localhost = std::env::var("COPROCESSOR_TEST_LOCALHOST").is_ok();
+    let is_custom_db_docker = std::env::var("COPROCESSOR_CUSTOM_DB").is_ok();
 
-    // Drop and recreate the database in localhost mode
-    // This is useful for running tests locally with applying latest migrations
-    let is_localhost_with_reset = std::env::var("COPROCESSOR_TEST_LOCALHOST_RESET").is_ok();
-
-    if is_localhost || is_localhost_with_reset {
-        setup_test_app_existing_localhost(is_localhost_with_reset, mode).await
-    } else {
+    if is_custom_db_docker {
+        info!("Using custom Postgres Docker container for tests");
+        // Sets up and populates a test database using a Postgres Docker container.
+        // Useful when running tests on a machine without local Postgres installed.
         setup_test_app_custom_docker(mode).await
+    } else {
+        // If COPROCESSOR_TEST_LOCALHOST_DB_RESET is set,
+        // Drop and recreate the database in localhost mode
+        // This is useful for running tests locally with applying latest migrations
+        // and uploading test keys.
+        let with_reset = std::env::var("COPROCESSOR_TEST_LOCALHOST_DB_RESET").is_ok();
+
+        // Reuses an existing local Postgres instance running at DATABASE_URL env var
+        setup_test_app_existing_localhost(with_reset, mode).await
     }
 }
 
@@ -59,6 +66,7 @@ async fn setup_test_app_existing_localhost(
     let db_url = std::env::var("DATABASE_URL").unwrap_or(db_url.to_string());
 
     if with_reset {
+        info!("Resetting local database at {db_url}");
         let admin_db_url = db_url.replace("coprocessor", "postgres");
         create_database(&admin_db_url, &db_url, mode).await?;
     }
