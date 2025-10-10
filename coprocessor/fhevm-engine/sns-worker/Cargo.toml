@@ -54,6 +54,7 @@ test_decrypt_128 = []
 test_s3_use_handle_as_key = []
 
 [dev-dependencies]
+serial_test = { workspace = true }
 test-harness = { path = "../test-harness" }
 
 

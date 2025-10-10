@@ -61,7 +61,8 @@ pub async fn fetch_keys(
 
     let server_key: tfhe::ServerKey = safe_deserialize_sns_key(&blob)?;
 
-    let keys = sqlx::query(
+    // Optionally retrieve the ClientKey for testing purposes
+    if let Ok(keys) = sqlx::query(
         "
                 SELECT cks_key FROM tenants
                 WHERE tenant_api_key = $1::uuid
@@ -69,13 +70,14 @@ pub async fn fetch_keys(
     )
     .bind(tenant_api_key)
     .fetch_one(pool)
-    .await?;
-
-    if let Ok(cks) = keys.try_get::<Vec<u8>, _>(0) {
-        if !cks.is_empty() {
-            info!(bytes_len = cks.len(), "Retrieved cks");
-            let client_key: tfhe::ClientKey = safe_deserialize_sns_key(&cks)?;
-            return Ok(Some((Some(client_key), server_key)));
+    .await
+    {
+        if let Ok(cks) = keys.try_get::<Vec<u8>, _>(0) {
+            if !cks.is_empty() {
+                info!(bytes_len = cks.len(), "Retrieved cks");
+                let client_key: tfhe::ClientKey = safe_deserialize_sns_key(&cks)?;
+                return Ok(Some((Some(client_key), server_key)));
+            }
         }
     }
 
