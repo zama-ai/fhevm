@@ -1,6 +1,12 @@
 use anyhow::Result;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 
+pub type TaskResult = Result<(SupportedFheCiphertexts, i16, Vec<u8>, bool)>;
+// pub struct TaskResult {
+//     ct: Result<SupportedFheCiphertexts>,
+//     compressed_ct: Option<(i16, Vec<u8>)>,
+//     is_allowed: bool,
+// }
 pub struct DFGTxResult {
     pub handle: Handle,
     pub transaction_id: Handle,
@@ -23,8 +29,8 @@ impl std::fmt::Debug for DFGTxResult {
 }
 #[derive(Clone)]
 pub enum DFGTxInput {
-    Value(SupportedFheCiphertexts),
-    Compressed((i16, Vec<u8>)),
+    Value((SupportedFheCiphertexts, bool)),
+    Compressed(((i16, Vec<u8>), bool)),
 }
 impl std::fmt::Debug for DFGTxInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
