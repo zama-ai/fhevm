@@ -6789,6 +6789,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "serial_test",
  "sha3",
  "sns-worker",
  "sqlx",
