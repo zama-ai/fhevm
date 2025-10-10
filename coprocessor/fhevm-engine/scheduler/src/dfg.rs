@@ -1,16 +1,42 @@
 pub mod scheduler;
 pub mod types;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::atomic::AtomicUsize};
 
 use crate::dfg::types::*;
 use anyhow::Result;
-use daggy::petgraph::{
-    visit::{EdgeRef, IntoEdgesDirected, IntoNodeReferences},
-    Direction,
+use daggy::{
+    petgraph::{
+        graph::node_index,
+        visit::{
+            EdgeRef, IntoEdgeReferences, IntoEdgesDirected, IntoNeighbors, IntoNodeReferences,
+            VisitMap, Visitable,
+        },
+        Direction::{self, Incoming},
+    },
+    Dag, NodeIndex,
 };
-use daggy::{petgraph::graph::node_index, Dag, NodeIndex};
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts, SupportedFheOperations};
+
+pub struct ExecNode {
+    df_nodes: Vec<NodeIndex>,
+    dependence_counter: AtomicUsize,
+    #[cfg(feature = "gpu")]
+    locality: i32,
+}
+impl std::fmt::Debug for ExecNode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.df_nodes.is_empty() {
+            write!(f, "Vec [ ]")
+        } else {
+            let _ = write!(f, "Vec [ ");
+            for i in self.df_nodes.iter() {
+                let _ = write!(f, "{}, ", i.index());
+            }
+            write!(f, "] - dependences: {:?}", self.dependence_counter)
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct DFGOp {
@@ -19,11 +45,22 @@ pub struct DFGOp {
     pub inputs: Vec<DFGTaskInput>,
     pub is_allowed: bool,
 }
+impl Default for DFGOp {
+    fn default() -> Self {
+        DFGOp {
+            output_handle: vec![],
+            fhe_op: SupportedFheOperations::FheTrivialEncrypt,
+            inputs: vec![],
+            is_allowed: false,
+        }
+    }
+}
 pub type TxEdge = ();
 #[derive(Default)]
 pub struct TxNode {
     // Inner dataflow graph
     pub graph: DFGraph,
+    pub ops: Vec<DFGOp>,
     // Allowed handles or verified input handles, with a map of
     // internal DFG node indexes to input positions in the
     // corresponding FHE op
@@ -35,6 +72,73 @@ pub struct TxNode {
     pub is_uncomputable: bool,
     pub intermediate_handles: Vec<Handle>,
 }
+
+pub fn build_component_nodes(
+    mut operations: Vec<DFGOp>,
+    transaction_id: &Handle,
+) -> Result<Vec<TxNode>> {
+    //self.transaction_id = transaction_id.clone();
+    //self.is_uncomputable = false;
+    // Gather all handles produced within the transaction
+    let mut graph: Dag<usize, OpEdge> = Dag::default();
+    let mut inputs: HashMap<Handle, Option<DFGTxInput>> = HashMap::new();
+    let mut outputs: Vec<Handle> = Vec::new();
+    let mut intermediate_handles: Vec<Handle> = Vec::new();
+    let mut produced_handles: HashMap<Handle, usize> = HashMap::new();
+    let mut components: Vec<TxNode> = vec![];
+    for (index, op) in operations.iter().enumerate() {
+        produced_handles.insert(op.output_handle.clone(), index);
+    }
+    let mut dependence_pairs = vec![];
+    for (index, op) in operations.iter().enumerate() {
+        for (pos, i) in op.inputs.iter().enumerate() {
+            match i {
+                DFGTaskInput::Dependence(dh) => {
+                    // Check which dependences are satisfied internally,
+                    // all missing ones are exposed as required inputs at
+                    // transaction level.
+                    let producer = produced_handles.get(dh);
+                    if let Some(producer) = producer {
+                        dependence_pairs.push((*producer, index, pos));
+                    } else {
+                        inputs.entry(dh.clone()).or_insert(None);
+                    }
+                }
+                DFGTaskInput::Value(_) | DFGTaskInput::Compressed(_) => {}
+            }
+        }
+        if op.is_allowed {
+            outputs.push(op.output_handle.clone());
+        } else {
+            intermediate_handles.push(op.output_handle.clone());
+        }
+        assert!(index == graph.add_node(index).index());
+    }
+    for (source, destination, pos) in dependence_pairs {
+        // This returns an error in case of circular
+        // dependences. This should not be possible.
+        graph
+            .add_edge(node_index(source), node_index(destination), pos as u8)
+            .map_err(|_| SchedulerError::CyclicDependence)?;
+    }
+    let mut execution_graph: Dag<ExecNode, ()> = Dag::default();
+    partition_preserving_parallelism(&graph, &mut execution_graph)?;
+    for idx in 0..execution_graph.node_count() {
+        let index = NodeIndex::new(idx);
+        let node = execution_graph
+            .node_weight_mut(index)
+            .ok_or(SchedulerError::DataflowGraphError)?;
+        let mut component = TxNode::default();
+        let mut component_ops = vec![];
+        for i in node.df_nodes.iter() {
+            component_ops.push(std::mem::take(&mut operations[i.index()]));
+        }
+        component.build(component_ops, transaction_id)?;
+        components.push(component);
+    }
+    Ok(components)
+}
+
 impl TxNode {
     pub fn build(&mut self, mut operations: Vec<DFGOp>, transaction_id: &Handle) -> Result<()> {
         self.transaction_id = transaction_id.clone();
@@ -341,4 +445,123 @@ impl DFGraph {
             .map_err(|_| SchedulerError::CyclicDependence)?;
         Ok(())
     }
+}
+
+pub fn add_execution_depedences<TNode, TEdge>(
+    graph: &Dag<TNode, TEdge>,
+    execution_graph: &mut Dag<ExecNode, ()>,
+    node_map: HashMap<NodeIndex, NodeIndex>,
+) -> Result<()> {
+    // Once the DFG is partitioned, we need to add dependences as
+    // edges in the execution graph
+    for edge in graph.edge_references() {
+        let (xsrc, xdst) = (
+            node_map
+                .get(&edge.source())
+                .ok_or(SchedulerError::DataflowGraphError)?,
+            node_map
+                .get(&edge.target())
+                .ok_or(SchedulerError::DataflowGraphError)?,
+        );
+        if xsrc != xdst && execution_graph.find_edge(*xsrc, *xdst).is_none() {
+            let _ = execution_graph.add_edge(*xsrc, *xdst, ());
+        }
+    }
+    for node in 0..execution_graph.node_count() {
+        let deps = execution_graph
+            .edges_directed(node_index(node), Incoming)
+            .count();
+        execution_graph[node_index(node)]
+            .dependence_counter
+            .store(deps, std::sync::atomic::Ordering::SeqCst);
+    }
+    Ok(())
+}
+
+pub fn partition_preserving_parallelism<TNode, TEdge>(
+    graph: &Dag<TNode, TEdge>,
+    execution_graph: &mut Dag<ExecNode, ()>,
+) -> Result<()> {
+    // First sort the DAG in a schedulable order
+    let ts = daggy::petgraph::algo::toposort(graph, None)
+        .map_err(|_| SchedulerError::CyclicDependence)?;
+    let mut vis = graph.visit_map();
+    let mut node_map = HashMap::new();
+    // Traverse the DAG and build a graph of connected components
+    // without siblings (i.e. without parallelism)
+    for nidx in ts.iter() {
+        if !vis.is_visited(nidx) {
+            vis.visit(*nidx);
+            let mut df_nodes = vec![*nidx];
+            let mut stack = vec![*nidx];
+            while let Some(n) = stack.pop() {
+                if graph.edges_directed(n, Direction::Outgoing).count() == 1 {
+                    for child in graph.neighbors(n) {
+                        if !vis.is_visited(&child.index())
+                            && graph.edges_directed(child, Direction::Incoming).count() == 1
+                        {
+                            df_nodes.push(child);
+                            stack.push(child);
+                            vis.visit(child.index());
+                        }
+                    }
+                }
+            }
+            let ex_node = execution_graph.add_node(ExecNode {
+                df_nodes: vec![],
+                dependence_counter: AtomicUsize::new(usize::MAX),
+                #[cfg(feature = "gpu")]
+                locality: -1,
+            });
+            for n in df_nodes.iter() {
+                node_map.insert(*n, ex_node);
+            }
+            execution_graph[ex_node].df_nodes = df_nodes;
+        }
+    }
+    add_execution_depedences(graph, execution_graph, node_map)
+}
+
+pub fn partition_components<TNode, TEdge>(
+    graph: &Dag<TNode, TEdge>,
+    execution_graph: &mut Dag<ExecNode, ()>,
+) -> Result<()> {
+    // First sort the DAG in a schedulable order
+    let ts = daggy::petgraph::algo::toposort(graph, None)
+        .map_err(|_| SchedulerError::CyclicDependence)?;
+    let tsmap: HashMap<&NodeIndex, usize> = ts.iter().enumerate().map(|(c, x)| (x, c)).collect();
+    let mut vis = graph.visit_map();
+    // Traverse the DAG and build a graph of the connected components
+    for nidx in ts.iter() {
+        if !vis.is_visited(nidx) {
+            vis.visit(*nidx);
+            let mut df_nodes = vec![*nidx];
+            let mut stack = vec![*nidx];
+            // DFS from the entry point undirected to gather all nodes
+            // in the component
+            while let Some(n) = stack.pop() {
+                for neighbor in graph.graph().neighbors_undirected(n) {
+                    if !vis.is_visited(&neighbor) {
+                        df_nodes.push(neighbor);
+                        stack.push(neighbor);
+                        vis.visit(neighbor);
+                    }
+                }
+            }
+            // Apply toposort to component nodes
+            df_nodes.sort_by_key(|x| tsmap.get(x).unwrap());
+            execution_graph
+                .add_node(ExecNode {
+                    df_nodes,
+                    dependence_counter: AtomicUsize::new(0),
+                    #[cfg(feature = "gpu")]
+                    locality: -1,
+                })
+                .index();
+        }
+    }
+    // As this partition is made by coalescing all connected
+    // components within the DFG, there are no dependences (edges) to
+    // add to the execution graph.
+    Ok(())
 }

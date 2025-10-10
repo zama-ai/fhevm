@@ -5,14 +5,14 @@ use fhevm_engine_common::types::{FhevmError, Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::{tfhe_ops::current_ciphertext_version, types::SupportedFheOperations};
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
-use prometheus::{register_int_counter, IntCounter};
+use opentelemetry::trace::{Span, TraceContextExt, Tracer};
+use prometheus::{IntCounter, register_int_counter};
 use scheduler::dfg::types::{DFGTxInput, SchedulerError};
+use scheduler::dfg::{DFGOp, DFTxGraph, TxNode, build_component_nodes};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
-use scheduler::dfg::{DFGOp, DFTxGraph, TxNode};
 use sqlx::Postgres;
-use sqlx::{postgres::PgListener, query, Acquire};
+use sqlx::{Acquire, postgres::PgListener, query};
 use std::{
     collections::{BTreeSet, HashMap},
     num::NonZeroUsize,
@@ -398,9 +398,10 @@ FOR UPDATE SKIP LOCKED            ",
                     is_allowed: w.is_allowed,
                 });
             }
-            let mut txn = TxNode::default();
-            txn.build(ops, transaction_id)?;
-            tenant_transactions.push(txn);
+            let mut components = build_component_nodes(ops, transaction_id)?;
+            //let mut txn = TxNode::default();
+            //txn.build(ops, transaction_id)?;
+            tenant_transactions.append(&mut components);
         }
         transactions.push((*tenant_id, tenant_transactions));
     }
