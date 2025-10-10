@@ -1,0 +1,12 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "DELETE FROM user_decryption_requests",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": []
+  },
+  "hash": "7eb5ee37fa8e57c641712b895a5f59e0c484429e78626ccd5ad8b6d55a12267b"
+}
