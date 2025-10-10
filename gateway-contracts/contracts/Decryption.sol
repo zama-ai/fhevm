@@ -16,6 +16,7 @@ import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { MultichainACLChecks } from "./shared/MultichainACLChecks.sol";
+import { CiphertextCommitsChecks } from "./shared/CiphertextCommitsChecks.sol";
 import { FheType } from "./shared/FheType.sol";
 import { Pausable } from "./shared/Pausable.sol";
 import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
@@ -35,6 +36,7 @@ contract Decryption is
     GatewayOwnable,
     GatewayConfigChecks,
     MultichainACLChecks,
+    CiphertextCommitsChecks,
     Pausable
 {
     /**
@@ -56,11 +58,6 @@ contract Decryption is
      * @notice The address of the MultichainACL contract for checking if a decryption requests are allowed.
      */
     IMultichainACL private constant MULTICHAIN_ACL = IMultichainACL(multichainACLAddress);
-
-    /**
-     * @notice The address of the CiphertextCommits contract for getting ciphertext materials.
-     */
-    ICiphertextCommits private constant CIPHERTEXT_COMMITS = ICiphertextCommits(ciphertextCommitsAddress);
 
     /**
      * @notice The maximum number of duration days that can be requested for a user decryption.
@@ -254,20 +251,8 @@ contract Decryption is
         // Check the handles' conformance
         _checkCtHandlesConformancePublic(ctHandles);
 
-        // Fetch the SNS ciphertexts from the CiphertextCommits contract
-        // This call is reverted if any of the ciphertexts are not found in the contract, but
-        // this should not happen for now as a ciphertext cannot be allowed for decryption
-        // without being added to the contract first (and we currently have no ways of deleting
-        // a ciphertext from the contract).
-        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
-
-        // Check that received snsCtMaterials have the same keyId.
-        // TODO: This should be removed once batched decryption requests with different keys is
-        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
-        _checkCtMaterialKeyIds(snsCtMaterials);
-
-        // Fetch the storage URLs that have reached consensus for the ciphertexts
-        string[][] memory storageUrls = CIPHERTEXT_COMMITS.getConsensusStorageUrls(ctHandles);
+        // Check that handles were generated with the same keyId.
+        _checkIsSameKeyId(ctHandles);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
 
@@ -283,7 +268,7 @@ contract Decryption is
         // The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
-        emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, storageUrls, extraData);
+        emit PublicDecryptionRequest(publicDecryptionId, ctHandles, extraData);
     }
 
     /**
@@ -388,20 +373,8 @@ contract Decryption is
             extraData
         );
 
-        // Fetch the ciphertexts from the CiphertextCommits contract
-        // This call is reverted if any of the ciphertexts are not found in the contract, but
-        // this should not happen for now as a ciphertext cannot be allowed for decryption
-        // without being added to the contract first (and we currently have no ways of deleting
-        // a ciphertext from the contract).
-        SnsCiphertextMaterial[] memory snsCtMaterials = CIPHERTEXT_COMMITS.getSnsCiphertextMaterials(ctHandles);
-
-        // Check that received snsCtMaterials have the same keyId.
-        // TODO: This should be removed once batched decryption requests with different keys is
-        // supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
-        _checkCtMaterialKeyIds(snsCtMaterials);
-
-        // Fetch the storage URLs that have reached consensus for the ciphertexts
-        string[][] memory storageUrls = CIPHERTEXT_COMMITS.getConsensusStorageUrls(ctHandles);
+        // Check that handles were generated with the same keyId.
+        _checkIsSameKeyId(ctHandles);
 
         DecryptionStorage storage $ = _getDecryptionStorage();
 
@@ -418,7 +391,7 @@ contract Decryption is
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
 
-        emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, storageUrls, userAddress, publicKey, extraData);
+        emit UserDecryptionRequest(userDecryptionId, ctHandles, userAddress, publicKey, extraData);
     }
 
     /**
@@ -492,10 +465,7 @@ contract Decryption is
         // For each handle, check that it is allowed for public decryption and that the ciphertext
         // material represented by it has been added.
         for (uint256 i = 0; i < ctHandles.length; i++) {
-            if (
-                !MULTICHAIN_ACL.isPublicDecryptAllowed(ctHandles[i]) ||
-                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandles[i])
-            ) {
+            if (!MULTICHAIN_ACL.isPublicDecryptAllowed(ctHandles[i]) || !_isCiphertextMaterialAdded(ctHandles[i])) {
                 return false;
             }
         }
@@ -519,7 +489,7 @@ contract Decryption is
                     ctHandleContractPairs[i].ctHandle,
                     ctHandleContractPairs[i].contractAddress
                 ) ||
-                !CIPHERTEXT_COMMITS.isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
+                !_isCiphertextMaterialAdded(ctHandleContractPairs[i].ctHandle)
             ) {
                 return false;
             }
@@ -760,6 +730,9 @@ contract Decryption is
 
             // Check that the handles are allowed for public decryption.
             _checkIsPublicDecryptAllowed(ctHandle);
+
+            // Check that the ciphertext material has been added.
+            _checkIsCiphertextMaterialAdded(ctHandle);
         }
 
         // Revert if the total bit size exceeds the maximum allowed.
@@ -814,6 +787,9 @@ contract Decryption is
                 revert ContractNotInContractAddresses(contractAddress, contractAddresses);
             }
 
+            // Check that the ciphertext material has been added.
+            _checkIsCiphertextMaterialAdded(ctHandle);
+
             ctHandles[i] = ctHandle;
         }
 
@@ -867,23 +843,6 @@ contract Decryption is
             }
         }
         return false;
-    }
-
-    /**
-     * @notice Checks that all SNS ciphertext materials have the same keyId.
-     * @param snsCtMaterials The list of SNS ciphertext materials to check
-     * @dev TODO: This should be removed once batched decryption requests with different keys is
-     * supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376)
-     */
-    function _checkCtMaterialKeyIds(SnsCiphertextMaterial[] memory snsCtMaterials) internal pure virtual {
-        if (snsCtMaterials.length <= 1) return;
-
-        uint256 firstKeyId = snsCtMaterials[0].keyId;
-        for (uint256 i = 1; i < snsCtMaterials.length; i++) {
-            if (snsCtMaterials[i].keyId != firstKeyId) {
-                revert DifferentKeyIdsNotAllowed(snsCtMaterials[0], snsCtMaterials[i]);
-            }
-        }
     }
 
     /**

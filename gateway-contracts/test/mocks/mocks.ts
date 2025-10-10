@@ -35,9 +35,8 @@ describe("Mock contracts", function () {
     ctHandle: DefaultBytes32,
     keyId: DefaultUint256,
     snsCiphertextDigest: DefaultBytes32,
+    storageUrls: [DefaultString],
   };
-
-  const DefaultStorageUrls = [[]];
 
   const DefaultProtocolMetadata = { name: DefaultString, website: DefaultString };
 
@@ -224,12 +223,7 @@ describe("Mock contracts", function () {
       publicDecryptionCounterId++;
       await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32], DefaultBytes))
         .to.emit(decryptionMock, "PublicDecryptionRequest")
-        .withArgs(
-          publicDecryptionCounterId,
-          toValues([DefaultSnsCiphertextMaterial]),
-          DefaultStorageUrls,
-          DefaultBytes,
-        );
+        .withArgs(publicDecryptionCounterId, [DefaultBytes32], DefaultBytes);
     });
 
     it("Should emit PublicDecryptionResponse event on public decryption response", async function () {
@@ -254,14 +248,7 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(decryptionMock, "UserDecryptionRequest")
-        .withArgs(
-          userDecryptionCounterId,
-          toValues([DefaultSnsCiphertextMaterial]),
-          DefaultStorageUrls,
-          DefaultAddress,
-          DefaultBytes,
-          DefaultBytes,
-        );
+        .withArgs(userDecryptionCounterId, [DefaultBytes32], DefaultAddress, DefaultBytes, DefaultBytes);
     });
 
     it("Should emit response and consensus events on user decryption response", async function () {

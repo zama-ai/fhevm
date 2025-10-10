@@ -15,10 +15,7 @@ import {
 } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
-import {
-  CtHandleContractPairStruct,
-  SnsCiphertextMaterialStruct,
-} from "../typechain-types/contracts/interfaces/IDecryption";
+import { CtHandleContractPairStruct } from "../typechain-types/contracts/interfaces/IDecryption";
 import {
   EIP712,
   createByteInput,
@@ -54,13 +51,6 @@ const MAX_DECRYPTION_REQUEST_BITS = 2048;
 // See https://docs.soliditylang.org/en/develop/units-and-global-variables.html#time-units
 function getDateInSeconds(): number {
   return Math.floor(Date.now() / 1000);
-}
-
-// Get the storage URLs for the given ctHandles
-function getStorageUrls(ctHandles: string[], storageUrlsPerHandle: Record<string, string[]>) {
-  const storageUrls = ctHandles.map((handle) => storageUrlsPerHandle[handle]);
-
-  return storageUrls;
 }
 
 describe("Decryption", function () {
@@ -117,19 +107,15 @@ describe("Decryption", function () {
   let decryption: Decryption;
   let owner: Wallet;
   let pauser: Wallet;
-  let snsCiphertextMaterials: SnsCiphertextMaterialStruct[];
   let kmsSignatures: string[];
   let kmsTxSenders: HardhatEthersSigner[];
   let kmsSigners: HardhatEthersSigner[];
   let coprocessorTxSenders: HardhatEthersSigner[];
-  let coprocessorStorageUrlsPerHandle: Record<string, string[]>;
 
   // Add ciphertext materials
   async function prepareAddCiphertextFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
     const { ciphertextCommits, coprocessorTxSenders } = fixtureData;
-
-    let snsCiphertextMaterials: SnsCiphertextMaterialStruct[] = [];
 
     // Add the ciphertext materials for each handle
     for (const ctHandle of ctHandles) {
@@ -138,23 +124,9 @@ describe("Decryption", function () {
           .connect(coprocessorTxSenders[i])
           .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
       }
-
-      // Store the SNS ciphertext materials for event checks
-      snsCiphertextMaterials.push({
-        ctHandle,
-        keyId,
-        snsCiphertextDigest,
-      });
     }
 
-    // Create a mapping from handles to their consensus storage URLs
-    const coprocessorStorageUrls = await ciphertextCommits.getConsensusStorageUrls(ctHandles);
-    const coprocessorStorageUrlsPerHandle: Record<string, string[]> = {};
-    ctHandles.forEach((handle, idx) => {
-      coprocessorStorageUrlsPerHandle[handle] = coprocessorStorageUrls[idx];
-    });
-
-    return { ...fixtureData, snsCiphertextMaterials, coprocessorStorageUrlsPerHandle };
+    return { ...fixtureData };
   }
 
   describe("Deployment", function () {
@@ -230,13 +202,11 @@ describe("Decryption", function () {
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
       pauser = fixtureData.pauser;
-      snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       kmsSignatures = fixtureData.kmsSignatures;
       kmsTxSenders = fixtureData.kmsTxSenders;
       kmsSigners = fixtureData.kmsSigners;
       coprocessorTxSenders = fixtureData.coprocessorTxSenders;
       eip712Message = fixtureData.eip712Message;
-      coprocessorStorageUrlsPerHandle = fixtureData.coprocessorStorageUrlsPerHandle;
     });
 
     it("Should request a public decryption with multiple ctHandles", async function () {
@@ -244,12 +214,11 @@ describe("Decryption", function () {
       const requestTx = await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
       // Get the storage URLs for the given ctHandles
-      const storageUrls = getStorageUrls(ctHandles, coprocessorStorageUrlsPerHandle);
 
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), storageUrls, extraDataV0);
+        .withArgs(decryptionId, ctHandles, extraDataV0);
     });
 
     it("Should request a public decryption with a single ctHandle", async function () {
@@ -258,15 +227,10 @@ describe("Decryption", function () {
       // Request public decryption with a single ctHandle
       const requestTx = await decryption.publicDecryptionRequest(singleCtHandles, extraDataV0);
 
-      const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
-
-      // Get the storage URLs for the given ctHandles
-      const storageUrls = getStorageUrls(singleCtHandles, coprocessorStorageUrlsPerHandle);
-
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
-        .withArgs(decryptionId, toValues(singleSnsCiphertextMaterials), storageUrls, extraDataV0);
+        .withArgs(decryptionId, singleCtHandles, extraDataV0);
     });
 
     it("Should revert because ctHandles list is empty", async function () {
@@ -324,7 +288,7 @@ describe("Decryption", function () {
 
       // Check that the request fails because the ciphertext material is unavailable
       await expect(decryption.publicDecryptionRequest(newCtHandles, extraDataV0))
-        .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
+        .to.be.revertedWithCustomError(decryption, "CiphertextMaterialNotAdded")
         .withArgs(newCtHandles[0]);
     });
 
@@ -389,20 +353,15 @@ describe("Decryption", function () {
         }
       }
 
+      const ctHandlesDifferentKeyIds = [...ctHandles, newCtHandle];
+
       // Request public decryption with ctMaterials tied to different key IDs
-      const requestTx = decryption.publicDecryptionRequest([...ctHandles, newCtHandle], extraDataV0);
+      const requestTx = decryption.publicDecryptionRequest(ctHandlesDifferentKeyIds, extraDataV0);
 
       // Check that different key IDs are not allowed for batched public decryption
       await expect(requestTx)
         .to.be.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
-        .withArgs(
-          toValues(snsCiphertextMaterials[0]),
-          toValues({
-            ctHandle: newCtHandle,
-            keyId: newKeyId,
-            snsCiphertextDigest,
-          }),
-        );
+        .withArgs(ctHandlesDifferentKeyIds);
     });
 
     it("Should public decrypt with 3 valid responses", async function () {
@@ -765,7 +724,6 @@ describe("Decryption", function () {
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
       pauser = fixtureData.pauser;
-      snsCiphertextMaterials = fixtureData.snsCiphertextMaterials;
       userSignature = fixtureData.userSignature;
       kmsSignatures = fixtureData.kmsSignatures;
       kmsTxSenders = fixtureData.kmsTxSenders;
@@ -774,7 +732,6 @@ describe("Decryption", function () {
       userDecryptedShares = fixtureData.userDecryptedShares;
       eip712RequestMessage = fixtureData.eip712RequestMessage;
       eip712ResponseMessages = fixtureData.eip712ResponseMessages;
-      coprocessorStorageUrlsPerHandle = fixtureData.coprocessorStorageUrlsPerHandle;
     });
 
     it("Should request a user decryption with multiple ctHandleContractPairs", async function () {
@@ -789,19 +746,15 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
-      // Get the storage URLs for the given ctHandles
-      const storageUrls = getStorageUrls(ctHandles, coprocessorStorageUrlsPerHandle);
-
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(decryptionId, toValues(snsCiphertextMaterials), storageUrls, user.address, publicKey, extraDataV0);
+        .withArgs(decryptionId, ctHandles, user.address, publicKey, extraDataV0);
     });
 
     it("Should request a user decryption with a single ctHandleContractPair", async function () {
       // Create single list of inputs
       const singleCtHandleContractPair: CtHandleContractPairStruct[] = ctHandleContractPairs.slice(0, 1);
-      const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
       const singleCtHandles = [ctHandles[0]];
 
       // Request user decryption
@@ -815,20 +768,10 @@ describe("Decryption", function () {
         extraDataV0,
       );
 
-      // Get the storage URLs for the given ctHandles
-      const storageUrls = getStorageUrls(singleCtHandles, coprocessorStorageUrlsPerHandle);
-
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "UserDecryptionRequest")
-        .withArgs(
-          decryptionId,
-          toValues(singleSnsCiphertextMaterials),
-          storageUrls,
-          user.address,
-          publicKey,
-          extraDataV0,
-        );
+        .withArgs(decryptionId, singleCtHandles, user.address, publicKey, extraDataV0);
     });
 
     it("Should revert because ctHandleContractPairs is empty", async function () {
@@ -1143,7 +1086,7 @@ describe("Decryption", function () {
           extraDataV0,
         ),
       )
-        .to.be.revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
+        .to.be.revertedWithCustomError(decryption, "CiphertextMaterialNotAdded")
         .withArgs(newCtHandle);
     });
 
@@ -1252,9 +1195,12 @@ describe("Decryption", function () {
         await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
       }
 
+      const ctHandleContractPairsDifferentKeyIds = [...ctHandleContractPairs, newCtHandleContractPair];
+      const ctHandlesDifferentKeyIds = [...ctHandles, newCtHandle];
+
       // Request user decryption with ctMaterials tied to different key IDs
       const requestTx = decryption.userDecryptionRequest(
-        [...ctHandleContractPairs, newCtHandleContractPair],
+        ctHandleContractPairsDifferentKeyIds,
         requestValidity,
         contractsInfo,
         user.address,
@@ -1266,14 +1212,7 @@ describe("Decryption", function () {
       // Check that different key IDs are not allowed for batched user decryption
       await expect(requestTx)
         .to.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
-        .withArgs(
-          toValues(snsCiphertextMaterials[0]),
-          toValues({
-            ctHandle: newCtHandle,
-            keyId: newKeyId,
-            snsCiphertextDigest,
-          }),
-        );
+        .withArgs(ctHandlesDifferentKeyIds);
     });
 
     it("Should revert because of two responses with same signature", async function () {

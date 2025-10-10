@@ -36,16 +36,10 @@ interface IDecryption {
     /**
      * @notice Emitted when an public decryption request is made.
      * @param decryptionId The decryption request ID.
-     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
-     * @param storageUrls The storage URLs that have reached consensus for the ciphertexts.
+     * @param ctHandles The handles, key IDs and SNS ciphertexts to decrypt.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    event PublicDecryptionRequest(
-        uint256 indexed decryptionId,
-        SnsCiphertextMaterial[] snsCtMaterials,
-        string[][] storageUrls,
-        bytes extraData
-    );
+    event PublicDecryptionRequest(uint256 indexed decryptionId, bytes32[] ctHandles, bytes extraData);
 
     /**
      * @notice Emitted when an public decryption response is made.
@@ -64,16 +58,14 @@ interface IDecryption {
     /**
      * @notice Emitted when a user decryption request is made.
      * @param decryptionId The decryption request ID.
-     * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
-     * @param storageUrls The storage URLs that have reached consensus for the ciphertexts.
+     * @param ctHandles The handles, key IDs and SNS ciphertexts to decrypt.
      * @param userAddress The user's address.
      * @param publicKey The user's public key for used reencryption.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event UserDecryptionRequest(
         uint256 indexed decryptionId,
-        SnsCiphertextMaterial[] snsCtMaterials,
-        string[][] storageUrls,
+        bytes32[] ctHandles,
         address userAddress,
         bytes publicKey,
         bytes extraData
@@ -184,18 +176,6 @@ interface IDecryption {
      * @param contractAddresses The list of expected contract addresses.
      */
     error ContractNotInContractAddresses(address contractAddress, address[] contractAddresses);
-
-    /**
-     * @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same.
-     * @param firstSnsCtMaterial The first SNS ciphertext material in the list with the expected key ID.
-     * @param invalidSnsCtMaterial The SNS ciphertext material found with a different key ID.
-     * @dev This should be removed once batched decryption requests with different keys is support by the KMS
-     * See https://github.com/zama-ai/fhevm-internal/issues/376
-     */
-    error DifferentKeyIdsNotAllowed(
-        SnsCiphertextMaterial firstSnsCtMaterial,
-        SnsCiphertextMaterial invalidSnsCtMaterial
-    );
 
     /**
      * @notice Error indicating that the (public, user, delegated user) decryption is not requested yet.

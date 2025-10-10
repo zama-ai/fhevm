@@ -66,7 +66,7 @@ describe("CiphertextCommits", function () {
 
   async function prepareViewTestFixture() {
     const fixtureData = await loadFixture(loadTestVariablesFixture);
-    const { ciphertextCommits, coprocessorTxSenders } = fixtureData;
+    const { ciphertextCommits, coprocessorTxSenders, coprocessors } = fixtureData;
 
     const unusedCoprocessorTxSender = coprocessorTxSenders[0];
     const usedCoprocessorTxSender = coprocessorTxSenders.slice(1);
@@ -78,7 +78,11 @@ describe("CiphertextCommits", function () {
         .connect(txSender)
         .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
     }
-    return { ...fixtureData, unusedCoprocessorTxSender, usedCoprocessorTxSender };
+
+    const unusedStorageUrl = coprocessors[0].storageUrl;
+    const usedStorageUrls = coprocessors.slice(1).map((coprocessor) => coprocessor.storageUrl);
+
+    return { ...fixtureData, unusedCoprocessorTxSender, usedCoprocessorTxSender, unusedStorageUrl, usedStorageUrls };
   }
 
   beforeEach(async function () {
@@ -199,8 +203,9 @@ describe("CiphertextCommits", function () {
         .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
 
       // Check that the coprocessor transaction senders list is empty because consensus is not reached yet
-      const addCiphertextMaterialConsensusTxSenders1 = await ciphertextCommits.getConsensusTxSenders(ctHandle);
-      expect(addCiphertextMaterialConsensusTxSenders1).to.deep.equal([]);
+      const addCiphertextMaterialConsensusTxSenders1 =
+        await ciphertextCommits.getConsensusCoprocessorTxSenders(ctHandle);
+      expect(addCiphertextMaterialConsensusTxSenders1).to.deep.equal([[], 0, false]);
 
       // Trigger a valid add ciphertext material call using the second coprocessor transaction sender
       await ciphertextCommits
@@ -211,8 +216,9 @@ describe("CiphertextCommits", function () {
 
       // Check that the coprocessor transaction senders that were involved in the consensus are the
       // 2 coprocessor transaction senders, at the moment the consensus is reached
-      const addCiphertextMaterialConsensusTxSenders2 = await ciphertextCommits.getConsensusTxSenders(ctHandle);
-      expect(addCiphertextMaterialConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
+      const addCiphertextMaterialConsensusTxSenders2 =
+        await ciphertextCommits.getConsensusCoprocessorTxSenders(ctHandle);
+      expect(addCiphertextMaterialConsensusTxSenders2).to.deep.equal([expectedCoprocessorTxSenders2, contextId, true]);
 
       // Trigger a valid add ciphertext material call using the third coprocessor transaction sender
       await ciphertextCommits
@@ -223,46 +229,9 @@ describe("CiphertextCommits", function () {
 
       // Check that the coprocessor transaction senders that were involved in the consensus are the
       // 3 coprocessor transaction senders, after the consensus is reached
-      const addCiphertextMaterialConsensusTxSenders3 = await ciphertextCommits.getConsensusTxSenders(ctHandle);
-      expect(addCiphertextMaterialConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
-    });
-
-    it("Should get all valid coprocessor storage URLs from add ciphertext material at and after consensus", async function () {
-      // Trigger a valid add ciphertext material call using the first and second coprocessor transaction sender
-      await ciphertextCommits
-        .connect(coprocessorTxSenders[0])
-        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-      await ciphertextCommits
-        .connect(coprocessorTxSenders[1])
-        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-
-      const expectedConsensusStorageUrls1 = coprocessors.slice(0, 2).map((coprocessor) => coprocessor.storageUrl);
-
-      // Check that we get the expected list of storage URLs at consensus
-      const consensusSStorageUrls1 = await ciphertextCommits.getConsensusStorageUrls([ctHandle]);
-      expect(consensusSStorageUrls1).to.deep.equal([expectedConsensusStorageUrls1]);
-
-      // Trigger a valid add ciphertext material call using the third coprocessor transaction sender
-      await ciphertextCommits
-        .connect(coprocessorTxSenders[2])
-        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-
-      const expectedConsensusStorageUrls2 = coprocessors.slice(0, 3).map((coprocessor) => coprocessor.storageUrl);
-
-      // Check that we get the expected list of storage URLs after consensus
-      const consensusStorageUrls2 = await ciphertextCommits.getConsensusStorageUrls([ctHandle]);
-      expect(consensusStorageUrls2).to.deep.equal([expectedConsensusStorageUrls2]);
-    });
-
-    it("Should revert because add ciphertext material consensus has not been reached", async function () {
-      // Trigger a valid add ciphertext material call using the first coprocessor transaction sender
-      await ciphertextCommits
-        .connect(coprocessorTxSenders[0])
-        .addCiphertextMaterial(ctHandle, keyId, ciphertextDigest, snsCiphertextDigest);
-
-      await expect(ciphertextCommits.getConsensusStorageUrls([ctHandle]))
-        .revertedWithCustomError(ciphertextCommits, "CiphertextMaterialNotFound")
-        .withArgs(ctHandle);
+      const addCiphertextMaterialConsensusTxSenders3 =
+        await ciphertextCommits.getConsensusCoprocessorTxSenders(ctHandle);
+      expect(addCiphertextMaterialConsensusTxSenders3).to.deep.equal([expectedCoprocessorTxSenders3, contextId, true]);
     });
 
     it("Should revert because the transaction sender is not a coprocessor from the active context", async function () {
@@ -401,25 +370,27 @@ describe("CiphertextCommits", function () {
 
   describe("Get ciphertext materials", async function () {
     let unusedCoprocessorTxSender: HardhatEthersSigner;
-    let usedCoprocessorTxSender: HardhatEthersSigner[];
+    let usedStorageUrls: string[];
+    let unusedStorageUrl: string;
 
     beforeEach(async function () {
       const fixtureData = await loadFixture(prepareViewTestFixture);
       unusedCoprocessorTxSender = fixtureData.unusedCoprocessorTxSender;
-      usedCoprocessorTxSender = fixtureData.usedCoprocessorTxSender;
+      usedStorageUrls = fixtureData.usedStorageUrls;
+      unusedStorageUrl = fixtureData.unusedStorageUrl;
     });
 
     it("Should get regular ciphertext materials", async function () {
       const result = await ciphertextCommits.getCiphertextMaterials([ctHandle]);
 
-      expect(result).to.be.deep.eq([[ctHandle, keyId, ciphertextDigest]]);
+      expect(result).to.be.deep.eq([[ctHandle, keyId, ciphertextDigest, usedStorageUrls]]);
     });
 
     it("Should get late transaction sender after consensus (regular)", async function () {
       const resultTx1 = await ciphertextCommits.getCiphertextMaterials([ctHandle]);
 
       // The consensus has been reached with only 2 coprocessors
-      expect(resultTx1).to.be.deep.eq([[ctHandle, keyId, ciphertextDigest]]);
+      expect(resultTx1).to.be.deep.eq([[ctHandle, keyId, ciphertextDigest, usedStorageUrls]]);
 
       // Trigger a "late" call with valid inputs, after the consensus has been reached
       await ciphertextCommits
@@ -429,7 +400,7 @@ describe("CiphertextCommits", function () {
       // Fetch the material once again
       const resultTx2 = await ciphertextCommits.getCiphertextMaterials([ctHandle]);
 
-      expect(resultTx2).to.be.deep.eq([[ctHandle, keyId, ciphertextDigest]]);
+      expect(resultTx2).to.be.deep.eq([[ctHandle, keyId, ciphertextDigest, [...usedStorageUrls, unusedStorageUrl]]]);
     });
 
     it("Should revert with CiphertextMaterialNotFound (regular)", async function () {
@@ -441,14 +412,14 @@ describe("CiphertextCommits", function () {
     it("Should get SNS ciphertext materials", async function () {
       const result = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
 
-      expect(result).to.be.deep.eq([[ctHandle, keyId, snsCiphertextDigest]]);
+      expect(result).to.be.deep.eq([[ctHandle, keyId, snsCiphertextDigest, usedStorageUrls]]);
     });
 
     it("Should get late transaction sender after consensus (SNS) ", async function () {
       const result = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
 
       // The consensus has been reached with only 2 coprocessors
-      expect(result).to.be.deep.eq([[ctHandle, keyId, snsCiphertextDigest]]);
+      expect(result).to.be.deep.eq([[ctHandle, keyId, snsCiphertextDigest, usedStorageUrls]]);
 
       // Trigger a "late" call with valid inputs, after the consensus has been reached
       await ciphertextCommits
@@ -458,7 +429,7 @@ describe("CiphertextCommits", function () {
       // Fetch the material once again
       const resultTx2 = await ciphertextCommits.getSnsCiphertextMaterials([ctHandle]);
 
-      expect(resultTx2).to.be.deep.eq([[ctHandle, keyId, snsCiphertextDigest]]);
+      expect(resultTx2).to.be.deep.eq([[ctHandle, keyId, snsCiphertextDigest, [...usedStorageUrls, unusedStorageUrl]]]);
     });
 
     it("Should revert with CiphertextMaterialNotFound (SNS)", async function () {

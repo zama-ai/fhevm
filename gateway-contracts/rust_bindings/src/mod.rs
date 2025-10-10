@@ -5,6 +5,7 @@
 //! These files may be overwritten by the codegen system at any time.
 pub mod r#address;
 pub mod r#ciphertext_commits;
+pub mod r#ciphertext_commits_checks;
 pub mod r#context_checks;
 pub mod r#context_lifecycle;
 pub mod r#context_upgradeable;

@@ -78,25 +78,31 @@ interface ICiphertextCommits {
     ) external view returns (SnsCiphertextMaterial[] memory);
 
     /**
-     * @notice Retrieves the list of the storage URLs associated to the handles for which the consensus was reached.
-     * @param ctHandles The list of handles to retrieve.
-     * @return The list of storage URLs.
-     */
-    function getConsensusStorageUrls(bytes32[] calldata ctHandles) external view returns (string[][] memory);
-
-    /**
      * @notice Indicates if the ciphertext material represented by the handle has been added in the contract.
      * @param ctHandle The handle to check.
      */
     function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool);
 
     /**
-     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus
-     * for an add ciphertext material.
-     * @param ctHandle The handle to retrieve the coprocessor transaction sender addresses for.
-     * @return The list of coprocessor transaction sender addresses.
+     * @notice Checks that ciphertext handles have been added with the same keyId.
+     * @param ctHandles The list of ciphertext handles to check
+     * @return Whether the ciphertext handles have been added with the same keyId
+     * @dev TODO: This won't be needed once batched decryption requests with different keys is
+     * supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376) and this function
+     * will be removed.
      */
-    function getConsensusTxSenders(bytes32 ctHandle) external view returns (address[] memory);
+    function isSameKeyId(bytes32[] calldata ctHandles) external view returns (bool);
+
+    /**
+     * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus
+     * for an add ciphertext material and a contextId. Also indicates if the consensus has been reached.
+     * @param ctHandle The handle to retrieve the coprocessor transaction sender addresses for.
+     * @return The list of coprocessor transaction sender addresses, the context ID associated to the
+     * consensus and whether the consensus has been reached.
+     */
+    function getConsensusCoprocessorTxSenders(
+        bytes32 ctHandle
+    ) external view returns (address[] memory, uint256 contextId, bool);
 
     /**
      * @notice Returns the versions of the CiphertextCommits contract in SemVer format.

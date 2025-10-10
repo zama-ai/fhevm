@@ -98,6 +98,8 @@ struct SnsCiphertextMaterial {
     uint256 keyId;
     /// @notice The digest of the SNS ciphertext
     bytes32 snsCiphertextDigest;
+    /// @notice The list of coprocessor transaction sender addresses that were involved in the consensus
+    string[] storageUrls;
 }
 
 /**
@@ -111,6 +113,8 @@ struct CiphertextMaterial {
     uint256 keyId;
     /// @notice The digest of the regular ciphertext
     bytes32 ciphertextDigest;
+    /// @notice The list of coprocessor transaction sender addresses that were involved in the consensus
+    string[] storageUrls;
 }
 
 /**
