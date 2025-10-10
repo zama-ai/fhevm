@@ -395,17 +395,20 @@ FOR UPDATE SKIP LOCKED            ",
                     output_handle: w.output_handle.clone(),
                     fhe_op,
                     inputs,
-                    is_allowed: w.is_allowed,
+                    is_allowed: true,
                 });
             }
             let mut components = build_component_nodes(ops, transaction_id)?;
+            tenant_transactions.append(&mut components);
             //let mut txn = TxNode::default();
             //txn.build(ops, transaction_id)?;
-            tenant_transactions.append(&mut components);
+            //tenant_transactions.push(txn);
         }
         transactions.push((*tenant_id, tenant_transactions));
     }
     s_prep.end();
+
+    println!("Transactions: {:?}", transactions);
     Ok(transactions)
 }
 
