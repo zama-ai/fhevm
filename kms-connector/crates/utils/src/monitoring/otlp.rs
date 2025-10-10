@@ -103,3 +103,17 @@ impl Extractor for PropagationContext {
         self.0.keys().map(|k| k.as_ref()).collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    // Test that the default value for otlp_context inserted in database corresponds to an empty
+    // `PropagationContext`.
+    fn test_propagation_context() {
+        let context: PropagationContext =
+            bc2wrap::deserialize(&alloy::hex::decode("0000000000000000").unwrap()).unwrap();
+        assert_eq!(context, PropagationContext::empty());
+    }
+}
