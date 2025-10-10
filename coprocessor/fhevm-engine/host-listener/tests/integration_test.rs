@@ -55,6 +55,7 @@ async fn emit_events<P, N>(
     tfhe_contract: FHEVMExecutorTestInstance<P, N>,
     acl_contract: ACLTestInstance<P, N>,
     reorg: bool,
+    nb_events_per_wallet: i64,
 ) where
     P: Clone + alloy::providers::Provider<N> + 'static,
     N: Clone
@@ -69,9 +70,10 @@ async fn emit_events<P, N>(
         let acl_contract = acl_contract.clone();
         let url = url.to_string();
         let thread = tokio::spawn(async move {
-            for i_message in 1..=NB_EVENTS_PER_WALLET {
+            for i_message in 1..=nb_events_per_wallet {
+                eprintln!("Emitting event {i_message} for wallet {i_wallet}");
                 let reorg_point =
-                    reorg && i_message == (2 * NB_EVENTS_PER_WALLET) / 3;
+                    reorg && i_message == (2 * nb_events_per_wallet) / 3;
                 let provider = ProviderBuilder::new()
                     .wallet(wallet.clone())
                     .connect_ws(WsConnect::new(url.to_string()))
@@ -226,6 +228,7 @@ async fn setup(node_chain_id: Option<u64>) -> Result<Setup, anyhow::Error> {
         dependence_cache_size: 128,
         reorg_maximum_duration_in_blocks: 100, // to go beyond chain start
         service_name: "host-listener-test".to_string(),
+        finalization_maximum_duration_in_blocks: 2,
     };
     let health_check_url = format!("http://127.0.0.1:{}", args.health_port);
 
@@ -291,6 +294,7 @@ async fn test_listener_no_event_loss(
             tfhe_contract_clone,
             acl_contract_clone,
             reorg,
+            NB_EVENTS_PER_WALLET,
         )
         .await;
     });
@@ -314,6 +318,7 @@ async fn test_listener_no_event_loss(
     let mut tfhe_events_count = 0;
     let mut acl_events_count = 0;
     let mut nb_kill = 1;
+    let nb_wallets = setup.wallets.len() as i64;
     // Restart/kill many time until no more events are consumned.
     for _ in 1..120 {
         // 10 mins max to avoid stalled CI
@@ -399,5 +404,127 @@ async fn test_health() -> Result<(), anyhow::Error> {
     assert!(health_check::wait_healthy(&setup.health_check_url, 10, 1).await);
     warn!("Test is killing the listener");
     listener_handle.abort();
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_catchup_and_listen() -> Result<(), anyhow::Error> {
+    let setup = setup(None).await?;
+    let mut args = setup.args.clone();
+
+    // Emit first batch of events
+    let wallets_clone = setup.wallets.clone();
+    let url_clone = setup.args.url.clone();
+    let tfhe_contract_clone = setup.tfhe_contract.clone();
+    let acl_contract_clone = setup.acl_contract.clone();
+    let nb_event_per_wallet = 10;
+    emit_events(
+        &wallets_clone,
+        &url_clone,
+        tfhe_contract_clone,
+        acl_contract_clone,
+        false, // no reorg
+        nb_event_per_wallet,
+    )
+    .await;
+
+    // Start listener in background task
+    args.start_at_block = Some(0);
+    args.catchup_paging = 3;
+    let listener_handle = tokio::spawn(main(args.clone()));
+    assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
+    tokio::time::sleep(tokio::time::Duration::from_secs(20)).await; // time to catchup
+
+    let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let acl_events_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let nb_wallets = setup.wallets.len() as i64;
+    assert_eq!(tfhe_events_count, nb_wallets * nb_event_per_wallet);
+    assert_eq!(acl_events_count, nb_wallets * nb_event_per_wallet);
+    assert!(!listener_handle.is_finished(), "Listener should continue");
+    let wallets_clone = setup.wallets.clone();
+    let url_clone = setup.args.url.clone();
+    let tfhe_contract_clone = setup.tfhe_contract.clone();
+    let acl_contract_clone = setup.acl_contract.clone();
+    emit_events(
+        &wallets_clone,
+        &url_clone,
+        tfhe_contract_clone,
+        acl_contract_clone,
+        false, // no reorg
+        nb_event_per_wallet,
+    )
+    .await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+
+    let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let acl_events_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    assert_eq!(tfhe_events_count, 2 * nb_wallets * nb_event_per_wallet);
+    assert_eq!(acl_events_count, 2 * nb_wallets * nb_event_per_wallet);
+    listener_handle.abort();
+    Ok(())
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_catchup_only() -> Result<(), anyhow::Error> {
+    let setup = setup(None).await?;
+    let mut args = setup.args.clone();
+
+    // Emit first batch of events
+    let wallets_clone = setup.wallets.clone();
+    let url_clone = setup.args.url.clone();
+    let tfhe_contract_clone = setup.tfhe_contract.clone();
+    let acl_contract_clone = setup.acl_contract.clone();
+    let nb_event_per_wallet = 5;
+    emit_events(
+        &wallets_clone,
+        &url_clone,
+        tfhe_contract_clone,
+        acl_contract_clone,
+        false, // no reorg
+        nb_event_per_wallet,
+    )
+    .await;
+
+    // Start listener in background task
+    args.start_at_block = Some(-30 + 2 * nb_event_per_wallet);
+    args.end_at_block = Some(15 + 2 * nb_event_per_wallet as u64);
+    args.catchup_paging = 2;
+    let listener_handle = tokio::spawn(main(args.clone()));
+    assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
+    tokio::time::sleep(tokio::time::Duration::from_secs(30)).await; // time to catchup
+
+    let tfhe_events_count = sqlx::query!("SELECT COUNT(*) FROM computations")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let acl_events_count = sqlx::query!("SELECT COUNT(*) FROM allowed_handles")
+        .fetch_one(&setup.db_pool)
+        .await?
+        .count
+        .unwrap_or(0);
+    let nb_wallets = setup.wallets.len() as i64;
+    eprintln!("End block {:?}", args.end_at_block);
+    assert_eq!(tfhe_events_count, nb_wallets * nb_event_per_wallet);
+    assert_eq!(acl_events_count, nb_wallets * nb_event_per_wallet);
+    assert!(listener_handle.is_finished(), "Listener should stop");
     Ok(())
 }
