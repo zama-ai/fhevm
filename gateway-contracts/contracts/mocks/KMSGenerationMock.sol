@@ -40,8 +40,7 @@ contract KMSGenerationMock {
     }
 
     function prepKeygenResponse(uint256 prepKeygenId, bytes calldata signature) external {
-        keyCounter++;
-        uint256 keyId = keyCounter;
+        uint256 keyId;
 
         emit KeygenRequest(prepKeygenId, keyId);
     }

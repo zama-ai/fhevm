@@ -28,18 +28,6 @@ abstract contract GatewayConfigChecks {
     error NotKmsSigner(address signerAddress);
 
     /**
-     * @notice Error emitted when an address is not a coprocessor transaction sender.
-     * @param txSenderAddress The address that is not a coprocessor transaction sender.
-     */
-    error NotCoprocessorTxSender(address txSenderAddress);
-
-    /**
-     * @notice Error emitted when an address is not a coprocessor signer.
-     * @param signerAddress The address that is not a coprocessor signer.
-     */
-    error NotCoprocessorSigner(address signerAddress);
-
-    /**
      * @notice Error emitted when an address is not a custodian transaction sender.
      * @param txSenderAddress The address that is not a custodian transaction sender.
      */
@@ -63,16 +51,6 @@ abstract contract GatewayConfigChecks {
     modifier onlyKmsTxSender() {
         if (!GATEWAY_CONFIG.isKmsTxSender(msg.sender)) {
             revert NotKmsTxSender(msg.sender);
-        }
-        _;
-    }
-
-    /**
-     * @notice Checks if the sender is a coprocessor transaction sender.
-     */
-    modifier onlyCoprocessorTxSender() {
-        if (!GATEWAY_CONFIG.isCoprocessorTxSender(msg.sender)) {
-            revert NotCoprocessorTxSender(msg.sender);
         }
         _;
     }
@@ -105,16 +83,6 @@ abstract contract GatewayConfigChecks {
     function _checkIsKmsSigner(address signerAddress) internal view {
         if (!GATEWAY_CONFIG.isKmsSigner(signerAddress)) {
             revert NotKmsSigner(signerAddress);
-        }
-    }
-
-    /**
-     * @notice Checks if the address is a coprocessor signer.
-     * @param signerAddress The address to check.
-     */
-    function _checkIsCoprocessorSigner(address signerAddress) internal view {
-        if (!GATEWAY_CONFIG.isCoprocessorSigner(signerAddress)) {
-            revert NotCoprocessorSigner(signerAddress);
         }
     }
 }
