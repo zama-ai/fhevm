@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use actix_web::{HttpResponse, http::StatusCode};
 use anyhow::anyhow;
 use opentelemetry::{
@@ -10,6 +8,7 @@ use opentelemetry::{
 use opentelemetry_otlp::SpanExporter;
 use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::Dispatch;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};

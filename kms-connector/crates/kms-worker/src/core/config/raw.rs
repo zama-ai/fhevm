@@ -74,7 +74,7 @@ fn default_database_polling_timeout_secs() -> u64 {
 }
 
 fn default_events_batch_size() -> u8 {
-    10
+    50
 }
 
 fn default_grpc_request_retries() -> u8 {
@@ -90,7 +90,7 @@ fn default_user_decryption_timeout() -> u64 {
 }
 
 fn default_grpc_poll_interval() -> u64 {
-    5 // 5 seconds
+    1 // 1 seconds
 }
 
 fn default_s3_ciphertext_retrieval_retries() -> u8 {
