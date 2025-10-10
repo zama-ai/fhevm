@@ -247,21 +247,24 @@ task('task:deployInputVerifier')
     const verifyingContractSource = process.env.INPUT_VERIFICATION_ADDRESS!;
     const chainIDSource = +process.env.CHAIN_ID_GATEWAY!;
 
-    let initialSigners: string[] = [];
+    let initialCoprocessorContextSigners: string[] = [];
     const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
     for (let idx = 0; idx < +numSigners; idx++) {
       if (!taskArguments.useAddress) {
         const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`);
         const inputSigner = new ethers.Wallet(privKeySigner).connect(ethers.provider);
-        initialSigners.push(inputSigner.address);
+        initialCoprocessorContextSigners.push(inputSigner.address);
       } else {
         const inputSignerAddress = getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`);
-        initialSigners.push(inputSignerAddress);
+        initialCoprocessorContextSigners.push(inputSignerAddress);
       }
     }
 
     await upgrades.upgradeProxy(proxy, newImplem, {
-      call: { fn: 'initializeFromEmptyProxy', args: [verifyingContractSource, chainIDSource, initialSigners] },
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [verifyingContractSource, chainIDSource, initialCoprocessorContextSigners],
+      },
     });
     console.info('InputVerifier code set successfully at address:', proxyAddress);
   });
