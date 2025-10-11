@@ -178,3 +178,6 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+## Community Resources
+
+- [TR] Zama FHE Starter — FHEVM (Solidity/Hardhat) + Concrete-ML (Python): https://github.com/0xDoubleShot/zama-fhe-starter-tr
