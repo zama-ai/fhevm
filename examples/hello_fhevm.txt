@@ -1,0 +1,6 @@
+# Hello FHEVM example
+# This file demonstrates a simple computation using FHEVM.
+# Instructions:
+# 1. Load this file in the FHEVM environment
+# 2. Run the sample computation
+# 3. Verify output
