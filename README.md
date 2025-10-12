@@ -185,3 +185,11 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 (PDF)](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
 - [Zama Official Website](https://zama.ai/)
 - [Zama Twitter](https://x.com/zama_fhe)
+## Quick Start Guide
+
+To quickly start using FHEVM:
+
+1. Clone the repository: git clone https://github.com/delijann/fhevm.git
+2. Navigate to the project folder: cd fhevm
+3. Follow the official documentation: [Zama Protocol 
+Docs](https://docs.zama.ai/protocol)
