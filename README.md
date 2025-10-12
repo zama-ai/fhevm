@@ -178,3 +178,10 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+## Additional Resources
+
+- [Zama Protocol Documentation](https://docs.zama.ai/protocol)
+- [FHEVM Whitepaper 
+(PDF)](https://github.com/zama-ai/fhevm/blob/main/fhevm-whitepaper.pdf)
+- [Zama Official Website](https://zama.ai/)
+- [Zama Twitter](https://x.com/zama_fhe)
