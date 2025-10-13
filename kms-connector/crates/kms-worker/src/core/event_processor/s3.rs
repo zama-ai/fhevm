@@ -300,15 +300,9 @@ where
     ) -> anyhow::Result<TypedCiphertext> {
         info!("S3 CIPHERTEXT RETRIEVAL START: from bucket {s3_bucket_url}, digest {digest_hex}");
 
-        // Direct HTTP retrieval
         let direct_url = format!("{s3_bucket_url}/{digest_hex}");
         let (ciphertext, ct_format) = self.direct_http_retrieval(&direct_url).await?;
-
-        // TODO: once tfhe-rs is upgraded to 1.3, replace map().unwrap_or() by ?
-        // Right now it fails test when facing unknown types
-        let fhe_type = extract_fhe_type_from_handle(handle)
-            .map(|t| t as i32)
-            .unwrap_or(0);
+        let fhe_type = extract_fhe_type_from_handle(handle)?;
 
         info!(
             handle = hex::encode(handle),
@@ -331,7 +325,7 @@ where
         Ok(TypedCiphertext {
             ciphertext,
             external_handle: handle.to_vec(),
-            fhe_type,
+            fhe_type: fhe_type as i32,
             ciphertext_format: ct_format.into(),
         })
     }

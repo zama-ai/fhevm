@@ -1,0 +1,48 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, otlp_context) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        {
+          "Custom": {
+            "name": "sns_ciphertext_material[]",
+            "kind": {
+              "Array": {
+                "Custom": {
+                  "name": "sns_ciphertext_material",
+                  "kind": {
+                    "Composite": [
+                      [
+                        "ct_handle",
+                        "Bytea"
+                      ],
+                      [
+                        "key_id",
+                        "Bytea"
+                      ],
+                      [
+                        "sns_ciphertext_digest",
+                        "Bytea"
+                      ],
+                      [
+                        "coprocessor_tx_sender_addresses",
+                        "ByteaArray"
+                      ]
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "Bytea",
+        "Bytea"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "d2b33c24cd185f97f5810a4b3da91565c87fed9d1697d651f5e51ffbba756bd6"
+}

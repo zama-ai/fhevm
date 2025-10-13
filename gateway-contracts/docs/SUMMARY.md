@@ -10,3 +10,6 @@
 - Contracts
   - [GatewayConfig](getting-started/contracts/gateway_config.md)
   - [KMSGeneration](getting-started/contracts/kms_generation.md)
+  - [PauserSet](getting-started/contracts/pauser_set.md)
+- Pausing
+  - [Pausing mechanism](getting-started/pausing/pausing.md)

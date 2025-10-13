@@ -5,7 +5,7 @@ use crate::core::event_processor::{
 };
 use alloy::providers::Provider;
 use anyhow::anyhow;
-use connector_utils::types::{GatewayEvent, KmsGrpcRequest, KmsResponse};
+use connector_utils::types::{GatewayEvent, GatewayEventKind, KmsGrpcRequest, KmsResponseKind};
 use sqlx::{Pool, Postgres};
 use thiserror::Error;
 use tonic::Code;
@@ -18,7 +18,7 @@ pub trait EventProcessor: Send {
     fn process(
         &mut self,
         event: &Self::Event,
-    ) -> impl Future<Output = Result<KmsResponse, ProcessingError>> + Send;
+    ) -> impl Future<Output = Result<KmsResponseKind, ProcessingError>> + Send;
 }
 
 /// Struct that processes Gateway's events coming from a `Postgres` database.
@@ -41,8 +41,8 @@ impl<P: Provider> EventProcessor for DbEventProcessor<P> {
     type Event = GatewayEvent;
 
     #[tracing::instrument(skip_all)]
-    async fn process(&mut self, event: &Self::Event) -> Result<KmsResponse, ProcessingError> {
-        info!("Starting to process {:?}...", event);
+    async fn process(&mut self, event: &Self::Event) -> Result<KmsResponseKind, ProcessingError> {
+        info!("Starting to process {:?}...", event.kind);
         match self.inner_process(event).await {
             Ok(response) => {
                 info!("Event successfully processed!");
@@ -89,8 +89,8 @@ impl<P: Provider> DbEventProcessor<P> {
         &self,
         event: GatewayEvent,
     ) -> Result<KmsGrpcRequest, ProcessingError> {
-        match event {
-            GatewayEvent::PublicDecryption(req) => {
+        match event.kind {
+            GatewayEventKind::PublicDecryption(req) => {
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -100,7 +100,7 @@ impl<P: Provider> DbEventProcessor<P> {
                     )
                     .await
             }
-            GatewayEvent::UserDecryption(req) => {
+            GatewayEventKind::UserDecryption(req) => {
                 self.decryption_processor
                     .prepare_decryption_request(
                         req.decryptionId,
@@ -110,17 +110,17 @@ impl<P: Provider> DbEventProcessor<P> {
                     )
                     .await
             }
-            GatewayEvent::PrepKeygen(req) => {
+            GatewayEventKind::PrepKeygen(req) => {
                 self.kms_generation_processor
                     .prepare_prep_keygen_request(req)
                     .await
             }
-            GatewayEvent::Keygen(req) => {
+            GatewayEventKind::Keygen(req) => {
                 self.kms_generation_processor
                     .prepare_keygen_request(req)
                     .await
             }
-            GatewayEvent::Crsgen(req) => {
+            GatewayEventKind::Crsgen(req) => {
                 self.kms_generation_processor
                     .prepare_crsgen_request(req)
                     .await
@@ -133,10 +133,10 @@ impl<P: Provider> DbEventProcessor<P> {
     async fn inner_process(
         &mut self,
         event: &GatewayEvent,
-    ) -> Result<KmsResponse, ProcessingError> {
+    ) -> Result<KmsResponseKind, ProcessingError> {
         let request = self.prepare_request(event.clone()).await?;
         let grpc_response = self.kms_client.send_request(request).await?;
-        KmsResponse::process(grpc_response).map_err(ProcessingError::Irrecoverable)
+        KmsResponseKind::process(grpc_response).map_err(ProcessingError::Irrecoverable)
     }
 }
 
