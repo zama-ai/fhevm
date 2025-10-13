@@ -145,7 +145,7 @@ contract InputVerifierTest is Test {
      * This function deploys a new instance of the `InputVerifier` contract and upgrades the proxy
      * to use the new implementation. It also reinitializes the proxy with the provided parameters.
      *
-     * @param contextSigners An array of addresses representing the signers to be used during reinitialization.
+     * @param initialCoprocessorSigners An array of addresses representing the coprocessor signers to be used during reinitialization.
      *
      * The function performs the following steps:
      * 1. Deploys a new `InputVerifier` contract and sets its address as the new implementation.
@@ -153,18 +153,19 @@ contract InputVerifierTest is Test {
      *    - Passes the encoded call to `InputVerifier.initializeFromEmptyProxy` with the required parameters:
      *      - `verifyingContractSource`: The source of the verifying contract.
      *      - `uint64(block.chainid)`: The chain ID of the current blockchain.
-     *      - `contextSigners`: The array of signers.
+     *      - `initialCoprocessorContextId`: The initial coprocessor context ID.
+     *      - `initialCoprocessorSigners`: The array of initial coprocessor signers.
      *    - `owner`: The owner of the proxy.
      * 3. Updates the `inputVerifier` reference to point to the proxy.
      */
-    function _upgradeProxy(address[] memory contextSigners) internal {
+    function _upgradeProxy(address[] memory initialCoprocessorSigners) internal {
         implementation = address(new InputVerifier());
         UnsafeUpgrades.upgradeProxy(
             proxy,
             implementation,
             abi.encodeCall(
                 InputVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, uint64(block.chainid), contextSigners)
+                (verifyingContractSource, uint64(block.chainid), initialCoprocessorContextId, initialCoprocessorSigners)
             ),
             owner
         );
@@ -1059,7 +1060,7 @@ contract InputVerifierTest is Test {
             implementation,
             abi.encodeCall(
                 InputVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, uint64(block.chainid), emptySigners)
+                (verifyingContractSource, uint64(block.chainid), initialCoprocessorContextId, emptySigners)
             ),
             owner
         );

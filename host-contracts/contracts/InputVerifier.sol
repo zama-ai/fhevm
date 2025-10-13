@@ -169,12 +169,13 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     function initializeFromEmptyProxy(
         address verifyingContractSource,
         uint64 chainIDSource,
+        uint256 initialCoprocessorContextId,
         address[] calldata initialCoprocessorSigners
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
 
-        // Activate the initial context.
-        _activateContext(1, initialCoprocessorSigners);
+        // Activate the initial coprocessor context.
+        _activateContext(initialCoprocessorContextId, initialCoprocessorSigners);
     }
 
     /**
@@ -186,7 +187,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     function reinitializeV2(
         address[] calldata initialCoprocessorSigners
     ) public virtual reinitializer(REINITIALIZER_VERSION) {
-        // Activate the initial context.
+        // Activate the initial coprocessor context.
         _activateContext(1, initialCoprocessorSigners);
     }
 

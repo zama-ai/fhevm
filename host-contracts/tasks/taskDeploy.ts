@@ -194,6 +194,7 @@ task('task:deployInputVerifier')
     // Load the initial coprocessor context signers from environment variables.
     let initialCoprocessorContextSigners: string[] = [];
     const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
+    const initialCoprocessorContextId = getRequiredEnvVar('COPROCESSOR_CONTEXT_ID');
     for (let idx = 0; idx < parseInt(numSigners); idx++) {
       if (!taskArguments.useAddress) {
         const privKeySigner = getRequiredEnvVar(`PRIVATE_KEY_COPROCESSOR_ACCOUNT_${idx}`);
@@ -208,7 +209,7 @@ task('task:deployInputVerifier')
     await upgrades.upgradeProxy(proxy, newImplem, {
       call: {
         fn: 'initializeFromEmptyProxy',
-        args: [verifyingContractSource, chainIDSource, initialCoprocessorContextSigners],
+        args: [verifyingContractSource, chainIDSource, initialCoprocessorContextId, initialCoprocessorContextSigners],
       },
     });
     console.log('InputVerifier code set successfully at address:', proxyAddress);
