@@ -27,13 +27,14 @@ contract InputVerifierTest is Test {
     uint256 internal constant privateKeySigner2 = 0x04;
     uint256 internal constant privateKeySigner3 = 0x05;
     uint256 internal constant privateKeySigner4 = 0x06;
-    address[] internal activeSigners;
     mapping(address => uint256) internal signerPrivateKeys;
     address internal signer0;
     address internal signer1;
     address internal signer2;
     address internal signer3;
     address internal signer4;
+    uint256 internal constant initialCoprocessorContextId = 1;
+    address[] internal initialCoprocessorContextSigners;
 
     /// @dev Proxy and implementation variables
     address internal proxy;
@@ -68,6 +69,7 @@ contract InputVerifierTest is Test {
         address userAddress,
         address contractAddress,
         uint256 chainId,
+        uint256 coprocessorContextId,
         bytes memory extraData
     ) internal view returns (bytes32) {
         bytes32 structHash = keccak256(
@@ -77,6 +79,7 @@ contract InputVerifierTest is Test {
                 userAddress,
                 contractAddress,
                 chainId,
+                coprocessorContextId,
                 keccak256(abi.encodePacked(extraData))
             )
         );
@@ -142,7 +145,7 @@ contract InputVerifierTest is Test {
      * This function deploys a new instance of the `InputVerifier` contract and upgrades the proxy
      * to use the new implementation. It also reinitializes the proxy with the provided parameters.
      *
-     * @param signers An array of addresses representing the signers to be used during reinitialization.
+     * @param initialCoprocessorSigners An array of addresses representing the coprocessor signers to be used during reinitialization.
      *
      * The function performs the following steps:
      * 1. Deploys a new `InputVerifier` contract and sets its address as the new implementation.
@@ -150,18 +153,19 @@ contract InputVerifierTest is Test {
      *    - Passes the encoded call to `InputVerifier.initializeFromEmptyProxy` with the required parameters:
      *      - `verifyingContractSource`: The source of the verifying contract.
      *      - `uint64(block.chainid)`: The chain ID of the current blockchain.
-     *      - `signers`: The array of signers.
+     *      - `initialCoprocessorContextId`: The initial coprocessor context ID.
+     *      - `initialCoprocessorSigners`: The array of initial coprocessor signers.
      *    - `owner`: The owner of the proxy.
      * 3. Updates the `inputVerifier` reference to point to the proxy.
      */
-    function _upgradeProxy(address[] memory signers) internal {
+    function _upgradeProxy(address[] memory initialCoprocessorSigners) internal {
         implementation = address(new InputVerifier());
         UnsafeUpgrades.upgradeProxy(
             proxy,
             implementation,
             abi.encodeCall(
                 InputVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, uint64(block.chainid), signers)
+                (verifyingContractSource, uint64(block.chainid), initialCoprocessorContextId, initialCoprocessorSigners)
             ),
             owner
         );
@@ -243,7 +247,12 @@ contract InputVerifierTest is Test {
         bytes[] memory signatures,
         bytes memory extraData
     ) internal pure returns (bytes memory inputProof) {
-        inputProof = abi.encodePacked(uint8(handles.length), uint8(signatures.length), handles);
+        inputProof = abi.encodePacked(
+            uint8(handles.length),
+            uint8(signatures.length),
+            initialCoprocessorContextId,
+            handles
+        );
         for (uint256 i = 0; i < signatures.length; i++) {
             inputProof = abi.encodePacked(inputProof, signatures[i]);
         }
@@ -255,7 +264,7 @@ contract InputVerifierTest is Test {
      * @param handles Handles included in the digest.
      * @param userAddress User's address.
      * @param contractAddress Contract's address.
-     * @param signers Signers' addresses.
+     * @param coprocessorSigners Coprocessor signers' addresses.
      * @param chainId Blockchain network ID.
      * @param extraData Generic bytes metadata for versioned payloads.
      * @return signatures Array of generated signatures.
@@ -264,16 +273,23 @@ contract InputVerifierTest is Test {
         bytes32[] memory handles,
         address userAddress,
         address contractAddress,
-        address[] memory signers,
+        address[] memory coprocessorSigners,
         uint256 chainId,
         bytes memory extraData
     ) internal view returns (bytes[] memory signatures) {
-        signatures = new bytes[](signers.length);
-        for (uint256 i = 0; i < signers.length; i++) {
+        signatures = new bytes[](coprocessorSigners.length);
+        for (uint256 i = 0; i < coprocessorSigners.length; i++) {
             /// @dev The signer address must have its private key in the mapping.
-            assert(signerPrivateKeys[signers[i]] != 0);
-            bytes32 digest = _computeDigest(handles, userAddress, contractAddress, chainId, extraData);
-            signatures[i] = _computeSignature(signerPrivateKeys[signers[i]], digest);
+            assert(signerPrivateKeys[coprocessorSigners[i]] != 0);
+            bytes32 digest = _computeDigest(
+                handles,
+                userAddress,
+                contractAddress,
+                chainId,
+                initialCoprocessorContextId,
+                extraData
+            );
+            signatures[i] = _computeSignature(signerPrivateKeys[coprocessorSigners[i]], digest);
         }
     }
 
@@ -287,7 +303,7 @@ contract InputVerifierTest is Test {
      * @param chainId Blockchain ID.
      * @param extraData Generic bytes metadata for versioned payloads.
      * @param handleVersion Handle version.
-     * @param signers Signers' addresses.
+     * @param coprocessorSigners Coprocessor signers' addresses.
      *
      * @return context Context with user and contract addresses.
      * @return mockInputHandle Computed input handle.
@@ -303,7 +319,7 @@ contract InputVerifierTest is Test {
         uint256 chainId,
         bytes memory extraData,
         uint8 handleVersion,
-        address[] memory signers
+        address[] memory coprocessorSigners
     )
         internal
         view
@@ -323,7 +339,7 @@ contract InputVerifierTest is Test {
             handles,
             userAddress,
             contractAddress,
-            signers,
+            coprocessorSigners,
             chainId,
             extraData
         );
@@ -337,7 +353,7 @@ contract InputVerifierTest is Test {
      * @dev Generates input parameters with a single mock handle for testing.
      * @param chainId Blockchain ID.
      * @param handleVersion Handle version.
-     * @param signers Signers' addresses.
+     * @param coprocessorSigners Coprocessor signers' addresses.
      * @return context Context with user and contract addresses.
      * @return mockInputHandle Mock input handle.
      * @return inputProof Input proof.
@@ -345,7 +361,7 @@ contract InputVerifierTest is Test {
     function _generateInputParametersWithOneMockHandle(
         uint256 chainId,
         uint8 handleVersion,
-        address[] memory signers
+        address[] memory coprocessorSigners
     )
         internal
         view
@@ -367,14 +383,14 @@ contract InputVerifierTest is Test {
                 chainId,
                 hex"00",
                 handleVersion,
-                signers
+                coprocessorSigners
             );
     }
 
     /**
      * @dev Upgrades the proxy with a specified number of signers (1-5).
-     * Adds signers (signer0 to signer4) to `activeSigners` based on `numberSigners`.
-     * Calls `_upgradeProxy` with the updated `activeSigners`.
+     * Adds signers (signer0 to signer4) to `initialCoprocessorContextSigners` based on `numberSigners`.
+     * Calls `_upgradeProxy` with the updated `initialCoprocessorContextSigners`.
      *
      * @param numberSigners Number of signers (1-5).
      */
@@ -382,22 +398,22 @@ contract InputVerifierTest is Test {
         assert(numberSigners > 0 && numberSigners < 6);
 
         if (numberSigners >= 1) {
-            activeSigners.push(signer0);
+            initialCoprocessorContextSigners.push(signer0);
         }
         if (numberSigners >= 2) {
-            activeSigners.push(signer1);
+            initialCoprocessorContextSigners.push(signer1);
         }
         if (numberSigners >= 3) {
-            activeSigners.push(signer2);
+            initialCoprocessorContextSigners.push(signer2);
         }
         if (numberSigners >= 4) {
-            activeSigners.push(signer3);
+            initialCoprocessorContextSigners.push(signer3);
         }
         if (numberSigners == 5) {
-            activeSigners.push(signer4);
+            initialCoprocessorContextSigners.push(signer4);
         }
 
-        _upgradeProxy(activeSigners);
+        _upgradeProxy(initialCoprocessorContextSigners);
     }
 
     /**
@@ -415,7 +431,7 @@ contract InputVerifierTest is Test {
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxyWithSigners(3);
-        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.1.0")));
+        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.2.0")));
     }
 
     /**
@@ -424,13 +440,14 @@ contract InputVerifierTest is Test {
     function test_GetCoprocessorSigners() public {
         uint256 numberSigners = 3;
         _upgradeProxyWithSigners(numberSigners);
-        address[] memory signers = inputVerifier.getCoprocessorSigners();
+        (address[] memory signers, bool isOperating) = inputVerifier.getCoprocessorSigners(initialCoprocessorContextId);
         assertEq(signers.length, numberSigners);
         assertEq(signers[0], signer0);
         assertEq(signers[1], signer1);
         for (uint256 i = 0; i < numberSigners; i++) {
-            assertTrue(inputVerifier.isSigner(signers[i]));
+            assertTrue(inputVerifier.isSigner(initialCoprocessorContextId, signers[i]));
         }
+        assertTrue(isOperating);
     }
 
     /**
@@ -440,7 +457,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(1);
 
         /// @dev The threshold is 1 since we have 1 signers.
-        uint256 threshold = inputVerifier.getThreshold();
+        uint256 threshold = inputVerifier.getCoprocessorThreshold(initialCoprocessorContextId);
         assertEq(threshold, 1);
     }
 
@@ -451,7 +468,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(2);
 
         /// @dev The threshold is 2 since we have 2 signers.
-        uint256 threshold = inputVerifier.getThreshold();
+        uint256 threshold = inputVerifier.getCoprocessorThreshold(initialCoprocessorContextId);
         assertEq(threshold, 2);
     }
 
@@ -462,7 +479,7 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(3);
 
         /// @dev The threshold is 2 since we have 3 signers.
-        uint256 threshold = inputVerifier.getThreshold();
+        uint256 threshold = inputVerifier.getCoprocessorThreshold(initialCoprocessorContextId);
         assertEq(threshold, 2);
     }
 
@@ -473,18 +490,33 @@ contract InputVerifierTest is Test {
         _upgradeProxyWithSigners(4);
 
         /// @dev The threshold is 3 since we have 4 signers.
-        uint256 threshold = inputVerifier.getThreshold();
+        uint256 threshold = inputVerifier.getCoprocessorThreshold(initialCoprocessorContextId);
         assertEq(threshold, 3);
     }
 
     /**
-     * @dev Tests that the contract owner cannot add a null address as a signer.
+     * @dev Tests that the contract owner cannot add a context with null ID.
      */
-    function test_OwnerCannotAddNullAddressAsSigner() public {
+    function test_OwnerCannotAddContextWithNullId() public {
         _upgradeProxyWithSigners(3);
-        vm.expectPartialRevert(InputVerifier.SignerNull.selector);
+        vm.expectPartialRevert(InputVerifier.InvalidNullContextId.selector);
         vm.prank(owner);
-        inputVerifier.addSigner(address(0));
+        uint256 nullContextId = 0;
+        address[] memory newContextSigners = new address[](1);
+        newContextSigners[0] = signer0;
+        inputVerifier.addCoprocessorContext(nullContextId, newContextSigners);
+    }
+
+    /**
+     * @dev Tests that the contract owner cannot add a context with empty signers.
+     */
+    function test_OwnerCannotAddContextWithEmptySigners() public {
+        _upgradeProxyWithSigners(3);
+        vm.expectPartialRevert(InputVerifier.EmptyCoprocessorSignerAddresses.selector);
+        vm.prank(owner);
+        uint256 newContextId = initialCoprocessorContextId + 1;
+        address[] memory newContextSigners = new address[](0);
+        inputVerifier.addCoprocessorContext(newContextId, newContextSigners);
     }
 
     /**
@@ -512,7 +544,7 @@ contract InputVerifierTest is Test {
                 block.chainid,
                 extraData,
                 HANDLE_VERSION,
-                activeSigners
+                initialCoprocessorContextSigners
             );
 
         vm.assertEq(mockInputHandle, inputVerifier.verifyInput(context, mockInputHandle, inputProof));
@@ -548,7 +580,7 @@ contract InputVerifierTest is Test {
                 block.chainid,
                 extraData,
                 HANDLE_VERSION,
-                activeSigners
+                initialCoprocessorContextSigners
             );
 
         vm.assertEq(mockInputHandle, inputVerifier.verifyInput(context, mockInputHandle, inputProof));
@@ -565,7 +597,7 @@ contract InputVerifierTest is Test {
             FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
-        ) = _generateInputParametersWithOneMockHandle(invalidChainId, HANDLE_VERSION, activeSigners);
+        ) = _generateInputParametersWithOneMockHandle(invalidChainId, HANDLE_VERSION, initialCoprocessorContextSigners);
 
         vm.expectRevert(InputVerifier.InvalidChainId.selector);
         inputVerifier.verifyInput(context, mockInputHandle, inputProof);
@@ -581,7 +613,7 @@ contract InputVerifierTest is Test {
             FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
-        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, initialCoprocessorContextSigners);
 
         inputProof = new bytes(0);
 
@@ -599,7 +631,7 @@ contract InputVerifierTest is Test {
             FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
-        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, initialCoprocessorContextSigners);
 
         /// @dev It is invalid since it is 255.
         mockInputHandle = mockInputHandle | (bytes32(uint256(255)) << 80);
@@ -618,7 +650,7 @@ contract InputVerifierTest is Test {
             FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
-        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, initialCoprocessorContextSigners);
 
         inputVerifier.verifyInput(context, mockInputHandle, inputProof);
 
@@ -640,7 +672,7 @@ contract InputVerifierTest is Test {
             FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
-        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, initialCoprocessorContextSigners);
 
         /// @dev It is invalid since it is greater than (equal to) the number of handles.
         mockInputHandle = mockInputHandle | (bytes32(uint256(indexHandle)) << 80);
@@ -660,7 +692,7 @@ contract InputVerifierTest is Test {
             FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
-        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, initialCoprocessorContextSigners);
 
         inputVerifier.verifyInput(context, mockInputHandle, inputProof);
 
@@ -681,7 +713,7 @@ contract InputVerifierTest is Test {
             FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
-        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, activeSigners);
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, initialCoprocessorContextSigners);
 
         /// @dev We truncate the length of the input proof to make it incomplete.
         bytes memory truncatedInputProof = new bytes(10);
@@ -704,7 +736,7 @@ contract InputVerifierTest is Test {
             FHEVMExecutor.ContextUserInputs memory context,
             bytes32 mockInputHandle,
             bytes memory inputProof
-        ) = _generateInputParametersWithOneMockHandle(block.chainid, handleVersion, activeSigners);
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, handleVersion, initialCoprocessorContextSigners);
 
         mockInputHandle = mockInputHandle | bytes32(uint256(handleVersion));
 
@@ -735,7 +767,7 @@ contract InputVerifierTest is Test {
             block.chainid,
             extraData,
             HANDLE_VERSION,
-            activeSigners
+            initialCoprocessorContextSigners
         );
 
         uint64 updatedCleartextValue = 987654321;
@@ -749,7 +781,7 @@ contract InputVerifierTest is Test {
             block.chainid,
             extraData,
             HANDLE_VERSION,
-            activeSigners
+            initialCoprocessorContextSigners
         );
 
         vm.expectRevert(InputVerifier.InvalidInputHandle.selector);
@@ -783,7 +815,7 @@ contract InputVerifierTest is Test {
                 block.chainid,
                 extraData,
                 HANDLE_VERSION,
-                activeSigners
+                initialCoprocessorContextSigners
             );
 
         inputVerifier.verifyInput(context, mockInputHandle, inputProof);
@@ -799,7 +831,7 @@ contract InputVerifierTest is Test {
             block.chainid,
             extraData,
             HANDLE_VERSION,
-            activeSigners
+            initialCoprocessorContextSigners
         );
 
         vm.expectRevert(InputVerifier.InvalidInputHandle.selector);
@@ -837,7 +869,7 @@ contract InputVerifierTest is Test {
         signers[0] = signer0;
         signers[1] = signer4;
 
-        assertFalse(inputVerifier.isSigner(signer4));
+        assertFalse(inputVerifier.isSigner(initialCoprocessorContextId, signer4));
 
         (
             FHEVMExecutor.ContextUserInputs memory context,
@@ -889,6 +921,28 @@ contract InputVerifierTest is Test {
         inputVerifier.verifyInput(context, mockInputHandle, inputProof);
     }
 
+    /**
+     * @dev Tests that the verifyInput function fails if the coprocessor context is not operating.
+     */
+    function test_VerifyInputFailsIfCoprocessorContextIsNotOperating() public {
+        _upgradeProxyWithSigners(3);
+
+        (
+            FHEVMExecutor.ContextUserInputs memory context,
+            bytes32 mockInputHandle,
+            bytes memory inputProof
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, initialCoprocessorContextSigners);
+
+        // Alter the context ID from the inputProof with a not operating one.
+        uint256 notOperatingContextId = 333;
+        assembly {
+            mstore(add(inputProof, 0x22), notOperatingContextId)
+        }
+
+        vm.expectPartialRevert(InputVerifier.CoprocessorContextNotOperating.selector);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
+    }
+
     /// @dev This function exists for the test below to call it externally.
     function upgrade(address randomAccount) external {
         UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxy()), "", randomAccount);
@@ -913,85 +967,91 @@ contract InputVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that only the owner can add a signer.
+     * @dev Tests that only the owner can a new coprocessor context.
      */
-    function test_OnlyOwnerCanAddSigner(address randomAccount) public {
+    function test_OnlyOwnerCanAddNewContext(address randomAccount) public {
         _upgradeProxyWithSigners(3);
         vm.assume(randomAccount != owner);
         vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(randomAccount);
-        inputVerifier.addSigner(randomAccount);
+        uint256 newContextId = initialCoprocessorContextId + 1;
+        address[] memory newContextSigners = new address[](0);
+        inputVerifier.addCoprocessorContext(newContextId, newContextSigners);
     }
 
     /**
-     * @dev Tests that only the owner can remove a signer.
+     * @dev Tests that only the owner can remove the suspended context.
      */
-    function test_OnlyOwnerCanRemoveSigner(address randomAccount) public {
+    function test_OnlyOwnerCanRemoveSuspendedContext(address randomAccount) public {
         _upgradeProxyWithSigners(3);
         vm.assume(randomAccount != owner);
         vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(randomAccount);
-        inputVerifier.removeSigner(randomAccount);
+        inputVerifier.deactivateSuspendedCoprocessorContext();
     }
 
     /**
-     * @dev Tests that the owner cannot add the same signer twice.
+     * @dev Tests that the owner cannot add an already used context.
      */
-    function test_OwnerCannotAddTwiceSameSigner() public {
+    function test_OwnerCannotAddAlreadyUsedContext() public {
         _upgradeProxyWithSigners(3);
-        vm.expectPartialRevert(InputVerifier.AlreadySigner.selector);
+        vm.expectPartialRevert(InputVerifier.ContextAlreadyInitialized.selector);
         vm.prank(owner);
-        inputVerifier.addSigner(signer0);
+        address[] memory newContextSigners = new address[](1);
+        newContextSigners[0] = signer0;
+        inputVerifier.addCoprocessorContext(initialCoprocessorContextId, newContextSigners);
     }
 
     /**
-     * @dev Tests that the owner cannot remove a signer if the signer is not in the list of active signers.
+     * @dev Tests that the owner can add a new coprocessor context.
      */
-    function test_OwnerCannotRemoveSignerIfNotASigner() public {
-        _upgradeProxyWithSigners(3);
-        address notASigner = address(12345);
-        vm.assertFalse(inputVerifier.isSigner(notASigner));
-        vm.expectPartialRevert(InputVerifier.NotASigner.selector);
+    function test_OwnerCanAddNewContext() public {
+        _upgradeProxyWithSigners(2);
         vm.prank(owner);
-        inputVerifier.removeSigner(address(12345));
-    }
+        uint256 newContextId = initialCoprocessorContextId + 1;
+        address[] memory newContextSigners = new address[](4);
+        newContextSigners[0] = signer0;
+        newContextSigners[1] = signer1;
+        newContextSigners[2] = signer2;
+        newContextSigners[3] = signer3;
+        inputVerifier.addCoprocessorContext(newContextId, newContextSigners);
 
-    /**
-     * @dev Tests that the owner can add a signer and it emits the SignerAdded event.
-     */
-    function test_OwnerCanAddSigner() public {
-        _upgradeProxyWithSigners(3);
-        vm.expectEmit(true, true, true, true);
-        emit InputVerifier.SignerAdded(signer3);
-        vm.prank(owner);
-        inputVerifier.addSigner(signer3);
-
-        address[] memory signers = inputVerifier.getCoprocessorSigners();
+        (address[] memory signers, bool isOperating) = inputVerifier.getCoprocessorSigners(newContextId);
         assertEq(signers.length, 4);
         assertEq(signers[0], signer0);
         assertEq(signers[1], signer1);
         assertEq(signers[2], signer2);
         assertEq(signers[3], signer3);
+        assertTrue(isOperating);
     }
 
     /**
-     * @dev Tests that the owner can remove a signer and it emits the SignerRemoved event.
+     * @dev Tests that the owner can deactivate a suspended coprocessor context.
      */
-    function test_OwnerCanRemoveSigner() public {
+    function test_OwnerCanDeactivateSuspendedContext() public {
         _upgradeProxyWithSigners(3);
-        vm.expectEmit(true, true, true, true);
-        emit InputVerifier.SignerRemoved(signer0);
-        vm.prank(owner);
-        inputVerifier.removeSigner(signer0);
 
-        address[] memory signers = inputVerifier.getCoprocessorSigners();
-        assertEq(signers.length, 2);
-        assertEq(signers[0], signer2);
-        assertEq(signers[1], signer1);
+        uint256 newContextId = initialCoprocessorContextId + 1;
+        address[] memory newContextSigners = new address[](1);
+        newContextSigners[0] = signer0;
+
+        // Add a new context which should suspend the initial one.
+        vm.prank(owner);
+        inputVerifier.addCoprocessorContext(newContextId, newContextSigners);
+
+        // Mark the suspended context as deactivated.
+        vm.prank(owner);
+        inputVerifier.deactivateSuspendedCoprocessorContext();
+
+        // Check that the suspended context is no longer active or suspended.
+        InputVerifier.CoprocessorContextStatus status = inputVerifier.getCoprocessorContextStatus(
+            initialCoprocessorContextId
+        );
+        assertEq(uint8(status), uint8(InputVerifier.CoprocessorContextStatus.Deactivated));
     }
 
     /// @dev This function exists for the test below to call it externally.
-    function emptyUpgrade() public {
+    function emptyCoprocessorContextSignersUpgrade() public {
         address[] memory emptySigners = new address[](0);
         implementation = address(new InputVerifier());
 
@@ -1000,18 +1060,18 @@ contract InputVerifierTest is Test {
             implementation,
             abi.encodeCall(
                 InputVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, uint64(block.chainid), emptySigners)
+                (verifyingContractSource, uint64(block.chainid), initialCoprocessorContextId, emptySigners)
             ),
             owner
         );
     }
 
     /**
-     * @dev Tests that the contract cannot be reinitialized if the initial signers set is empty.
+     * @dev Tests that the contract cannot be reinitialized if the initial context signers set is empty.
      */
-    function test_CannotReinitializeIfInitialSignersSetIsEmpty() public {
-        vm.expectPartialRevert(InputVerifier.InitialSignersSetIsEmpty.selector);
-        this.emptyUpgrade();
+    function test_CannotReinitializeIfInitialContextSignersSetIsEmpty() public {
+        vm.expectPartialRevert(InputVerifier.EmptyCoprocessorSignerAddresses.selector);
+        this.emptyCoprocessorContextSignersUpgrade();
     }
 
     /**
