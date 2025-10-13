@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use crate::db_utils::setup_test_user;
+use sqlx::postgres::types::Oid;
+use sqlx::Row;
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
 use tokio_util::sync::CancellationToken;
 use tracing::info;
@@ -39,22 +41,16 @@ impl DBInstance {
 /// }
 /// ```
 pub async fn setup_test_db(mode: ImportMode) -> Result<DBInstance, Box<dyn std::error::Error>> {
-    let is_custom_db_docker = std::env::var("COPROCESSOR_CUSTOM_DB").is_ok();
+    let is_localhost: bool = std::env::var("COPROCESSOR_TEST_LOCALHOST").is_ok();
 
-    if is_custom_db_docker {
-        info!("Using custom Postgres Docker container for tests");
-        // Sets up and populates a test database using a Postgres Docker container.
-        // Useful when running tests on a machine without local Postgres installed.
-        setup_test_app_custom_docker(mode).await
+    // Drop and recreate the database in localhost mode
+    // This is useful for running tests locally with applying latest migrations
+    let is_localhost_with_reset = std::env::var("COPROCESSOR_TEST_LOCALHOST_RESET").is_ok();
+
+    if is_localhost || is_localhost_with_reset {
+        setup_test_app_existing_localhost(is_localhost_with_reset, mode).await
     } else {
-        // If COPROCESSOR_TEST_LOCALHOST_DB_RESET is set,
-        // Drop and recreate the database in localhost mode
-        // This is useful for running tests locally with applying latest migrations
-        // and uploading test keys.
-        let with_reset = std::env::var("COPROCESSOR_TEST_LOCALHOST_DB_RESET").is_ok();
-
-        // Reuses an existing local Postgres instance running at DATABASE_URL env var
-        setup_test_app_existing_localhost(with_reset, mode).await
+        setup_test_app_custom_docker(mode).await
     }
 }
 
@@ -70,6 +66,10 @@ async fn setup_test_app_existing_localhost(
         let admin_db_url = db_url.replace("coprocessor", "postgres");
         create_database(&admin_db_url, &db_url, mode).await?;
     }
+
+    info!("Using existing local database at {db_url}");
+
+    let _ = get_sns_pk_size(&sqlx::PgPool::connect(&db_url).await?, 12345).await;
 
     Ok(DBInstance {
         _container: None,
@@ -91,7 +91,7 @@ async fn setup_test_app_custom_docker(
         .await
         .expect("postgres started");
 
-    println!("Postgres started...");
+    info!("Postgres container started");
 
     let cont_host = container.get_host().await?;
     let cont_port = container.get_host_port_ipv4(5432).await?;
@@ -118,7 +118,7 @@ async fn create_database(
     db_url: &str,
     mode: ImportMode,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    println!("Creating coprocessor db...");
+    info!("Creating coprocessor db...");
     let admin_pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(1)
         .connect(admin_db_url)
@@ -132,30 +132,49 @@ async fn create_database(
         .execute(&admin_pool)
         .await?;
 
-    println!("database url: {db_url}");
+    info!(db_url, "Created database");
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(10)
         .connect(db_url)
         .await?;
 
-    println!("Running migrations...");
+    info!("Running migrations...");
     sqlx::migrate!("./migrations").run(&pool).await?;
 
     match mode {
         ImportMode::None => {
-            println!("No keys imported");
+            info!("No keys imported");
         }
         ImportMode::WithKeysNoSns => {
-            println!("Creating test user with keys, without SnS key...");
+            info!("Creating test user with keys, without SnS key...");
             setup_test_user(&pool, false).await?;
         }
         ImportMode::WithAllKeys => {
-            println!("Creating test user with all keys...");
+            info!("Creating test user with all keys...");
             setup_test_user(&pool, true).await?;
         }
     }
 
-    println!("DB prepared");
+    info!("Database initialized");
 
     Ok(())
+}
+
+pub async fn get_sns_pk_size(pool: &sqlx::PgPool, chain_id: i64) -> Result<i64, sqlx::Error> {
+    let row = sqlx::query("SELECT sns_pk FROM tenants WHERE chain_id = $1")
+        .bind(chain_id)
+        .fetch_one(pool)
+        .await?;
+
+    let oid: Oid = row.try_get(0)?;
+    info!(oid = ?oid, chain_id, "Found sns_pk oid");
+    let row = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(octet_length(data))::bigint, 0) FROM pg_largeobject WHERE loid = $1",
+    )
+    .bind(oid)
+    .fetch_one(pool)
+    .await?;
+
+    info!(size = ?bytesize::ByteSize::b(row as u64), "Found sns_pk large object");
+    Ok(row)
 }
