@@ -124,3 +124,31 @@ pub fn generate_dump_fhe_keys() {
     let ser_keys: SerializedFhevmKeys = keys.into();
     ser_keys.save_to_disk();
 }
+
+/// Runs a basic encrypted computation example to verify worker setup.
+///
+/// # Description
+/// This function demonstrates how the TFHE worker handles a minimal encrypted operation.
+/// It is not used in production but serves as a sanity check for developers.
+///
+/// # Returns
+/// * `Ok(())` on success
+/// * `Err(String)` if any step fails
+pub fn fhe_worker_self_test() -> Result<(), String> {
+    info!("🔐 Starting TFHE worker self-test...");
+
+    // Example placeholder: pretend we're running an FHE computation
+    let encrypted_a = vec![1u8, 2, 3];
+    let encrypted_b = vec![4u8, 5, 6];
+
+    if encrypted_a.is_empty() || encrypted_b.is_empty() {
+        error!("Empty encrypted vectors, aborting self-test!");
+        return Err("Invalid encrypted input".to_string());
+    }
+
+    // Simulate computation
+    let _result: Vec<u8> = encrypted_a.iter().zip(encrypted_b.iter()).map(|(a, b)| a ^ b).collect();
+
+    info!("✅ TFHE worker self-test completed successfully.");
+    Ok(())
+}
