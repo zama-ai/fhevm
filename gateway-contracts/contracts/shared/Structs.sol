@@ -99,7 +99,9 @@ struct SnsCiphertextMaterial {
     /// @notice The digest of the SNS ciphertext
     bytes32 snsCiphertextDigest;
     /// @notice The list of coprocessor transaction sender addresses that were involved in the consensus
-    string[] storageUrls;
+    address[] coprocessorTxSenderAddresses;
+    /// @notice The coprocessor context ID
+    uint256 contextId;
 }
 
 /**
@@ -114,7 +116,9 @@ struct CiphertextMaterial {
     /// @notice The digest of the regular ciphertext
     bytes32 ciphertextDigest;
     /// @notice The list of coprocessor transaction sender addresses that were involved in the consensus
-    string[] storageUrls;
+    address[] coprocessorTxSenderAddresses;
+    /// @notice The coprocessor context ID
+    uint256 contextId;
 }
 
 /**

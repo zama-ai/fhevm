@@ -84,16 +84,6 @@ interface ICiphertextCommits {
     function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool);
 
     /**
-     * @notice Checks that ciphertext handles have been added with the same keyId.
-     * @param ctHandles The list of ciphertext handles to check
-     * @return Whether the ciphertext handles have been added with the same keyId
-     * @dev TODO: This won't be needed once batched decryption requests with different keys is
-     * supported by the KMS (see https://github.com/zama-ai/fhevm-internal/issues/376) and this function
-     * will be removed.
-     */
-    function isSameKeyId(bytes32[] calldata ctHandles) external view returns (bool);
-
-    /**
      * @notice Returns the coprocessor transaction sender addresses that were involved in the consensus
      * for an add ciphertext material and a contextId. Also indicates if the consensus has been reached.
      * @param ctHandle The handle to retrieve the coprocessor transaction sender addresses for.

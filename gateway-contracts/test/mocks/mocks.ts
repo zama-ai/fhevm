@@ -35,7 +35,8 @@ describe("Mock contracts", function () {
     ctHandle: DefaultBytes32,
     keyId: DefaultUint256,
     snsCiphertextDigest: DefaultBytes32,
-    storageUrls: [DefaultString],
+    coprocessorTxSenderAddresses: EmptyArray,
+    contextId: DefaultUint256,
   };
 
   const DefaultProtocolMetadata = { name: DefaultString, website: DefaultString };
@@ -223,7 +224,7 @@ describe("Mock contracts", function () {
       publicDecryptionCounterId++;
       await expect(decryptionMock.publicDecryptionRequest([DefaultBytes32], DefaultBytes))
         .to.emit(decryptionMock, "PublicDecryptionRequest")
-        .withArgs(publicDecryptionCounterId, [DefaultBytes32], DefaultBytes);
+        .withArgs(publicDecryptionCounterId, toValues([DefaultSnsCiphertextMaterial]), DefaultBytes);
     });
 
     it("Should emit PublicDecryptionResponse event on public decryption response", async function () {
@@ -248,7 +249,13 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(decryptionMock, "UserDecryptionRequest")
-        .withArgs(userDecryptionCounterId, [DefaultBytes32], DefaultAddress, DefaultBytes, DefaultBytes);
+        .withArgs(
+          userDecryptionCounterId,
+          toValues([DefaultSnsCiphertextMaterial]),
+          DefaultAddress,
+          DefaultBytes,
+          DefaultBytes,
+        );
     });
 
     it("Should emit response and consensus events on user decryption response", async function () {
@@ -318,8 +325,8 @@ describe("Mock contracts", function () {
 
   describe("InputVerificationMock", async function () {
     let zkProofCounterId = DefaultUint256;
+    zkProofCounterId++;
     it("Should emit VerifyProofRequest event on verify proof request", async function () {
-      zkProofCounterId++;
       await expect(
         inputVerificationMock.verifyProofRequest(
           DefaultUint256,

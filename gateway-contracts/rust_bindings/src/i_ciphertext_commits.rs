@@ -8,13 +8,15 @@ interface ICiphertextCommits {
         bytes32 ctHandle;
         uint256 keyId;
         bytes32 ciphertextDigest;
-        string[] storageUrls;
+        address[] coprocessorTxSenderAddresses;
+        uint256 contextId;
     }
     struct SnsCiphertextMaterial {
         bytes32 ctHandle;
         uint256 keyId;
         bytes32 snsCiphertextDigest;
-        string[] storageUrls;
+        address[] coprocessorTxSenderAddresses;
+        uint256 contextId;
     }
 
     error CiphertextMaterialNotFound(bytes32 ctHandle);
@@ -29,7 +31,6 @@ interface ICiphertextCommits {
     function getSnsCiphertextMaterials(bytes32[] memory ctHandles) external view returns (SnsCiphertextMaterial[] memory);
     function getVersion() external pure returns (string memory);
     function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool);
-    function isSameKeyId(bytes32[] memory ctHandles) external view returns (bool);
 }
 ```
 
@@ -96,9 +97,14 @@ interface ICiphertextCommits {
             "internalType": "bytes32"
           },
           {
-            "name": "storageUrls",
-            "type": "string[]",
-            "internalType": "string[]"
+            "name": "coprocessorTxSenderAddresses",
+            "type": "address[]",
+            "internalType": "address[]"
+          },
+          {
+            "name": "contextId",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
       }
@@ -166,9 +172,14 @@ interface ICiphertextCommits {
             "internalType": "bytes32"
           },
           {
-            "name": "storageUrls",
-            "type": "string[]",
-            "internalType": "string[]"
+            "name": "coprocessorTxSenderAddresses",
+            "type": "address[]",
+            "internalType": "address[]"
+          },
+          {
+            "name": "contextId",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
       }
@@ -196,25 +207,6 @@ interface ICiphertextCommits {
         "name": "ctHandle",
         "type": "bytes32",
         "internalType": "bytes32"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bool",
-        "internalType": "bool"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "isSameKeyId",
-    "inputs": [
-      {
-        "name": "ctHandles",
-        "type": "bytes32[]",
-        "internalType": "bytes32[]"
       }
     ],
     "outputs": [
@@ -478,7 +470,7 @@ pub mod ICiphertextCommits {
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextDigest; string[] storageUrls; }
+struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextDigest; address[] coprocessorTxSenderAddresses; uint256 contextId; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -490,9 +482,11 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
         #[allow(missing_docs)]
         pub ciphertextDigest: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub storageUrls: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::String,
+        pub coprocessorTxSenderAddresses: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::Address,
         >,
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -507,14 +501,16 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::FixedBytes<32>,
-            alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::String>,
+            alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            alloy::sol_types::sol_data::Uint<256>,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::FixedBytes<32>,
             alloy::sol_types::private::primitives::aliases::U256,
             alloy::sol_types::private::FixedBytes<32>,
-            alloy::sol_types::private::Vec<alloy::sol_types::private::String>,
+            alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            alloy::sol_types::private::primitives::aliases::U256,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -531,7 +527,13 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
         #[doc(hidden)]
         impl ::core::convert::From<CiphertextMaterial> for UnderlyingRustTuple<'_> {
             fn from(value: CiphertextMaterial) -> Self {
-                (value.ctHandle, value.keyId, value.ciphertextDigest, value.storageUrls)
+                (
+                    value.ctHandle,
+                    value.keyId,
+                    value.ciphertextDigest,
+                    value.coprocessorTxSenderAddresses,
+                    value.contextId,
+                )
             }
         }
         #[automatically_derived]
@@ -542,7 +544,8 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
                     ctHandle: tuple.0,
                     keyId: tuple.1,
                     ciphertextDigest: tuple.2,
-                    storageUrls: tuple.3,
+                    coprocessorTxSenderAddresses: tuple.3,
+                    contextId: tuple.4,
                 }
             }
         }
@@ -565,8 +568,13 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.ciphertextDigest),
                     <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::String,
-                    > as alloy_sol_types::SolType>::tokenize(&self.storageUrls),
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.coprocessorTxSenderAddresses,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -641,7 +649,7 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "CiphertextMaterial(bytes32 ctHandle,uint256 keyId,bytes32 ciphertextDigest,string[] storageUrls)",
+                    "CiphertextMaterial(bytes32 ctHandle,uint256 keyId,bytes32 ciphertextDigest,address[] coprocessorTxSenderAddresses,uint256 contextId)",
                 )
             }
             #[inline]
@@ -672,8 +680,14 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
                         )
                         .0,
                     <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::String,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.storageUrls)
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.coprocessorTxSenderAddresses,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.contextId)
                         .0,
                 ]
                     .concat()
@@ -698,9 +712,14 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
                         &rust.ciphertextDigest,
                     )
                     + <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::String,
+                        alloy::sol_types::sol_data::Address,
                     > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.storageUrls,
+                        &rust.coprocessorTxSenderAddresses,
+                    )
+                    + <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.contextId,
                     )
             }
             #[inline]
@@ -730,9 +749,15 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
                     out,
                 );
                 <alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::String,
+                    alloy::sol_types::sol_data::Address,
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.storageUrls,
+                    &rust.coprocessorTxSenderAddresses,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.contextId,
                     out,
                 );
             }
@@ -754,7 +779,7 @@ struct CiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 ciphertextD
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphertextDigest; string[] storageUrls; }
+struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphertextDigest; address[] coprocessorTxSenderAddresses; uint256 contextId; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -766,9 +791,11 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
         #[allow(missing_docs)]
         pub snsCiphertextDigest: alloy::sol_types::private::FixedBytes<32>,
         #[allow(missing_docs)]
-        pub storageUrls: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::String,
+        pub coprocessorTxSenderAddresses: alloy::sol_types::private::Vec<
+            alloy::sol_types::private::Address,
         >,
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -783,14 +810,16 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::FixedBytes<32>,
-            alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::String>,
+            alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            alloy::sol_types::sol_data::Uint<256>,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
             alloy::sol_types::private::FixedBytes<32>,
             alloy::sol_types::private::primitives::aliases::U256,
             alloy::sol_types::private::FixedBytes<32>,
-            alloy::sol_types::private::Vec<alloy::sol_types::private::String>,
+            alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            alloy::sol_types::private::primitives::aliases::U256,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -811,7 +840,8 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                     value.ctHandle,
                     value.keyId,
                     value.snsCiphertextDigest,
-                    value.storageUrls,
+                    value.coprocessorTxSenderAddresses,
+                    value.contextId,
                 )
             }
         }
@@ -823,7 +853,8 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                     ctHandle: tuple.0,
                     keyId: tuple.1,
                     snsCiphertextDigest: tuple.2,
-                    storageUrls: tuple.3,
+                    coprocessorTxSenderAddresses: tuple.3,
+                    contextId: tuple.4,
                 }
             }
         }
@@ -846,8 +877,13 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                         32,
                     > as alloy_sol_types::SolType>::tokenize(&self.snsCiphertextDigest),
                     <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::String,
-                    > as alloy_sol_types::SolType>::tokenize(&self.storageUrls),
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(
+                        &self.coprocessorTxSenderAddresses,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -922,7 +958,7 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "SnsCiphertextMaterial(bytes32 ctHandle,uint256 keyId,bytes32 snsCiphertextDigest,string[] storageUrls)",
+                    "SnsCiphertextMaterial(bytes32 ctHandle,uint256 keyId,bytes32 snsCiphertextDigest,address[] coprocessorTxSenderAddresses,uint256 contextId)",
                 )
             }
             #[inline]
@@ -953,8 +989,14 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                         )
                         .0,
                     <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::String,
-                    > as alloy_sol_types::SolType>::eip712_data_word(&self.storageUrls)
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::eip712_data_word(
+                            &self.coprocessorTxSenderAddresses,
+                        )
+                        .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.contextId)
                         .0,
                 ]
                     .concat()
@@ -979,9 +1021,14 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                         &rust.snsCiphertextDigest,
                     )
                     + <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::String,
+                        alloy::sol_types::sol_data::Address,
                     > as alloy_sol_types::EventTopic>::topic_preimage_length(
-                        &rust.storageUrls,
+                        &rust.coprocessorTxSenderAddresses,
+                    )
+                    + <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.contextId,
                     )
             }
             #[inline]
@@ -1011,9 +1058,15 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                     out,
                 );
                 <alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::String,
+                    alloy::sol_types::sol_data::Address,
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(
-                    &rust.storageUrls,
+                    &rust.coprocessorTxSenderAddresses,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.contextId,
                     out,
                 );
             }
@@ -2472,170 +2525,6 @@ function isCiphertextMaterialAdded(bytes32 ctHandle) external view returns (bool
             }
         }
     };
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `isSameKeyId(bytes32[])` and selector `0xa11ec757`.
-```solidity
-function isSameKeyId(bytes32[] memory ctHandles) external view returns (bool);
-```*/
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isSameKeyIdCall {
-        #[allow(missing_docs)]
-        pub ctHandles: alloy::sol_types::private::Vec<
-            alloy::sol_types::private::FixedBytes<32>,
-        >,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    ///Container type for the return parameters of the [`isSameKeyId(bytes32[])`](isSameKeyIdCall) function.
-    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
-    #[derive(Clone)]
-    pub struct isSameKeyIdReturn {
-        #[allow(missing_docs)]
-        pub _0: bool,
-    }
-    #[allow(
-        non_camel_case_types,
-        non_snake_case,
-        clippy::pub_underscore_fields,
-        clippy::style
-    )]
-    const _: () = {
-        use alloy::sol_types as alloy_sol_types;
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
-            );
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (
-                alloy::sol_types::private::Vec<
-                    alloy::sol_types::private::FixedBytes<32>,
-                >,
-            );
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isSameKeyIdCall> for UnderlyingRustTuple<'_> {
-                fn from(value: isSameKeyIdCall) -> Self {
-                    (value.ctHandles,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isSameKeyIdCall {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { ctHandles: tuple.0 }
-                }
-            }
-        }
-        {
-            #[doc(hidden)]
-            type UnderlyingSolTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            #[doc(hidden)]
-            type UnderlyingRustTuple<'a> = (bool,);
-            #[cfg(test)]
-            #[allow(dead_code, unreachable_patterns)]
-            fn _type_assertion(
-                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
-            ) {
-                match _t {
-                    alloy_sol_types::private::AssertTypeEq::<
-                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
-                    >(_) => {}
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<isSameKeyIdReturn> for UnderlyingRustTuple<'_> {
-                fn from(value: isSameKeyIdReturn) -> Self {
-                    (value._0,)
-                }
-            }
-            #[automatically_derived]
-            #[doc(hidden)]
-            impl ::core::convert::From<UnderlyingRustTuple<'_>> for isSameKeyIdReturn {
-                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
-                    Self { _0: tuple.0 }
-                }
-            }
-        }
-        #[automatically_derived]
-        impl alloy_sol_types::SolCall for isSameKeyIdCall {
-            type Parameters<'a> = (
-                alloy::sol_types::sol_data::Array<
-                    alloy::sol_types::sol_data::FixedBytes<32>,
-                >,
-            );
-            type Token<'a> = <Self::Parameters<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = bool;
-            type ReturnTuple<'a> = (alloy::sol_types::sol_data::Bool,);
-            type ReturnToken<'a> = <Self::ReturnTuple<
-                'a,
-            > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "isSameKeyId(bytes32[])";
-            const SELECTOR: [u8; 4] = [161u8, 30u8, 199u8, 87u8];
-            #[inline]
-            fn new<'a>(
-                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
-            ) -> Self {
-                tuple.into()
-            }
-            #[inline]
-            fn tokenize(&self) -> Self::Token<'_> {
-                (
-                    <alloy::sol_types::sol_data::Array<
-                        alloy::sol_types::sol_data::FixedBytes<32>,
-                    > as alloy_sol_types::SolType>::tokenize(&self.ctHandles),
-                )
-            }
-            #[inline]
-            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                (
-                    <alloy::sol_types::sol_data::Bool as alloy_sol_types::SolType>::tokenize(
-                        ret,
-                    ),
-                )
-            }
-            #[inline]
-            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
-                    .map(|r| {
-                        let r: isSameKeyIdReturn = r.into();
-                        r._0
-                    })
-            }
-            #[inline]
-            fn abi_decode_returns_validate(
-                data: &[u8],
-            ) -> alloy_sol_types::Result<Self::Return> {
-                <Self::ReturnTuple<
-                    '_,
-                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
-                    .map(|r| {
-                        let r: isSameKeyIdReturn = r.into();
-                        r._0
-                    })
-            }
-        }
-    };
     ///Container for all the [`ICiphertextCommits`](self) function calls.
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive()]
@@ -2652,8 +2541,6 @@ function isSameKeyId(bytes32[] memory ctHandles) external view returns (bool);
         getVersion(getVersionCall),
         #[allow(missing_docs)]
         isCiphertextMaterialAdded(isCiphertextMaterialAddedCall),
-        #[allow(missing_docs)]
-        isSameKeyId(isSameKeyIdCall),
     }
     #[automatically_derived]
     impl ICiphertextCommitsCalls {
@@ -2668,7 +2555,6 @@ function isSameKeyId(bytes32[] memory ctHandles) external view returns (bool);
             [45u8, 220u8, 154u8, 111u8],
             [85u8, 196u8, 217u8, 151u8],
             [144u8, 243u8, 3u8, 84u8],
-            [161u8, 30u8, 199u8, 87u8],
             [161u8, 79u8, 137u8, 113u8],
             [228u8, 187u8, 40u8, 140u8],
         ];
@@ -2677,7 +2563,7 @@ function isSameKeyId(bytes32[] memory ctHandles) external view returns (bool);
     impl alloy_sol_types::SolInterface for ICiphertextCommitsCalls {
         const NAME: &'static str = "ICiphertextCommitsCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 7usize;
+        const COUNT: usize = 6usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -2698,9 +2584,6 @@ function isSameKeyId(bytes32[] memory ctHandles) external view returns (bool);
                 }
                 Self::isCiphertextMaterialAdded(_) => {
                     <isCiphertextMaterialAddedCall as alloy_sol_types::SolCall>::SELECTOR
-                }
-                Self::isSameKeyId(_) => {
-                    <isSameKeyIdCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -2764,17 +2647,6 @@ function isSameKeyId(bytes32[] memory ctHandles) external view returns (bool);
                             .map(ICiphertextCommitsCalls::addCiphertextMaterial)
                     }
                     addCiphertextMaterial
-                },
-                {
-                    fn isSameKeyId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <isSameKeyIdCall as alloy_sol_types::SolCall>::abi_decode_raw(
-                                data,
-                            )
-                            .map(ICiphertextCommitsCalls::isSameKeyId)
-                    }
-                    isSameKeyId
                 },
                 {
                     fn getSnsCiphertextMaterials(
@@ -2865,17 +2737,6 @@ function isSameKeyId(bytes32[] memory ctHandles) external view returns (bool);
                     addCiphertextMaterial
                 },
                 {
-                    fn isSameKeyId(
-                        data: &[u8],
-                    ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
-                        <isSameKeyIdCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
-                                data,
-                            )
-                            .map(ICiphertextCommitsCalls::isSameKeyId)
-                    }
-                    isSameKeyId
-                },
-                {
                     fn getSnsCiphertextMaterials(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<ICiphertextCommitsCalls> {
@@ -2941,11 +2802,6 @@ function isSameKeyId(bytes32[] memory ctHandles) external view returns (bool);
                         inner,
                     )
                 }
-                Self::isSameKeyId(inner) => {
-                    <isSameKeyIdCall as alloy_sol_types::SolCall>::abi_encoded_size(
-                        inner,
-                    )
-                }
             }
         }
         #[inline]
@@ -2983,12 +2839,6 @@ function isSameKeyId(bytes32[] memory ctHandles) external view returns (bool);
                 }
                 Self::isCiphertextMaterialAdded(inner) => {
                     <isCiphertextMaterialAddedCall as alloy_sol_types::SolCall>::abi_encode_raw(
-                        inner,
-                        out,
-                    )
-                }
-                Self::isSameKeyId(inner) => {
-                    <isSameKeyIdCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -3507,15 +3357,6 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     ctHandle,
                 },
             )
-        }
-        ///Creates a new call builder for the [`isSameKeyId`] function.
-        pub fn isSameKeyId(
-            &self,
-            ctHandles: alloy::sol_types::private::Vec<
-                alloy::sol_types::private::FixedBytes<32>,
-            >,
-        ) -> alloy_contract::SolCallBuilder<&P, isSameKeyIdCall, N> {
-            self.call_builder(&isSameKeyIdCall { ctHandles })
         }
     }
     /// Event filters.

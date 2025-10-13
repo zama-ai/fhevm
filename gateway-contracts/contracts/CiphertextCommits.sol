@@ -213,27 +213,6 @@ contract CiphertextCommits is
     }
 
     /**
-     * @notice See {ICiphertextCommits-isSameKeyId}.
-     */
-    function isSameKeyId(bytes32[] calldata ctHandles) public view virtual returns (bool) {
-        if (ctHandles.length <= 1) {
-            return true;
-        }
-
-        CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
-
-        bytes32 firstCtHandle = ctHandles[0];
-        uint256 firstKeyId = $.keyIds[firstCtHandle];
-        for (uint256 i = 1; i < ctHandles.length; i++) {
-            if ($.keyIds[ctHandles[i]] != firstKeyId) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /**
      * @notice See {ICiphertextCommits-getCiphertextMaterials}.
      */
     function getCiphertextMaterials(
@@ -248,14 +227,16 @@ contract CiphertextCommits is
                 revert CiphertextMaterialNotFound(ctHandles[i]);
             }
 
-            // Get the storage URLs of the coprocessors that were involved in the consensus
-            string[] memory storageUrls = _getStorageUrls(ctHandles[i]);
+            // Get the unique hash associated to the handle and use it to get the list of coprocessor
+            // transaction sender address that were involved in the consensus
+            bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandles[i]];
 
             ctMaterials[i] = CiphertextMaterial(
                 ctHandles[i],
                 $.keyIds[ctHandles[i]],
                 $.ciphertextDigests[ctHandles[i]],
-                storageUrls
+                $.coprocessorTxSenderAddresses[addCiphertextHash],
+                $.addCiphertextContextId[addCiphertextHash]
             );
         }
 
@@ -277,14 +258,16 @@ contract CiphertextCommits is
                 revert CiphertextMaterialNotFound(ctHandles[i]);
             }
 
-            // Get the storage URLs of the coprocessors that were involved in the consensus
-            string[] memory storageUrls = _getStorageUrls(ctHandles[i]);
+            // Get the unique hash associated to the handle and use it to get the list of coprocessor
+            // transaction sender address that were involved in the consensus
+            bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandles[i]];
 
             snsCtMaterials[i] = SnsCiphertextMaterial(
                 ctHandles[i],
                 $.keyIds[ctHandles[i]],
                 $.snsCiphertextDigests[ctHandles[i]],
-                storageUrls
+                $.coprocessorTxSenderAddresses[addCiphertextHash],
+                $.addCiphertextContextId[addCiphertextHash]
             );
         }
 
@@ -347,32 +330,6 @@ contract CiphertextCommits is
     function _isConsensusReached(uint256 contextId, uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = COPROCESSOR_CONTEXTS.getCoprocessorMajorityThreshold(contextId);
         return coprocessorCounter >= consensusThreshold;
-    }
-
-    /**
-     * @notice Returns the list of storage URLs of the coprocessors that were involved in the consensus
-     * @param ctHandle The handle of the ciphertext
-     * @return The list of storage URLs of the coprocessors that were involved in the consensus
-     */
-    function _getStorageUrls(bytes32 ctHandle) internal view virtual returns (string[] memory) {
-        CiphertextCommitsStorage storage $ = _getCiphertextCommitsStorage();
-
-        // Get the unique hash associated to the handle in order to retrieve the list of transaction
-        // sender address that participated in the consensus
-        // This digest is null (0x0) for version V1.
-        bytes32 addCiphertextHash = $.ctHandleConsensusHash[ctHandle];
-
-        // Get the transaction sender addresses and the context ID associated to the consensus
-        address[] memory coprocessorTxSenderAddresses = $.coprocessorTxSenderAddresses[addCiphertextHash];
-        uint256 contextId = $.addCiphertextContextId[addCiphertextHash];
-
-        string[] memory coprocessorStorageUrls = new string[](coprocessorTxSenderAddresses.length);
-        for (uint256 j = 0; j < coprocessorTxSenderAddresses.length; j++) {
-            coprocessorStorageUrls[j] = COPROCESSOR_CONTEXTS
-                .getCoprocessor(contextId, coprocessorTxSenderAddresses[j])
-                .storageUrl;
-        }
-        return coprocessorStorageUrls;
     }
 
     /**
