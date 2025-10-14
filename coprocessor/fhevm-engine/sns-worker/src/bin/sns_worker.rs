@@ -76,7 +76,7 @@ async fn main() {
     // Handle SIGINIT signals
     handle_sigint(parent.clone());
 
-    sns_worker::run_all(config, parent)
+    sns_worker::run_all(config, parent, None)
         .await
         .unwrap_or_else(|err| {
             error!(error = %err, "Error running SNS worker");

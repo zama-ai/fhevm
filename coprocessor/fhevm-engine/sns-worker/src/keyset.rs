@@ -1,9 +1,8 @@
-use std::sync::Arc;
-
 use fhevm_engine_common::{
     tenant_keys::read_keys_from_large_object, utils::safe_deserialize_sns_key,
 };
 use sqlx::{PgPool, Row};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
 
@@ -62,6 +61,14 @@ pub async fn fetch_keys(
     let server_key: tfhe::ServerKey = safe_deserialize_sns_key(&blob)?;
 
     // Optionally retrieve the ClientKey for testing purposes
+    let client_key = fetch_client_key(pool, tenant_api_key).await?;
+    Ok(Some((client_key, server_key)))
+}
+
+pub async fn fetch_client_key(
+    pool: &PgPool,
+    tenant_api_key: &String,
+) -> anyhow::Result<Option<tfhe::ClientKey>> {
     if let Ok(keys) = sqlx::query(
         "
                 SELECT cks_key FROM tenants
@@ -76,10 +83,9 @@ pub async fn fetch_keys(
             if !cks.is_empty() {
                 info!(bytes_len = cks.len(), "Retrieved cks");
                 let client_key: tfhe::ClientKey = safe_deserialize_sns_key(&cks)?;
-                return Ok(Some((Some(client_key), server_key)));
+                return Ok(Some(client_key));
             }
         }
     }
-
-    Ok(Some((None, server_key)))
+    Ok(None)
 }
