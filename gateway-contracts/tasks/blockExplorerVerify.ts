@@ -77,6 +77,30 @@ task("task:verifyGatewayConfig")
     });
   });
 
+task("task:verifyCoprocessorContexts")
+  .addOptionalParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, { upgrades, run }) {
+    if (useInternalProxyAddress) {
+      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+    }
+    const proxyAddress = getRequiredEnvVar("COPROCESSOR_CONTEXTS_ADDRESS");
+
+    const implementationAddress = await upgrades.erc1967.getImplementationAddress(proxyAddress);
+    await run("verify:verify", {
+      address: proxyAddress,
+      constructorArguments: [],
+    });
+    await run("verify:verify", {
+      address: implementationAddress,
+      constructorArguments: [],
+    });
+  });
+
 task("task:verifyInputVerification")
   .addOptionalParam(
     "useInternalProxyAddress",
@@ -182,6 +206,7 @@ task("task:verifyAllGatewayContracts")
     } catch (error) {
       console.error("An error occurred:", error);
     }
+
     try {
       // to not panic if Blockscout throws an error due to already verified implementation
       console.log("Verify InputVerification contract:");
@@ -189,6 +214,7 @@ task("task:verifyAllGatewayContracts")
     } catch (error) {
       console.error("An error occurred:", error);
     }
+
     try {
       // to not panic if Blockscout throws an error due to already verified implementation
       console.log("Verify KMSGeneration contract:");
@@ -196,6 +222,7 @@ task("task:verifyAllGatewayContracts")
     } catch (error) {
       console.error("An error occurred:", error);
     }
+
     try {
       // to not panic if Blockscout throws an error due to already verified implementation
       console.log("Verify CiphertextCommits contract:");
@@ -203,6 +230,7 @@ task("task:verifyAllGatewayContracts")
     } catch (error) {
       console.error("An error occurred:", error);
     }
+
     try {
       // to not panic if Blockscout throws an error due to already verified implementation
       console.log("Verify MultichainACL contract:");
@@ -210,6 +238,7 @@ task("task:verifyAllGatewayContracts")
     } catch (error) {
       console.error("An error occurred:", error);
     }
+
     try {
       // to not panic if Blockscout throws an error due to already verified implementation
       console.log("Verify Decryption contract:");
@@ -217,6 +246,7 @@ task("task:verifyAllGatewayContracts")
     } catch (error) {
       console.error("An error occurred:", error);
     }
+
     try {
       // to not panic if Blockscout throws an error due to already verified implementation
       console.log("Verify PauserSet contract:");
@@ -224,10 +254,14 @@ task("task:verifyAllGatewayContracts")
     } catch (error) {
       console.error("An error occurred:", error);
     }
+
     try {
       // to not panic if Blockscout throws an error due to already verified implementation
-      console.log("Contract verification done!");
+      console.log("Verify CoprocessorContexts contract:");
+      await hre.run("task:verifyCoprocessorContexts", { useInternalProxyAddress });
     } catch (error) {
       console.error("An error occurred:", error);
     }
+
+    console.log("Contract verification done!");
   });

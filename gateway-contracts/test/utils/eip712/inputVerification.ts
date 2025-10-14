@@ -12,6 +12,7 @@ export function createEIP712ResponseZKPoK(
   userAddress: string,
   contractAddress: string,
   contractChainId: number,
+  coprocessorContextId: number,
   extraData: string,
 ): EIP712 {
   if (!ethers.isAddress(verifyingContract)) {
@@ -30,6 +31,7 @@ export function createEIP712ResponseZKPoK(
         { name: "userAddress", type: "address" },
         { name: "contractAddress", type: "address" },
         { name: "contractChainId", type: "uint256" },
+        { name: "coprocessorContextId", type: "uint256" },
         { name: "extraData", type: "bytes" },
       ],
     },
@@ -45,6 +47,7 @@ export function createEIP712ResponseZKPoK(
       userAddress,
       contractAddress,
       contractChainId,
+      coprocessorContextId,
       extraData,
     },
   };

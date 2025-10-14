@@ -20,6 +20,7 @@ interface IDecryption {
         uint256 keyId;
         bytes32 snsCiphertextDigest;
         address[] coprocessorTxSenderAddresses;
+        uint256 contextId;
     }
 
     error ContractAddressesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
@@ -363,6 +364,11 @@ interface IDecryption {
             "name": "coprocessorTxSenderAddresses",
             "type": "address[]",
             "internalType": "address[]"
+          },
+          {
+            "name": "contextId",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
       },
@@ -441,6 +447,11 @@ interface IDecryption {
             "name": "coprocessorTxSenderAddresses",
             "type": "address[]",
             "internalType": "address[]"
+          },
+          {
+            "name": "contextId",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
       },
@@ -586,6 +597,11 @@ interface IDecryption {
             "name": "coprocessorTxSenderAddresses",
             "type": "address[]",
             "internalType": "address[]"
+          },
+          {
+            "name": "contextId",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
       },
@@ -613,6 +629,11 @@ interface IDecryption {
             "name": "coprocessorTxSenderAddresses",
             "type": "address[]",
             "internalType": "address[]"
+          },
+          {
+            "name": "contextId",
+            "type": "uint256",
+            "internalType": "uint256"
           }
         ]
       }
@@ -1476,7 +1497,7 @@ struct RequestValidity { uint256 startTimestamp; uint256 durationDays; }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**```solidity
-struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphertextDigest; address[] coprocessorTxSenderAddresses; }
+struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphertextDigest; address[] coprocessorTxSenderAddresses; uint256 contextId; }
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1491,6 +1512,8 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
         pub coprocessorTxSenderAddresses: alloy::sol_types::private::Vec<
             alloy::sol_types::private::Address,
         >,
+        #[allow(missing_docs)]
+        pub contextId: alloy::sol_types::private::primitives::aliases::U256,
     }
     #[allow(
         non_camel_case_types,
@@ -1506,6 +1529,7 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
             alloy::sol_types::sol_data::Uint<256>,
             alloy::sol_types::sol_data::FixedBytes<32>,
             alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            alloy::sol_types::sol_data::Uint<256>,
         );
         #[doc(hidden)]
         type UnderlyingRustTuple<'a> = (
@@ -1513,6 +1537,7 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
             alloy::sol_types::private::primitives::aliases::U256,
             alloy::sol_types::private::FixedBytes<32>,
             alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            alloy::sol_types::private::primitives::aliases::U256,
         );
         #[cfg(test)]
         #[allow(dead_code, unreachable_patterns)]
@@ -1534,6 +1559,7 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                     value.keyId,
                     value.snsCiphertextDigest,
                     value.coprocessorTxSenderAddresses,
+                    value.contextId,
                 )
             }
         }
@@ -1546,6 +1572,7 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                     keyId: tuple.1,
                     snsCiphertextDigest: tuple.2,
                     coprocessorTxSenderAddresses: tuple.3,
+                    contextId: tuple.4,
                 }
             }
         }
@@ -1572,6 +1599,9 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                     > as alloy_sol_types::SolType>::tokenize(
                         &self.coprocessorTxSenderAddresses,
                     ),
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.contextId),
                 )
             }
             #[inline]
@@ -1646,7 +1676,7 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
             #[inline]
             fn eip712_root_type() -> alloy_sol_types::private::Cow<'static, str> {
                 alloy_sol_types::private::Cow::Borrowed(
-                    "SnsCiphertextMaterial(bytes32 ctHandle,uint256 keyId,bytes32 snsCiphertextDigest,address[] coprocessorTxSenderAddresses)",
+                    "SnsCiphertextMaterial(bytes32 ctHandle,uint256 keyId,bytes32 snsCiphertextDigest,address[] coprocessorTxSenderAddresses,uint256 contextId)",
                 )
             }
             #[inline]
@@ -1682,6 +1712,10 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                             &self.coprocessorTxSenderAddresses,
                         )
                         .0,
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::eip712_data_word(&self.contextId)
+                        .0,
                 ]
                     .concat()
             }
@@ -1708,6 +1742,11 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                         alloy::sol_types::sol_data::Address,
                     > as alloy_sol_types::EventTopic>::topic_preimage_length(
                         &rust.coprocessorTxSenderAddresses,
+                    )
+                    + <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::EventTopic>::topic_preimage_length(
+                        &rust.contextId,
                     )
             }
             #[inline]
@@ -1740,6 +1779,12 @@ struct SnsCiphertextMaterial { bytes32 ctHandle; uint256 keyId; bytes32 snsCiphe
                     alloy::sol_types::sol_data::Address,
                 > as alloy_sol_types::EventTopic>::encode_topic_preimage(
                     &rust.coprocessorTxSenderAddresses,
+                    out,
+                );
+                <alloy::sol_types::sol_data::Uint<
+                    256,
+                > as alloy_sol_types::EventTopic>::encode_topic_preimage(
+                    &rust.contextId,
                     out,
                 );
             }
@@ -2036,7 +2081,7 @@ error DecryptionNotRequested(uint256 decryptionId);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Custom error with signature `DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[]),(bytes32,uint256,bytes32,address[]))` and selector `0xcfae921f`.
+    /**Custom error with signature `DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[],uint256),(bytes32,uint256,bytes32,address[],uint256))` and selector `0xc2eddf9d`.
 ```solidity
 error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCiphertextMaterial invalidSnsCtMaterial);
 ```*/
@@ -2099,8 +2144,8 @@ error DifferentKeyIdsNotAllowed(SnsCiphertextMaterial firstSnsCtMaterial, SnsCip
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[]),(bytes32,uint256,bytes32,address[]))";
-            const SELECTOR: [u8; 4] = [207u8, 174u8, 146u8, 31u8];
+            const SIGNATURE: &'static str = "DifferentKeyIdsNotAllowed((bytes32,uint256,bytes32,address[],uint256),(bytes32,uint256,bytes32,address[],uint256))";
+            const SELECTOR: [u8; 4] = [194u8, 237u8, 223u8, 157u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -3075,7 +3120,7 @@ error UserDecryptionRequestExpired(uint256 currentTimestamp, RequestValidity req
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `PublicDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],bytes)` and selector `0x22db480a39bd72556438aadb4a32a3d2a6638b87c03bbec5fef6997e109587ff`.
+    /**Event with signature `PublicDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[],uint256)[],bytes)` and selector `0xf1b11be50c03123b97d816b2941afe78c72cbaefeff5531fd1ef80ed6d2ecca8`.
 ```solidity
 event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, bytes extraData);
 ```*/
@@ -3117,11 +3162,11 @@ event PublicDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMateria
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "PublicDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],bytes)";
+            const SIGNATURE: &'static str = "PublicDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[],uint256)[],bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                34u8, 219u8, 72u8, 10u8, 57u8, 189u8, 114u8, 85u8, 100u8, 56u8, 170u8,
-                219u8, 74u8, 50u8, 163u8, 210u8, 166u8, 99u8, 139u8, 135u8, 192u8, 59u8,
-                190u8, 197u8, 254u8, 246u8, 153u8, 126u8, 16u8, 149u8, 135u8, 255u8,
+                241u8, 177u8, 27u8, 229u8, 12u8, 3u8, 18u8, 59u8, 151u8, 216u8, 22u8,
+                178u8, 148u8, 26u8, 254u8, 120u8, 199u8, 44u8, 186u8, 239u8, 239u8,
+                245u8, 83u8, 31u8, 209u8, 239u8, 128u8, 237u8, 109u8, 46u8, 204u8, 168u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -3338,7 +3383,7 @@ event PublicDecryptionResponse(uint256 indexed decryptionId, bytes decryptedResu
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)` and selector `0xf9011bd6ba0da6049c520d70fe5971f17ed7ab795486052544b51019896c596b`.
+    /**Event with signature `UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[],uint256)[],address,bytes,bytes)` and selector `0x953b685968a1a7c5f0dfb3ded7daa9f4f6b8f2d81fe33e4d272623d10e783eb8`.
 ```solidity
 event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[] snsCtMaterials, address userAddress, bytes publicKey, bytes extraData);
 ```*/
@@ -3386,11 +3431,12 @@ event UserDecryptionRequest(uint256 indexed decryptionId, SnsCiphertextMaterial[
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[])[],address,bytes,bytes)";
+            const SIGNATURE: &'static str = "UserDecryptionRequest(uint256,(bytes32,uint256,bytes32,address[],uint256)[],address,bytes,bytes)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                249u8, 1u8, 27u8, 214u8, 186u8, 13u8, 166u8, 4u8, 156u8, 82u8, 13u8,
-                112u8, 254u8, 89u8, 113u8, 241u8, 126u8, 215u8, 171u8, 121u8, 84u8,
-                134u8, 5u8, 37u8, 68u8, 181u8, 16u8, 25u8, 137u8, 108u8, 89u8, 107u8,
+                149u8, 59u8, 104u8, 89u8, 104u8, 161u8, 167u8, 197u8, 240u8, 223u8,
+                179u8, 222u8, 215u8, 218u8, 169u8, 244u8, 246u8, 184u8, 242u8, 216u8,
+                31u8, 227u8, 62u8, 77u8, 39u8, 38u8, 35u8, 209u8, 14u8, 120u8, 62u8,
+                184u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -5815,7 +5861,7 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
             [164u8, 195u8, 3u8, 145u8],
             [166u8, 166u8, 203u8, 33u8],
             [175u8, 31u8, 4u8, 149u8],
-            [207u8, 174u8, 146u8, 31u8],
+            [194u8, 237u8, 223u8, 157u8],
             [212u8, 138u8, 249u8, 66u8],
             [220u8, 77u8, 120u8, 177u8],
             [222u8, 40u8, 89u8, 193u8],
@@ -6457,14 +6503,15 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 32usize]] = &[
             [
-                34u8, 219u8, 72u8, 10u8, 57u8, 189u8, 114u8, 85u8, 100u8, 56u8, 170u8,
-                219u8, 74u8, 50u8, 163u8, 210u8, 166u8, 99u8, 139u8, 135u8, 192u8, 59u8,
-                190u8, 197u8, 254u8, 246u8, 153u8, 126u8, 16u8, 149u8, 135u8, 255u8,
-            ],
-            [
                 127u8, 205u8, 251u8, 83u8, 129u8, 145u8, 127u8, 85u8, 74u8, 113u8, 125u8,
                 10u8, 84u8, 112u8, 163u8, 63u8, 90u8, 73u8, 186u8, 100u8, 69u8, 240u8,
                 94u8, 196u8, 60u8, 116u8, 192u8, 188u8, 44u8, 198u8, 8u8, 178u8,
+            ],
+            [
+                149u8, 59u8, 104u8, 89u8, 104u8, 161u8, 167u8, 197u8, 240u8, 223u8,
+                179u8, 222u8, 215u8, 218u8, 169u8, 244u8, 246u8, 184u8, 242u8, 216u8,
+                31u8, 227u8, 62u8, 77u8, 39u8, 38u8, 35u8, 209u8, 14u8, 120u8, 62u8,
+                184u8,
             ],
             [
                 215u8, 229u8, 138u8, 54u8, 122u8, 10u8, 108u8, 41u8, 142u8, 118u8, 173u8,
@@ -6477,9 +6524,9 @@ function userDecryptionResponse(uint256 decryptionId, bytes memory userDecrypted
                 34u8, 116u8, 197u8, 136u8, 30u8, 72u8, 238u8, 161u8, 237u8, 37u8,
             ],
             [
-                249u8, 1u8, 27u8, 214u8, 186u8, 13u8, 166u8, 4u8, 156u8, 82u8, 13u8,
-                112u8, 254u8, 89u8, 113u8, 241u8, 126u8, 215u8, 171u8, 121u8, 84u8,
-                134u8, 5u8, 37u8, 68u8, 181u8, 16u8, 25u8, 137u8, 108u8, 89u8, 107u8,
+                241u8, 177u8, 27u8, 229u8, 12u8, 3u8, 18u8, 59u8, 151u8, 216u8, 22u8,
+                178u8, 148u8, 26u8, 254u8, 120u8, 199u8, 44u8, 186u8, 239u8, 239u8,
+                245u8, 83u8, 31u8, 209u8, 239u8, 128u8, 237u8, 109u8, 46u8, 204u8, 168u8,
             ],
         ];
     }

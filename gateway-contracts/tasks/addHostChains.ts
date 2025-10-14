@@ -40,13 +40,18 @@ task("task:addHostChainsToGatewayConfig")
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
+    console.log("In GatewayConfig contract:", proxyAddress, "\n");
+
     // Add host chains
     const gatewayConfig = await hre.ethers.getContractAt("GatewayConfig", proxyAddress, deployer);
     for (const hostChain of hostChains) {
-      await gatewayConfig.addHostChain(hostChain);
+      console.log("Adding host chain: ", hostChain);
+      const tx = await gatewayConfig.addHostChain(hostChain);
+
+      // Wait for confirmation before adding next host chain
+      await tx.wait();
+      console.log("Host chain added !\n");
     }
 
-    console.log("In GatewayConfig contract:", proxyAddress, "\n");
-    console.log("Added host chains:", hostChains, "\n");
     console.log("Host chains registration done!");
   });

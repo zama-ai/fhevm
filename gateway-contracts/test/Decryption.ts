@@ -17,7 +17,6 @@ import {
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
 import {
   CtHandleContractPairStruct,
-  DelegationAccountsStruct,
   SnsCiphertextMaterialStruct,
 } from "../typechain-types/contracts/interfaces/IDecryption";
 import {
@@ -27,7 +26,6 @@ import {
   createBytes32s,
   createCtHandle,
   createCtHandles,
-  createEIP712RequestDelegatedUserDecrypt,
   createEIP712RequestUserDecrypt,
   createEIP712ResponsePublicDecrypt,
   createEIP712ResponseUserDecrypt,
@@ -36,7 +34,6 @@ import {
   createRandomWallet,
   getKeyId,
   getPublicDecryptId,
-  getSignaturesDelegatedUserDecryptRequest,
   getSignaturesPublicDecrypt,
   getSignaturesUserDecryptRequest,
   getSignaturesUserDecryptResponse,
@@ -64,6 +61,9 @@ describe("Decryption", function () {
 
   // Get the gateway's chain ID
   const gatewayChainId = hre.network.config.chainId!;
+
+  // Define the first coprocessor context ID
+  const contextId = 1;
 
   // Define input values
   const keyId = getKeyId(1);
@@ -104,8 +104,6 @@ describe("Decryption", function () {
   // Define extra data for version 0
   const extraDataV0 = hre.ethers.solidityPacked(["uint8"], [0]);
 
-  let gatewayConfig: GatewayConfig;
-  let kmsGeneration: KMSGeneration;
   let MultichainACL: MultichainACL;
   let ciphertextCommits: CiphertextCommits;
   let decryption: Decryption;
@@ -124,7 +122,7 @@ describe("Decryption", function () {
 
     let snsCiphertextMaterials: SnsCiphertextMaterialStruct[] = [];
 
-    // Allow public decryption
+    // Add the ciphertext materials for each handle
     for (const ctHandle of ctHandles) {
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await ciphertextCommits
@@ -138,10 +136,11 @@ describe("Decryption", function () {
         keyId,
         snsCiphertextDigest,
         coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+        contextId,
       });
     }
 
-    return { ...fixtureData, snsCiphertextMaterials, keyId };
+    return { ...fixtureData, snsCiphertextMaterials };
   }
 
   describe("Deployment", function () {
@@ -210,8 +209,6 @@ describe("Decryption", function () {
     beforeEach(async function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(preparePublicDecryptEIP712Fixture);
-      gatewayConfig = fixtureData.gatewayConfig;
-      kmsGeneration = fixtureData.kmsGeneration;
       MultichainACL = fixtureData.MultichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
@@ -229,6 +226,8 @@ describe("Decryption", function () {
       // Request public decryption
       const requestTx = await decryption.publicDecryptionRequest(ctHandles, extraDataV0);
 
+      // Get the storage URLs for the given ctHandles
+
       // Check request event
       await expect(requestTx)
         .to.emit(decryption, "PublicDecryptionRequest")
@@ -236,10 +235,11 @@ describe("Decryption", function () {
     });
 
     it("Should request a public decryption with a single ctHandle", async function () {
-      // Request public decryption with a single ctHandle
-      const requestTx = await decryption.publicDecryptionRequest([ctHandles[0]], extraDataV0);
-
+      const singleCtHandles = ctHandles.slice(0, 1);
       const singleSnsCiphertextMaterials = snsCiphertextMaterials.slice(0, 1);
+
+      // Request public decryption with a single ctHandle
+      const requestTx = await decryption.publicDecryptionRequest(singleCtHandles, extraDataV0);
 
       // Check request event
       await expect(requestTx)
@@ -357,31 +357,31 @@ describe("Decryption", function () {
 
     it("Should revert because of ctMaterials tied to different key IDs", async function () {
       // Store the handles with a new key ID and allow them for public decryption
-      for (const newCtHandle of newCtHandles) {
-        for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await ciphertextCommits
-            .connect(coprocessorTxSenders[i])
-            .addCiphertextMaterial(newCtHandle, newKeyId, ciphertextDigest, snsCiphertextDigest);
+      for (let i = 0; i < coprocessorTxSenders.length; i++) {
+        await ciphertextCommits
+          .connect(coprocessorTxSenders[i])
+          .addCiphertextMaterial(newCtHandle, newKeyId, ciphertextDigest, snsCiphertextDigest);
 
-          await MultichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
-        }
+        await MultichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
       }
 
+      const newSnsCiphertextMaterial = {
+        ctHandle: newCtHandle,
+        keyId: newKeyId,
+        snsCiphertextDigest,
+        coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+        contextId,
+      };
+
+      const ctHandlesDifferentKeyIds = [...ctHandles, newCtHandle];
+
       // Request public decryption with ctMaterials tied to different key IDs
-      const requestTx = decryption.publicDecryptionRequest([...ctHandles, newCtHandle], extraDataV0);
+      const requestTx = decryption.publicDecryptionRequest(ctHandlesDifferentKeyIds, extraDataV0);
 
       // Check that different key IDs are not allowed for batched public decryption
       await expect(requestTx)
         .to.be.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
-        .withArgs(
-          toValues(snsCiphertextMaterials[0]),
-          toValues({
-            ctHandle: newCtHandle,
-            keyId: newKeyId,
-            snsCiphertextDigest,
-            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
-          }),
-        );
+        .withArgs(toValues(snsCiphertextMaterials[0]), toValues(newSnsCiphertextMaterial));
     });
 
     it("Should public decrypt with 3 valid responses", async function () {
@@ -737,8 +737,6 @@ describe("Decryption", function () {
     beforeEach(async function () {
       // Initialize globally used variables before each test
       const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
-      gatewayConfig = fixtureData.gatewayConfig;
-      kmsGeneration = fixtureData.kmsGeneration;
       MultichainACL = fixtureData.MultichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
@@ -1216,9 +1214,19 @@ describe("Decryption", function () {
         await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
       }
 
+      const newSnsCiphertextMaterial = {
+        ctHandle: newCtHandle,
+        keyId: newKeyId,
+        snsCiphertextDigest,
+        coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
+        contextId,
+      };
+
+      const ctHandleContractPairsDifferentKeyIds = [...ctHandleContractPairs, newCtHandleContractPair];
+
       // Request user decryption with ctMaterials tied to different key IDs
       const requestTx = decryption.userDecryptionRequest(
-        [...ctHandleContractPairs, newCtHandleContractPair],
+        ctHandleContractPairsDifferentKeyIds,
         requestValidity,
         contractsInfo,
         user.address,
@@ -1229,16 +1237,8 @@ describe("Decryption", function () {
 
       // Check that different key IDs are not allowed for batched user decryption
       await expect(requestTx)
-        .to.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
-        .withArgs(
-          toValues(snsCiphertextMaterials[0]),
-          toValues({
-            ctHandle: newCtHandle,
-            keyId: newKeyId,
-            snsCiphertextDigest,
-            coprocessorTxSenderAddresses: coprocessorTxSenders.map((s) => s.address),
-          }),
-        );
+        .to.be.revertedWithCustomError(decryption, "DifferentKeyIdsNotAllowed")
+        .withArgs(toValues(snsCiphertextMaterials[0]), toValues(newSnsCiphertextMaterial));
     });
 
     it("Should revert because of two responses with same signature", async function () {
