@@ -21,7 +21,6 @@ use tracing::{debug, error, info, warn};
 
 const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
-#[cfg(feature = "bench")]
 lazy_static! {
     pub static ref TIMING: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 }

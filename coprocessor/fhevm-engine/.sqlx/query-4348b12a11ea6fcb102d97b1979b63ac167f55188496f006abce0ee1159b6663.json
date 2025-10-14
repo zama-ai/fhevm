@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT into gw_listener_last_block (dummy_id, last_block_num)\n            VALUES (true, $1)\n            ON CONFLICT (dummy_id) DO UPDATE SET last_block_num = EXCLUDED.last_block_num",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4348b12a11ea6fcb102d97b1979b63ac167f55188496f006abce0ee1159b6663"
+}
