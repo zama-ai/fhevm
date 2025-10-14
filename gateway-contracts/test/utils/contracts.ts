@@ -100,6 +100,8 @@ async function initTestingWallets(nKmsNodes: number, nCustodians: number) {
     });
   }
 
+  const coprocessorBlob = getRequiredEnvVar("COPROCESSORS_BLOB");
+
   // Load the coprocessor storage URLs
   const coprocessorStorageUrls = [];
   for (let idx = 0; idx < nCoprocessors; idx++) {
@@ -140,6 +142,7 @@ async function initTestingWallets(nKmsNodes: number, nCustodians: number) {
     coprocessors,
     coprocessorTxSenders,
     coprocessorSigners,
+    coprocessorBlob,
     coprocessorStorageUrls,
     custodianTxSenders,
     custodianSigners,

@@ -15,6 +15,7 @@ import {
 import {
   ContextStatus,
   addNewCoprocessorContext,
+  createByteInput,
   createCoprocessors,
   createRandomWallet,
   loadTestVariablesFixture,
@@ -61,7 +62,7 @@ async function deactivateContext(
 
 describe("CoprocessorContexts", function () {
   // Define input values
-  const featureSet = 1;
+  const blob = createByteInput();
 
   // Define fake values
   const fakeTxSender = createRandomWallet();
@@ -112,7 +113,7 @@ describe("CoprocessorContexts", function () {
         hre.upgrades.upgradeProxy(proxyContract, newCoprocessorContextsFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [featureSet, emptyCoprocessors],
+            args: [blob, emptyCoprocessors],
           },
         }),
       ).to.be.revertedWithCustomError(coprocessorContexts, "EmptyCoprocessors");
@@ -131,7 +132,7 @@ describe("CoprocessorContexts", function () {
         hre.upgrades.upgradeProxy(proxyContract, newCoprocessorContextsFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [featureSet, coprocessorsWithNullTxSenderAddress],
+            args: [blob, coprocessorsWithNullTxSenderAddress],
           },
         }),
       )
@@ -152,7 +153,7 @@ describe("CoprocessorContexts", function () {
         hre.upgrades.upgradeProxy(proxyContract, newCoprocessorContextsFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [featureSet, coprocessorsWithNullSignerAddress],
+            args: [blob, coprocessorsWithNullSignerAddress],
           },
         }),
       )
@@ -180,7 +181,7 @@ describe("CoprocessorContexts", function () {
         hre.upgrades.upgradeProxy(proxyContract, newCoprocessorContextsFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [featureSet, coprocessorsWithSameTxSenderAddress],
+            args: [blob, coprocessorsWithSameTxSenderAddress],
           },
         }),
       )
@@ -208,7 +209,7 @@ describe("CoprocessorContexts", function () {
         hre.upgrades.upgradeProxy(proxyContract, newCoprocessorContextsFactory, {
           call: {
             fn: "initializeFromEmptyProxy",
-            args: [featureSet, coprocessorsWithSameSignerAddress],
+            args: [blob, coprocessorsWithSameSignerAddress],
           },
         }),
       )
@@ -218,6 +219,8 @@ describe("CoprocessorContexts", function () {
   });
 
   describe("After deployment", function () {
+    let coprocessorBlob: string;
+
     // Define the first context ID
     const contextId = 1;
 
@@ -225,6 +228,7 @@ describe("CoprocessorContexts", function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
       coprocessorContexts = fixture.coprocessorContexts;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
+      coprocessorBlob = fixture.coprocessorBlob;
     });
 
     describe("Getters", function () {
@@ -255,7 +259,7 @@ describe("CoprocessorContexts", function () {
         const expectedActiveCoprocessorContext: CoprocessorContextStruct = {
           contextId,
           previousContextId: 0,
-          featureSet,
+          blob: coprocessorBlob,
           coprocessors: coprocessors,
         };
 
@@ -450,7 +454,7 @@ describe("CoprocessorContexts", function () {
       const newContextId = 2;
 
       // Define new coprocessor context fields
-      const newFeatureSet = 2030;
+      const newBlob = createByteInput();
 
       // Define new time periods
       const newPreActivationTimePeriod = 100;
@@ -470,19 +474,19 @@ describe("CoprocessorContexts", function () {
         // Add a new coprocessor context
         const txResult = await coprocessorContexts
           .connect(owner)
-          .addCoprocessorContext(newFeatureSet, newCoprocessors, newTimePeriods);
+          .addCoprocessorContext(newBlob, newCoprocessors, newTimePeriods);
 
         const oldCoprocessorContext: CoprocessorContextStruct = {
           contextId,
           previousContextId: 0,
-          featureSet,
+          blob,
           coprocessors: coprocessors,
         };
 
         const newCoprocessorContext: CoprocessorContextStruct = {
           contextId: newContextId,
           previousContextId: contextId,
-          featureSet: newFeatureSet,
+          blob: newBlob,
           coprocessors: newCoprocessors,
         };
 
@@ -504,9 +508,7 @@ describe("CoprocessorContexts", function () {
         // Add a new coprocessor context
         await addNewCoprocessorContext(3, coprocessorContexts, owner);
 
-        await expect(
-          coprocessorContexts.connect(owner).addCoprocessorContext(newFeatureSet, newCoprocessors, newTimePeriods),
-        )
+        await expect(coprocessorContexts.connect(owner).addCoprocessorContext(newBlob, newCoprocessors, newTimePeriods))
           .to.be.revertedWithCustomError(coprocessorContexts, "PreActivationContextOngoing")
           .withArgs(newContextId);
       });
@@ -521,9 +523,7 @@ describe("CoprocessorContexts", function () {
           coprocessorContexts,
         );
 
-        await expect(
-          coprocessorContexts.connect(owner).addCoprocessorContext(newFeatureSet, newCoprocessors, newTimePeriods),
-        )
+        await expect(coprocessorContexts.connect(owner).addCoprocessorContext(newBlob, newCoprocessors, newTimePeriods))
           .to.be.revertedWithCustomError(coprocessorContexts, "SuspendedContextOngoing")
           .withArgs(contextId);
       });

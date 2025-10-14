@@ -7,6 +7,7 @@ import {
   CoprocessorContextTimePeriodsStruct,
   CoprocessorV2Struct,
 } from "../../typechain-types/contracts/interfaces/ICoprocessorContexts";
+import { createByteInput } from "./inputs";
 
 export enum ContextStatus {
   NotInitialized = 0,
@@ -57,7 +58,7 @@ export async function addNewCoprocessorContext(
   fund: boolean = false,
 ) {
   // Define coprocessor context fields
-  const featureSet = 2030;
+  const blob = createByteInput();
 
   // Define time periods
   const coprocessorsPreActivationTimePeriod = 100;
@@ -82,11 +83,11 @@ export async function addNewCoprocessorContext(
   }
 
   // Add a new coprocessor context
-  await coprocessorContexts.connect(owner).addCoprocessorContext(featureSet, result.coprocessors, timePeriods);
+  await coprocessorContexts.connect(owner).addCoprocessorContext(blob, result.coprocessors, timePeriods);
 
   return {
     ...result,
-    featureSet,
+    blob,
     timePeriods,
   };
 }

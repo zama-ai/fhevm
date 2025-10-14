@@ -84,21 +84,17 @@ contract CoprocessorContexts is ICoprocessorContexts, UUPSUpgradeableEmptyProxy,
     /**
      * @notice Initializes the contract
      * @dev This function needs to be public in order to be called by the UUPS proxy.
-     * @param initialFeatureSet The feature set of the initial coprocessor context
+     * @param initialBlob The blob of the initial coprocessor context
      * @param initialCoprocessors The coprocessors of the initial coprocessor context
      */
     /// @custom:oz-upgrades-validate-as-initializer
     function initializeFromEmptyProxy(
-        uint256 initialFeatureSet,
+        bytes calldata initialBlob,
         CoprocessorV2[] calldata initialCoprocessors
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         // The first coprocessor context is the initial coprocessor context and thus does not have a
         // previous context (indicated by a null context ID)
-        CoprocessorContext memory newCoprocessorContext = _addCoprocessorContext(
-            0,
-            initialFeatureSet,
-            initialCoprocessors
-        );
+        CoprocessorContext memory newCoprocessorContext = _addCoprocessorContext(0, initialBlob, initialCoprocessors);
 
         CoprocessorContextsStorage storage $ = _getCoprocessorContextsStorage();
 
@@ -106,7 +102,7 @@ contract CoprocessorContexts is ICoprocessorContexts, UUPSUpgradeableEmptyProxy,
         // cases, the context must go through the pre-activation state first.
         ContextLifecycle.initializeActive($.coprocessorContextLifecycle, newCoprocessorContext.contextId);
 
-        emit InitializeCoprocessorContexts(initialFeatureSet, initialCoprocessors);
+        emit InitializeCoprocessorContexts(initialBlob, initialCoprocessors);
     }
 
     /**
@@ -162,7 +158,7 @@ contract CoprocessorContexts is ICoprocessorContexts, UUPSUpgradeableEmptyProxy,
      * @notice See {ICoprocessorContexts-addCoprocessorContext}.
      */
     function addCoprocessorContext(
-        uint256 featureSet,
+        bytes calldata blob,
         CoprocessorV2[] calldata coprocessors,
         CoprocessorContextTimePeriods calldata timePeriods
     ) external virtual onlyGatewayOwner {
@@ -178,7 +174,7 @@ contract CoprocessorContexts is ICoprocessorContexts, UUPSUpgradeableEmptyProxy,
         // The previous context ID is the active coprocessor context ID
         CoprocessorContext memory newCoprocessorContext = _addCoprocessorContext(
             activeCoprocessorContext.contextId,
-            featureSet,
+            blob,
             coprocessors
         );
 
@@ -434,13 +430,13 @@ contract CoprocessorContexts is ICoprocessorContexts, UUPSUpgradeableEmptyProxy,
     /**
      * @dev Add a new coprocessor context to the state.
      * @param previousContextId The ID of the previous coprocessor context.
-     * @param featureSet The feature set.
+     * @param blob The blob.
      * @param coprocessors The coprocessors.
      * @return The new coprocessor context.
      */
     function _addCoprocessorContext(
         uint256 previousContextId,
-        uint256 featureSet,
+        bytes calldata blob,
         CoprocessorV2[] calldata coprocessors
     ) internal virtual returns (CoprocessorContext memory) {
         // A coprocessor context must contain at least one coprocessor
@@ -459,7 +455,7 @@ contract CoprocessorContexts is ICoprocessorContexts, UUPSUpgradeableEmptyProxy,
         // The coprocessors themselves are copied in the loop below
         $.coprocessorContexts[contextId].contextId = contextId;
         $.coprocessorContexts[contextId].previousContextId = previousContextId;
-        $.coprocessorContexts[contextId].featureSet = featureSet;
+        $.coprocessorContexts[contextId].blob = blob;
 
         for (uint256 i = 0; i < coprocessors.length; i++) {
             if (coprocessors[i].txSenderAddress == address(0)) {

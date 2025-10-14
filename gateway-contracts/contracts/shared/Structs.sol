@@ -45,8 +45,8 @@ struct CoprocessorContext {
     uint256 contextId;
     /// @notice The ID of the previous (active)coprocessor context
     uint256 previousContextId;
-    /// @notice The feature set of the coprocessor context
-    uint256 featureSet;
+    /// @notice Blob containing data like version, feature set, etc.
+    bytes blob;
     /// @notice The coprocessors in the coprocessor context
     CoprocessorV2[] coprocessors;
 }

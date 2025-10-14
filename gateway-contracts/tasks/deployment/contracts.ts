@@ -128,7 +128,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
 // Deploy the CoprocessorContexts contract
 task("task:deployCoprocessorContexts").setAction(async function (_, hre) {
   // Parse the coprocessor feature set
-  const coprocessorsFeatureSet = getRequiredEnvVar("COPROCESSORS_FEATURE_SET");
+  const coprocessorsBlob = getRequiredEnvVar("COPROCESSORS_BLOB");
 
   // Parse the coprocessors
   const numCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
@@ -144,7 +144,7 @@ task("task:deployCoprocessorContexts").setAction(async function (_, hre) {
   console.log("Coprocessors:", coprocessors);
 
   await deployContractImplementation("CoprocessorContexts", hre, REGULAR_EMPTY_PROXY_NAME, [
-    coprocessorsFeatureSet,
+    coprocessorsBlob,
     coprocessors,
   ]);
 });

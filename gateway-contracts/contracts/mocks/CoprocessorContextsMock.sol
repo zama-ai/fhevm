@@ -4,7 +4,7 @@ import "../shared/Structs.sol";
 import "../shared/Enums.sol";
 
 contract CoprocessorContextsMock {
-    event InitializeCoprocessorContexts(uint256 featureSet, CoprocessorV2[] coprocessors);
+    event InitializeCoprocessorContexts(bytes blob, CoprocessorV2[] coprocessors);
 
     event NewCoprocessorContext(
         CoprocessorContext activeCoprocessorContext,
@@ -26,15 +26,15 @@ contract CoprocessorContextsMock {
 
     uint256 coprocessorContextCount = 0;
 
-    function initializeFromEmptyProxy(uint256 initialFeatureSet, CoprocessorV2[] calldata initialCoprocessors) public {
-        uint256 featureSet;
+    function initializeFromEmptyProxy(bytes calldata initialBlob, CoprocessorV2[] calldata initialCoprocessors) public {
+        bytes memory blob;
         CoprocessorV2[] memory coprocessors = new CoprocessorV2[](1);
 
-        emit InitializeCoprocessorContexts(featureSet, coprocessors);
+        emit InitializeCoprocessorContexts(blob, coprocessors);
     }
 
     function addCoprocessorContext(
-        uint256 featureSet,
+        bytes calldata blob,
         CoprocessorV2[] calldata coprocessors,
         CoprocessorContextTimePeriods calldata timePeriods
     ) external {

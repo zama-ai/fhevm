@@ -58,7 +58,7 @@ describe("Mock contracts", function () {
   const DefaultCoprocessorContext = {
     contextId: DefaultUint256,
     previousContextId: DefaultUint256,
-    featureSet: DefaultUint256,
+    blob: DefaultBytes,
     coprocessors: [],
   };
 
@@ -157,7 +157,7 @@ describe("Mock contracts", function () {
     it("Should emit PreActivateCoprocessorContext event on add coprocessor context call", async function () {
       await expect(
         coprocessorContextsMock.addCoprocessorContext(
-          DefaultUint256,
+          DefaultBytes,
           [DefaultCoprocessor],
           DefaultCoprocessorContextTimePeriods,
         ),

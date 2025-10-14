@@ -49,7 +49,7 @@ A set of coprocessors is called a coprocessor context and must be constituted of
 
 - `contextId`: unique non-zero identifier of the coprocessor context, defined using an incremental counter within the `CoprocessorContexts` contract.
 - `previousContextId`: identifier of the previous coprocessor context.
-- `featureSet`: feature set of the coprocessor context, used for updating the coprocessors' software.
+- `blob`: blob of the coprocessor context, containing data like version, feature set, etc.
 - `coprocessors`: list of coprocessors in the coprocessor context.
 
 It is possible to get information about the current [`active`](#lifecycle) coprocessor context using the following view functions:

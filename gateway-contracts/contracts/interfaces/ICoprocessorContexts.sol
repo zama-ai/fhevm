@@ -16,10 +16,10 @@ import { ContextStatus } from "../shared/Enums.sol";
 interface ICoprocessorContexts {
     /**
      * @notice Emitted when the CoprocessorContexts initialization is completed.
-     * @param featureSet The feature set.
+     * @param blob The blob.
      * @param coprocessors The coprocessors.
      */
-    event InitializeCoprocessorContexts(uint256 featureSet, CoprocessorV2[] coprocessors);
+    event InitializeCoprocessorContexts(bytes blob, CoprocessorV2[] coprocessors);
 
     /**
      * @notice Emitted when a new coprocessor context has been suggested to be added.
@@ -196,12 +196,12 @@ interface ICoprocessorContexts {
 
     /**
      * @notice Add a new coprocessor context.
-     * @param featureSet The feature set.
+     * @param blob The blob.
      * @param coprocessors The set of coprocessors representing the coprocessor context.
      * @param timePeriods The time periods.
      */
     function addCoprocessorContext(
-        uint256 featureSet,
+        bytes calldata blob,
         CoprocessorV2[] calldata coprocessors,
         CoprocessorContextTimePeriods calldata timePeriods
     ) external;
