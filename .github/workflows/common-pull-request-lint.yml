@@ -34,20 +34,18 @@ jobs:
         with:
           node-version: 20.x
 
-      - name: Install commitlint
-        run: |
-          npm install @commitlint/config-conventional@^18 conventional-changelog-conventionalcommits @commitlint/types@^18
-          npm install -g @commitlint/cli@^18
-
-      - name: Validate all commits from PR
+      - name: Install & run commitlint
+        if: ${{ !startsWith(github.head_ref, 'mergify-a/merge-queue/') }}
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: npx commitlint --config .github/config/commitlint.config.js --from "${BASE_SHA}" --to "${HEAD_SHA}" --verbose
+        run: |
+          npm install @commitlint/config-conventional@^18 conventional-changelog-conventionalcommits @commitlint/types@^18
+          npm install -g @commitlint/cli@^18
+          npx commitlint --config .github/config/commitlint.config.js --from "${BASE_SHA}" --to "${HEAD_SHA}" --verbose
 
       - name: Run zizmor 🌈
         uses: zizmorcore/zizmor-action@e673c3917a1aef3c65c972347ed84ccd013ecda4 # v0.2.0
         with:
           persona: pedantic
           version: 1.14.2
-  
