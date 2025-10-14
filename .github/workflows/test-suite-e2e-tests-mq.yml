@@ -1,0 +1,248 @@
+name: test-suite-e2e-tests-mq
+
+on:
+  workflow_dispatch:
+    inputs:
+      coprocessor:
+        description: "Coprocessor versions array: [db_migration, gw_listener, host_listener, tx_sender, tfhe_worker, sns_worker, zkproof_worker]"
+        default: "[]"
+        type: string
+      gateway:
+        description: "Gateway version"
+        default: ""
+        type: string
+      host:
+        description: "Host version"
+        default: ""
+        type: string
+      connector:
+        description: "Connector versions array: [db_migration, gw_listener, tx_sender, kms_worker]"
+        default: "[]"
+        type: string
+      test-suite:
+        description: "Test suite version"
+        default: ""
+        type: string
+      relayer:
+        description: "Relayer version"
+        default: ""
+        type: string
+      kms-core:
+        description: "KMS Core version"
+        default: ""
+        type: string
+  pull_request:
+    branches:
+      - main
+
+permissions: {}
+
+# Allow to run multiple instances of the same workflow in parallel when triggered manually 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check-changes:
+    name: test-suite-e2e-tests-mq/check-changes
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+    runs-on: ubuntu-latest
+    outputs:
+      changes-fhevm: ${{ steps.filter.outputs.fhevm }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36  # v3.0.2
+        id: filter
+        with:
+          filters: |
+            fhevm:
+              - 'test-suite/fhevm/**'
+  fhevm-e2e-test:
+    name: test-suite-e2e-tests-mq/fhevm-e2e-test (bpr)
+    needs: check-changes
+    if: ${{ needs.check-changes.outputs.changes-fhevm == 'true' || github.event_name == 'release' || github.event_name == 'workflow_dispatch' || startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    permissions:
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC authentication
+      packages: 'read' # Required to read GitHub packages/container registry
+
+    runs-on: large_ubuntu_32
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: 'false'
+
+      - name: Setup Docker
+        uses: docker/setup-buildx-action@d70bba72b1f3fd22344832f00baa16ece964efeb # v3.3.0
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_READ_TOKEN }}
+
+      - name: Login to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
+      - name: Parse component versions
+        id: parse-versions
+        run: |
+          echo "🔧 Parsing component versions..."
+          
+          # Parse coprocessor array (7 elements)
+          coprocessor_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.coprocessor || '[]' }}'
+          if [[ "${coprocessor_input}" != "[]" && -n "${coprocessor_input}" ]]; then
+            echo "📊 Coprocessor array: ${coprocessor_input}"
+            
+            db_migration_version=$(echo "${coprocessor_input}" | jq -r '.[0] // empty')
+            gw_listener_version=$(echo "${coprocessor_input}" | jq -r '.[1] // empty')
+            host_listener_version=$(echo "${coprocessor_input}" | jq -r '.[2] // empty')
+            tx_sender_version=$(echo "${coprocessor_input}" | jq -r '.[3] // empty')
+            tfhe_worker_version=$(echo "${coprocessor_input}" | jq -r '.[4] // empty')
+            sns_worker_version=$(echo "${coprocessor_input}" | jq -r '.[5] // empty')
+            zkproof_worker_version=$(echo "${coprocessor_input}" | jq -r '.[6] // empty')
+            
+            [[ -n "${db_migration_version}" ]] && echo "DB_MIGRATION_VERSION_OVERRIDE=${db_migration_version}" >> "$GITHUB_ENV"
+            [[ -n "${gw_listener_version}" ]] && echo "GW_LISTENER_VERSION_OVERRIDE=${gw_listener_version}" >> "$GITHUB_ENV"
+            [[ -n "${host_listener_version}" ]] && echo "HOST_LISTENER_VERSION_OVERRIDE=${host_listener_version}" >> "$GITHUB_ENV"
+            [[ -n "${tx_sender_version}" ]] && echo "TX_SENDER_VERSION_OVERRIDE=${tx_sender_version}" >> "$GITHUB_ENV"
+            [[ -n "${tfhe_worker_version}" ]] && echo "TFHE_WORKER_VERSION_OVERRIDE=${tfhe_worker_version}" >> "$GITHUB_ENV"
+            [[ -n "${sns_worker_version}" ]] && echo "SNS_WORKER_VERSION_OVERRIDE=${sns_worker_version}" >> "$GITHUB_ENV"
+            [[ -n "${zkproof_worker_version}" ]] && echo "ZKPROOF_WORKER_VERSION_OVERRIDE=${zkproof_worker_version}" >> "$GITHUB_ENV"
+          fi
+          
+          # Parse gateway string
+          gateway_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.gateway || '' }}'
+          [[ -n "${gateway_input}" ]] && echo "GATEWAY_VERSION_OVERRIDE=${gateway_input}" >> "$GITHUB_ENV"
+          
+          # Parse host string
+          host_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.host || '' }}'
+          [[ -n "${host_input}" ]] && echo "HOST_VERSION_OVERRIDE=${host_input}" >> "$GITHUB_ENV"
+          
+          # Parse connector array (4 elements)
+          connector_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.connector || '[]' }}'
+          if [[ "${connector_input}" != "[]" && -n "${connector_input}" ]]; then
+            echo "📊 Connector array: ${connector_input}"
+            
+            connector_db_migration=$(echo "${connector_input}" | jq -r '.[0] // empty')
+            connector_gw_listener=$(echo "${connector_input}" | jq -r '.[1] // empty')
+            connector_tx_sender=$(echo "${connector_input}" | jq -r '.[2] // empty')
+            connector_kms_worker=$(echo "${connector_input}" | jq -r '.[3] // empty')
+            
+            [[ -n "${connector_db_migration}" ]] && echo "CONNECTOR_DB_MIGRATION_VERSION_OVERRIDE=${connector_db_migration}" >> "$GITHUB_ENV"
+            [[ -n "${connector_gw_listener}" ]] && echo "CONNECTOR_GW_LISTENER_VERSION_OVERRIDE=${connector_gw_listener}" >> "$GITHUB_ENV"
+            [[ -n "${connector_tx_sender}" ]] && echo "CONNECTOR_TX_SENDER_VERSION_OVERRIDE=${connector_tx_sender}" >> "$GITHUB_ENV"
+            [[ -n "${connector_kms_worker}" ]] && echo "CONNECTOR_KMS_WORKER_VERSION_OVERRIDE=${connector_kms_worker}" >> "$GITHUB_ENV"
+          fi
+          
+          # Parse test-suite string
+          test_suite_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.test-suite || '' }}'
+          [[ -n "${test_suite_input}" ]] && echo "TEST_SUITE_VERSION_OVERRIDE=${test_suite_input}" >> "$GITHUB_ENV"
+          
+          # Parse relayer string
+          relayer_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.relayer || '' }}'
+          [[ -n "${relayer_input}" ]] && echo "RELAYER_VERSION_OVERRIDE=${relayer_input}" >> "$GITHUB_ENV"
+          
+          # Parse kms-core string
+          kms_core_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.kms-core || '' }}'
+          [[ -n "${kms_core_input}" ]] && echo "KMS_CORE_VERSION_OVERRIDE=${kms_core_input}" >> "$GITHUB_ENV"
+          
+
+          echo "Component versions: gateway:${gateway_input}, host:${host_input}, coprocessor:${coprocessor_input}, connector:${connector_input}, test-suite:${test_suite_input}, relayer:${relayer_input}, kms-core:${kms_core_input}"
+          echo "✅ Component versions parsed successfully"
+
+      - name: Deploy fhevm Stack
+        working-directory: test-suite/fhevm
+        env:
+          # Coprocessor components
+          DB_MIGRATION_VERSION: ${{ env.DB_MIGRATION_VERSION_OVERRIDE || env.DB_MIGRATION_VERSION }}
+          GW_LISTENER_VERSION: ${{ env.GW_LISTENER_VERSION_OVERRIDE || env.GW_LISTENER_VERSION }}
+          HOST_LISTENER_VERSION: ${{ env.HOST_LISTENER_VERSION_OVERRIDE || env.HOST_LISTENER_VERSION }}
+          TX_SENDER_VERSION: ${{ env.TX_SENDER_VERSION_OVERRIDE || env.TX_SENDER_VERSION }}
+          TFHE_WORKER_VERSION: ${{ env.TFHE_WORKER_VERSION_OVERRIDE || env.TFHE_WORKER_VERSION }}
+          SNS_WORKER_VERSION: ${{ env.SNS_WORKER_VERSION_OVERRIDE || env.SNS_WORKER_VERSION }}
+          ZKPROOF_WORKER_VERSION: ${{ env.ZKPROOF_WORKER_VERSION_OVERRIDE || env.ZKPROOF_WORKER_VERSION }}
+          
+          # Gateway component
+          GATEWAY_VERSION: ${{ env.GATEWAY_VERSION_OVERRIDE || env.GATEWAY_VERSION }}
+          
+          # Host component
+          HOST_VERSION: ${{ env.HOST_VERSION_OVERRIDE || env.HOST_VERSION }}
+          
+          # Connector components
+          CONNECTOR_DB_MIGRATION_VERSION: ${{ env.CONNECTOR_DB_MIGRATION_VERSION_OVERRIDE || env.CONNECTOR_DB_MIGRATION_VERSION }}
+          CONNECTOR_GW_LISTENER_VERSION: ${{ env.CONNECTOR_GW_LISTENER_VERSION_OVERRIDE || env.CONNECTOR_GW_LISTENER_VERSION }}
+          CONNECTOR_TX_SENDER_VERSION: ${{ env.CONNECTOR_TX_SENDER_VERSION_OVERRIDE || env.CONNECTOR_TX_SENDER_VERSION }}
+          CONNECTOR_KMS_WORKER_VERSION: ${{ env.CONNECTOR_KMS_WORKER_VERSION_OVERRIDE || env.CONNECTOR_KMS_WORKER_VERSION }}
+
+          # Test suite component
+          TEST_SUITE_VERSION: ${{ env.TEST_SUITE_VERSION_OVERRIDE || env.TEST_SUITE_VERSION }}
+        run: |
+          ./fhevm-cli deploy
+
+      - name: Input proof test (uint64)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test input-proof
+
+      - name: Public Decryption test
+        working-directory: test-suite/fhevm
+        run: |
+          timeout 5m ./fhevm-cli test public-decryption
+
+      - name: User Decryption test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test user-decryption
+
+      - name: ERC20 test
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test erc20
+
+      - name: Public Decryption HTTP endpoint test (ebool)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test public-decrypt-http-ebool
+
+      - name: Public Decryption HTTP endpoint test (mixed)
+        working-directory: test-suite/fhevm
+        run: |
+          ./fhevm-cli test public-decrypt-http-mixed
+
+      - name: Show logs on test failure
+        working-directory: test-suite/fhevm
+        if: always()
+        run: |
+          echo "::group::Relayer Logs"
+          ./fhevm-cli logs fhevm-relayer
+          echo "::endgroup::"
+          echo "::group::SNS Worker Logs"
+          ./fhevm-cli logs coprocessor-sns-worker | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+          echo "::group::Transaction Sender Logs (filtered)"
+          ./fhevm-cli logs coprocessor-transaction-sender | grep -v "Selected 0 rows to process"
+          echo "::endgroup::"
+          echo "::group::Host Listener"
+          ./fhevm-cli logs coprocessor-host-listener
+          echo "::endgroup::"
+          echo "::group::Gateway Listener"
+          ./fhevm-cli logs coprocessor-gw-listener
+          echo "::endgroup::"
+
+      - name: Cleanup
+        working-directory: test-suite/fhevm
+        if: always()
+        run: |
+          ./fhevm-cli clean
