@@ -12,4 +12,34 @@ contract ACLEvents {
     /// @param caller       account calling the allowForDecryption function.
     /// @param handlesList  List of handles allowed for decryption.
     event AllowedForDecryption(address indexed caller, bytes32[] handlesList);
+
+    /// @notice                 Emitted when an account delegation is requested.
+    /// @param delegator        The address of the account that delegates access to its handles.
+    /// @param delegate         The address of the account that receives the delegation.
+    /// @param contractAddress  The contract address to delegate access to.
+    /// @param delegationCounter    Delegation counter.
+    /// @param oldExpiryDate    Previous Expiry Date.
+    /// @param newExpiryDate    New Expiry Date.
+    event DelegatedAccount(
+        address indexed delegator,
+        address indexed delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpiryDate,
+        uint64 newExpiryDate
+    );
+
+    /// @notice                 Emitted when a delegation is revoked.
+    /// @param delegator        The address of the account that delegates access to its handles.
+    /// @param delegate         The address of the account that receives the delegation.
+    /// @param contractAddress  The contract address to delegate access to.
+    /// @param delegationCounter    Delegation counter.
+    /// @param oldExpiryDate    Previous Expiry Date.
+    event RevokedDelegation(
+        address indexed delegator,
+        address indexed delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpiryDate
+    );
 }

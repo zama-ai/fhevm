@@ -75,7 +75,7 @@ contract ACLTest is Test {
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxy();
-        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.1.0")));
+        assertEq(acl.getVersion(), string(abi.encodePacked("ACL v0.2.0")));
         assertEq(acl.owner(), owner);
         assertEq(acl.isPauser(pauser), true);
         assertEq(acl.getFHEVMExecutorAddress(), fhevmExecutorAdd);
@@ -117,18 +117,24 @@ contract ACLTest is Test {
     /**
      * @dev Tests that the function allow reverts if the sender is not allowed to use the handle.
      */
-    function test_CannotAllowIfNotAllowedToUseTheHandle(bytes32 handle, address account) public {
+    function test_CannotAllowIfNotAllowedToUseTheHandle(address sender, bytes32 handle, address account) public {
         _upgradeProxy();
-        vm.expectPartialRevert(ACL.SenderNotAllowed.selector);
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderNotAllowed.selector, sender));
         acl.allow(handle, account);
     }
 
     /**
      * @dev Tests that the function allowTransient reverts if the sender is not allowed to use the handle.
      */
-    function test_CannotAllowTransientIfNotAllowedToUseTheHandle(bytes32 handle, address account) public {
+    function test_CannotAllowTransientIfNotAllowedToUseTheHandle(
+        address sender,
+        bytes32 handle,
+        address account
+    ) public {
         _upgradeProxy();
-        vm.expectPartialRevert(ACL.SenderNotAllowed.selector);
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderNotAllowed.selector, sender));
         acl.allowTransient(handle, account);
     }
 
@@ -167,7 +173,240 @@ contract ACLTest is Test {
     }
 
     /**
-     * @dev Tests that the sender cannot allo for decrypt if the handle list is empty.
+     * @dev Tests that the sender can delegate to another account only if both contract and sender addresses are allowed
+     * to use the handle.
+     */
+    function test_CanDelegateAccountButItIsAllowedOnBehalfOnlyIfBothContractAndSenderAreAllowed(
+        bytes32 handle,
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+
+        ACL.Delegation memory delegation;
+        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+        uint64 oldExpiryDate = delegation.expiryDate;
+        uint64 newExpiryDate = expiryDate;
+        uint64 delegationCounter = delegation.delegationCounter++;
+
+        vm.prank(sender);
+        vm.expectEmit(address(acl));
+        emit ACLEvents.DelegatedAccount(
+            sender,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            oldExpiryDate,
+            newExpiryDate
+        );
+        acl.delegateAccount(delegate, contractAddress, expiryDate);
+        vm.assertFalse(acl.allowedOnBehalf(delegate, sender, contractAddress, handle));
+
+        /// @dev The sender and the delegate contract must be allowed to use the handle before it delegates.
+        _allowHandle(handle, sender);
+        vm.assertFalse(acl.allowedOnBehalf(delegate, sender, contractAddress, handle));
+        _allowHandle(handle, contractAddress);
+        vm.assertTrue(acl.allowedOnBehalf(delegate, sender, contractAddress, handle));
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate in the same block twice.
+     */
+    function test_CannotDelegateAccountInSameBlockTwice(
+        bytes32 handle,
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        /// @dev We call the other test to avoid repeating the same code.
+        test_CanDelegateAccountButItIsAllowedOnBehalfOnlyIfBothContractAndSenderAreAllowed(
+            handle,
+            sender,
+            delegate,
+            contractAddress
+        );
+
+        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+
+        vm.prank(sender);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ACL.AlreadyDelegatedOrRevokedInSameBlock.selector,
+                sender,
+                delegate,
+                contractAddress,
+                block.number
+            )
+        );
+        acl.delegateAccount(delegate, contractAddress, expiryDate);
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate account if delegate and contract address are the same.
+     */
+    function test_CannotDelegateAccountForSameDelegateAndContractAddress(address sender, address delegate) public {
+        _upgradeProxy();
+        vm.assume(sender != delegate);
+
+        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(ACL.DelegateCannotBeContractAddress.selector, delegate));
+        acl.delegateAccount(delegate, delegate, expiryDate);
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate with expiry date before one hour.
+     */
+    function test_CannotDelegateAccountWithExpiryDateBeforeOneHour(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+
+        uint64 expiryDate = uint64(block.timestamp);
+
+        vm.prank(sender);
+        vm.expectRevert(ACL.ExpiryDateBeforeOneHour.selector);
+        acl.delegateAccount(delegate, contractAddress, expiryDate);
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate with expiry date after one year.
+     */
+    function test_CannotDelegateAccountWithExpiryDateAfterOneYear(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+
+        uint64 expiryDate = uint64(block.timestamp) + 366 days;
+
+        vm.prank(sender);
+        vm.expectRevert(ACL.ExpiryDateAfterOneYear.selector);
+        acl.delegateAccount(delegate, contractAddress, expiryDate);
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate to itself as the contract address.
+     */
+    function test_CannotDelegateIfSenderIsContractAddress(address sender, address delegate) public {
+        _upgradeProxy();
+        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeContractAddress.selector, sender));
+        acl.delegateAccount(delegate, sender, expiryDate);
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate to itself as delegate.
+     */
+    function test_CannotDelegateIfSenderIsDelegate(address sender, address contractAddress) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeDelegate.selector, sender));
+        acl.delegateAccount(sender, contractAddress, expiryDate);
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate if account is not allowed to use the handle.
+     */
+    function test_CannotDelegateAccountIfAccountNotAllowed(
+        bytes32 handle,
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+        /// @dev Only the delegate contract must be allowed to use the handle before it delegates.
+        _allowHandle(handle, contractAddress);
+
+        ACL.Delegation memory delegation;
+        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+        uint64 oldExpiryDate = delegation.expiryDate;
+        uint64 newExpiryDate = expiryDate;
+
+        vm.prank(sender);
+        vm.expectEmit(address(acl));
+        emit ACLEvents.DelegatedAccount(
+            sender,
+            delegate,
+            contractAddress,
+            delegation.delegationCounter++,
+            oldExpiryDate,
+            newExpiryDate
+        );
+
+        acl.delegateAccount(delegate, contractAddress, expiryDate);
+
+        vm.assertFalse(acl.allowedOnBehalf(delegate, sender, contractAddress, handle));
+    }
+
+    /**
+     * @dev Tests that the sender can revoke delegation if the sender has already delegated.
+     */
+    function test_CanRevokeDelegation(address sender, address delegate, address contractAddress) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+
+        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+        uint64 oldExpiryDate = expiryDate;
+
+        /// @dev Delegate the account first.
+        vm.prank(sender);
+        acl.delegateAccount(delegate, contractAddress, expiryDate);
+
+        // After delegation above, the counter should be 1.
+        uint64 delegationCounter = 1;
+
+        // Increase block number to avoid "AlreadyDelegatedOrRevokedInSameBlock" error.
+        vm.roll(block.number + 1);
+
+        vm.prank(sender);
+        vm.expectEmit(address(acl));
+        emit ACLEvents.RevokedDelegation(sender, delegate, contractAddress, delegationCounter, oldExpiryDate);
+        acl.revokeDelegation(delegate, contractAddress);
+    }
+
+    /**
+     * @dev Tests that the sender cannot revoke delegation if the sender has not delegated yet.
+     */
+    function test_CannotRevokeDelegationIfNotDelegatedYet(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(ACL.NotDelegatedYet.selector, sender, delegate, contractAddress));
+        acl.revokeDelegation(delegate, contractAddress);
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate if the handle list is empty.
      */
     function test_NoOneCanAllowForDecryptionIfEmptyList(address sender) public {
         _upgradeProxy();
@@ -205,13 +444,18 @@ contract ACLTest is Test {
     /**
      * @dev Tests that the sender cannot allow for decryption if the sender is not allowed to use the handle.
      */
-    function test_CannotAllowForDecryptionIfSenderIsNotAllowedToUseTheHandle(bytes32 handle0, bytes32 handle1) public {
+    function test_CannotAllowForDecryptionIfSenderIsNotAllowedToUseTheHandle(
+        address sender,
+        bytes32 handle0,
+        bytes32 handle1
+    ) public {
         _upgradeProxy();
         bytes32[] memory handlesList = new bytes32[](2);
         handlesList[0] = handle0;
         handlesList[1] = handle1;
 
-        vm.expectPartialRevert(ACL.SenderNotAllowed.selector);
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderNotAllowed.selector, sender));
         acl.allowForDecryption(handlesList);
     }
 
@@ -233,7 +477,7 @@ contract ACLTest is Test {
         _allowHandle(handle0, sender);
 
         vm.prank(sender);
-        vm.expectPartialRevert(ACL.SenderNotAllowed.selector);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderNotAllowed.selector, sender));
         acl.allowForDecryption(handlesList);
     }
 
@@ -243,7 +487,7 @@ contract ACLTest is Test {
     function test_OnlyPauserCanPause(address randomAccount) public {
         _upgradeProxy();
         vm.assume(randomAccount != pauser);
-        vm.expectPartialRevert(ACL.NotPauser.selector);
+        vm.expectRevert(abi.encodeWithSelector(ACL.NotPauser.selector, randomAccount));
         vm.prank(randomAccount);
         acl.pause();
     }
@@ -256,7 +500,7 @@ contract ACLTest is Test {
         vm.assume(randomAccount != owner);
         vm.prank(pauser);
         acl.pause();
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, randomAccount));
         vm.prank(randomAccount);
         acl.unpause();
     }
@@ -268,7 +512,7 @@ contract ACLTest is Test {
         _upgradeProxy();
         vm.prank(pauser);
         acl.pause();
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, pauser));
         vm.prank(pauser);
         acl.unpause();
     }
@@ -316,6 +560,50 @@ contract ACLTest is Test {
     }
 
     /**
+     * @dev Tests that delegateAccount() cannot be called if the contract is paused.
+     */
+    function test_CannotDelegateAccountIfPaused(address sender, address delegate, address contractAddress) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+
+        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+
+        vm.prank(sender);
+        acl.delegateAccount(delegate, contractAddress, expiryDate);
+
+        vm.prank(pauser);
+        acl.pause();
+
+        vm.prank(sender);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        acl.delegateAccount(delegate, contractAddress, expiryDate);
+    }
+
+    /**
+     * @dev Tests that revokeDelegation() cannot be called if the contract is paused.
+     */
+    function test_CannotRevokeDelegationIfPaused(address sender, address delegate, address contractAddress) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+
+        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+
+        vm.prank(sender);
+        acl.delegateAccount(delegate, contractAddress, expiryDate);
+
+        vm.prank(pauser);
+        acl.pause();
+
+        vm.prank(sender);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        acl.revokeDelegation(delegate, contractAddress);
+    }
+
+    /**
      * @dev Tests that only the owner can authorize an upgrade.
      */
     function test_OnlyOwnerCanAuthorizeUpgrade(address randomAccount) public {
@@ -323,7 +611,7 @@ contract ACLTest is Test {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, randomAccount));
         this.upgrade(randomAccount);
     }
 
