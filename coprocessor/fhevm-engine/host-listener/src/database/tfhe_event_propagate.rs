@@ -551,10 +551,10 @@ impl Database {
             AclContractEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
             }
-            AclContractEvents::DelegateAccount(delegate_account) => {
+            AclContractEvents::DelegatedAccount(delegate_account) => {
                 warn!(
                     event = ?delegate_account,
-                    "unhandled Acl::DelegateAccount event"
+                    "unhandled Acl::DelegatedAccount event"
                 );
             }
             AclContractEvents::OwnershipTransferStarted(
@@ -779,7 +779,7 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
             allowed_for_decryption.handlesList.clone()
         }
         AclContractEvents::Initialized(_)
-        | AclContractEvents::DelegateAccount(_)
+        | AclContractEvents::DelegatedAccount(_)
         | AclContractEvents::OwnershipTransferStarted(_)
         | AclContractEvents::OwnershipTransferred(_)
         | AclContractEvents::RevokedDelegation(_)

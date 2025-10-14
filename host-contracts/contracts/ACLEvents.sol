@@ -20,7 +20,7 @@ contract ACLEvents {
     /// @param delegationCounter    Delegation counter.
     /// @param oldExpiryDate    Previous Expiry Date.
     /// @param newExpiryDate    New Expiry Date.
-    event DelegateAccount(
+    event DelegatedAccount(
         address indexed delegator,
         address indexed delegate,
         address contractAddress,

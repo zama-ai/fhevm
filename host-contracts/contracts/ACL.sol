@@ -272,7 +272,7 @@ contract ACL is
         // Set the delegation expiry date.
         delegation.expiryDate = newExpiryDate;
 
-        emit DelegateAccount(
+        emit DelegatedAccount(
             msg.sender,
             delegate,
             contractAddress,

@@ -195,7 +195,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACLEvents.DelegateAccount(
+        emit ACLEvents.DelegatedAccount(
             sender,
             delegate,
             contractAddress,
@@ -347,7 +347,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACLEvents.DelegateAccount(
+        emit ACLEvents.DelegatedAccount(
             sender,
             delegate,
             contractAddress,
