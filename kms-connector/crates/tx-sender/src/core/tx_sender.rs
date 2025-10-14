@@ -244,28 +244,13 @@ where
         })?;
 
         debug!("Transaction receipt: {:?}", receipt);
-        if receipt.status() {
-            GATEWAY_TX_SENT_COUNTER.inc();
-            info!(
-                tx_hash = hex::encode(receipt.transaction_hash),
-                block_hash = receipt.block_hash.map(hex::encode),
-                "Response successfully sent to the Gateway!"
-            );
-            Ok(())
-        } else {
-            GATEWAY_TX_SENT_ERRORS.inc();
-            let revert_reason = self
-                .get_revert_reason(&receipt)
-                .await
-                .unwrap_or_else(|e| e.to_string());
-            error!(
-                tx_hash = hex::encode(receipt.transaction_hash),
-                "Failed to send response to the Gateway: {revert_reason}"
-            );
-            Err(Error::Recoverable(anyhow!(
-                "Failed to send response to the Gateway: {revert_reason}"
-            )))
-        }
+        GATEWAY_TX_SENT_COUNTER.inc();
+        info!(
+            tx_hash = hex::encode(receipt.transaction_hash),
+            block_hash = receipt.block_hash.map(hex::encode),
+            "Response successfully sent to the Gateway!"
+        );
+        Ok(())
     }
 
     pub async fn send_public_decryption_response(
@@ -400,7 +385,20 @@ where
         // Force a fresh gas estimation on each attempt to account for state drift
         call.gas = None;
         self.overprovision_gas(&mut call).await?;
-        Ok(self.provider.send_transaction_sync(call).await?)
+
+        let receipt = self.provider.send_transaction_sync(call).await?;
+        if !receipt.status() {
+            let revert_reason = self
+                .get_revert_reason(&receipt)
+                .await
+                .unwrap_or_else(|e| e.to_string());
+
+            return Err(Error::Recoverable(anyhow!(
+                "{revert_reason}. Tx hash {}",
+                hex::encode(receipt.transaction_hash)
+            )));
+        }
+        Ok(receipt)
     }
 
     /// Tries to use the `debug_trace_transaction` RPC call to find the cause of a reverted tx.
@@ -495,18 +493,26 @@ impl From<PendingTransactionError> for Error {
 mod tests {
     use super::*;
     use alloy::{
+        network::{Ethereum, IntoWallet, Network, TransactionBuilder},
         primitives::Address,
-        providers::{Identity, ProviderBuilder, fillers::FillProvider, mock::Asserter},
+        providers::{
+            Identity, ProviderBuilder, SendableTx,
+            fillers::{FillProvider, FillerControlFlow},
+            mock::Asserter,
+        },
         rpc::{json_rpc::ErrorPayload, types::trace::geth::GethTrace},
+        transports::TransportResult,
     };
-    use connector_utils::tests::rand::{rand_signature, rand_u256};
+    use connector_utils::{
+        config::KmsWallet,
+        tests::rand::{rand_signature, rand_u256},
+    };
     use serde::de::DeserializeOwned;
     use serde_json::value::RawValue;
     use std::fs::File;
 
     #[tokio::test]
     #[tracing_test::traced_test]
-    #[ignore = "To be fixed. Use of eth_sendRawTransactionSync broke it"]
     async fn test_send_tx_out_of_gas() -> anyhow::Result<()> {
         // Create a mocked `alloy::Provider`
         let asserter = Asserter::new();
@@ -515,7 +521,7 @@ mod tests {
                 ProviderBuilder::new()
                     .disable_recommended_fillers()
                     .connect_mocked_client(asserter.clone()),
-                Identity,
+                MockFiller {},
             ),
             Address::default(),
         );
@@ -523,11 +529,13 @@ mod tests {
         // Used to mock all RPC responses of transaction sending operation
         let test_data_dir = test_data_dir();
         let estimate_gas: usize = parse_mock(&format!("{test_data_dir}/1_estimate_gas.json"))?;
+        let nonce: String = parse_mock(&format!("{test_data_dir}/2_get_nonce.json"))?;
         let send_tx_sync: TransactionReceipt =
-            parse_mock(&format!("{test_data_dir}/2_send_tx_sync.json"))?;
+            parse_mock(&format!("{test_data_dir}/3_send_tx_sync.json"))?;
         let debug_trace_tx: GethTrace =
-            parse_mock(&format!("{test_data_dir}/3_debug_trace_tx.json"))?;
+            parse_mock(&format!("{test_data_dir}/4_debug_trace_tx.json"))?;
         asserter.push_success(&estimate_gas);
+        asserter.push_success(&nonce);
         asserter.push_success(&send_tx_sync);
         asserter.push_success(&debug_trace_tx);
 
@@ -539,10 +547,11 @@ mod tests {
             TransactionSenderInnerConfig {
                 tx_retries: 1,
                 trace_reverted_tx: true,
+                gas_multiplier_percent: 105,
                 ..Default::default()
             },
         );
-        let error = inner_sender
+        inner_sender
             .send_to_gateway(KmsResponseKind::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
@@ -551,16 +560,7 @@ mod tests {
             }))
             .await
             .unwrap_err();
-        match error {
-            Error::Recoverable(error_msg) => {
-                assert!(
-                    error_msg
-                        .to_string()
-                        .contains("Failed to send response to the Gateway: out of gas")
-                );
-            }
-            _ => panic!("Unexpected error type"),
-        }
+        logs_contain("out of gas");
         Ok(())
     }
 
@@ -583,7 +583,7 @@ mod tests {
 
         let test_data_dir = test_data_dir();
         let send_tx_sync: TransactionReceipt =
-            parse_mock(&format!("{test_data_dir}/2_send_tx_sync.json")).unwrap();
+            parse_mock(&format!("{test_data_dir}/3_send_tx_sync.json")).unwrap();
 
         let result = inner_sender
             .get_revert_reason(&send_tx_sync)
@@ -603,7 +603,7 @@ mod tests {
                 ProviderBuilder::new()
                     .disable_recommended_fillers()
                     .connect_mocked_client(asserter.clone()),
-                Identity,
+                MockFiller {},
             ),
             Address::default(),
         );
@@ -657,7 +657,7 @@ mod tests {
                 ProviderBuilder::new()
                     .disable_recommended_fillers()
                     .connect_mocked_client(asserter.clone()),
-                Identity,
+                MockFiller {},
             ),
             Address::default(),
         );
@@ -761,5 +761,67 @@ mod tests {
 
     fn test_data_dir() -> String {
         format!("{}/tests/data/tx_out_of_gas", env!("CARGO_MANIFEST_DIR"))
+    }
+
+    /// A filler that mocks gas estimation and signing of the transactions
+    #[derive(Clone, Debug)]
+    struct MockFiller;
+
+    impl TxFiller<Ethereum> for MockFiller {
+        type Fillable = ();
+
+        fn status(&self, tx: &<Ethereum as Network>::TransactionRequest) -> FillerControlFlow {
+            if tx.from().is_none() {
+                return FillerControlFlow::Ready;
+            }
+
+            match tx.complete_preferred() {
+                Ok(_) => FillerControlFlow::Ready,
+                Err(e) => FillerControlFlow::Missing(vec![("Wallet", e)]),
+            }
+        }
+
+        fn fill_sync(&self, _tx: &mut SendableTx<Ethereum>) {}
+
+        async fn prepare<P>(
+            &self,
+            _provider: &P,
+            _tx: &<Ethereum as Network>::TransactionRequest,
+        ) -> TransportResult<Self::Fillable>
+        where
+            P: Provider<Ethereum>,
+        {
+            Ok(())
+        }
+
+        async fn fill(
+            &self,
+            _fillable: Self::Fillable,
+            tx: SendableTx<Ethereum>,
+        ) -> TransportResult<SendableTx<Ethereum>> {
+            let mut builder = match tx {
+                SendableTx::Builder(builder) => builder,
+                _ => return Ok(tx),
+            };
+
+            let chain_id = 54321;
+            let wallet = KmsWallet::from_private_key_str(
+                "0x3f45b129a7fd099146e9fe63851a71646231f7743c712695f3b2d2bf0e41c774",
+                Some(chain_id),
+            )
+            .unwrap()
+            .into_wallet();
+            builder.set_gas_limit(21000);
+            builder.set_max_fee_per_gas(10);
+            builder.set_max_priority_fee_per_gas(10);
+            builder.set_chain_id(chain_id);
+            builder.set_nonce(0);
+            let envelope = builder
+                .build(&wallet)
+                .await
+                .map_err(RpcError::local_usage)?;
+
+            Ok(SendableTx::Envelope(envelope))
+        }
     }
 }

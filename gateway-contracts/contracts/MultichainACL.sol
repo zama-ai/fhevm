@@ -44,38 +44,23 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     /// @custom:storage-location erc7201:fhevm_gateway.storage.MultichainACL
     struct MultichainACLStorage {
         // ----------------------------------------------------------------------------------------------
-        // Common consensus state variables:
+        // Common state variables:
         // ----------------------------------------------------------------------------------------------
-        /// @notice The coprocessor transaction senders involved in a consensus for allowing a public decryption.
-        mapping(bytes32 ctHandle => address[] coprocessorTxSenderAddresses) allowPublicDecryptConsensusTxSenders;
-        // prettier-ignore
-        /// @notice The coprocessor transaction senders involved in a consensus for allowing an account.
-        mapping(bytes32 ctHandle => mapping(address accountAddress =>
-            address[] coprocessorTxSenderAddresses))
-               allowAccountConsensusTxSenders;
-        // ----------------------------------------------------------------------------------------------
-        // Allow account state variables:
-        // ----------------------------------------------------------------------------------------------
-        /// @notice Accounts allowed to use the ciphertext handle.
-        mapping(bytes32 ctHandle => mapping(address accountAddress => bool isAllowed)) allowedAccounts;
-        /// @notice The counter used for the allowAccount consensus.
-        mapping(bytes32 ctHandle => mapping(address accountAddress => uint256 counter)) allowAccountCounters;
-        // prettier-ignore
-        /// @notice The coprocessors that have already allowed an account to use the ciphertext handle.
-        mapping(bytes32 ctHandle => mapping(address accountAddress =>
-            mapping(address coprocessorTxSenderAddress => bool hasAllowed)))
-                allowAccountCoprocessors;
-        // ----------------------------------------------------------------------------------------------
-        // Allow public decryption state variables:
-        // ----------------------------------------------------------------------------------------------
+        /// @notice The coprocessors that have already made an allow call.
+        mapping(bytes32 allowHash => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) allowCoprocessors;
+        /// @notice The counter used for an allow consensus.
+        mapping(bytes32 allowHash => uint256 counter) allowCounters;
+        /// @notice The coprocessor transaction senders involved in a consensus for an allow call.
+        mapping(bytes32 allowHash => address[] coprocessorTxSenderAddresses) allowConsensusTxSenders;
         /// @notice Allowed public decryptions.
-        mapping(bytes32 ctHandle => bool isAllowed) allowedPublicDecrypts;
-        /// @notice The counter used for the public decryption consensus.
-        mapping(bytes32 ctHandle => uint256 counter) allowPublicDecryptCounters;
-        // prettier-ignore
-        /// @notice The coprocessors that have already allowed a public decryption.
-        mapping(bytes32 ctHandle => mapping(address coprocessorTxSenderAddress => bool hasAllowed)) 
-            allowPublicDecryptCoprocessors;
+        mapping(bytes32 allowHash => bool isAllowed) isAllowed;
+        /// @notice The coprocessor transaction senders involved in a consensus for delegating an account.
+        mapping(bytes32 delegateAccountHash => address[] coprocessorTxSenderAddresses) delegateAccountConsensusTxSenders;
+        // ----------------------------------------------------------------------------------------------
+        // Coprocessor context state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The context ID for the allow consensus.
+        mapping(bytes32 allowHash => uint256 contextId) allowContextId;
     }
 
     /**
@@ -115,24 +100,30 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
+        // Associate the ctHandle to coprocessor context ID 1 to anticipate their introduction in V2.
+        // Only set the context ID if it hasn't been set yet to avoid multiple identical SSTOREs.
+        if ($.allowContextId[ctHandle] == 0) {
+            $.allowContextId[ctHandle] = 1;
+        }
+
         // Check if the coprocessor has already allowed the ciphertext handle for public decryption.
         // A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
         // the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
-        if ($.allowPublicDecryptCoprocessors[ctHandle][msg.sender]) {
+        if ($.allowCoprocessors[ctHandle][msg.sender]) {
             revert CoprocessorAlreadyAllowedPublicDecrypt(ctHandle, msg.sender);
         }
-        $.allowPublicDecryptCounters[ctHandle]++;
-        $.allowPublicDecryptCoprocessors[ctHandle][msg.sender] = true;
+        $.allowCounters[ctHandle]++;
+        $.allowCoprocessors[ctHandle][msg.sender] = true;
 
         // Store the coprocessor transaction sender address for the public decryption response
         // It is important to consider the same mapping fields used for the consensus
         // A "late" valid coprocessor transaction sender address will still be added in the list.
-        $.allowPublicDecryptConsensusTxSenders[ctHandle].push(msg.sender);
+        $.allowConsensusTxSenders[ctHandle].push(msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (!$.allowedPublicDecrypts[ctHandle] && _isConsensusReached($.allowPublicDecryptCounters[ctHandle])) {
-            $.allowedPublicDecrypts[ctHandle] = true;
+        if (!$.isAllowed[ctHandle] && _isConsensusReached($.allowCounters[ctHandle])) {
+            $.isAllowed[ctHandle] = true;
             emit AllowPublicDecrypt(ctHandle);
         }
     }
@@ -147,27 +138,33 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     ) external virtual onlyCoprocessorTxSender onlyHandleFromRegisteredHostChain(ctHandle) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
+        // Compute the hash of the allow call, unique across all types of allow calls.
+        bytes32 allowHash = _getAllowAccountHash(ctHandle, accountAddress);
+
+        // Associate the allowHash to coprocessor context ID 1 to anticipate their introduction in V2.
+        // Only set the context ID if it hasn't been set yet to avoid multiple identical SSTOREs.
+        if ($.allowContextId[allowHash] == 0) {
+            $.allowContextId[allowHash] = 1;
+        }
+
         // Check if the coprocessor has already allowed the account to use the ciphertext handle.
         // A Coprocessor can only allow once for a given ctHandle, so it's not possible for it to allow
         // the same ctHandle for different host chains, hence the chain ID is not included in the mapping.
-        if ($.allowAccountCoprocessors[ctHandle][accountAddress][msg.sender]) {
+        if ($.allowCoprocessors[allowHash][msg.sender]) {
             revert CoprocessorAlreadyAllowedAccount(ctHandle, accountAddress, msg.sender);
         }
-        $.allowAccountCounters[ctHandle][accountAddress]++;
-        $.allowAccountCoprocessors[ctHandle][accountAddress][msg.sender] = true;
+        $.allowCounters[allowHash]++;
+        $.allowCoprocessors[allowHash][msg.sender] = true;
 
         // Store the coprocessor transaction sender address for the allow account response
         // It is important to consider the same mapping fields used for the consensus
         // A "late" valid coprocessor transaction sender address will still be added in the list.
-        $.allowAccountConsensusTxSenders[ctHandle][accountAddress].push(msg.sender);
+        $.allowConsensusTxSenders[allowHash].push(msg.sender);
 
         // Send the event if and only if the consensus is reached in the current response call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted
-        if (
-            !$.allowedAccounts[ctHandle][accountAddress] &&
-            _isConsensusReached($.allowAccountCounters[ctHandle][accountAddress])
-        ) {
-            $.allowedAccounts[ctHandle][accountAddress] = true;
+        if (!$.isAllowed[allowHash] && _isConsensusReached($.allowCounters[allowHash])) {
+            $.isAllowed[allowHash] = true;
             emit AllowAccount(ctHandle, accountAddress);
         }
     }
@@ -177,7 +174,8 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
      */
     function isPublicDecryptAllowed(bytes32 ctHandle) external view virtual returns (bool) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
-        return $.allowedPublicDecrypts[ctHandle];
+
+        return $.isAllowed[ctHandle];
     }
 
     /**
@@ -185,7 +183,9 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
      */
     function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view virtual returns (bool) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
-        return $.allowedAccounts[ctHandle][accountAddress];
+
+        bytes32 allowHash = _getAllowAccountHash(ctHandle, accountAddress);
+        return $.isAllowed[allowHash];
     }
 
     /**
@@ -196,7 +196,7 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     ) external view virtual returns (address[] memory) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        return $.allowPublicDecryptConsensusTxSenders[ctHandle];
+        return $.allowConsensusTxSenders[ctHandle];
     }
 
     /**
@@ -208,7 +208,8 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     ) external view virtual returns (address[] memory) {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
 
-        return $.allowAccountConsensusTxSenders[ctHandle][accountAddress];
+        bytes32 allowHash = _getAllowAccountHash(ctHandle, accountAddress);
+        return $.allowConsensusTxSenders[allowHash];
     }
 
     /**
@@ -243,6 +244,13 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
     function _isConsensusReached(uint256 coprocessorCounter) internal view virtual returns (bool) {
         uint256 consensusThreshold = GATEWAY_CONFIG.getCoprocessorMajorityThreshold();
         return coprocessorCounter >= consensusThreshold;
+    }
+
+    /**
+     * @notice Returns the hash of a allow account call.
+     */
+    function _getAllowAccountHash(bytes32 ctHandle, address accountAddress) internal pure virtual returns (bytes32) {
+        return keccak256(abi.encode(ctHandle, accountAddress));
     }
 
     /**

@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use actix_web::{HttpResponse, http::StatusCode};
 use anyhow::anyhow;
 use opentelemetry::{
@@ -10,6 +8,7 @@ use opentelemetry::{
 use opentelemetry_otlp::SpanExporter;
 use opentelemetry_sdk::{Resource, propagation::TraceContextPropagator, trace::SdkTracerProvider};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use tracing::Dispatch;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
@@ -102,5 +101,19 @@ impl Extractor for PropagationContext {
 
     fn keys(&self) -> Vec<&str> {
         self.0.keys().map(|k| k.as_ref()).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    // Test that the default value for otlp_context inserted in database corresponds to an empty
+    // `PropagationContext`.
+    fn test_propagation_context() {
+        let context: PropagationContext =
+            bc2wrap::deserialize(&alloy::hex::decode("0000000000000000").unwrap()).unwrap();
+        assert_eq!(context, PropagationContext::empty());
     }
 }

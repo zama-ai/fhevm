@@ -6326,6 +6326,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "prometheus",
  "rayon",
  "tfhe",
  "tokio",
