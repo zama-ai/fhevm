@@ -213,10 +213,10 @@ jobs:
             
             console.log(`📋 Parsed built images:`, builtImages);
 
-            // Initialize the 7 inputs that match test-suite-e2e-tests.yml exactly
+            // Initialize the 7 inputs that match test-suite-e2e-tests-mq.yml exactly
             const inputs = {};
             
-            // Map built images to the exact 7-input structure from test-suite-e2e-tests.yml
+            // Map built images to the exact 7-input structure from test-suite-e2e-tests-mq.yml
             const componentMapping = {
               'db_migration_version': { type: 'coprocessor', index: 0 },
               'gateway_listener_version': { type: 'coprocessor', index: 1 },  
@@ -352,7 +352,7 @@ jobs:
               await github.rest.actions.createWorkflowDispatch({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
-                workflow_id: 'test-suite-e2e-tests.yml',
+                workflow_id: 'test-suite-e2e-tests-mq.yml',
                 ref: ref,
                 inputs: inputs
               });
