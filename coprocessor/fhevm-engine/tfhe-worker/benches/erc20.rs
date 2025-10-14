@@ -16,7 +16,7 @@ use tfhe_worker::server::tfhe_worker::{
     fhevm_coprocessor_client::FhevmCoprocessorClient, AsyncComputation, AsyncComputeRequest,
     InputToUpload, InputUploadBatch,
 };
-#[cfg(feature = "bench")]
+
 use tfhe_worker::tfhe_worker::TIMING;
 use tokio::runtime::Runtime;
 use tonic::metadata::MetadataValue;
