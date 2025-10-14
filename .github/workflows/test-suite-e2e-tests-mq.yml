@@ -95,27 +95,6 @@ jobs:
           username: ${{ secrets.CGR_USERNAME }}
           password: ${{ secrets.CGR_PASSWORD }}
 
-      - name: Set version from release
-        if: github.event_name == 'release'
-        run: |
-          {
-            echo "CONNECTOR_DB_MIGRATION_VERSION=${GH_REF_NAME}"
-            echo "CONNECTOR_GW_LISTENER_VERSION=${GH_REF_NAME}"
-            echo "CONNECTOR_KMS_WORKER_VERSION=${GH_REF_NAME}"
-            echo "CONNECTOR_TX_SENDER_VERSION=${GH_REF_NAME}"
-            echo "DB_MIGRATION_VERSION=${GH_REF_NAME}"
-            echo "GATEWAY_VERSION=${GH_REF_NAME}"
-            echo "HOST_VERSION=${GH_REF_NAME}"
-            echo "HOST_LISTENER_VERSION=${GH_REF_NAME}"
-            echo "GW_LISTENER_VERSION=${GH_REF_NAME}"
-            echo "TX_SENDER_VERSION=${GH_REF_NAME}"
-            echo "TFHE_WORKER_VERSION=${GH_REF_NAME}"
-            echo "SNS_WORKER_VERSION=${GH_REF_NAME}"
-            echo "ZKPROOF_WORKER_VERSION=${GH_REF_NAME}"
-          } >> "$GITHUB_ENV"
-        env:
-          GH_REF_NAME: ${{ github.ref_name }}
-
       - name: Parse component versions
         id: parse-versions
         run: |
@@ -206,22 +185,10 @@ jobs:
           CONNECTOR_GW_LISTENER_VERSION: ${{ env.CONNECTOR_GW_LISTENER_VERSION_OVERRIDE || env.CONNECTOR_GW_LISTENER_VERSION }}
           CONNECTOR_TX_SENDER_VERSION: ${{ env.CONNECTOR_TX_SENDER_VERSION_OVERRIDE || env.CONNECTOR_TX_SENDER_VERSION }}
           CONNECTOR_KMS_WORKER_VERSION: ${{ env.CONNECTOR_KMS_WORKER_VERSION_OVERRIDE || env.CONNECTOR_KMS_WORKER_VERSION }}
+
+          # Test suite component
+          TEST_SUITE_VERSION: ${{ env.TEST_SUITE_VERSION_OVERRIDE || env.TEST_SUITE_VERSION }}
         run: |
-          echo "🚀 Deploying fhevm stack with versions:"
-          echo "  Coprocessor DB Migration: ${DB_MIGRATION_VERSION:-default}"
-          echo "  Coprocessor GW Listener: ${GW_LISTENER_VERSION:-default}"
-          echo "  Coprocessor Host Listener: ${HOST_LISTENER_VERSION:-default}"
-          echo "  Coprocessor TX Sender: ${TX_SENDER_VERSION:-default}"
-          echo "  Coprocessor TFHE Worker: ${TFHE_WORKER_VERSION:-default}"
-          echo "  Coprocessor SNS Worker: ${SNS_WORKER_VERSION:-default}"
-          echo "  Coprocessor ZKProof Worker: ${ZKPROOF_WORKER_VERSION:-default}"
-          echo "  Gateway: ${GATEWAY_VERSION:-default}"
-          echo "  Host: ${HOST_VERSION:-default}"
-          echo "  Connector DB Migration: ${CONNECTOR_DB_MIGRATION_VERSION:-default}"
-          echo "  Connector GW Listener: ${CONNECTOR_GW_LISTENER_VERSION:-default}"
-          echo "  Connector TX Sender: ${CONNECTOR_TX_SENDER_VERSION:-default}"
-          echo "  Connector KMS Worker: ${CONNECTOR_KMS_WORKER_VERSION:-default}"
-          
           ./fhevm-cli deploy
 
       - name: Input proof test (uint64)
