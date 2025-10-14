@@ -1,6 +1,6 @@
 use crate::{
     executor::{garbage_collect, query_sns_tasks, Order},
-    keyset::fetch_keys,
+    keyset::fetch_client_key,
     squash_noise::safe_deserialize,
     Config, DBConfig, S3Config, S3RetryPolicy, SchedulePolicy,
 };
@@ -25,7 +25,7 @@ use test_harness::{
 use tfhe::{
     prelude::FheDecrypt, ClientKey, CompressedSquashedNoiseCiphertextList, SquashedNoiseFheUint,
 };
-use tokio::time::sleep;
+use tokio::{sync::mpsc, time::timeout};
 use tracing::{info, Level};
 
 const LISTEN_CHANNEL: &str = "sns_worker_chan";
@@ -40,7 +40,7 @@ pub fn init_tracing() {
 }
 
 #[tokio::test]
-#[ignore = "requires valid SnS keys in CI"]
+#[ignore = "disabled in CI"]
 async fn test_fhe_ciphertext128_with_compression() {
     const WITH_COMPRESSION: bool = true;
     let test_env = setup(WITH_COMPRESSION).await.expect("valid setup");
@@ -69,6 +69,10 @@ async fn test_fhe_ciphertext128_with_compression() {
     .expect("test_fhe_ciphertext128_with_compression, first_fhe_computation = false");
 }
 
+/// Tests batch execution of SnS computations with compression.
+/// Inserts a batch of identical ciphertext64 entries with unique handles,
+/// triggers the SNS worker to convert them, and verifies that all resulting
+/// ciphertext128 entries are correctly computed and uploaded to S3.
 #[tokio::test]
 #[serial(db)]
 async fn test_batch_execution() {
@@ -96,7 +100,7 @@ async fn test_batch_execution() {
 }
 
 #[tokio::test]
-#[ignore = "requires valid SnS keys in CI"]
+#[ignore = "disabled in CI"]
 async fn test_fhe_ciphertext128_no_compression() {
     const NO_COMPRESSION: bool = false;
     let test_env = setup(NO_COMPRESSION).await.expect("valid setup");
@@ -167,6 +171,8 @@ async fn run_batch_computations(
     assert_ciphertext_s3_object_count(test_env, bucket128, 0i64).await;
     assert_ciphertext_s3_object_count(test_env, bucket64, 0i64).await;
 
+    info!(batch_size, "Inserting ciphertexts ...");
+
     let mut handles = Vec::new();
     let tenant_id = get_tenant_id_from_db(pool, TENANT_API_KEY).await;
     for i in 0..batch_size {
@@ -182,12 +188,16 @@ async fn run_batch_computations(
         handles.push(handle);
     }
 
+    info!(batch_size, "Inserted batch");
+
     // Send notification only after the batch was fully inserted
     // NB. Use db transaction instead
     sqlx::query("SELECT pg_notify($1, '')")
         .bind(LISTEN_CHANNEL)
         .execute(pool)
         .await?;
+
+    info!("Sent pg_notify to SnS worker");
 
     let start = std::time::Instant::now();
     let mut set = tokio::task::JoinSet::new();
@@ -211,7 +221,7 @@ async fn run_batch_computations(
     }
 
     let elapsed = start.elapsed();
-    info!("Batch execution took: {:?}, batch: {}", elapsed, batch_size);
+    info!(elapsed = ?elapsed, batch_size, "Batch execution completed");
 
     // Assert that all ciphertext128 objects are uploaded to S3
     assert_ciphertext_s3_object_count(test_env, bucket128, batch_size as i64).await;
@@ -426,18 +436,23 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
 
     let token = db_instance.parent_token.child_token();
     let config: Config = conf.clone();
-    let Some((client_key, _)) = fetch_keys(&pool, &TENANT_API_KEY.to_owned()).await? else {
-        panic!("Client key should be available in the test database");
-    };
 
+    let client_key: Option<ClientKey> = fetch_client_key(&pool, &TENANT_API_KEY.to_owned()).await?;
+
+    let (events_tx, mut events_rx) = mpsc::channel::<&'static str>(10);
     tokio::spawn(async move {
-        crate::run_all(config, token)
+        crate::run_all(config, token, Some(events_tx))
             .await
             .expect("valid worker run");
     });
 
-    // TODO: Replace this with notification from the worker when it's in ready-state
-    sleep(Duration::from_secs(5)).await;
+    // Wait until the keys are loaded with timeout of 1 min
+    let load_keys = timeout(Duration::from_secs(60), events_rx.recv()).await;
+    if let Result::Ok(Some(event)) = load_keys {
+        info!(event = %event, "Proceeding with tests");
+    } else {
+        return Err(anyhow!("Timeout waiting for keys to be loaded"));
+    }
 
     Ok(TestEnvironment {
         pool,
@@ -457,7 +472,7 @@ async fn setup_localstack(
     conf: &Config,
 ) -> anyhow::Result<(Option<Arc<LocalstackContainer>>, aws_sdk_s3::Client)> {
     let (localstack, host_port) =
-        if std::env::var("TXN_SENDER_TEST_GLOBAL_LOCALSTACK").unwrap_or("0".to_string()) == "1" {
+        if std::env::var("TEST_GLOBAL_LOCALSTACK").unwrap_or("0".to_string()) == "1" {
             (None, LOCALSTACK_PORT)
         } else {
             let localstack_instance = Arc::new(test_harness::localstack::start_localstack().await?);
@@ -605,7 +620,7 @@ async fn assert_ciphertext128(
 ) -> anyhow::Result<()> {
     let pool = &test_env.pool;
     let client_key = &test_env.client_key;
-    let ct = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 10000).await?;
+    let ct = test_harness::db_utils::wait_for_ciphertext(pool, tenant_id, handle, 100).await?;
 
     info!("Ciphertext len: {:?}", ct.len());
 
@@ -679,7 +694,7 @@ async fn assert_ciphertext_uploaded(
         bucket,
         &hex::encode(handle),
         expected_ct_len,
-        1000,
+        100,
     )
     .await;
 }
