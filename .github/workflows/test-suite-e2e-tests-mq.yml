@@ -179,6 +179,8 @@ jobs:
           kms_core_input='${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && inputs.kms-core || '' }}'
           [[ -n "${kms_core_input}" ]] && echo "KMS_CORE_VERSION_OVERRIDE=${kms_core_input}" >> "$GITHUB_ENV"
           
+
+          echo "Component versions: gateway:${gateway_input}, host:${host_input}, coprocessor:${coprocessor_input}, connector:${connector_input}, test-suite:${test_suite_input}, relayer:${relayer_input}, kms-core:${kms_core_input}"
           echo "✅ Component versions parsed successfully"
 
       - name: Deploy fhevm Stack
