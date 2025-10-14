@@ -190,7 +190,7 @@ contract ACLTest is Test {
         ACL.Delegation memory delegation;
         uint64 expiryDate = uint64(block.timestamp) + 7 hours;
         uint64 oldExpiryDate = delegation.expiryDate;
-        uint64 newExpiryDate = uint64(block.timestamp) + expiryDate;
+        uint64 newExpiryDate = expiryDate;
         uint64 delegationCounter = delegation.delegationCounter++;
 
         vm.prank(sender);
@@ -343,7 +343,7 @@ contract ACLTest is Test {
         ACL.Delegation memory delegation;
         uint64 expiryDate = uint64(block.timestamp) + 7 hours;
         uint64 oldExpiryDate = delegation.expiryDate;
-        uint64 newExpiryDate = uint64(block.timestamp) + expiryDate;
+        uint64 newExpiryDate = expiryDate;
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
@@ -371,7 +371,7 @@ contract ACLTest is Test {
         vm.assume(delegate != contractAddress);
 
         uint64 expiryDate = uint64(block.timestamp) + 7 hours;
-        uint64 oldExpiryDate = uint64(block.timestamp) + expiryDate;
+        uint64 oldExpiryDate = expiryDate;
 
         /// @dev Delegate the account first.
         vm.prank(sender);

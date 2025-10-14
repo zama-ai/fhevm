@@ -263,7 +263,7 @@ contract ACL is
             revert DelegateCannotBeContractAddress(contractAddress);
         }
 
-        uint64 newExpiryDate = uint64(block.timestamp) + expiryDate;
+        uint64 newExpiryDate = expiryDate;
         uint64 oldExpiryDate = delegation.expiryDate;
         if (oldExpiryDate == newExpiryDate) {
             revert ExpiryDateAlreadySetToSameValue(msg.sender, delegate, contractAddress, oldExpiryDate);
