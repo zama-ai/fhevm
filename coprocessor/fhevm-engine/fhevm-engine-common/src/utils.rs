@@ -5,6 +5,10 @@ use std::time::Duration;
 use serde::{de::DeserializeOwned, Serialize};
 use tfhe::{named::Named, prelude::ParameterSetConformant, Unversionize, Versionize};
 
+use sqlx::postgres::PgConnectOptions;
+use std::fmt;
+use std::str::FromStr;
+
 use crate::types::FhevmError;
 
 pub const SAFE_SER_DESER_LIMIT: u64 = 1024 * 1024 * 16;
@@ -108,5 +112,79 @@ impl HeartBeat {
 impl Default for HeartBeat {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[derive(Clone)]
+pub struct DatabaseURL(String);
+
+impl From<&str> for DatabaseURL {
+    fn from(s: &str) -> Self {
+        Self(s.to_owned())
+    }
+}
+impl From<String> for DatabaseURL {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl Default for DatabaseURL {
+    fn default() -> Self {
+        std::env::var("DATABASE_URL")
+            .unwrap_or("postgres://postgres:postgres@localhost:5432/coprocessor".to_owned())
+            .into()
+    }
+}
+
+impl DatabaseURL {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn into_inner(self) -> String {
+        self.0
+    }
+
+    fn mask_password(options: &PgConnectOptions) -> String {
+        let new_url = format!(
+            "postgres://{}:{}@{}:{}/{}",
+            options.get_username(),
+            "*****",
+            options.get_host(),
+            options.get_port(),
+            options.get_database().unwrap_or_default()
+        );
+        new_url
+    }
+}
+
+impl fmt::Display for DatabaseURL {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match PgConnectOptions::from_str(self.as_str()) {
+            Ok(options) => {
+                write!(f, "{:?}", Self::mask_password(&options))
+            }
+            Err(_) => write!(f, "Invalid DatabaseURL"),
+        }
+    }
+}
+
+impl fmt::Debug for DatabaseURL {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match PgConnectOptions::from_str(self.as_str()) {
+            Ok(options) => {
+                write!(f, "{:?}", options.password("*****"))
+            }
+            Err(_) => write!(f, "Invalid DatabaseURL"),
+        }
+    }
+}
+impl FromStr for DatabaseURL {
+    type Err = sqlx::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let _ = PgConnectOptions::from_str(s)?;
+        Ok(Self(s.to_owned()))
     }
 }
