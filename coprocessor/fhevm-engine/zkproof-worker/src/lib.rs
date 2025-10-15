@@ -5,6 +5,7 @@ mod tests;
 
 pub mod verifier;
 use std::{
+    fmt::{self, Display},
     io,
     sync::{LazyLock, OnceLock},
     time::Duration,
@@ -16,7 +17,10 @@ use fhevm_engine_common::{
     types::FhevmError,
 };
 use prometheus::Histogram;
+
+use fhevm_engine_common::{pg_pool::ServiceError, types::FhevmError, utils::DatabaseURL};
 use thiserror::Error;
+use tracing_subscriber::registry::Data;
 
 /// The highest index of an input is 254,
 /// cause 255 (0xff) is reserved for handles originating from the FHE operations
@@ -77,7 +81,7 @@ impl From<ExecutionError> for ServiceError {
 
 #[derive(Default, Debug, Clone)]
 pub struct Config {
-    pub database_url: String,
+    pub database_url: DatabaseURL,
     pub listen_database_channel: String,
     pub notify_database_channel: String,
     pub pg_pool_connections: u32,
@@ -96,3 +100,19 @@ pub static ZKVERIFY_OP_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(||
         "ZK verification latencies in seconds",
     )
 });
+impl Display for Config {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Config {{ database_url: {}, listen_database_channel: {}, notify_database_channel: {}, pg_pool_connections: {}, pg_polling_interval: {}, pg_timeout: {:?}, pg_auto_explain_with_min_duration: {:?}, worker_thread_count: {} }}",
+            self.database_url,
+            self.listen_database_channel,
+            self.notify_database_channel,
+            self.pg_pool_connections,
+            self.pg_polling_interval,
+            self.pg_timeout,
+            self.pg_auto_explain_with_min_duration,
+            self.worker_thread_count
+        )
+    }
+}

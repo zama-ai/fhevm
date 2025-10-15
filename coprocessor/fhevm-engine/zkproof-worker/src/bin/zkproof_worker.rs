@@ -1,7 +1,9 @@
 use clap::{command, Parser};
+use fhevm_engine_common::telemetry;
 use fhevm_engine_common::telemetry::{self, MetricsConfig};
-use fhevm_engine_common::{healthz_server::HttpServer, metrics_server};
+use fhevm_engine_common::{healthz_server::HttpServer, metrics_server, utils::DatabaseURL};
 use humantime::parse_duration;
+use sqlx::Database;
 use std::{sync::Arc, time::Duration};
 use tokio::{join, task};
 use tokio_util::sync::CancellationToken;
@@ -41,7 +43,7 @@ pub struct Args {
     /// Postgres database url. If unspecified DATABASE_URL environment variable
     /// is used
     #[arg(long)]
-    pub database_url: Option<String>,
+    pub database_url: Option<DatabaseURL>,
 
     /// Number of zkproof workers to process proofs in parallel
     #[arg(long, default_value_t = 8)]
@@ -90,10 +92,7 @@ async fn main() {
         .with_max_level(args.log_level)
         .init();
 
-    let database_url = args
-        .database_url
-        .clone()
-        .unwrap_or_else(|| std::env::var("DATABASE_URL").expect("DATABASE_URL is undefined"));
+    let database_url = args.database_url.clone().unwrap_or_default();
 
     let conf = zkproof_worker::Config {
         database_url,
