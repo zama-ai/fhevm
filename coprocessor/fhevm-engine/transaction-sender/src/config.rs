@@ -1,8 +1,10 @@
 use std::time::Duration;
 
+use fhevm_engine_common::utils::DatabaseURL;
+
 #[derive(Clone, Debug)]
 pub struct ConfigSettings {
-    pub database_url: String,
+    pub database_url: DatabaseURL,
     pub database_pool_size: u32,
 
     pub verify_proof_resp_db_channel: String,
@@ -46,8 +48,7 @@ pub struct ConfigSettings {
 impl Default for ConfigSettings {
     fn default() -> Self {
         Self {
-            database_url: std::env::var("DATABASE_URL")
-                .unwrap_or("postgres://postgres:postgres@localhost/coprocessor".to_owned()),
+            database_url: DatabaseURL::default(),
             database_pool_size: 10,
             verify_proof_resp_db_channel: "event_zkpok_computed".to_owned(),
             add_ciphertexts_db_channel: "event_ciphertexts_uploaded".to_owned(),
