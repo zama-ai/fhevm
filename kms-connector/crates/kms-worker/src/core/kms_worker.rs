@@ -11,6 +11,8 @@ use crate::{
     },
     monitoring::health::{KmsHealthClient, State},
 };
+use alloy::transports::http::reqwest;
+use anyhow::anyhow;
 use connector_utils::{
     conn::{GatewayProvider, connect_to_db, connect_to_gateway},
     tasks::spawn_with_limit,
@@ -108,10 +110,14 @@ impl KmsWorker<DbEventPicker, DbEventProcessor<GatewayProvider>, DbKmsResponsePu
         let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
         let kms_client = KmsClient::connect(&config).await?;
         let kms_health_client = KmsHealthClient::connect(&config.kms_core_endpoints).await?;
+        let s3_client = reqwest::Client::builder()
+            .connect_timeout(config.s3_connect_timeout)
+            .build()
+            .map_err(|e| anyhow!("Failed to create HTTP client: {}", e))?;
 
         let event_picker = DbEventPicker::connect(db_pool.clone(), &config).await?;
 
-        let s3_service = S3Service::new(&config, provider.clone());
+        let s3_service = S3Service::new(&config, provider.clone(), s3_client);
         let decryption_processor = DecryptionProcessor::new(&config, s3_service);
         let kms_generation_processor = KMSGenerationProcessor::new(&config);
         let event_processor = DbEventProcessor::new(
