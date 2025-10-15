@@ -565,7 +565,9 @@ impl Database {
                     "unhandled Acl::OwnershipTransferStarted event"
                 );
             }
-            AclContractEvents::RevokedDelegationForUserDecryption(revoked_delegation) => {
+            AclContractEvents::RevokedDelegationForUserDecryption(
+                revoked_delegation,
+            ) => {
                 warn!(
                     event = ?revoked_delegation,
                     "unhandled Acl::RevokedDelegationForUserDecryption event"
