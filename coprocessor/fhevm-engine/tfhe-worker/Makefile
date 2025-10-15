@@ -45,7 +45,7 @@ sync_tfhers_local:
 	rsync -av --progress ../../../../tfhe-rs/ ../../tfhe-rs/ \
 			--delete \
 			--exclude target \
-			--exclude keys \
+			--exclude keys/shortint \
 			--exclude backends/tfhe-cuda-backend/cuda/cmake-build-debug/ \
 			--exclude .git \
 			--exclude tfhe/build/
