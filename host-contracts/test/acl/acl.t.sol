@@ -195,7 +195,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACLEvents.DelegatedAccount(
+        emit ACLEvents.DelegatedForUserDecryption(
             sender,
             delegate,
             contractAddress,
@@ -203,14 +203,14 @@ contract ACLTest is Test {
             oldExpiryDate,
             newExpiryDate
         );
-        acl.delegateAccount(delegate, contractAddress, expiryDate);
-        vm.assertFalse(acl.allowedOnBehalf(delegate, sender, contractAddress, handle));
+        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
+        vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
 
         /// @dev The sender and the delegate contract must be allowed to use the handle before it delegates.
         _allowHandle(handle, sender);
-        vm.assertFalse(acl.allowedOnBehalf(delegate, sender, contractAddress, handle));
+        vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
         _allowHandle(handle, contractAddress);
-        vm.assertTrue(acl.allowedOnBehalf(delegate, sender, contractAddress, handle));
+        vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
     }
 
     /**
@@ -242,7 +242,7 @@ contract ACLTest is Test {
                 block.number
             )
         );
-        acl.delegateAccount(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
     }
 
     /**
@@ -256,7 +256,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectRevert(abi.encodeWithSelector(ACL.DelegateCannotBeContractAddress.selector, delegate));
-        acl.delegateAccount(delegate, delegate, expiryDate);
+        acl.delegateForUserDecryption(delegate, delegate, expiryDate);
     }
 
     /**
@@ -276,7 +276,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectRevert(ACL.ExpiryDateBeforeOneHour.selector);
-        acl.delegateAccount(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
     }
 
     /**
@@ -296,7 +296,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectRevert(ACL.ExpiryDateAfterOneYear.selector);
-        acl.delegateAccount(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
     }
 
     /**
@@ -308,7 +308,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeContractAddress.selector, sender));
-        acl.delegateAccount(delegate, sender, expiryDate);
+        acl.delegateForUserDecryption(delegate, sender, expiryDate);
     }
 
     /**
@@ -321,7 +321,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeDelegate.selector, sender));
-        acl.delegateAccount(sender, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(sender, contractAddress, expiryDate);
     }
 
     /**
@@ -347,7 +347,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACLEvents.DelegatedAccount(
+        emit ACLEvents.DelegatedForUserDecryption(
             sender,
             delegate,
             contractAddress,
@@ -356,9 +356,9 @@ contract ACLTest is Test {
             newExpiryDate
         );
 
-        acl.delegateAccount(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
 
-        vm.assertFalse(acl.allowedOnBehalf(delegate, sender, contractAddress, handle));
+        vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
     }
 
     /**
@@ -375,7 +375,7 @@ contract ACLTest is Test {
 
         /// @dev Delegate the account first.
         vm.prank(sender);
-        acl.delegateAccount(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
 
         // After delegation above, the counter should be 1.
         uint64 delegationCounter = 1;
@@ -385,8 +385,14 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
-        emit ACLEvents.RevokedDelegation(sender, delegate, contractAddress, delegationCounter, oldExpiryDate);
-        acl.revokeDelegation(delegate, contractAddress);
+        emit ACLEvents.RevokedDelegationForUserDecryption(
+            sender,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            oldExpiryDate
+        );
+        acl.revokeDelegationForUserDecryption(delegate, contractAddress);
     }
 
     /**
@@ -402,7 +408,7 @@ contract ACLTest is Test {
 
         vm.prank(sender);
         vm.expectRevert(abi.encodeWithSelector(ACL.NotDelegatedYet.selector, sender, delegate, contractAddress));
-        acl.revokeDelegation(delegate, contractAddress);
+        acl.revokeDelegationForUserDecryption(delegate, contractAddress);
     }
 
     /**
@@ -571,14 +577,14 @@ contract ACLTest is Test {
         uint64 expiryDate = uint64(block.timestamp) + 7 hours;
 
         vm.prank(sender);
-        acl.delegateAccount(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
 
         vm.prank(pauser);
         acl.pause();
 
         vm.prank(sender);
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
-        acl.delegateAccount(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
     }
 
     /**
@@ -593,14 +599,14 @@ contract ACLTest is Test {
         uint64 expiryDate = uint64(block.timestamp) + 7 hours;
 
         vm.prank(sender);
-        acl.delegateAccount(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
 
         vm.prank(pauser);
         acl.pause();
 
         vm.prank(sender);
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
-        acl.revokeDelegation(delegate, contractAddress);
+        acl.revokeDelegationForUserDecryption(delegate, contractAddress);
     }
 
     /**
