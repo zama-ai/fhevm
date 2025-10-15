@@ -224,13 +224,13 @@ contract ACL is
     }
 
     /**
-     * @notice Delegates the access of handles, for instance, in the context of account
-     *  abstraction for issuing user decryption requests from a smart contract account.
+     * @notice Delegates an account the access to handles for user decryption, for instance, in the context of account
+     * abstraction for issuing user decryption requests from a smart contract account.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
      * @param expiryDate Expiry date in seconds, between 1 hour and 1 year in the future.
      */
-    function delegateAccount(
+    function delegateForUserDecryption(
         address delegate,
         address contractAddress,
         uint64 expiryDate
@@ -272,7 +272,7 @@ contract ACL is
         // Set the delegation expiry date.
         delegation.expiryDate = newExpiryDate;
 
-        emit DelegatedAccount(
+        emit DelegatedForUserDecryption(
             msg.sender,
             delegate,
             contractAddress,
@@ -283,11 +283,11 @@ contract ACL is
     }
 
     /**
-     * @notice Revokes delegated access to handles.
+     * @notice Revokes the access to handles for user decryption delegated to an account.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
      */
-    function revokeDelegation(address delegate, address contractAddress) public virtual whenNotPaused {
+    function revokeDelegationForUserDecryption(address delegate, address contractAddress) public virtual whenNotPaused {
         ACLStorage storage $ = _getACLStorage();
         Delegation storage delegation = $.delegations[msg.sender][delegate][contractAddress];
         uint256 blockNumber = block.number;
@@ -307,7 +307,13 @@ contract ACL is
         // Reset the delegation expiry date.
         delegation.expiryDate = 0;
 
-        emit RevokedDelegation(msg.sender, delegate, contractAddress, delegation.delegationCounter++, oldExpiryDate);
+        emit RevokedDelegationForUserDecryption(
+            msg.sender,
+            delegate,
+            contractAddress,
+            delegation.delegationCounter++,
+            oldExpiryDate
+        );
     }
 
     /**
@@ -332,43 +338,20 @@ contract ACL is
     }
 
     /**
-     * @notice Returns whether the delegate is allowed to access the handle via delegated user decryption.
-     * @param delegate The address of the account that receives the delegation.
-     * @param delegator The address of the account that delegates access to its handles.
-     * @param handle Handle.
-     * @param contractAddress The contract address to delegate access to.
-     * @return isAllowed Whether the handle can be accessed.
-     */
-    function allowedOnBehalf(
-        address delegate,
-        address delegator,
-        address contractAddress,
-        bytes32 handle
-    ) public view virtual returns (bool) {
-        ACLStorage storage $ = _getACLStorage();
-        Delegation storage delegation = $.delegations[delegator][delegate][contractAddress];
-        return
-            $.persistedAllowedPairs[handle][delegator] &&
-            $.persistedAllowedPairs[handle][contractAddress] &&
-            delegation.expiryDate >= block.timestamp;
-    }
-
-    /**
-     * @notice Get the delegation expiry date.
+     * @notice Get the expiry date of a delegation for user decryption.
      * @param delegate The address of the account that receives the delegation.
      * @param delegator The address of the account that delegates access to its handles.
      * @param contractAddress The contract address to delegate access to.
      * @return expiryDate the expiryDate (0 means delegation is inactive).
      */
-    function getDelegationExpiryDate(
+    function getUserDecryptionDelegationExpiryDate(
         address delegate,
         address delegator,
         address contractAddress
     ) public view virtual returns (uint64) {
         ACLStorage storage $ = _getACLStorage();
         Delegation storage delegation = $.delegations[delegator][delegate][contractAddress];
-        uint64 expiryDate = delegation.expiryDate;
-        return expiryDate;
+        return delegation.expiryDate;
     }
 
     /**
@@ -422,6 +405,28 @@ contract ACL is
     function isAllowedForDecryption(bytes32 handle) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
         return $.allowedForDecryption[handle];
+    }
+
+    /**
+     * @notice Returns whether an account is delegated to access the handle for user decryption.
+     * @param delegate The address of the account that receives the delegation.
+     * @param delegator The address of the account that delegates access to its handles.
+     * @param handle The handle to check for delegated user decryption.
+     * @param contractAddress The contract address to delegate access to.
+     * @return isDelegatedForUserDecryption Whether the handle can be accessed for delegated user decryption.
+     */
+    function isHandleDelegatedForUserDecryption(
+        address delegator,
+        address delegate,
+        address contractAddress,
+        bytes32 handle
+    ) public view virtual returns (bool) {
+        ACLStorage storage $ = _getACLStorage();
+        Delegation storage delegation = $.delegations[delegator][delegate][contractAddress];
+        return
+            $.persistedAllowedPairs[handle][delegator] &&
+            $.persistedAllowedPairs[handle][contractAddress] &&
+            delegation.expiryDate >= block.timestamp;
     }
 
     /**
