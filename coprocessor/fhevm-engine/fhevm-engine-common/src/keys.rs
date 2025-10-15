@@ -32,7 +32,7 @@ pub const TFHE_NOISE_SQUASHING_PARAMS: MetaNoiseSquashingParameters = cpu_meta_p
     .noise_squashing_parameters
     .expect("Missing noise squashing parameters");
 pub const TFHE_PKS_RERANDOMIZATION_PARAMS: ShortintKeySwitchingParameters = cpu_meta_parameters
-    .re_randomization_parameters
+    .dedicated_compact_public_key_parameters.unwrap().re_randomization_parameters
     .expect("Missing rerandomisation parameters");
 
 #[cfg(feature = "gpu")]
