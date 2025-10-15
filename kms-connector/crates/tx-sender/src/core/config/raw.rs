@@ -20,7 +20,7 @@ pub struct RawConfig {
     pub gateway_url: String,
     pub chain_id: u64,
     pub decryption_contract: RawContractConfig,
-    pub kms_management_contract: RawContractConfig,
+    pub kms_generation_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
     pub private_key: Option<String>,
@@ -29,6 +29,8 @@ pub struct RawConfig {
     pub tx_retries: u8,
     #[serde(default = "default_tx_retry_interval_ms")]
     pub tx_retry_interval_ms: u64,
+    #[serde(default = "default_trace_reverted_tx")]
+    pub trace_reverted_tx: bool,
     #[serde(default = "default_responses_batch_size")]
     pub responses_batch_size: u8,
     #[serde(default = "default_gas_multiplier_percent")]
@@ -50,19 +52,23 @@ fn default_database_polling_timeout_secs() -> u64 {
 }
 
 fn default_tx_retries() -> u8 {
-    3
+    4
 }
 
 fn default_tx_retry_interval_ms() -> u64 {
-    100
-}
-
-fn default_responses_batch_size() -> u8 {
     10
 }
 
+fn default_trace_reverted_tx() -> bool {
+    true
+}
+
+fn default_responses_batch_size() -> u8 {
+    50
+}
+
 fn default_gas_multiplier_percent() -> usize {
-    130 // 130% gas increase by default
+    115 // 115% gas increase by default
 }
 
 impl DeserializeRawConfig for RawConfig {}
@@ -81,9 +87,9 @@ impl Default for RawConfig {
                 domain_name: Some("Decryption".to_string()),
                 domain_version: Some("1".to_string()),
             },
-            kms_management_contract: RawContractConfig {
+            kms_generation_contract: RawContractConfig {
                 address: "0x0000000000000000000000000000000000000000".to_string(),
-                domain_name: Some("KmsManagement".to_string()),
+                domain_name: Some("KMSGeneration".to_string()),
                 domain_version: Some("1".to_string()),
             },
             service_name: "kms-connector".to_string(),
@@ -93,6 +99,7 @@ impl Default for RawConfig {
             aws_kms_config: None,
             tx_retries: default_tx_retries(),
             tx_retry_interval_ms: default_tx_retry_interval_ms(),
+            trace_reverted_tx: default_trace_reverted_tx(),
             responses_batch_size: default_responses_batch_size(),
             gas_multiplier_percent: default_gas_multiplier_percent(),
             task_limit: default_task_limit(),

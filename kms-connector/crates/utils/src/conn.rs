@@ -5,16 +5,17 @@ use crate::{
 use alloy::{
     network::EthereumWallet,
     providers::{
-        Identity, ProviderBuilder, ProviderLayer, RootProvider, WsConnect,
+        Identity, ProviderBuilder, ProviderLayer, RootProvider,
         fillers::{
             BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, TxFiller,
             WalletFiller,
         },
     },
+    transports::http::reqwest::Url,
 };
 use anyhow::anyhow;
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
-use std::{sync::Once, time::Duration};
+use std::{str::FromStr, sync::Once, time::Duration};
 use tracing::{info, warn};
 
 /// The number of connection retry to connect to the database or the Gateway RPC node.
@@ -51,29 +52,36 @@ type DefaultFillers = JoinFill<
 >;
 
 /// The default `alloy::Provider` used to interact with the Gateway.
-pub type GatewayProvider = FillProvider<DefaultFillers, RootProvider>;
+pub type GatewayProvider = FillProvider<JoinFill<DefaultFillers, ChainIdFiller>, RootProvider>;
 
 /// The default `alloy::Provider` used to interact with the Gateway using a wallet.
-pub type WalletGatewayProvider = NonceManagedProvider<
-    FillProvider<
-        JoinFill<JoinFill<Identity, FillersWithoutNonceManagement>, WalletFiller<EthereumWallet>>,
-        RootProvider,
-    >,
+pub type WalletGatewayProvider = NonceManagedProvider<WalletGatewayProviderFillers, RootProvider>;
+pub type WalletGatewayProviderFillers = JoinFill<
+    JoinFill<JoinFill<Identity, ChainIdFiller>, FillersWithoutNonceManagement>,
+    WalletFiller<EthereumWallet>,
 >;
 
 /// Tries to establish the connection with a RPC node of the Gateway.
-pub async fn connect_to_gateway(gateway_url: &str) -> anyhow::Result<GatewayProvider> {
-    connect_to_gateway_inner(gateway_url, ProviderBuilder::new).await
+pub async fn connect_to_gateway(
+    gateway_url: &str,
+    chain_id: u64,
+) -> anyhow::Result<GatewayProvider> {
+    connect_to_gateway_inner(gateway_url, || {
+        ProviderBuilder::new().with_chain_id(chain_id)
+    })
+    .await
 }
 
 /// Tries to establish the connection with a RPC node of the Gateway, with a `WalletFiller`.
 pub async fn connect_to_gateway_with_wallet(
     gateway_url: &str,
+    chain_id: u64,
     wallet: KmsWallet,
 ) -> anyhow::Result<WalletGatewayProvider> {
     let provider = connect_to_gateway_inner(gateway_url, || {
         ProviderBuilder::new()
             .disable_recommended_fillers()
+            .with_chain_id(chain_id)
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet.clone())
     })
@@ -97,23 +105,11 @@ where
             .unwrap()
     });
 
-    for i in 1..=CONNECTION_RETRY_NUMBER {
-        info!("Attempting connection to Gateway... ({i}/{CONNECTION_RETRY_NUMBER})");
-
-        let ws_endpoint = WsConnect::new(gateway_url);
-        match provider_builder_new().connect_ws(ws_endpoint).await {
-            Ok(provider) => {
-                info!("Connected to Gateway's RPC node successfully");
-                return Ok(provider);
-            }
-            Err(e) => warn!("Gateway connection attempt #{i} failed: {e}"),
-        }
-
-        if i != CONNECTION_RETRY_NUMBER {
-            tokio::time::sleep(CONNECTION_RETRY_DELAY).await;
-        }
-    }
-    Err(anyhow!("Could not connect to Gateway at url {gateway_url}"))
+    let gateway_url =
+        Url::from_str(gateway_url).map_err(|e| anyhow!("Invalid Gateway URL: {e}"))?;
+    let provider = provider_builder_new().connect_http(gateway_url);
+    info!("Connected to Gateway's RPC node successfully");
+    Ok(provider)
 }
 
 static INSTALL_CRYPTO_PROVIDER_ONCE: Once = Once::new();

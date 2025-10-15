@@ -53,10 +53,7 @@ export const initDecryptionOracle = async (): Promise<void> => {
     await ethers.provider.send('set_lastBlockSnapshotForDecrypt', [firstBlockListening]);
   }
   // this function will emit logs for every request and fulfilment of a decryption
-  decryptionOracle = await ethers.getContractAt(
-    'decryptionOracle/DecryptionOracle.sol:DecryptionOracle',
-    parsedEnv.DECRYPTION_ORACLE_ADDRESS,
-  );
+  decryptionOracle = await ethers.getContractAt('DecryptionOracle', parsedEnv.DECRYPTION_ORACLE_ADDRESS);
   decryptionOracle.on(
     'DecryptionRequest',
     async (counter, requestID, cts, contractCaller, callbackSelector, eventData) => {
@@ -69,10 +66,7 @@ export const initDecryptionOracle = async (): Promise<void> => {
 };
 
 export const awaitAllDecryptionResults = async (): Promise<void> => {
-  decryptionOracle = await ethers.getContractAt(
-    'decryptionOracle/DecryptionOracle.sol:DecryptionOracle',
-    parsedEnv.DECRYPTION_ORACLE_ADDRESS,
-  );
+  decryptionOracle = await ethers.getContractAt('DecryptionOracle', parsedEnv.DECRYPTION_ORACLE_ADDRESS);
   const provider = ethers.provider;
   if (networkName === 'hardhat' && process.env.SOLIDITY_COVERAGE !== 'true') {
     // evm_snapshot is not supported in coverage mode
@@ -106,13 +100,14 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
     if (!event) {
       throw new Error('Event is null');
     }
+    const counter = event.args[0];
     const requestID = event.args[1];
     const handles = event.args[2];
     const contractCaller = event.args[3];
     const callbackSelector = event.args[4];
 
     // if request is not already fulfilled
-    if (mocked && !toSkip.includes(requestID)) {
+    if (mocked && !toSkip.includes(counter)) {
       // in mocked mode, we trigger the decryption fulfillment manually
       await awaitCoprocessor();
 
@@ -129,26 +124,8 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
 
       const abiCoder = new ethers.AbiCoder();
 
-      // ABI encode the decryptedResult as done in the KMS, following the format:
-      // - requestId (32 bytes)
-      // - all inputs
-      // - list of signatures (list of bytes)
-      // For this we use the following values for getting the correct abi encoding (in particular for
-      // getting the right signatures offset right after):
-      // - requestId: a dummy uint256
-      // - signatures: a dummy empty array of bytes
-      const encodedData = abiCoder.encode(
-        ['uint256', ...Array(values.length).fill('uint256'), 'bytes[]'],
-        [31, ...values, []],
-      );
-
-      // To get the correct value, we pop:
-      // - the `0x` prefix (put back just after): first byte (2 hex characters)
-      // - the dummy requestID: next 32 bytes (64 hex characters)
-      // - the length of empty bytes[]: last 32 bytes (64 hex characters)
-      // We will most likely pop the last 64 bytes (which included the empty array's offset) instead
-      // of 32 bytes in the future, see https://github.com/zama-ai/fhevm-internal/issues/345
-      const decryptedResult = '0x' + encodedData.slice(66, -64);
+      // ABI encode the decryptedResult as done in the KMS, since all decrypted values are native static types, thay have same abi-encoding as uint256:
+      const decryptedResult = abiCoder.encode(new Array(values.length).fill('uint256'), values);
 
       const extraDataV0: string = ethers.solidityPacked(['uint8'], [0]);
 
@@ -186,7 +163,7 @@ const fulfillAllPastRequestsIds = async (mocked: boolean) => {
         } else {
           console.log('Gateway fulfillment tx failed with an unknown error');
         }
-        toSkip.push(requestID);
+        toSkip.push(counter);
         throw error;
       }
     }

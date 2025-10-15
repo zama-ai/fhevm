@@ -7,23 +7,22 @@ use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::Client;
 use bytesize::ByteSize;
+use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
 use fhevm_engine_common::telemetry::{self};
 use fhevm_engine_common::utils::compact_hex;
 use futures::future::join_all;
-use sha3::{Digest, Keccak256};
-
 use opentelemetry::global::BoxedSpan;
-use sqlx::postgres::PgPoolOptions;
+use sha3::{Digest, Keccak256};
 use sqlx::{PgPool, Pool, Postgres, Transaction};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::select;
-use tokio::sync::{mpsc, Semaphore};
+use tokio::sync::{mpsc, RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tokio::time::interval;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, error_span, info, warn, Instrument};
 
 // TODO: Use a config TOML to set these values
 pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
@@ -33,50 +32,69 @@ pub const EVENT_CIPHERTEXTS_UPLOADED: &str = "event_ciphertexts_uploaded";
 // with sizes of 32MiB so the batch size is set to 10
 const DEFAULT_BATCH_SIZE: usize = 10;
 
-/// Process the S3 uploads
-pub(crate) async fn process_s3_uploads(
-    conf: &Config,
-    mut jobs: mpsc::Receiver<UploadJob>,
+pub(crate) async fn spawn_resubmit_task(
+    pool_mngr: &PostgresPoolManager,
+    conf: Config,
     jobs_tx: mpsc::Sender<UploadJob>,
-    token: CancellationToken,
     client: Arc<aws_sdk_s3::Client>,
     is_ready: Arc<AtomicBool>,
-) -> Result<(), ExecutionError> {
-    let (is_ready_res, _) = check_is_ready(&client, conf).await;
-    is_ready.store(is_ready_res, Ordering::Release);
-
-    let pool = Arc::new(
-        PgPoolOptions::new()
-            .max_connections(conf.db.max_connections)
-            .acquire_timeout(conf.db.timeout)
-            .connect(&conf.db.url)
-            .await?,
-    );
-
-    // Spawn the resubmits_loop as a helper task
-    tokio::spawn({
+) -> Result<JoinHandle<()>, ExecutionError> {
+    let op = move |pool, token| {
         let client = client.clone();
         let is_ready = is_ready.clone();
         let conf = conf.clone();
-        let token = token.clone();
-        let pool = pool.clone();
-        async move {
-            do_resubmits_loop(client, pool, &conf, jobs_tx, token, is_ready)
-                .await
-                .unwrap_or_else(|err| {
-                    error!(error = %err, "Failed to spawn do_resubmits_loop");
-                });
-        }
-    });
+        let jobs_tx = jobs_tx.clone();
 
-    let conf = &conf.s3;
+        async move {
+            do_resubmits_loop(client, pool, conf, jobs_tx, token, is_ready)
+                .await
+                .map_err(ServiceError::from)
+        }
+    };
+
+    // Spawn the resubmits_loop as a helper task
+    Result::Ok(pool_mngr.spawn_with_db_retry(op, "s3_resubmit").await)
+}
+
+pub(crate) async fn spawn_uploader(
+    pool_mngr: &PostgresPoolManager,
+    conf: Config,
+    rx: Arc<RwLock<mpsc::Receiver<UploadJob>>>,
+    client: Arc<aws_sdk_s3::Client>,
+    is_ready: Arc<AtomicBool>,
+) -> Result<JoinHandle<()>, ExecutionError> {
+    let op = move |pool, token| {
+        let client = client.clone();
+        let is_ready = is_ready.clone();
+        let conf = conf.s3.clone();
+        let rx = rx.clone();
+
+        async move {
+            run_uploader_loop(rx, token, client, is_ready, pool, conf)
+                .await
+                .map_err(ServiceError::from)
+        }
+    };
+
+    // Spawn the uploader loop
+    Result::Ok(pool_mngr.spawn_with_db_retry(op, "s3").await)
+}
+
+async fn run_uploader_loop(
+    jobs_rx: Arc<RwLock<mpsc::Receiver<UploadJob>>>,
+    token: CancellationToken,
+    client: Arc<Client>,
+    is_ready: Arc<AtomicBool>,
+    pool: Pool<Postgres>,
+    conf: S3Config,
+) -> Result<(), ExecutionError> {
+    let mut ongoing_upload_tasks: Vec<JoinHandle<()>> = Vec::new();
     let max_concurrent_uploads = conf.max_concurrent_uploads as usize;
     let semaphore = Arc::new(Semaphore::new(max_concurrent_uploads));
-    let mut upload_jobs: Vec<JoinHandle<()>> = Vec::new();
-
+    let mut jobs_rx = jobs_rx.write().await;
     loop {
         select! {
-            job = jobs.recv() => {
+            job = jobs_rx.recv() => {
                 let job = match job {
                     Some(job) => job,
                     None => return Ok(()),
@@ -125,16 +143,15 @@ pub(crate) async fn process_s3_uploads(
                 debug!(handle = hex::encode(&item.handle), "Received task, handle");
 
                 // Cleanup completed tasks
-                upload_jobs.retain(|h| !h.is_finished());
-
+                ongoing_upload_tasks.retain(|h| !h.is_finished());
                 // Check if we have reached the max concurrent uploads
-                if upload_jobs.len() >= max_concurrent_uploads {
+                if ongoing_upload_tasks.len() >= max_concurrent_uploads {
                     warn!({target = "worker", action = "review", max_concurrent_uploads = max_concurrent_uploads},
                         "Max concurrent uploads reached, waiting for a slot ...",
                     );
                 } else {
                     debug!(
-                        available_upload_slots = max_concurrent_uploads - upload_jobs.len(),
+                        available_upload_slots = max_concurrent_uploads - ongoing_upload_tasks.len(),
                         "Available upload slots"
                     );
                 }
@@ -148,7 +165,9 @@ pub(crate) async fn process_s3_uploads(
                 // Spawn a new task to upload the ciphertexts
                 let h = tokio::spawn(async move {
                     let s = item.otel.child_span("upload_s3");
-                        if let Err(err) = upload_ciphertexts(trx, item, &client, &conf).await {
+                    match upload_ciphertexts(trx, item, &client, &conf).instrument(error_span!("upload_s3")).await {
+                        Ok(()) => telemetry::end_span(s),
+                        Err(err) => {
                             if let ExecutionError::S3TransientError(_) = err {
                                 ready_flag.store(false, Ordering::Release);
                                 info!(error = %err, "S3 setup is not ready, due to transient error");
@@ -157,21 +176,19 @@ pub(crate) async fn process_s3_uploads(
                             }
 
                             telemetry::end_span_with_err(s, err.to_string());
-
-                        } else {
-                            telemetry::end_span(s);
                         }
-                        drop(permit);
+                    }
+                    drop(permit);
                 });
 
-                upload_jobs.push(h);
+                ongoing_upload_tasks.push(h);
             },
             _ = token.cancelled() => {
                 // Cleanup completed tasks
-                upload_jobs.retain(|h| !h.is_finished());
+                ongoing_upload_tasks.retain(|h| !h.is_finished());
 
                 info!("Waiting for all uploads to finish...");
-                for handle in upload_jobs {
+                for handle in ongoing_upload_tasks {
                     if let Err(err) = handle.await {
                         error!(error = %err, "Failed to join upload task");
                     }
@@ -379,7 +396,7 @@ async fn fetch_pending_uploads(
     limit: i64,
 ) -> Result<Vec<UploadJob>, ExecutionError> {
     let rows = sqlx::query!(
-        "SELECT tenant_id, handle, ciphertext, ciphertext128, ciphertext128_format 
+        "SELECT tenant_id, handle, ciphertext, ciphertext128, ciphertext128_format, transaction_id 
         FROM ciphertext_digest 
         WHERE ciphertext IS NULL OR ciphertext128 IS NULL
         FOR UPDATE SKIP LOCKED
@@ -397,6 +414,7 @@ async fn fetch_pending_uploads(
         let ciphertext_digest = row.ciphertext;
         let ciphertext128_digest = row.ciphertext128;
         let handle = row.handle;
+        let transaction_id = row.transaction_id;
 
         // Fetch missing ciphertext
         if ciphertext_digest.is_none() {
@@ -466,7 +484,8 @@ async fn fetch_pending_uploads(
                 handle: handle.clone(),
                 ct64_compressed,
                 ct128: Arc::new(ct128),
-                otel: telemetry::tracer_with_handle("recovery_task", handle),
+                otel: telemetry::tracer_with_handle("recovery_task", handle, &transaction_id),
+                transaction_id,
             };
 
             // Instruct the uploader to acquire DB lock when processing the item
@@ -482,8 +501,8 @@ async fn fetch_pending_uploads(
 /// retry uploading the actual ciphertext.
 async fn do_resubmits_loop(
     client: Arc<aws_sdk_s3::Client>,
-    pool: Arc<Pool<Postgres>>,
-    conf: &Config,
+    pool: Pool<Postgres>,
+    conf: Config,
     tasks: mpsc::Sender<UploadJob>,
     token: CancellationToken,
     is_ready: Arc<AtomicBool>,
@@ -515,7 +534,7 @@ async fn do_resubmits_loop(
             _ = recheck_ticker.tick() => {
                 if !is_ready.load(Ordering::Acquire) {
                     info!("Recheck S3 setup ...");
-                    let (is_ready_res, _) = check_is_ready(&client, conf).await;
+                    let (is_ready_res, _) = check_is_ready(&client, &conf).await;
                     if is_ready_res {
                         info!("Reconnected to S3, buckets exist");
                         is_ready.store(true, Ordering::Release);
@@ -559,8 +578,6 @@ async fn try_resubmit(
         match fetch_pending_uploads(pool, batch_size as i64).await {
             Ok(jobs) => {
                 info!(
-                    target: "worker",
-                    action = "retry_s3_uploads",
                     pending_uploads = jobs.len(),
                     "Fetched pending uploads from the database"
                 );
@@ -578,11 +595,7 @@ async fn try_resubmit(
                 }
 
                 if jobs_count < batch_size {
-                    info!(
-                        target: "worker",
-                        action = "retry_s3_uploads",
-                        "No (more) pending uploads to resubmit"
-                    );
+                    info!("No (more) pending uploads to resubmit");
                     return Ok(());
                 }
             }

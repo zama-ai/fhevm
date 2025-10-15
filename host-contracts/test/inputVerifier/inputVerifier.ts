@@ -189,12 +189,12 @@ describe('InputVerifier', function () {
 
     await expect(inputVerifier.connect(randomAccount).addSigner(randomAccount)).to.be.revertedWithCustomError(
       inputVerifier,
-      'OwnableUnauthorizedAccount',
+      'NotHostOwner',
     );
 
     await expect(inputVerifier.connect(randomAccount).removeSigner(randomAccount)).to.be.revertedWithCustomError(
       inputVerifier,
-      'OwnableUnauthorizedAccount',
+      'NotHostOwner',
     );
   });
 });

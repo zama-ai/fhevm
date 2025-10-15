@@ -55,6 +55,7 @@ fn construct_config() -> Config {
         },
         enable_compression: args.enable_compression,
         schedule_policy: args.schedule_policy,
+        pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
     }
 }
 
@@ -65,6 +66,9 @@ async fn main() {
 
     tracing_subscriber::fmt()
         .json()
+        .with_target(false) // drop "target" field so the logs are not too verbose. Instead, span names are used.
+        .with_current_span(true) // keep "span"
+        .with_span_list(false) // drop "spans"
         .with_level(true)
         .with_max_level(config.log_level)
         .init();
@@ -72,7 +76,7 @@ async fn main() {
     // Handle SIGINIT signals
     handle_sigint(parent.clone());
 
-    sns_worker::run_all(config, parent)
+    sns_worker::run_all(config, parent, None)
         .await
         .unwrap_or_else(|err| {
             error!(error = %err, "Error running SNS worker");

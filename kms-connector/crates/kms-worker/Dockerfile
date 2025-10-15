@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # RUST_IMAGE_VERSION arg can be used to override the default version
-ARG RUST_IMAGE_VERSION=1.89.0
+ARG RUST_IMAGE_VERSION=1.90.0
 
 # Stage 1: Build kms-worker
 FROM ghcr.io/zama-ai/fhevm/gci/rust-glibc:${RUST_IMAGE_VERSION} AS builder
@@ -21,16 +21,9 @@ COPY .git ./.git
 COPY gateway-contracts/rust_bindings ./gateway-contracts/rust_bindings
 COPY kms-connector ./kms-connector
 
-# Install build dependencies
-RUN --mount=type=cache,target=/var/cache/apk,sharing=locked \
-    --mount=type=cache,target=/var/lib/apk,sharing=locked \
-    apk add --no-cache \
-    gcc \
-    protoc
-
 # Build with improved caching
 WORKDIR /app/kms-connector
-RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     git config --global --add safe.directory /app && \
     cargo build --profile=${LTO_RELEASE} -p kms-worker
 

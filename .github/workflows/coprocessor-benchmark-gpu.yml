@@ -74,7 +74,7 @@ jobs:
     name: coprocessor-benchmark-gpu/parse-inputs
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     outputs:
       profile: ${{ steps.parse_profile.outputs.profile }}
       hardware_name: ${{ steps.parse_hardware_name.outputs.name }}
@@ -94,7 +94,7 @@ jobs:
     needs: parse-inputs
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -116,8 +116,8 @@ jobs:
     continue-on-error: true
     timeout-minutes: 720  # 12 hours
     permissions:
-      contents: 'read'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to read GitHub packages/container registry
     strategy:
       fail-fast: false
       # explicit include-based build matrix, of known valid options
@@ -205,6 +205,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
       - name: Init database
         run: make init_db
         working-directory: coprocessor/fhevm-engine/tfhe-worker
@@ -219,7 +226,7 @@ jobs:
           HARDHAT_NETWORK: hardhat
         run: |
           cp ./host-contracts/.env.example ./host-contracts/.env
-          npm --prefix ./host-contracts ci --include=optional
+          npm --workspace=host-contracts ci --include=optional
           cd host-contracts && npm install && npm run deploy:emptyProxies && npx hardhat compile
 
       - name: Run benchmarks on GPU
@@ -247,7 +254,7 @@ jobs:
           --crate "coprocessor/fhevm-engine/tfhe-worker" \
           --name-suffix "operation_batch_size_${BATCH_SIZE}-schedule_${SCHEDULING_POLICY}-optimization_target_${OPTIMIZATION_TARGET}"
         env:
-          RESULTS_FILENAME: ${{ env.results_filename }}
+          RESULTS_FILENAME: ${{ env.RESULTS_FILENAME }}
           HW_NAME: ${{ needs.parse-inputs.outputs.hardware_name }}
           COMMIT_HASH: ${{ env.COMMIT_HASH }}
           GH_REF_NAME: ${{ github.ref_name }}
@@ -278,7 +285,7 @@ jobs:
           --slab-url "${SLAB_URL}"
         env:
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
-          RESULTS_FILENAME: ${{ env.results_filename }}
+          RESULTS_FILENAME: ${{ env.RESULTS_FILENAME }}
           SLAB_URL: ${{ secrets.SLAB_URL }}
 
   teardown-instance:
@@ -287,7 +294,7 @@ jobs:
     needs: [ setup-instance, benchmark ]
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     steps:
       - name: Stop remote instance
         id: stop-instance

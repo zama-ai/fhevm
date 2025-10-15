@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use super::{Config, EventPublisher};
 use crate::{
     core::DbEventPublisher,
@@ -11,17 +9,20 @@ use crate::{
 use alloy::{contract::Event, network::Ethereum, providers::Provider, sol_types::SolEvent};
 use connector_utils::{
     conn::{GatewayProvider, connect_to_db, connect_to_gateway},
+    monitoring::otlp::PropagationContext,
     tasks::spawn_with_limit,
-    types::GatewayEvent,
+    types::{GatewayEvent, GatewayEventKind},
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
-    kms_management::KmsManagement::{self, KmsManagementInstance},
+    kms_generation::KMSGeneration::{self, KMSGenerationInstance},
 };
+use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio_stream::StreamExt;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct monitoring and storing Gateway's events.
 #[derive(Clone)]
@@ -32,8 +33,8 @@ where
     /// The Gateway's `Decryption` contract instance which is monitored.
     decryption_contract: DecryptionInstance<Prov>,
 
-    /// The Gateway's `KmsManagement` contract instance which is monitored.
-    kms_management_contract: KmsManagementInstance<Prov>,
+    /// The Gateway's `KMSGeneration` contract instance which is monitored.
+    kms_generation_contract: KMSGenerationInstance<Prov>,
 
     /// The entity responsible of events publication to some external storage.
     publisher: Publ,
@@ -51,12 +52,12 @@ where
     pub fn new(config: &Config, provider: Prov, publisher: Publ) -> Self {
         let decryption_contract =
             Decryption::new(config.decryption_contract.address, provider.clone());
-        let kms_management_contract =
-            KmsManagement::new(config.kms_management_contract.address, provider);
+        let kms_generation_contract =
+            KMSGeneration::new(config.kms_generation_contract.address, provider);
 
         Self {
             decryption_contract,
-            kms_management_contract,
+            kms_generation_contract,
             publisher,
             config: config.clone(),
         }
@@ -77,10 +78,8 @@ where
 
         tasks.spawn(self.clone().subscribe_to_public_decryption_requests());
         tasks.spawn(self.clone().subscribe_to_user_decryption_requests());
-        tasks.spawn(self.clone().subscribe_to_preprocess_keygen_requests());
-        tasks.spawn(self.clone().subscribe_to_preprocess_kskgen_requests());
+        tasks.spawn(self.clone().subscribe_to_prep_keygen_requests());
         tasks.spawn(self.clone().subscribe_to_keygen_requests());
-        tasks.spawn(self.clone().subscribe_to_kskgen_requests());
         tasks.spawn(self.subscribe_to_crsgen_requests());
 
         tasks.join_all().await;
@@ -96,7 +95,7 @@ where
         mut event_filter: Event<&'a Prov, E>,
         poll_interval: Duration,
     ) where
-        E: Into<GatewayEvent> + SolEvent + Send + Sync + 'static,
+        E: Into<GatewayEventKind> + SolEvent + Send + Sync + 'static,
     {
         info!(
             "Starting {} event subscriptions from block {}...",
@@ -134,13 +133,20 @@ where
             EVENT_RECEIVED_COUNTER.inc();
 
             let publisher = self.publisher.clone();
-            spawn_with_limit(async move {
-                if let Err(err) = publisher.publish(event.into()).await {
-                    error!("Failed to publish {event_name}: {err}");
-                    EVENT_STORAGE_ERRORS.inc();
-                }
-            })
-            .await;
+            spawn_with_limit(Self::handle_gateway_event(publisher, event.into())).await;
+        }
+    }
+
+    /// Main function used to trace a single event handling across all Connector's services.
+    #[tracing::instrument(skip(publisher), fields(event = %event_kind))]
+    async fn handle_gateway_event(publisher: Publ, event_kind: GatewayEventKind) {
+        let event = GatewayEvent::new(
+            event_kind,
+            PropagationContext::inject(&tracing::Span::current().context()),
+        );
+        if let Err(err) = publisher.publish(event).await {
+            error!("Failed to publish event: {err}");
+            EVENT_STORAGE_ERRORS.inc();
         }
     }
 
@@ -164,32 +170,18 @@ where
         .await;
     }
 
-    async fn subscribe_to_preprocess_keygen_requests(self) {
-        let preprocess_keygen_filter = self
-            .kms_management_contract
-            .PreprocessKeygenRequest_filter();
+    async fn subscribe_to_prep_keygen_requests(self) {
+        let prep_keygen_filter = self.kms_generation_contract.PrepKeygenRequest_filter();
         self.subscribe_to_events(
-            "PreprocessKeygenRequest",
-            preprocess_keygen_filter,
-            self.config.key_management_polling,
-        )
-        .await;
-    }
-
-    async fn subscribe_to_preprocess_kskgen_requests(self) {
-        let preprocess_kskgen_filter = self
-            .kms_management_contract
-            .PreprocessKskgenRequest_filter();
-        self.subscribe_to_events(
-            "PreprocessKskgenRequest",
-            preprocess_kskgen_filter,
+            "PrepKeygenRequest",
+            prep_keygen_filter,
             self.config.key_management_polling,
         )
         .await;
     }
 
     async fn subscribe_to_keygen_requests(self) {
-        let keygen_filter = self.kms_management_contract.KeygenRequest_filter();
+        let keygen_filter = self.kms_generation_contract.KeygenRequest_filter();
         self.subscribe_to_events(
             "KeygenRequest",
             keygen_filter,
@@ -198,18 +190,8 @@ where
         .await;
     }
 
-    async fn subscribe_to_kskgen_requests(self) {
-        let kskgen_filter = self.kms_management_contract.KskgenRequest_filter();
-        self.subscribe_to_events(
-            "KskgenRequest",
-            kskgen_filter,
-            self.config.key_management_polling,
-        )
-        .await;
-    }
-
     async fn subscribe_to_crsgen_requests(self) {
-        let crsgen_filter = self.kms_management_contract.CrsgenRequest_filter();
+        let crsgen_filter = self.kms_generation_contract.CrsgenRequest_filter();
         self.subscribe_to_events(
             "CrsgenRequest",
             crsgen_filter,
@@ -225,7 +207,7 @@ impl GatewayListener<GatewayProvider, DbEventPublisher> {
         let db_pool = connect_to_db(&config.database_url, config.database_pool_size).await?;
         let publisher = DbEventPublisher::new(db_pool.clone());
 
-        let provider = connect_to_gateway(&config.gateway_url).await?;
+        let provider = connect_to_gateway(&config.gateway_url, config.chain_id).await?;
         let state = State::new(db_pool, provider.clone(), config.healthcheck_timeout);
         let gw_listener = GatewayListener::new(&config, provider, publisher);
         Ok((gw_listener, state))
@@ -246,15 +228,15 @@ mod tests {
         },
     };
     use anyhow::Result;
+    use connector_utils::types::{GatewayEvent, GatewayEventKind};
     use fhevm_gateway_bindings::{
         decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-        kms_management::KmsManagement::{
-            CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
-            PreprocessKskgenRequest,
-        },
+        kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
     };
     use tracing_test::traced_test;
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_public_decryption_requests_subscription() {
@@ -264,10 +246,17 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(PublicDecryptionRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_public_decryption_requests().await;
-        assert!(logs_contain("PublicDecryptionRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_public_decryption_requests());
+        loop {
+            if logs_contain("PublicDecryptionRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_user_decryption_requests_subscription() {
@@ -277,36 +266,37 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(UserDecryptionRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_user_decryption_requests().await;
-        assert!(logs_contain("UserDecryptionRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_user_decryption_requests());
+        loop {
+            if logs_contain("UserDecryptionRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
-    async fn test_preprocess_keygen_requests_subscription() {
+    async fn test_prep_keygen_requests_subscription() {
         let (asserter, gw_listener) = test_setup().await;
 
         // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(PreprocessKeygenRequest::default());
+        let rpc_event_log = mock_rpc_event_log(PrepKeygenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_preprocess_keygen_requests().await;
-        assert!(logs_contain("PreprocessKeygenRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_prep_keygen_requests());
+        loop {
+            if logs_contain("PrepKeygenRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
-    #[tokio::test]
-    #[traced_test]
-    async fn test_preprocess_kskgen_requests_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(PreprocessKskgenRequest::default());
-        asserter.push_success(&[rpc_event_log]);
-
-        gw_listener.subscribe_to_preprocess_kskgen_requests().await;
-        assert!(logs_contain("PreprocessKskgenRequest published!"));
-    }
-
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_keygen_requests_subscription() {
@@ -316,23 +306,17 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(KeygenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_keygen_requests().await;
-        assert!(logs_contain("KeygenRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_keygen_requests());
+        loop {
+            if logs_contain("KeygenRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
-    #[tokio::test]
-    #[traced_test]
-    async fn test_kskgen_requests_subscription() {
-        let (asserter, gw_listener) = test_setup().await;
-
-        // Used to mock a new event
-        let rpc_event_log = mock_rpc_event_log(KskgenRequest::default());
-        asserter.push_success(&[rpc_event_log]);
-
-        gw_listener.subscribe_to_kskgen_requests().await;
-        assert!(logs_contain("KskgenRequest published!"));
-    }
-
+    #[rstest::rstest]
+    #[timeout(Duration::from_secs(5))]
     #[tokio::test]
     #[traced_test]
     async fn test_crsgen_requests_subscription() {
@@ -342,8 +326,13 @@ mod tests {
         let rpc_event_log = mock_rpc_event_log(CrsgenRequest::default());
         asserter.push_success(&[rpc_event_log]);
 
-        gw_listener.subscribe_to_crsgen_requests().await;
-        assert!(logs_contain("CrsgenRequest published!"));
+        tokio::spawn(gw_listener.subscribe_to_crsgen_requests());
+        loop {
+            if logs_contain("CrsgenRequest published!") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
     }
 
     /// Mock the log generated by the publication of a Gateway event.
@@ -393,14 +382,14 @@ mod tests {
 
     impl EventPublisher for MockPublisher {
         async fn publish(&self, event: GatewayEvent) -> Result<()> {
-            match event {
-                GatewayEvent::PublicDecryption(_) => info!("PublicDecryptionRequest published!"),
-                GatewayEvent::UserDecryption(_) => info!("UserDecryptionRequest published!"),
-                GatewayEvent::PreprocessKeygen(_) => info!("PreprocessKeygenRequest published!"),
-                GatewayEvent::PreprocessKskgen(_) => info!("PreprocessKskgenRequest published!"),
-                GatewayEvent::Keygen(_) => info!("KeygenRequest published!"),
-                GatewayEvent::Kskgen(_) => info!("KskgenRequest published!"),
-                GatewayEvent::Crsgen(_) => info!("CrsgenRequest published!"),
+            match event.kind {
+                GatewayEventKind::PublicDecryption(_) => {
+                    info!("PublicDecryptionRequest published!")
+                }
+                GatewayEventKind::UserDecryption(_) => info!("UserDecryptionRequest published!"),
+                GatewayEventKind::PrepKeygen(_) => info!("PrepKeygenRequest published!"),
+                GatewayEventKind::Keygen(_) => info!("KeygenRequest published!"),
+                GatewayEventKind::Crsgen(_) => info!("CrsgenRequest published!"),
             }
             Ok(())
         }

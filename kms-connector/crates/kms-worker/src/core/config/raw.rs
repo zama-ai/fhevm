@@ -32,11 +32,13 @@ pub struct RawConfig {
     #[serde(default = "default_database_polling_timeout_secs")]
     pub database_polling_timeout_secs: u64,
     pub gateway_url: String,
+    #[serde(default)]
     pub kms_core_endpoints: Vec<String>,
     pub kms_core_endpoint: Option<String>,
     pub chain_id: u64,
     pub decryption_contract: RawContractConfig,
     pub gateway_config_contract: RawContractConfig,
+    pub kms_generation_contract: RawContractConfig,
     #[serde(default = "default_service_name")]
     pub service_name: String,
     #[serde(default = "default_events_batch_size")]
@@ -72,7 +74,7 @@ fn default_database_polling_timeout_secs() -> u64 {
 }
 
 fn default_events_batch_size() -> u8 {
-    10
+    50
 }
 
 fn default_grpc_request_retries() -> u8 {
@@ -88,7 +90,7 @@ fn default_user_decryption_timeout() -> u64 {
 }
 
 fn default_grpc_poll_interval() -> u64 {
-    5 // 5 seconds
+    1 // 1 seconds
 }
 
 fn default_s3_ciphertext_retrieval_retries() -> u8 {
@@ -149,6 +151,11 @@ impl Default for RawConfig {
             gateway_config_contract: RawContractConfig {
                 address: "0x0000000000000000000000000000000000000000".to_string(),
                 domain_name: Some("GatewayConfig".to_string()),
+                domain_version: Some("1".to_string()),
+            },
+            kms_generation_contract: RawContractConfig {
+                address: "0x0000000000000000000000000000000000000000".to_string(),
+                domain_name: Some("KMSGeneration".to_string()),
                 domain_version: Some("1".to_string()),
             },
             service_name: "kms-connector".to_string(),

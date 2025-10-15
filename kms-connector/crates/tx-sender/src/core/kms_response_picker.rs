@@ -3,7 +3,7 @@ use crate::{
     monitoring::metrics::{RESPONSE_RECEIVED_COUNTER, RESPONSE_RECEIVED_ERRORS},
 };
 use anyhow::anyhow;
-use connector_utils::types::KmsResponse;
+use connector_utils::types::{KmsResponse, kms_response};
 use sqlx::{
     Pool, Postgres,
     postgres::{PgListener, PgNotification},
@@ -20,6 +20,9 @@ pub trait KmsResponsePicker {
 // Postgres notifications for KMS Core's responses
 const PUBLIC_DECRYPT_NOTIFICATION: &str = "public_decryption_response_available";
 const USER_DECRYPT_NOTIFICATION: &str = "user_decryption_response_available";
+const PREP_KEYGEN_NOTIFICATION: &str = "prep_keygen_response_available";
+const KEYGEN_NOTIFICATION: &str = "keygen_response_available";
+const CRSGEN_NOTIFICATION: &str = "crsgen_response_available";
 
 /// Struct that collects KMS Core's responses from a `Postgres` database.
 pub struct DbKmsResponsePicker {
@@ -72,7 +75,10 @@ impl DbKmsResponsePicker {
 
     async fn listen(&mut self) -> sqlx::Result<()> {
         self.db_listener.listen(PUBLIC_DECRYPT_NOTIFICATION).await?;
-        self.db_listener.listen(USER_DECRYPT_NOTIFICATION).await
+        self.db_listener.listen(USER_DECRYPT_NOTIFICATION).await?;
+        self.db_listener.listen(PREP_KEYGEN_NOTIFICATION).await?;
+        self.db_listener.listen(KEYGEN_NOTIFICATION).await?;
+        self.db_listener.listen(CRSGEN_NOTIFICATION).await
     }
 }
 
@@ -113,20 +119,25 @@ impl DbKmsResponsePicker {
         match notification.channel() {
             PUBLIC_DECRYPT_NOTIFICATION => self.pick_public_decryption_responses().await,
             USER_DECRYPT_NOTIFICATION => self.pick_user_decryption_responses().await,
-            channel => return Err(anyhow!("Unexpected notification: {channel}")),
+            PREP_KEYGEN_NOTIFICATION => self.pick_prep_keygen_responses().await,
+            KEYGEN_NOTIFICATION => self.pick_keygen_responses().await,
+            CRSGEN_NOTIFICATION => self.pick_crsgen_responses().await,
+            channel => Err(anyhow!("Unexpected notification: {channel}")),
         }
-        .map_err(anyhow::Error::from)
     }
 
     async fn pick_any_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
         Ok([
             self.pick_public_decryption_responses().await?,
             self.pick_user_decryption_responses().await?,
+            self.pick_prep_keygen_responses().await?,
+            self.pick_keygen_responses().await?,
+            self.pick_crsgen_responses().await?,
         ]
         .concat())
     }
 
-    async fn pick_public_decryption_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
+    async fn pick_public_decryption_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
         sqlx::query(
             "
                 UPDATE public_decryption_responses
@@ -138,18 +149,18 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE public_decryption_responses.decryption_id = resp.decryption_id
-                RETURNING resp.decryption_id, decrypted_result, signature, extra_data
+                RETURNING resp.decryption_id, decrypted_result, signature, extra_data, otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(KmsResponse::from_public_decryption_row)
+        .map(kms_response::from_public_decryption_row)
         .collect()
     }
 
-    async fn pick_user_decryption_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
+    async fn pick_user_decryption_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
         sqlx::query(
             "
                 UPDATE user_decryption_responses
@@ -161,14 +172,80 @@ impl DbKmsResponsePicker {
                     LIMIT $1 FOR UPDATE SKIP LOCKED
                 ) AS resp
                 WHERE user_decryption_responses.decryption_id = resp.decryption_id
-                RETURNING resp.decryption_id, user_decrypted_shares, signature, extra_data
+                RETURNING resp.decryption_id, user_decrypted_shares, signature, extra_data, otlp_context
             ",
         )
         .bind(self.responses_batch_size as i16)
         .fetch_all(&self.db_pool)
         .await?
         .iter()
-        .map(KmsResponse::from_user_decryption_row)
+        .map(kms_response::from_user_decryption_row)
+        .collect()
+    }
+
+    async fn pick_prep_keygen_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                UPDATE prep_keygen_responses
+                SET under_process = TRUE
+                FROM (
+                    SELECT prep_keygen_id
+                    FROM prep_keygen_responses
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE prep_keygen_responses.prep_keygen_id = resp.prep_keygen_id
+                RETURNING resp.prep_keygen_id, signature, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(kms_response::from_prep_keygen_row)
+        .collect()
+    }
+
+    async fn pick_keygen_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                UPDATE keygen_responses
+                SET under_process = TRUE
+                FROM (
+                    SELECT key_id
+                    FROM keygen_responses
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE keygen_responses.key_id = resp.key_id
+                RETURNING resp.key_id, key_digests, signature, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(kms_response::from_keygen_row)
+        .collect()
+    }
+
+    async fn pick_crsgen_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
+        sqlx::query(
+            "
+                UPDATE crsgen_responses
+                SET under_process = TRUE
+                FROM (
+                    SELECT crs_id
+                    FROM crsgen_responses
+                    WHERE under_process = FALSE
+                    LIMIT 1 FOR UPDATE SKIP LOCKED
+                ) AS resp
+                WHERE crsgen_responses.crs_id = resp.crs_id
+                RETURNING resp.crs_id, crs_digest, signature, otlp_context
+            ",
+        )
+        .fetch_all(&self.db_pool)
+        .await?
+        .iter()
+        .map(kms_response::from_crsgen_row)
         .collect()
     }
 }

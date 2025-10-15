@@ -50,8 +50,9 @@ on:
 
 permissions: {}
 
+# Allow to run multiple instances of the same workflow in parallel when triggered manually 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'auto' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
@@ -59,7 +60,7 @@ jobs:
     name: test-suite-e2e-operators-tests/setup-instance
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -78,9 +79,9 @@ jobs:
     name: test-suite-e2e-operators-tests/operators-e2e-test
     if: ${{ github.event_name == 'workflow_dispatch' }}
     permissions:
-      contents: 'read'
-      id-token: 'write'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      id-token: 'write' # Required for OIDC authentication
+      packages: 'read' # Required to read GitHub packages/container registry
     runs-on: ${{ needs.setup-instance.outputs.runner-name }}
     needs: setup-instance
     timeout-minutes: 1440
@@ -155,7 +156,7 @@ jobs:
     needs: [ setup-instance, operators-e2e-test]
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     steps:
       - name: Stop remote instance
         id: stop-instance

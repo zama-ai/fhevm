@@ -23,16 +23,18 @@ use alloy::{
 };
 use anyhow::bail;
 use async_trait::async_trait;
-use fhevm_engine_common::{tenant_keys::query_tenant_info, types::AllowEvents, utils::compact_hex};
+use fhevm_engine_common::{
+    telemetry, tenant_keys::query_tenant_info, types::AllowEvents, utils::compact_hex,
+};
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
-use MultichainAcl::MultichainAclErrors;
+use MultichainACL::MultichainACLErrors;
 
 sol!(
     #[sol(rpc)]
-    MultichainAcl,
-    "artifacts/MultichainAcl.sol/MultichainAcl.json"
+    MultichainACL,
+    "artifacts/MultichainACL.sol/MultichainACL.json"
 );
 
 struct Key {
@@ -56,7 +58,7 @@ impl Display for Key {
 }
 
 #[derive(Clone)]
-pub struct MultichainAclOperation<P: Provider<Ethereum> + Clone + 'static> {
+pub struct MultichainACLOperation<P: Provider<Ethereum> + Clone + 'static> {
     multichain_acl_address: Address,
     provider: NonceManagedProvider<P>,
     conf: crate::ConfigSettings,
@@ -64,7 +66,7 @@ pub struct MultichainAclOperation<P: Provider<Ethereum> + Clone + 'static> {
     db_pool: Pool<Postgres>,
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
+impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
     /// Sends a transaction
     ///
     /// TODO: Refactor: Avoid code duplication
@@ -74,10 +76,12 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         txn_request: impl Into<TransactionRequest>,
         current_limited_retries_count: i32,
         current_unlimited_retries_count: i32,
+        src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         let h = compact_hex(&key.handle);
 
         info!(handle = h, "Processing transaction");
+        let _t = telemetry::tracer("call_allow_account", &src_transaction_id);
 
         let overprovisioned_txn_req = try_overprovision_gas_limit(
             txn_request,
@@ -97,10 +101,11 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                     handle = h,
                     "Coprocessor has already added the ACL entry"
                 );
-                self.set_txn_is_sent(key, None, None).await?;
+                self.set_txn_is_sent(key, None, None, src_transaction_id)
+                    .await?;
                 return Ok(());
             }
-            // Consider transport errors and local usage errors as something that must be retried infinitely.
+            // Consider transport retryable errors, BackendGone and local usage errors as something that must be retried infinitely.
             // Local usage are included as they might be transient due to external AWS KMS signers.
             Err(e)
                 if matches!(&e, RpcError::Transport(inner) if inner.is_retry_err() || matches!(inner, TransportErrorKind::BackendGone))
@@ -119,10 +124,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                     current_unlimited_retries_count,
                 )
                 .await?;
-                bail!(
-                    "Transaction sending failed with unlimited retry error: {}",
-                    e
-                );
+                bail!(e);
             }
             Err(e) => {
                 ALLOW_HANDLE_FAIL_COUNTER.inc();
@@ -138,7 +140,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                     current_limited_retries_count,
                 )
                 .await?;
-                bail!("Transaction sending failed with error: {}", e);
+                bail!(e);
             }
         };
 
@@ -171,6 +173,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
                 key,
                 Some(receipt.transaction_hash.as_slice()),
                 receipt.block_number.map(|bn| bn as i64),
+                src_transaction_id,
             )
             .await?;
 
@@ -208,10 +211,10 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
 
     fn already_allowed_error(&self, err: &RpcError<TransportErrorKind>) -> Option<Address> {
         err.as_error_resp()
-            .and_then(|payload| payload.as_decoded_interface_error::<MultichainAclErrors>())
+            .and_then(|payload| payload.as_decoded_interface_error::<MultichainACLErrors>())
             .map(|error| match error {
-                MultichainAclErrors::CoprocessorAlreadyAllowedAccount(c) => c.coprocessor,
-                MultichainAclErrors::CoprocessorAlreadyAllowedPublicDecrypt(c) => c.txSender,
+                MultichainACLErrors::CoprocessorAlreadyAllowedAccount(c) => c.txSender, /* coprocessor address */
+                MultichainACLErrors::CoprocessorAlreadyAllowedPublicDecrypt(c) => c.txSender,
             })
     }
 
@@ -220,6 +223,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         key: &Key,
         txn_hash: Option<&[u8]>,
         txn_block_number: Option<i64>,
+        src_transaction_id: Option<Vec<u8>>,
     ) -> anyhow::Result<()> {
         sqlx::query!(
             "UPDATE allowed_handles
@@ -238,11 +242,15 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         )
         .execute(&self.db_pool)
         .await?;
+
+        telemetry::try_end_l1_transaction(&self.db_pool, &src_transaction_id.unwrap_or_default())
+            .await?;
+
         Ok(())
     }
 }
 
-impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
+impl<P: Provider<Ethereum> + Clone + 'static> MultichainACLOperation<P> {
     pub fn new(
         multichain_acl_address: Address,
         provider: NonceManagedProvider<P>,
@@ -253,7 +261,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
         info!(
             gas = gas.unwrap_or(0),
             multichain_acl_address = %multichain_acl_address,
-            "Creating MultichainAclOperation"
+            "Creating MultichainACLOperation"
         );
 
         Self {
@@ -352,7 +360,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> MultichainAclOperation<P> {
 }
 
 #[async_trait]
-impl<P> TransactionOperation<P> for MultichainAclOperation<P>
+impl<P> TransactionOperation<P> for MultichainACLOperation<P>
 where
     P: alloy::providers::Provider<Ethereum> + Clone + 'static,
 {
@@ -363,7 +371,7 @@ where
     async fn execute(&self) -> anyhow::Result<bool> {
         let rows = sqlx::query!(
             "
-            SELECT handle, tenant_id, account_address, event_type, txn_limited_retries_count, txn_unlimited_retries_count
+            SELECT handle, tenant_id, account_address, event_type, txn_limited_retries_count, txn_unlimited_retries_count, transaction_id
             FROM allowed_handles 
             WHERE txn_is_sent = false 
             AND txn_limited_retries_count < $1
@@ -375,7 +383,7 @@ where
         .fetch_all(&self.db_pool)
         .await?;
 
-        let multichain_acl = MultichainAcl::new(self.multichain_acl_address, self.provider.inner());
+        let multichain_acl = MultichainACL::new(self.multichain_acl_address, self.provider.inner());
 
         info!(rows_count = rows.len(), "Selected rows to process");
 
@@ -383,6 +391,9 @@ where
 
         let mut join_set = JoinSet::new();
         for row in rows.into_iter() {
+            let src_transaction_id = row.transaction_id.clone();
+            let t = telemetry::tracer("prepare_allow_account", &src_transaction_id);
+
             let tenant = match query_tenant_info(&self.db_pool, row.tenant_id).await {
                 Ok(res) => res,
                 Err(_) => {
@@ -467,6 +478,8 @@ where
                 event_type,
             };
 
+            t.end();
+
             let operation = self.clone();
             join_set.spawn(async move {
                 operation
@@ -475,6 +488,7 @@ where
                         txn_request,
                         row.txn_limited_retries_count,
                         row.txn_unlimited_retries_count,
+                        src_transaction_id,
                     )
                     .await
             });
@@ -485,9 +499,5 @@ where
         }
 
         Ok(maybe_has_more_work)
-    }
-
-    fn provider(&self) -> &P {
-        self.provider.inner()
     }
 }

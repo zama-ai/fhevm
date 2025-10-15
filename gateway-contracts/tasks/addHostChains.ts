@@ -9,8 +9,13 @@ import { getRequiredEnvVar } from "./utils/loadVariables";
 // Note: Internal GatewayConfig address is defined in the `addresses/` directory. It should be used
 // for local testing. By default, we use the GATEWAY_CONFIG_ADDRESS env var, as done in deployment
 task("task:addHostChainsToGatewayConfig")
-  .addParam("useInternalGatewayConfigAddress", "If internal GatewayConfig address should be used", false, types.boolean)
-  .setAction(async function ({ useInternalGatewayConfigAddress }, hre) {
+  .addParam(
+    "useInternalProxyAddress",
+    "If proxy address from the /addresses directory should be used",
+    false,
+    types.boolean,
+  )
+  .setAction(async function ({ useInternalProxyAddress }, hre) {
     await hre.run("compile:specific", { contract: "contracts" });
     console.log("Register host chains to GatewayConfig contract");
 
@@ -30,7 +35,7 @@ task("task:addHostChainsToGatewayConfig")
       });
     }
 
-    if (useInternalGatewayConfigAddress) {
+    if (useInternalProxyAddress) {
       dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");

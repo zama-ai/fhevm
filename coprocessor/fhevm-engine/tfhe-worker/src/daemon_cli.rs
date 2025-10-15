@@ -42,14 +42,14 @@ pub struct Args {
 
     /// Maximum compact inputs to upload
     #[arg(long, default_value_t = 10)]
-    pub maximimum_compact_inputs_upload: usize,
+    pub maximum_compact_inputs_upload: usize,
 
     /// Maximum compact inputs to upload
     #[arg(long, default_value_t = 255)]
     pub maximum_handles_per_input: u8,
 
     /// Coprocessor FHE processing threads
-    #[arg(long, default_value_t = 8)]
+    #[arg(long, default_value_t = 32)]
     pub coprocessor_fhe_threads: usize,
 
     /// Tokio Async IO threads
@@ -77,8 +77,8 @@ pub struct Args {
     #[arg(long, default_value = "./coprocessor.key")]
     pub coprocessor_private_key: String,
 
-    /// Coprocessor service name in OTLP traces
-    #[arg(long, default_value = "coprocessor")]
+    /// tfhe-worker service name in OTLP traces
+    #[arg(long, default_value = "tfhe-worker")]
     pub service_name: String,
 
     /// Log level for the application

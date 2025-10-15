@@ -1,7 +1,8 @@
 use clap::{command, Parser};
 use fhevm_engine_common::healthz_server::HttpServer;
 use fhevm_engine_common::telemetry;
-use std::sync::Arc;
+use humantime::parse_duration;
+use std::{sync::Arc, time::Duration};
 use tokio::{join, task};
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, Level};
@@ -25,6 +26,15 @@ pub struct Args {
     /// Postgres pool connections
     #[arg(long, default_value_t = 5)]
     pub pg_pool_connections: u32,
+
+    /// Postgres acquire timeout
+    /// A longer timeout could affect the healthz/liveness updates
+    #[arg(long, default_value = "15s", value_parser = parse_duration)]
+    pub pg_timeout: Duration,
+
+    /// Postgres diagnostics: enable auto_explain extension
+    #[arg(long, value_parser = parse_duration)]
+    pub pg_auto_explain_with_min_duration: Option<Duration>,
 
     /// Postgres database url. If unspecified DATABASE_URL environment variable
     /// is used
@@ -60,6 +70,8 @@ async fn main() {
     let args = parse_args();
     tracing_subscriber::fmt()
         .json()
+        .with_current_span(true)
+        .with_span_list(false)
         .with_level(true)
         .with_max_level(args.log_level)
         .init();
@@ -76,15 +88,22 @@ async fn main() {
         pg_pool_connections: args.pg_pool_connections,
         pg_polling_interval: args.pg_polling_interval,
         worker_thread_count: args.worker_thread_count,
+        pg_timeout: args.pg_timeout,
+        pg_auto_explain_with_min_duration: args.pg_auto_explain_with_min_duration,
     };
 
-    if let Err(err) = telemetry::setup_otlp(&args.service_name) {
-        error!(error = %err, "Error while initializing tracing");
-        std::process::exit(1);
+    if !args.service_name.is_empty() {
+        if let Err(err) = telemetry::setup_otlp(&args.service_name) {
+            error!(error = %err, "Failed to setup OTLP");
+        }
     }
 
     let cancel_token = CancellationToken::new();
-    let service = ZkProofService::create(conf, cancel_token.child_token()).await;
+    let Some(service) = ZkProofService::create(conf, cancel_token.child_token()).await else {
+        error!("Failed to create zkproof service");
+        std::process::exit(1);
+    };
+
     let service = Arc::new(service);
 
     let http_server = HttpServer::new(

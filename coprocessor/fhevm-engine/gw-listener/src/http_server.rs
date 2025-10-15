@@ -13,6 +13,7 @@ use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info};
 
+use crate::aws_s3::AwsS3Interface;
 use crate::gw_listener::GatewayListener;
 use crate::HealthStatus;
 use alloy::{network::Ethereum, providers::Provider};
@@ -42,15 +43,22 @@ impl From<HealthStatus> for HealthResponse {
     }
 }
 
-pub struct HttpServer<P: Provider<Ethereum> + Clone + Send + Sync + 'static> {
-    listener: Arc<GatewayListener<P>>,
+pub struct HttpServer<
+    P: Provider<Ethereum> + Clone + Send + Sync + 'static,
+    A: AwsS3Interface + Clone + Send + Sync + 'static,
+> {
+    listener: Arc<GatewayListener<P, A>>,
     port: u16,
     cancel_token: CancellationToken,
 }
 
-impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
+impl<
+        P: Provider<Ethereum> + Clone + Send + Sync + 'static,
+        A: AwsS3Interface + Clone + Send + Sync + 'static,
+    > HttpServer<P, A>
+{
     pub fn new(
-        listener: Arc<GatewayListener<P>>,
+        listener: Arc<GatewayListener<P, A>>,
         port: u16,
         cancel_token: CancellationToken,
     ) -> Self {
@@ -90,8 +98,11 @@ impl<P: Provider<Ethereum> + Clone + Send + Sync + 'static> HttpServer<P> {
 }
 
 // Health handler returns appropriate HTTP status code based on health
-async fn health_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
-    State(listener): State<Arc<GatewayListener<P>>>,
+async fn health_handler<
+    P: Provider<Ethereum> + Clone + Send + Sync + 'static,
+    A: AwsS3Interface + Clone + 'static,
+>(
+    State(listener): State<Arc<GatewayListener<P, A>>>,
 ) -> impl IntoResponse {
     let status = listener.health_check().await;
     let http_status = if status.healthy {
@@ -104,8 +115,11 @@ async fn health_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
     (http_status, Json(HealthResponse::from(status)))
 }
 
-async fn liveness_handler<P: Provider<Ethereum> + Clone + Send + Sync + 'static>(
-    State(_listener): State<Arc<GatewayListener<P>>>,
+async fn liveness_handler<
+    P: Provider<Ethereum> + Clone + Send + Sync + 'static,
+    A: AwsS3Interface + Clone + 'static,
+>(
+    State(_listener): State<Arc<GatewayListener<P, A>>>,
 ) -> impl IntoResponse {
     (
         StatusCode::OK,

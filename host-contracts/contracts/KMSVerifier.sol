@@ -4,8 +4,8 @@ pragma solidity ^0.8.24;
 import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import {EIP712UpgradeableCrossChain} from "./shared/EIP712UpgradeableCrossChain.sol";
-import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {ACLOwnable} from "./shared/ACLOwnable.sol";
 
 /**
  * @title   KMSVerifier.
@@ -13,7 +13,7 @@ import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
  *          signature verification functions.
  * @dev     The contract uses EIP712UpgradeableCrossChain for cryptographic operations and is deployed using an UUPS proxy.
  */
-contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP712UpgradeableCrossChain {
+contract KMSVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, ACLOwnable {
     /// @notice Returned if the KMS signer to add is already a signer.
     error KMSAlreadySigner();
 
@@ -94,7 +94,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 3;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.KMSVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant KMSVerifierStorageLocation =
@@ -119,17 +119,17 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
         address[] calldata initialSigners,
         uint256 initialThreshold
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __Ownable_init(owner());
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
         defineNewContext(initialSigners, initialThreshold);
     }
 
     /**
      * @notice Re-initializes the contract from V1.
+     * @dev Define a `reinitializeVX` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice          Sets a new context (i.e. new set of unique signers and new threshold).
@@ -137,7 +137,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
      * @param newSignersSet   The new set of signers to be set. This array should not be empty and without duplicates nor null values.
      * @param newThreshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
-    function defineNewContext(address[] memory newSignersSet, uint256 newThreshold) public virtual onlyOwner {
+    function defineNewContext(address[] memory newSignersSet, uint256 newThreshold) public virtual onlyACLOwner {
         uint256 newSignersLen = newSignersSet.length;
         if (newSignersLen == 0) {
             revert SignersSetIsEmpty();
@@ -173,7 +173,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
      * @dev             Only the owner can set a threshold.
      * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
-    function setThreshold(uint256 threshold) public virtual onlyOwner {
+    function setThreshold(uint256 threshold) public virtual onlyACLOwner {
         _setThreshold(threshold);
         KMSVerifierStorage storage $ = _getKMSVerifierStorage();
         emit NewContextSet($.signers, threshold);
@@ -364,7 +364,7 @@ contract KMSVerifier is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable, EIP7
     /**
      * @dev Should revert when msg.sender is not authorized to upgrade the contract.
      */
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
 
     /**
      * @notice                  Hashes the decryption result.

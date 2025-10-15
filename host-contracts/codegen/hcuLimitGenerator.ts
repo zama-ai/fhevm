@@ -14,8 +14,8 @@ export function generateSolidityHCULimit(priceData: PriceData): string {
   
   import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
   import {UUPSUpgradeableEmptyProxy} from "./shared/UUPSUpgradeableEmptyProxy.sol";
-  import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
   import {fhevmExecutorAdd} from "../addresses/FHEVMHostAddresses.sol";
+  import {ACLOwnable} from "./shared/ACLOwnable.sol";
 
   import {FheType} from "./shared/FheType.sol";
 
@@ -25,7 +25,7 @@ export function generateSolidityHCULimit(priceData: PriceData): string {
    * transaction level, including the maximum number of homomorphic complexity units (HCU) per transaction.
    * @dev The contract is designed to be used with the FHEVMExecutor contract.
   */
-contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
+contract HCULimit is UUPSUpgradeableEmptyProxy, ACLOwnable {
     /// @notice Returned if the sender is not the FHEVMExecutor.
     error CallerMustBeFHEVMExecutorContract();
 
@@ -48,7 +48,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 2;
+    uint256 private constant MINOR_VERSION = 1;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -66,7 +66,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
 
     /// Constant used for making sure the version number used in the \`reinitializer\` modifier is
     /// identical between \`initializeFromEmptyProxy\` and the \`reinitializeVX\` method
-    uint64 private constant REINITIALIZER_VERSION = 4;
+    uint64 private constant REINITIALIZER_VERSION = 2;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.HCULimit")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant HCULimitStorageLocation =
@@ -81,16 +81,15 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      * @notice  Initializes the contract.
      */
     /// @custom:oz-upgrades-validate-as-initializer
-    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
-        __Ownable_init(owner());
-    }
+    function initializeFromEmptyProxy() public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice Re-initializes the contract from V1.
+     * @dev Define a \`reinitializeVX\` function once the contract needs to be upgraded.
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV3() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
 \n\n`;
 
@@ -100,7 +99,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     if (data.supportScalar && data.scalar && data.nonScalar) {
       switch (data.numberInputs) {
         case 1:
-          output += `    /**
+          output += `  
+        /**
         * @notice Check the homomorphic complexity units limit required for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
         * @param resultType Result type.
         * @param scalarByte Scalar byte.
@@ -113,7 +113,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     `;
           break;
         case 2:
-          output += `    /**
+          output += `
+        /**
          * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param scalarByte Scalar byte.
@@ -132,7 +133,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     } else if (data.supportScalar && data.scalar && !data.nonScalar) {
       switch (data.numberInputs) {
         case 2:
-          output += `    /**
+          output += `    
+        /**
          * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param scalarByte Scalar byte.
@@ -161,7 +163,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     `;
           break;
         case 1:
-          output += `    /**
+          output += `    
+      /**
         * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
         * @param ct The only operand.
         * @param result Result.
@@ -172,7 +175,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     `;
           break;
         case 2:
-          output += `    /**
+          output += `    
+        /**
          * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param lhs The left-hand side operand.
@@ -185,7 +189,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     `;
           break;
         case 3:
-          output += `    /**
+          output += `    
+        /**
          * @notice Check the homomorphic complexity units limit for ${operation.charAt(0).toUpperCase() + operation.slice(1)}.
          * @param resultType Result type.
          * @param lhs The left-hand side operand.
@@ -231,6 +236,7 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     }
     output += `
         }
+        
     `;
   }
 
@@ -339,11 +345,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      * @dev This function uses inline assembly to load the HCU from a specific storage location.
      */
     function _getHCUForHandle(bytes32 handle) internal view virtual returns (uint256 handleHCU) {
-        bytes32 slot = keccak256(abi.encodePacked(HCULimitStorageLocation, handle));
         assembly {
-            // Ensure the slot is properly aligned and validated before using tload.
-            // This assumes the slot is derived from a secure and deterministic process.
-            handleHCU := tload(slot)
+            handleHCU := tload(handle)
         }
     }
 
@@ -353,10 +356,8 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      * @dev This function uses inline assembly to store the HCU in a specific storage location.
      */
     function _getHCUForTransaction() internal view virtual returns (uint256 transactionHCU) {
-        /// @dev keccak256(abi.encodePacked(HCULimitStorageLocation, "HCU"))
-        bytes32 slot = 0x9fe02aa19e370f46d43dc2b6620733ba9c3b193659e9699f55eefe911af8a4b4;
         assembly {
-            transactionHCU := tload(slot)
+            transactionHCU := tload(0)
         }
     }
 
@@ -365,12 +366,11 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
      * @notice Sets the HCU for a handle in the transient storage.
      * @param handle The handle for which to set the HCU.
      * @param handleHCU The HCU to set for the handle.
-     * @dev This function uses inline assembly to store the HCU in a specific storage location.
+     * @dev This function uses inline assembly to store the HCU in a specific transient storage slot.
      */
     function _setHCUForHandle(bytes32 handle, uint256 handleHCU) internal virtual {
-        bytes32 slot = keccak256(abi.encodePacked(HCULimitStorageLocation, handle));
         assembly {
-            tstore(slot, handleHCU)
+            tstore(handle, handleHCU)
         }
     }
 
@@ -379,20 +379,18 @@ contract HCULimit is UUPSUpgradeableEmptyProxy, Ownable2StepUpgradeable {
     /**
      * @notice Updates the current HCU consumption for the transaction and stores it in the transient storage.
      * @param transactionHCU The total HCU for the transaction.
-     * @dev This function uses inline assembly to store the HCU in a specific storage location.
+     * @dev This function uses inline assembly to store the HCU in a specific transient storage slot.
      */
     function _setHCUForTransaction(uint256 transactionHCU) internal virtual {
-        /// @dev keccak256(abi.encodePacked(HCULimitStorageLocation, "HCU"))
-        bytes32 slot = 0x9fe02aa19e370f46d43dc2b6620733ba9c3b193659e9699f55eefe911af8a4b4;
         assembly {
-            tstore(slot, transactionHCU)
+            tstore(0, transactionHCU) // to avoid collisions with handles (see _setHCUForHandle)
         }
     }
 
     /**
      * @dev Should revert when msg.sender is not authorized to upgrade the contract.
      */
-    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address _newImplementation) internal virtual override onlyACLOwner {}
 
     /**
      * @dev Returns the maximum of two numbers.

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 
 use alloy::primitives::FixedBytes;
-use alloy::rpc::types::Block;
+use alloy::rpc::types::{Block, Header};
 
 pub type BlockHash = FixedBytes<32>;
 
@@ -15,11 +15,17 @@ pub struct BlockSummary {
 
 impl From<Block> for BlockSummary {
     fn from(block: Block) -> Self {
+        block.header.into()
+    }
+}
+
+impl From<Header> for BlockSummary {
+    fn from(block_header: Header) -> Self {
         Self {
-            number: block.header.number,
-            hash: block.header.hash,
-            parent_hash: block.header.parent_hash,
-            timestamp: block.header.timestamp,
+            number: block_header.number,
+            hash: block_header.hash,
+            parent_hash: block_header.parent_hash,
+            timestamp: block_header.timestamp,
         }
     }
 }
@@ -65,8 +71,20 @@ impl BlockHistory {
         false
     }
 
-    pub fn block_has_not_changed(&self, block_hash: &BlockHash) -> bool {
-        self.ordered_blocks.back().map(|b| &b.hash) == Some(block_hash)
+    pub fn find_block_by_number(
+        &self,
+        block_number: u64,
+    ) -> Option<&BlockSummary> {
+        // we process the history in reverse to have O(1) on no reorg
+        let slices = self.ordered_blocks.as_slices();
+        for history_slice in [slices.1, slices.0].iter() {
+            for historic_block in history_slice.iter().rev() {
+                if historic_block.number == block_number {
+                    return Some(historic_block);
+                }
+            }
+        }
+        None
     }
 
     pub fn tip(&self) -> Option<BlockSummary> {
@@ -130,12 +148,9 @@ mod tests {
         assert!(history.is_ready_to_detect_reorg());
         assert!(history.is_known(&block1.hash));
         assert!(history.is_known(&block2.hash));
-        assert!(history.block_has_not_changed(&block2.hash));
-        assert!(!history.block_has_not_changed(&block3.hash));
         assert!(!history.is_known(&block3.hash));
         history.add_block(block3);
         assert_eq!(history.tip().map(|b| b.number), Some(block3.number));
-        assert!(history.block_has_not_changed(&block3.hash));
         assert!(history.is_known(&block3.hash));
     }
 

@@ -307,11 +307,11 @@ impl CoprocessorService {
         let tenant_id = check_if_api_key_is_valid(&request, &self.pool, tracer).await?;
 
         let req = request.get_ref();
-        if req.input_ciphertexts.len() > self.args.maximimum_compact_inputs_upload {
+        if req.input_ciphertexts.len() > self.args.maximum_compact_inputs_upload {
             return Err(tonic::Status::from_error(Box::new(
                 CoprocessorError::MoreThanMaximumCompactInputCiphertextsUploaded {
                     input_count: req.input_ciphertexts.len(),
-                    maximum_allowed: self.args.maximimum_compact_inputs_upload,
+                    maximum_allowed: self.args.maximum_compact_inputs_upload,
                 },
             )));
         }
@@ -695,9 +695,10 @@ impl CoprocessorService {
                         is_completed,
                         is_scalar,
                         dependence_chain_id,
-                        transaction_id
+                        transaction_id,
+                        is_allowed
                     )
-                    VALUES($1, $2, $3, $4, false, $5, $6, $7)
+                    VALUES($1, $2, $3, $4, false, $5, $6, $7, $8)
                     ON CONFLICT (tenant_id, output_handle, transaction_id) DO NOTHING
                 ",
                 tenant_id,
@@ -706,7 +707,8 @@ impl CoprocessorService {
                 fhe_operation,
                 are_comps_scalar[idx],
                 computation_buckets[idx],
-                comp.transaction_id
+                comp.transaction_id,
+                comp.is_allowed
             )
             .execute(trx.as_mut())
             .await

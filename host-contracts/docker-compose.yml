@@ -26,8 +26,8 @@ services:
   fhevm-sc-deploy:
     container_name: fhevm-sc-deploy
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../
+      dockerfile: host-contracts/Dockerfile
     env_file:
       - ./.env
     environment:
@@ -35,3 +35,28 @@ services:
       - CHAIN_ID_GATEWAY=54321
     command:
       - npx hardhat task:deployAllHostContracts
+    volumes:
+      - addresses-volume:/app/host-contracts/addresses
+
+  fhevm-sc-add-pausers:
+    container_name: fhevm-sc-add-pausers
+    build:
+      context: ../
+      dockerfile: host-contracts/Dockerfile
+    env_file:
+      - ./.env
+    environment:
+      - HARDHAT_NETWORK=${HARDHAT_NETWORK:-staging}
+      - CHAIN_ID_GATEWAY=54321
+    command:
+      - npx hardhat task:addHostPausers --use-internal-pauser-set-address true
+    depends_on:
+      fhevm-sc-deploy:
+        condition: service_completed_successfully
+    # Addresses needs to be mounted even though we don't use them in the task because the PauserSet
+    # contract is compiled, and it imports these addresses.
+    volumes:
+      - addresses-volume:/app/host-contracts/addresses
+
+volumes:
+  addresses-volume:

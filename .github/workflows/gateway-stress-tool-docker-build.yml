@@ -1,0 +1,36 @@
+name: gateway-stress-tool-docker-build
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: fhevm-gateway-stress-tool-${{ github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    name: gateway-stress-tool-docker-build/build
+    uses: zama-ai/ci-templates/.github/workflows/common-docker.yml@3d8b1adcb5504fef30223016d459e3e38b36f9d1
+    secrets:
+      AWS_ACCESS_KEY_S3_USER: ${{ secrets.AWS_ACCESS_KEY_S3_USER }}
+      AWS_SECRET_KEY_S3_USER: ${{ secrets.AWS_SECRET_KEY_S3_USER }}
+      BLOCKCHAIN_ACTIONS_TOKEN: ${{ secrets.BLOCKCHAIN_ACTIONS_TOKEN }}
+      CGR_USERNAME: ${{ secrets.CGR_USERNAME }}
+      CGR_PASSWORD: ${{ secrets.CGR_PASSWORD }}
+    permissions:
+      actions: 'read' # Required to read workflow run information
+      contents: 'read' # Required to checkout repository code
+      pull-requests: 'read' # Required to read pull request information
+      attestations: 'write' # Required to create build attestations
+      packages: 'write' # Required to publish Docker images
+      id-token: 'write' # Required for OIDC authentication
+    with:
+      use-cgr-secrets: true
+      working-directory: "."
+      docker-context: "."
+      push_image: true
+      image-name: "fhevm/test-suite/gateway-stress-tool"
+      docker-file: "./test-suite/gateway-stress/Dockerfile"
+      app-cache-dir: "fhevm-gateway-stress-tool"

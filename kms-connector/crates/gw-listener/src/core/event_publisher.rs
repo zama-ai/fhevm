@@ -1,12 +1,15 @@
 use crate::monitoring::metrics::EVENT_STORED_COUNTER;
 use anyhow::anyhow;
-use connector_utils::types::{GatewayEvent, db::SnsCiphertextMaterialDbItem};
+use connector_utils::{
+    monitoring::otlp::PropagationContext,
+    types::{
+        GatewayEvent, GatewayEventKind,
+        db::{ParamsTypeDb, SnsCiphertextMaterialDbItem},
+    },
+};
 use fhevm_gateway_bindings::{
     decryption::Decryption::{PublicDecryptionRequest, UserDecryptionRequest},
-    kms_management::KmsManagement::{
-        CrsgenRequest, KeygenRequest, KskgenRequest, PreprocessKeygenRequest,
-        PreprocessKskgenRequest,
-    },
+    kms_generation::KMSGeneration::{CrsgenRequest, KeygenRequest, PrepKeygenRequest},
 };
 use sqlx::{Pool, Postgres, postgres::PgQueryResult};
 use tracing::info;
@@ -29,18 +32,19 @@ impl DbEventPublisher {
 }
 
 impl EventPublisher for DbEventPublisher {
-    #[tracing::instrument(skip(self), fields(event = %event))]
+    #[tracing::instrument(skip_all)]
     async fn publish(&self, event: GatewayEvent) -> anyhow::Result<()> {
-        info!("Storing {:?} in DB...", event);
+        info!("Storing {:?} in DB...", event.kind);
 
-        let query_result = match event.clone() {
-            GatewayEvent::PublicDecryption(e) => self.publish_public_decryption(e).await,
-            GatewayEvent::UserDecryption(e) => self.publish_user_decryption(e).await,
-            GatewayEvent::PreprocessKeygen(e) => self.publish_preprocess_keygen_request(e).await,
-            GatewayEvent::PreprocessKskgen(e) => self.publish_preprocess_kskgen_request(e).await,
-            GatewayEvent::Keygen(e) => self.publish_keygen_request(e).await,
-            GatewayEvent::Kskgen(e) => self.publish_kskgen_request(e).await,
-            GatewayEvent::Crsgen(e) => self.publish_crsgen_request(e).await,
+        let otlp_ctx = event.otlp_context;
+        let query_result = match event.kind {
+            GatewayEventKind::PublicDecryption(e) => {
+                self.publish_public_decryption(e, otlp_ctx).await
+            }
+            GatewayEventKind::UserDecryption(e) => self.publish_user_decryption(e, otlp_ctx).await,
+            GatewayEventKind::PrepKeygen(e) => self.publish_prep_keygen_request(e, otlp_ctx).await,
+            GatewayEventKind::Keygen(e) => self.publish_keygen_request(e, otlp_ctx).await,
+            GatewayEventKind::Crsgen(e) => self.publish_crsgen_request(e, otlp_ctx).await,
         }
         .map_err(|err| anyhow!("Failed to publish event: {err}"))?;
 
@@ -56,7 +60,8 @@ impl DbEventPublisher {
     async fn publish_public_decryption(
         &self,
         request: PublicDecryptionRequest,
-    ) -> sqlx::Result<PgQueryResult> {
+        otlp_ctx: PropagationContext,
+    ) -> anyhow::Result<PgQueryResult> {
         let sns_ciphertexts_db = request
             .snsCtMaterials
             .iter()
@@ -64,19 +69,23 @@ impl DbEventPublisher {
             .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
         sqlx::query!(
-            "INSERT INTO public_decryption_requests VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            "INSERT INTO public_decryption_requests(decryption_id, sns_ct_materials, extra_data, otlp_context) \
+            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
             request.decryptionId.as_le_slice(),
             sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
             request.extraData.as_ref(),
+            bc2wrap::serialize(&otlp_ctx)?,
         )
         .execute(&self.db_pool)
         .await
+        .map_err(anyhow::Error::from)
     }
 
     async fn publish_user_decryption(
         &self,
         request: UserDecryptionRequest,
-    ) -> sqlx::Result<PgQueryResult> {
+        otlp_ctx: PropagationContext,
+    ) -> anyhow::Result<PgQueryResult> {
         let sns_ciphertexts_db = request
             .snsCtMaterials
             .iter()
@@ -84,72 +93,74 @@ impl DbEventPublisher {
             .collect::<Vec<SnsCiphertextMaterialDbItem>>();
 
         sqlx::query!(
-            "INSERT INTO user_decryption_requests VALUES ($1, $2, $3, $4, $5) ON CONFLICT DO NOTHING",
+            "INSERT INTO user_decryption_requests(\
+                decryption_id, sns_ct_materials, user_address, public_key, extra_data, otlp_context\
+            ) \
+            VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING",
             request.decryptionId.as_le_slice(),
             sns_ciphertexts_db as Vec<SnsCiphertextMaterialDbItem>,
             request.userAddress.as_slice(),
             request.publicKey.as_ref(),
             request.extraData.as_ref(),
+            bc2wrap::serialize(&otlp_ctx)?,
         )
         .execute(&self.db_pool)
         .await
+        .map_err(anyhow::Error::from)
     }
 
-    async fn publish_preprocess_keygen_request(
+    async fn publish_prep_keygen_request(
         &self,
-        request: PreprocessKeygenRequest,
-    ) -> sqlx::Result<PgQueryResult> {
+        request: PrepKeygenRequest,
+        otlp_ctx: PropagationContext,
+    ) -> anyhow::Result<PgQueryResult> {
+        let params_type: ParamsTypeDb = request.paramsType.try_into()?;
         sqlx::query!(
-            "INSERT INTO preprocess_keygen_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
-            request.preKeygenRequestId.as_le_slice(),
-            request.fheParamsDigest.as_slice(),
+            "INSERT INTO prep_keygen_requests(prep_keygen_id, epoch_id, params_type, otlp_context) \
+            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            request.prepKeygenId.as_le_slice(),
+            request.epochId.as_le_slice(),
+            params_type as ParamsTypeDb,
+            bc2wrap::serialize(&otlp_ctx)?,
         )
         .execute(&self.db_pool)
         .await
+        .map_err(anyhow::Error::from)
     }
 
-    async fn publish_preprocess_kskgen_request(
+    async fn publish_keygen_request(
         &self,
-        request: PreprocessKskgenRequest,
-    ) -> sqlx::Result<PgQueryResult> {
+        request: KeygenRequest,
+        otlp_ctx: PropagationContext,
+    ) -> anyhow::Result<PgQueryResult> {
         sqlx::query!(
-            "INSERT INTO preprocess_kskgen_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
-            request.preKskgenRequestId.as_le_slice(),
-            request.fheParamsDigest.as_slice(),
+            "INSERT INTO keygen_requests(prep_keygen_id, key_id, otlp_context) \
+            VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            request.prepKeygenId.as_le_slice(),
+            request.keyId.as_le_slice(),
+            bc2wrap::serialize(&otlp_ctx)?,
         )
         .execute(&self.db_pool)
         .await
+        .map_err(anyhow::Error::from)
     }
 
-    async fn publish_keygen_request(&self, request: KeygenRequest) -> sqlx::Result<PgQueryResult> {
+    async fn publish_crsgen_request(
+        &self,
+        request: CrsgenRequest,
+        otlp_ctx: PropagationContext,
+    ) -> anyhow::Result<PgQueryResult> {
+        let params_type: ParamsTypeDb = request.paramsType.try_into()?;
         sqlx::query!(
-            "INSERT INTO keygen_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
-            request.preKeyId.as_le_slice(),
-            request.fheParamsDigest.as_slice(),
+            "INSERT INTO crsgen_requests(crs_id, max_bit_length, params_type, otlp_context) \
+            VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
+            request.crsId.as_le_slice(),
+            request.maxBitLength.as_le_slice(),
+            params_type as ParamsTypeDb,
+            bc2wrap::serialize(&otlp_ctx)?,
         )
         .execute(&self.db_pool)
         .await
-    }
-
-    async fn publish_kskgen_request(&self, request: KskgenRequest) -> sqlx::Result<PgQueryResult> {
-        sqlx::query!(
-            "INSERT INTO kskgen_requests VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING",
-            request.preKskId.as_le_slice(),
-            request.sourceKeyId.as_le_slice(),
-            request.destKeyId.as_le_slice(),
-            request.fheParamsDigest.as_slice(),
-        )
-        .execute(&self.db_pool)
-        .await
-    }
-
-    async fn publish_crsgen_request(&self, request: CrsgenRequest) -> sqlx::Result<PgQueryResult> {
-        sqlx::query!(
-            "INSERT INTO crsgen_requests VALUES ($1, $2) ON CONFLICT DO NOTHING",
-            request.crsgenRequestId.as_le_slice(),
-            request.fheParamsDigest.as_slice(),
-        )
-        .execute(&self.db_pool)
-        .await
+        .map_err(anyhow::Error::from)
     }
 }

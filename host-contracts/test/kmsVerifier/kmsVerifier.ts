@@ -105,7 +105,7 @@ describe('KMSVerifier', function () {
     setSigners = [...setSigners, randomAccount];
     await expect(kmsVerifier.connect(randomAccount).defineNewContext(setSigners, 2)).to.be.revertedWithCustomError(
       kmsVerifier,
-      'OwnableUnauthorizedAccount',
+      'NotHostOwner',
     );
   });
 });

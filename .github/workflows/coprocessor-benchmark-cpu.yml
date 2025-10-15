@@ -29,6 +29,15 @@ on:
           - "MAX_LOCALITY"
           - "LOOP"
           - "FINE_GRAIN"
+      benchmark_type:
+        description: "Benchmark type"
+        required: false
+        type: choice
+        options:
+          - "ALL"
+          - "THROUGHPUT"
+          - "LATENCY"
+        default: "ALL"
 
 env:
   CARGO_TERM_COLOR: always
@@ -43,7 +52,7 @@ jobs:
     name: coprocessor-benchmarks-cpu/setup-instance
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     outputs:
       runner-name: ${{ steps.start-remote-instance.outputs.label }}
     steps:
@@ -65,8 +74,8 @@ jobs:
     continue-on-error: true
     timeout-minutes: 720  # 12 hours
     permissions:
-      contents: 'read'
-      packages: 'read'
+      contents: 'read' # Required to checkout repository code
+      packages: 'read' # Required to read GitHub packages/container registry
     strategy:
       fail-fast: false
       # explicit include-based build matrix, of known valid options
@@ -143,6 +152,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to Chainguard Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567 # v3.3.0
+        with:
+          registry: cgr.dev
+          username: ${{ secrets.CGR_USERNAME }}
+          password: ${{ secrets.CGR_PASSWORD }}
+
       - name: Init database
         run: make init_db
         working-directory: coprocessor/fhevm-engine/tfhe-worker
@@ -158,9 +174,10 @@ jobs:
 
       - name: Run benchmarks on CPU
         run: |
-          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TXN_SENDER_TEST_GLOBAL_LOCALSTACK=1 BENCHMARK_BATCH_SIZE="${BATCH_SIZE}" FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" make -e "benchmark_${BENCHMARKS}_cpu"
+          DATABASE_URL=postgresql://postgres:postgres@localhost:5432/coprocessor TXN_SENDER_TEST_GLOBAL_LOCALSTACK=1 BENCHMARK_BATCH_SIZE="${BATCH_SIZE}" BENCHMARK_TYPE="${BENCHMARK_TYPE}" FHEVM_DF_SCHEDULE="${SCHEDULING_POLICY}" make -e "benchmark_${BENCHMARKS}_cpu"
         working-directory: coprocessor/fhevm-engine/tfhe-worker
         env:
+          BENCHMARK_TYPE: ${{ inputs.benchmark_type }}
           BATCH_SIZE: ${{ inputs.batch_size }}
           SCHEDULING_POLICY: ${{ inputs.scheduling_policy }}
           BENCHMARKS: ${{ inputs.benchmarks }}
@@ -178,7 +195,7 @@ jobs:
           --walk-subdirs \
           --name-suffix "operation_batch_size_${BATCH_SIZE}-schedule_${SCHEDULING_POLICY}"
         env:
-          RESULTS_FILENAME: ${{ env.results_filename }}
+          RESULTS_FILENAME: ${{ env.RESULTS_FILENAME }}
           COMMIT_HASH: ${{ env.COMMIT_HASH }}
           GH_REF_NAME: ${{ github.ref_name }}
           COMMIT_DATE: ${{ env.COMMIT_DATE }}
@@ -207,7 +224,7 @@ jobs:
           --slab-url "${SLAB_URL}"
         env:
           JOB_SECRET: ${{ secrets.JOB_SECRET }}
-          RESULTS_FILENAME: ${{ env.results_filename }}
+          RESULTS_FILENAME: ${{ env.RESULTS_FILENAME }}
           SLAB_URL: ${{ secrets.SLAB_URL }}
 
   teardown-instance:
@@ -216,7 +233,7 @@ jobs:
     needs: [ setup-instance, benchmarks-cpu ]
     runs-on: ubuntu-latest
     permissions:
-      contents: 'read'
+      contents: 'read' # Required to checkout repository code
     steps:
       - name: Stop remote instance
         id: stop-instance

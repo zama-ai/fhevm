@@ -7,8 +7,11 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
-import {EmptyUUPSProxy} from "../../contracts/shared/EmptyUUPSProxy.sol";
+import {ACL} from "../../contracts/ACL.sol";
+import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {ACLOwnable} from "../../contracts/shared/ACLOwnable.sol";
+import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 contract KMSVerifierTest is Test {
     KMSVerifier internal kmsVerifier;
@@ -105,7 +108,22 @@ contract KMSVerifierTest is Test {
     function _deployProxy() internal {
         proxy = UnsafeUpgrades.deployUUPSProxy(
             address(new EmptyUUPSProxy()),
-            abi.encodeCall(EmptyUUPSProxy.initialize, owner)
+            abi.encodeCall(EmptyUUPSProxy.initialize, ())
+        );
+    }
+
+    /**
+     * @dev Internal function to deploy and etch ACL contract at expected constant address.
+     * Also stores `owner` as ACL's owner, this is needed for ownership of core contracts.
+     */
+    function _deployAndEtchACL() internal {
+        address _acl = address(new ACL());
+        bytes memory code = _acl.code;
+        vm.etch(aclAdd, code);
+        vm.store(
+            aclAdd,
+            0x9016d09d72d40fdae2fd8ceac6b6234c7706214fd39c1cd1e609a0528c199300, // OwnableStorageLocation
+            bytes32(uint256(uint160(owner)))
         );
     }
 
@@ -189,6 +207,7 @@ contract KMSVerifierTest is Test {
      */
     function setUp() public {
         _deployProxy();
+        _deployAndEtchACL();
         _initializeSigners();
     }
 
@@ -226,7 +245,7 @@ contract KMSVerifierTest is Test {
         vm.assume(randomAccount != owner);
         _upgradeProxyWithSigners(3);
         address randomSigner = address(42);
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         vm.prank(randomAccount);
         address[] memory newSigners = new address[](1);
         newSigners[0] = randomSigner;
@@ -321,7 +340,7 @@ contract KMSVerifierTest is Test {
         vm.assume(randomAccount != owner);
         _upgradeProxyWithSigners(3);
         vm.prank(randomAccount);
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         kmsVerifier.setThreshold(2);
     }
 
@@ -358,7 +377,7 @@ contract KMSVerifierTest is Test {
         vm.assume(randomAccount != owner);
         /// @dev Have to use external call to this to avoid this issue:
         ///      https://github.com/foundry-rs/foundry/issues/5806
-        vm.expectPartialRevert(OwnableUpgradeable.OwnableUnauthorizedAccount.selector);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
         this.upgrade(randomAccount);
     }
 

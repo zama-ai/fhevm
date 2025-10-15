@@ -1,20 +1,33 @@
 use crate::{
-    core::{Config, event_processor::eip712::verify_user_decryption_eip712},
+    core::{
+        Config,
+        event_processor::{eip712::verify_user_decryption_eip712, processor::ProcessingError},
+    },
     monitoring::metrics::{
-        CORE_REQUEST_SENT_COUNTER, CORE_REQUEST_SENT_ERRORS, CORE_RESPONSE_COUNTER,
-        CORE_RESPONSE_ERRORS,
+        DECRYPTION_REQUEST_SENT_COUNTER, DECRYPTION_REQUEST_SENT_ERRORS,
+        DECRYPTION_RESPONSE_COUNTER, DECRYPTION_RESPONSE_ERRORS,
+        KEY_MANAGEMENT_REQUEST_SENT_COUNTER, KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+        KEY_MANAGEMENT_RESPONSE_COUNTER, KEY_MANAGEMENT_RESPONSE_ERRORS,
     },
 };
+use alloy::primitives::U256;
 use anyhow::anyhow;
 use connector_utils::{
     conn::{CONNECTION_RETRY_DELAY, CONNECTION_RETRY_NUMBER},
-    types::{KmsGrpcRequest, KmsGrpcResponse},
+    types::{KmsGrpcRequest, KmsGrpcResponse, decode_request_id, u256_to_u32},
 };
 use kms_grpc::{
-    kms::v1::{Empty, PublicDecryptionRequest, RequestId, UserDecryptionRequest},
+    kms::v1::{
+        CrsGenRequest, Empty, KeyGenPreprocRequest, KeyGenRequest, PublicDecryptionRequest,
+        RequestId, UserDecryptionRequest,
+    },
     kms_service::v1::core_service_endpoint_client::CoreServiceEndpointClient,
 };
-use std::time::{Duration, Instant};
+use prometheus::IntCounter;
+use std::{
+    sync::LazyLock,
+    time::{Duration, Instant},
+};
 use tonic::{Code, Request, Response, Status, transport::Channel};
 use tracing::{info, warn};
 
@@ -107,44 +120,38 @@ impl KmsClient {
     pub async fn send_request(
         &mut self,
         request: KmsGrpcRequest,
-    ) -> anyhow::Result<KmsGrpcResponse> {
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
         match request {
-            KmsGrpcRequest::PublicDecryption(request) => {
-                self.request_public_decryption(request).await
-            }
-            KmsGrpcRequest::UserDecryption(request) => self.request_user_decryption(request).await,
+            KmsGrpcRequest::PublicDecryption(req) => self.request_public_decryption(req).await,
+            KmsGrpcRequest::UserDecryption(req) => self.request_user_decryption(req).await,
+            KmsGrpcRequest::PrepKeygen(req) => self.request_prep_keygen(req).await,
+            KmsGrpcRequest::Keygen(req) => self.request_keygen(req).await,
+            KmsGrpcRequest::Crsgen(req) => self.request_crsgen(req).await,
         }
     }
 
     async fn request_public_decryption(
         &mut self,
         request: PublicDecryptionRequest,
-    ) -> anyhow::Result<KmsGrpcResponse> {
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
         let request_id = request
             .request_id
             .clone()
-            .ok_or_else(|| Status::invalid_argument("Missing request ID"))?;
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("Missing request ID")))?;
 
-        // Log the FHE types being processed in this request
-        if let Some(ciphertexts) = request.ciphertexts.as_slice().first() {
-            info!(
-                "[OUT] Sending GRPC request with FHE type: {}",
-                ciphertexts.fhe_type
-            );
-        } else {
-            info!("[OUT] Sending GRPC request with no ciphertexts",);
-        }
-
-        // Send initial request with retries
         let inner_client = self.choose_client(request_id.clone());
-        send_request_with_retry(self.grpc_request_retries, || {
-            let mut client = inner_client.clone();
-            let request = request.clone();
-            async move { client.public_decrypt(request).await }
-        })
+        send_request_with_retry(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.public_decrypt(request).await }
+            },
+            &DECRYPTION_REQUEST_SENT_COUNTER,
+            &DECRYPTION_REQUEST_SENT_ERRORS,
+        )
         .await?;
 
-        // Poll for result with timeout
         let grpc_response = poll_for_result(
             self.public_decryption_timeout,
             self.grpc_poll_interval,
@@ -153,49 +160,43 @@ impl KmsClient {
                 let mut client = inner_client.clone();
                 async move { client.get_public_decryption_result(request).await }
             },
+            &DECRYPTION_RESPONSE_COUNTER,
+            &DECRYPTION_RESPONSE_ERRORS,
         )
-        .await?;
+        .await
+        .map_err(ProcessingError::from_response_status)?;
 
         KmsGrpcResponse::try_from((request_id, grpc_response))
+            .map_err(ProcessingError::Irrecoverable)
     }
 
     async fn request_user_decryption(
         &mut self,
         request: UserDecryptionRequest,
-    ) -> anyhow::Result<KmsGrpcResponse> {
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
         let request_id = request
             .request_id
             .clone()
-            .ok_or_else(|| Status::invalid_argument("Missing request ID"))?;
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("Missing request ID")))?;
 
         // Verify the EIP-712 signature for the user decryption request
         if let Err(e) = verify_user_decryption_eip712(&request) {
             warn!("Failed to verify request: {e}. Proceeding despite failure...");
         }
 
-        // Log the client address and FHE types being processed
-        let fhe_types = request
-            .typed_ciphertexts
-            .iter()
-            .map(|ct| ct.fhe_type.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-
-        info!(
-            "[OUT] Sending GRPC request for client {} with FHE types: [{}]",
-            request.client_address, fhe_types
-        );
-
-        // Send initial request with retries
         let inner_client = self.choose_client(request_id.clone());
-        send_request_with_retry(self.grpc_request_retries, || {
-            let mut client = inner_client.clone();
-            let request = request.clone();
-            async move { client.user_decrypt(request).await }
-        })
+        send_request_with_retry(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.user_decrypt(request).await }
+            },
+            &DECRYPTION_REQUEST_SENT_COUNTER,
+            &DECRYPTION_REQUEST_SENT_ERRORS,
+        )
         .await?;
 
-        // Poll for result with timeout
         let grpc_response = poll_for_result(
             self.user_decryption_timeout,
             self.grpc_poll_interval,
@@ -204,24 +205,154 @@ impl KmsClient {
                 let request = Request::new(request_id.clone());
                 async move { client.get_user_decryption_result(request).await }
             },
+            &DECRYPTION_RESPONSE_COUNTER,
+            &DECRYPTION_RESPONSE_ERRORS,
+        )
+        .await
+        .map_err(ProcessingError::from_response_status)?;
+
+        KmsGrpcResponse::try_from((request_id, grpc_response))
+            .map_err(ProcessingError::Irrecoverable)
+    }
+
+    async fn request_prep_keygen(
+        &self,
+        request: KeyGenPreprocRequest,
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
+        let request_id = request
+            .request_id
+            .clone()
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("Missing request ID")))?;
+
+        let inner_client = self.choose_client(request_id.clone());
+        send_request_with_retry(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.key_gen_preproc(request).await }
+            },
+            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
+            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
         )
         .await?;
 
-        KmsGrpcResponse::try_from((request_id, grpc_response))
+        let grpc_response = poll_for_result(
+            self.user_decryption_timeout,
+            self.grpc_poll_interval,
+            || {
+                let mut client = inner_client.clone();
+                let request = Request::new(request_id.clone());
+                async move { client.get_key_gen_preproc_result(request).await }
+            },
+            &KEY_MANAGEMENT_RESPONSE_COUNTER,
+            &KEY_MANAGEMENT_RESPONSE_ERRORS,
+        )
+        .await
+        .map_err(ProcessingError::from_response_status)?;
+
+        Ok(KmsGrpcResponse::PrepKeygen(grpc_response.into_inner()))
+    }
+
+    async fn request_keygen(
+        &self,
+        request: KeyGenRequest,
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
+        let request_id = request
+            .request_id
+            .clone()
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("Missing request ID")))?;
+
+        let inner_client = self.choose_client(request_id.clone());
+        send_request_with_retry(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.key_gen(request).await }
+            },
+            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
+            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+        )
+        .await?;
+
+        let grpc_response = poll_for_result(
+            self.user_decryption_timeout,
+            self.grpc_poll_interval,
+            || {
+                let mut client = inner_client.clone();
+                let request = Request::new(request_id.clone());
+                async move { client.get_key_gen_result(request).await }
+            },
+            &KEY_MANAGEMENT_RESPONSE_COUNTER,
+            &KEY_MANAGEMENT_RESPONSE_ERRORS,
+        )
+        .await
+        .map_err(ProcessingError::from_response_status)?;
+
+        Ok(KmsGrpcResponse::Keygen(grpc_response.into_inner()))
+    }
+
+    async fn request_crsgen(
+        &self,
+        request: CrsGenRequest,
+    ) -> Result<KmsGrpcResponse, ProcessingError> {
+        let request_id = request
+            .request_id
+            .clone()
+            .ok_or_else(|| ProcessingError::Irrecoverable(anyhow!("Missing request ID")))?;
+
+        let inner_client = self.choose_client(request_id.clone());
+        send_request_with_retry(
+            self.grpc_request_retries,
+            || {
+                let mut client = inner_client.clone();
+                let request = request.clone();
+                async move { client.crs_gen(request).await }
+            },
+            &KEY_MANAGEMENT_REQUEST_SENT_COUNTER,
+            &KEY_MANAGEMENT_REQUEST_SENT_ERRORS,
+        )
+        .await?;
+
+        let grpc_response = poll_for_result(
+            self.user_decryption_timeout,
+            self.grpc_poll_interval,
+            || {
+                let mut client = inner_client.clone();
+                let request = Request::new(request_id.clone());
+                async move { client.get_crs_gen_result(request).await }
+            },
+            &KEY_MANAGEMENT_RESPONSE_COUNTER,
+            &KEY_MANAGEMENT_RESPONSE_ERRORS,
+        )
+        .await
+        .map_err(ProcessingError::from_response_status)?;
+
+        Ok(KmsGrpcResponse::Crsgen(grpc_response.into_inner()))
     }
 
     fn choose_client(&self, request_id: RequestId) -> CoreServiceEndpointClient<Channel> {
-        let request_id = request_id.request_id.parse::<usize>().unwrap_or_else(|_| {
-            warn!("Failed to parse request ID. Sending request to shard 0 by default");
+        let request_id = decode_request_id(request_id).unwrap_or_else(|e| {
+            warn!("Failed to parse request ID: {e}. Sending request to shard 0 by default");
+            U256::ZERO
+        });
+        let client_index = u256_to_u32(request_id % U256::from(self.inners.len())).unwrap_or_else(|e| {
+            warn!("Failed to convert request ID from U256 to u32: {e}. Sending request to shard 0 by default");
             0
         });
-        let client_index = request_id % self.inners.len();
-        self.inners[client_index].clone()
+        info!("Sending GRPC request to KMS shard #{client_index}");
+        self.inners[client_index as usize].clone()
     }
 }
 
 #[tracing::instrument(skip_all)]
-async fn send_request_with_retry<F, Fut>(retries: u8, mut request_fn: F) -> anyhow::Result<()>
+async fn send_request_with_retry<F, Fut>(
+    retries: u8,
+    mut request_fn: F,
+    success_counter: &LazyLock<IntCounter>,
+    error_counter: &LazyLock<IntCounter>,
+) -> Result<(), ProcessingError>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<Response<Empty>, Status>>,
@@ -229,16 +360,24 @@ where
     for i in 1..=retries {
         match request_fn().await {
             Ok(_) => break,
-            Err(e) => {
-                CORE_REQUEST_SENT_ERRORS.inc();
-                warn!("#{}/{} GRPC request attempt failed: {}", i, retries, e);
+            Err(e) if e.code() == Code::AlreadyExists => return Ok(()),
+            Err(e) if [Code::ResourceExhausted, Code::Unknown].contains(&e.code()) => {
+                error_counter.inc();
+                warn!("#{i}/{retries} GRPC request attempt failed: {e}");
                 if i == retries {
-                    return Err(anyhow!("All GRPC requests failed!"));
+                    return Err(ProcessingError::Recoverable(anyhow!(
+                        "All GRPC requests failed!"
+                    )));
                 }
+            }
+            Err(e) => {
+                error_counter.inc();
+                return Err(ProcessingError::Irrecoverable(e.into()));
             }
         }
     }
-    CORE_REQUEST_SENT_COUNTER.inc();
+    success_counter.inc();
+    info!("GRPC request successfully sent to the KMS!");
     Ok(())
 }
 
@@ -248,6 +387,8 @@ async fn poll_for_result<T, F, Fut>(
     timeout: Duration,
     retry_interval: Duration,
     mut poll_fn: F,
+    success_counter: &LazyLock<IntCounter>,
+    error_counter: &LazyLock<IntCounter>,
 ) -> Result<Response<T>, Status>
 where
     F: FnMut() -> Fut,
@@ -258,15 +399,15 @@ where
         info!("Trying to retrieve result from KMS Core...");
         match poll_fn().await {
             Ok(response) => {
-                CORE_RESPONSE_COUNTER.inc();
+                success_counter.inc();
                 info!("Result successfully retrieved from KMS Core!");
                 return Ok(response);
             }
             Err(status) => {
-                if status.code() == Code::NotFound {
+                if [Code::Unavailable, Code::Unknown].contains(&status.code()) {
                     // Check if we've exceeded the timeout
                     if start.elapsed() >= timeout {
-                        CORE_RESPONSE_ERRORS.inc();
+                        error_counter.inc();
                         return Err(Status::deadline_exceeded(format!(
                             "Operation timed out after {timeout:?}"
                         )));
@@ -279,7 +420,7 @@ where
                     continue;
                 }
                 // Any other error is returned immediately
-                CORE_RESPONSE_ERRORS.inc();
+                error_counter.inc();
                 return Err(status);
             }
         }

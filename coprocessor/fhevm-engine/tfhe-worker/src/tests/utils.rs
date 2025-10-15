@@ -1,10 +1,8 @@
 use crate::daemon_cli::Args;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
-use fhevm_engine_common::types::AllowEvents;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::utils::{safe_deserialize, safe_deserialize_key};
 use rand::Rng;
-use sqlx::Postgres;
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU16, Ordering};
 use testcontainers::{core::WaitFor, runners::AsyncRunner, GenericImage, ImageExt};
@@ -111,7 +109,7 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         server_addr: format!("127.0.0.1:{app_port}"),
         metrics_addr: "".to_string(),
         database_url: Some(db_url.to_string()),
-        maximimum_compact_inputs_upload: 10,
+        maximum_compact_inputs_upload: 10,
         coprocessor_private_key: "./coprocessor.key".to_string(),
         service_name: "coprocessor".to_string(),
         log_level: Level::INFO,
@@ -194,9 +192,11 @@ pub async fn wait_until_all_allowed_handles_computed(
 
     loop {
         tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-        let count = sqlx::query!("SELECT count(1) FROM allowed_handles WHERE is_computed = FALSE")
-            .fetch_one(&pool)
-            .await?;
+        let count = sqlx::query!(
+            "SELECT count(1) FROM computations WHERE is_allowed = TRUE AND is_completed = FALSE"
+        )
+        .fetch_one(&pool)
+        .await?;
         let current_count = count.count.unwrap();
         if current_count == 0 {
             println!("All computations completed");
@@ -339,23 +339,4 @@ pub async fn decrypt_ciphertexts(
 
     let values = values.into_iter().map(|i| i.1).collect::<Vec<_>>();
     Ok(values)
-}
-
-pub async fn allow_handle(
-    handle: &Vec<u8>,
-    pool: &sqlx::Pool<Postgres>,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let tenant_id = default_tenant_id();
-    let account_address = String::new();
-    let event_type = AllowEvents::AllowedForDecryption;
-    let _query =
-            sqlx::query!(
-                "INSERT INTO allowed_handles(tenant_id, handle, account_address, event_type) VALUES($1, $2, $3, $4)
-                     ON CONFLICT DO NOTHING;",
-                tenant_id,
-                handle,
-                account_address,
-                event_type as i16,
-            ).execute(pool).await?;
-    Ok(())
 }

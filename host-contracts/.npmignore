@@ -4,6 +4,7 @@
 !/artifacts/contracts/InputVerifier.sol/InputVerifier.json
 !/artifacts/contracts/KMSVerifier.sol/KMSVerifier.json
 !/artifacts/contracts/FHEVMExecutor.sol/FHEVMExecutor.json
+!/artifacts/contracts/immutable/PauserSet.sol/PauserSet.json
 !contracts/**
 !package.json
 !LICENSE

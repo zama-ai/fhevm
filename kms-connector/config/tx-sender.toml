@@ -10,12 +10,12 @@ chain_id = 54321
 
 # Gateway WebSocket RPC URL endpoint (required)
 # ENV: KMS_CONNECTOR_GATEWAY_URL
-gateway_url = "ws://gateway-node:8546"
+gateway_url = "ws://localhost:8545"
 
 # URL of the KMS Connector internal database (required)
 # Format: see https://www.postgresql.org/docs/current/libpq-connect.html#LIBPQ-CONNSTRING-URIS
 # ENV: KMS_CONNECTOR_DATABASE_URL
-database_url = "postgres://postgres:postgres@localhost"
+database_url = "postgres://postgres:postgres@localhost/kms-connector"
 
 # Configuration of the Decryption contract (required)
 [decryption_contract]
@@ -30,17 +30,17 @@ address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 # ENV: KMS_CONNECTOR_DECRYPTION_DOMAIN_VERSION
 # domain_version = "1"
 
-# Configuration of the KmsManagement contract (required)
-[kms_management_contract]
-# Address of the KmsManagement contract (required)
+# Configuration of the KMSGeneration contract (required)
+[kms_generation_contract]
+# Address of the KMSGeneration contract (required)
 # Format: hex string with 0x prefix
-# ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__ADDRESS
+# ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__ADDRESS
 address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
-# EIP-712 domain name for KmsManagement contract (optional, defaults to "KmsManagement")
-# ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_NAME
-# domain_name = "KmsManagement"
-# EIP-712 domain version for KmsManagement contract (optional, defaults to "1")
-# ENV: KMS_CONNECTOR_KMS_MANAGEMENT_CONTRACT__DOMAIN_VERSION
+# EIP-712 domain name for KMSGeneration contract (optional, defaults to "KMSGeneration")
+# ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_NAME
+# domain_name = "KMSGeneration"
+# EIP-712 domain version for KMSGeneration contract (optional, defaults to "1")
+# ENV: KMS_CONNECTOR_KMS_GENERATION_CONTRACT__DOMAIN_VERSION
 # domain_version = "1"
 
 # Private key as a hex string (optional if `aws_kms_config` is configured)
@@ -70,21 +70,25 @@ private_key = "8da4ef21b864d2cc526dbdb2a120bd2874c36c9d0a1fb7f8c63d7f7a8b41de8f"
 # ENV: KMS_CONNECTOR_HEALTHCHECK_TIMEOUT_SECS
 # healthcheck_timeout_secs = 3
 
-# The limit number of KMS Core responses to fetch from the database (optional, defaults to 10)
+# The limit number of KMS Core responses to fetch from the database (optional, defaults to 50)
 # ENV: KMS_CONNECTOR_RESPONSES_BATCH_SIZE
-# responses_batch_size = 10
+# responses_batch_size = 50
 
-# Number of retries for transactions sent to the Gateway (optional, defaults to 3)
+# Number of retries for transactions sent to the Gateway (optional, defaults to 4)
 # ENV: KMS_CONNECTOR_TX_RETRIES
-# tx_retries = 3
+# tx_retries = 4
 
 # Interval between retries for transactions sent to the Gateway, in milliseconds (optional, defaults to 100ms)
 # ENV: KMS_CONNECTOR_TX_RETRY_INTERVAL_MS
 # tx_retry_interval = 100
 
-# The gas multiplier percentage after each transaction attempt (optional, defaults to 130%)
+# Boolean to enable tracing of reverted transactions, using `debug_trace_transaction` RPC call (optional, defaults to true)
+# ENV: KMS_CONNECTOR_TRACE_REVERTED_TX
+# trace_reverted_tx = true
+
+# The gas multiplier percentage after each transaction attempt (optional, defaults to 115%)
 # ENV: KMS_CONNECTOR_GAS_MULTIPLIER_PERCENT
-# gas_multiplier_percent = 130
+# gas_multiplier_percent = 115
 
 # The maximum number of tasks to process events/responses concurrently (optional, defaults to 1000)
 # ENV: KMS_CONNECTOR_TASK_LIMIT

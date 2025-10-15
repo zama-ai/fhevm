@@ -9,7 +9,8 @@ WORKDIR /app
 USER root
 
 # Install required runtime dependencies only
-RUN cargo install sqlx-cli --version 0.8.6 --no-default-features --features postgres --locked
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo install sqlx-cli --version 0.8.6 --no-default-features --features postgres --locked
 
 COPY kms-connector/connector-db/init_db.sh ./init_db.sh
 COPY kms-connector/connector-db/migrations ./migrations

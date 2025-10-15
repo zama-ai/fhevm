@@ -7,13 +7,13 @@ publish.workspace = true
 version.workspace = true
 
 [dependencies]
+bc2wrap.workspace = true
 connector-utils.workspace = true
 fhevm_gateway_bindings.workspace = true
 
 actix-web.workspace = true
 alloy.workspace = true
 anyhow.workspace = true
-bincode.workspace = true
 config.workspace = true
 dashmap.workspace = true
 kms-grpc.workspace = true
@@ -21,12 +21,14 @@ prometheus.workspace = true
 serde.workspace = true
 sha3.workspace = true
 sqlx.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tokio-stream.workspace = true
 tokio-util.workspace = true
 tonic.workspace = true
 tonic-health.workspace = true
 tracing.workspace = true
+tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]

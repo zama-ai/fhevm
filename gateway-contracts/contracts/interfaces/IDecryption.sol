@@ -78,21 +78,33 @@ interface IDecryption {
     /**
      * @notice Emitted when an public decryption response is made.
      * @param decryptionId The decryption request ID associated with the response.
-     * @param userDecryptedShares The list of decryption shares reencrypted with the user's public key.
-     * @param signatures The signatures of all the KMS connectors that responded.
+     * @param indexShare The index of the share associated with the decryption.
+     * @param userDecryptedShare The decryption share reencrypted with the user's public key.
+     * @param signature The signature of the KMS connector that responded.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
     event UserDecryptionResponse(
         uint256 indexed decryptionId,
-        bytes[] userDecryptedShares,
-        bytes[] signatures,
+        uint256 indexShare,
+        bytes userDecryptedShare,
+        bytes signature,
         bytes extraData
     );
 
-    /// @notice Error indicating that the input list of handles is empty.
+    /**
+     * @notice Emitted when the number of user decryption response received reaches the threshold.
+     * @param decryptionId The decryption request ID.
+     */
+    event UserDecryptionResponseThresholdReached(uint256 indexed decryptionId);
+
+    /**
+     * @notice Error indicating that the input list of handles is empty.
+     */
     error EmptyCtHandles();
 
-    /// @notice Error indicating that the input list of ctHandleContractPairs is empty.
+    /**
+     * @notice Error indicating that the input list of ctHandleContractPairs is empty.
+     */
     error EmptyCtHandleContractPairs();
 
     /**
@@ -126,9 +138,11 @@ interface IDecryption {
      * @param maxLength The maximum number of contract addresses allowed.
      * @param actualLength The actual number of contract addresses provided.
      */
-    error ContractAddressesMaxLengthExceeded(uint8 maxLength, uint256 actualLength);
+    error ContractAddressesMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
 
-    /// @notice Error indicating that the durationDays of a user decryption request is 0.
+    /**
+     * @notice Error indicating that the durationDays of a user decryption request is 0.
+     */
     error InvalidNullDurationDays();
 
     /**
@@ -161,13 +175,6 @@ interface IDecryption {
     error UserAddressInContractAddresses(address userAddress, address[] contractAddresses);
 
     /**
-     * @notice Error indicating that the delegator address is included in the contract addresses list.
-     * @param delegatorAddress The delegator address that is included in the list.
-     * @param contractAddresses The list of expected contract addresses.
-     */
-    error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
-
-    /**
      * @notice Error indicating that the contract address is not included in the contract addresses list.
      * @param contractAddress The contract address that is not in the list.
      * @param contractAddresses The list of expected contract addresses.
@@ -178,19 +185,13 @@ interface IDecryption {
      * @notice Error indicating that the key IDs in a given SNS ciphertext materials list are not the same.
      * @param firstSnsCtMaterial The first SNS ciphertext material in the list with the expected key ID.
      * @param invalidSnsCtMaterial The SNS ciphertext material found with a different key ID.
-     * @dev This will be removed in the future as multiple keyIds processing is implemented.
-     * See https://github.com/zama-ai/fhevm-gateway/issues/104.
+     * @dev This should be removed once batched decryption requests with different keys is support by the KMS
+     * See https://github.com/zama-ai/fhevm-internal/issues/376
      */
     error DifferentKeyIdsNotAllowed(
         SnsCiphertextMaterial firstSnsCtMaterial,
         SnsCiphertextMaterial invalidSnsCtMaterial
     );
-
-    /**
-     * @notice Error indicating that the (public, user, delegated user) decryption is not done.
-     * @param decryptionId The decryption request ID.
-     */
-    error DecryptionNotDone(uint256 decryptionId);
 
     /**
      * @notice Error indicating that the (public, user, delegated user) decryption is not requested yet.
@@ -223,7 +224,7 @@ interface IDecryption {
      * @notice Requests a user decryption.
      * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
      * @param requestValidity The validity period of the user decryption request.
-     * @param contractsInfo The chain ID and contract addresses to be used in the decryption.
+     * @param contractsInfo The contracts' information (chain ID, addresses).
      * @param userAddress The user's address.
      * @param publicKey The user's public key to reencrypt the decryption shares.
      * @param signature The EIP712 signature to verify.
@@ -234,26 +235,6 @@ interface IDecryption {
         RequestValidity calldata requestValidity,
         ContractsInfo calldata contractsInfo,
         address userAddress,
-        bytes calldata publicKey,
-        bytes calldata signature,
-        bytes calldata extraData
-    ) external;
-
-    /**
-     * @notice Requests a delegated user decryption.
-     * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
-     * @param requestValidity The validity period of the user decryption request.
-     * @param delegationAccounts The user's address and the delegated account address for the user decryption.
-     * @param contractsInfo The chain ID and contract addresses to be used in the decryption.
-     * @param publicKey The user's public key to reencrypt the decryption shares.
-     * @param signature The EIP712 signature to verify.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
-     */
-    function delegatedUserDecryptionRequest(
-        CtHandleContractPair[] calldata ctHandleContractPairs,
-        RequestValidity calldata requestValidity,
-        DelegationAccounts calldata delegationAccounts,
-        ContractsInfo calldata contractsInfo,
         bytes calldata publicKey,
         bytes calldata signature,
         bytes calldata extraData
@@ -274,45 +255,32 @@ interface IDecryption {
     ) external;
 
     /**
-     * @notice Checks if handles are ready to be decrypted publicly.
+     * @notice Indicates if handles are ready to be decrypted publicly.
      * @param ctHandles The ciphertext handles.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function checkPublicDecryptionReady(bytes32[] calldata ctHandles, bytes calldata extraData) external view;
+    function isPublicDecryptionReady(
+        bytes32[] calldata ctHandles,
+        bytes calldata extraData
+    ) external view returns (bool);
 
     /**
-     * @notice Checks if handles are ready to be decrypted by a user.
+     * @notice Indicates if handles are ready to be decrypted by a user.
      * @param userAddress The user's address.
      * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
      * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
      */
-    function checkUserDecryptionReady(
+    function isUserDecryptionReady(
         address userAddress,
         CtHandleContractPair[] calldata ctHandleContractPairs,
         bytes calldata extraData
-    ) external view;
+    ) external view returns (bool);
 
     /**
-     * @notice Checks if handles are ready to be decrypted by a delegated address.
-     * @param contractsChainId The contract's chain ID.
-     * @param delegationAccounts The delegator and delegated address.
-     * @param ctHandleContractPairs The ciphertext handles with associated contract addresses.
-     * @param contractAddresses The contract addresses.
-     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
-     */
-    function checkDelegatedUserDecryptionReady(
-        uint256 contractsChainId,
-        DelegationAccounts calldata delegationAccounts,
-        CtHandleContractPair[] calldata ctHandleContractPairs,
-        address[] calldata contractAddresses,
-        bytes calldata extraData
-    ) external view;
-
-    /**
-     * @notice Checks if a (public, user, delegated user) decryption is done.
+     * @notice Indicates if a (public, user, delegated user) decryption is done.
      * @param decryptionId The decryption request ID.
      */
-    function checkDecryptionDone(uint256 decryptionId) external view;
+    function isDecryptionDone(uint256 decryptionId) external view returns (bool);
 
     /**
      * @notice Returns the KMS transaction sender addresses that were involved in the consensus for a decryption request.

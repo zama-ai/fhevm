@@ -3,16 +3,16 @@ use crate::{
     conn::WalletGatewayProvider,
     provider::{FillersWithoutNonceManagement, NonceManagedProvider},
     tests::setup::{ROOT_CARGO_TOML, pick_free_port},
-    // tests::setup::{ROOT_CARGO_TOML, pick_free_port},
 };
 use alloy::{
     primitives::{Address, ChainId, FixedBytes},
-    providers::{ProviderBuilder, WsConnect},
+    providers::ProviderBuilder,
+    transports::http::reqwest::Url,
 };
 use fhevm_gateway_bindings::{
     decryption::Decryption::{self, DecryptionInstance},
     gateway_config::GatewayConfig::{self, GatewayConfigInstance},
-    kms_management::KmsManagement::{self, KmsManagementInstance},
+    kms_generation::KMSGeneration::{self, KMSGenerationInstance},
 };
 use std::{sync::LazyLock, time::Duration};
 use testcontainers::{
@@ -28,7 +28,7 @@ pub const DECRYPTION_MOCK_ADDRESS: Address = Address(FixedBytes([
 pub const GATEWAY_CONFIG_MOCK_ADDRESS: Address = Address(FixedBytes([
     159, 167, 153, 249, 90, 114, 37, 140, 4, 21, 223, 237, 216, 207, 118, 210, 97, 60, 117, 15,
 ]));
-pub const KMS_MANAGEMENT_MOCK_ADDRESS: Address = Address(FixedBytes([
+pub const KMS_GENERATION_MOCK_ADDRESS: Address = Address(FixedBytes([
     200, 27, 227, 169, 24, 21, 210, 212, 9, 109, 174, 8, 26, 113, 22, 201, 250, 123, 223, 8,
 ]));
 
@@ -46,7 +46,7 @@ pub struct GatewayInstance {
     pub provider: WalletGatewayProvider,
     pub decryption_contract: DecryptionInstance<WalletGatewayProvider>,
     pub gateway_config_contract: GatewayConfigInstance<WalletGatewayProvider>,
-    pub kms_management_contract: KmsManagementInstance<WalletGatewayProvider>,
+    pub kms_generation_contract: KMSGenerationInstance<WalletGatewayProvider>,
     pub anvil: ContainerAsync<GenericImage>,
     pub anvil_host_port: u16,
     pub block_time: u64,
@@ -62,14 +62,14 @@ impl GatewayInstance {
         let decryption_contract = Decryption::new(DECRYPTION_MOCK_ADDRESS, provider.clone());
         let gateway_config_contract =
             GatewayConfig::new(GATEWAY_CONFIG_MOCK_ADDRESS, provider.clone());
-        let kms_management_contract =
-            KmsManagement::new(KMS_MANAGEMENT_MOCK_ADDRESS, provider.clone());
+        let kms_generation_contract =
+            KMSGeneration::new(KMS_GENERATION_MOCK_ADDRESS, provider.clone());
 
         GatewayInstance {
             provider,
             decryption_contract,
             gateway_config_contract,
-            kms_management_contract,
+            kms_generation_contract,
             anvil,
             anvil_host_port,
             block_time,
@@ -89,12 +89,10 @@ impl GatewayInstance {
 
         let inner_provider = ProviderBuilder::new()
             .disable_recommended_fillers()
+            .with_chain_id(*CHAIN_ID as u64)
             .filler(FillersWithoutNonceManagement::default())
             .wallet(wallet)
-            .connect_ws(WsConnect::new(Self::anvil_ws_endpoint_impl(
-                anvil_host_port,
-            )))
-            .await?;
+            .connect_http(Self::anvil_http_endpoint_impl(anvil_host_port));
         let provider = NonceManagedProvider::new(inner_provider, wallet_addr);
 
         Ok(GatewayInstance::new(
@@ -109,12 +107,14 @@ impl GatewayInstance {
         Duration::from_secs(self.block_time)
     }
 
-    fn anvil_ws_endpoint_impl(anvil_host_port: u16) -> String {
-        format!("ws://localhost:{anvil_host_port}")
+    fn anvil_http_endpoint_impl(anvil_host_port: u16) -> Url {
+        format!("http://localhost:{anvil_host_port}")
+            .parse()
+            .unwrap()
     }
 
-    pub fn anvil_ws_endpoint(&self) -> String {
-        Self::anvil_ws_endpoint_impl(self.anvil_host_port)
+    pub fn anvil_http_endpoint(&self) -> Url {
+        Self::anvil_http_endpoint_impl(self.anvil_host_port)
     }
 }
 
@@ -123,7 +123,7 @@ pub async fn setup_anvil_gateway(
     block_time: u64,
 ) -> anyhow::Result<ContainerAsync<GenericImage>> {
     info!("Starting Anvil...");
-    let anvil = GenericImage::new("ghcr.io/foundry-rs/foundry", "v1.2.3")
+    let anvil = GenericImage::new("ghcr.io/foundry-rs/foundry", "v1.3.5")
         .with_wait_for(WaitFor::message_on_stdout("Listening"))
         .with_entrypoint("anvil")
         .with_cmd([

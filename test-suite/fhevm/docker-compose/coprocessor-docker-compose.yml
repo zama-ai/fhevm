@@ -1,39 +1,6 @@
 services:
-  ####################### DATABASE SETUP #######################
-  db:
-    container_name: fhevm-coprocessor-db
-    image: postgres:15.7
-    restart: always
-    env_file:
-      - ../env/staging/.env.coprocessor.local
-    ports:
-      - '5432:5432'
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    volumes:
-      - db:/var/lib/postgresql/data
-
-  key-downloader:
-    container_name: fhevm-key-downloader
-    image: busybox
-    env_file:
-      - ../env/staging/.env.coprocessor.local
-    volumes:
-      - keys-cache:/keys
-    command: >
-      sh -c "echo 'Starting key downloads...' &&
-        wget $KMS_PUBLIC_KEY -O /keys/pks &&
-        echo 'Downloaded public key' &&
-        wget $KMS_SERVER_KEY -O /keys/sns_pk &&
-        echo 'Downloaded server key' &&
-        wget $KMS_CRS_KEY -O /keys/pp &&
-        echo 'Downloaded PP key - All downloads complete'"
-
-  db-migration:
-    container_name: fhevm-db-migration
+  coprocessor-db-migration:
+    container_name: coprocessor-db-migration
     image: ghcr.io/zama-ai/fhevm/coprocessor/db-migration:${DB_MIGRATION_VERSION}
     build:
       context: ../../..
@@ -50,15 +17,10 @@ services:
       - /initialize_db.sh
     volumes:
       - keys-cache:/fhevm-keys
-    depends_on:
-      db:
-        condition: service_healthy
-      key-downloader:
-        condition: service_completed_successfully
 
   ####################### COPROCESSOR SERVICES #######################
-  host-listener:
-    container_name: fhevm-host-listener
+  coprocessor-host-listener:
+    container_name: coprocessor-host-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/host-listener:${HOST_LISTENER_VERSION}
     build:
       context: ../../..
@@ -76,14 +38,13 @@ services:
       - --acl-contract-address=${ACL_CONTRACT_ADDRESS}
       - --tfhe-contract-address=${FHEVM_EXECUTOR_CONTRACT_ADDRESS}
       - --url=${RPC_URL}
+      - --initial-block-time=1
     depends_on:
-      db:
-        condition: service_healthy
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
-  gw-listener:
-    container_name: fhevm-gw-listener
+  coprocessor-gw-listener:
+    container_name: coprocessor-gw-listener
     image: ghcr.io/zama-ai/fhevm/coprocessor/gw-listener:${GW_LISTENER_VERSION}
     build:
       context: ../../..
@@ -103,19 +64,18 @@ services:
       - gw_listener
       - --database-url=${DATABASE_URL}
       - --database-pool-size=16
-      - --verify-proof-req-database-channel="event_zkpok_new_work"
+      - --verify-proof-req-database-channel=event_zkpok_new_work
       - --gw-url=${GATEWAY_WS_URL}
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
+      - --kms-generation-address=${KMS_GENERATION_ADDRESS}
       - --error-sleep-initial-secs=1
       - --error-sleep-max-secs=10
     depends_on:
-      db:
-        condition: service_healthy
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
-  tfhe-worker:
-    container_name: fhevm-tfhe-worker
+  coprocessor-tfhe-worker:
+    container_name: coprocessor-tfhe-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/tfhe-worker:${TFHE_WORKER_VERSION}
     build:
       context: ../../..
@@ -137,13 +97,11 @@ services:
       - --coprocessor-fhe-threads=8
       - --tokio-threads=4
     depends_on:
-      db:
-        condition: service_healthy
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
-  zkproof-worker:
-    container_name: fhevm-zkproof-worker
+  coprocessor-zkproof-worker:
+    container_name: coprocessor-zkproof-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/zkproof-worker:${ZKPROOF_WORKER_VERSION}
     build:
       context: ../../..
@@ -157,19 +115,17 @@ services:
     command:
       - zkproof_worker
       - --database-url=${DATABASE_URL}
-      - --pg-listen-channel="event_zkpok_new_work"
-      - --pg-notify-channel="event_zkpok_computed"
+      - --pg-listen-channel=event_zkpok_new_work
+      - --pg-notify-channel=event_zkpok_computed
       - --pg-polling-interval=5
       - --pg-pool-connections=5
       - --worker-thread-count=4
     depends_on:
-      db:
-        condition: service_healthy
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
-  sns-worker:
-    container_name: fhevm-sns-worker
+  coprocessor-sns-worker:
+    container_name: coprocessor-sns-worker
     image: ghcr.io/zama-ai/fhevm/coprocessor/sns-worker:${SNS_WORKER_VERSION}
     build:
       context: ../../..
@@ -202,13 +158,11 @@ services:
       - --s3-regular-recheck-duration=120s
       - --enable-compression
     depends_on:
-      db:
-        condition: service_healthy
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
-  transaction-sender:
-    container_name: fhevm-transaction-sender
+  coprocessor-transaction-sender:
+    container_name: coprocessor-transaction-sender
     image: ghcr.io/zama-ai/fhevm/coprocessor/tx-sender:${TX_SENDER_VERSION}
     build:
       context: ../../..
@@ -228,19 +182,16 @@ services:
       - --input-verification-address=${INPUT_VERIFICATION_ADDRESS}
       - --multichain-acl-address=${MULTICHAIN_ACL_ADDRESS}
       - --database-pool-size=10
-      - --database-polling-interval-secs=5
-      - --verify-proof-resp-database-channel="event_zkpok_computed"
-      - --add-ciphertexts-database-channel="event_ciphertexts_uploaded"
+      - --database-polling-interval-secs=20
+      - --verify-proof-resp-database-channel=event_zkpok_computed
+      - --add-ciphertexts-database-channel=event_ciphertexts_uploaded
       - --verify-proof-resp-batch-limit=128
       - --verify-proof-resp-max-retries=15
       - --verify-proof-remove-after-max-retries
       - --signer-type=private-key
     depends_on:
-      db:
-        condition: service_healthy
-      db-migration:
+      coprocessor-db-migration:
         condition: service_completed_successfully
 
 volumes:
-  db:
   keys-cache:

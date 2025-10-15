@@ -34,8 +34,8 @@ sol!(
 
 sol!(
     #[sol(rpc)]
-    MultichainAcl,
-    "artifacts/MultichainAcl.sol/MultichainAcl.json"
+    MultichainACL,
+    "artifacts/MultichainACL.sol/MultichainACL.json"
 );
 
 pub enum SignerType {
@@ -104,8 +104,7 @@ impl TestEnvironment {
             }
             SignerType::AwsKms => {
                 let host_port;
-                if std::env::var("TXN_SENDER_TEST_GLOBAL_LOCALSTACK").unwrap_or("0".to_string())
-                    == "1"
+                if std::env::var("TEST_GLOBAL_LOCALSTACK").unwrap_or("0".to_string()) == "1"
                     && !force_per_test_localstack
                 {
                     localstack = None;
