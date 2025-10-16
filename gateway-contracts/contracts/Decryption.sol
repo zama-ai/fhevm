@@ -21,6 +21,7 @@ import { Pausable } from "./shared/Pausable.sol";
 import { FHETypeBitSizes } from "./libraries/FHETypeBitSizes.sol";
 import { HandleOps } from "./libraries/HandleOps.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { ZamaOFTUtils } from "./shared/ZamaOFTUtils.sol";
 import { SnsCiphertextMaterial, CtHandleContractPair } from "./shared/Structs.sol";
 import { PUBLIC_DECRYPT_COUNTER_BASE, USER_DECRYPT_COUNTER_BASE } from "./shared/KMSRequestCounters.sol";
 
@@ -35,6 +36,7 @@ contract Decryption is
     GatewayOwnable,
     GatewayConfigChecks,
     MultichainACLChecks,
+    ZamaOFTUtils,
     Pausable
 {
     /**
@@ -312,6 +314,9 @@ contract Decryption is
         // The handles are used during response calls for the EIP712 signature validation.
         $.publicCtHandles[publicDecryptionId] = ctHandles;
 
+        // Collect the fee for this public decryption request.
+        _collectPublicDecryptionFee();
+
         emit PublicDecryptionRequest(publicDecryptionId, snsCtMaterials, extraData);
     }
 
@@ -457,6 +462,9 @@ contract Decryption is
 
         // The publicKey and ctHandles are used during response calls for the EIP712 signature validation.
         $.userDecryptionPayloads[userDecryptionId] = UserDecryptionPayload(publicKey, ctHandles);
+
+        // Collect the fee for this user decryption request.
+        _collectUserDecryptionFee();
 
         emit UserDecryptionRequest(userDecryptionId, snsCtMaterials, userAddress, publicKey, extraData);
     }

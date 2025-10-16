@@ -4,9 +4,10 @@ import { expect } from "chai";
 import { Wallet } from "ethers";
 import hre from "hardhat";
 
-import { GatewayConfig, InputVerification, InputVerification__factory } from "../typechain-types";
+import { InputVerification, InputVerification__factory, ProtocolPayment, ZamaOFT } from "../typechain-types";
 import {
   EIP712,
+  approveContractWithMaxAllowance,
   createByteInput,
   createCtHandles,
   createEIP712ResponseZKPoK,
@@ -66,19 +67,32 @@ describe("InputVerification", function () {
   });
 
   describe("Verify proof request", async function () {
-    let gatewayConfig: GatewayConfig;
     let inputVerification: InputVerification;
+    let protocolPayment: ProtocolPayment;
+    let mockedZamaOFT: ZamaOFT;
     let contractChainId: number;
     let owner: Wallet;
     let pauser: Wallet;
+    let inputVerificationPrice: bigint;
+    let zamaFundedSigner: HardhatEthersSigner;
+    let zamaUnfundedSigner: HardhatEthersSigner;
+    let inputVerificationAddress: string;
+    let protocolPaymentAddress: string;
 
-    before(async function () {
+    beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
-      gatewayConfig = fixture.gatewayConfig;
       inputVerification = fixture.inputVerification;
+      protocolPayment = fixture.protocolPayment;
+      mockedZamaOFT = fixture.mockedZamaOFT;
       contractChainId = fixture.chainIds[0];
       owner = fixture.owner;
       pauser = fixture.pauser;
+      inputVerificationPrice = fixture.inputVerificationPrice;
+      zamaFundedSigner = fixture.zamaFundedSigner;
+      zamaUnfundedSigner = fixture.zamaUnfundedSigner;
+
+      inputVerificationAddress = await inputVerification.getAddress();
+      protocolPaymentAddress = await protocolPayment.getAddress();
     });
 
     it("Should request a proof verification", async function () {
@@ -114,17 +128,53 @@ describe("InputVerification", function () {
       // Pause the contract
       await inputVerification.connect(pauser).pause();
 
-      // Try calling paused verify proof request
+      // Try calling verify proof request
       await expect(
-        inputVerification
-          .connect(owner)
-          .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0),
+        inputVerification.verifyProofRequest(
+          contractChainId,
+          contractAddress,
+          userAddress,
+          ciphertextWithZKProof,
+          extraDataV0,
+        ),
       ).to.be.revertedWithCustomError(inputVerification, "EnforcedPause");
+    });
+
+    describe("$ZAMA fees collection", function () {
+      it("Should collect the $ZAMA fees for the input verification", async function () {
+        const fundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const protocolPaymentBalance = await mockedZamaOFT.balanceOf(protocolPaymentAddress);
+
+        // Trigger a proof verification request
+        const tx = await inputVerification
+          .connect(zamaFundedSigner)
+          .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0);
+        tx.wait();
+
+        // Check that the $ZAMA fees have been collected from the funded signer and added to the
+        // protocol payment contract's balance
+        const newFundedSignerBalance = await mockedZamaOFT.balanceOf(zamaFundedSigner.address);
+        const newProtocolPaymentBalance = await mockedZamaOFT.balanceOf(protocolPaymentAddress);
+        expect(newFundedSignerBalance).to.equal(fundedSignerBalance - inputVerificationPrice);
+        expect(newProtocolPaymentBalance).to.equal(protocolPaymentBalance + inputVerificationPrice);
+      });
+
+      it("Should revert because sender has not enough $ZAMA tokens", async function () {
+        // Approve the input verification contract with the maximum allowance over the signer's tokens
+        await approveContractWithMaxAllowance(zamaUnfundedSigner, inputVerificationAddress);
+
+        await expect(
+          inputVerification
+            .connect(zamaUnfundedSigner)
+            .verifyProofRequest(contractChainId, contractAddress, userAddress, ciphertextWithZKProof, extraDataV0),
+        )
+          .to.be.revertedWithCustomError(mockedZamaOFT, "ERC20InsufficientBalance")
+          .withArgs(zamaUnfundedSigner.address, 0, inputVerificationPrice);
+      });
     });
   });
 
   describe("Proof verification response", async function () {
-    let gatewayConfig: GatewayConfig;
     let inputVerification: InputVerification;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
@@ -132,16 +182,13 @@ describe("InputVerification", function () {
     let inputVerificationAddress: string;
     let eip712Message: EIP712;
     let signatures: string[];
-    let pauser: Wallet;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
-      gatewayConfig = fixture.gatewayConfig;
       inputVerification = fixture.inputVerification;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       contractChainId = fixture.chainIds[0];
-      pauser = fixture.pauser;
 
       inputVerificationAddress = await inputVerification.getAddress();
 
@@ -482,22 +529,18 @@ describe("InputVerification", function () {
   });
 
   describe("Proof rejection response", async function () {
-    let gatewayConfig: GatewayConfig;
     let inputVerification: InputVerification;
     let coprocessorTxSenders: HardhatEthersSigner[];
     let coprocessorSigners: HardhatEthersSigner[];
     let contractChainId: number;
     let inputVerificationAddress: string;
-    let pauser: Wallet;
 
     beforeEach(async function () {
       const fixture = await loadFixture(loadTestVariablesFixture);
-      gatewayConfig = fixture.gatewayConfig;
       inputVerification = fixture.inputVerification;
       coprocessorTxSenders = fixture.coprocessorTxSenders;
       coprocessorSigners = fixture.coprocessorSigners;
       contractChainId = fixture.chainIds[0];
-      pauser = fixture.pauser;
 
       inputVerificationAddress = await inputVerification.getAddress();
 

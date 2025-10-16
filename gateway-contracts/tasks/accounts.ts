@@ -1,4 +1,4 @@
-import { task, types } from "hardhat/config";
+import { task } from "hardhat/config";
 import { HardhatNetworkHDAccountsConfig } from "hardhat/types";
 
 import { NUM_ACCOUNTS } from "../hardhat.config";
