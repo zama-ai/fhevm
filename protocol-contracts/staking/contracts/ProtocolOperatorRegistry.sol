@@ -8,8 +8,8 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 contract ProtocolOperatorRegistry {
     /// @custom:storage-location erc7201:zama.storage.ProtocolOperatorRegistry
     struct ProtocolOperatorRegistryStorage {
-        mapping(address => address) _operatorToStakedTokens;
-        mapping(address => address) _stakedTokensToOperator;
+        mapping(address operator => address) _stakingAccounts;
+        mapping(address stakingAccount => address) _operators;
     }
 
     // keccak256(abi.encode(uint256(keccak256("zama.storage.ProtocolOperatorRegistry")) - 1)) & ~bytes32(uint256(0xff))
@@ -40,26 +40,26 @@ contract ProtocolOperatorRegistry {
             require(Ownable(account).owner() == msg.sender, StakingAccountNotOwnedByCaller());
             require(operator(account) == address(0), StakingAccountAlreadyRegistered());
 
-            $._stakedTokensToOperator[account] = msg.sender;
+            $._operators[account] = msg.sender;
         }
 
         address currentStakedTokensAccount = stakedTokens(msg.sender);
         if (currentStakedTokensAccount != address(0)) {
-            $._stakedTokensToOperator[currentStakedTokensAccount] = address(0);
+            $._operators[currentStakedTokensAccount] = address(0);
         }
-        $._operatorToStakedTokens[msg.sender] = account;
+        $._stakingAccounts[msg.sender] = account;
 
         emit StakedTokensAccountSet(msg.sender, currentStakedTokensAccount, account);
     }
 
     /// @dev Staked tokens account associated with a given operator account.
     function stakedTokens(address account) public view returns (address) {
-        return _getProtocolOperatorRegistryStorage()._operatorToStakedTokens[account];
+        return _getProtocolOperatorRegistryStorage()._stakingAccounts[account];
     }
 
     /// @dev Gets operator account associated with a given staked tokens account.
     function operator(address account) public view returns (address) {
-        return _getProtocolOperatorRegistryStorage()._stakedTokensToOperator[account];
+        return _getProtocolOperatorRegistryStorage()._operators[account];
     }
 
     function _getProtocolOperatorRegistryStorage() private pure returns (ProtocolOperatorRegistryStorage storage $) {
