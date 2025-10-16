@@ -1,9 +1,6 @@
-import dotenv from "dotenv";
 import { task, types } from "hardhat/config";
-import path from "path";
 
-import { ADDRESSES_DIR } from "../hardhat.config";
-import { getRequiredEnvVar } from "./utils/loadVariables";
+import { getRequiredEnvVar, loadGatewayAddresses } from "./utils";
 
 // Add host chains metadata to the GatewayConfig contract
 // Note: Internal GatewayConfig address is defined in the `addresses/` directory. It should be used
@@ -36,7 +33,7 @@ task("task:addHostChainsToGatewayConfig")
     }
 
     if (useInternalProxyAddress) {
-      dotenv.config({ path: path.join(ADDRESSES_DIR, ".env.gateway"), override: true });
+      loadGatewayAddresses();
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
