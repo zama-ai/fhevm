@@ -22,6 +22,8 @@ COPY package.json package-lock.json ./
 COPY library-solidity ./library-solidity
 COPY test-suite/e2e ./test-suite/e2e
 
+## TODO: to be cleaned. This commit is to trigger docker build
+
 # Install dependencies
 RUN npm ci && \
     npm prune

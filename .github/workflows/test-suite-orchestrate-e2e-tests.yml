@@ -1,0 +1,384 @@
+name: test-suite-orchestrate-e2e-tests
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+
+permissions: {} # No permissions needed at workflow level
+
+concurrency:
+  group: test-suite-orchestrate-e2e-tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  trigger-builds:
+    name: test-suite-orchestrate-e2e-tests/trigger-builds
+    # to be activated before merging this PR
+    # if: ${{ startsWith(github.head_ref, 'mergify/merge-queue/') }}
+    permissions:
+      actions: 'write' # Required to trigger other workflows via workflow_dispatch
+      contents: 'read' # Required to read repository information and refs
+    runs-on: ubuntu-latest
+    outputs:
+      built-images: ${{ steps.collect.outputs.built-images }}
+      image-tag: ${{ steps.collect.outputs.image-tag }}
+    steps:
+      - name: Trigger build workflows and collect results
+        id: collect
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const workflows = ['test-suite-docker-build.yml'];
+            
+            // Determine target ref
+            let ref;
+            if (context.eventName === 'pull_request') {
+              const pr = context.payload.pull_request;
+              if (pr.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+                core.warning('PR from fork; skipping dispatch of internal build workflows.');
+                return;
+              }
+              ref = pr.head.ref;
+            } else {
+              ref = process.env.GITHUB_REF_NAME || context.ref.replace('refs/heads/','');
+            }
+
+            console.log(`🚀 Triggering builds using ref: ${ref}`);
+            
+            // Trigger all build workflows
+            for (const workflow of workflows) {
+              console.log(`\nTriggering ${workflow} on ref: ${ref}`);
+              
+              try {
+                const response = await github.rest.actions.createWorkflowDispatch({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  workflow_id: workflow,
+                  ref: ref,
+                  inputs: {
+                    ref: ref,
+                    trigger_source: 'test-suite-orchestrate-e2e-tests'
+                  }
+                });
+                
+                console.log(`✅ Successfully triggered ${workflow} (status: ${response.status})`);
+              } catch (error) {
+                console.log(`❌ Failed to trigger ${workflow}: ${error.message}`);
+              }
+            }
+            
+            // Wait for workflows to start
+            console.log('\n⏳ Waiting 30 seconds for workflows to start...');
+            await new Promise(resolve => setTimeout(resolve, 30000));
+            
+            // Set up image mapping
+            const workflowToImage = {
+              'test-suite-docker-build': 'test_suite_version'
+            };
+            
+            // Wait for builds to complete and collect results
+            const maxAttempts = 60;
+            let attempt = 1;
+            let builtImages = [];
+            
+            while (attempt <= maxAttempts) {
+              console.log(`\nAttempt ${attempt}/${maxAttempts}: Checking workflow results`);
+              let allDone = true;
+              const currentBuiltImages = [];
+              
+              for (const workflowName of Object.keys(workflowToImage)) {
+                console.log(`Checking workflow: ${workflowName}`);
+                
+                // Look for recent workflow_dispatch runs (last 45 minutes)
+                const sinceTime = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+                
+                try {
+                  const runs = await github.rest.actions.listWorkflowRuns({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    workflow_id: `${workflowName}.yml`,
+                    event: 'workflow_dispatch',
+                    created: `>=${sinceTime}`,
+                    per_page: 5
+                  });
+                  
+                  const recentRun = runs.data.workflow_runs[0];
+                  
+                  if (recentRun) {
+                    console.log(`   Found run: ID=${recentRun.id}, Status=${recentRun.status}, Conclusion=${recentRun.conclusion || 'null'}`);
+                    
+                    if (recentRun.conclusion === 'success') {
+                      // Check if docker jobs succeeded
+                      const jobs = await github.rest.actions.listJobsForWorkflowRun({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        run_id: recentRun.id
+                      });
+                      
+                      const dockerJobs = jobs.data.jobs.filter(job => 
+                        job.name.includes('docker') && job.conclusion === 'success'
+                      );
+                      
+                      if (dockerJobs.length > 0) {
+                        const imageName = workflowToImage[workflowName];
+                        currentBuiltImages.push(imageName);
+                        console.log(`   ✅ ${workflowName} built image: ${imageName} (${dockerJobs.length} docker jobs succeeded)`);
+                      } else {
+                        console.log(`   🔶 ${workflowName} completed but no docker jobs succeeded`);
+                      }
+                    } else if (recentRun.conclusion === 'failure' || recentRun.conclusion === 'cancelled') {
+                      console.log(`   ❌ ${workflowName} failed with conclusion: ${recentRun.conclusion}`);
+                    } else if (recentRun.status === 'in_progress' || recentRun.status === 'queued') {
+                      console.log(`   ⏳ ${workflowName} still running (status: ${recentRun.status})`);
+                      allDone = false;
+                    }
+                  } else {
+                    console.log(`   ⚠️ No recent workflow_dispatch run found for ${workflowName}`);
+                    allDone = false;
+                  }
+                } catch (error) {
+                  console.log(`   ❌ Error checking ${workflowName}: ${error.message}`);
+                  allDone = false;
+                }
+              }
+              
+              if (allDone) {
+                builtImages = currentBuiltImages;
+                break;
+              }
+              
+              console.log('Not all workflows complete yet, waiting 30 seconds...');
+              await new Promise(resolve => setTimeout(resolve, 30000));
+              attempt++;
+            }
+            
+            if (attempt > maxAttempts) {
+              console.log('⚠️ Timeout waiting for workflows to complete, using current results');
+              builtImages = currentBuiltImages || [];
+            }
+            
+            // Create outputs
+            const imageTag = context.sha.substring(0, 7);
+            const jsonArray = JSON.stringify([...new Set(builtImages)]);
+            
+            console.log(`\n📊 Final results:`);
+            console.log(`   Image tag: ${imageTag}`);
+            console.log(`   Built images: ${jsonArray}`);
+            
+            // Set GitHub outputs
+            core.setOutput('built-images', jsonArray);
+            core.setOutput('image-tag', imageTag);
+
+  orchestrate-e2e-tests:
+    name: test-suite-orchestrate-e2e-tests/orchestrate-e2e-tests
+    needs: trigger-builds
+    if: always()
+    permissions:
+      actions: 'write' # Required to trigger E2E test workflows via workflow_dispatch
+      contents: 'read' # Required to read repository information and refs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Orchestrate E2E Tests
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          IMAGE_TAG: ${{ needs.trigger-builds.outputs.image-tag }}
+          BUILT_IMAGES: ${{ needs.trigger-builds.outputs.built-images }}
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const imageTag = process.env.IMAGE_TAG;
+            const builtImagesStr = process.env.BUILT_IMAGES || '[]';
+            
+            console.log(`📊 Image tag: ${imageTag}`);
+            console.log(`📦 Built images string: ${builtImagesStr}`);
+            
+            // Parse built images
+            let builtImages;
+            try {
+              builtImages = JSON.parse(builtImagesStr);
+            } catch (e) {
+              console.log(`❌ Failed to parse BUILT_IMAGES: ${e.message}`);
+              return;
+            }
+
+            if (!Array.isArray(builtImages)) {
+              console.log(`❌ BUILT_IMAGES is not an array: ${typeof builtImages}`);
+              return;
+            }
+            
+            console.log(`📋 Parsed built images:`, builtImages);
+
+            // Initialize the 7 inputs that match test-suite-e2e-tests-mq.yml exactly
+            const inputs = {};
+            
+            // Map built images to the exact 7-input structure from test-suite-e2e-tests-mq.yml
+            const componentMapping = {
+              'db_migration_version': { type: 'coprocessor', index: 0 },
+              'gateway_listener_version': { type: 'coprocessor', index: 1 },  
+              'host_listener_version': { type: 'coprocessor', index: 2 },
+              'tx_sender_version': { type: 'coprocessor', index: 3 },
+              'tfhe_worker_version': { type: 'coprocessor', index: 4 },
+              'sns_worker_version': { type: 'coprocessor', index: 5 },
+              'zkproof_worker_version': { type: 'coprocessor', index: 6 },
+              'gateway_version': { type: 'gateway' },
+              'host_version': { type: 'host' },
+              'connector_version': { type: 'connector', index: 'all' }, // Special case for all connector components
+              'test_suite_version': { type: 'test-suite' },
+              'relayer_version': { type: 'relayer' },
+              'kms_core_version': { type: 'kms-core' }
+            };
+
+            // Initialize arrays - but only add to inputs if we have actual built images
+            const coprocessorArray = new Array(7).fill(null);
+            const connectorArray = new Array(4).fill(null);
+            let hasCoprocessorBuilds = false;
+            let hasConnectorBuilds = false;
+            let hasGatewayBuild = false;
+            let hasHostBuild = false;
+            let hasTestSuiteBuild = false;
+            let hasRelayerBuild = false;
+            let hasKmsCoreBuild = false;
+
+            // Map built images to components
+            for (const builtImage of builtImages) {
+              const mapping = componentMapping[builtImage];
+              if (mapping) {
+                console.log(`✅ Processing ${builtImage} → ${mapping.type}${mapping.index !== undefined ? `[${mapping.index}]` : ''} = ${imageTag}`);
+                
+                switch (mapping.type) {
+                  case 'coprocessor':
+                    coprocessorArray[mapping.index] = imageTag;
+                    hasCoprocessorBuilds = true;
+                    break;
+                  case 'gateway':
+                    hasGatewayBuild = true;
+                    break;
+                  case 'host':
+                    hasHostBuild = true;
+                    break;
+                  case 'connector':
+                    if (mapping.index === 'all') {
+                      // Set all 4 connector components: [db_migration, gw_listener, tx_sender, kms_worker]
+                      connectorArray.fill(imageTag);
+                      hasConnectorBuilds = true;
+                    } else {
+                      connectorArray[mapping.index] = imageTag;
+                      hasConnectorBuilds = true;
+                    }
+                    break;
+                  case 'test-suite':
+                    hasTestSuiteBuild = true;
+                    break;
+                  case 'relayer':
+                    hasRelayerBuild = true;
+                    break;
+                  case 'kms-core':
+                    hasKmsCoreBuild = true;
+                    break;
+                }
+              } else {
+                console.log(`⏭️  Skipping ${builtImage} (no component mapping)`);
+              }
+            }
+
+            // Only add inputs for components that were actually built
+            
+            // 1. coprocessor: array of 7 elements - only if at least one coprocessor component was built
+            if (hasCoprocessorBuilds) {
+              inputs.coprocessor = JSON.stringify(coprocessorArray);
+              console.log(`📝 Input 1 - coprocessor: ${inputs.coprocessor}`);
+            }
+            
+            // 2. gateway: string - only if gateway was built
+            if (hasGatewayBuild) {
+              inputs.gateway = imageTag;
+              console.log(`📝 Input 2 - gateway: ${imageTag}`);
+            }
+            
+            // 3. host: string - only if host was built
+            if (hasHostBuild) {
+              inputs.host = imageTag;
+              console.log(`📝 Input 3 - host: ${imageTag}`);
+            }
+            
+            // 4. connector: array of 4 elements - only if at least one connector component was built
+            if (hasConnectorBuilds) {
+              inputs.connector = JSON.stringify(connectorArray);
+              console.log(`📝 Input 4 - connector: ${inputs.connector}`);
+            }
+            
+            // 5. test-suite: string - only if test-suite was built
+            if (hasTestSuiteBuild) {
+              inputs['test-suite'] = imageTag;
+              console.log(`📝 Input 5 - test-suite: ${imageTag}`);
+            }
+            
+            // 6. relayer: string - only if relayer was built
+            if (hasRelayerBuild) {
+              inputs.relayer = imageTag;
+              console.log(`📝 Input 6 - relayer: ${imageTag}`);
+            }
+            
+            // 7. kms-core: string - only if kms-core was built
+            if (hasKmsCoreBuild) {
+              inputs['kms-core'] = imageTag;
+              console.log(`📝 Input 7 - kms-core: ${imageTag}`);
+            }
+
+            // Determine target ref
+            let ref;
+            if (context.eventName === 'pull_request') {
+              ref = context.payload.pull_request.head.ref;
+            } else {
+              ref = process.env.GITHUB_REF_NAME || context.ref.replace('refs/heads/','');
+            }
+            
+            console.log(`🚀 Dispatching E2E tests on ref: ${ref}`);
+            console.log(`📝 Final inputs (${Object.keys(inputs).length}/7 possible):`, inputs);
+
+            // Always dispatch E2E tests
+            if (Object.keys(inputs).length === 0) {
+              console.log('🔍 No built images found, dispatching E2E tests with all fhevm-cli defaults');
+            } else {
+              console.log(`📊 Dispatching with ${Object.keys(inputs).length} component overrides, others will use fhevm-cli defaults`);
+            }
+
+            try {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'test-suite-e2e-tests-mq.yml',
+                ref: ref,
+                inputs: inputs
+              });
+
+              console.log('✅ E2E tests workflow dispatched successfully!');
+              
+              // Log what versions will be used
+              if (Object.keys(inputs).length > 0) {
+                console.log('📋 E2E tests will use these overridden versions:');
+                Object.entries(inputs).forEach(([key, value]) => {
+                  console.log(`   ${key}: ${value}`);
+                });
+                console.log('📋 All other components will use fhevm-cli defaults');
+              } else {
+                console.log('📋 E2E tests will use all fhevm-cli defaults');
+              }
+              
+            } catch (error) {
+              console.log(`❌ Failed to dispatch E2E tests: ${error.message}`);
+              
+              if (error.message.includes('Unexpected inputs provided')) {
+                console.log('💡 The E2E workflow rejected some inputs.');
+                console.log('🔍 This indicates a mismatch between input names.');
+                console.log('📋 Attempted inputs:', Object.keys(inputs));
+                console.log('📋 Expected inputs: coprocessor, gateway, host, connector, test-suite, relayer, kms-core');
+              }
+              
+              core.setFailed(`Failed to dispatch E2E tests: ${error.message}`);
+            }
