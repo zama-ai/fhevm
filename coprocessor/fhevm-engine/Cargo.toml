@@ -94,7 +94,7 @@ overflow-checks = false
 [profile.release]
 opt-level = 3
 lto = "fat"
-debug = true
+#debug = true
 
-[profile.bench.build-override]
-debug = true
+#[profile.bench.build-override]
+#debug = true
