@@ -233,7 +233,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     }
 
     function _setUnstakeCooldownPeriod(uint256 unstakeCooldownPeriod_) internal virtual {
-        if (unstakeCooldownPeriod_ == 0) revert InvalidUnstakeCooldownPeriod();
+        require(unstakeCooldownPeriod_ != 0, InvalidUnstakeCooldownPeriod());
         _getProtocolStakingStorage()._unstakeCooldownPeriod = unstakeCooldownPeriod_;
 
         emit UnstakeCooldownPeriodSet(unstakeCooldownPeriod_);
