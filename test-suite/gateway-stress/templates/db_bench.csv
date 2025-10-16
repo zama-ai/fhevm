@@ -1,0 +1,15 @@
+parallel_requests;number_of_measures;decryption_type
+1;50;public
+10;50;public
+50;50;public
+100;50;public
+200;50;public
+500;50;public
+1000;50;public
+1;50;user
+10;50;user
+50;50;user
+100;50;user
+200;50;user
+500;50;user
+1000;50;user
