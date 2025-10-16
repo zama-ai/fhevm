@@ -181,6 +181,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         // Register the KMS nodes
         for (uint256 i = 0; i < initialKmsNodes.length; i++) {
+            if (initialKmsNodes[i].txSenderAddress == address(0)) {
+                revert InvalidZeroAddress("KMS txSenderAddress");
+            }
+            if (initialKmsNodes[i].signerAddress == address(0)) {
+                revert InvalidZeroAddress("KMS signerAddress");
+            }
             $.isKmsTxSender[initialKmsNodes[i].txSenderAddress] = true;
             $.kmsNodes[initialKmsNodes[i].txSenderAddress] = initialKmsNodes[i];
             $.kmsTxSenderAddresses.push(initialKmsNodes[i].txSenderAddress);
@@ -197,6 +203,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         // Register the coprocessors
         for (uint256 i = 0; i < initialCoprocessors.length; i++) {
+            if (initialCoprocessors[i].txSenderAddress == address(0)) {
+                revert InvalidZeroAddress("Coprocessor txSenderAddress");
+            }
+            if (initialCoprocessors[i].signerAddress == address(0)) {
+                revert InvalidZeroAddress("Coprocessor signerAddress");
+            }
             $.isCoprocessorTxSender[initialCoprocessors[i].txSenderAddress] = true;
             $.coprocessors[initialCoprocessors[i].txSenderAddress] = initialCoprocessors[i];
             $.coprocessorTxSenderAddresses.push(initialCoprocessors[i].txSenderAddress);
@@ -206,6 +218,12 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
 
         // Register the custodians
         for (uint256 i = 0; i < initialCustodians.length; i++) {
+            if (initialCustodians[i].txSenderAddress == address(0)) {
+                revert InvalidZeroAddress("Custodian txSenderAddress");
+            }
+            if (initialCustodians[i].signerAddress == address(0)) {
+                revert InvalidZeroAddress("Custodian signerAddress");
+            }
             $.custodians[initialCustodians[i].txSenderAddress] = initialCustodians[i];
             $.custodianTxSenderAddresses.push(initialCustodians[i].txSenderAddress);
             $.isCustodianTxSender[initialCustodians[i].txSenderAddress] = true;
