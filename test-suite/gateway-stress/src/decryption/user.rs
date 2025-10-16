@@ -1,4 +1,5 @@
 use crate::{
+    blockchain::manager::AppProvider,
     config::Config,
     decryption::{
         BurstResult, EVENT_LISTENER_POLLING, extract_id_from_receipt, send_tx_with_retries,
@@ -50,10 +51,10 @@ pub type UserDecryptThresholdEvent =
     requests_pb,
     responses_pb
 ))]
-pub async fn user_decryption_burst<P, S>(
+pub async fn user_decryption_burst<S>(
     burst_index: usize,
     config: Config,
-    decryption_contract: DecryptionInstance<P>,
+    decryption_contract: DecryptionInstance<AppProvider>,
     sdk: Arc<FhevmSdk>,
     user_addr: Address,
     response_listener: Arc<Mutex<S>>,
@@ -61,7 +62,6 @@ pub async fn user_decryption_burst<P, S>(
     responses_pb: ProgressBar,
 ) -> anyhow::Result<BurstResult>
 where
-    P: Provider + Clone + 'static,
     S: Stream<Item = UserDecryptThresholdEvent> + Unpin + Send + 'static,
 {
     debug!("Start of the burst...");
@@ -110,9 +110,9 @@ where
 
 /// Sends a UserDecryptionRequest transaction to the Gateway.
 #[tracing::instrument(skip(decryption_contract, user_addr, sdk, config, id_sender))]
-async fn send_user_decryption<P: Provider>(
+async fn send_user_decryption(
     index: u32,
-    decryption_contract: DecryptionInstance<P>,
+    decryption_contract: DecryptionInstance<AppProvider>,
     user_addr: Address,
     sdk: Arc<FhevmSdk>,
     config: Config,
@@ -125,8 +125,8 @@ async fn send_user_decryption<P: Provider>(
     }
 }
 
-async fn send_user_decryption_inner<P: Provider>(
-    decryption_contract: DecryptionInstance<P>,
+async fn send_user_decryption_inner(
+    decryption_contract: DecryptionInstance<AppProvider>,
     user_addr: Address,
     sdk: Arc<FhevmSdk>,
     config: Config,
