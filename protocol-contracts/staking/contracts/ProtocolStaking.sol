@@ -48,6 +48,10 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
 
     event TokensStaked(address indexed account, uint256 amount);
     event TokensUnstaked(address indexed account, address indexed recipient, uint256 amount);
+    /// @dev Emitted when tokens are released to a recipient after the unstaking cooldown period.
+    event TokensReleased(address indexed recipient, uint256 amount);
+    /// @dev Emitted when rewards of an account are claimed.
+    event RewardsClaimed(address indexed account, address indexed recipient, uint256 amount);
     event RewardRateSet(uint256 rewardRate);
     event UnstakeCooldownPeriodSet(uint256 unstakeCooldownPeriod);
     event RewardsRecipientSet(address indexed account, address indexed recipient);
@@ -120,6 +124,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         if (amountToRelease > 0) {
             $._released[account] = totalAmountCooledDown;
             IERC20(stakingToken()).safeTransfer(account, amountToRelease);
+            emit TokensReleased(account, amountToRelease);
         }
     }
 
@@ -128,7 +133,9 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         uint256 rewards = earned(account);
         if (rewards > 0) {
             _getProtocolStakingStorage()._paid[account] += SafeCast.toInt256(rewards);
-            IERC20Mintable(stakingToken()).mint(rewardsRecipient(account), rewards);
+            address recipient = rewardsRecipient(account);
+            IERC20Mintable(stakingToken()).mint(recipient, rewards);
+            emit RewardsClaimed(account, recipient, rewards);
         }
     }
 
