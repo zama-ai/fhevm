@@ -205,6 +205,14 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         return $._unstakeRequests[account].latest() - $._released[account];
     }
 
+    /**
+     * @dev Gets the current protocol reward rate in tokens distributed per second.
+     * @return The reward rate.
+     */
+    function rewardRate() public view returns (uint256) {
+        return _getProtocolStakingStorage()._rewardRate;
+    }
+
     /// @dev Returns the recipient for rewards earned by `account`.
     function rewardsRecipient(address account) public view virtual returns (address) {
         address storedRewardsRecipient = _getProtocolStakingStorage()._rewardsRecipient[account];
