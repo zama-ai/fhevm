@@ -140,6 +140,12 @@ describe('Protocol Staking', function () {
         .withArgs(this.mock, this.staker2, ethers.parseEther('50'));
     });
 
+    it('should not unstake to zero address', async function () {
+      await expect(
+        this.mock.connect(this.staker1).unstake(ethers.ZeroAddress, ethers.parseEther('50')),
+      ).to.be.revertedWithCustomError(this.mock, 'InvalidUnstakeRecipient');
+    });
+
     describe('Release', function () {
       it('should transfer after cooldown complete', async function () {
         await this.mock.connect(this.admin).setUnstakeCooldownPeriod(60); // 1 minute
