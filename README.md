@@ -178,3 +178,5 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+
+> Note: This repository is part of Zama’s FHEVM Developer Program, supporting developers experimenting with FHE and blockchain integration.
