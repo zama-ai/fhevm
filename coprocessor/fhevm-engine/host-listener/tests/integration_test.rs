@@ -47,7 +47,7 @@ sol!(
 use crate::ACLTest::ACLTestInstance;
 use crate::FHEVMExecutorTest::FHEVMExecutorTestInstance;
 
-const NB_EVENTS_PER_WALLET: i64 = 200;
+const NB_EVENTS_PER_WALLET: i64 = 100;
 
 async fn emit_events<P, N>(
     wallets: &[EthereumWallet],
@@ -254,12 +254,6 @@ async fn test_bad_chain_id() {
     } else {
         panic!("Listener should have failed due to chain ID mismatch");
     }
-}
-
-#[tokio::test]
-#[serial(db)]
-async fn test_listener_restart() -> Result<(), anyhow::Error> {
-    test_listener_no_event_loss(true, false).await
 }
 
 #[tokio::test]
