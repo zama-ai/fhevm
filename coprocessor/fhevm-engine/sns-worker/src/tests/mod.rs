@@ -6,9 +6,10 @@ use crate::{
 };
 use anyhow::{anyhow, Ok};
 use aws_config::BehaviorVersion;
-use fhevm_engine_common::utils::compact_hex;
+use fhevm_engine_common::utils::{compact_hex, DatabaseURL};
 use serde::{Deserialize, Serialize};
 use serial_test::serial;
+use sqlx::Database;
 use std::{
     fs::File,
     io::{Read, Write},
@@ -422,13 +423,13 @@ async fn setup(enable_compression: bool) -> anyhow::Result<TestEnvironment> {
         .await
         .expect("valid db instance");
 
-    let conf = build_test_config(db_instance.db_url().to_owned(), enable_compression);
+    let conf = build_test_config(db_instance.db_url.clone(), enable_compression);
 
     // Set up the database connection pool
     let pool = sqlx::postgres::PgPoolOptions::new()
         .max_connections(conf.db.max_connections)
         .acquire_timeout(conf.db.timeout)
-        .connect(&conf.db.url)
+        .connect(conf.db.url.as_str())
         .await?;
 
     // Set up S3 storage
@@ -709,7 +710,7 @@ async fn assert_ciphertext_s3_object_count(
         .await;
 }
 
-fn build_test_config(db_url: String, enable_compression: bool) -> Config {
+fn build_test_config(url: DatabaseURL, enable_compression: bool) -> Config {
     let batch_limit = std::env::var("BATCH_LIMIT")
         .ok()
         .and_then(|v| v.parse::<u32>().ok())
@@ -723,7 +724,7 @@ fn build_test_config(db_url: String, enable_compression: bool) -> Config {
     Config {
         tenant_api_key: TENANT_API_KEY.to_string(),
         db: DBConfig {
-            url: db_url,
+            url,
             listen_channels: vec![LISTEN_CHANNEL.to_string()],
             notify_channel: "fhevm".to_string(),
             batch_limit,

@@ -18,7 +18,7 @@ use transaction_sender::{
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::{telemetry, utils::DatabaseURL};
 use humantime::parse_duration;
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
@@ -49,7 +49,7 @@ struct Conf {
     private_key: Option<String>,
 
     #[arg(short, long)]
-    database_url: Option<String>,
+    database_url: Option<DatabaseURL>,
 
     #[arg(long, default_value = "10")]
     database_pool_size: u32,
@@ -205,7 +205,9 @@ async fn main() -> anyhow::Result<()> {
     let wallet = EthereumWallet::new(abstract_signer.clone());
     let database_url = match conf.database_url.clone() {
         Some(url) => url,
-        None => std::env::var("DATABASE_URL").context("DATABASE_URL is undefined")?,
+        None => std::env::var("DATABASE_URL")
+            .context("DATABASE_URL is undefined")?
+            .into(),
     };
 
     let provider = loop {
