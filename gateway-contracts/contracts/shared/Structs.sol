@@ -97,3 +97,13 @@ struct CtHandleContractPair {
     /// @notice The address of the contract
     address contractAddress;
 }
+
+/**
+ * @notice A struct that contains user decryption delegation data.
+ */
+struct UserDecryptionDelegation {
+    /// @notice The expiration date for the intended delegation.
+    uint64 expiryDate;
+    /// @notice A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+    uint64 delegationCounter;
+}
