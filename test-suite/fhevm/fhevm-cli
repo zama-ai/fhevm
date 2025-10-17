@@ -181,6 +181,10 @@ case $COMMAND in
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
           ;;
+        public-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
+          docker_args+=("-g" "test async decrypt (uint.*|ebytes.* trivial|ebytes64 non-trivial|ebytes256 non-trivial with snapshot|addresses|several addresses)")
+          ;;
         erc20)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] ERC20${RESET}"
           docker_args+=("-g" "should transfer tokens between two users.")
