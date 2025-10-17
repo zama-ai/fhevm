@@ -166,7 +166,7 @@ export async function loadTestVariablesFixture() {
   );
 
   // Load the MultichainACL contract
-  const MultichainACL = await hre.ethers.getContractAt("MultichainACL", getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS"));
+  const multichainACL = await hre.ethers.getContractAt("MultichainACL", getRequiredEnvVar("MULTICHAIN_ACL_ADDRESS"));
 
   // Load the Decryption contract
   const decryption = await hre.ethers.getContractAt("Decryption", getRequiredEnvVar("DECRYPTION_ADDRESS"));
@@ -179,7 +179,7 @@ export async function loadTestVariablesFixture() {
     gatewayConfig,
     kmsGeneration,
     ciphertextCommits,
-    MultichainACL,
+    multichainACL,
     decryption,
     inputVerification,
     chainIds,
