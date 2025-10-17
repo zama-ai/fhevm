@@ -324,7 +324,7 @@ contract MultichainACL is
             // Mark the delegate user decryption hash as having reached consensus for revocation.
             $.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] = true;
 
-            emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress);
+            emit RevokeUserDecryption(chainId, delegator, delegate, contractAddress);
         }
     }
 

@@ -4,16 +4,7 @@ import { expect } from "chai";
 import { ContractFactory, EventLog, Wallet } from "ethers";
 import hre from "hardhat";
 
-import {
-  CiphertextCommits,
-  Decryption,
-  EmptyUUPSProxyGatewayConfig,
-  GatewayConfig,
-  InputVerification,
-  KMSGeneration,
-  MultichainACL,
-  PauserSet,
-} from "../typechain-types";
+import { Decryption, EmptyUUPSProxyGatewayConfig, GatewayConfig, InputVerification } from "../typechain-types";
 // The type needs to be imported separately because it is not properly detected by the linter
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
 import {
@@ -40,7 +31,6 @@ describe("GatewayConfig", function () {
   const fakeSigner = createRandomWallet();
 
   let gatewayConfig: GatewayConfig;
-  let pauserSet: PauserSet;
   let owner: Wallet;
   let pauser: Wallet;
   let nKmsNodes: number;
@@ -110,7 +100,6 @@ describe("GatewayConfig", function () {
     // Initialize globally used variables before each test
     const fixtureData = await loadFixture(getInputsForDeployFixture);
     gatewayConfig = fixtureData.gatewayConfig;
-    pauserSet = fixtureData.pauserSet;
     owner = fixtureData.owner;
     pauser = fixtureData.pauser;
     nKmsNodes = fixtureData.nKmsNodes;
@@ -862,19 +851,13 @@ describe("GatewayConfig", function () {
     });
 
     describe("Pause all gateway contracts", function () {
-      let ciphertextCommits: CiphertextCommits;
       let decryption: Decryption;
       let inputVerification: InputVerification;
-      let kmsGeneration: KMSGeneration;
-      let MultichainACL: MultichainACL;
 
       before(async function () {
         const fixtureData = await loadFixture(loadTestVariablesFixture);
-        ciphertextCommits = fixtureData.ciphertextCommits;
         decryption = fixtureData.decryption;
         inputVerification = fixtureData.inputVerification;
-        kmsGeneration = fixtureData.kmsGeneration;
-        MultichainACL = fixtureData.MultichainACL;
       });
 
       it("Should pause all the Gateway contracts with the pauser", async function () {
