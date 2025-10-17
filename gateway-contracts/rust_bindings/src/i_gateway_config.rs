@@ -51,7 +51,7 @@ interface IGatewayConfig {
     event AddHostChain(HostChain hostChain);
     event InitializeGatewayConfig(ProtocolMetadata metadata, uint256 mpcThreshold, KmsNode[] kmsNodes, Coprocessor[] coprocessors, Custodian[] custodians);
     event PauseAllGatewayContracts();
-    event ReinitializeGatewayConfigV2(uint256 coprocessorThreshold);
+    event ReinitializeGatewayConfigV2(Coprocessor[] newCoprocessors, uint256 coprocessorThreshold);
     event UnpauseAllGatewayContracts();
     event UpdateCoprocessorThreshold(uint256 newCoprocessorThreshold);
     event UpdateKmsGenThreshold(uint256 newKmsGenThreshold);
@@ -905,6 +905,29 @@ interface IGatewayConfig {
     "type": "event",
     "name": "ReinitializeGatewayConfigV2",
     "inputs": [
+      {
+        "name": "newCoprocessors",
+        "type": "tuple[]",
+        "indexed": false,
+        "internalType": "struct Coprocessor[]",
+        "components": [
+          {
+            "name": "txSenderAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "signerAddress",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "s3BucketUrl",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      },
       {
         "name": "coprocessorThreshold",
         "type": "uint256",
@@ -4087,9 +4110,9 @@ event PauseAllGatewayContracts();
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `ReinitializeGatewayConfigV2(uint256)` and selector `0x73fb3687faa8c1b7ea60c1e2ac6a2fe0b7032c970dbd64a2def58b2501e0c965`.
+    /**Event with signature `ReinitializeGatewayConfigV2((address,address,string)[],uint256)` and selector `0x74bd4f61990c338925735f135e2432ece508762eeaa39fd2a45fc202aa585e93`.
 ```solidity
-event ReinitializeGatewayConfigV2(uint256 coprocessorThreshold);
+event ReinitializeGatewayConfigV2(Coprocessor[] newCoprocessors, uint256 coprocessorThreshold);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -4099,6 +4122,10 @@ event ReinitializeGatewayConfigV2(uint256 coprocessorThreshold);
     )]
     #[derive(Clone)]
     pub struct ReinitializeGatewayConfigV2 {
+        #[allow(missing_docs)]
+        pub newCoprocessors: alloy::sol_types::private::Vec<
+            <Coprocessor as alloy::sol_types::SolType>::RustType,
+        >,
         #[allow(missing_docs)]
         pub coprocessorThreshold: alloy::sol_types::private::primitives::aliases::U256,
     }
@@ -4112,16 +4139,19 @@ event ReinitializeGatewayConfigV2(uint256 coprocessorThreshold);
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
         impl alloy_sol_types::SolEvent for ReinitializeGatewayConfigV2 {
-            type DataTuple<'a> = (alloy::sol_types::sol_data::Uint<256>,);
+            type DataTuple<'a> = (
+                alloy::sol_types::sol_data::Array<Coprocessor>,
+                alloy::sol_types::sol_data::Uint<256>,
+            );
             type DataToken<'a> = <Self::DataTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
             type TopicList = (alloy_sol_types::sol_data::FixedBytes<32>,);
-            const SIGNATURE: &'static str = "ReinitializeGatewayConfigV2(uint256)";
+            const SIGNATURE: &'static str = "ReinitializeGatewayConfigV2((address,address,string)[],uint256)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                115u8, 251u8, 54u8, 135u8, 250u8, 168u8, 193u8, 183u8, 234u8, 96u8,
-                193u8, 226u8, 172u8, 106u8, 47u8, 224u8, 183u8, 3u8, 44u8, 151u8, 13u8,
-                189u8, 100u8, 162u8, 222u8, 245u8, 139u8, 37u8, 1u8, 224u8, 201u8, 101u8,
+                116u8, 189u8, 79u8, 97u8, 153u8, 12u8, 51u8, 137u8, 37u8, 115u8, 95u8,
+                19u8, 94u8, 36u8, 50u8, 236u8, 229u8, 8u8, 118u8, 46u8, 234u8, 163u8,
+                159u8, 210u8, 164u8, 95u8, 194u8, 2u8, 170u8, 88u8, 94u8, 147u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -4131,7 +4161,8 @@ event ReinitializeGatewayConfigV2(uint256 coprocessorThreshold);
                 data: <Self::DataTuple<'_> as alloy_sol_types::SolType>::RustType,
             ) -> Self {
                 Self {
-                    coprocessorThreshold: data.0,
+                    newCoprocessors: data.0,
+                    coprocessorThreshold: data.1,
                 }
             }
             #[inline]
@@ -4152,6 +4183,9 @@ event ReinitializeGatewayConfigV2(uint256 coprocessorThreshold);
             #[inline]
             fn tokenize_body(&self) -> Self::DataToken<'_> {
                 (
+                    <alloy::sol_types::sol_data::Array<
+                        Coprocessor,
+                    > as alloy_sol_types::SolType>::tokenize(&self.newCoprocessors),
                     <alloy::sol_types::sol_data::Uint<
                         256,
                     > as alloy_sol_types::SolType>::tokenize(&self.coprocessorThreshold),
@@ -12132,9 +12166,9 @@ function updateUserDecryptionThreshold(uint256 newUserDecryptionThreshold) exter
                 221u8, 185u8, 180u8, 173u8, 61u8, 237u8, 95u8, 3u8, 1u8, 104u8, 55u8,
             ],
             [
-                115u8, 251u8, 54u8, 135u8, 250u8, 168u8, 193u8, 183u8, 234u8, 96u8,
-                193u8, 226u8, 172u8, 106u8, 47u8, 224u8, 183u8, 3u8, 44u8, 151u8, 13u8,
-                189u8, 100u8, 162u8, 222u8, 245u8, 139u8, 37u8, 1u8, 224u8, 201u8, 101u8,
+                116u8, 189u8, 79u8, 97u8, 153u8, 12u8, 51u8, 137u8, 37u8, 115u8, 95u8,
+                19u8, 94u8, 36u8, 50u8, 236u8, 229u8, 8u8, 118u8, 46u8, 234u8, 163u8,
+                159u8, 210u8, 164u8, 95u8, 194u8, 2u8, 170u8, 88u8, 94u8, 147u8,
             ],
             [
                 122u8, 46u8, 247u8, 220u8, 137u8, 64u8, 10u8, 138u8, 217u8, 43u8, 180u8,

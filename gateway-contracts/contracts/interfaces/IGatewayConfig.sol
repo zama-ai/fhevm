@@ -37,9 +37,10 @@ interface IGatewayConfig {
 
     /**
      * @notice Emitted when the GatewayConfig is re-initialized from V2.
+     * @param newCoprocessors The new coprocessors.
      * @param coprocessorThreshold The new coprocessor threshold.
      */
-    event ReinitializeGatewayConfigV2(uint256 coprocessorThreshold);
+    event ReinitializeGatewayConfigV2(Coprocessor[] newCoprocessors, uint256 coprocessorThreshold);
 
     /**
      * @notice Emitted when the MPC threshold has been updated.

@@ -251,9 +251,17 @@ task('task:upgradeInputVerifier')
     }
     const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
 
+    let initialSigners: string[] = [];
+    const numSigners = getRequiredEnvVar('NUM_COPROCESSORS');
+    for (let idx = 0; idx < +numSigners; idx++) {
+      const inputSignerAddress = getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`);
+      initialSigners.push(inputSignerAddress);
+    }
+
     const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
 
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+      initialSigners,
       coprocessorThreshold,
     ]);
   });

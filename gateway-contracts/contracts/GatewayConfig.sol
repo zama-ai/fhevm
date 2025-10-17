@@ -239,9 +239,39 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(uint256 coprocessorThreshold) public virtual reinitializer(REINITIALIZER_VERSION) {
+    function reinitializeV2(
+        Coprocessor[] memory newCoprocessors,
+        uint256 coprocessorThreshold
+    ) public virtual reinitializer(REINITIALIZER_VERSION) {
+        if (newCoprocessors.length == 0) {
+            revert EmptyCoprocessors();
+        }
+
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        // Remove the old coprocessors
+        for (uint256 i = 0; i < $.coprocessorTxSenderAddresses.length; i++) {
+            $.isCoprocessorTxSender[$.coprocessorTxSenderAddresses[i]] = false;
+            $.coprocessorTxSenderAddresses.pop();
+        }
+        for (uint256 i = 0; i < $.coprocessorSignerAddresses.length; i++) {
+            $.isCoprocessorSigner[$.coprocessorSignerAddresses[i]] = false;
+            $.coprocessorSignerAddresses.pop();
+        }
+
+        // Register the new coprocessors
+        for (uint256 i = 0; i < newCoprocessors.length; i++) {
+            $.isCoprocessorTxSender[newCoprocessors[i].txSenderAddress] = true;
+            $.coprocessors[newCoprocessors[i].txSenderAddress] = newCoprocessors[i];
+            $.coprocessorTxSenderAddresses.push(newCoprocessors[i].txSenderAddress);
+            $.isCoprocessorSigner[newCoprocessors[i].signerAddress] = true;
+            $.coprocessorSignerAddresses.push(newCoprocessors[i].signerAddress);
+        }
+
+        // Setting the coprocessor threshold should be done after the coprocessors have been
+        // registered as the functions reading the `coprocessorSignerAddresses` array.
         _setCoprocessorThreshold(coprocessorThreshold);
-        emit ReinitializeGatewayConfigV2(coprocessorThreshold);
+        emit ReinitializeGatewayConfigV2(newCoprocessors, coprocessorThreshold);
     }
 
     /**

@@ -11,7 +11,7 @@ contract GatewayConfigMock {
         Custodian[] custodians
     );
 
-    event ReinitializeGatewayConfigV2(uint256 coprocessorThreshold);
+    event ReinitializeGatewayConfigV2(Coprocessor[] newCoprocessors, uint256 coprocessorThreshold);
 
     event UpdateMpcThreshold(uint256 newMpcThreshold);
 
@@ -49,8 +49,8 @@ contract GatewayConfigMock {
         emit InitializeGatewayConfig(metadata, mpcThreshold, kmsNodes, coprocessors, custodians);
     }
 
-    function reinitializeV2(uint256 coprocessorThreshold) public {
-        emit ReinitializeGatewayConfigV2(coprocessorThreshold);
+    function reinitializeV2(Coprocessor[] memory newCoprocessors, uint256 coprocessorThreshold) public {
+        emit ReinitializeGatewayConfigV2(newCoprocessors, coprocessorThreshold);
     }
 
     function updateMpcThreshold(uint256 newMpcThreshold) external {

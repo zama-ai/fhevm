@@ -18,12 +18,6 @@ import {ACLOwnable} from "./shared/ACLOwnable.sol";
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
 contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, ACLOwnable {
-    /**
-     * @notice Emitted when the InputVerifier is re-initialized from V2.
-     * @param threshold The new threshold.
-     */
-    event ReinitializeInputVerifierV2(uint256 threshold);
-
     /// @notice Returned if the deserializing of the input proof fails.
     error DeserializingInputProofFail();
 
@@ -159,9 +153,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    function reinitializeV2(uint256 threshold) public virtual reinitializer(REINITIALIZER_VERSION) {
-        _setThreshold(threshold);
-        emit ReinitializeInputVerifierV2(threshold);
+    function reinitializeV2(
+        address[] memory newSignersSet,
+        uint256 threshold
+    ) public virtual reinitializer(REINITIALIZER_VERSION) {
+        defineNewContext(newSignersSet, threshold);
     }
 
     /**

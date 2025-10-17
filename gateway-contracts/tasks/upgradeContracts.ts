@@ -254,10 +254,25 @@ task("task:upgradeGatewayConfig")
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
+    // Parse the coprocessors
+    const numCoprocessors = parseInt(getRequiredEnvVar("NUM_COPROCESSORS"));
+    const coprocessors = [];
+    for (let idx = 0; idx < numCoprocessors; idx++) {
+      coprocessors.push({
+        txSenderAddress: getRequiredEnvVar(`COPROCESSOR_TX_SENDER_ADDRESS_${idx}`),
+        signerAddress: getRequiredEnvVar(`COPROCESSOR_SIGNER_ADDRESS_${idx}`),
+        s3BucketUrl: getRequiredEnvVar(`COPROCESSOR_S3_BUCKET_URL_${idx}`),
+      });
+    }
+
     // Get the coprocessor threshold
     const coprocessorThreshold = getRequiredEnvVar("COPROCESSOR_THRESHOLD");
 
+    console.log("New coprocessors:", coprocessors);
+    console.log("Coprocessor threshold:", coprocessorThreshold);
+
     await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+      coprocessors,
       coprocessorThreshold,
     ]);
   });
