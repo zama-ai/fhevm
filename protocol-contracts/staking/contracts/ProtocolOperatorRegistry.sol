@@ -32,7 +32,7 @@ contract ProtocolOperatorRegistry {
      *
      * - `msg.sender` must be the {Ownable-owner} of `account`.
      */
-    function setStakedTokensAccount(address account) public virtual {
+    function setStakedTokensAccount(address account) public {
         ProtocolOperatorRegistryStorage storage $ = _getProtocolOperatorRegistryStorage();
         if (account != address(0)) {
             require(Ownable(account).owner() == msg.sender, StakingAccountNotOwnedByCaller());
