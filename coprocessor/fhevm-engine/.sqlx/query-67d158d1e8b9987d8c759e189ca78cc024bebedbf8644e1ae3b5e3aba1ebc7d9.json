@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM delegate_user_decrypt\n        WHERE block_hash IN (SELECT unnest($1::bytea[]))\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "67d158d1e8b9987d8c759e189ca78cc024bebedbf8644e1ae3b5e3aba1ebc7d9"
+}

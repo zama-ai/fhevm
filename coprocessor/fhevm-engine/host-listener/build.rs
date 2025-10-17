@@ -7,7 +7,10 @@ use semver::Version;
 use std::{env, fs, path::Path, process::Command};
 
 fn build_contracts() {
-    println!("cargo:rerun-if-changed=../../../host-contracts/contracts");
+    println!(
+        "cargo:rerun-if-changed=../../../host-contracts/contracts/ACL.sol"
+    );
+    println!("cargo:rerun-if-changed=../../../host-contracts/contracts/FHEVMExecutor.sol");
     // Step 1: Copy ../../contracts/.env.example to ../../contracts/.env
     let env_example = Path::new("../../../host-contracts/.env.example");
     let env_dest = Path::new("../../../host-contracts/.env");

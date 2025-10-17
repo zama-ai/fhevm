@@ -3395,6 +3395,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fhevm_gateway_bindings"
+version = "0.1.0-rc14"
+dependencies = [
+ "alloy",
+ "serde",
+]
+
+[[package]]
 name = "filetime"
 version = "0.2.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8236,6 +8244,7 @@ dependencies = [
  "axum",
  "clap",
  "fhevm-engine-common",
+ "fhevm_gateway_bindings",
  "foundry-compilers",
  "futures-util",
  "humantime",
