@@ -22,6 +22,7 @@ WORKDIR /app
 COPY coprocessor/fhevm-engine ./coprocessor/fhevm-engine
 COPY coprocessor/proto ./coprocessor/proto
 COPY gateway-contracts/contracts/ ./gateway-contracts/contracts/
+COPY gateway-contracts/rust_bindings/ ./gateway-contracts/rust_bindings
 COPY --from=contract_builder /app/gateway-contracts/artifacts/contracts /app/gateway-contracts/artifacts/contracts
 COPY .git/HEAD ./coprocessor/fhevm-engine/BUILD_ID
 

@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT delegator, delegate, contract_address, delegation_counter, old_expiry_date, expiry_date, host_chain_id, block_number, block_hash, transaction_id\n        FROM delegate_user_decrypt\n        WHERE block_number <= $1\n        ORDER BY block_number ASC, delegation_counter ASC, transaction_id ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "delegator",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "delegate",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 2,
+        "name": "contract_address",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 3,
+        "name": "delegation_counter",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "old_expiry_date",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "expiry_date",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "host_chain_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "block_hash",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 9,
+        "name": "transaction_id",
+        "type_info": "Bytea"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "367faf1554f9a917f729866c2a5d61223726c92855b1f9a25c704049b9a41b0a"
+}

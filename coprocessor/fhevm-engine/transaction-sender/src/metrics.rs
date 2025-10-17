@@ -50,3 +50,19 @@ pub(crate) static ALLOW_HANDLE_FAIL_COUNTER: LazyLock<IntCounter> = LazyLock::ne
     )
     .unwrap()
 });
+pub(crate) static DELEGATE_USER_DECRYPT_SUCCESS_COUNTER: LazyLock<IntCounter> =
+    LazyLock::new(|| {
+        register_int_counter!(
+            "coprocessor_txn_sender_delegation_user_decrypt_success_counter",
+            "Number of successful delegate user decrypt txns in transaction-sender"
+        )
+        .unwrap()
+    });
+
+pub(crate) static DELEGATE_USER_DECRYPT_FAIL_COUNTER: LazyLock<IntCounter> = LazyLock::new(|| {
+    register_int_counter!(
+        "coprocessor_txn_sender_delegation_user_decrypt_fail_counter",
+        "Number of failed delegate user decrypt txns requests in transaction-sender"
+    )
+    .unwrap()
+});

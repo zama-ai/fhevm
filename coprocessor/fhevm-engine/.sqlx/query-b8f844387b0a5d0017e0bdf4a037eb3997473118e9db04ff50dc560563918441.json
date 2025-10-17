@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT block_number, expiry_date FROM delegate_user_decrypt",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "block_number",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "expiry_date",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "b8f844387b0a5d0017e0bdf4a037eb3997473118e9db04ff50dc560563918441"
+}
