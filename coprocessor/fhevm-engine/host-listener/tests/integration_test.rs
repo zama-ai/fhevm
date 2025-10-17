@@ -17,12 +17,13 @@ use alloy::sol;
 use futures_util::future::try_join_all;
 use serial_test::serial;
 use sqlx::postgres::PgPoolOptions;
+use std::collections::HashSet;
 use std::process::Command;
-use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, AtomicU64};
 use test_harness::health_check;
 use test_harness::instance::ImportMode;
-use tracing::{warn, Level};
+use tracing::{info, warn, Level};
 
 use host_listener::cmd::main;
 use host_listener::cmd::Args;
@@ -398,6 +399,108 @@ async fn test_health() -> Result<(), anyhow::Error> {
     tokio::time::sleep(tokio::time::Duration::from_secs(5)).await; // time to recover
     assert!(health_check::wait_healthy(&setup.health_check_url, 10, 1).await);
     warn!("Test is killing the listener");
+    listener_handle.abort();
+    Ok(())
+}
+
+const NB_DELEGATION_PER_WALLET: usize = 15;
+
+async fn emit_delegations<P, N>(
+    wallets: &[EthereumWallet],
+    url: &str,
+    acl_contract: ACLTestInstance<P, N>,
+) where
+    P: Clone + alloy::providers::Provider<N> + 'static,
+    N: Clone
+        + alloy::providers::Network<TransactionRequest = TransactionRequest>
+        + 'static,
+{
+    static UNIQUE_INT: AtomicU64 = AtomicU64::new(1); // to counter avoid idempotency
+    let mut threads = vec![];
+    let delegate = *acl_contract.address();
+    let contract_address = *acl_contract.address();
+    for (i_wallet, wallet) in wallets.iter().enumerate() {
+        let expiration_date = 3600_u64 + i_wallet as u64;
+        let wallet = wallet.clone();
+        let acl_contract = acl_contract.clone();
+        let url = url.to_string();
+        let thread = tokio::spawn(async move {
+            let delegation_counter = UNIQUE_INT.fetch_add(1, Ordering::SeqCst);
+            for _ in 1..=NB_DELEGATION_PER_WALLET {
+                let provider = ProviderBuilder::new()
+                    .wallet(wallet.clone())
+                    .connect_ws(WsConnect::new(url.to_string()))
+                    .await
+                    .unwrap();
+                let acl_txn_req = acl_contract
+                    .delegateForUserDecryption(
+                        delegate,
+                        contract_address,
+                        delegation_counter,
+                        0,
+                        expiration_date,
+                    )
+                    .into_transaction_request();
+                let pending_txn = provider
+                    .send_transaction(acl_txn_req.clone())
+                    .await
+                    .unwrap();
+                let receipt = pending_txn.get_receipt().await.unwrap();
+                assert!(receipt.status());
+            }
+        });
+        threads.push(thread);
+    }
+    if let Err(err) = try_join_all(threads).await {
+        eprintln!("{err}");
+        panic!("One event emission failed: {err}");
+    }
+}
+
+#[tokio::test]
+#[serial(db)]
+async fn test_listener_delegations() -> Result<(), anyhow::Error> {
+    let setup = setup(None).await?;
+    let args = setup.args.clone();
+
+    // Start listener in background task
+    let listener_handle = tokio::spawn(main(args.clone()));
+    assert!(health_check::wait_healthy(&setup.health_check_url, 60, 1).await);
+
+    // Emit first batch of events
+    let wallets_clone = setup.wallets.clone();
+    let url_clone = setup.args.url.clone();
+    let acl_contract_clone = setup.acl_contract.clone();
+    let event_source = tokio::spawn(async move {
+        emit_delegations(&wallets_clone, &url_clone, acl_contract_clone).await;
+    });
+
+    let mut delegation_set = HashSet::new();
+    for _ in 1..30 {
+        let _ = tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        let delegations = sqlx::query!(
+            "SELECT block_number, new_expiration_date FROM delegate_user_decrypt"
+        )
+        .fetch_all(&setup.db_pool)
+        .await?;
+        for delegation in delegations {
+            delegation_set.insert((
+                delegation.block_number,
+                delegation.new_expiration_date,
+            ));
+        }
+        if delegation_set.len()
+            >= setup.wallets.len() * NB_DELEGATION_PER_WALLET
+        {
+            info!("Delegations in database");
+            break;
+        }
+    }
+    event_source.await?;
+    assert_eq!(
+        delegation_set.len(),
+        setup.wallets.len() * NB_DELEGATION_PER_WALLET
+    );
     listener_handle.abort();
     Ok(())
 }

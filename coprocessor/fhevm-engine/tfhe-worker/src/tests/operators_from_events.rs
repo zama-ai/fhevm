@@ -41,7 +41,7 @@ async fn insert_tfhe_event(
         event: log.inner,
         transaction_hash: log.transaction_hash,
         is_allowed,
-        block_number: log.block_number,
+        block_number: log.block_number.unwrap_or(0),
     };
     db.insert_tfhe_event(tx, &event).await
 }

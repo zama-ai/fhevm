@@ -86,7 +86,12 @@ impl TestEnvironment {
 
         Self::truncate_tables(
             &db_pool,
-            vec!["verify_proofs", "ciphertext_digest", "allowed_handles"],
+            vec![
+                "verify_proofs",
+                "ciphertext_digest",
+                "allowed_handles",
+                "delegate_user_decrypt",
+            ],
         )
         .await?;
 
