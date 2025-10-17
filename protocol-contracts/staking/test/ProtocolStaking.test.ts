@@ -28,7 +28,7 @@ describe('Protocol Staking', function () {
 
     await Promise.all(
       [staker1, staker2].flatMap(account => [
-        token.mint(account, ethers.parseEther('1000')),
+        token.mint(account, ethers.parseEther('1001')),
         token.$_approve(account, mock, ethers.MaxUint256),
       ]),
     );
@@ -113,6 +113,18 @@ describe('Protocol Staking', function () {
 
       await expect(this.mock.totalStakedWeight()).to.eventually.equal(0);
       await expect(this.mock.connect(this.staker1).earned(this.staker1)).to.eventually.equal(0);
+    });
+
+    it('earned should not revert if account staked but not yet earned rewards', async function () {
+      await this.mock.connect(this.manager).setRewardRate(ethers.parseEther('0.001'));
+      await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
+      await this.mock.connect(this.manager).addEligibleAccount(this.staker2);
+      await this.mock.connect(this.staker1).stake(ethers.parseEther('1000'));
+      await timeIncreaseNoMine(60 * 60 * 24); // increase time by 1 day
+      await this.mock.connect(this.manager).setRewardRate(ethers.parseEther('0'));
+      await this.mock.connect(this.staker2).stake(ethers.parseEther('1000'));
+      await this.mock.connect(this.staker1).stake(ethers.parseEther('1'));
+      await expect(this.mock.earned(this.staker2)).to.eventually.equal(0);
     });
 
     it('Single user should get 100% of rewards', async function () {
