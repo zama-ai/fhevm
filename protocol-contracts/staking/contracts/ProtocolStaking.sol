@@ -44,7 +44,9 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     // keccak256(abi.encode(uint256(keccak256("zama.storage.ProtocolStaking")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant PROTOCOL_STAKING_STORAGE_LOCATION =
         0x6867237db38693700f305f18dff1dbf600e282237f7d452b4c792e6b019c6b00;
-    bytes32 private constant ELIGIBLE_ACCOUNT_ROLE = keccak256("eligible-account-role");
+    bytes32 private constant UPGRADER_ROLE = keccak256("UPGRADER_ROLE");
+    bytes32 private constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
+    bytes32 private constant ELIGIBLE_ACCOUNT_ROLE = keccak256("ELIGIBLE_ACCOUNT_ROLE");
 
     event TokensStaked(address indexed account, uint256 amount);
     event TokensUnstaked(address indexed account, address indexed recipient, uint256 amount);
@@ -75,9 +77,13 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         string memory version,
         address stakingToken_,
         address governor,
+        address upgrader,
+        address manager,
         uint256 initialUnstakeCooldownPeriod
     ) public virtual initializer {
         __AccessControlDefaultAdminRules_init(0, governor);
+        _grantRole(UPGRADER_ROLE, upgrader);
+        _grantRole(MANAGER_ROLE, manager);
         __ERC20_init(name, symbol);
         __EIP712_init(name, version);
         _getProtocolStakingStorage()._stakingToken = stakingToken_;
@@ -142,8 +148,8 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         }
     }
 
-    /// @dev Sets the reward rate in tokens per second. Only callable by {owner}.
-    function setRewardRate(uint256 rewardRate) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+    /// @dev Sets the reward rate in tokens per second. Only callable by `MANAGER_ROLE` role.
+    function setRewardRate(uint256 rewardRate) public virtual onlyRole(MANAGER_ROLE) {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
         $._lastUpdateReward = _historicalReward();
         $._lastUpdateTimestamp = Time.timestamp();
@@ -154,22 +160,22 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
 
     /**
      * @dev Adds the eligible account role to `account`. Only accounts with the eligible account role earn rewards for staked tokens.
-     * Only callable by the `ELIGIBLE_ACCOUNT_ROLE` role admin (by default {owner}).
+     * Only callable by the `MANAGER_ROLE` role.
      */
-    function addEligibleAccount(address account) public virtual onlyRole(getRoleAdmin(ELIGIBLE_ACCOUNT_ROLE)) {
+    function addEligibleAccount(address account) public virtual onlyRole(MANAGER_ROLE) {
         require(_grantRole(ELIGIBLE_ACCOUNT_ROLE, account), EligibleAccountAlreadyExists(account));
     }
 
     /**
      * @dev Removes the eligible account role from `account`. `account` stops to earn rewards but maintains all existing rewards.
-     * Only callable by the `ELIGIBLE_ACCOUNT_ROLE` role admin (by default {owner}).
+     * Only callable by the `MANAGER_ROLE` role.
      */
-    function removeEligibleAccount(address account) public virtual onlyRole(getRoleAdmin(ELIGIBLE_ACCOUNT_ROLE)) {
+    function removeEligibleAccount(address account) public virtual onlyRole(MANAGER_ROLE) {
         require(_revokeRole(ELIGIBLE_ACCOUNT_ROLE, account), EligibleAccountDoesNotExist(account));
     }
 
-    /// @dev Sets the {unstake} cooldown period in seconds to `unstakeCooldownPeriod`. Only callable by {owner}.
-    function setUnstakeCooldownPeriod(uint256 unstakeCooldownPeriod_) public virtual onlyRole(DEFAULT_ADMIN_ROLE) {
+    /// @dev Sets the {unstake} cooldown period in seconds to `unstakeCooldownPeriod`. Only callable by `MANAGER_ROLE` role.
+    function setUnstakeCooldownPeriod(uint256 unstakeCooldownPeriod_) public virtual onlyRole(MANAGER_ROLE) {
         _setUnstakeCooldownPeriod(unstakeCooldownPeriod_);
     }
 
@@ -291,7 +297,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         super._update(from, to, value);
     }
 
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(UPGRADER_ROLE) {}
 
     function _historicalReward() internal view virtual returns (uint256) {
         ProtocolStakingStorage storage $ = _getProtocolStakingStorage();
