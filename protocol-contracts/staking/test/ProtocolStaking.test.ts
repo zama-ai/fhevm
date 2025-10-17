@@ -9,12 +9,22 @@ const timeIncreaseNoMine = (duration: number) =>
 /* eslint-disable no-unexpected-multiline */
 describe('Protocol Staking', function () {
   beforeEach(async function () {
-    const [staker1, staker2, admin, ...accounts] = await ethers.getSigners();
-
+    const [staker1, staker2, admin, upgrader, manager, anyone, ...accounts] = await ethers.getSigners();
     const token = await ethers.deployContract('$ERC20Mock', ['StakingToken', 'ST', 18]);
     const mock = await ethers
       .getContractFactory('ProtocolStaking')
-      .then(factory => upgrades.deployProxy(factory, ['StakedToken', 'SST', '1', token.target, admin.address, 1]));
+      .then(factory =>
+        upgrades.deployProxy(factory, [
+          'StakedToken',
+          'SST',
+          '1',
+          token.target,
+          admin.address,
+          upgrader.address,
+          manager.address,
+          1,
+        ]),
+      );
 
     await Promise.all(
       [staker1, staker2].flatMap(account => [
@@ -23,19 +33,65 @@ describe('Protocol Staking', function () {
       ]),
     );
 
-    Object.assign(this, { accounts, staker1, staker2, admin, token, mock });
+    Object.assign(this, {
+      accounts,
+      staker1,
+      staker2,
+      admin,
+      upgrader,
+      manager,
+      anyone,
+      token,
+      mock,
+    });
   });
 
   it('unstake cooldown period returned correctly', async function () {
     await expect(this.mock.unstakeCooldownPeriod()).to.eventually.eq(1);
-    await this.mock.connect(this.admin).setUnstakeCooldownPeriod(100);
+    await this.mock.connect(this.manager).setUnstakeCooldownPeriod(100);
     await expect(this.mock.unstakeCooldownPeriod()).to.eventually.eq(100);
   });
 
   it('should return reward rate', async function () {
     await expect(this.mock.rewardRate()).to.eventually.eq(0);
-    await this.mock.connect(this.admin).setRewardRate(ethers.parseEther('0.5'));
+    await this.mock.connect(this.manager).setRewardRate(ethers.parseEther('0.5'));
     await expect(this.mock.rewardRate()).to.eventually.eq(ethers.parseEther('0.5'));
+  });
+
+  describe('Access Control', function () {
+    it('should not set unstake cooldown period if not authorized', async function () {
+      await expect(this.mock.connect(this.anyone).setUnstakeCooldownPeriod(100)).to.be.revertedWithCustomError(
+        this.mock,
+        'AccessControlUnauthorizedAccount',
+      );
+    });
+
+    it('should not set reward rate if not authorized', async function () {
+      await expect(this.mock.connect(this.anyone).setRewardRate(100)).to.be.revertedWithCustomError(
+        this.mock,
+        'AccessControlUnauthorizedAccount',
+      );
+    });
+
+    it('should not add eligible account if not authorized', async function () {
+      await expect(this.mock.connect(this.anyone).addEligibleAccount(this.staker1)).to.be.revertedWithCustomError(
+        this.mock,
+        'AccessControlUnauthorizedAccount',
+      );
+    });
+
+    it('should not remove eligible account if not authorized', async function () {
+      await expect(this.mock.connect(this.anyone).removeEligibleAccount(this.staker1)).to.be.revertedWithCustomError(
+        this.mock,
+        'AccessControlUnauthorizedAccount',
+      );
+    });
+
+    it('should not upgrade if not authorized', async function () {
+      await expect(
+        this.mock.connect(this.anyone).upgradeToAndCall(this.mock.target, '0x'),
+      ).to.be.revertedWithCustomError(this.mock, 'AccessControlUnauthorizedAccount');
+    });
   });
 
   describe('Staking', function () {
@@ -52,7 +108,7 @@ describe('Protocol Staking', function () {
       await this.mock.connect(this.staker1).stake(ethers.parseEther('100'));
 
       // Reward 0.5 tokens per block in aggregate
-      await this.mock.connect(this.admin).setRewardRate(ethers.parseEther('0.5'));
+      await this.mock.connect(this.manager).setRewardRate(ethers.parseEther('0.5'));
       await timeIncreaseNoMine(10);
 
       await expect(this.mock.totalStakedWeight()).to.eventually.equal(0);
@@ -63,10 +119,10 @@ describe('Protocol Staking', function () {
       await this.mock.connect(this.staker1).stake(ethers.parseEther('100'));
 
       // Reward 0.5 tokens per block in aggregate
-      await this.mock.connect(this.admin).setRewardRate(ethers.parseEther('0.5'));
-      await this.mock.connect(this.admin).addEligibleAccount(this.staker1);
+      await this.mock.connect(this.manager).setRewardRate(ethers.parseEther('0.5'));
+      await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
       await timeIncreaseNoMine(9);
-      await this.mock.connect(this.admin).setRewardRate(0);
+      await this.mock.connect(this.manager).setRewardRate(0);
       await expect(this.mock.totalStakedWeight()).to.eventually.equal(
         await this.mock.weight(await this.mock.balanceOf(this.staker1)),
       );
@@ -78,11 +134,11 @@ describe('Protocol Staking', function () {
       await this.mock.connect(this.staker2).stake(ethers.parseEther('1000'));
 
       // Reward 0.5 tokens per block in aggregate
-      await this.mock.connect(this.admin).addEligibleAccount(this.staker1);
-      await this.mock.connect(this.admin).addEligibleAccount(this.staker2);
-      await this.mock.connect(this.admin).setRewardRate(ethers.parseEther('0.5'));
+      await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
+      await this.mock.connect(this.manager).addEligibleAccount(this.staker2);
+      await this.mock.connect(this.manager).setRewardRate(ethers.parseEther('0.5'));
       await timeIncreaseNoMine(10);
-      await this.mock.connect(this.admin).setRewardRate(0);
+      await this.mock.connect(this.manager).setRewardRate(0);
 
       const earned1 = await this.mock.earned(this.staker1);
       const earned2 = await this.mock.earned(this.staker2);
@@ -94,11 +150,11 @@ describe('Protocol Staking', function () {
     });
 
     it('Second staker should not get reward from previous period', async function () {
-      await this.mock.connect(this.admin).addEligibleAccount(this.staker1);
-      await this.mock.connect(this.admin).addEligibleAccount(this.staker2);
+      await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
+      await this.mock.connect(this.manager).addEligibleAccount(this.staker2);
 
       // Reward 0.5 tokens per block in aggregate
-      await this.mock.connect(this.admin).setRewardRate(ethers.parseEther('0.5'));
+      await this.mock.connect(this.manager).setRewardRate(ethers.parseEther('0.5'));
       // staker1 stakes early and stars accumulating rewards
       await this.mock.connect(this.staker1).stake(ethers.parseEther('100'));
       await timeIncreaseNoMine(9);
@@ -106,7 +162,7 @@ describe('Protocol Staking', function () {
       await this.mock.connect(this.staker2).stake(ethers.parseEther('100'));
       await time.increase(9);
       // stop rewards
-      await this.mock.connect(this.admin).setRewardRate(0);
+      await this.mock.connect(this.manager).setRewardRate(0);
 
       const earned1 = await this.mock.earned(this.staker1);
       const earned2 = await this.mock.earned(this.staker2);
@@ -123,7 +179,7 @@ describe('Protocol Staking', function () {
     });
 
     it('should not transfer instantly', async function () {
-      await this.mock.connect(this.admin).setUnstakeCooldownPeriod(60); // 1 minute
+      await this.mock.connect(this.manager).setUnstakeCooldownPeriod(60); // 1 minute
       await expect(this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('50')))
         .to.emit(this.mock, 'Transfer')
         .withArgs(this.staker1, ethers.ZeroAddress, ethers.parseEther('50'))
@@ -148,7 +204,7 @@ describe('Protocol Staking', function () {
 
     describe('Release', function () {
       it('should transfer after cooldown complete', async function () {
-        await this.mock.connect(this.admin).setUnstakeCooldownPeriod(60); // 1 minute
+        await this.mock.connect(this.manager).setUnstakeCooldownPeriod(60); // 1 minute
         await this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('50'));
         await expect(this.mock.tokensInCooldown(this.staker1)).to.eventually.eq(ethers.parseEther('50'));
 
@@ -161,7 +217,7 @@ describe('Protocol Staking', function () {
       });
 
       it('should only release once', async function () {
-        await this.mock.connect(this.admin).setUnstakeCooldownPeriod(60); // 1 minute
+        await this.mock.connect(this.manager).setUnstakeCooldownPeriod(60); // 1 minute
         await this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('50'));
 
         await timeIncreaseNoMine(60);
@@ -175,7 +231,7 @@ describe('Protocol Staking', function () {
       });
 
       it("should not release if cooldown isn't complete", async function () {
-        await this.mock.connect(this.admin).setUnstakeCooldownPeriod(60);
+        await this.mock.connect(this.manager).setUnstakeCooldownPeriod(60);
         await this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('50'));
 
         await timeIncreaseNoMine(30);
@@ -183,7 +239,7 @@ describe('Protocol Staking', function () {
       });
 
       it('should combine multiple complete withdrawals', async function () {
-        await this.mock.connect(this.admin).setUnstakeCooldownPeriod(60); // 1 minute
+        await this.mock.connect(this.manager).setUnstakeCooldownPeriod(60); // 1 minute
         await this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('50'));
 
         await timeIncreaseNoMine(30);
@@ -198,7 +254,7 @@ describe('Protocol Staking', function () {
       });
 
       it('should only release completed cooldowns in batch', async function () {
-        await this.mock.connect(this.admin).setUnstakeCooldownPeriod(60); // 1 minute
+        await this.mock.connect(this.manager).setUnstakeCooldownPeriod(60); // 1 minute
         await this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('25'));
 
         await timeIncreaseNoMine(20);
@@ -214,11 +270,11 @@ describe('Protocol Staking', function () {
       });
 
       it('should handle decrease in cooldown period gracefully', async function () {
-        await this.mock.connect(this.admin).setUnstakeCooldownPeriod(120);
+        await this.mock.connect(this.manager).setUnstakeCooldownPeriod(120);
         await this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('25'));
 
         await timeIncreaseNoMine(30);
-        await this.mock.connect(this.admin).setUnstakeCooldownPeriod(30);
+        await this.mock.connect(this.manager).setUnstakeCooldownPeriod(30);
         await this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('25'));
 
         // advance 30 seconds. Still need to wait another 60 seconds for the original unstake request to complete.
@@ -233,7 +289,7 @@ describe('Protocol Staking', function () {
     });
 
     it('should decrease total staking amount log accordingly', async function () {
-      await this.mock.connect(this.admin).addEligibleAccount(this.staker1);
+      await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
 
       const beforetotalStakedWeight = await this.mock.totalStakedWeight();
       const beforeStaker1Log = await this.mock.weight(await this.mock.balanceOf(this.staker1));
@@ -249,10 +305,10 @@ describe('Protocol Staking', function () {
       await this.mock.connect(this.staker1).stake(ethers.parseEther('100'));
 
       // Reward 0.5 tokens per block in aggregate
-      await this.mock.connect(this.admin).setRewardRate(ethers.parseEther('0.5'));
-      await this.mock.connect(this.admin).addEligibleAccount(this.staker1);
+      await this.mock.connect(this.manager).setRewardRate(ethers.parseEther('0.5'));
+      await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
       await timeIncreaseNoMine(9);
-      await this.mock.connect(this.admin).setRewardRate(0);
+      await this.mock.connect(this.manager).setRewardRate(0);
       const earned = await this.mock.earned(this.staker1);
       await expect(this.mock.claimRewards(this.staker1))
         .to.emit(this.token, 'Transfer')
@@ -265,8 +321,8 @@ describe('Protocol Staking', function () {
       await this.mock.connect(this.staker1).stake(ethers.parseEther('100'));
       await this.mock.connect(this.staker1).setRewardsRecipient(this.staker2);
 
-      await this.mock.connect(this.admin).setRewardRate(ethers.parseEther('0.5'));
-      await this.mock.connect(this.admin).addEligibleAccount(this.staker1);
+      await this.mock.connect(this.manager).setRewardRate(ethers.parseEther('0.5'));
+      await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
       await timeIncreaseNoMine(9);
 
       await expect(this.mock.claimRewards(this.staker1))
@@ -280,14 +336,14 @@ describe('Protocol Staking', function () {
   describe('Manage Eligible Accounts', function () {
     describe('Add Eligible Account', function () {
       it('should emit event', async function () {
-        await expect(this.mock.connect(this.admin).addEligibleAccount(this.staker1))
+        await expect(this.mock.connect(this.manager).addEligibleAccount(this.staker1))
           .to.emit(this.mock, 'RoleGranted')
-          .withArgs(ethers.id('eligible-account-role'), this.staker1, this.admin);
+          .withArgs(ethers.id('ELIGIBLE_ACCOUNT_ROLE'), this.staker1, this.manager);
       });
 
       it('should reflect in eligible account storage', async function () {
-        await this.mock.connect(this.admin).addEligibleAccount(this.staker1);
-        await this.mock.connect(this.admin).addEligibleAccount(this.staker2);
+        await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
+        await this.mock.connect(this.manager).addEligibleAccount(this.staker2);
 
         await expect(this.mock.isEligibleAccount(this.staker1)).to.eventually.equal(true);
         await expect(this.mock.isEligibleAccount(this.staker2)).to.eventually.equal(true);
@@ -295,8 +351,8 @@ describe('Protocol Staking', function () {
       });
 
       it("can't add twice", async function () {
-        await this.mock.connect(this.admin).addEligibleAccount(this.staker1);
-        await expect(this.mock.connect(this.admin).addEligibleAccount(this.staker1))
+        await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
+        await expect(this.mock.connect(this.manager).addEligibleAccount(this.staker1))
           .to.be.revertedWithCustomError(this.mock, 'EligibleAccountAlreadyExists')
           .withArgs(this.staker1);
       });
@@ -304,7 +360,7 @@ describe('Protocol Staking', function () {
       it('should add to totalStakedWeight', async function () {
         const weightBefore = await this.mock.totalStakedWeight();
         const staker1Weight = await this.mock.weight(await this.mock.balanceOf(this.staker1));
-        await this.mock.connect(this.admin).addEligibleAccount(this.staker1);
+        await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
 
         await expect(this.mock.totalStakedWeight()).to.eventually.eq(weightBefore + staker1Weight);
       });
@@ -312,25 +368,25 @@ describe('Protocol Staking', function () {
 
     describe('Remove Eligible Account', function () {
       beforeEach(async function () {
-        await this.mock.connect(this.admin).addEligibleAccount(this.staker1);
-        await this.mock.connect(this.admin).addEligibleAccount(this.staker2);
+        await this.mock.connect(this.manager).addEligibleAccount(this.staker1);
+        await this.mock.connect(this.manager).addEligibleAccount(this.staker2);
       });
 
       it('should emit event', async function () {
-        await expect(this.mock.connect(this.admin).removeEligibleAccount(this.staker1))
+        await expect(this.mock.connect(this.manager).removeEligibleAccount(this.staker1))
           .to.emit(this.mock, 'RoleRevoked')
-          .withArgs(ethers.id('eligible-account-role'), this.staker1, this.admin);
+          .withArgs(ethers.id('ELIGIBLE_ACCOUNT_ROLE'), this.staker1, this.manager);
       });
 
       it('should reflect in eligible account list', async function () {
-        await this.mock.connect(this.admin).removeEligibleAccount(this.staker1);
+        await this.mock.connect(this.manager).removeEligibleAccount(this.staker1);
 
         await expect(this.mock.isEligibleAccount(this.staker1)).to.eventually.equal(false);
         await expect(this.mock.isEligibleAccount(this.staker2)).to.eventually.equal(true);
       });
 
       it('should revert if not an eligible account', async function () {
-        await expect(this.mock.connect(this.admin).removeEligibleAccount(this.admin))
+        await expect(this.mock.connect(this.manager).removeEligibleAccount(this.admin))
           .to.be.revertedWithCustomError(this.mock, 'EligibleAccountDoesNotExist')
           .withArgs(this.admin);
       });
@@ -338,17 +394,17 @@ describe('Protocol Staking', function () {
       it('should deduct from totalStakedWeight', async function () {
         const weightBefore = await this.mock.totalStakedWeight();
         const staker1Weight = await this.mock.weight(await this.mock.balanceOf(this.staker1));
-        await this.mock.connect(this.admin).removeEligibleAccount(this.staker1);
+        await this.mock.connect(this.manager).removeEligibleAccount(this.staker1);
 
         await expect(this.mock.totalStakedWeight()).to.eventually.eq(weightBefore - staker1Weight);
       });
 
       it('should retain rewards after removed as an eligible account', async function () {
         await this.mock.connect(this.staker1).stake(ethers.parseEther('100'));
-        await this.mock.connect(this.admin).setRewardRate(ethers.parseEther('0.5'));
+        await this.mock.connect(this.manager).setRewardRate(ethers.parseEther('0.5'));
         await time.increase(9);
 
-        await this.mock.connect(this.admin).removeEligibleAccount(this.staker1);
+        await this.mock.connect(this.manager).removeEligibleAccount(this.staker1);
         await time.increase(100);
 
         await mine();
@@ -358,7 +414,7 @@ describe('Protocol Staking', function () {
   });
 
   it('set cooldown period should revert for 0', async function () {
-    await expect(this.mock.connect(this.admin).setUnstakeCooldownPeriod(0)).to.be.revertedWithCustomError(
+    await expect(this.mock.connect(this.manager).setUnstakeCooldownPeriod(0)).to.be.revertedWithCustomError(
       this.mock,
       'InvalidUnstakeCooldownPeriod',
     );
