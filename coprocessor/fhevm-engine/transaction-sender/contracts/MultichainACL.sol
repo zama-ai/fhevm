@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 /// @title MultichainACL smart contract
-/// @dev sources: 
+/// @dev sources:
 ///      - github.com/zama-ai/fhevm/blob/main/gateway-contracts/contracts/MultichainACL.sol
 ///      - github.com/zama-ai/fhevm/blob/main/gateway-contracts/contracts/interfaces/IMultichainACL.sol
 /// @notice This contract is a mock of the MultichainACL contract from L2.
@@ -32,4 +32,41 @@ contract MultichainACL {
         }
         emit AllowPublicDecrypt(ctHandle);
     }
+
+    error CoprocessorAlreadyDelegatedOrRevokedUserDecryption(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 expiryDate,
+        uint64 delegationCounter,
+        address txSender
+    );
+
+    error UserDecryptionDelegationCounterTooLow(uint64 delegationCounter);
+
+    function delegateUserDecryption(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 expirationDate,
+        uint64 delegationCounter
+    ) public {
+        if (expirationDate == 0) {
+            revert UserDecryptionDelegationCounterTooLow(delegationCounter);
+        }
+        if (expirationDate == 1) {
+            revert CoprocessorAlreadyDelegatedOrRevokedUserDecryption(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                expirationDate,
+                delegationCounter,
+                msg.sender
+            );
+        }
+    }
+
 }

@@ -712,6 +712,13 @@ txSender:
     - --private-key=$(TX_SENDER_PRIVATE_KEY)
     - --zkpok-manager-address=$(ZKPOK_MANAGER_ADDRESS)
     - --ciphertext-storage-address=$(CIPHERTEXT_STORAGE_ADDRESS)
+    # New in 0.10
+    - --host-chain-url=$(ETHEREUM_RPC_URL)
+    - --delegation-block-delay=10  # not applied immediately to avoid reorg
+    - --delegation-clear-after-n_blocks=648000  # ~3 months at 12s block time, only on succesful delgations
+    - --delegation-fallback-polling=30  # polling fallback in seconds when notification are not received
+    - --delegation-max-retry=100000  # does not include immediate retry on transient error which are infinite
+    - --retry-immediately-on-nonce-error=2  # nonce error happens as error from one transaction can invalidate other nonce
 
   # Service ports configuration
   ports:
