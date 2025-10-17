@@ -213,6 +213,7 @@ describe("Mock contracts", function () {
           DefaultUint256,
           DefaultUint256,
           DefaultUint256,
+          DefaultUint256,
           [DefaultKmsNodeV2],
           [DefaultCoprocessor],
           [DefaultCustodian],
@@ -243,6 +244,18 @@ describe("Mock contracts", function () {
     it("Should emit UpdateUserDecryptionThreshold event on update UserDecryption threshold call", async function () {
       await expect(gatewayConfigMock.updateUserDecryptionThreshold(DefaultUint256))
         .to.emit(gatewayConfigMock, "UpdateUserDecryptionThreshold")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit UpdateKmsGenThreshold event on update KmsGen threshold call", async function () {
+      await expect(gatewayConfigMock.updateKmsGenThreshold(DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdateKmsGenThreshold")
+        .withArgs(DefaultUint256);
+    });
+
+    it("Should emit UpdateCoprocessorThreshold event on update coprocessor threshold call", async function () {
+      await expect(gatewayConfigMock.updateCoprocessorThreshold(DefaultUint256))
+        .to.emit(gatewayConfigMock, "UpdateCoprocessorThreshold")
         .withArgs(DefaultUint256);
     });
 
