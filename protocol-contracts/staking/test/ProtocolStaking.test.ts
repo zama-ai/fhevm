@@ -206,14 +206,14 @@ describe('Protocol Staking', function () {
       it('should transfer after cooldown complete', async function () {
         await this.mock.connect(this.manager).setUnstakeCooldownPeriod(60); // 1 minute
         await this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('50'));
-        await expect(this.mock.tokensInCooldown(this.staker1)).to.eventually.eq(ethers.parseEther('50'));
+        await expect(this.mock.awaitingRelease(this.staker1)).to.eventually.eq(ethers.parseEther('50'));
 
         await timeIncreaseNoMine(60);
 
         const tx = await this.mock.release(this.staker1);
         await expect(tx).to.changeTokenBalance(this.token, this.staker1, ethers.parseEther('50'));
         await expect(tx).to.emit(this.mock, 'TokensReleased').withArgs(this.staker1, ethers.parseEther('50'));
-        await expect(this.mock.tokensInCooldown(this.staker1)).to.eventually.eq(ethers.parseEther('0'));
+        await expect(this.mock.awaitingRelease(this.staker1)).to.eventually.eq(ethers.parseEther('0'));
       });
 
       it('should only release once', async function () {
@@ -244,13 +244,13 @@ describe('Protocol Staking', function () {
 
         await timeIncreaseNoMine(30);
         await this.mock.connect(this.staker1).unstake(this.staker1, ethers.parseEther('50'));
-        await expect(this.mock.tokensInCooldown(this.staker1)).to.eventually.eq(ethers.parseEther('100'));
+        await expect(this.mock.awaitingRelease(this.staker1)).to.eventually.eq(ethers.parseEther('100'));
 
         await timeIncreaseNoMine(60);
         await expect(this.mock.release(this.staker1))
           .to.emit(this.token, 'Transfer')
           .withArgs(this.mock, this.staker1, ethers.parseEther('100'));
-        await expect(this.mock.tokensInCooldown(this.staker1)).to.eventually.eq(ethers.parseEther('0'));
+        await expect(this.mock.awaitingRelease(this.staker1)).to.eventually.eq(ethers.parseEther('0'));
       });
 
       it('should only release completed cooldowns in batch', async function () {
