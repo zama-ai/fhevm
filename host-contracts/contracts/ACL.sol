@@ -44,9 +44,6 @@ contract ACL is
      */
     error DelegateCannotBeContractAddress(address contractAddress);
 
-    /// @notice Returned if the requested expiry date for delegation is after the next year.
-    error ExpiryDateAfterOneYear();
-
     /**
      * @notice Returned if the requested expiry date was already set to same expiry for (delegate,contractAddress).
      * @param delegator The address of the account that delegates access to its handles.
@@ -61,8 +58,11 @@ contract ACL is
         uint256 expiryDate
     );
 
-    /// @notice Returned if the requested expiry date array is before the next hour.
+    /// @notice Returned if the requested expiry date for user decryption delegation is before the next hour.
     error ExpiryDateBeforeOneHour();
+
+    /// @notice Returned if the requested expiry date for user decryption delegation is after the next year.
+    error ExpiryDateAfterOneYear();
 
     /// @notice Returned if the handlesList array is empty.
     error HandlesListIsEmpty();
@@ -276,7 +276,7 @@ contract ACL is
             msg.sender,
             delegate,
             contractAddress,
-            delegation.delegationCounter++,
+            ++delegation.delegationCounter,
             oldExpiryDate,
             newExpiryDate
         );
@@ -311,7 +311,7 @@ contract ACL is
             msg.sender,
             delegate,
             contractAddress,
-            delegation.delegationCounter++,
+            ++delegation.delegationCounter,
             oldExpiryDate
         );
     }

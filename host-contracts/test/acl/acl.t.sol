@@ -191,7 +191,6 @@ contract ACLTest is Test {
         uint64 expiryDate = uint64(block.timestamp) + 7 hours;
         uint64 oldExpiryDate = delegation.expiryDate;
         uint64 newExpiryDate = expiryDate;
-        uint64 delegationCounter = delegation.delegationCounter++;
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
@@ -199,7 +198,7 @@ contract ACLTest is Test {
             sender,
             delegate,
             contractAddress,
-            delegationCounter,
+            ++delegation.delegationCounter,
             oldExpiryDate,
             newExpiryDate
         );
@@ -351,7 +350,7 @@ contract ACLTest is Test {
             sender,
             delegate,
             contractAddress,
-            delegation.delegationCounter++,
+            ++delegation.delegationCounter,
             oldExpiryDate,
             newExpiryDate
         );
@@ -377,8 +376,8 @@ contract ACLTest is Test {
         vm.prank(sender);
         acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
 
-        // After delegation above, the counter should be 1.
-        uint64 delegationCounter = 1;
+        // After delegation above, the counter should be 2.
+        uint64 delegationCounter = 2;
 
         // Increase block number to avoid "AlreadyDelegatedOrRevokedInSameBlock" error.
         vm.roll(block.number + 1);
