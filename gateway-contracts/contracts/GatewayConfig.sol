@@ -250,12 +250,19 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
 
         // Remove the old coprocessors
-        for (uint256 i = 0; i < $.coprocessorTxSenderAddresses.length; i++) {
+        uint256 oldCoprocessorTxSenderAddressesLength = $.coprocessorTxSenderAddresses.length;
+        for (uint256 i = 0; i < oldCoprocessorTxSenderAddressesLength; i++) {
             $.isCoprocessorTxSender[$.coprocessorTxSenderAddresses[i]] = false;
+        }
+        for (uint256 i = 0; i < oldCoprocessorTxSenderAddressesLength; i++) {
             $.coprocessorTxSenderAddresses.pop();
         }
-        for (uint256 i = 0; i < $.coprocessorSignerAddresses.length; i++) {
+
+        uint256 oldCoprocessorSignerAddressesLength = $.coprocessorSignerAddresses.length;
+        for (uint256 i = 0; i < oldCoprocessorSignerAddressesLength; i++) {
             $.isCoprocessorSigner[$.coprocessorSignerAddresses[i]] = false;
+        }
+        for (uint256 i = 0; i < oldCoprocessorSignerAddressesLength; i++) {
             $.coprocessorSignerAddresses.pop();
         }
 
