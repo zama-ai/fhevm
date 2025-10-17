@@ -19,7 +19,7 @@ kms-worker.path = "crates/kms-worker"
 tx-sender.path = "crates/tx-sender"
 connector-utils.path = "crates/utils"
 fhevm_gateway_bindings = { git = "https://github.com/zama-ai/fhevm.git", tag = "v0.9.0", default-features = false }
-kms-grpc = { git = "https://github.com/zama-ai/kms.git", tag = "v0.12.0", default-features = true }
+kms-grpc = { git = "https://github.com/zama-ai/kms.git", rev = "c22a3c5cfc6603114d411d0d3d5c5252b33ad0cb", default-features = true }
 bc2wrap = { git = "https://github.com/zama-ai/kms.git", tag = "v0.12.0", default-features = true }
 tfhe = "=1.4.0-alpha.3"
 
@@ -27,7 +27,7 @@ tfhe = "=1.4.0-alpha.3"
 #                       External dependencies                       #
 #####################################################################
 actix-web = "=4.11.0"
-alloy = { version = "=1.0.36", default-features = false, features = [
+alloy = { version = "=1.0.38", default-features = false, features = [
     "essentials",
     "provider-debug-api",
     "provider-ws",
