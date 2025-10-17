@@ -12,50 +12,50 @@ describe('ProtocolOperatorRegistry', function () {
   });
 
   it('should accept legitimate claim', async function () {
-    await expect(this.mock.connect(this.owner).setStakedTokensAccount(this.ownable))
-      .to.emit(this.mock, 'StakedTokensAccountSet')
+    await expect(this.mock.connect(this.owner).setStakingAccount(this.ownable))
+      .to.emit(this.mock, 'StakingAccountSet')
       .withArgs(this.owner, ethers.ZeroAddress, this.ownable);
 
     await expect(this.mock.operator(this.ownable)).to.eventually.eq(this.owner);
-    await expect(this.mock.stakedTokens(this.owner)).to.eventually.eq(this.ownable);
+    await expect(this.mock.stakingAccount(this.owner)).to.eventually.eq(this.ownable);
   });
 
   it('should reject claim of unowned account', async function () {
-    await expect(this.mock.connect(this.thief).setStakedTokensAccount(this.ownable)).to.be.revertedWithCustomError(
+    await expect(this.mock.connect(this.thief).setStakingAccount(this.ownable)).to.be.revertedWithCustomError(
       this.mock,
       'StakingAccountNotOwnedByCaller',
     );
   });
 
   it('should unregister claim on zero claim', async function () {
-    await this.mock.connect(this.owner).setStakedTokensAccount(this.ownable);
-    await expect(this.mock.connect(this.owner).setStakedTokensAccount(ethers.ZeroAddress))
-      .to.emit(this.mock, 'StakedTokensAccountSet')
+    await this.mock.connect(this.owner).setStakingAccount(this.ownable);
+    await expect(this.mock.connect(this.owner).setStakingAccount(ethers.ZeroAddress))
+      .to.emit(this.mock, 'StakingAccountSet')
       .withArgs(this.owner, this.ownable, ethers.ZeroAddress);
 
     await expect(this.mock.operator(this.ownable)).to.eventually.eq(ethers.ZeroAddress);
-    await expect(this.mock.stakedTokens(this.owner)).to.eventually.eq(ethers.ZeroAddress);
+    await expect(this.mock.stakingAccount(this.owner)).to.eventually.eq(ethers.ZeroAddress);
   });
 
   it('should register as operator of staking account by new owner', async function () {
-    await this.mock.connect(this.owner).setStakedTokensAccount(this.ownable);
+    await this.mock.connect(this.owner).setStakingAccount(this.ownable);
     await this.ownable.$_transferOwnership(this.receiver);
 
-    await expect(this.mock.connect(this.receiver).setStakedTokensAccount(this.ownable))
-      .to.emit(this.mock, 'StakedTokensAccountSet')
+    await expect(this.mock.connect(this.receiver).setStakingAccount(this.ownable))
+      .to.emit(this.mock, 'StakingAccountSet')
       .withArgs(this.owner, this.ownable, ethers.ZeroAddress)
-      .to.emit(this.mock, 'StakedTokensAccountSet')
+      .to.emit(this.mock, 'StakingAccountSet')
       .withArgs(this.receiver, ethers.ZeroAddress, this.ownable);
 
     await expect(this.mock.operator(this.ownable)).to.eventually.eq(this.receiver);
-    await expect(this.mock.stakedTokens(this.receiver)).to.eventually.eq(this.ownable);
-    await expect(this.mock.stakedTokens(this.owner)).to.eventually.eq(ethers.ZeroAddress);
+    await expect(this.mock.stakingAccount(this.receiver)).to.eventually.eq(this.ownable);
+    await expect(this.mock.stakingAccount(this.owner)).to.eventually.eq(ethers.ZeroAddress);
   });
 
-  it('should be able to transfer staked tokens account', async function () {
-    await this.mock.connect(this.owner).setStakedTokensAccount(this.ownable);
+  it('should be able to transfer staking account', async function () {
+    await this.mock.connect(this.owner).setStakingAccount(this.ownable);
     await this.ownable.$_transferOwnership(this.receiver);
-    await this.mock.connect(this.owner).setStakedTokensAccount(ethers.ZeroAddress);
-    await this.mock.connect(this.receiver).setStakedTokensAccount(this.ownable);
+    await this.mock.connect(this.owner).setStakingAccount(ethers.ZeroAddress);
+    await this.mock.connect(this.receiver).setStakingAccount(this.ownable);
   });
 });
