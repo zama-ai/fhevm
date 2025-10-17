@@ -34,6 +34,16 @@ interface IDecryption {
     }
 
     /**
+     * @notice A struct that contains the delegator and the delegate addresses for a delegated user decryption.
+     */
+    struct DelegationAccounts {
+        /// @notice The address of the account that delegates access to its handles.
+        address delegatorAddress;
+        /// @notice The address of the account that receives the delegation.
+        address delegateAddress;
+    }
+
+    /**
      * @notice Emitted when an public decryption request is made.
      * @param decryptionId The decryption request ID.
      * @param snsCtMaterials The handles, key IDs and SNS ciphertexts to decrypt.
@@ -175,6 +185,13 @@ interface IDecryption {
     error UserAddressInContractAddresses(address userAddress, address[] contractAddresses);
 
     /**
+     * @notice Error indicating that the delegator address is included in the contract addresses list.
+     * @param delegatorAddress The delegator address that is included in the list.
+     * @param contractAddresses The list of expected contract addresses.
+     */
+    error DelegatorAddressInContractAddresses(address delegatorAddress, address[] contractAddresses);
+
+    /**
      * @notice Error indicating that the contract address is not included in the contract addresses list.
      * @param contractAddress The contract address that is not in the list.
      * @param contractAddresses The list of expected contract addresses.
@@ -235,6 +252,26 @@ interface IDecryption {
         RequestValidity calldata requestValidity,
         ContractsInfo calldata contractsInfo,
         address userAddress,
+        bytes calldata publicKey,
+        bytes calldata signature,
+        bytes calldata extraData
+    ) external;
+
+    /**
+     * @notice Requests a delegated user decryption.
+     * @param ctHandleContractPairs The ciphertexts to decrypt for associated contracts.
+     * @param requestValidity The validity period of the user decryption request.
+     * @param delegationAccounts The user's address and the delegated account address for the user decryption.
+     * @param contractsInfo The contracts' information (chain ID, addresses).
+     * @param publicKey The user's public key to reencrypt the decryption shares.
+     * @param signature The EIP712 signature to verify.
+     * @param extraData Generic bytes metadata for versioned payloads. First byte is for the version.
+     */
+    function delegatedUserDecryptionRequest(
+        CtHandleContractPair[] calldata ctHandleContractPairs,
+        RequestValidity calldata requestValidity,
+        DelegationAccounts calldata delegationAccounts,
+        ContractsInfo calldata contractsInfo,
         bytes calldata publicKey,
         bytes calldata signature,
         bytes calldata extraData
