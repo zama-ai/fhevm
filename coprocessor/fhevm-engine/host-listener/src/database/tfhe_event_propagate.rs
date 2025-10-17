@@ -1,3 +1,4 @@
+use alloy_primitives::Address;
 use alloy_primitives::FixedBytes;
 use alloy_primitives::Log;
 use alloy_primitives::Uint;
@@ -83,7 +84,7 @@ pub struct LogTfhe {
     pub event: Log<TfheContractEvents>,
     pub transaction_hash: Option<TransactionHash>,
     pub is_allowed: bool,
-    pub block_number: Option<u64>,
+    pub block_number: u64,
 }
 
 pub type Transaction<'l> = sqlx::Transaction<'l, Postgres>;
@@ -140,7 +141,11 @@ impl Database {
     }
 
     pub async fn new_transaction(&self) -> Result<Transaction<'_>, SqlxError> {
-        self.pool.read().await.clone().begin().await
+        self.pool().await.begin().await
+    }
+
+    pub async fn pool(&self) -> sqlx::Pool<Postgres> {
+        self.pool.read().await.clone()
     }
 
     pub async fn reconnect(&mut self) {
@@ -384,7 +389,7 @@ impl Database {
         ) {
             self.record_transaction_begin(
                 &log.transaction_hash.map(|h| h.to_vec()),
-                &log.block_number,
+                log.block_number,
             ).await;
         };
 
@@ -480,7 +485,9 @@ impl Database {
         tx: &mut Transaction<'_>,
         event: &Log<AclContractEvents>,
         transaction_hash: &Option<Handle>,
-        block_number: &Option<u64>,
+        chain_id: u64,
+        block_hash: &[u8],
+        block_number: u64,
     ) -> Result<(), SqlxError> {
         let data = &event.data;
 
@@ -548,14 +555,42 @@ impl Database {
                 )
                 .await?;
             }
+            AclContractEvents::DelegatedForUserDecryption(delegation) => {
+                Self::insert_delegation(
+                    tx,
+                    delegation.delegator,
+                    delegation.delegate,
+                    delegation.contractAddress,
+                    delegation.delegationCounter as u64,
+                    delegation.oldExpiryDate as u64,
+                    delegation.newExpiryDate as u64,
+                    chain_id,
+                    block_hash,
+                    block_number,
+                    transaction_hash.clone(),
+                )
+                .await?;
+            }
+            AclContractEvents::RevokedDelegationForUserDecryption(
+                delegation,
+            ) => {
+                Self::insert_delegation(
+                    tx,
+                    delegation.delegator,
+                    delegation.delegate,
+                    delegation.contractAddress,
+                    delegation.delegationCounter as u64,
+                    delegation.oldExpiryDate as u64,
+                    0, // end the delegation
+                    chain_id,
+                    block_hash,
+                    block_number,
+                    transaction_hash.clone(),
+                )
+                .await?;
+            }
             AclContractEvents::Initialized(initialized) => {
                 warn!(event = ?initialized, "unhandled Acl::Initialized event");
-            }
-            AclContractEvents::DelegatedForUserDecryption(delegate_account) => {
-                warn!(
-                    event = ?delegate_account,
-                    "unhandled Acl::DelegatedForUserDecryption event"
-                );
             }
             AclContractEvents::OwnershipTransferStarted(
                 ownership_transfer_started,
@@ -563,14 +598,6 @@ impl Database {
                 warn!(
                     event = ?ownership_transfer_started,
                     "unhandled Acl::OwnershipTransferStarted event"
-                );
-            }
-            AclContractEvents::RevokedDelegationForUserDecryption(
-                revoked_delegation,
-            ) => {
-                warn!(
-                    event = ?revoked_delegation,
-                    "unhandled Acl::RevokedDelegationForUserDecryption event"
                 );
             }
             AclContractEvents::OwnershipTransferred(ownership_transferred) => {
@@ -650,7 +677,7 @@ impl Database {
     async fn record_transaction_begin(
         &self,
         transaction_hash: &Option<Vec<u8>>,
-        block_number: &Option<u64>,
+        block_number: u64,
     ) {
         if let Some(txn_id) = transaction_hash {
             let pool = self.pool.read().await.clone();
@@ -658,10 +685,55 @@ impl Database {
                 &pool,
                 self.chain_id as i64,
                 txn_id.as_ref(),
-                block_number.unwrap_or_default(),
+                block_number,
             )
             .await;
         }
+    }
+
+    async fn insert_delegation(
+        tx: &mut Transaction<'_>,
+        delegator: Address,
+        delegate: Address,
+        contract_address: Address,
+        delegation_counter: u64,
+        old_expiry_date: u64,
+        expiry_date: u64,
+        chain_id: u64,
+        block_hash: &[u8],
+        block_number: u64,
+        transaction_id: Option<Vec<u8>>,
+    ) -> Result<(), SqlxError> {
+        let query = sqlx::query!(
+            "INSERT INTO delegate_user_decrypt(delegator, delegate, contract_address, delegation_counter, old_expiry_date, expiry_date, host_chain_id, block_number, block_hash, transaction_id)
+            VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT DO NOTHING",
+            &delegator.into_array(),
+            &delegate.into_array(),
+            &contract_address.into_array(),
+            delegation_counter as i64,
+            old_expiry_date as i64,
+            expiry_date as i64,
+            chain_id as i64,
+            block_number as i64,
+            block_hash,
+            transaction_id
+        );
+        query.execute(tx.deref_mut()).await?;
+        Ok(())
+    }
+
+    pub async fn block_notification(
+        &mut self,
+        last_block_number: u64,
+    ) -> Result<(), SqlxError> {
+        let query = sqlx::query!(
+            "SELECT pg_notify($1, $2)",
+            "new_host_block",
+            last_block_number.to_string()
+        );
+        query.execute(&self.pool().await).await?;
+        Ok(())
     }
 }
 
@@ -782,9 +854,9 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
         }
         AclContractEvents::Initialized(_)
         | AclContractEvents::DelegatedForUserDecryption(_)
+        | AclContractEvents::RevokedDelegationForUserDecryption(_)
         | AclContractEvents::OwnershipTransferStarted(_)
         | AclContractEvents::OwnershipTransferred(_)
-        | AclContractEvents::RevokedDelegationForUserDecryption(_)
         | AclContractEvents::Upgraded(_)
         | AclContractEvents::Paused(_)
         | AclContractEvents::Unpaused(_) => vec![],
