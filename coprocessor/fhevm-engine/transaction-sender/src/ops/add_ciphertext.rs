@@ -14,7 +14,6 @@ use alloy::{
     primitives::{Address, FixedBytes, U256},
     providers::Provider,
     rpc::types::TransactionRequest,
-    sol,
     transports::{RpcError, TransportErrorKind},
 };
 use anyhow::bail;
@@ -23,13 +22,9 @@ use fhevm_engine_common::{telemetry, tenant_keys::query_tenant_info, utils::comp
 use sqlx::{Pool, Postgres};
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
-use CiphertextCommits::CiphertextCommitsErrors;
 
-sol!(
-    #[sol(rpc)]
-    CiphertextCommits,
-    "artifacts/CiphertextCommits.sol/CiphertextCommits.json"
-);
+use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits;
+use fhevm_gateway_bindings::ciphertext_commits::CiphertextCommits::CiphertextCommitsErrors;
 
 #[derive(Clone)]
 pub struct AddCiphertextOperation<P: Provider<Ethereum> + Clone + 'static> {
@@ -182,8 +177,9 @@ impl<P: Provider<Ethereum> + Clone + 'static> AddCiphertextOperation<P> {
     fn already_added_error(&self, err: &RpcError<TransportErrorKind>) -> Option<Address> {
         err.as_error_resp()
             .and_then(|payload| payload.as_decoded_interface_error::<CiphertextCommitsErrors>())
-            .map(|error| match error {
-                CiphertextCommitsErrors::CoprocessorAlreadyAdded(c) => c.coprocessorTxSenderAddress,
+            .and_then(|error| match error {
+                CiphertextCommitsErrors::CoprocessorAlreadyAdded(c) => Some(c.txSender),
+                _ => None,
             })
     }
 
