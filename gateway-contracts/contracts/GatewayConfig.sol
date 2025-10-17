@@ -253,6 +253,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 oldCoprocessorTxSenderAddressesLength = $.coprocessorTxSenderAddresses.length;
         for (uint256 i = 0; i < oldCoprocessorTxSenderAddressesLength; i++) {
             $.isCoprocessorTxSender[$.coprocessorTxSenderAddresses[i]] = false;
+            delete $.coprocessors[$.coprocessorTxSenderAddresses[i]];
         }
         for (uint256 i = 0; i < oldCoprocessorTxSenderAddressesLength; i++) {
             $.coprocessorTxSenderAddresses.pop();
