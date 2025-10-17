@@ -33,6 +33,7 @@ pub mod r#input_verification;
 pub mod r#kms_generation;
 pub mod r#math;
 pub mod r#message_hash_utils;
+pub mod r#multicall_upgradeable;
 pub mod r#multichain_acl;
 pub mod r#multichain_acl_checks;
 pub mod r#ownable2_step_upgradeable;
