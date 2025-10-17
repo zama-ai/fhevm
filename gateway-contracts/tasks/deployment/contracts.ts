@@ -82,6 +82,9 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
   // Parse the KMS public material generation threshold
   const kmsGenThreshold = getRequiredEnvVar("KMS_GENERATION_THRESHOLD");
 
+  // Parse the coprocessor threshold
+  const coprocessorThreshold = getRequiredEnvVar("COPROCESSOR_THRESHOLD");
+
   // Parse the KMS nodes
   const numKmsNodes = parseInt(getRequiredEnvVar("NUM_KMS_NODES"));
   const kmsNodes = [];
@@ -131,6 +134,7 @@ task("task:deployGatewayConfig").setAction(async function (_, hre) {
     publicDecryptionThreshold,
     userDecryptionThreshold,
     kmsGenThreshold,
+    coprocessorThreshold,
     kmsNodes,
     coprocessors,
     custodians,

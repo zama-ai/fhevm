@@ -35,7 +35,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     string private constant CONTRACT_NAME = "GatewayConfig";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -44,7 +44,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /**
      * @notice The address of the all gateway contracts
@@ -117,6 +117,11 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         mapping(address custodianSignerAddress => bool isSigner) isCustodianSigner;
         /// @notice The threshold to consider for the KMS public material (FHE key, CRS) generation consensus.
         uint256 kmsGenThreshold;
+        // ----------------------------------------------------------------------------------------------
+        // Coprocessor threshold state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The threshold to consider for coprocessor consensus
+        uint256 coprocessorThreshold;
     }
 
     /**
@@ -147,6 +152,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      * @param initialPublicDecryptionThreshold The public decryption threshold
      * @param initialUserDecryptionThreshold The user decryption threshold
      * @param initialKmsGenThreshold The KMS generation threshold
+     * @param initialCoprocessorThreshold The coprocessor threshold
      * @param initialKmsNodes List of KMS nodes
      * @param initialCoprocessors List of coprocessors
      * @param initialCustodians List of custodians
@@ -158,6 +164,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         uint256 initialPublicDecryptionThreshold,
         uint256 initialUserDecryptionThreshold,
         uint256 initialKmsGenThreshold,
+        uint256 initialCoprocessorThreshold,
         KmsNode[] memory initialKmsNodes,
         Coprocessor[] memory initialCoprocessors,
         Custodian[] memory initialCustodians
@@ -204,6 +211,10 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
             $.coprocessorSignerAddresses.push(initialCoprocessors[i].signerAddress);
         }
 
+        // Setting the coprocessor threshold should be done after the coprocessors have been
+        // registered as the functions reading the `coprocessorSignerAddresses` array.
+        _setCoprocessorThreshold(initialCoprocessorThreshold);
+
         // Register the custodians
         for (uint256 i = 0; i < initialCustodians.length; i++) {
             $.custodians[initialCustodians[i].txSenderAddress] = initialCustodians[i];
@@ -228,7 +239,48 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2(
+        Coprocessor[] memory newCoprocessors,
+        uint256 coprocessorThreshold
+    ) public virtual reinitializer(REINITIALIZER_VERSION) {
+        if (newCoprocessors.length == 0) {
+            revert EmptyCoprocessors();
+        }
+
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+
+        // Remove the old coprocessors
+        uint256 oldCoprocessorTxSenderAddressesLength = $.coprocessorTxSenderAddresses.length;
+        for (uint256 i = 0; i < oldCoprocessorTxSenderAddressesLength; i++) {
+            $.isCoprocessorTxSender[$.coprocessorTxSenderAddresses[i]] = false;
+            delete $.coprocessors[$.coprocessorTxSenderAddresses[i]];
+        }
+        for (uint256 i = 0; i < oldCoprocessorTxSenderAddressesLength; i++) {
+            $.coprocessorTxSenderAddresses.pop();
+        }
+
+        uint256 oldCoprocessorSignerAddressesLength = $.coprocessorSignerAddresses.length;
+        for (uint256 i = 0; i < oldCoprocessorSignerAddressesLength; i++) {
+            $.isCoprocessorSigner[$.coprocessorSignerAddresses[i]] = false;
+        }
+        for (uint256 i = 0; i < oldCoprocessorSignerAddressesLength; i++) {
+            $.coprocessorSignerAddresses.pop();
+        }
+
+        // Register the new coprocessors
+        for (uint256 i = 0; i < newCoprocessors.length; i++) {
+            $.isCoprocessorTxSender[newCoprocessors[i].txSenderAddress] = true;
+            $.coprocessors[newCoprocessors[i].txSenderAddress] = newCoprocessors[i];
+            $.coprocessorTxSenderAddresses.push(newCoprocessors[i].txSenderAddress);
+            $.isCoprocessorSigner[newCoprocessors[i].signerAddress] = true;
+            $.coprocessorSignerAddresses.push(newCoprocessors[i].signerAddress);
+        }
+
+        // Setting the coprocessor threshold should be done after the coprocessors have been
+        // registered as the functions reading the `coprocessorSignerAddresses` array.
+        _setCoprocessorThreshold(coprocessorThreshold);
+        emit ReinitializeGatewayConfigV2(newCoprocessors, coprocessorThreshold);
+    }
 
     /**
      * @notice See {IGatewayConfig-isPauser}.
@@ -267,6 +319,14 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
     function updateKmsGenThreshold(uint256 newKmsGenThreshold) external virtual onlyOwner {
         _setKmsGenThreshold(newKmsGenThreshold);
         emit UpdateKmsGenThreshold(newKmsGenThreshold);
+    }
+
+    /**
+     * @notice See {IGatewayConfig-updateCoprocessorThreshold}.
+     */
+    function updateCoprocessorThreshold(uint256 newCoprocessorThreshold) external virtual onlyOwner {
+        _setCoprocessorThreshold(newCoprocessorThreshold);
+        emit UpdateCoprocessorThreshold(newCoprocessorThreshold);
     }
 
     /**
@@ -412,7 +472,7 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
      */
     function getCoprocessorMajorityThreshold() external view virtual returns (uint256) {
         GatewayConfigStorage storage $ = _getGatewayConfigStorage();
-        return $.coprocessorTxSenderAddresses.length / 2 + 1;
+        return $.coprocessorThreshold;
     }
 
     /**
@@ -579,6 +639,27 @@ contract GatewayConfig is IGatewayConfig, Ownable2StepUpgradeable, UUPSUpgradeab
         }
 
         $.userDecryptionThreshold = newUserDecryptionThreshold;
+    }
+
+    /**
+     * @notice Sets the coprocessor threshold.
+     * @param newCoprocessorThreshold The new coprocessor threshold.
+     */
+    function _setCoprocessorThreshold(uint256 newCoprocessorThreshold) internal virtual {
+        GatewayConfigStorage storage $ = _getGatewayConfigStorage();
+        uint256 nCoprocessors = $.coprocessorSignerAddresses.length;
+
+        // Check that the coprocessor threshold `t` is valid. It must verify:
+        // - `t >= 1` : the coprocessor consensus should require at least one vote
+        // - `t <= n` : it should be less than the number of registered coprocessors
+        if (newCoprocessorThreshold == 0) {
+            revert InvalidNullCoprocessorThreshold();
+        }
+        if (newCoprocessorThreshold > nCoprocessors) {
+            revert InvalidHighCoprocessorThreshold(newCoprocessorThreshold, nCoprocessors);
+        }
+
+        $.coprocessorThreshold = newCoprocessorThreshold;
     }
 
     /**

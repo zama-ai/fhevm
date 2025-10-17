@@ -62,11 +62,7 @@ contract HCULimitTest is Test, SupportedTypesConstants {
 
         implementation = address(new MockHCULimit());
         vm.startPrank(owner);
-        UnsafeUpgrades.upgradeProxy(
-            proxy,
-            implementation,
-            abi.encodeCall(hcuLimit.initializeFromEmptyProxy, ())
-        );
+        UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(hcuLimit.initializeFromEmptyProxy, ()));
         vm.stopPrank();
         hcuLimit = MockHCULimit(proxy);
         fhevmExecutor = hcuLimit.getFHEVMExecutorAddress();

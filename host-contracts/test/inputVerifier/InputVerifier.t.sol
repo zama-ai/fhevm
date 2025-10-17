@@ -17,6 +17,7 @@ import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 contract InputVerifierTest is Test {
     InputVerifier internal inputVerifier;
 
+    uint256 internal constant initialThreshold = 1;
     address internal constant verifyingContractSource = address(10000);
     address internal constant owner = address(456);
     uint8 internal constant HANDLE_VERSION = 0;
@@ -161,7 +162,7 @@ contract InputVerifierTest is Test {
             implementation,
             abi.encodeCall(
                 InputVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, uint64(block.chainid), signers)
+                (verifyingContractSource, uint64(block.chainid), signers, initialThreshold)
             ),
             owner
         );
@@ -412,10 +413,12 @@ contract InputVerifierTest is Test {
 
     /**
      * @dev Tests that the contract is reinitialized correctly.
+     * It verifies that the version and threshold are set correctly after the upgrade.
      */
     function test_PostProxyUpgradeCheck() public {
         _upgradeProxyWithSigners(3);
-        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.1.0")));
+        assertEq(inputVerifier.getVersion(), string(abi.encodePacked("InputVerifier v0.2.0")));
+        assertEq(inputVerifier.getThreshold(), initialThreshold);
     }
 
     /**
@@ -434,47 +437,17 @@ contract InputVerifierTest is Test {
     }
 
     /**
-     * @dev Tests that the initial threshold is set correctly for two signers.
+     * @dev Tests that only the contract owner can add a signer.
      */
-    function test_GetInitialThresholdForOneSigner() public {
-        _upgradeProxyWithSigners(1);
-
-        /// @dev The threshold is 1 since we have 1 signers.
-        uint256 threshold = inputVerifier.getThreshold();
-        assertEq(threshold, 1);
-    }
-
-    /**
-     * @dev Tests that the initial threshold is set correctly for two signers.
-     */
-    function test_GetInitialThresholdForTwoSigners() public {
-        _upgradeProxyWithSigners(2);
-
-        /// @dev The threshold is 2 since we have 2 signers.
-        uint256 threshold = inputVerifier.getThreshold();
-        assertEq(threshold, 2);
-    }
-
-    /**
-     * @dev Tests that the initial threshold is set correctly for three signers.
-     */
-    function test_GetInitialThresholdForThreeSigners() public {
+    function test_OnlyOwnerCanDefineNewContext(address randomAccount) public {
+        vm.assume(randomAccount != owner);
         _upgradeProxyWithSigners(3);
-
-        /// @dev The threshold is 2 since we have 3 signers.
-        uint256 threshold = inputVerifier.getThreshold();
-        assertEq(threshold, 2);
-    }
-
-    /**
-     * @dev Tests that the initial threshold is set correctly for four signers.
-     */
-    function test_GetInitialThresholdForFourSigners() public {
-        _upgradeProxyWithSigners(4);
-
-        /// @dev The threshold is 3 since we have 4 signers.
-        uint256 threshold = inputVerifier.getThreshold();
-        assertEq(threshold, 3);
+        address randomSigner = address(42);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
+        vm.prank(randomAccount);
+        address[] memory newSigners = new address[](1);
+        newSigners[0] = randomSigner;
+        inputVerifier.defineNewContext(newSigners, 1);
     }
 
     /**
@@ -482,9 +455,111 @@ contract InputVerifierTest is Test {
      */
     function test_OwnerCannotAddNullAddressAsSigner() public {
         _upgradeProxyWithSigners(3);
-        vm.expectPartialRevert(InputVerifier.SignerNull.selector);
+        address nullSigner = address(0);
+        address[] memory newSigners = new address[](1);
+        newSigners[0] = nullSigner;
+        vm.expectPartialRevert(InputVerifier.CoprocessorSignerNull.selector);
         vm.prank(owner);
-        inputVerifier.addSigner(address(0));
+        inputVerifier.defineNewContext(newSigners, 1);
+    }
+
+    /**
+     * @dev Tests that the owner of the contract can successfully add a new signer.
+     */
+    function test_OwnerCanAddNewSigner() public {
+        _upgradeProxyWithSigners(3);
+        address randomSigner = address(42);
+        address[] memory newSigners = new address[](1);
+        newSigners[0] = randomSigner;
+        vm.prank(owner);
+        vm.expectEmit();
+        emit InputVerifier.NewContextSet(newSigners, 1);
+        inputVerifier.defineNewContext(newSigners, 1);
+        assertEq(inputVerifier.getCoprocessorSigners()[0], randomSigner);
+        assertTrue(inputVerifier.isSigner(randomSigner));
+    }
+
+    /**
+     * @dev Tests that the contract owner cannot add the same signer twice.
+     */
+    function test_OwnerCannotAddSameSignerTwice() public {
+        test_OwnerCanAddNewSigner();
+        address randomSigner = inputVerifier.getCoprocessorSigners()[0];
+        address[] memory newSigners = new address[](2);
+        newSigners[0] = randomSigner;
+        newSigners[1] = randomSigner;
+        vm.prank(owner);
+        vm.expectRevert(InputVerifier.CoprocessorAlreadySigner.selector);
+        inputVerifier.defineNewContext(newSigners, 1);
+    }
+
+    /**
+     * @dev Tests that the owner can successfully remove a signer.
+     */
+    function test_OwnerCanRemoveSigner() public {
+        /// @dev We call the other test to avoid repeating the same code.
+        test_OwnerCanAddNewSigner();
+
+        address randomSigner = address(43);
+        vm.startPrank(owner);
+
+        address[] memory newSigners = new address[](2);
+        newSigners[0] = address(42);
+        newSigners[1] = randomSigner;
+        inputVerifier.defineNewContext(newSigners, 2);
+        assertEq(inputVerifier.getCoprocessorSigners().length, 2);
+
+        address[] memory newSigners2 = new address[](1);
+        newSigners2[0] = address(42);
+        inputVerifier.defineNewContext(newSigners2, 1);
+        assertFalse(inputVerifier.isSigner(randomSigner));
+        assertEq(inputVerifier.getCoprocessorSigners().length, 1);
+    }
+
+    /**
+     * @dev Test to ensure that the contract owner cannot remove the last signer.
+     * This function verifies that the contract logic prevents the removal of the
+     * final signer, maintaining at least one signer at all times.
+     */
+    function test_OwnerCannotRemoveTheLastSigner() public {
+        /// @dev We call the other test to avoid repeating the same code.
+        test_OwnerCanAddNewSigner();
+        address[] memory emptyAddress = new address[](0);
+        vm.prank(owner);
+        vm.expectRevert(InputVerifier.SignersSetIsEmpty.selector);
+        inputVerifier.defineNewContext(emptyAddress, 0);
+    }
+
+    /**
+     * @dev Tests that only the owner can set the threshold.
+     * @param randomAccount An address that is not the owner.
+     */
+    function test_OnlyOwnerCanSetThreshold(address randomAccount) public {
+        vm.assume(randomAccount != owner);
+        _upgradeProxyWithSigners(3);
+        vm.prank(randomAccount);
+        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
+        inputVerifier.setThreshold(2);
+    }
+
+    /**
+     * @dev Tests that the threshold value must not be set to 0.
+     */
+    function test_ThresholdMustBeNotSetToZero() public {
+        _upgradeProxyWithSigners(3);
+        vm.prank(owner);
+        vm.expectRevert(InputVerifier.ThresholdIsNull.selector);
+        inputVerifier.setThreshold(0);
+    }
+
+    /**
+     * @dev Tests that the threshold cannot be set if it is above the number of signers.
+     */
+    function test_ThresholdCannotBeSetIfAboveNumberOfSigners() public {
+        _upgradeProxyWithSigners(3);
+        vm.prank(owner);
+        vm.expectRevert(InputVerifier.ThresholdIsAboveNumberOfSigners.selector);
+        inputVerifier.setThreshold(4);
     }
 
     /**
@@ -809,8 +884,13 @@ contract InputVerifierTest is Test {
     /**
      * @dev Tests that the verifyInput function fails if the signature threshold is not reached.
      */
-    function test_VerifyInputFailsIfSignatureThresholdNotReached() public {
+    function test_VerifyInputFailsIfNumberOfSignaturesIsInferiorToThreshold() public {
         _upgradeProxyWithSigners(3);
+
+        /// @dev The threshold is set to 2, so we need at least 2 signatures from different signers.
+        vm.prank(owner);
+        inputVerifier.setThreshold(2);
+        assertEq(inputVerifier.getThreshold(), 2);
 
         /// @dev We only use one signer to generate the input parameters but the threshold is 2.
         address[] memory signers = new address[](1);
@@ -827,10 +907,41 @@ contract InputVerifierTest is Test {
     }
 
     /**
+     * @dev Tests that the verification of EIP-712 coprocessor signatures fails as expected if the same signer is used twice.
+     */
+    function test_VerifyInputFailsFailIfSameSignerIsUsedTwice() public {
+        _upgradeProxyWithSigners(3);
+
+        /// @dev The threshold is set to 2, so we need at least 2 signatures from different signers.
+        vm.prank(owner);
+        inputVerifier.setThreshold(2);
+        assertEq(inputVerifier.getThreshold(), 2);
+
+        /// @dev We use 2 signers (threshold is 2) but they are the same signer!
+        address[] memory signers = new address[](2);
+        signers[0] = signer0;
+        signers[1] = signer0;
+
+        (
+            FHEVMExecutor.ContextUserInputs memory context,
+            bytes32 mockInputHandle,
+            bytes memory inputProof
+        ) = _generateInputParametersWithOneMockHandle(block.chainid, HANDLE_VERSION, signers);
+
+        vm.expectPartialRevert(InputVerifier.SignaturesVerificationFailed.selector);
+        inputVerifier.verifyInput(context, mockInputHandle, inputProof);
+    }
+
+    /**
      * @dev Tests that the verifyInput function fails if an invalid signer address is recovered.
      */
     function test_VerifyInputFailsIfInvalidSignerIsRecovered() public {
         _upgradeProxyWithSigners(3);
+
+        /// @dev The threshold is set to 2, so we need at least 2 signatures from different signers.
+        vm.prank(owner);
+        inputVerifier.setThreshold(2);
+        assertEq(inputVerifier.getThreshold(), 2);
 
         /// @dev We use 2 signers (threshold is 2) but one of the signers is not a signer in the InputVerifier contract!
         address[] memory signers = new address[](2);
@@ -854,6 +965,11 @@ contract InputVerifierTest is Test {
      */
     function test_VerifyInputFailsIfSignaturesVerificationFailed() public {
         _upgradeProxyWithSigners(3);
+
+        /// @dev The threshold is set to 2, so we need at least 2 signatures from different signers.
+        vm.prank(owner);
+        inputVerifier.setThreshold(2);
+        assertEq(inputVerifier.getThreshold(), 2);
 
         /// @dev We use 2 signers (threshold is 2) but it is the same signer!
         address[] memory signers = new address[](2);
@@ -912,84 +1028,6 @@ contract InputVerifierTest is Test {
         UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxy()), "", owner);
     }
 
-    /**
-     * @dev Tests that only the owner can add a signer.
-     */
-    function test_OnlyOwnerCanAddSigner(address randomAccount) public {
-        _upgradeProxyWithSigners(3);
-        vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
-        vm.prank(randomAccount);
-        inputVerifier.addSigner(randomAccount);
-    }
-
-    /**
-     * @dev Tests that only the owner can remove a signer.
-     */
-    function test_OnlyOwnerCanRemoveSigner(address randomAccount) public {
-        _upgradeProxyWithSigners(3);
-        vm.assume(randomAccount != owner);
-        vm.expectPartialRevert(ACLOwnable.NotHostOwner.selector);
-        vm.prank(randomAccount);
-        inputVerifier.removeSigner(randomAccount);
-    }
-
-    /**
-     * @dev Tests that the owner cannot add the same signer twice.
-     */
-    function test_OwnerCannotAddTwiceSameSigner() public {
-        _upgradeProxyWithSigners(3);
-        vm.expectPartialRevert(InputVerifier.AlreadySigner.selector);
-        vm.prank(owner);
-        inputVerifier.addSigner(signer0);
-    }
-
-    /**
-     * @dev Tests that the owner cannot remove a signer if the signer is not in the list of active signers.
-     */
-    function test_OwnerCannotRemoveSignerIfNotASigner() public {
-        _upgradeProxyWithSigners(3);
-        address notASigner = address(12345);
-        vm.assertFalse(inputVerifier.isSigner(notASigner));
-        vm.expectPartialRevert(InputVerifier.NotASigner.selector);
-        vm.prank(owner);
-        inputVerifier.removeSigner(address(12345));
-    }
-
-    /**
-     * @dev Tests that the owner can add a signer and it emits the SignerAdded event.
-     */
-    function test_OwnerCanAddSigner() public {
-        _upgradeProxyWithSigners(3);
-        vm.expectEmit(true, true, true, true);
-        emit InputVerifier.SignerAdded(signer3);
-        vm.prank(owner);
-        inputVerifier.addSigner(signer3);
-
-        address[] memory signers = inputVerifier.getCoprocessorSigners();
-        assertEq(signers.length, 4);
-        assertEq(signers[0], signer0);
-        assertEq(signers[1], signer1);
-        assertEq(signers[2], signer2);
-        assertEq(signers[3], signer3);
-    }
-
-    /**
-     * @dev Tests that the owner can remove a signer and it emits the SignerRemoved event.
-     */
-    function test_OwnerCanRemoveSigner() public {
-        _upgradeProxyWithSigners(3);
-        vm.expectEmit(true, true, true, true);
-        emit InputVerifier.SignerRemoved(signer0);
-        vm.prank(owner);
-        inputVerifier.removeSigner(signer0);
-
-        address[] memory signers = inputVerifier.getCoprocessorSigners();
-        assertEq(signers.length, 2);
-        assertEq(signers[0], signer2);
-        assertEq(signers[1], signer1);
-    }
-
     /// @dev This function exists for the test below to call it externally.
     function emptyUpgrade() public {
         address[] memory emptySigners = new address[](0);
@@ -1000,7 +1038,7 @@ contract InputVerifierTest is Test {
             implementation,
             abi.encodeCall(
                 InputVerifier.initializeFromEmptyProxy,
-                (verifyingContractSource, uint64(block.chainid), emptySigners)
+                (verifyingContractSource, uint64(block.chainid), emptySigners, initialThreshold)
             ),
             owner
         );
@@ -1010,7 +1048,7 @@ contract InputVerifierTest is Test {
      * @dev Tests that the contract cannot be reinitialized if the initial signers set is empty.
      */
     function test_CannotReinitializeIfInitialSignersSetIsEmpty() public {
-        vm.expectPartialRevert(InputVerifier.InitialSignersSetIsEmpty.selector);
+        vm.expectPartialRevert(InputVerifier.SignersSetIsEmpty.selector);
         this.emptyUpgrade();
     }
 
