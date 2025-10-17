@@ -18,13 +18,11 @@ import {ACLOwnable} from "./shared/ACLOwnable.sol";
  * @dev      The contract uses EIP712UpgradeableCrossChain for cryptographic operations.
  */
 contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain, ACLOwnable {
-    /// @notice         Emitted when a signer is added.
-    /// @param signer   The address of the signer that was added.
-    event SignerAdded(address indexed signer);
-
-    /// @notice         Emitted when a signer is removed.
-    /// @param signer   The address of the signer that was removed.
-    event SignerRemoved(address indexed signer);
+    /**
+     * @notice Emitted when the InputVerifier is re-initialized from V2.
+     * @param threshold The new threshold.
+     */
+    event ReinitializeInputVerifierV2(uint256 threshold);
 
     /// @notice Returned if the deserializing of the input proof fails.
     error DeserializingInputProofFail();
@@ -44,17 +42,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     /// @notice Returned if the handle version is not the correct one.
     error InvalidHandleVersion();
 
-    /// @notice Returned if the initial signers set is empty.
-    error InitialSignersSetIsEmpty();
-
     /// @notice Returned if signer is null.
-    error SignerNull();
+    error CoprocessorSignerNull();
 
     /// @notice Returned if signer is already registered.
-    error AlreadySigner();
-
-    /// @notice Returned if no signer is already registered.
-    error AtLeastOneSignerIsRequired();
+    error CoprocessorAlreadySigner();
 
     ///  @notice Returned if not a registered signer.
     error NotASigner();
@@ -70,6 +62,20 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
 
     /// @notice Returned when signatures verification fails.
     error SignaturesVerificationFailed();
+
+    /// @notice Returned if the signers set is empty.
+    error SignersSetIsEmpty();
+
+    /// @notice Returned if the chosen threshold is null.
+    error ThresholdIsNull();
+
+    /// @notice Threshold is above number of signers.
+    error ThresholdIsAboveNumberOfSigners();
+
+    /// @notice         Emitted when a context is set or changed.
+    /// @param newSignersSet  The set of new signers.
+    /// @param newThreshold   The new threshold set by the owner.
+    event NewContextSet(address[] newSignersSet, uint256 newThreshold);
 
     /// @param handles      List of handles.
     /// @param userAddress      Address of the user.
@@ -105,7 +111,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     uint256 private constant MAJOR_VERSION = 0;
 
     /// @notice Minor version of the contract.
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
 
     /// @notice Patch version of the contract.
     uint256 private constant PATCH_VERSION = 0;
@@ -119,7 +125,7 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
 
     /// Constant used for making sure the version number used in the `reinitializer` modifier is
     /// identical between `initializeFromEmptyProxy` and the `reinitializeVX` method
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /// keccak256(abi.encode(uint256(keccak256("fhevm.storage.InputVerifier")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant InputVerifierStorageLocation =
@@ -140,16 +146,11 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     function initializeFromEmptyProxy(
         address verifyingContractSource,
         uint64 chainIDSource,
-        address[] calldata initialSigners
+        address[] calldata initialSigners,
+        uint256 initialThreshold
     ) public virtual onlyFromEmptyProxy reinitializer(REINITIALIZER_VERSION) {
         __EIP712_init(CONTRACT_NAME_SOURCE, "1", verifyingContractSource, chainIDSource);
-        uint256 initialSignersLen = initialSigners.length;
-        if (initialSignersLen == 0) {
-            revert InitialSignersSetIsEmpty();
-        }
-        for (uint256 i = 0; i < initialSignersLen; i++) {
-            addSigner(initialSigners[i]);
-        }
+        defineNewContext(initialSigners, initialThreshold);
     }
 
     /**
@@ -158,7 +159,58 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2(uint256 threshold) public virtual reinitializer(REINITIALIZER_VERSION) {
+        _setThreshold(threshold);
+        emit ReinitializeInputVerifierV2(threshold);
+    }
+
+    /**
+     * @notice          Sets a new context (i.e. new set of unique signers and new threshold).
+     * @dev             Only the owner can set a new context.
+     * @param newSignersSet   The new set of signers to be set. This array should not be empty and without duplicates nor null values.
+     * @param newThreshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
+     */
+    function defineNewContext(address[] memory newSignersSet, uint256 newThreshold) public virtual onlyACLOwner {
+        uint256 newSignersLen = newSignersSet.length;
+        if (newSignersLen == 0) {
+            revert SignersSetIsEmpty();
+        }
+
+        /// @dev First, we remove the old signers set
+        InputVerifierStorage storage $ = _getInputVerifierStorage();
+        address[] memory oldSignersSet = $.signers;
+        uint256 oldSignersLen = oldSignersSet.length;
+        for (uint256 i = 0; i < oldSignersLen; i++) {
+            $.isSigner[oldSignersSet[i]] = false;
+            $.signers.pop();
+        }
+
+        /// @dev Next, we add the new set of signers.
+        for (uint256 i = 0; i < newSignersLen; i++) {
+            address signer = newSignersSet[i];
+            if (signer == address(0)) {
+                revert CoprocessorSignerNull();
+            }
+            if ($.isSigner[signer]) {
+                revert CoprocessorAlreadySigner();
+            }
+            $.isSigner[signer] = true;
+            $.signers.push(signer);
+        }
+        _setThreshold(newThreshold);
+        emit NewContextSet(newSignersSet, newThreshold);
+    }
+
+    /**
+     * @notice          Sets a threshold (i.e. the minimum number of valid signatures required to accept a transaction).
+     * @dev             Only the owner can set a threshold.
+     * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
+     */
+    function setThreshold(uint256 threshold) public virtual onlyACLOwner {
+        _setThreshold(threshold);
+        InputVerifierStorage storage $ = _getInputVerifierStorage();
+        emit NewContextSet($.signers, threshold);
+    }
 
     /**
      * @dev This function removes the transient allowances, which could be useful for
@@ -277,53 +329,6 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
         }
 
         return bytes32(result);
-    }
-
-    /**
-     * @notice          Adds a new signer.
-     * @dev             Only the owner can add a signer.
-     * @param signer    The address to be added as a signer.
-     */
-    function addSigner(address signer) public virtual onlyACLOwner {
-        if (signer == address(0)) {
-            revert SignerNull();
-        }
-
-        InputVerifierStorage storage $ = _getInputVerifierStorage();
-        if ($.isSigner[signer]) {
-            revert AlreadySigner();
-        }
-
-        $.isSigner[signer] = true;
-        $.signers.push(signer);
-        _applyThreshold();
-        emit SignerAdded(signer);
-    }
-
-    /**
-     * @notice          Removes an existing signer.
-     * @dev             Only the owner can remove a signer.
-     * @param signer    The signer address to remove.
-     */
-    function removeSigner(address signer) public virtual onlyACLOwner {
-        InputVerifierStorage storage $ = _getInputVerifierStorage();
-        if (!$.isSigner[signer]) {
-            revert NotASigner();
-        }
-
-        /// @dev Remove signer from the mapping.
-        $.isSigner[signer] = false;
-
-        /// @dev Find the index of the signer and remove it from the array.
-        for (uint i = 0; i < $.signers.length; i++) {
-            if ($.signers[i] == signer) {
-                $.signers[i] = $.signers[$.signers.length - 1]; /// @dev Move the last element into the place to delete.
-                $.signers.pop(); /// @dev Remove the last element.
-                _applyThreshold();
-                emit SignerRemoved(signer);
-                return;
-            }
-        }
     }
 
     /**
@@ -521,18 +526,19 @@ contract InputVerifier is UUPSUpgradeableEmptyProxy, EIP712UpgradeableCrossChain
     }
 
     /**
-     * @notice Sets the threshold for the number of signers required for a signature to be valid.
+     * @notice          Internal function that sets the minimum number of valid signatures required to accept a transaction.
+     * @dev             External functions using this internal function should be access controlled to owner.
+     * @param threshold    The threshold to be set. Threshold should be non-null and less than the number of signers.
      */
-    function _applyThreshold() internal virtual {
-        InputVerifierStorage storage $ = _getInputVerifierStorage();
-        uint256 signerLength = $.signers.length;
-
-        if (signerLength != 0) {
-            $.threshold = signerLength / 2 + 1;
-        } else {
-            /// @dev It is impossible to remove all KMS signers.
-            revert AtLeastOneSignerIsRequired();
+    function _setThreshold(uint256 threshold) internal virtual {
+        if (threshold == 0) {
+            revert ThresholdIsNull();
         }
+        InputVerifierStorage storage $ = _getInputVerifierStorage();
+        if (threshold > $.signers.length) {
+            revert ThresholdIsAboveNumberOfSigners();
+        }
+        $.threshold = threshold;
     }
 
     /**

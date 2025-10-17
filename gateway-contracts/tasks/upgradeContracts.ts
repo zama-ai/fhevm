@@ -254,7 +254,12 @@ task("task:upgradeGatewayConfig")
     }
     const proxyAddress = getRequiredEnvVar("GATEWAY_CONFIG_ADDRESS");
 
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+    // Get the coprocessor threshold
+    const coprocessorThreshold = getRequiredEnvVar("COPROCESSOR_THRESHOLD");
+
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+      coprocessorThreshold,
+    ]);
   });
 
 task("task:upgradeKMSGeneration")

@@ -251,7 +251,11 @@ task('task:upgradeInputVerifier')
     }
     const proxyAddress = getRequiredEnvVar('INPUT_VERIFIER_CONTRACT_ADDRESS');
 
-    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre);
+    const coprocessorThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
+
+    await upgradeCurrentToNew(proxyAddress, currentImplementation, newImplementation, verifyContract, hre, [
+      coprocessorThreshold,
+    ]);
   });
 
 task('task:upgradeHCULimit')
