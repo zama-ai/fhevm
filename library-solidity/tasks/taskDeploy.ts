@@ -260,8 +260,13 @@ task('task:deployInputVerifier')
       }
     }
 
+    const initialThreshold = getRequiredEnvVar('COPROCESSOR_THRESHOLD');
+
     await upgrades.upgradeProxy(proxy, newImplem, {
-      call: { fn: 'initializeFromEmptyProxy', args: [verifyingContractSource, chainIDSource, initialSigners] },
+      call: {
+        fn: 'initializeFromEmptyProxy',
+        args: [verifyingContractSource, chainIDSource, initialSigners, initialThreshold],
+      },
     });
     console.info('InputVerifier code set successfully at address:', proxyAddress);
   });

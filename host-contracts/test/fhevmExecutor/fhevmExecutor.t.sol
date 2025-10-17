@@ -391,7 +391,6 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
      * @dev Tests that only the owner can authorize an upgrade.
      */
     function test_OnlyOwnerCanAuthorizeUpgrade() public {
-        
         /// @dev It does not revert since it called by the owner.
         UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxy()), "", owner);
     }
@@ -599,7 +598,7 @@ contract FHEVMExecutorTest is SupportedTypesConstants, Test {
     }
 
     function test_FheBitXorSupportedTypesWorkAsExpected(uint8 fheType, bool scalarBool) public {
-        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00); 
+        bytes1 scalarByte = scalarBool ? bytes1(0x01) : bytes1(0x00);
         vm.assume(fheType <= uint8(FheType.Int248));
         vm.assume(_isTypeSupported(FheType(fheType), supportedTypesFheBitXor));
         address sender = address(123);
