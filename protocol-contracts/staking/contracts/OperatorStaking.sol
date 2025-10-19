@@ -145,7 +145,7 @@ contract OperatorStaking is ERC20, Ownable {
             _sharesReleased[controller] += shares;
             SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
 
-            emit IERC4626.Withdraw(msg.sender, receiver, controller, shares, assets);
+            emit IERC4626.Withdraw(msg.sender, receiver, controller, assets, shares);
         }
 
         return assets;
