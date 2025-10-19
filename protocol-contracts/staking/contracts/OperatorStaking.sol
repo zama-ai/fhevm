@@ -143,7 +143,7 @@ contract OperatorStaking is ERC20, Ownable {
         if (assets > 0) {
             _totalSharesInRedemption -= shares;
             _sharesReleased[controller] += shares;
-            SafeERC20.safeTransfer(IERC20(asset()), receiver, assets);
+            _doTransferOut(receiver, assets);
 
             emit IERC4626.Withdraw(msg.sender, receiver, controller, assets, shares);
         }
@@ -305,6 +305,14 @@ contract OperatorStaking is ERC20, Ownable {
      */
     function isOperator(address controller, address operator) public view virtual returns (bool) {
         return _operator[controller][operator];
+    }
+
+    function _doTransferOut(address to, uint256 amount) internal {
+        IERC20 asset_ = IERC20(asset());
+        if (amount > asset_.balanceOf(address(this))) {
+            protocolStaking().release(address(this));
+        }
+        SafeERC20.safeTransfer(asset_, to, amount);
     }
 
     /**

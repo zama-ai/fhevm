@@ -72,7 +72,6 @@ describe('OperatorStaking', function () {
       await expect(this.mock.pendingRedeemRequest(0, this.staker1)).to.eventually.eq(0);
       await expect(this.mock.claimableRedeemRequest(0, this.staker1)).to.eventually.eq(ethers.parseEther('1'));
 
-      await this.protocolStaking.release(this.mock);
       await expect(this.mock.connect(this.staker1).redeem(ethers.parseEther('1'), this.staker1, this.staker1))
         .to.emit(this.token, 'Transfer')
         .withArgs(this.mock, this.staker1, ethers.parseEther('1'));
@@ -86,7 +85,6 @@ describe('OperatorStaking', function () {
       await this.mock.connect(this.staker2).requestRedeem(ethers.parseEther('1'), this.staker2, this.staker2);
 
       await timeIncreaseNoMine(60);
-      await this.protocolStaking.release(this.mock);
 
       await expect(this.mock.connect(this.staker1).redeem(ethers.MaxUint256, this.staker1, this.staker1))
         .to.emit(this.token, 'Transfer')
@@ -112,7 +110,6 @@ describe('OperatorStaking', function () {
       await this.mock.connect(this.staker1).requestRedeem(ethers.parseEther('1'), this.staker1, this.staker1);
 
       await timeIncreaseNoMine(60);
-      await this.protocolStaking.release(this.mock);
 
       await expect(this.mock.connect(this.staker1).redeem(ethers.MaxUint256, this.staker1, this.staker1))
         .to.emit(this.token, 'Transfer')
@@ -121,7 +118,6 @@ describe('OperatorStaking', function () {
       await this.mock.connect(this.staker1).requestRedeem(ethers.parseEther('2'), this.staker1, this.staker1);
 
       await timeIncreaseNoMine(60);
-      await this.protocolStaking.release(this.mock);
 
       await expect(this.mock.connect(this.staker1).redeem(ethers.MaxUint256, this.staker1, this.staker1))
         .to.emit(this.token, 'Transfer')
@@ -134,7 +130,6 @@ describe('OperatorStaking', function () {
       await this.mock.connect(this.staker1).requestRedeem(ethers.parseEther('1'), controller, this.staker1);
 
       await timeIncreaseNoMine(60);
-      await this.protocolStaking.release(this.mock);
 
       await expect(this.mock.connect(this.staker1).redeem(ethers.MaxUint256, this.staker1, this.staker1)).to.not.emit(
         this.token,
@@ -176,7 +171,7 @@ describe('OperatorStaking', function () {
         await this.mock.connect(this.staker1).requestRedeem(ethers.parseEther('1'), this.staker1, this.staker1);
 
         await timeIncreaseNoMine(60);
-        await this.protocolStaking.release(this.mock);
+
         await expect(this.mock.connect(this.operator).redeem(ethers.MaxUint256, this.operator, this.staker1))
           .to.emit(this.token, 'Transfer')
           .withArgs(this.mock, this.operator, ethers.parseEther('1'));
@@ -186,7 +181,7 @@ describe('OperatorStaking', function () {
         await this.mock.connect(this.staker1).requestRedeem(ethers.parseEther('1'), this.staker2, this.staker1);
 
         await timeIncreaseNoMine(60);
-        await this.protocolStaking.release(this.mock);
+
         await expect(
           this.mock.connect(this.operator).redeem(ethers.MaxUint256, this.operator, this.staker2),
         ).to.be.revertedWithCustomError(this.mock, 'Unauthorized');
@@ -236,7 +231,6 @@ describe('OperatorStaking', function () {
         .requestRedeem(await this.mock.balanceOf(this.staker2), this.staker2, this.staker2);
 
       await timeIncreaseNoMine(60);
-      await this.protocolStaking.release(this.mock);
 
       await expect(
         this.mock.connect(this.staker1).redeem(ethers.MaxUint256, this.staker1, this.staker1),
@@ -255,7 +249,6 @@ describe('OperatorStaking', function () {
       await this.protocolStaking.slash(this.mock, ethers.parseEther('1.5'));
 
       await timeIncreaseNoMine(60);
-      await this.protocolStaking.release(this.mock);
 
       await expect(
         this.mock.connect(this.staker1).redeem(ethers.MaxUint256, this.staker1, this.staker1),
@@ -292,7 +285,6 @@ describe('OperatorStaking', function () {
 
       await timeIncreaseNoMine(60);
 
-      await this.protocolStaking.release(this.mock);
       await expect(
         this.mock.connect(this.staker1).redeem(ethers.MaxUint256, this.staker1, this.staker1),
       ).to.changeTokenBalance(this.token, this.staker1, ethers.parseEther('0.5'));

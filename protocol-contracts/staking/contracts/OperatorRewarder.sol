@@ -200,10 +200,11 @@ contract OperatorRewarder is Ownable {
     }
 
     function _doTransferOut(address to, uint256 amount) internal {
-        if (amount > token().balanceOf(address(this))) {
+        IERC20 token_ = token();
+        if (amount > token_.balanceOf(address(this))) {
             protocolStaking().claimRewards(address(_operatorStaking));
         }
-        token().safeTransfer(to, amount);
+        token_.safeTransfer(to, amount);
     }
 
     function _totalAssetsPlusPaidRewards() internal view returns (uint256) {
