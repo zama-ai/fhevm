@@ -7,6 +7,7 @@ import {IERC20} from "@openzeppelin/contracts/interfaces/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
+import {SignedMath} from "@openzeppelin/contracts/utils/math/SignedMath.sol";
 import {OperatorStaking} from "./OperatorStaking.sol";
 import {ProtocolStaking} from "./ProtocolStaking.sol";
 
@@ -184,11 +185,7 @@ contract OperatorRewarder is Ownable {
         int256 allocation = SafeCast.toInt256(
             stakedBalance > 0 ? _allocation(stakedBalance, operatorStaking().totalSupply()) : 0
         );
-        int256 paid = _rewardsPaid[account];
-        if (paid >= allocation) {
-            return 0;
-        }
-        return SafeCast.toUint256(allocation - paid);
+        return SafeCast.toUint256(SignedMath.max(0, allocation) - _rewardsPaid[account]);
     }
 
     /**
