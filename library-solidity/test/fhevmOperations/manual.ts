@@ -1,6 +1,6 @@
 import { expect } from 'chai';
-import { ethers } from 'hardhat';
 import { ZeroAddress } from 'ethers';
+import { ethers } from 'hardhat';
 
 import type { FHEVMManualTestSuite } from '../../types/contracts/tests/FHEVMManualTestSuite';
 import {
