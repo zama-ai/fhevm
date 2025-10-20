@@ -114,13 +114,11 @@ contract OperatorStaking is ERC20, Ownable {
         _burn(owner, shares);
 
         (, uint48 lastReleaseTime, uint208 totalSharesRedeemed) = _unstakeRequests[controller].latestCheckpoint();
-        uint48 releaseTime = SafeCast.toUint48(
-            Math.max(Time.timestamp() + protocolStaking_.unstakeCooldownPeriod(), lastReleaseTime)
-        );
-        _unstakeRequests[controller].push(releaseTime, totalSharesRedeemed + shares);
         _totalSharesInRedemption += shares;
 
-        protocolStaking_.unstake(address(this), assetsToWithdraw);
+        uint48 releaseTime = protocolStaking_.unstake(address(this), assetsToWithdraw);
+        assert(releaseTime >= lastReleaseTime); // should never happen
+        _unstakeRequests[controller].push(releaseTime, totalSharesRedeemed + shares);
 
         emit RedeemRequest(controller, owner, 0, msg.sender, shares);
     }

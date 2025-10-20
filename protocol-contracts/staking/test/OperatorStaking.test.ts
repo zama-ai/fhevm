@@ -160,6 +160,40 @@ describe('OperatorStaking', function () {
       ).to.be.reverted;
     });
 
+    it('should handle reduction in cooldown period correctly', async function () {
+      const staker3 = this.accounts[0];
+      await this.token.connect(staker3).approve(this.mock, ethers.MaxUint256);
+      await this.token.connect(this.staker1).transfer(staker3, ethers.parseEther('1'));
+
+      await this.mock.connect(this.staker1).deposit(ethers.parseEther('1'), this.staker1);
+      await this.mock.connect(this.staker2).deposit(ethers.parseEther('1'), this.staker2);
+      await this.mock.connect(staker3).deposit(ethers.parseEther('1'), staker3);
+
+      await this.mock.connect(this.staker1).requestRedeem(ethers.parseEther('1'), this.staker1, this.staker1);
+      await timeIncreaseNoMine(30);
+
+      await this.mock.connect(this.staker2).requestRedeem(ethers.parseEther('1'), this.staker2, this.staker2);
+
+      await this.protocolStaking.connect(this.admin).setUnstakeCooldownPeriod(30);
+      await this.mock.connect(staker3).requestRedeem(ethers.parseEther('1'), staker3, staker3);
+
+      // Staker 3 will need to wait 59 seconds
+
+      await timeIncreaseNoMine(30);
+      await this.protocolStaking.release(this.mock);
+
+      await expect(this.mock.connect(staker3).redeem(ethers.MaxUint256, staker3, staker3)).to.not.emit(
+        this.token,
+        'Transfer',
+      );
+
+      await timeIncreaseNoMine(29);
+
+      await expect(this.mock.connect(staker3).redeem(ethers.MaxUint256, staker3, staker3))
+        .to.emit(this.token, 'Transfer')
+        .withArgs(this.mock, staker3, ethers.parseEther('1'));
+    });
+
     describe('with operator', async function () {
       beforeEach(async function () {
         this.operator = this.accounts[0];
