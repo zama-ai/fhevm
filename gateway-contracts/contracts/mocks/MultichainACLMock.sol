@@ -7,9 +7,24 @@ contract MultichainACLMock {
 
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
 
-    event DelegateUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress);
+    event DelegateUserDecryption(
+        uint256 indexed chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpirationDate,
+        uint64 newExpirationDate
+    );
 
-    event RevokeUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress);
+    event RevokeUserDecryption(
+        uint256 indexed chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpirationDate
+    );
 
     function allowPublicDecrypt(bytes32 ctHandle, bytes calldata /* unusedVariable */) external {
         emit AllowPublicDecrypt(ctHandle);
@@ -24,10 +39,21 @@ contract MultichainACLMock {
         address delegator,
         address delegate,
         address contractAddress,
-        uint64 expiryDate,
-        uint64 delegationCounter
+        uint64 delegationCounter,
+        uint64 expirationDate
     ) external {
-        emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress);
+        uint64 oldExpirationDate;
+        uint64 newExpirationDate;
+
+        emit DelegateUserDecryption(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            oldExpirationDate,
+            newExpirationDate
+        );
     }
 
     function revokeUserDecryption(
@@ -35,9 +61,11 @@ contract MultichainACLMock {
         address delegator,
         address delegate,
         address contractAddress,
-        uint64 expiryDate,
-        uint64 delegationCounter
+        uint64 delegationCounter,
+        uint64 expirationDate
     ) external {
-        emit RevokeUserDecryption(chainId, delegator, delegate, contractAddress);
+        uint64 oldExpirationDate;
+
+        emit RevokeUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter, oldExpirationDate);
     }
 }

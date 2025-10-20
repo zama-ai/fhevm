@@ -329,7 +329,15 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(multichainACLMock, "DelegateUserDecryption")
-        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress);
+        .withArgs(
+          DefaultUint256,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultAddress,
+          DefaultUint256,
+          DefaultUint256,
+          DefaultUint256,
+        );
     });
 
     it("Should emit RevokeUserDecryption event on revoke user decryption delegation call", async function () {
@@ -344,7 +352,7 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(multichainACLMock, "RevokeUserDecryption")
-        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress);
+        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256, DefaultUint256);
     });
   });
 });

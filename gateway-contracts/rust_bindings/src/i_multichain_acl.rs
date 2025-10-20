@@ -6,25 +6,25 @@ interface IMultichainACL {
     error ContractsMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
     error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
-    error CoprocessorAlreadyDelegatedOrRevokedUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 expiryDate, uint64 delegationCounter, address txSender);
+    error CoprocessorAlreadyDelegatedOrRevokedUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate, address txSender);
     error EmptyContractAddresses();
     error UserDecryptionDelegationCounterTooLow(uint64 delegationCounter);
 
     event AllowAccount(bytes32 indexed ctHandle, address accountAddress);
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
-    event DelegateUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress);
-    event RevokeUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress);
+    event DelegateUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate, uint64 newExpirationDate);
+    event RevokeUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate);
 
     function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory extraData) external;
     function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
-    function delegateUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 expiryDate, uint64 delegationCounter) external;
+    function delegateUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external;
     function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddress) external view returns (address[] memory);
     function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view returns (address[] memory);
     function getVersion() external pure returns (string memory);
     function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view returns (bool);
     function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
     function isUserDecryptionDelegated(uint256 chainId, address delegator, address delegate, address contractAddress) external view returns (bool);
-    function revokeUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 expiryDate, uint64 delegationCounter) external;
+    function revokeUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external;
 }
 ```
 
@@ -97,12 +97,12 @@ interface IMultichainACL {
         "internalType": "address"
       },
       {
-        "name": "expiryDate",
+        "name": "delegationCounter",
         "type": "uint64",
         "internalType": "uint64"
       },
       {
-        "name": "delegationCounter",
+        "name": "expirationDate",
         "type": "uint64",
         "internalType": "uint64"
       }
@@ -268,12 +268,12 @@ interface IMultichainACL {
         "internalType": "address"
       },
       {
-        "name": "expiryDate",
+        "name": "delegationCounter",
         "type": "uint64",
         "internalType": "uint64"
       },
       {
-        "name": "delegationCounter",
+        "name": "expirationDate",
         "type": "uint64",
         "internalType": "uint64"
       }
@@ -340,6 +340,24 @@ interface IMultichainACL {
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "delegationCounter",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "oldExpirationDate",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "newExpirationDate",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -371,6 +389,18 @@ interface IMultichainACL {
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "delegationCounter",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      },
+      {
+        "name": "oldExpirationDate",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
       }
     ],
     "anonymous": false
@@ -453,12 +483,12 @@ interface IMultichainACL {
         "internalType": "address"
       },
       {
-        "name": "expiryDate",
+        "name": "delegationCounter",
         "type": "uint64",
         "internalType": "uint64"
       },
       {
-        "name": "delegationCounter",
+        "name": "expirationDate",
         "type": "uint64",
         "internalType": "uint64"
       },
@@ -817,7 +847,7 @@ error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender)
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `CoprocessorAlreadyDelegatedOrRevokedUserDecryption(uint256,address,address,address,uint64,uint64,address)` and selector `0x512cb930`.
 ```solidity
-error CoprocessorAlreadyDelegatedOrRevokedUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 expiryDate, uint64 delegationCounter, address txSender);
+error CoprocessorAlreadyDelegatedOrRevokedUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate, address txSender);
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -831,9 +861,9 @@ error CoprocessorAlreadyDelegatedOrRevokedUserDecryption(uint256 chainId, addres
         #[allow(missing_docs)]
         pub contractAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub expiryDate: u64,
-        #[allow(missing_docs)]
         pub delegationCounter: u64,
+        #[allow(missing_docs)]
+        pub expirationDate: u64,
         #[allow(missing_docs)]
         pub txSender: alloy::sol_types::private::Address,
     }
@@ -886,8 +916,8 @@ error CoprocessorAlreadyDelegatedOrRevokedUserDecryption(uint256 chainId, addres
                     value.delegator,
                     value.delegate,
                     value.contractAddress,
-                    value.expiryDate,
                     value.delegationCounter,
+                    value.expirationDate,
                     value.txSender,
                 )
             }
@@ -902,8 +932,8 @@ error CoprocessorAlreadyDelegatedOrRevokedUserDecryption(uint256 chainId, addres
                     delegator: tuple.1,
                     delegate: tuple.2,
                     contractAddress: tuple.3,
-                    expiryDate: tuple.4,
-                    delegationCounter: tuple.5,
+                    delegationCounter: tuple.4,
+                    expirationDate: tuple.5,
                     txSender: tuple.6,
                 }
             }
@@ -940,10 +970,10 @@ error CoprocessorAlreadyDelegatedOrRevokedUserDecryption(uint256 chainId, addres
                     ),
                     <alloy::sol_types::sol_data::Uint<
                         64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.expiryDate),
+                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
                     <alloy::sol_types::sol_data::Uint<
                         64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
+                    > as alloy_sol_types::SolType>::tokenize(&self.expirationDate),
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.txSender,
                     ),
@@ -1338,9 +1368,9 @@ event AllowPublicDecrypt(bytes32 indexed ctHandle);
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `DelegateUserDecryption(uint256,address,address,address)` and selector `0xde2ddcaba387f2b0ad2cd0df646a0f063b26c3ecf4551c52715eedb733553c3c`.
+    /**Event with signature `DelegateUserDecryption(uint256,address,address,address,uint64,uint64,uint64)` and selector `0x38681bb7371eab69bb4e6193b8b7848c732d6cefeea5a965d3bd949d93a20cf9`.
 ```solidity
-event DelegateUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress);
+event DelegateUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate, uint64 newExpirationDate);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -1358,6 +1388,12 @@ event DelegateUserDecryption(uint256 indexed chainId, address delegator, address
         pub delegate: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
         pub contractAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub delegationCounter: u64,
+        #[allow(missing_docs)]
+        pub oldExpirationDate: u64,
+        #[allow(missing_docs)]
+        pub newExpirationDate: u64,
     }
     #[allow(
         non_camel_case_types,
@@ -1373,6 +1409,9 @@ event DelegateUserDecryption(uint256 indexed chainId, address delegator, address
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Uint<64>,
+                alloy::sol_types::sol_data::Uint<64>,
+                alloy::sol_types::sol_data::Uint<64>,
             );
             type DataToken<'a> = <Self::DataTuple<
                 'a,
@@ -1381,11 +1420,12 @@ event DelegateUserDecryption(uint256 indexed chainId, address delegator, address
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "DelegateUserDecryption(uint256,address,address,address)";
+            const SIGNATURE: &'static str = "DelegateUserDecryption(uint256,address,address,address,uint64,uint64,uint64)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                222u8, 45u8, 220u8, 171u8, 163u8, 135u8, 242u8, 176u8, 173u8, 44u8,
-                208u8, 223u8, 100u8, 106u8, 15u8, 6u8, 59u8, 38u8, 195u8, 236u8, 244u8,
-                85u8, 28u8, 82u8, 113u8, 94u8, 237u8, 183u8, 51u8, 85u8, 60u8, 60u8,
+                56u8, 104u8, 27u8, 183u8, 55u8, 30u8, 171u8, 105u8, 187u8, 78u8, 97u8,
+                147u8, 184u8, 183u8, 132u8, 140u8, 115u8, 45u8, 108u8, 239u8, 238u8,
+                165u8, 169u8, 101u8, 211u8, 189u8, 148u8, 157u8, 147u8, 162u8, 12u8,
+                249u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -1399,6 +1439,9 @@ event DelegateUserDecryption(uint256 indexed chainId, address delegator, address
                     delegator: data.0,
                     delegate: data.1,
                     contractAddress: data.2,
+                    delegationCounter: data.3,
+                    oldExpirationDate: data.4,
+                    newExpirationDate: data.5,
                 }
             }
             #[inline]
@@ -1428,6 +1471,15 @@ event DelegateUserDecryption(uint256 indexed chainId, address delegator, address
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.contractAddress,
                     ),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.oldExpirationDate),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.newExpirationDate),
                 )
             }
             #[inline]
@@ -1470,9 +1522,9 @@ event DelegateUserDecryption(uint256 indexed chainId, address delegator, address
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `RevokeUserDecryption(uint256,address,address,address)` and selector `0xb469fcd59fbb7118e4fde460806a0741ad1c6363557455bd67333d03e23ccc57`.
+    /**Event with signature `RevokeUserDecryption(uint256,address,address,address,uint64,uint64)` and selector `0xd07ad3cd763bfd4a1e320c513759b5fce7c721798b1685ea72c6f669d7bed269`.
 ```solidity
-event RevokeUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress);
+event RevokeUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -1490,6 +1542,10 @@ event RevokeUserDecryption(uint256 indexed chainId, address delegator, address d
         pub delegate: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
         pub contractAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub delegationCounter: u64,
+        #[allow(missing_docs)]
+        pub oldExpirationDate: u64,
     }
     #[allow(
         non_camel_case_types,
@@ -1505,6 +1561,8 @@ event RevokeUserDecryption(uint256 indexed chainId, address delegator, address d
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Uint<64>,
+                alloy::sol_types::sol_data::Uint<64>,
             );
             type DataToken<'a> = <Self::DataTuple<
                 'a,
@@ -1513,11 +1571,11 @@ event RevokeUserDecryption(uint256 indexed chainId, address delegator, address d
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "RevokeUserDecryption(uint256,address,address,address)";
+            const SIGNATURE: &'static str = "RevokeUserDecryption(uint256,address,address,address,uint64,uint64)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                180u8, 105u8, 252u8, 213u8, 159u8, 187u8, 113u8, 24u8, 228u8, 253u8,
-                228u8, 96u8, 128u8, 106u8, 7u8, 65u8, 173u8, 28u8, 99u8, 99u8, 85u8,
-                116u8, 85u8, 189u8, 103u8, 51u8, 61u8, 3u8, 226u8, 60u8, 204u8, 87u8,
+                208u8, 122u8, 211u8, 205u8, 118u8, 59u8, 253u8, 74u8, 30u8, 50u8, 12u8,
+                81u8, 55u8, 89u8, 181u8, 252u8, 231u8, 199u8, 33u8, 121u8, 139u8, 22u8,
+                133u8, 234u8, 114u8, 198u8, 246u8, 105u8, 215u8, 190u8, 210u8, 105u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -1531,6 +1589,8 @@ event RevokeUserDecryption(uint256 indexed chainId, address delegator, address d
                     delegator: data.0,
                     delegate: data.1,
                     contractAddress: data.2,
+                    delegationCounter: data.3,
+                    oldExpirationDate: data.4,
                 }
             }
             #[inline]
@@ -1560,6 +1620,12 @@ event RevokeUserDecryption(uint256 indexed chainId, address delegator, address d
                     <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
                         &self.contractAddress,
                     ),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.oldExpirationDate),
                 )
             }
             #[inline]
@@ -1935,7 +2001,7 @@ function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `delegateUserDecryption(uint256,address,address,address,uint64,uint64)` and selector `0x4d7ab390`.
 ```solidity
-function delegateUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 expiryDate, uint64 delegationCounter) external;
+function delegateUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -1949,9 +2015,9 @@ function delegateUserDecryption(uint256 chainId, address delegator, address dele
         #[allow(missing_docs)]
         pub contractAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub expiryDate: u64,
-        #[allow(missing_docs)]
         pub delegationCounter: u64,
+        #[allow(missing_docs)]
+        pub expirationDate: u64,
     }
     ///Container type for the return parameters of the [`delegateUserDecryption(uint256,address,address,address,uint64,uint64)`](delegateUserDecryptionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -2005,8 +2071,8 @@ function delegateUserDecryption(uint256 chainId, address delegator, address dele
                         value.delegator,
                         value.delegate,
                         value.contractAddress,
-                        value.expiryDate,
                         value.delegationCounter,
+                        value.expirationDate,
                     )
                 }
             }
@@ -2020,8 +2086,8 @@ function delegateUserDecryption(uint256 chainId, address delegator, address dele
                         delegator: tuple.1,
                         delegate: tuple.2,
                         contractAddress: tuple.3,
-                        expiryDate: tuple.4,
-                        delegationCounter: tuple.5,
+                        delegationCounter: tuple.4,
+                        expirationDate: tuple.5,
                     }
                 }
             }
@@ -2111,10 +2177,10 @@ function delegateUserDecryption(uint256 chainId, address delegator, address dele
                     ),
                     <alloy::sol_types::sol_data::Uint<
                         64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.expiryDate),
+                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
                     <alloy::sol_types::sol_data::Uint<
                         64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
+                    > as alloy_sol_types::SolType>::tokenize(&self.expirationDate),
                 )
             }
             #[inline]
@@ -3146,7 +3212,7 @@ function isUserDecryptionDelegated(uint256 chainId, address delegator, address d
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `revokeUserDecryption(uint256,address,address,address,uint64,uint64)` and selector `0xe8283595`.
 ```solidity
-function revokeUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 expiryDate, uint64 delegationCounter) external;
+function revokeUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
@@ -3160,9 +3226,9 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
         #[allow(missing_docs)]
         pub contractAddress: alloy::sol_types::private::Address,
         #[allow(missing_docs)]
-        pub expiryDate: u64,
-        #[allow(missing_docs)]
         pub delegationCounter: u64,
+        #[allow(missing_docs)]
+        pub expirationDate: u64,
     }
     ///Container type for the return parameters of the [`revokeUserDecryption(uint256,address,address,address,uint64,uint64)`](revokeUserDecryptionCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
@@ -3216,8 +3282,8 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                         value.delegator,
                         value.delegate,
                         value.contractAddress,
-                        value.expiryDate,
                         value.delegationCounter,
+                        value.expirationDate,
                     )
                 }
             }
@@ -3231,8 +3297,8 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                         delegator: tuple.1,
                         delegate: tuple.2,
                         contractAddress: tuple.3,
-                        expiryDate: tuple.4,
-                        delegationCounter: tuple.5,
+                        delegationCounter: tuple.4,
+                        expirationDate: tuple.5,
                     }
                 }
             }
@@ -3322,10 +3388,10 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                     ),
                     <alloy::sol_types::sol_data::Uint<
                         64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.expiryDate),
+                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
                     <alloy::sol_types::sol_data::Uint<
                         64,
-                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
+                    > as alloy_sol_types::SolType>::tokenize(&self.expirationDate),
                 )
             }
             #[inline]
@@ -4195,14 +4261,15 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                 219u8, 55u8, 195u8, 65u8, 150u8, 145u8, 178u8, 225u8, 101u8, 102u8,
             ],
             [
-                180u8, 105u8, 252u8, 213u8, 159u8, 187u8, 113u8, 24u8, 228u8, 253u8,
-                228u8, 96u8, 128u8, 106u8, 7u8, 65u8, 173u8, 28u8, 99u8, 99u8, 85u8,
-                116u8, 85u8, 189u8, 103u8, 51u8, 61u8, 3u8, 226u8, 60u8, 204u8, 87u8,
+                56u8, 104u8, 27u8, 183u8, 55u8, 30u8, 171u8, 105u8, 187u8, 78u8, 97u8,
+                147u8, 184u8, 183u8, 132u8, 140u8, 115u8, 45u8, 108u8, 239u8, 238u8,
+                165u8, 169u8, 101u8, 211u8, 189u8, 148u8, 157u8, 147u8, 162u8, 12u8,
+                249u8,
             ],
             [
-                222u8, 45u8, 220u8, 171u8, 163u8, 135u8, 242u8, 176u8, 173u8, 44u8,
-                208u8, 223u8, 100u8, 106u8, 15u8, 6u8, 59u8, 38u8, 195u8, 236u8, 244u8,
-                85u8, 28u8, 82u8, 113u8, 94u8, 237u8, 183u8, 51u8, 85u8, 60u8, 60u8,
+                208u8, 122u8, 211u8, 205u8, 118u8, 59u8, 253u8, 74u8, 30u8, 50u8, 12u8,
+                81u8, 55u8, 89u8, 181u8, 252u8, 231u8, 199u8, 33u8, 121u8, 139u8, 22u8,
+                133u8, 234u8, 114u8, 198u8, 246u8, 105u8, 215u8, 190u8, 210u8, 105u8,
             ],
         ];
     }
@@ -4492,8 +4559,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             delegator: alloy::sol_types::private::Address,
             delegate: alloy::sol_types::private::Address,
             contractAddress: alloy::sol_types::private::Address,
-            expiryDate: u64,
             delegationCounter: u64,
+            expirationDate: u64,
         ) -> alloy_contract::SolCallBuilder<&P, delegateUserDecryptionCall, N> {
             self.call_builder(
                 &delegateUserDecryptionCall {
@@ -4501,8 +4568,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     delegator,
                     delegate,
                     contractAddress,
-                    expiryDate,
                     delegationCounter,
+                    expirationDate,
                 },
             )
         }
@@ -4592,8 +4659,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             delegator: alloy::sol_types::private::Address,
             delegate: alloy::sol_types::private::Address,
             contractAddress: alloy::sol_types::private::Address,
-            expiryDate: u64,
             delegationCounter: u64,
+            expirationDate: u64,
         ) -> alloy_contract::SolCallBuilder<&P, revokeUserDecryptionCall, N> {
             self.call_builder(
                 &revokeUserDecryptionCall {
@@ -4601,8 +4668,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                     delegator,
                     delegate,
                     contractAddress,
-                    expiryDate,
                     delegationCounter,
+                    expirationDate,
                 },
             )
         }
