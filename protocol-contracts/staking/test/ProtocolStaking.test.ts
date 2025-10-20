@@ -199,9 +199,11 @@ describe('Protocol Staking', function () {
     });
 
     it('should be able to unstake to someone else', async function () {
+      const currentTime = BigInt(await time.latest());
+      const cooldownPeriod = BigInt(await this.mock.unstakeCooldownPeriod());
       await expect(this.mock.connect(this.staker1).unstake(this.staker2, ethers.parseEther('50')))
         .to.emit(this.mock, 'TokensUnstaked')
-        .withArgs(this.staker1, this.staker2, ethers.parseEther('50'));
+        .withArgs(this.staker1, this.staker2, ethers.parseEther('50'), currentTime + cooldownPeriod + 1n);
       await mine();
       await expect(this.mock.release(this.staker2))
         .to.emit(this.token, 'Transfer')
