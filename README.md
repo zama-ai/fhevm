@@ -178,3 +178,9 @@ This software is distributed under the **BSD-3-Clause-Clear** license. Read [thi
 <p align="right">
   <a href="#about" > ↑ Back to top </a>
 </p>
+## Usage Examples
+You can test the project locally using the following steps:
+1. git clone <repo_url>
+2. npm install
+3. npm run test
+
