@@ -131,6 +131,9 @@ impl DbKmsResponsePicker {
         Ok([
             self.pick_public_decryption_responses().await?,
             self.pick_user_decryption_responses().await?,
+            self.pick_prep_keygen_responses().await?,
+            self.pick_keygen_responses().await?,
+            self.pick_crsgen_responses().await?,
         ]
         .concat())
     }
