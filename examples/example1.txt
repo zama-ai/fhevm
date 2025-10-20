@@ -1,0 +1,2 @@
+Sample file for commit testing.
+Contains plain text with no impact on the main codebase.
