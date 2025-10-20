@@ -16,12 +16,12 @@ use utoipa::ToSchema;
 
 /// Represents the payload coming into the '/input-proof' endpoint.
 #[derive(Debug, Deserialize, Clone, Serialize, ToSchema)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct PublicDecryptRequestJson {
-    pub ciphertextHandles: Vec<String>,
+    pub ciphertext_handles: Vec<String>,
     /// Extra data field, always set to 0x00
     #[schema(value_type = String, example = "0x00")]
-    pub extraData: Bytes,
+    pub extra_data: Bytes,
 }
 
 impl PublicDecryptRequestJson {
@@ -69,7 +69,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
         }
     }
 
-    #[instrument(name="handle-public-decrypt", skip_all, fields(handles=?payload.ciphertextHandles))]
+    #[instrument(name="handle-public-decrypt", skip_all, fields(handles=?payload.ciphertext_handles))]
     pub async fn handle(&self, Json(payload): Json<PublicDecryptRequestJson>) -> impl IntoResponse {
         info!("Handling public decryption request in http listener");
         // Validate the payload

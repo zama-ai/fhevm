@@ -19,30 +19,30 @@ use utoipa::ToSchema;
 
 /// Represents the payload coming into the endpoint for user decrypt.
 #[derive(Debug, Deserialize, Clone, Serialize, ToSchema)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct UserDecryptRequestJson {
-    pub handleContractPairs: Vec<HandleContractPairJson>,
-    pub requestValidity: RequestValidityJson,
+    pub handle_contract_pairs: Vec<HandleContractPairJson>,
+    pub request_validity: RequestValidityJson,
     #[serde(deserialize_with = "de_string_or_number")]
     #[schema(value_type = ChainId)]
-    pub contractsChainId: String,
+    pub contracts_chain_id: String,
     /// Array of contract addresses
-    pub contractAddresses: Vec<String>,
+    pub contract_addresses: Vec<String>,
     /// User's wallet address
-    pub userAddress: String,
+    pub user_address: String,
     pub signature: String,
     /// Public key
-    pub publicKey: String,
+    pub public_key: String,
     /// Extra data field, always set to 0x00
     #[schema(example = "0x00")]
-    pub extraData: String,
+    pub extra_data: String,
 }
 
 #[derive(Debug, Deserialize, Clone, Serialize, Hash, ToSchema)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct HandleContractPairJson {
     pub handle: String,
-    pub contractAddress: String,
+    pub contract_address: String,
 }
 
 impl Display for HandleContractPairJson {
@@ -50,7 +50,7 @@ impl Display for HandleContractPairJson {
         write!(
             f,
             "ct-handle: {}, contract-address: {}",
-            self.handle, self.contractAddress
+            self.handle, self.contract_address
         )
     }
 }
@@ -108,7 +108,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
     }
 
     /// Handles requests to the endpoint for user decrypt.
-    #[instrument(name="handle-user-decrypt", skip_all, fields(user_address=%payload.userAddress, cts=?payload.handleContractPairs))]
+    #[instrument(name="handle-user-decrypt", skip_all, fields(user_address=%payload.user_address, cts=?payload.handle_contract_pairs))]
     pub async fn handle(&self, Json(payload): Json<UserDecryptRequestJson>) -> impl IntoResponse {
         info!("Handling user decryption request in http listener");
         // Validate the payload
@@ -126,7 +126,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
                     error!("Cannot serialize payload: {}", e);
                 }
                 // Try parsing individual fields
-                if let Err(e) = payload.requestValidity.durationDays.parse::<u32>() {
+                if let Err(e) = payload.request_validity.durationDays.parse::<u32>() {
                     error!("Failed to parse durationDays: {}", e);
                 }
 

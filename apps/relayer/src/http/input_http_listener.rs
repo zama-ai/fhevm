@@ -15,26 +15,26 @@ use utoipa::ToSchema;
 
 /// Represents the payload coming into the endpoint for input proof.
 #[derive(Debug, Deserialize, Clone, Serialize, ToSchema)]
-#[allow(non_snake_case)]
+#[serde(rename_all = "camelCase")]
 pub struct InputProofRequestJson {
     /// Contract's chain id
     #[serde(deserialize_with = "de_string_or_number")]
     #[schema(value_type = ChainId)]
-    pub contractChainId: String,
+    pub contract_chain_id: String,
     /// Contract's address
-    pub contractAddress: String, // Hex encoded address with 0x prefix.
+    pub contract_address: String, // Hex encoded address with 0x prefix.
     /// User's wallet address
-    pub userAddress: String, // Hex encoded address with 0x prefix.
-    pub ciphertextWithInputVerification: String,
+    pub user_address: String, // Hex encoded address with 0x prefix.
+    pub ciphertext_with_input_verification: String,
     /// Extra data field, always set to 0x00
     #[schema(example = "0x00")]
-    pub extraData: String, // Hex encoded Bytes array with 0x prefix.
+    pub extra_data: String, // Hex encoded Bytes array with 0x prefix.
 }
 
 impl InputProofRequestJson {
     pub fn validate(&self) -> Result<(), String> {
         // Add other validations here.
-        if self.ciphertextWithInputVerification.is_empty() {
+        if self.ciphertext_with_input_verification.is_empty() {
             Err("Input Verification cannot be empty.".to_string())
         } else {
             Ok(())
@@ -81,7 +81,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
     // pub contractAddress: String, // Hex encoded address with 0x prefix.
     // pub userAddress: String,     // Hex encoded address with 0x prefix.
     /// Handles requests to the endpoint for input proof.
-    #[instrument(name="handle-input", skip_all, fields(contract=%payload.contractAddress, contract_chain_id=%payload.contractChainId, userAddress=%payload.userAddress))]
+    #[instrument(name="handle-input", skip_all, fields(contract=%payload.contract_address, contract_chain_id=%payload.contract_chain_id, userAddress=%payload.user_address))]
     pub async fn handle(&self, Json(payload): Json<InputProofRequestJson>) -> impl IntoResponse {
         info!("Handling input proof request");
         // Validate the payload
@@ -211,15 +211,15 @@ mod tests {
             serde_json::from_str(json_data).expect("JSON deserialization failed");
 
         // Assert that each field was deserialized correctly.
-        assert_eq!(request.contractChainId, "123456");
+        assert_eq!(request.contract_chain_id, "123456");
         assert_eq!(
-            request.contractAddress,
+            request.contract_address,
             "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
         );
         assert_eq!(
-            request.userAddress,
+            request.user_address,
             "0x12B064FB845C1cc05e9493856a1D637a73e944bE"
         );
-        assert_eq!(request.ciphertextWithInputVerification, "abcdef");
+        assert_eq!(request.ciphertext_with_input_verification, "abcdef");
     }
 }

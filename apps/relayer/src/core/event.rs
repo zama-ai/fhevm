@@ -505,7 +505,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         info!("Converting UserDecryptRequestJson to UserDecryptRequest");
 
         let mut ct_handle_contract_pairs = Vec::new();
-        for json_data in &value.handleContractPairs {
+        for json_data in &value.handle_contract_pairs {
             let ct_handle = if json_data.handle.starts_with("0x") {
                 // Remove the 0x prefix before parsing
                 U256::from_str_radix(&json_data.handle[2..], 16)
@@ -514,7 +514,7 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             }
             .map_err(|e| anyhow::anyhow!("Failed to parse ctHandle: {}", e))?;
 
-            let contract_address = Address::from_str(&json_data.contractAddress)
+            let contract_address = Address::from_str(&json_data.contract_address)
                 .map_err(|e| anyhow::anyhow!("Failed to parse contractAddress: {}", e))?;
 
             ct_handle_contract_pairs.push(HandleContractPair {
@@ -524,40 +524,40 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         }
 
         // Parse duration days - first try as number, then as string
-        let duration_days = match value.requestValidity.durationDays.parse::<u64>() {
+        let duration_days = match value.request_validity.durationDays.parse::<u64>() {
             Ok(num) => U256::from(num),
             Err(_) => {
                 // Try parsing as hex if it starts with 0x
-                if value.requestValidity.durationDays.starts_with("0x") {
-                    U256::from_str(&value.requestValidity.durationDays)?
+                if value.request_validity.durationDays.starts_with("0x") {
+                    U256::from_str(&value.request_validity.durationDays)?
                 } else {
                     // Otherwise try as decimal string
-                    U256::from_str_radix(&value.requestValidity.durationDays, 10)?
+                    U256::from_str_radix(&value.request_validity.durationDays, 10)?
                 }
             }
         };
 
         let request_validity = RequestValidity {
-            start_timestamp: U256::from_str(&value.requestValidity.startTimestamp)?,
+            start_timestamp: U256::from_str(&value.request_validity.startTimestamp)?,
             duration_days,
         };
 
         // Parse contract chain ID
-        let contracts_chain_id = parse_chain_id(&value.contractsChainId)?;
+        let contracts_chain_id = parse_chain_id(&value.contracts_chain_id)?;
 
         let contract_addresses = &value
-            .contractAddresses
+            .contract_addresses
             .iter()
             .map(|addr| Address::from_str(addr))
             .collect::<Result<Vec<_>, _>>()?;
 
         // Validate and parse extraData
-        let extra_data = if value.extraData == "0x00" {
+        let extra_data = if value.extra_data == "0x00" {
             Bytes::from(vec![0x00])
         } else {
             return Err(anyhow::anyhow!(
                 "extraData must be 0x00, got: {}",
-                value.extraData
+                value.extra_data
             ));
         };
 
@@ -566,9 +566,9 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
             request_validity,
             contracts_chain_id,
             contract_addresses: contract_addresses.clone(),
-            user_address: Address::from_str(&value.userAddress)?,
+            user_address: Address::from_str(&value.user_address)?,
             signature: Bytes::from_str(&value.signature)?,
-            public_key: Bytes::from_str(&value.publicKey)?,
+            public_key: Bytes::from_str(&value.public_key)?,
             extra_data,
         })
     }
@@ -603,7 +603,7 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
         info!("Converting PublicDecryptRequestJson to PublicDecryptRequest");
 
         let mut ct_handles = Vec::new();
-        for ct_handle_hex in &value.ciphertextHandles {
+        for ct_handle_hex in &value.ciphertext_handles {
             let ct_handle = if let Some(ct_handle_hex_wo_prefix) = ct_handle_hex.strip_prefix("0x")
             {
                 U256::from_str_radix(ct_handle_hex_wo_prefix, 16)
@@ -618,12 +618,12 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
         }
 
         // Validate and parse extraData
-        let extra_data = if value.extraData == Bytes::from(&[0x00]) {
-            value.extraData
+        let extra_data = if value.extra_data == Bytes::from(&[0x00]) {
+            value.extra_data
         } else {
             return Err(anyhow::anyhow!(
                 "extraData must be 0x00, got: {:#x}",
-                value.extraData
+                value.extra_data
             ));
         };
 
@@ -732,30 +732,30 @@ impl TryFrom<InputProofRequestJson> for InputProofRequest {
     type Error = anyhow::Error;
 
     fn try_from(json: InputProofRequestJson) -> Result<Self, Self::Error> {
-        info!("json.contractChainId: {:?}", json.contractChainId);
-        let contract_chain_id = parse_chain_id(&json.contractChainId)
+        info!("json.contractChainId: {:?}", json.contract_chain_id);
+        let contract_chain_id = parse_chain_id(&json.contract_chain_id)
             .map_err(|e| anyhow::anyhow!("Error parsing contractChainId: {:?}", e))?;
         info!("contract_chain_id decoded: {:?}", contract_chain_id);
 
-        let contract_address = Address::from_str(&json.contractAddress)
+        let contract_address = Address::from_str(&json.contract_address)
             .map_err(|e| anyhow::anyhow!("Error parsing contractAddress: {:?}", e))?;
 
-        let user_address = Address::from_str(&json.userAddress)
+        let user_address = Address::from_str(&json.user_address)
             .map_err(|e| anyhow::anyhow!("Error parsing userAddress: {:?}", e))?;
 
         // Should be hex string without a "0x" prefix.
-        let proof_bytes = hex::decode(&json.ciphertextWithInputVerification).map_err(|e| {
+        let proof_bytes = hex::decode(&json.ciphertext_with_input_verification).map_err(|e| {
             anyhow::anyhow!("Error decoding ciphertextWithInputVerification: {}", e)
         })?;
         let ciphetext_with_zk_proof = Bytes::from(proof_bytes);
 
         // Validate and parse extraData
-        let extra_data = if json.extraData == "0x00" {
+        let extra_data = if json.extra_data == "0x00" {
             Bytes::from(vec![0x00])
         } else {
             return Err(anyhow::anyhow!(
                 "extraData must be 0x00, got: {}",
-                json.extraData
+                json.extra_data
             ));
         };
         Ok(InputProofRequest {
@@ -821,11 +821,11 @@ mod tests {
     #[ignore]
     fn test_input_proof_request_conversion_() -> Result<(), Box<dyn std::error::Error>> {
         let json = InputProofRequestJson {
-            contractChainId: CHAIN_ID.to_string(),
-            contractAddress: CONTRACT_ADDRESS.to_string(),
-            userAddress: USER_ADDRESS.to_string(),
-            ciphertextWithInputVerification: CIPHERTEXT.to_string(),
-            extraData: EXTRA_DATA.to_string(),
+            contract_chain_id: CHAIN_ID.to_string(),
+            contract_address: CONTRACT_ADDRESS.to_string(),
+            user_address: USER_ADDRESS.to_string(),
+            ciphertext_with_input_verification: CIPHERTEXT.to_string(),
+            extra_data: EXTRA_DATA.to_string(),
         };
 
         let request = InputProofRequest::try_from(json)?;
