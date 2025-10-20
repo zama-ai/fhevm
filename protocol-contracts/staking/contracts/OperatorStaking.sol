@@ -19,6 +19,10 @@ import {ProtocolStaking} from "./ProtocolStaking.sol";
  * @custom:security-contact security@zama.ai
  * @notice Allows users to stake assets and receive shares, with support for reward distribution.
  * @dev Integrates with ProtocolStaking and OperatorRewarder contracts. Inspired by ERC7540 but not fully compliant.
+ *
+ * NOTE: This contract supports slashing on the `ProtocolStaking` level and symmetrically passes losses to restakers on the
+ * `OperatorStaking` level. Slashing must first decrease the `ProtocolStaking` balance of this contract before affecting
+ * pending withdrawals.
  */
 contract OperatorStaking is ERC20, Ownable {
     using Math for uint256;
@@ -223,7 +227,6 @@ contract OperatorStaking is ERC20, Ownable {
         return super.totalSupply() + totalSharesInRedemption();
     }
 
-    // Can there be reentry such that assets in cooldown and balanceOf are double counted?
     /**
      * @notice Returns the total assets managed by the contract.
      * @return The total assets.
