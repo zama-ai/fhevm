@@ -2,8 +2,8 @@ use crate::core::event::{
     ApiVersion, InputProofEventData, InputProofEventId, InputProofRequest, RelayerEvent,
     RelayerEventData,
 };
-use crate::core::utils::{de_string_or_number, OnceHandler};
 use crate::http::docs_utils::ChainId;
+use crate::http::utils::{de_string_or_number, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use axum::{extract::Json, http::StatusCode, response::IntoResponse};

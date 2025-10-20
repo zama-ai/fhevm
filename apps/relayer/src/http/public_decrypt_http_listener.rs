@@ -2,7 +2,7 @@ use crate::core::event::{
     ApiVersion, PublicDecryptEventData, PublicDecryptEventId, PublicDecryptRequest, RelayerEvent,
     RelayerEventData,
 };
-use crate::core::utils::OnceHandler;
+use crate::http::utils::OnceHandler;
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use alloy::primitives::Bytes;
