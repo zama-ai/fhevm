@@ -198,8 +198,8 @@ contract MultichainACL is
         address delegator,
         address delegate,
         address contractAddress,
-        uint64 expiryDate,
-        uint64 delegationCounter
+        uint64 delegationCounter,
+        uint64 expirationDate
     ) external virtual onlyCoprocessorTxSender {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
         bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
@@ -207,8 +207,8 @@ contract MultichainACL is
             delegator,
             delegate,
             contractAddress,
-            expiryDate,
-            delegationCounter
+            delegationCounter,
+            expirationDate
         );
 
         mapping(address => bool) storage alreadyDelegatedUserDecryptionCoprocessors = $
@@ -221,8 +221,8 @@ contract MultichainACL is
                 delegator,
                 delegate,
                 contractAddress,
-                expiryDate,
                 delegationCounter,
+                expirationDate,
                 msg.sender
             );
         }
@@ -250,13 +250,22 @@ contract MultichainACL is
             }
 
             // Update the user decryption delegation information.
+            uint64 oldExpirationDate = userDecryptionDelegation.expirationDate;
             userDecryptionDelegation.delegationCounter = delegationCounter;
-            userDecryptionDelegation.expiryDate = expiryDate;
+            userDecryptionDelegation.expirationDate = expirationDate;
 
             // Mark the delegate user decryption hash as having reached consensus for delegation.
             $.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] = true;
 
-            emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress);
+            emit DelegateUserDecryption(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                oldExpirationDate,
+                expirationDate
+            );
         }
     }
 
@@ -266,8 +275,8 @@ contract MultichainACL is
         address delegator,
         address delegate,
         address contractAddress,
-        uint64 expiryDate,
-        uint64 delegationCounter
+        uint64 delegationCounter,
+        uint64 expirationDate
     ) external virtual onlyCoprocessorTxSender {
         MultichainACLStorage storage $ = _getMultichainACLStorage();
         bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
@@ -275,8 +284,8 @@ contract MultichainACL is
             delegator,
             delegate,
             contractAddress,
-            expiryDate,
-            delegationCounter
+            delegationCounter,
+            expirationDate
         );
 
         mapping(address => bool) storage alreadyRevokedUserDecryptionCoprocessors = $
@@ -289,8 +298,8 @@ contract MultichainACL is
                 delegator,
                 delegate,
                 contractAddress,
-                expiryDate,
                 delegationCounter,
+                expirationDate,
                 msg.sender
             );
         }
@@ -318,13 +327,21 @@ contract MultichainACL is
             }
 
             // Update the user decryption delegation information.
+            uint64 oldExpirationDate = userDecryptionDelegation.expirationDate;
             userDecryptionDelegation.delegationCounter = delegationCounter;
-            userDecryptionDelegation.expiryDate = 0;
+            userDecryptionDelegation.expirationDate = 0;
 
             // Mark the delegate user decryption hash as having reached consensus for revocation.
             $.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] = true;
 
-            emit RevokeUserDecryption(chainId, delegator, delegate, contractAddress);
+            emit RevokeUserDecryption(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                oldExpirationDate
+            );
         }
     }
 
@@ -362,7 +379,7 @@ contract MultichainACL is
             delegate
         ][contractAddress];
 
-        return userDecryptionDelegation.expiryDate >= block.timestamp;
+        return userDecryptionDelegation.expirationDate >= block.timestamp;
     }
 
     /**
@@ -438,10 +455,10 @@ contract MultichainACL is
         address delegator,
         address delegate,
         address contractAddress,
-        uint64 expiryDate,
-        uint64 delegationCounter
+        uint64 delegationCounter,
+        uint64 expirationDate
     ) internal pure virtual returns (bytes32) {
-        return keccak256(abi.encode(chainId, delegator, delegate, contractAddress, expiryDate, delegationCounter));
+        return keccak256(abi.encode(chainId, delegator, delegate, contractAddress, delegationCounter, expirationDate));
     }
 
     /**

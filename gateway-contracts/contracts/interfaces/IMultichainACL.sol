@@ -27,8 +27,19 @@ interface IMultichainACL {
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The address of the contract that is part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param oldExpirationDate The previous expiration date for the intended delegation.
+     * @param newExpirationDate The new expiration date for the intended delegation.
      */
-    event DelegateUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress);
+    event DelegateUserDecryption(
+        uint256 indexed chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpirationDate,
+        uint64 newExpirationDate
+    );
 
     /**
      * @notice Emitted when a user decryption delegation is revoked from a delegate and contract addresses.
@@ -36,8 +47,17 @@ interface IMultichainACL {
      * @param delegator The address of the account that revokes access to its handles.
      * @param delegate The address of the account that stops receiving the delegation.
      * @param contractAddress The address of the contract that was part of the user decryption context.
+     * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param oldExpirationDate The previous expiration date for the intended delegation.
      */
-    event RevokeUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress);
+    event RevokeUserDecryption(
+        uint256 indexed chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 oldExpirationDate
+    );
 
     /**
      * @notice Error indicating that the coprocessor has already allowed public decryption to the ciphertext.
@@ -60,8 +80,8 @@ interface IMultichainACL {
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The address of the contract that was part of the user decryption context.
-     * @param expiryDate The expiration date for the intended delegation.
      * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param expirationDate The expiration date for the intended delegation.
      * @param txSender The transaction sender address of the coprocessor that has already confirmed delegation or revocation.
      */
     error CoprocessorAlreadyDelegatedOrRevokedUserDecryption(
@@ -69,8 +89,8 @@ interface IMultichainACL {
         address delegator,
         address delegate,
         address contractAddress,
-        uint64 expiryDate,
         uint64 delegationCounter,
+        uint64 expirationDate,
         address txSender
     );
 
@@ -113,16 +133,16 @@ interface IMultichainACL {
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The address of the contract that is part of the user decryption context.
-     * @param expiryDate The expiration date for the intended delegation.
      * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param expirationDate The expiration date for the intended delegation.
      */
     function delegateUserDecryption(
         uint256 chainId,
         address delegator,
         address delegate,
         address contractAddress,
-        uint64 expiryDate,
-        uint64 delegationCounter
+        uint64 delegationCounter,
+        uint64 expirationDate
     ) external;
 
     /**
@@ -131,16 +151,16 @@ interface IMultichainACL {
      * @param delegator The address of the account that revokes access to its handles.
      * @param delegate The address of the account that stops receiving the delegation.
      * @param contractAddress The address of the contract that was part of the user decryption context.
-     * @param expiryDate The expiration date for the intended delegation.
      * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
+     * @param expirationDate The expiration date for the intended delegation.
      */
     function revokeUserDecryption(
         uint256 chainId,
         address delegator,
         address delegate,
         address contractAddress,
-        uint64 expiryDate,
-        uint64 delegationCounter
+        uint64 delegationCounter,
+        uint64 expirationDate
     ) external;
 
     /**

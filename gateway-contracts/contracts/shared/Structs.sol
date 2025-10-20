@@ -103,7 +103,7 @@ struct CtHandleContractPair {
  */
 struct UserDecryptionDelegation {
     /// @notice The expiration date for the intended delegation.
-    uint64 expiryDate;
+    uint64 expirationDate;
     /// @notice A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
     uint64 delegationCounter;
 }

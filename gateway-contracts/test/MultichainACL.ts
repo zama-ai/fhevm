@@ -36,7 +36,7 @@ describe("MultichainACL", function () {
   const delegator = createRandomAddress();
   const delegate = createRandomAddress();
   const contractAddress = createRandomAddress();
-  const expiryDate = Date.now();
+  const expirationDate = Date.now();
   const delegationCounter = 1;
 
   let gatewayConfig: GatewayConfig;
@@ -297,28 +297,37 @@ describe("MultichainACL", function () {
       // Trigger 2 delegate calls with different coprocessor transaction senders.
       await multichainACL
         .connect(coprocessorTxSenders[0])
-        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, delegationCounter);
+        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
       const txResponse = multichainACL
         .connect(coprocessorTxSenders[1])
-        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, delegationCounter);
+        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
 
       // Consensus should be reached at the second response.
+      const oldExpirationDate = 0;
       await expect(txResponse)
         .to.emit(multichainACL, "DelegateUserDecryption")
-        .withArgs(hostChainId, delegator, delegate, contractAddress);
+        .withArgs(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          delegationCounter,
+          oldExpirationDate,
+          expirationDate,
+        );
     });
 
     it("Should delegate user decryption with 2 valid calls and ignore the other valid one", async function () {
       // Trigger 3 delegate calls with different coprocessor transaction senders.
       const txResponse1 = await multichainACL
         .connect(coprocessorTxSenders[0])
-        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, delegationCounter);
+        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
       await multichainACL
         .connect(coprocessorTxSenders[1])
-        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, delegationCounter);
+        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
       const txResponse3 = await multichainACL
         .connect(coprocessorTxSenders[2])
-        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, delegationCounter);
+        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
 
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet.
@@ -330,11 +339,11 @@ describe("MultichainACL", function () {
     it("Should revert because coprocessor tries to delegate user decryption twice", async function () {
       await multichainACL
         .connect(coprocessorTxSenders[0])
-        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, delegationCounter);
+        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
       await expect(
         multichainACL
           .connect(coprocessorTxSenders[0])
-          .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, delegationCounter),
+          .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate),
       )
         .revertedWithCustomError(multichainACL, "CoprocessorAlreadyDelegatedOrRevokedUserDecryption")
         .withArgs(
@@ -342,8 +351,8 @@ describe("MultichainACL", function () {
           delegator,
           delegate,
           contractAddress,
-          expiryDate,
           delegationCounter,
+          expirationDate,
           coprocessorTxSenders[0].address,
         );
     });
@@ -352,7 +361,7 @@ describe("MultichainACL", function () {
       await expect(
         multichainACL
           .connect(fakeTxSender)
-          .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, delegationCounter),
+          .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate),
       )
         .revertedWithCustomError(multichainACL, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
@@ -362,7 +371,14 @@ describe("MultichainACL", function () {
       const tooLowDelegationCounter = 0;
       await multichainACL
         .connect(coprocessorTxSenders[0])
-        .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, tooLowDelegationCounter);
+        .delegateUserDecryption(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          tooLowDelegationCounter,
+          expirationDate,
+        );
       await expect(
         multichainACL
           .connect(coprocessorTxSenders[1])
@@ -371,8 +387,8 @@ describe("MultichainACL", function () {
             delegator,
             delegate,
             contractAddress,
-            expiryDate,
             tooLowDelegationCounter,
+            expirationDate,
           ),
       )
         .revertedWithCustomError(multichainACL, "UserDecryptionDelegationCounterTooLow")
@@ -389,7 +405,7 @@ describe("MultichainACL", function () {
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await multichainACL
           .connect(coprocessorTxSenders[i])
-          .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, delegationCounter);
+          .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
       }
 
       expect(await multichainACL.isUserDecryptionDelegated(hostChainId, delegator, delegate, contractAddress)).to.be
@@ -404,7 +420,7 @@ describe("MultichainACL", function () {
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await multichainACL
           .connect(coprocessorTxSenders[i])
-          .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, delegationCounter);
+          .delegateUserDecryption(hostChainId, delegator, delegate, contractAddress, delegationCounter, expirationDate);
       }
     });
 
@@ -412,28 +428,63 @@ describe("MultichainACL", function () {
       // Trigger 2 revoke calls with different coprocessor transaction senders.
       await multichainACL
         .connect(coprocessorTxSenders[0])
-        .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter);
+        .revokeUserDecryption(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          revokeDelegationCounter,
+          expirationDate,
+        );
       const txResponse = multichainACL
         .connect(coprocessorTxSenders[1])
-        .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter);
+        .revokeUserDecryption(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          revokeDelegationCounter,
+          expirationDate,
+        );
 
       // Consensus should be reached at the second response.
       await expect(txResponse)
         .to.emit(multichainACL, "RevokeUserDecryption")
-        .withArgs(hostChainId, delegator, delegate, contractAddress);
+        .withArgs(hostChainId, delegator, delegate, contractAddress, revokeDelegationCounter, expirationDate);
     });
 
     it("Should revoke user decryption delegation with 2 valid calls and ignore the other valid one", async function () {
       // Trigger 3 revoke calls with different coprocessor transaction senders.
       const txResponse1 = await multichainACL
         .connect(coprocessorTxSenders[0])
-        .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter);
+        .revokeUserDecryption(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          revokeDelegationCounter,
+          expirationDate,
+        );
       await multichainACL
         .connect(coprocessorTxSenders[1])
-        .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter);
+        .revokeUserDecryption(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          revokeDelegationCounter,
+          expirationDate,
+        );
       const txResponse3 = await multichainACL
         .connect(coprocessorTxSenders[2])
-        .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter);
+        .revokeUserDecryption(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          revokeDelegationCounter,
+          expirationDate,
+        );
 
       // Check that the 1st and 3rd responses do not emit an event:
       // - 1st response is ignored because consensus is not reached yet.
@@ -445,11 +496,25 @@ describe("MultichainACL", function () {
     it("Should revert because coprocessor tries to revoke user decryption delegation twice", async function () {
       await multichainACL
         .connect(coprocessorTxSenders[0])
-        .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter);
+        .revokeUserDecryption(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          revokeDelegationCounter,
+          expirationDate,
+        );
       await expect(
         multichainACL
           .connect(coprocessorTxSenders[0])
-          .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter),
+          .revokeUserDecryption(
+            hostChainId,
+            delegator,
+            delegate,
+            contractAddress,
+            revokeDelegationCounter,
+            expirationDate,
+          ),
       )
         .revertedWithCustomError(multichainACL, "CoprocessorAlreadyDelegatedOrRevokedUserDecryption")
         .withArgs(
@@ -457,8 +522,8 @@ describe("MultichainACL", function () {
           delegator,
           delegate,
           contractAddress,
-          expiryDate,
           revokeDelegationCounter,
+          expirationDate,
           coprocessorTxSenders[0].address,
         );
     });
@@ -467,7 +532,14 @@ describe("MultichainACL", function () {
       await expect(
         multichainACL
           .connect(fakeTxSender)
-          .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter),
+          .revokeUserDecryption(
+            hostChainId,
+            delegator,
+            delegate,
+            contractAddress,
+            revokeDelegationCounter,
+            expirationDate,
+          ),
       )
         .revertedWithCustomError(multichainACL, "NotCoprocessorTxSender")
         .withArgs(fakeTxSender.address);
@@ -483,19 +555,33 @@ describe("MultichainACL", function () {
             delegator,
             delegate,
             contractAddress,
-            expiryDate,
             revokeDelegationCounter + 1,
+            expirationDate,
           );
       }
 
       // Now try to revoke with a too low counter.
       await multichainACL
         .connect(coprocessorTxSenders[0])
-        .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter);
+        .revokeUserDecryption(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          revokeDelegationCounter,
+          expirationDate,
+        );
       await expect(
         multichainACL
           .connect(coprocessorTxSenders[1])
-          .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter),
+          .revokeUserDecryption(
+            hostChainId,
+            delegator,
+            delegate,
+            contractAddress,
+            revokeDelegationCounter,
+            expirationDate,
+          ),
       )
         .revertedWithCustomError(multichainACL, "UserDecryptionDelegationCounterTooLow")
         .withArgs(revokeDelegationCounter);
@@ -511,7 +597,14 @@ describe("MultichainACL", function () {
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
         await multichainACL
           .connect(coprocessorTxSenders[i])
-          .revokeUserDecryption(hostChainId, delegator, delegate, contractAddress, expiryDate, revokeDelegationCounter);
+          .revokeUserDecryption(
+            hostChainId,
+            delegator,
+            delegate,
+            contractAddress,
+            revokeDelegationCounter,
+            expirationDate,
+          );
       }
 
       expect(await multichainACL.isUserDecryptionDelegated(hostChainId, delegator, delegate, contractAddress)).to.be
