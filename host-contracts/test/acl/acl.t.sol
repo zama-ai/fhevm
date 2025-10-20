@@ -11,8 +11,19 @@ import {ACLEvents} from "../../contracts/ACLEvents.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
 import {fhevmExecutorAdd, pauserSetAdd, aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
+contract MockACL is ACL {
+    function getUserDecryptionDelegation(
+        address delegator,
+        address delegate,
+        address contractAddress
+    ) public view returns (UserDecryptionDelegation memory) {
+        ACLStorage storage $ = _getACLStorage();
+        return $.userDecryptionDelegations[delegator][delegate][contractAddress];
+    }
+}
+
 contract ACLTest is Test {
-    ACL internal acl;
+    MockACL internal acl;
     PauserSet internal pauserSet;
 
     address internal constant owner = address(456);
@@ -23,7 +34,7 @@ contract ACLTest is Test {
     address internal fhevmExecutor;
 
     /**
-     * @dev Grants permissions for a hnadle for an account for testing purposes.
+     * @dev Grants permissions for a handle for an account for testing purposes.
      *
      * @param handle The handle identifier.
      * @param account The account to grant permissions to.
@@ -37,9 +48,9 @@ contract ACLTest is Test {
     }
 
     function _upgradeProxy() internal {
-        implementation = address(new ACL());
+        implementation = address(new MockACL());
         UnsafeUpgrades.upgradeProxy(proxy, implementation, abi.encodeCall(acl.initializeFromEmptyProxy, ()), owner);
-        acl = ACL(proxy);
+        acl = MockACL(proxy);
         fhevmExecutor = acl.getFHEVMExecutorAddress();
     }
 
@@ -176,7 +187,7 @@ contract ACLTest is Test {
      * @dev Tests that the sender can delegate to another account only if both contract and sender addresses are allowed
      * to use the handle.
      */
-    function test_CanDelegateAccountButItIsAllowedOnBehalfOnlyIfBothContractAndSenderAreAllowed(
+    function test_CanDelegateForUserDecryptionAndIsHandleDelegatedForUserDecryptionOnlyIfBothContractAndSenderAreAllowed(
         bytes32 handle,
         address sender,
         address delegate,
@@ -187,10 +198,10 @@ contract ACLTest is Test {
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
 
-        ACL.Delegation memory delegation;
-        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
-        uint64 oldExpiryDate = delegation.expiryDate;
-        uint64 newExpiryDate = expiryDate;
+        ACL.UserDecryptionDelegation memory userDecryptionDelegation;
+        uint64 expirationDate = uint64(block.timestamp) + 7 hours;
+        uint64 oldExpirationDate = userDecryptionDelegation.expirationDate;
+        uint64 newExpirationDate = expirationDate;
 
         vm.prank(sender);
         vm.expectEmit(address(acl));
@@ -198,38 +209,49 @@ contract ACLTest is Test {
             sender,
             delegate,
             contractAddress,
-            ++delegation.delegationCounter,
-            oldExpiryDate,
-            newExpiryDate
+            ++userDecryptionDelegation.delegationCounter,
+            oldExpirationDate,
+            newExpirationDate
         );
-        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+
+        /// @dev Check that even that the delegation was made, neither the delegator nor the contract are allowed to use the handle.
         vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
 
-        /// @dev The sender and the delegate contract must be allowed to use the handle before it delegates.
+        /// @dev The delegator and the contract must be allowed to use the handle before it delegates.
         _allowHandle(handle, sender);
         vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
         _allowHandle(handle, contractAddress);
         vm.assertTrue(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+
+        /// @dev Check that the delegation is stored correctly.
+        ACL.UserDecryptionDelegation memory storedUserDecryptionDelegation = acl.getUserDecryptionDelegation(
+            sender,
+            delegate,
+            contractAddress
+        );
+        assertEq(storedUserDecryptionDelegation.expirationDate, expirationDate);
+        assertEq(storedUserDecryptionDelegation.delegationCounter, userDecryptionDelegation.delegationCounter);
     }
 
     /**
      * @dev Tests that the sender cannot delegate in the same block twice.
      */
-    function test_CannotDelegateAccountInSameBlockTwice(
+    function test_CannotDelegateForUserDecryptionInSameBlockTwice(
         bytes32 handle,
         address sender,
         address delegate,
         address contractAddress
     ) public {
         /// @dev We call the other test to avoid repeating the same code.
-        test_CanDelegateAccountButItIsAllowedOnBehalfOnlyIfBothContractAndSenderAreAllowed(
+        test_CanDelegateForUserDecryptionAndIsHandleDelegatedForUserDecryptionOnlyIfBothContractAndSenderAreAllowed(
             handle,
             sender,
             delegate,
             contractAddress
         );
 
-        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+        uint64 expirationDate = uint64(block.timestamp) + 7 hours;
 
         vm.prank(sender);
         vm.expectRevert(
@@ -241,92 +263,30 @@ contract ACLTest is Test {
                 block.number
             )
         );
-        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
     }
 
     /**
-     * @dev Tests that the sender cannot delegate account if delegate and contract address are the same.
+     * @dev Tests that the sender cannot delegate for user decryption if delegate and contract address are the same.
      */
-    function test_CannotDelegateAccountForSameDelegateAndContractAddress(address sender, address delegate) public {
+    function test_CannotDelegateForUserDecryptionForSameDelegateAndContractAddress(
+        address sender,
+        address delegate
+    ) public {
         _upgradeProxy();
         vm.assume(sender != delegate);
 
-        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+        uint64 expirationDate = uint64(block.timestamp) + 7 hours;
 
         vm.prank(sender);
         vm.expectRevert(abi.encodeWithSelector(ACL.DelegateCannotBeContractAddress.selector, delegate));
-        acl.delegateForUserDecryption(delegate, delegate, expiryDate);
+        acl.delegateForUserDecryption(delegate, delegate, expirationDate);
     }
 
     /**
-     * @dev Tests that the sender cannot delegate with expiry date before one hour.
+     * @dev Tests that the user decryption delegation cannot be created with the same expiration date.
      */
-    function test_CannotDelegateAccountWithExpiryDateBeforeOneHour(
-        address sender,
-        address delegate,
-        address contractAddress
-    ) public {
-        _upgradeProxy();
-        vm.assume(sender != contractAddress);
-        vm.assume(sender != delegate);
-        vm.assume(delegate != contractAddress);
-
-        uint64 expiryDate = uint64(block.timestamp);
-
-        vm.prank(sender);
-        vm.expectRevert(ACL.ExpiryDateBeforeOneHour.selector);
-        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
-    }
-
-    /**
-     * @dev Tests that the sender cannot delegate with expiry date after one year.
-     */
-    function test_CannotDelegateAccountWithExpiryDateAfterOneYear(
-        address sender,
-        address delegate,
-        address contractAddress
-    ) public {
-        _upgradeProxy();
-        vm.assume(sender != contractAddress);
-        vm.assume(sender != delegate);
-        vm.assume(delegate != contractAddress);
-
-        uint64 expiryDate = uint64(block.timestamp) + 366 days;
-
-        vm.prank(sender);
-        vm.expectRevert(ACL.ExpiryDateAfterOneYear.selector);
-        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
-    }
-
-    /**
-     * @dev Tests that the sender cannot delegate to itself as the contract address.
-     */
-    function test_CannotDelegateIfSenderIsContractAddress(address sender, address delegate) public {
-        _upgradeProxy();
-        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
-
-        vm.prank(sender);
-        vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeContractAddress.selector, sender));
-        acl.delegateForUserDecryption(delegate, sender, expiryDate);
-    }
-
-    /**
-     * @dev Tests that the sender cannot delegate to itself as delegate.
-     */
-    function test_CannotDelegateIfSenderIsDelegate(address sender, address contractAddress) public {
-        _upgradeProxy();
-        vm.assume(sender != contractAddress);
-        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
-
-        vm.prank(sender);
-        vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeDelegate.selector, sender));
-        acl.delegateForUserDecryption(sender, contractAddress, expiryDate);
-    }
-
-    /**
-     * @dev Tests that the sender cannot delegate if account is not allowed to use the handle.
-     */
-    function test_CannotDelegateAccountIfAccountNotAllowed(
+    function test_CannotDelegateUserDecryptionWithSameExpirationDate(
         bytes32 handle,
         address sender,
         address delegate,
@@ -336,50 +296,118 @@ contract ACLTest is Test {
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
-        /// @dev Only the delegate contract must be allowed to use the handle before it delegates.
-        _allowHandle(handle, contractAddress);
 
-        ACL.Delegation memory delegation;
-        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
-        uint64 oldExpiryDate = delegation.expiryDate;
-        uint64 newExpiryDate = expiryDate;
-
+        /// @dev Delegate user decryption for the first time.
+        uint64 expirationDate = uint64(block.timestamp) + 7 hours;
         vm.prank(sender);
-        vm.expectEmit(address(acl));
-        emit ACLEvents.DelegatedForUserDecryption(
-            sender,
-            delegate,
-            contractAddress,
-            ++delegation.delegationCounter,
-            oldExpiryDate,
-            newExpiryDate
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+
+        /// @dev Increase block number to avoid "AlreadyDelegatedOrRevokedInSameBlock" error.
+        vm.roll(block.number + 1);
+
+        /// @dev Delegate user decryption for the second time with the same expiration date.
+        vm.prank(sender);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                ACL.ExpirationDateAlreadySetToSameValue.selector,
+                sender,
+                delegate,
+                contractAddress,
+                expirationDate
+            )
         );
-
-        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
-
-        vm.assertFalse(acl.isHandleDelegatedForUserDecryption(sender, delegate, contractAddress, handle));
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
     }
 
     /**
-     * @dev Tests that the sender can revoke delegation if the sender has already delegated.
+     * @dev Tests that the sender cannot delegate for user decryption with expiration date before one hour.
      */
-    function test_CanRevokeDelegation(address sender, address delegate, address contractAddress) public {
+    function test_CannotDelegateForUserDecryptionWithExpirationDateBeforeOneHour(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
         _upgradeProxy();
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
 
-        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
-        uint64 oldExpiryDate = expiryDate;
+        uint64 expirationDate = uint64(block.timestamp);
+
+        vm.prank(sender);
+        vm.expectRevert(ACL.ExpirationDateBeforeOneHour.selector);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate for user decryption with expiration date after one year.
+     */
+    function test_CannotDelegateForUserDecryptionWithExpirationDateAfterOneYear(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+
+        uint64 expirationDate = uint64(block.timestamp) + 366 days;
+
+        vm.prank(sender);
+        vm.expectRevert(ACL.ExpirationDateAfterOneYear.selector);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate to itself as the contract address.
+     */
+    function test_CannotDelegateIfSenderIsContractAddress(address sender, address delegate) public {
+        _upgradeProxy();
+        uint64 expirationDate = uint64(block.timestamp) + 7 hours;
+
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeContractAddress.selector, sender));
+        acl.delegateForUserDecryption(delegate, sender, expirationDate);
+    }
+
+    /**
+     * @dev Tests that the sender cannot delegate to itself as delegate.
+     */
+    function test_CannotDelegateIfSenderIsDelegate(address sender, address contractAddress) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        uint64 expirationDate = uint64(block.timestamp) + 7 hours;
+
+        vm.prank(sender);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderCannotBeDelegate.selector, sender));
+        acl.delegateForUserDecryption(sender, contractAddress, expirationDate);
+    }
+
+    /**
+     * @dev Tests that the sender can revoke delegation for user decryption if the sender has already delegated.
+     */
+    function test_CanRevokeDelegationForUserDecryption(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+
+        uint64 expirationDate = uint64(block.timestamp) + 7 hours;
+        uint64 oldExpirationDate = expirationDate;
 
         /// @dev Delegate the account first.
         vm.prank(sender);
-        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
 
-        // After delegation above, the counter should be 2.
-        uint64 delegationCounter = 2;
+        /// @dev After delegation above, the counter should be 2.
+        uint64 revokeDelegationCounter = 2;
 
-        // Increase block number to avoid "AlreadyDelegatedOrRevokedInSameBlock" error.
+        /// @dev Increase block number to avoid "AlreadyDelegatedOrRevokedInSameBlock" error.
         vm.roll(block.number + 1);
 
         vm.prank(sender);
@@ -388,10 +416,84 @@ contract ACLTest is Test {
             sender,
             delegate,
             contractAddress,
-            delegationCounter,
-            oldExpiryDate
+            revokeDelegationCounter,
+            oldExpirationDate
         );
         acl.revokeDelegationForUserDecryption(delegate, contractAddress);
+
+        /// @dev Check that the delegation is stored correctly after revocation.
+        ACL.UserDecryptionDelegation memory storedUserDecryptionDelegation = acl.getUserDecryptionDelegation(
+            sender,
+            delegate,
+            contractAddress
+        );
+        assertEq(storedUserDecryptionDelegation.expirationDate, 0);
+        assertEq(storedUserDecryptionDelegation.delegationCounter, revokeDelegationCounter);
+    }
+
+    /**
+     * @dev Tests that the delegation and revocation counter is stored in a sequential order.
+     */
+    function test_UserDecryptionDelegationAndRevocationCounterIsSequential(
+        bytes32 handle,
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
+        _upgradeProxy();
+        vm.assume(sender != contractAddress);
+        vm.assume(sender != delegate);
+        vm.assume(delegate != contractAddress);
+        uint64 userDecryptionDelegationCounter = 0;
+
+        /// @dev Delegate user decryption for the first time.
+        uint64 expirationDate = uint64(block.timestamp) + 3 hours;
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+        ACL.UserDecryptionDelegation memory userDecryptionDelegation = acl.getUserDecryptionDelegation(
+            sender,
+            delegate,
+            contractAddress
+        );
+        assertEq(userDecryptionDelegation.delegationCounter, ++userDecryptionDelegationCounter);
+
+        /// @dev Increase block number to avoid "AlreadyDelegatedOrRevokedInSameBlock" error.
+        vm.roll(block.number + 1);
+
+        /// @dev Delegate user decryption for the second time.
+        expirationDate = uint64(block.timestamp) + 5 hours;
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+        userDecryptionDelegation = acl.getUserDecryptionDelegation(sender, delegate, contractAddress);
+        assertEq(userDecryptionDelegation.delegationCounter, ++userDecryptionDelegationCounter);
+
+        /// @dev Increase block number to avoid "AlreadyDelegatedOrRevokedInSameBlock" error.
+        vm.roll(block.number + 1);
+
+        /// @dev Revoke user decryption delegation for the first time.
+        vm.prank(sender);
+        acl.revokeDelegationForUserDecryption(delegate, contractAddress);
+        userDecryptionDelegation = acl.getUserDecryptionDelegation(sender, delegate, contractAddress);
+        assertEq(userDecryptionDelegation.delegationCounter, ++userDecryptionDelegationCounter);
+
+        /// @dev Increase block number to avoid "AlreadyDelegatedOrRevokedInSameBlock" error.
+        vm.roll(block.number + 1);
+
+        /// @dev Delegate user decryption for the second time.
+        expirationDate = uint64(block.timestamp) + 7 hours;
+        vm.prank(sender);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
+        userDecryptionDelegation = acl.getUserDecryptionDelegation(sender, delegate, contractAddress);
+        assertEq(userDecryptionDelegation.delegationCounter, ++userDecryptionDelegationCounter);
+
+        /// @dev Increase block number to avoid "AlreadyDelegatedOrRevokedInSameBlock" error.
+        vm.roll(block.number + 1);
+
+        /// @dev Revoke user decryption delegation for the second time.
+        vm.prank(sender);
+        acl.revokeDelegationForUserDecryption(delegate, contractAddress);
+        userDecryptionDelegation = acl.getUserDecryptionDelegation(sender, delegate, contractAddress);
+        assertEq(userDecryptionDelegation.delegationCounter, ++userDecryptionDelegationCounter);
     }
 
     /**
@@ -565,40 +667,48 @@ contract ACLTest is Test {
     }
 
     /**
-     * @dev Tests that delegateAccount() cannot be called if the contract is paused.
+     * @dev Tests that user decryption delegation cannot be called if the contract is paused.
      */
-    function test_CannotDelegateAccountIfPaused(address sender, address delegate, address contractAddress) public {
+    function test_CannotDelegateForUserDecryptionIfPaused(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
         _upgradeProxy();
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
 
-        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+        uint64 expirationDate = uint64(block.timestamp) + 7 hours;
 
         vm.prank(sender);
-        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
 
         vm.prank(pauser);
         acl.pause();
 
         vm.prank(sender);
         vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
-        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
     }
 
     /**
-     * @dev Tests that revokeDelegation() cannot be called if the contract is paused.
+     * @dev Tests that revoke delegation for user decryption cannot be called if the contract is paused.
      */
-    function test_CannotRevokeDelegationIfPaused(address sender, address delegate, address contractAddress) public {
+    function test_CannotRevokeDelegationForUserDecryptionIfPaused(
+        address sender,
+        address delegate,
+        address contractAddress
+    ) public {
         _upgradeProxy();
         vm.assume(sender != contractAddress);
         vm.assume(sender != delegate);
         vm.assume(delegate != contractAddress);
 
-        uint64 expiryDate = uint64(block.timestamp) + 7 hours;
+        uint64 expirationDate = uint64(block.timestamp) + 7 hours;
 
         vm.prank(sender);
-        acl.delegateForUserDecryption(delegate, contractAddress, expiryDate);
+        acl.delegateForUserDecryption(delegate, contractAddress, expirationDate);
 
         vm.prank(pauser);
         acl.pause();
