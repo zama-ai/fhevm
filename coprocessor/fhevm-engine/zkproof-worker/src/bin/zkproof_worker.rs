@@ -1,6 +1,6 @@
 use clap::{command, Parser};
-use fhevm_engine_common::healthz_server::HttpServer;
 use fhevm_engine_common::telemetry;
+use fhevm_engine_common::{healthz_server::HttpServer, metrics_server};
 use humantime::parse_duration;
 use std::{sync::Arc, time::Duration};
 use tokio::{join, task};
@@ -59,6 +59,10 @@ pub struct Args {
     /// HTTP server port for health checks
     #[arg(long, default_value_t = 8080)]
     health_check_port: u16,
+
+    /// Prometheus metrics server address
+    #[arg(long, default_value = "0.0.0.0:9100")]
+    pub metrics_addr: Option<String>,
 }
 
 pub fn parse_args() -> Args {
@@ -122,6 +126,9 @@ async fn main() {
         }
         anyhow::Ok(())
     });
+
+    // Start metrics server
+    metrics_server::spawn(args.metrics_addr.clone(), cancel_token.child_token());
 
     let service_task = async {
         info!("Starting worker...");

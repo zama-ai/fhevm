@@ -17,7 +17,8 @@ use std::{
 use aws_config::{retry::RetryConfig, timeout::TimeoutConfig, BehaviorVersion};
 use aws_sdk_s3::{config::Builder, Client};
 use fhevm_engine_common::{
-    healthz_server::HttpServer,
+    healthz_server::{self},
+    metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
     telemetry::{self, OtelTracer},
     types::FhevmError,
@@ -111,6 +112,7 @@ pub struct Config {
     pub s3: S3Config,
     pub log_level: Level,
     pub health_checks: HealthCheckConfig,
+    pub metrics_addr: Option<String>,
     pub enable_compression: bool,
     pub schedule_policy: SchedulePolicy,
     pub pg_auto_explain_with_min_duration: Option<Duration>,
@@ -393,13 +395,17 @@ pub async fn run_computation_loop(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let port = conf.health_checks.port;
 
+    // Start metrics server
+    metrics_server::spawn(conf.metrics_addr.clone(), token.child_token());
+
     let service = Arc::new(
         SwitchNSquashService::create(pool_mngr, conf, tx, token.child_token(), client).await?,
     );
 
-    let http_server = HttpServer::new(service.clone(), port, token.child_token());
-    let _http_handle = task::spawn(async move {
-        if let Err(err) = http_server.start().await {
+    // Start health check server
+    let healthz = healthz_server::HttpServer::new(service.clone(), port, token.child_token());
+    task::spawn(async move {
+        if let Err(err) = healthz.start().await {
             error!(
                 task = "health_check",
                 error = %err,
@@ -409,7 +415,9 @@ pub async fn run_computation_loop(
         anyhow::Ok(())
     });
 
+    // Run the main service loop
     service.run(pool_mngr).await;
+    token.cancel();
 
     info!("Worker stopped");
     Ok(())

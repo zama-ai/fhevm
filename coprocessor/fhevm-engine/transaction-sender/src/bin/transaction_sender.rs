@@ -18,7 +18,7 @@ use transaction_sender::{
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::{metrics_server, telemetry};
 use humantime::parse_duration;
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
@@ -111,6 +111,10 @@ struct Conf {
     /// HTTP server port
     #[arg(long, alias = "health-check-port", default_value_t = 8080)]
     http_server_port: u16,
+
+    /// Prometheus metrics server address
+    #[arg(long, default_value = "0.0.0.0:9100")]
+    pub metrics_addr: Option<String>,
 
     #[arg(long, default_value = "4s", value_parser = parse_duration)]
     health_check_timeout: Duration,
@@ -302,6 +306,9 @@ async fn main() -> anyhow::Result<()> {
     // Run both services concurrently. Here we assume that if transaction sender stops without an error, HTTP server should also stop.
     let transaction_sender_fut = tokio::spawn(async move { transaction_sender.run().await });
     let http_server_fut = tokio::spawn(async move { http_server.start().await });
+
+    // Start metrics server
+    metrics_server::spawn(conf.metrics_addr.clone(), cancel_token.child_token());
 
     let transaction_sender_res = transaction_sender_fut.await;
     let http_server_res = http_server_fut.await;
