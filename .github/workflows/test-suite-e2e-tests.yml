@@ -152,6 +152,14 @@ jobs:
         run: |
           ./fhevm-cli deploy
 
+      - name: Public Decryption test
+        working-directory: test-suite/fhevm
+        run: |
+          timeout 5m ./fhevm-cli test delegate-public-decryption
+          ./fhevm-cli logs coprocessor-host-listener
+          ./fhevm-cli logs coprocessor-gw-listener
+          exit 1
+
       - name: Input proof test (uint64)
         working-directory: test-suite/fhevm
         run: |

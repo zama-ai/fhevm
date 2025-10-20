@@ -24,8 +24,8 @@ export CONNECTOR_TX_SENDER_VERSION=${CONNECTOR_TX_SENDER_VERSION:-"v0.9.2"}
 
 # Coprocessor services.
 export DB_MIGRATION_VERSION=${DB_MIGRATION_VERSION:-"v0.9.2"}
-export GW_LISTENER_VERSION=${GW_LISTENER_VERSION:-"v0.9.2"}
-export HOST_LISTENER_VERSION=${HOST_LISTENER_VERSION:-"v0.9.2"}
+export GW_LISTENER_VERSION=${GW_LISTENER_VERSION:-"2b8bf11"}
+export HOST_LISTENER_VERSION=${HOST_LISTENER_VERSION:-"2b8bf11"}
 export TX_SENDER_VERSION=${TX_SENDER_VERSION:-"v0.9.2"}
 export TFHE_WORKER_VERSION=${TFHE_WORKER_VERSION:-"v0.9.2"}
 export SNS_WORKER_VERSION=${SNS_WORKER_VERSION:-"v0.9.2"}
@@ -175,6 +175,10 @@ case $COMMAND in
         user-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
           docker_args+=("-g" "test user decrypt")
+          ;;
+        delegate-user-decryption)
+          log_message="${LIGHT_BLUE}${BOLD}[TEST] USER DECRYPTION${RESET}"
+          docker_args+=("-g" "test delegate user decrypt")
           ;;
         public-decryption)
           log_message="${LIGHT_BLUE}${BOLD}[TEST] PUBLIC DECRYPTION${RESET}"
