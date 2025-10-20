@@ -125,6 +125,57 @@ describe('OperatorRewarder', function () {
 
       await expect(this.mock.claimRewards(this.staker1)).to.not.emit(this.token, 'Transfer');
     });
+
+    it('should calculate properly after full removal then restake', async function () {
+      await this.operatorStaking.connect(this.staker1).deposit(ethers.parseEther('1'), this.staker1);
+      await this.operatorStaking.connect(this.staker2).deposit(ethers.parseEther('1'), this.staker2);
+
+      await timeIncreaseNoMine(10);
+      await this.protocolStaking.connect(this.admin).setRewardRate(0);
+
+      await this.mock.claimRewards(this.staker1);
+      await this.mock.claimRewards(this.staker2);
+
+      await this.operatorStaking
+        .connect(this.staker1)
+        .requestRedeem(ethers.parseEther('1'), this.staker1, this.staker1);
+      await this.operatorStaking
+        .connect(this.staker2)
+        .requestRedeem(ethers.parseEther('1'), this.staker2, this.staker2);
+      await timeIncreaseNoMine(60);
+
+      await this.operatorStaking.connect(this.staker1).redeem(ethers.parseEther('1'), this.staker1, this.staker1);
+      await this.operatorStaking.connect(this.staker2).redeem(ethers.parseEther('1'), this.staker2, this.staker2);
+
+      await this.operatorStaking.connect(this.staker1).deposit(ethers.parseEther('1'), this.staker1);
+      await expect(this.mock.earned(this.staker1)).to.eventually.eq(0);
+
+      await this.protocolStaking.connect(this.admin).setRewardRate(ethers.parseEther('0.5'));
+
+      await time.increase(10);
+      await expect(this.mock.earned(this.staker1)).to.eventually.eq(ethers.parseEther('5'));
+
+      await expect(this.mock.claimRewards(this.staker1))
+        .to.emit(this.token, 'Transfer')
+        .withArgs(this.mock, this.staker1, ethers.parseEther('5.5'));
+      await expect(this.mock.earned(this.staker1)).to.eventually.eq(0);
+    });
+
+    it("should properly count rewards after pending withdrawal that's not yet redeemed", async function () {
+      await this.operatorStaking.connect(this.staker1).deposit(ethers.parseEther('3'), this.staker1);
+      await this.operatorStaking.connect(this.staker2).deposit(ethers.parseEther('1'), this.staker2);
+
+      await timeIncreaseNoMine(10);
+
+      await this.operatorStaking
+        .connect(this.staker1)
+        .requestRedeem(ethers.parseEther('2'), this.staker1, this.staker1);
+
+      await time.increase(10);
+
+      expect(await this.mock.earned(this.staker1)).to.be.closeTo(ethers.parseEther('6.75'), 1n);
+      await expect(this.mock.earned(this.staker2)).to.eventually.eq(ethers.parseEther('3.75'));
+    });
   });
 
   describe('View and claim owner reward', async function () {

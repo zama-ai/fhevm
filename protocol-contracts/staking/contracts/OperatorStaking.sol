@@ -218,14 +218,6 @@ contract OperatorStaking is ERC20, Ownable {
     }
 
     /**
-     * @notice Returns the total supply including shares in redemption.
-     * @return The total supply.
-     */
-    function totalSupply() public view virtual override returns (uint256) {
-        return super.totalSupply() + totalSharesInRedemption();
-    }
-
-    /**
      * @notice Returns the total assets managed by the contract.
      * @return The total assets.
      */
@@ -340,11 +332,23 @@ contract OperatorStaking is ERC20, Ownable {
     }
 
     function _convertToShares(uint256 assets, Math.Rounding rounding) internal view virtual returns (uint256) {
-        return assets.mulDiv(totalSupply() + 10 ** _decimalsOffset(), totalAssets() + 1, rounding);
+        // Shares in redemption have not yet received assets, so we need to account for them in the conversion.
+        return
+            assets.mulDiv(
+                (totalSupply() + totalSharesInRedemption()) + 10 ** _decimalsOffset(),
+                totalAssets() + 1,
+                rounding
+            );
     }
 
     function _convertToAssets(uint256 shares, Math.Rounding rounding) internal view virtual returns (uint256) {
-        return shares.mulDiv(totalAssets() + 1, totalSupply() + 10 ** _decimalsOffset(), rounding);
+        // Shares in redemption have not yet received assets, so we need to account for them in the conversion.
+        return
+            shares.mulDiv(
+                totalAssets() + 1,
+                (totalSupply() + totalSharesInRedemption()) + 10 ** _decimalsOffset(),
+                rounding
+            );
     }
 
     function _decimalsOffset() internal view virtual returns (uint8) {
