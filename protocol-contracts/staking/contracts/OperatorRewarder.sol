@@ -185,7 +185,7 @@ contract OperatorRewarder is Ownable {
         int256 allocation = SafeCast.toInt256(
             stakedBalance > 0 ? _allocation(stakedBalance, operatorStaking().totalSupply()) : 0
         );
-        return SafeCast.toUint256(SignedMath.max(0, allocation) - _rewardsPaid[account]);
+        return SafeCast.toUint256(SignedMath.max(0, allocation - _rewardsPaid[account]));
     }
 
     /**
