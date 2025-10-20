@@ -1,5 +1,5 @@
 use clap::{command, Parser};
-use fhevm_engine_common::telemetry;
+use fhevm_engine_common::telemetry::{self, MetricsConfig, ZKPROOF_TXN_LATENCY_CONFIG};
 use fhevm_engine_common::{healthz_server::HttpServer, metrics_server};
 use humantime::parse_duration;
 use std::{sync::Arc, time::Duration};
@@ -63,15 +63,23 @@ pub struct Args {
     /// Prometheus metrics server address
     #[arg(long, default_value = "0.0.0.0:9100")]
     pub metrics_addr: Option<String>,
+
+    /// Prometheus metrics: "coprocessor_zkverify_latency_seconds",
+    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_zkproof_latency: MetricsConfig,
 }
 
 pub fn parse_args() -> Args {
-    Args::parse()
+    let args = Args::parse();
+    // Set global configs from args
+    let _ = ZKPROOF_TXN_LATENCY_CONFIG.set(args.metric_zkproof_latency);
+    args
 }
 
 #[tokio::main]
 async fn main() {
     let args = parse_args();
+
     tracing_subscriber::fmt()
         .json()
         .with_current_span(true)

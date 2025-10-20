@@ -1,4 +1,5 @@
 use clap::Parser;
+use fhevm_engine_common::telemetry::MetricsConfig;
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -90,8 +91,22 @@ pub struct Args {
 
     #[arg(long, default_value_t = 8080)]
     pub health_check_port: u16,
+
+    /// Prometheus metrics: coprocessor_rerand_latency_seconds
+    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_rerand_latency: MetricsConfig,
+
+    /// Prometheus metrics: coprocessor_rerand_latency_seconds
+    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_fhe_latency: MetricsConfig,
 }
 
 pub fn parse_args() -> Args {
-    Args::parse()
+    let args = Args::parse();
+    // Set global configs from args
+    let _ = scheduler::RERAND_LATENCY_HISTOGRAM_CONF.set(args.metric_rerand_latency);
+
+    // Set global configs from args
+    let _ = scheduler::FHE_LATENCY_HISTOGRAM_CONF.set(args.metric_fhe_latency);
+    args
 }

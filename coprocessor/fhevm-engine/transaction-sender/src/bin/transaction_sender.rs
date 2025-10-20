@@ -18,7 +18,10 @@ use transaction_sender::{
     FillersWithoutNonceManagement, NonceManagedProvider, TransactionSender,
 };
 
-use fhevm_engine_common::{metrics_server, telemetry};
+use fhevm_engine_common::{
+    metrics_server,
+    telemetry::{self, MetricsConfig},
+};
 use humantime::parse_duration;
 
 #[derive(Parser, Debug, Clone, ValueEnum)]
@@ -134,6 +137,14 @@ struct Conf {
     /// service name in OTLP traces
     #[arg(long, default_value = "txn-sender")]
     pub service_name: String,
+
+    /// Prometheus metrics: coprocessor_l1_txn_latency_seconds
+    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_l1_txn_latency: MetricsConfig,
+
+    /// Prometheus metrics: coprocessor_l1_txn_latency_seconds
+    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    pub zkproof_txn_latency: MetricsConfig,
 }
 
 fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()> {
@@ -150,11 +161,19 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
     Ok(())
 }
 
+fn parse_args() -> Conf {
+    let args = Conf::parse();
+    // Set global configs from args
+    let _ = telemetry::L1_TXN_LATENCY_CONFIG.set(args.metric_l1_txn_latency);
+    let _ = telemetry::ZKPROOF_TXN_LATENCY_CONFIG.set(args.zkproof_txn_latency);
+    args
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
-    let conf = Conf::parse();
+    let conf = parse_args();
 
     tracing_subscriber::fmt()
         .json()

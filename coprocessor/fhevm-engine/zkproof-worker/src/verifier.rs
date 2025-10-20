@@ -1,6 +1,6 @@
 use alloy_primitives::Address;
 use fhevm_engine_common::pg_pool::{PostgresPoolManager, ServiceError};
-use fhevm_engine_common::telemetry::{self, gen_buckets};
+use fhevm_engine_common::telemetry::{self};
 use fhevm_engine_common::tenant_keys::TfheTenantKeys;
 use fhevm_engine_common::tenant_keys::{self, FetchTenantKeyResult};
 use fhevm_engine_common::tfhe_ops::{current_ciphertext_version, extract_ct_list};
@@ -9,7 +9,6 @@ use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::utils::safe_deserialize_conformant;
 use hex::encode;
 use lru::LruCache;
-use prometheus::{register_histogram, Histogram};
 use sha3::Digest;
 use sha3::Keccak256;
 use sqlx::{postgres::PgListener, PgPool, Row};
@@ -20,10 +19,10 @@ use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformancePara
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 
-use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX};
+use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX, ZKVERIFY_LATENCY_HISTOGRAM};
 use anyhow::Result;
 
-use std::sync::{Arc, LazyLock};
+use std::sync::Arc;
 use std::time::SystemTime;
 use tfhe::set_server_key;
 
@@ -38,17 +37,6 @@ const EVENT_CIPHERTEXT_COMPUTED: &str = "event_ciphertext_computed";
 
 const RAW_CT_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_rct";
 const HANDLE_HASH_DOMAIN_SEPARATOR: [u8; 8] = *b"ZK-w_hdl";
-
-pub(crate) static ZKPROOF_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    let buckets = gen_buckets(0.01, 10.0);
-
-    register_histogram!(
-        "coprocessor_zkverify_latency_seconds",
-        "ZKProof verification latencies in seconds",
-        buckets
-    )
-    .unwrap()
-});
 
 pub(crate) struct Ciphertext {
     handle: Vec<u8>,
@@ -345,7 +333,7 @@ async fn execute_verify_proof_routine(
         if res.is_ok() {
             let elapsed = started_at.elapsed().unwrap_or_default().as_secs_f64();
             if elapsed > 0.0 {
-                ZKPROOF_LATENCY_HISTOGRAM.observe(elapsed);
+                ZKVERIFY_LATENCY_HISTOGRAM.observe(elapsed);
             }
         }
 

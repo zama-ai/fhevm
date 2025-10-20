@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use clap::{command, Parser};
+use fhevm_engine_common::telemetry::MetricsConfig;
 use humantime::parse_duration;
-use sns_worker::SchedulePolicy;
+use sns_worker::{SchedulePolicy, SNS_LATENCY_HISTOGRAM_CONF};
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -122,8 +123,15 @@ pub struct Args {
     /// Schedule policy for processing tasks
     #[arg(long, default_value = "rayon_parallel", value_parser = clap::value_parser!(SchedulePolicy))]
     pub schedule_policy: SchedulePolicy,
+
+    /// Prometheus metrics: coprocessor_sns_latency_seconds
+    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    pub metric_sns_latency: MetricsConfig,
 }
 
 pub fn parse_args() -> Args {
-    Args::parse()
+    let args = Args::parse();
+    // Set global configs from args
+    let _ = SNS_LATENCY_HISTOGRAM_CONF.set(args.metric_sns_latency);
+    args
 }

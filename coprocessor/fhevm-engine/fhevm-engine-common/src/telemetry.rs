@@ -8,18 +8,35 @@ use opentelemetry::{
 use opentelemetry_sdk::{trace::SdkTracerProvider, Resource};
 use prometheus::{register_histogram, Histogram};
 use sqlx::PgConnection;
+use std::fmt;
 use std::{
     num::NonZeroUsize,
-    sync::{Arc, LazyLock},
+    str::FromStr,
+    sync::{Arc, LazyLock, OnceLock},
     time::SystemTime,
 };
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
-pub const GLOBAL_LATENCY_METRIC_NAME_L1: &str = "coprocessor_l1_txn_latency_seconds";
-pub const GLOBAL_LATENCY_METRIC_NAME_ZKPROOF: &str = "coprocessor_zkproof_txn_latency_seconds";
-
 pub const TXN_ID_ATTR_KEY: &str = "txn_id";
+
+pub static L1_TXN_LATENCY_CONFIG: OnceLock<MetricsConfig> = OnceLock::new();
+pub(crate) static L1_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    register_histogram(
+        L1_TXN_LATENCY_CONFIG.get(),
+        "coprocessor_l1_txn_latency_seconds",
+        "L1 transaction latencies in seconds",
+    )
+});
+
+pub static ZKPROOF_TXN_LATENCY_CONFIG: OnceLock<MetricsConfig> = OnceLock::new();
+pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    register_histogram(
+        ZKPROOF_TXN_LATENCY_CONFIG.get(),
+        "coprocessor_zkproof_txn_latency_seconds",
+        "ZKProof transaction latencies in seconds",
+    )
+});
 
 pub fn setup_otlp(
     service_name: &str,
@@ -157,38 +174,76 @@ pub fn end_span_with_err(mut span: BoxedSpan, desc: String) {
     span.end();
 }
 
-pub fn gen_buckets(step: f64, max_bucket: f64) -> Vec<f64> {
-    let mut buckets = Vec::new();
-    let mut v = step;
-    while v <= max_bucket * 60.0 {
-        buckets.push(v);
-        v += step;
+#[derive(Clone, Copy, Debug)]
+pub struct MetricsConfig {
+    bucket_start: f64,
+    bucket_end: f64,
+    bucket_step: f64,
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        MetricsConfig {
+            bucket_start: 0.01,
+            bucket_end: 10.0,
+            bucket_step: 0.01,
+        }
+    }
+}
+
+impl FromStr for MetricsConfig {
+    type Err = String;
+    /// Expected format: "start:end:step", e.g. "0.0:10.0:0.5"
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() != 3 {
+            return Err("Expected format: <start>:<end>:<step>".to_string());
+        }
+
+        let bucket_start = parts[0]
+            .parse::<f64>()
+            .map_err(|_| "Invalid start value".to_string())?;
+        let bucket_end = parts[1]
+            .parse::<f64>()
+            .map_err(|_| "Invalid end value".to_string())?;
+        let bucket_step = parts[2]
+            .parse::<f64>()
+            .map_err(|_| "Invalid step value".to_string())?;
+
+        Ok(Self {
+            bucket_start,
+            bucket_end,
+            bucket_step,
+        })
+    }
+}
+
+impl fmt::Display for MetricsConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}:{}:{}",
+            self.bucket_start, self.bucket_end, self.bucket_step
+        )
+    }
+}
+
+pub fn gen_linear_buckets(conf: &MetricsConfig) -> Vec<f64> {
+    let mut buckets = vec![];
+    let mut current = conf.bucket_start;
+    while current <= conf.bucket_end {
+        buckets.push(current);
+        current += conf.bucket_step;
     }
     buckets
 }
 
-pub(crate) static L1_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    // Max TPS: 100 => 1 txn per 0.01 second
-    let buckets = gen_buckets(0.01, 10.0);
-
-    register_histogram!(
-        GLOBAL_LATENCY_METRIC_NAME_L1,
-        "L1 transaction latencies in seconds",
-        buckets
-    )
-    .unwrap()
-});
-
-pub(crate) static ZKPROOF_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    let buckets = gen_buckets(0.01, 10.0);
-
-    register_histogram!(
-        GLOBAL_LATENCY_METRIC_NAME_ZKPROOF,
-        "ZKProof transaction latencies in seconds",
-        buckets
-    )
-    .unwrap()
-});
+/// Registers histogram to global prometheus registry
+pub fn register_histogram(config: Option<&MetricsConfig>, name: &str, desc: &str) -> Histogram {
+    let config = config.copied().unwrap_or_default();
+    register_histogram!(name, desc, gen_linear_buckets(&config))
+        .unwrap_or_else(|_| panic!("Failed to register latency histogram: {}", name))
+}
 
 pub(crate) static TXN_METRICS_MANAGER: LazyLock<TransactionMetrics> =
     LazyLock::new(|| TransactionMetrics::new(NonZeroUsize::new(100).unwrap()));

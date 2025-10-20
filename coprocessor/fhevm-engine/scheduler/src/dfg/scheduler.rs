@@ -1,4 +1,7 @@
-use crate::dfg::{types::*, TxEdge};
+use crate::{
+    dfg::{types::*, TxEdge},
+    FHE_LATENCY_HISTOGRAM, RERAND_LATENCY_HISTOGRAM,
+};
 use anyhow::Result;
 use daggy::{
     petgraph::{
@@ -12,15 +15,14 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use fhevm_engine_common::utils::HeartBeat;
 use fhevm_engine_common::{common::FheOperation, telemetry};
-use fhevm_engine_common::{telemetry::gen_buckets, tfhe_ops::perform_fhe_operation};
+use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
+use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 use opentelemetry::trace::{Span, Tracer};
-use prometheus::{register_histogram, Histogram};
 use std::{
     collections::HashMap,
-    sync::{atomic::AtomicUsize, LazyLock},
+    sync::atomic::AtomicUsize,
 };
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
@@ -30,28 +32,6 @@ use super::{DFGraph, DFTxGraph, OpNode};
 
 const TRANSACTION_RERANDOMISATION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Rrd";
 const COMPACT_PUBLIC_ENCRYPTION_DOMAIN_SEPARATOR: [u8; 8] = *b"TFHE_Enc";
-
-pub(crate) static RERAND_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    let buckets = gen_buckets(0.001, 1.0);
-
-    register_histogram!(
-        "coprocessor_rerand_latency_seconds",
-        "Re-randomization latencies per transaction in seconds",
-        buckets
-    )
-    .unwrap()
-});
-
-pub(crate) static FHE_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
-    let buckets = gen_buckets(0.001, 1.0);
-
-    register_histogram!(
-        "coprocessor_fhe_batch_latency_seconds",
-        "The latency of FHE operations within a single transaction, in seconds",
-        buckets
-    )
-    .unwrap()
-});
 
 struct ExecNode {
     df_nodes: Vec<NodeIndex>,

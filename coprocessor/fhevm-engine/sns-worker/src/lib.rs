@@ -21,6 +21,7 @@ use fhevm_engine_common::{
     metrics_server,
     pg_pool::{PostgresPoolManager, ServiceError},
     telemetry::{self, OtelTracer},
+    telemetry::{register_histogram, MetricsConfig},
     types::FhevmError,
     utils::compact_hex,
 };
@@ -43,6 +44,9 @@ use crate::{
     aws_upload::{check_is_ready, spawn_resubmit_task, spawn_uploader},
     executor::SwitchNSquashService,
 };
+
+use prometheus::Histogram;
+use std::sync::{LazyLock, OnceLock};
 
 pub const UPLOAD_QUEUE_SIZE: usize = 20;
 pub const SAFE_SER_LIMIT: u64 = 1024 * 1024 * 66;
@@ -546,3 +550,12 @@ pub async fn run_all(
 
     Ok(())
 }
+
+pub static SNS_LATENCY_HISTOGRAM_CONF: OnceLock<MetricsConfig> = OnceLock::new();
+pub static SNS_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    register_histogram(
+        SNS_LATENCY_HISTOGRAM_CONF.get(),
+        "coprocessor_sns_latency_seconds",
+        "Squash_noise computation latencies in seconds",
+    )
+});

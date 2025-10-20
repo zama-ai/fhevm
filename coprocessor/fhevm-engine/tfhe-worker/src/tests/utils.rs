@@ -1,4 +1,5 @@
 use crate::daemon_cli::Args;
+use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::tfhe_ops::current_ciphertext_version;
 use fhevm_engine_common::types::SupportedFheCiphertexts;
 use fhevm_engine_common::utils::{safe_deserialize, safe_deserialize_key};
@@ -114,6 +115,8 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         service_name: "coprocessor".to_string(),
         log_level: Level::INFO,
         health_check_port: 8081,
+        metric_fhe_latency: MetricsConfig::default(),
+        metric_rerand_latency: MetricsConfig::default(),
     };
 
     std::thread::spawn(move || {
