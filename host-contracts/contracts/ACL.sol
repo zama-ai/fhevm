@@ -45,7 +45,7 @@ contract ACL is
     error DelegateCannotBeContractAddress(address contractAddress);
 
     /**
-     * @notice Returned if the requested expiry date was already set to same expiry for (delegate,contractAddress).
+     * @notice Returned if the requested expiration date was already set to same expiration for (delegate,contractAddress).
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
@@ -311,7 +311,7 @@ contract ACL is
             revert NotDelegatedYet(msg.sender, delegate, contractAddress);
         }
 
-        // Reset the delegation expiry date.
+        // Reset the delegation expiration date.
         userDecryptionDelegation.expirationDate = 0;
 
         emit RevokedDelegationForUserDecryption(
@@ -345,7 +345,7 @@ contract ACL is
     }
 
     /**
-     * @notice Get the expiry date of a delegation for user decryption.
+     * @notice Get the expiration date of a delegation for user decryption.
      * @param delegate The address of the account that receives the delegation.
      * @param delegator The address of the account that delegates access to its handles.
      * @param contractAddress The contract address to delegate access to.
