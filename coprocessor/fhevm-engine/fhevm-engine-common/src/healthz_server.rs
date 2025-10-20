@@ -103,7 +103,6 @@ impl<S: HealthCheckService + Send + Sync + 'static> HttpServer<S> {
             .route("/healthz", get(Self::health_handler))
             .route("/liveness", get(Self::liveness_handler))
             .route("/version", get(Self::version_handler))
-            .route("/metrics", get(Self::metrics_handler))
             .with_state(self.service.clone());
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
@@ -162,18 +161,6 @@ impl<S: HealthCheckService + Send + Sync + 'static> HttpServer<S> {
     async fn version_handler(State(service): State<Arc<S>>) -> impl IntoResponse {
         let version = service.get_version();
         (StatusCode::OK, Json(serde_json::json!(version)))
-    }
-
-    async fn metrics_handler() -> impl IntoResponse {
-        let encoder = prometheus::TextEncoder::new();
-        let metric_families = prometheus::gather();
-
-        info!(num_metrics = metric_families.len(), "Serving metrics");
-
-        match encoder.encode_to_string(&metric_families) {
-            Ok(encoded_metrics) => (StatusCode::OK, encoded_metrics),
-            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-        }
     }
 }
 
