@@ -99,6 +99,10 @@ pub struct Args {
     #[arg(long, default_value_t = 8080)]
     pub health_check_port: u16,
 
+    /// Prometheus metrics server address
+    #[arg(long, default_value = "0.0.0.0:9100")]
+    pub metrics_addr: Option<String>,
+
     /// Liveness threshold for health checks
     /// Exceeding this threshold means that the worker is stuck
     /// and will be restarted by the orchestrator

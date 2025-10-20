@@ -66,7 +66,7 @@ pub struct Args {
 
     /// Prometheus metrics server address
     #[arg(long, default_value = "0.0.0.0:9100")]
-    pub metrics_addr: String,
+    pub metrics_addr: Option<String>,
 
     /// Postgres database url. If unspecified DATABASE_URL environment variable is used
     #[arg(long)]
