@@ -56,7 +56,7 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
     /// @dev Emitted when tokens are staked by an account.
     event TokensStaked(address indexed account, uint256 amount);
     /// @dev Emitted when tokens are unstaked by an account.
-    event TokensUnstaked(address indexed account, address indexed recipient, uint256 amount);
+    event TokensUnstaked(address indexed account, address indexed recipient, uint256 amount, uint48 releaseTime);
     /// @dev Emitted when tokens are released to a recipient after the unstaking cooldown period.
     event TokensReleased(address indexed recipient, uint256 amount);
     /// @dev Emitted when rewards of an account are claimed.
@@ -121,10 +121,11 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
      * @dev Unstake `amount` tokens from `msg.sender`'s staked balance to `recipient`.
      * @param recipient The recipient where unstaked tokens should be sent.
      * @param amount The amount of tokens to unstake.
+     * @return releaseTime The timestamp when the unstaked tokens can be released.
      *
      * NOTE: Unstaked tokens are released by calling {release} after {unstakeCooldownPeriod}.
      */
-    function unstake(address recipient, uint256 amount) public {
+    function unstake(address recipient, uint256 amount) public returns (uint48) {
         require(recipient != address(0), InvalidUnstakeRecipient());
         _burn(msg.sender, amount);
 
@@ -132,13 +133,11 @@ contract ProtocolStaking is AccessControlDefaultAdminRulesUpgradeable, ERC20Vote
         (, uint256 lastReleaseTime, uint256 totalRequestedToWithdraw) = $
             ._unstakeRequests[recipient]
             .latestCheckpoint();
-        uint256 releaseTime = Time.timestamp() + $._unstakeCooldownPeriod;
-        $._unstakeRequests[recipient].push(
-            uint48(Math.max(releaseTime, lastReleaseTime)),
-            uint208(totalRequestedToWithdraw + amount)
-        );
+        uint48 releaseTime = uint48(Math.max(Time.timestamp() + $._unstakeCooldownPeriod, lastReleaseTime));
+        $._unstakeRequests[recipient].push(releaseTime, uint208(totalRequestedToWithdraw + amount));
 
-        emit TokensUnstaked(msg.sender, recipient, amount);
+        emit TokensUnstaked(msg.sender, recipient, amount, releaseTime);
+        return releaseTime;
     }
 
     /**
