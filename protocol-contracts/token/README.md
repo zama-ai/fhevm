@@ -33,7 +33,7 @@ For better DevX, add the Arbitrum Sepolia network to your Metamask wallet:
 The deployment of the `ZamaERC20` and `ZamaOFTAdapter` on Ethereum Sepolia as well as the deployment of the `ZamaOFT` on Arbitrum Sepolia and the wiring of both contracts can be done automatically by running the following script:
 
 ```bash
-./scripts/deploy_zama_oft_testnet.sh
+./deploy_zama_oft.sh
 ```
 
 The script loads environment variables from the `.env` file.
