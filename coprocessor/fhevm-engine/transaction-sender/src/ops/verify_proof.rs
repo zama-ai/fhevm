@@ -16,7 +16,9 @@ use std::convert::TryInto;
 use std::time::Duration;
 use tokio::task::JoinSet;
 use tracing::{debug, error, info, warn};
-use InputVerification::InputVerificationErrors;
+
+use fhevm_gateway_bindings::input_verification::InputVerification;
+use fhevm_gateway_bindings::input_verification::InputVerification::InputVerificationErrors;
 
 sol! {
     struct CiphertextVerification {
@@ -27,12 +29,6 @@ sol! {
         bytes extraData;
     }
 }
-
-sol!(
-    #[sol(rpc)]
-    InputVerification,
-    "artifacts/InputVerification.sol/InputVerification.json"
-);
 
 #[derive(Clone)]
 pub(crate) struct VerifyProofOperation<P: Provider<Ethereum> + Clone + 'static> {

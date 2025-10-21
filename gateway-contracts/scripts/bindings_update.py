@@ -17,7 +17,7 @@ GW_CONTRACTS_DIR = GW_ROOT_DIR.joinpath("contracts")
 GW_MOCKS_DIR = GW_CONTRACTS_DIR.joinpath("mocks")
 
 # To update forge to the latest version locally, run `foundryup`
-ALLOWED_FORGE_VERSIONS = ["1.3.1-v1.3.1", "1.3.1-stable", "1.3.2-stable"]
+ALLOWED_FORGE_VERSIONS = ["1.3.1-v1.3.1", "1.3.1-stable", "1.3.2-stable", "1.4.2-stable"]
 
 
 def init_cli() -> ArgumentParser:
@@ -95,6 +95,7 @@ class BindingsUpdater:
             log_error("ERROR: forge is not installed.")
             sys.exit(ExitStatus.FORGE_NOT_INSTALLED.value)
 
+        print("Check forge is installed, waiting for response...")
         forge_version = (
             subprocess.run(
                 ["forge", "--version"],
@@ -104,6 +105,7 @@ class BindingsUpdater:
             .stdout.splitlines()[0]
             .lstrip("forge Version: ")
         )
+        print("Forge version:", forge_version)
         if forge_version not in ALLOWED_FORGE_VERSIONS:
             log_error(
                 "ERROR: Required forge version to be one of these: "

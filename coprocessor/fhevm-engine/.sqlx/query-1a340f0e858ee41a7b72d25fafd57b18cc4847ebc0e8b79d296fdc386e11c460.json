@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO delegate_user_decrypt(delegator, delegate, contract_address, delegation_counter, old_expiry_date, expiry_date, block_number, block_hash, transaction_id, host_chain_id)\n        VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n        ON CONFLICT DO NOTHING",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Bytea",
+        "Bytea",
+        "Bytea",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Int8",
+        "Bytea",
+        "Bytea",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1a340f0e858ee41a7b72d25fafd57b18cc4847ebc0e8b79d296fdc386e11c460"
+}
