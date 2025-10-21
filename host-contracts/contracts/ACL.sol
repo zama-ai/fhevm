@@ -61,9 +61,6 @@ contract ACL is
     /// @notice Returned if the requested expiration date for user decryption delegation is before the next hour.
     error ExpirationDateBeforeOneHour();
 
-    /// @notice Returned if the requested expiration date for user decryption delegation is after the next year.
-    error ExpirationDateAfterOneYear();
-
     /// @notice Returned if the handlesList array is empty.
     error HandlesListIsEmpty();
 
@@ -240,9 +237,6 @@ contract ACL is
     ) public virtual whenNotPaused {
         if (expirationDate < block.timestamp + 1 hours) {
             revert ExpirationDateBeforeOneHour();
-        }
-        if (expirationDate > block.timestamp + 365 days) {
-            revert ExpirationDateAfterOneYear();
         }
 
         ACLStorage storage $ = _getACLStorage();
