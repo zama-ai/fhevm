@@ -65,52 +65,52 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
     /**
      * @dev Allows the sender to recover Ether held by the contract.
      * @param amount Amount of recovered ETH.
-     * @param recepient Receiver of the recovered ETH.
+     * @param recipient Receiver of the recovered ETH.
      * Emits an EtherRecovered event upon success.
      */
-    function recoverEther(uint256 amount, address recepient) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        (bool success, ) = recepient.call{ value: amount }("");
+    function recoverEther(uint256 amount, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        (bool success, ) = recipient.call{ value: amount }("");
         if (!success) {
             revert FailedToSendEther();
         }
-        emit EtherRecovered(recepient, amount);
+        emit EtherRecovered(recipient, amount);
     }
 
     /**
      * @dev Allows the sender to recover ERC20 tokens held by the contract.
      * @param token The address of the ERC20 token to recover.
      * @param amount The amount of the ERC20 token to recover.
-     * @param recepient Receiver of the recovered tokens.
+     * @param recipient Receiver of the recovered tokens.
      * Emits an ERC20Recovered event upon success.
      */
-    function recoverERC20(address token, uint256 amount, address recepient) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        IERC20(token).safeTransfer(recepient, amount);
-        emit ERC20Recovered(token, recepient, amount);
+    function recoverERC20(address token, uint256 amount, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        IERC20(token).safeTransfer(recipient, amount);
+        emit ERC20Recovered(token, recipient, amount);
     }
 
     /**
      * @dev Allows the sender to recover ERC721 tokens held by the contract.
      * @param token The address of the ERC721 token to recover.
      * @param tokenId The token ID of the ERC721 token to recover.
-     * @param recepient Receiver of the recovered ERC721 token.
+     * @param recipient Receiver of the recovered ERC721 token.
      * Emits an ERC721Recovered event upon success.
      */
-    function recoverERC721(address token, uint256 tokenId, address recepient) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        IERC721(token).safeTransferFrom(address(this), recepient, tokenId);
-        emit ERC721Recovered(token, tokenId, recepient);
+    function recoverERC721(address token, uint256 tokenId, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        IERC721(token).safeTransferFrom(address(this), recipient, tokenId);
+        emit ERC721Recovered(token, tokenId, recipient);
     }
 
     /**
      * @dev Allows the sender to recover ERC1155 tokens held by the contract.
      * @param token The address of the ERC1155 token to recover.
      * @param tokenId The token ID of the ERC1155 token to recover.
-     * @param recepient Receiver of the recovered ERC1155 token.
+     * @param recipient Receiver of the recovered ERC1155 token.
      * Emits an ERC1155Recovered event upon success.
      */
-    function recoverERC1155(address token, uint256 tokenId, address recepient) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function recoverERC1155(address token, uint256 tokenId, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
         uint256 amount = IERC1155(token).balanceOf(address(this), tokenId);
-        IERC1155(token).safeTransferFrom({ from: address(this), to: recepient, id: tokenId, value: amount, data: "" });
-        emit ERC1155Recovered(token, tokenId, recepient, amount);
+        IERC1155(token).safeTransferFrom({ from: address(this), to: recipient, id: tokenId, value: amount, data: "" });
+        emit ERC1155Recovered(token, tokenId, recipient, amount);
     }
 
     /**
