@@ -1,18 +1,19 @@
-mod app;
 mod bench;
 mod blockchain;
 mod cli;
 mod config;
+mod db;
 mod decryption;
 
 use crate::{
-    app::App,
+    blockchain::GatewayTestManager,
     cli::{Cli, Subcommands},
     config::Config,
+    db::manager::DatabaseTestManager,
 };
 use clap::Parser;
 use std::process::ExitCode;
-use tracing::{error, info};
+use tracing::{debug, error};
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 #[tokio::main]
@@ -27,26 +28,45 @@ async fn main() -> ExitCode {
 
 async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
-    let mut config = Config::from_env_and_file(cli.config)?;
+    let mut config = Config::from_env_and_file(&cli.config)?;
+    update_config_from_cli(&mut config, &cli);
 
-    // Override some fields of the config by the CLI
+    debug!("Config: {config:?}");
+    match cli.subcommand {
+        Subcommands::Gw(args) => {
+            let test_manager = GatewayTestManager::connect(config).await?;
+            test_manager.stress_test(args).await?
+        }
+        Subcommands::BenchGw(args) => {
+            let test_manager = GatewayTestManager::connect(config).await?;
+            test_manager.decryption_benchmark(args).await?
+        }
+        Subcommands::Db(args) => {
+            let test_manager = DatabaseTestManager::connect(config).await?;
+            test_manager.stress_test(args).await?
+        }
+        Subcommands::BenchDb(args) => {
+            let test_manager = DatabaseTestManager::connect(config).await?;
+            test_manager.decryption_benchmark(args).await?
+        }
+    }
+
+    Ok(())
+}
+
+fn update_config_from_cli(config: &mut Config, cli: &Cli) {
     if cli.sequential {
         config.sequential = cli.sequential;
     }
     if let Some(parallel) = cli.parallel {
         config.parallel_requests = parallel;
     }
-
-    info!("Config: {config:?}");
-    let app = App::connect(config).await?;
-    match cli.subcommand {
-        Subcommands::Public => app.public_decryption_stress_test().await?,
-        Subcommands::User => app.user_decryption_stress_test().await?,
-        Subcommands::Benchmark(args) => app.decryption_benchmark(args).await?,
-        _ => todo!(),
+    if let Some(duration) = cli.duration {
+        config.tests_duration = duration;
     }
-
-    Ok(())
+    if let Some(interval) = cli.interval {
+        config.tests_interval = interval;
+    }
 }
 
 fn init_tracing() {
