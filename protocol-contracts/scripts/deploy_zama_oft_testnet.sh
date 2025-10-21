@@ -4,6 +4,34 @@ set -euo pipefail
 # Streamlines README steps 4–6 for deploying and wiring Zama OFT contracts.
 
 RUN_VERIFY=false
+OFT_NETWORK="arbitrum-testnet"
+OAPP_CONFIG="layerzero.config.ts"
+
+SUPPORTED_OFT_NETWORKS=("arbitrum-testnet" "gateway-testnet")
+
+function usage() {
+	cat <<'USAGE'
+Usage: ./scripts/deploy_zama_oft_testnet.sh [--verify] [--oft-network <network>] [--oapp-config <file>]
+
+Options:
+  --oapp-config     LayerZero OApp config file passed to lz:oapp:wire (default: layerzero.config.ts).
+  --oft-network     Target network for the ZamaOFT deployment (arbitrum-testnet | gateway-testnet).
+  --verify          Run the optional Etherscan verification commands.
+USAGE
+}
+
+function ensure_supported_oft_network() {
+	local candidate="$1"
+	local network
+	for network in "${SUPPORTED_OFT_NETWORKS[@]}"; do
+		if [[ $candidate == "$network" ]]; then
+			return 0
+		fi
+	done
+	printf 'Error: unsupported OFT network "%s". Supported values: %s.\n' \
+		"$candidate" "${SUPPORTED_OFT_NETWORKS[*]}" >&2
+	exit 1
+}
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -12,13 +40,36 @@ while [[ $# -gt 0 ]]; do
 		shift
 		;;
 	-h | --help)
-		cat <<'USAGE'
-Usage: ./scripts/deploy_zama_oft_testnet.sh [--verify]
-
-Options:
-  --verify   Run the optional Etherscan verification commands.
-USAGE
+		usage
 		exit 0
+		;;
+	--oft-network)
+		if [[ $# -lt 2 ]]; then
+			printf 'Error: --oft-network requires a value.\n' >&2
+			exit 1
+		fi
+		OFT_NETWORK="$2"
+		shift 2
+		;;
+	--oft-network=*)
+		OFT_NETWORK="${1#*=}"
+		shift
+		;;
+	--oapp-config)
+		if [[ $# -lt 2 ]]; then
+			printf 'Error: --oapp-config requires a value.\n' >&2
+			exit 1
+		fi
+		OAPP_CONFIG="$2"
+		shift 2
+		;;
+	--oapp-config=*)
+		OAPP_CONFIG="${1#*=}"
+		shift
+		;;
+	--)
+		shift
+		break
 		;;
 	*)
 		printf 'Error: unknown option %s\n' "$1" >&2
@@ -26,6 +77,21 @@ USAGE
 		;;
 	esac
 done
+
+ensure_supported_oft_network "$OFT_NETWORK"
+
+case "$OFT_NETWORK" in
+arbitrum-testnet)
+	OFT_NETWORK_LABEL="Arbitrum Sepolia"
+	;;
+gateway-testnet)
+	OFT_NETWORK_LABEL="Gateway Testnet"
+	;;
+*)
+	# This can't happen because of ensure_supported_oft_network, but keep a guard.
+	OFT_NETWORK_LABEL="$OFT_NETWORK"
+	;;
+esac
 
 function info() {
 	printf '\n> %s\n' "$1"
@@ -71,12 +137,17 @@ if [[ ! -f .env ]]; then
 	exit 1
 fi
 
+if [[ ! -f $OAPP_CONFIG ]]; then
+	printf 'Error: OApp config file %s not found.\n' "$OAPP_CONFIG" >&2
+	exit 1
+fi
+
 require_env_value PRIVATE_KEY
 require_env_value SEPOLIA_RPC_URL
 require_env_value INITIAL_SUPPLY_RECEIVER
 require_env_value INITIAL_ADMIN
 
-note "Ensure the deployer wallet is funded on Ethereum Sepolia and Arbitrum Sepolia."
+note "Ensure the deployer wallet is funded on Ethereum Sepolia and ${OFT_NETWORK_LABEL}."
 
 # Step 4: Deploy contracts
 info "Installing dependencies with pnpm"
@@ -152,9 +223,9 @@ info "Deploy ZamaOFTAdapter on Ethereum Sepolia"
 note "Running lz:deploy in CI mode for ZamaOFTAdapter on ethereum-testnet."
 npx hardhat lz:deploy --ci --networks ethereum-testnet --tags ZamaOFTAdapter
 
-info "Deploy ZamaOFT on Arbitrum Sepolia"
-note "Running lz:deploy in CI mode for ZamaOFT on arbitrum-testnet."
-npx hardhat lz:deploy --ci --networks arbitrum-testnet --tags ZamaOFT
+info "Deploy ZamaOFT on ${OFT_NETWORK_LABEL}"
+note "Running lz:deploy in CI mode for ZamaOFT on ${OFT_NETWORK}."
+npx hardhat lz:deploy --ci --networks "${OFT_NETWORK}" --tags ZamaOFT
 
 # Step 5: Optional verification
 if [[ $RUN_VERIFY == true ]]; then
@@ -163,17 +234,22 @@ if [[ $RUN_VERIFY == true ]]; then
 		note "Verification command returned an error; check Etherscan manually."
 	fi
 
-	info "Verifying ZamaOFT on Arbitrum Sepolia"
-	if ! pnpm verify:etherscan:arbitrum:sepolia; then
-		note "Verification command returned an error; check Arbiscan manually."
+	if [[ $OFT_NETWORK == "arbitrum-testnet" ]]; then
+		info "Verifying ZamaOFT on ${OFT_NETWORK_LABEL}"
+		if ! pnpm verify:etherscan:arbitrum:sepolia; then
+			note "Verification command returned an error; check Arbiscan manually."
+		fi
+	else
+		info "Skipping ZamaOFT verification on ${OFT_NETWORK_LABEL}"
+		note "No verification command configured for ${OFT_NETWORK}; rerun once scripts are available."
 	fi
 else
 	info "Skipping Etherscan verification"
 fi
 
 # Step 6: Wire contracts
-info "Wire ZamaOFTAdapter (Ethereum Sepolia) with ZamaOFT (Arbitrum Sepolia)"
-note "Running lz:oapp:wire in CI mode using layerzero.config.ts."
-npx hardhat lz:oapp:wire --ci --oapp-config layerzero.config.ts
+info "Wire ZamaOFTAdapter (Ethereum Sepolia) with ZamaOFT (${OFT_NETWORK_LABEL})"
+note "Running lz:oapp:wire in CI mode using ${OAPP_CONFIG}."
+npx hardhat lz:oapp:wire --ci --oapp-config "${OAPP_CONFIG}"
 
 info "Deployment flow complete"
