@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT decryption_id, created_at FROM public_decryption_responses WHERE decryption_id = ANY($1::bytea[])",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "decryption_id",
+        "type_info": "Bytea"
+      },
+      {
+        "ordinal": 1,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "ByteaArray"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "d6597f8cda1d06ba8a5adedc650047a8646bfa1f3c666f2cf0f29257268b3542"
+}
