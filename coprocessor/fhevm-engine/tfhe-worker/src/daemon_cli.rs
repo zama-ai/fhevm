@@ -1,5 +1,6 @@
 use clap::Parser;
 use fhevm_engine_common::telemetry::MetricsConfig;
+use fhevm_engine_common::utils::DatabaseURL;
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -71,7 +72,7 @@ pub struct Args {
 
     /// Postgres database url. If unspecified DATABASE_URL environment variable is used
     #[arg(long)]
-    pub database_url: Option<String>,
+    pub database_url: Option<DatabaseURL>,
 
     /// Coprocessor private key file path.
     /// Private key is in plain text 0x1234.. format.

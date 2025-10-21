@@ -3,7 +3,7 @@ use std::time::Duration;
 use fhevm_engine_common::healthz_server::{
     default_get_version, HealthCheckService, HealthStatus, Version,
 };
-use fhevm_engine_common::utils::HeartBeat;
+use fhevm_engine_common::utils::{DatabaseURL, HeartBeat};
 
 const ACTIVITY_FRESHNESS: Duration = Duration::from_secs(10); // Not alive if tick is older
 const CONNECTED_TICK_FRESHNESS: Duration = Duration::from_secs(5); // Need to check connection if tick is older
@@ -11,13 +11,13 @@ const CONNECTED_TICK_FRESHNESS: Duration = Duration::from_secs(5); // Need to ch
 /// Represents the health status of the transaction sender service
 #[derive(Clone, Debug)]
 pub struct HealthCheck {
-    pub database_url: String,
+    pub database_url: DatabaseURL,
     pub database_heartbeat: HeartBeat,
     pub activity_heartbeat: HeartBeat,
 }
 
 impl HealthCheck {
-    pub fn new(database_url: String) -> Self {
+    pub fn new(database_url: DatabaseURL) -> Self {
         // A lazy pool is used to avoid blocking the main thread during initialization or bad database URL
         Self {
             database_url,
@@ -47,7 +47,7 @@ impl HealthCheckService for HealthCheck {
             let pool = sqlx::postgres::PgPoolOptions::new()
                 .acquire_timeout(Duration::from_secs(5))
                 .max_connections(1)
-                .connect(&self.database_url);
+                .connect(self.database_url.as_str());
             if let Ok(pool) = pool.await {
                 status.set_db_connected(&pool).await;
             } else {

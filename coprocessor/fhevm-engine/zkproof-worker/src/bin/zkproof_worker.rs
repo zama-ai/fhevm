@@ -1,9 +1,7 @@
 use clap::{command, Parser};
-use fhevm_engine_common::telemetry;
 use fhevm_engine_common::telemetry::{self, MetricsConfig};
 use fhevm_engine_common::{healthz_server::HttpServer, metrics_server, utils::DatabaseURL};
 use humantime::parse_duration;
-use sqlx::Database;
 use std::{sync::Arc, time::Duration};
 use tokio::{join, task};
 use tokio_util::sync::CancellationToken;

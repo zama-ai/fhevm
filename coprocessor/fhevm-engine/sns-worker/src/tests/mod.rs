@@ -9,7 +9,6 @@ use aws_config::BehaviorVersion;
 use fhevm_engine_common::utils::{compact_hex, DatabaseURL};
 use serde::{Deserialize, Serialize};
 use serial_test::serial;
-use sqlx::Database;
 use std::{
     fs::File,
     io::{Read, Write},

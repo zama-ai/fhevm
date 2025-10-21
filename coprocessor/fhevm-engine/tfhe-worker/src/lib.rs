@@ -70,11 +70,8 @@ pub async fn async_main(
         }
     }
 
-    let health_check = health_check::HealthCheck::new(
-        args.database_url
-            .clone()
-            .unwrap_or("no_database_url".to_string()),
-    );
+    let database_url = args.database_url.clone().unwrap_or_default();
+    let health_check = health_check::HealthCheck::new(database_url);
 
     let mut set = JoinSet::new();
     if args.run_server {

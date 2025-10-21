@@ -15,12 +15,10 @@ use fhevm_engine_common::{
     pg_pool::ServiceError,
     telemetry::{register_histogram, MetricsConfig},
     types::FhevmError,
+    utils::DatabaseURL,
 };
 use prometheus::Histogram;
-
-use fhevm_engine_common::{pg_pool::ServiceError, types::FhevmError, utils::DatabaseURL};
 use thiserror::Error;
-use tracing_subscriber::registry::Data;
 
 /// The highest index of an input is 254,
 /// cause 255 (0xff) is reserved for handles originating from the FHE operations
