@@ -121,7 +121,7 @@ contract ACL is
         mapping(address account =>
             mapping(address delegate => mapping(address contractAddress => UserDecryptionDelegation delegation)))
                 userDecryptionDelegations;
-        mapping(address account => bool isDenied) denylist;
+        mapping(address account => bool isDenied) denyList;
     }
 
     /// @notice Name of the contract.
@@ -178,7 +178,7 @@ contract ACL is
      * @param account Address of the account.
      */
     function allow(bytes32 handle, address account) public virtual whenNotPaused {
-        if (isDenied(msg.sender)) {
+        if (isAccountDenied(msg.sender)) {
             revert SenderDenied(msg.sender);
         }
         if (!isAllowed(handle, msg.sender)) {
@@ -201,7 +201,7 @@ contract ACL is
             revert HandlesListIsEmpty();
         }
 
-        if (isDenied(msg.sender)) {
+        if (isAccountDenied(msg.sender)) {
             revert SenderDenied(msg.sender);
         }
 
@@ -231,7 +231,7 @@ contract ACL is
             }
         }
 
-        if (isDenied(msg.sender)) {
+        if (isAccountDenied(msg.sender)) {
             revert SenderDenied(msg.sender);
         }
 
@@ -479,11 +479,11 @@ contract ACL is
     /**
      * @notice Returns `true` if address `a` is denied and `false` otherwise.
      * @param account Address of the account.
-     * @return isDenied Whether the account is denied.
+     * @return isAccountDenied Whether the account is denied.
      */
-    function isDenied(address account) public view virtual returns (bool) {
+    function isAccountDenied(address account) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
-        return $.denylist[account];
+        return $.denyList[account];
     }
 
     /**
@@ -492,7 +492,7 @@ contract ACL is
      */
     function blockAccount(address account) public virtual whenNotPaused onlyOwner {
         ACLStorage storage $ = _getACLStorage();
-        $.denylist[account] = true;
+        $.denyList[account] = true;
     }
 
     /**
@@ -501,7 +501,7 @@ contract ACL is
      */
     function unblockAccount(address account) public virtual whenNotPaused onlyOwner {
         ACLStorage storage $ = _getACLStorage();
-        $.denylist[account] = false;
+        $.denyList[account] = false;
     }
 
     /**
