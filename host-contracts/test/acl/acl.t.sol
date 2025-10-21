@@ -287,7 +287,6 @@ contract ACLTest is Test {
      * @dev Tests that the user decryption delegation cannot be created with the same expiration date.
      */
     function test_CannotDelegateUserDecryptionWithSameExpirationDate(
-        bytes32 handle,
         address sender,
         address delegate,
         address contractAddress
@@ -415,7 +414,6 @@ contract ACLTest is Test {
      * @dev Tests that the delegation and revocation counter is stored in a sequential order.
      */
     function test_UserDecryptionDelegationAndRevocationCounterIsSequential(
-        bytes32 handle,
         address sender,
         address delegate,
         address contractAddress

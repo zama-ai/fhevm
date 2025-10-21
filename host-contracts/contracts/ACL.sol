@@ -49,7 +49,7 @@ contract ACL is
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
-     * @param expirationDate The expiration date for the intended delegation.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
     error ExpirationDateAlreadySetToSameValue(
         address delegator,
@@ -99,7 +99,7 @@ contract ACL is
      *      to allow off-chain clients to track changes.
      */
     struct UserDecryptionDelegation {
-        /// @notice Date when the user decryption delegation expires.
+        /// @notice The UNIX timestamp when the user decryption delegation expires.
         uint64 expirationDate;
         /// @notice The last block number when a delegation or revocation happened.
         uint64 lastBlockDelegateOrRevoke;
@@ -228,13 +228,22 @@ contract ACL is
      * abstraction for issuing user decryption requests from a smart contract account.
      * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
-     * @param expirationDate Expiration date in seconds, between 1 hour and 1 year in the future.
+     * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
     function delegateForUserDecryption(
         address delegate,
         address contractAddress,
         uint64 expirationDate
     ) public virtual whenNotPaused {
+        /**
+         * @dev Arbitrum block timestamps may be up to one hour ahead of L1.
+         *
+         * Since the expiration is propagated to the Gateway MultichainACL contract deployed on Arbitrum,
+         * we enforce a 1-hour lower bound to stay within Arbitrum’s valid timestamp range
+         * and avoid premature expiration due to clock drift.
+         *
+         * (See https://docs.arbitrum.io/build-decentralized-apps/arbitrum-vs-ethereum/block-numbers-and-time#block-timestamps-arbitrum-vs-ethereum)
+         */
         if (expirationDate < block.timestamp + 1 hours) {
             revert ExpirationDateBeforeOneHour();
         }
@@ -340,14 +349,14 @@ contract ACL is
 
     /**
      * @notice Get the expiration date of a delegation for user decryption.
-     * @param delegate The address of the account that receives the delegation.
      * @param delegator The address of the account that delegates access to its handles.
+     * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
-     * @return expirationDate The expiration date for the user decryption delegation (0 means delegation is inactive).
+     * @return expirationDate The UNIX timestamp when the user decryption delegation expires (0 means delegation is inactive).
      */
     function getUserDecryptionDelegationExpirationDate(
-        address delegate,
         address delegator,
+        address delegate,
         address contractAddress
     ) public view virtual returns (uint64) {
         ACLStorage storage $ = _getACLStorage();
@@ -412,10 +421,10 @@ contract ACL is
 
     /**
      * @notice Returns whether an account is delegated to access the handle for user decryption.
-     * @param delegate The address of the account that receives the delegation.
      * @param delegator The address of the account that delegates access to its handles.
-     * @param handle The handle to check for delegated user decryption.
+     * @param delegate The address of the account that receives the delegation.
      * @param contractAddress The contract address to delegate access to.
+     * @param handle The handle to check for delegated user decryption.
      * @return isDelegatedForUserDecryption Whether the handle can be accessed for delegated user decryption.
      */
     function isHandleDelegatedForUserDecryption(
