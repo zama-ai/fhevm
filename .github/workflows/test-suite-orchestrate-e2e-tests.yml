@@ -76,22 +76,19 @@ jobs:
             console.log('\n⏳ Waiting 30 seconds for workflows to start...');
             await new Promise(resolve => setTimeout(resolve, 30000));
             
-            // Set up image mapping
-            const workflowToImage = {
-              'test-suite-docker-build': 'test_suite_version'
-            };
-            
             // Wait for builds to complete and collect results
             const maxAttempts = 60;
             let attempt = 1;
             let builtImages = [];
+            let imageTag = '';
             
             while (attempt <= maxAttempts) {
               console.log(`\nAttempt ${attempt}/${maxAttempts}: Checking workflow results`);
               let allDone = true;
               const currentBuiltImages = [];
+              let currentImageTag = '';
               
-              for (const workflowName of Object.keys(workflowToImage)) {
+              for (const workflowName of workflows) {
                 console.log(`Checking workflow: ${workflowName}`);
                 
                 // Look for recent workflow_dispatch runs (last 45 minutes)
@@ -101,7 +98,7 @@ jobs:
                   const runs = await github.rest.actions.listWorkflowRuns({
                     owner: context.repo.owner,
                     repo: context.repo.repo,
-                    workflow_id: `${workflowName}.yml`,
+                    workflow_id: workflowName,
                     event: 'workflow_dispatch',
                     created: `>=${sinceTime}`,
                     per_page: 5
@@ -113,23 +110,26 @@ jobs:
                     console.log(`   Found run: ID=${recentRun.id}, Status=${recentRun.status}, Conclusion=${recentRun.conclusion || 'null'}`);
                     
                     if (recentRun.conclusion === 'success') {
-                      // Check if docker jobs succeeded
+                      // Check specifically for the output-build-status job
                       const jobs = await github.rest.actions.listJobsForWorkflowRun({
                         owner: context.repo.owner,
                         repo: context.repo.repo,
                         run_id: recentRun.id
                       });
                       
-                      const dockerJobs = jobs.data.jobs.filter(job => 
-                        job.name.includes('docker') && job.conclusion === 'success'
+                      const outputJob = jobs.data.jobs.find(job => 
+                        job.name.includes('output-build-status')
                       );
                       
-                      if (dockerJobs.length > 0) {
-                        const imageName = workflowToImage[workflowName];
-                        currentBuiltImages.push(imageName);
-                        console.log(`   ✅ ${workflowName} built image: ${imageName} (${dockerJobs.length} docker jobs succeeded)`);
+                      if (outputJob && outputJob.conclusion === 'success') {
+                        // The output-build-status job succeeded, which means an image was built
+                        currentBuiltImages.push('test_suite_version');
+                        currentImageTag = context.sha.substring(0, 7);
+                        console.log(`   ✅ ${workflowName} built image: test_suite_version with tag: ${currentImageTag}`);
+                      } else if (outputJob && outputJob.conclusion === 'failure') {
+                        console.log(`   🔶 ${workflowName} completed but output-build-status indicates no image was built`);
                       } else {
-                        console.log(`   🔶 ${workflowName} completed but no docker jobs succeeded`);
+                        console.log(`   🔶 ${workflowName} completed but no output-build-status job found`);
                       }
                     } else if (recentRun.conclusion === 'failure' || recentRun.conclusion === 'cancelled') {
                       console.log(`   ❌ ${workflowName} failed with conclusion: ${recentRun.conclusion}`);
@@ -149,6 +149,7 @@ jobs:
               
               if (allDone) {
                 builtImages = currentBuiltImages;
+                imageTag = currentImageTag;
                 break;
               }
               
@@ -160,14 +161,14 @@ jobs:
             if (attempt > maxAttempts) {
               console.log('⚠️ Timeout waiting for workflows to complete, using current results');
               builtImages = currentBuiltImages || [];
+              imageTag = currentImageTag || '';
             }
             
             // Create outputs
-            const imageTag = context.sha.substring(0, 7);
             const jsonArray = JSON.stringify([...new Set(builtImages)]);
             
             console.log(`\n📊 Final results:`);
-            console.log(`   Image tag: ${imageTag}`);
+            console.log(`   Image tag: ${imageTag || 'none'}`);
             console.log(`   Built images: ${jsonArray}`);
             
             // Set GitHub outputs
@@ -212,6 +213,14 @@ jobs:
             }
             
             console.log(`📋 Parsed built images:`, builtImages);
+
+            // Check if any images were built
+            if (builtImages.length === 0) {
+              console.log('⏭️ No images were built (path filters skipped all builds)');
+              console.log('⏭️ Skipping E2E tests as there are no new images to test');
+              core.notice('E2E tests skipped: No new images were built due to path filters');
+              return;
+            }
 
             // Initialize the 7 inputs that match test-suite-e2e-tests-mq.yml exactly
             const inputs = {};
