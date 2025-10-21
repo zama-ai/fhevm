@@ -7,6 +7,7 @@ cp .env.example .env
 ```
 
 Then fill the `PRIVATE_KEY` and `SEPOLIA_RPC_URL` in `.env` with your own values.
+The `RPC_URL_ARBITRUM_SEPOLIA` value defaults to "https://sepolia-rollup.arbitrum.io/rpc" if left empty.
 The values of `INITIAL_SUPPLY_RECEIVER` (account receiving initially minted supply of 1 billion tokens) and `INITIAL_ADMIN` (first admin role, responsible of adding minters and other admins) should also be filled. For easy testing purpose, they could be both set to be the address of the account corresponding to `PRIVATE_KEY` (i.e the deployer).
 Also, if you want to do Step 5 (Etherscan verification) which is optional but recommended for easier debugging, get an Etherscan free API key in order to set the value of `ETHERSCAN_API`.
 
@@ -33,7 +34,7 @@ For better DevX, add the Arbitrum Sepolia network to your Metamask wallet:
 The deployment of the `ZamaERC20` and `ZamaOFTAdapter` on Ethereum Sepolia as well as the deployment of the `ZamaOFT` on Arbitrum Sepolia and the wiring of both contracts can be done automatically by running the following script:
 
 ```bash
-./scripts/deploy_zama_oft_testnet.sh
+./scripts/deploy_zama_oft_testnet.sh [--verify] [--oft-network <network>] [--oapp-config <file>]
 ```
 
 The script loads environment variables from the `.env` file.
@@ -43,7 +44,8 @@ The script runs in non-interactive mode, so no manual input is required. It also
 - Confirms `.env` is populated (Step 1) and reminds that the deployer wallet must be funded on Ethereum and Arbitrum Sepolia (Step 3).
 - Deploys `ZamaERC20` and `ZamaOFTAdapter` to `ethereum-testnet` using the appropriate deploy script tags.
 - Automatically captures the deployed `ZamaERC20` address and writes it to `networks.ethereum-testnet.oftAdapter.tokenAddress` in `hardhat.config.ts`.
-- Deploys `ZamaOFT` to `arbitrum-testnet` with the matching deploy script tag.
+- Deploys `ZamaOFT` to the selected oft-network (`arbitrum-testnet` or `gateway-testnet`) with the matching deploy script tag.
+- Wires the `ZamaOFTAdapter` on `ethereum-testnet` to the `ZamaOFT` on the selected oft-network, with the provided layerzero config (defaults to `layerzero.config.ts`).
 - Add `--verify` if you want the optional Step 5 verification commands executed before Step 6.
 
 You can still follow the manual instructions below if you prefer.
