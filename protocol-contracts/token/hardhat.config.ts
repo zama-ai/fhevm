@@ -65,7 +65,7 @@ const config: HardhatUserConfig = {
             url: process.env.SEPOLIA_RPC_URL,
             accounts,
             oftAdapter: {
-              tokenAddress: "0x94b220F837dBe8c99E51C6283141050911Cb4e97",
+                tokenAddress: '0x0', // Set the token address for the OFT adapter
             },
         },
         hardhat: {
