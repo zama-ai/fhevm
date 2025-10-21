@@ -17,8 +17,7 @@ These components are not part of the trusted base of the protocol; their actions
 - Wait for the KMS to produce signed plaintexts via the Gateway.
 - Call back the contract on the host chain, passing the decrypted result.
 
-Since the decrypted values are signed by the KMS, the receiving smart contract can verify the result, removing any need\
-to trust the oracle itself.
+Since the decrypted values are signed by the KMS, the receiving smart contract can verify the result, removing any need to trust the oracle itself.
 
 ## Security model of the Oracle
 
@@ -31,8 +30,7 @@ Goal: Enable contracts to access decrypted values asynchronously and securely, w
 
 ## What is the Relayer?
 
-The Relayer is a user-facing service that simplifies interaction with the Gateway, particularly for encryption and\
-decryption operations that need to happen off-chain.
+The Relayer is a user-facing service that simplifies interaction with the Gateway, particularly for encryption and decryption operations that need to happen off-chain.
 
 ## Responsibilities of the Relayer
 
@@ -41,8 +39,7 @@ decryption operations that need to happen off-chain.
 - Collect the response from the KMS, re-encrypted under the user’s public key.
 - Deliver the ciphertext back to the user, who decrypts it locally in their browser/app.
 
-This allows users to interact with encrypted smart contracts without having to run their own Gateway interface,\
-validator, or FHE tooling.
+This allows users to interact with encrypted smart contracts without having to run their own Gateway interface, validator, or FHE tooling.
 
 ## Security model of the Relayer
 
@@ -50,13 +47,11 @@ validator, or FHE tooling.
 - All data flows are signed and auditable by the user.
 - Users can always run their own relayer or interact with the Gateway directly if needed.
 
-Goal: Make it easy for users to submit encrypted inputs and retrieve private decrypted results without managing\
-infrastructure.
+Goal: Make it easy for users to submit encrypted inputs and retrieve private decrypted results without managing infrastructure.
 
 ## How they fit in
 
 - Smart contracts use the Oracle to receive plaintext results of encrypted computations via callbacks.
-- Users rely on the Relayer to push encrypted values into the system and fetch personal decrypted results, all backed by\
-  EIP-712 signatures and FHE key re-encryption.
+- Users rely on the Relayer to push encrypted values into the system and fetch personal decrypted results, all backed by EIP-712 signatures and FHE key re-encryption.
 
 Together, Oracles and Relayers help bridge the gap between encrypted execution and application usability—without compromising security or decentralization.
