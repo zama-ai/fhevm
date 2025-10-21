@@ -85,8 +85,11 @@ pub async fn run_http_server<D>(
     responses(
         (status = 200, description = "Successfully proved ciphertexts", body = InputProofResponseJson),
         (status = 400, description = "Bad request (wrong version)", body = VersionErrorResponseJson),
+        // TODO: Define a shared error response body for 400 errors
         (status = 400, description = "Bad request", body = InputProofErrorResponseJson),
+        // TODO: Define a shared error response body for 422 errors
         (status = 422, description = "Failed to deserialize the JSON body"),
+        // TODO: Define a shared error response body for 500 errors
         (status = 500, description = "Internal server error", body = InputProofErrorResponseJson),
     ),
 )]

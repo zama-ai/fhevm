@@ -149,6 +149,8 @@ impl RelayerEvent {
 const BAD_CONVERSION_BODY: &str = "INTERNAL CONVERSION ERROR";
 const BAD_CONVERSION_STATUS_CODE: StatusCode = StatusCode::INTERNAL_SERVER_ERROR;
 
+// TODO: remove all this conversion. RelayerEvent is a core type, while IntoResponse is an http concern.
+// So this conversion should be done in the http listener only, not in the core type itself.
 impl IntoResponse for RelayerEvent {
     fn into_response(self) -> Response {
         match &self.data {
