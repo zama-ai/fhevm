@@ -15,15 +15,12 @@ use daggy::{
     },
     Dag, NodeIndex,
 };
-use fhevm_engine_common::utils::HeartBeat;
-use fhevm_engine_common::{common::FheOperation, telemetry};
 use fhevm_engine_common::tfhe_ops::perform_fhe_operation;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
+use fhevm_engine_common::utils::HeartBeat;
+use fhevm_engine_common::{common::FheOperation, telemetry};
 use opentelemetry::trace::{Span, Tracer};
-use std::{
-    collections::HashMap,
-    sync::atomic::AtomicUsize,
-};
+use std::{collections::HashMap, sync::atomic::AtomicUsize};
 use tfhe::ReRandomizationContext;
 use tokio::task::JoinSet;
 use tracing::{error, info, warn};
@@ -532,6 +529,7 @@ async fn execute_partition(
 
             let elapsed = started_at.elapsed();
             RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
+            drop(s);
         } else {
             let mut s = tracer.start_with_context("decompress_transaction_inputs", loop_ctx);
             telemetry::set_txn_id(&mut s, &tid);
@@ -554,6 +552,7 @@ async fn execute_partition(
                 }
                 continue 'tx;
             }
+            drop(s);
         }
 
         // Prime the scheduler with ready ops from the transaction's subgraph
