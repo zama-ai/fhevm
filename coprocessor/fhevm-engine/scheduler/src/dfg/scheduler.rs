@@ -1,6 +1,6 @@
 use crate::{
     dfg::{types::*, TxEdge},
-    FHE_LATENCY_HISTOGRAM, RERAND_LATENCY_HISTOGRAM,
+    FHE_BATCH_LATENCY_HISTOGRAM, RERAND_LATENCY_BATCH_HISTOGRAM,
 };
 use anyhow::Result;
 use daggy::{
@@ -531,7 +531,7 @@ async fn execute_partition(
             }
 
             let elapsed = started_at.elapsed();
-            RERAND_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
+            RERAND_LATENCY_BATCH_HISTOGRAM.observe(elapsed.as_secs_f64());
         } else {
             let mut s = tracer.start_with_context("decompress_transaction_inputs", loop_ctx);
             telemetry::set_txn_id(&mut s, &tid);
@@ -617,7 +617,7 @@ async fn execute_partition(
         }
         s.end();
         let elapsed = started_at.elapsed();
-        FHE_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
+        FHE_BATCH_LATENCY_HISTOGRAM.observe(elapsed.as_secs_f64());
     }
     (res, task_id)
 }

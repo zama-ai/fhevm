@@ -3,7 +3,7 @@ use std::time::Duration;
 use clap::{command, Parser};
 use fhevm_engine_common::telemetry::MetricsConfig;
 use humantime::parse_duration;
-use sns_worker::{SchedulePolicy, SNS_LATENCY_HISTOGRAM_CONF};
+use sns_worker::{SchedulePolicy, SNS_LATENCY_OP_HISTOGRAM_CONF};
 use tracing::Level;
 
 #[derive(Parser, Debug, Clone)]
@@ -124,14 +124,14 @@ pub struct Args {
     #[arg(long, default_value = "rayon_parallel", value_parser = clap::value_parser!(SchedulePolicy))]
     pub schedule_policy: SchedulePolicy,
 
-    /// Prometheus metrics: coprocessor_sns_latency_seconds
+    /// Prometheus metrics: coprocessor_sns_op_latency_seconds
     #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
-    pub metric_sns_latency: MetricsConfig,
+    pub metric_sns_op_latency: MetricsConfig,
 }
 
 pub fn parse_args() -> Args {
     let args = Args::parse();
     // Set global configs from args
-    let _ = SNS_LATENCY_HISTOGRAM_CONF.set(args.metric_sns_latency);
+    let _ = SNS_LATENCY_OP_HISTOGRAM_CONF.set(args.metric_sns_op_latency);
     args
 }

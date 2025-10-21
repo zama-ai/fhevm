@@ -88,10 +88,10 @@ pub struct Config {
     pub worker_thread_count: u32,
 }
 
-pub(crate) static ZKVERIFY_LATENCY_HISTOGRAM_CONF: OnceLock<MetricsConfig> = OnceLock::new();
-pub(crate) static ZKVERIFY_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+pub static ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF: OnceLock<MetricsConfig> = OnceLock::new();
+pub static ZKVERIFY_OP_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
     register_histogram(
-        ZKVERIFY_LATENCY_HISTOGRAM_CONF.get(),
+        ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF.get(),
         "coprocessor_zkverify_op_latency_seconds",
         "ZK verification latencies in seconds",
     )

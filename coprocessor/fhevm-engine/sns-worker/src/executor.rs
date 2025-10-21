@@ -7,7 +7,7 @@ use crate::HandleItem;
 use crate::KeySet;
 use crate::SchedulePolicy;
 use crate::UploadJob;
-use crate::SNS_LATENCY_HISTOGRAM;
+use crate::SNS_LATENCY_OP_HISTOGRAM;
 use crate::{Config, ExecutionError};
 use aws_sdk_s3::Client;
 use fhevm_engine_common::healthz_server::{HealthCheckService, HealthStatus, Version};
@@ -569,7 +569,7 @@ fn compute_task(
 
             let elapsed = started_at.elapsed().map(|d| d.as_secs_f64()).unwrap_or(0.0);
             if elapsed > 0.0 {
-                SNS_LATENCY_HISTOGRAM.observe(elapsed);
+                SNS_LATENCY_OP_HISTOGRAM.observe(elapsed);
             }
         }
         Err(err) => {

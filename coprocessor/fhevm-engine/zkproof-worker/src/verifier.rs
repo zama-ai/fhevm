@@ -19,7 +19,7 @@ use tfhe::integer::ciphertext::IntegerProvenCompactCiphertextListConformancePara
 use tokio::sync::RwLock;
 use tokio::task::JoinSet;
 
-use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX, ZKVERIFY_LATENCY_HISTOGRAM};
+use crate::{auxiliary, Config, ExecutionError, MAX_INPUT_INDEX, ZKVERIFY_OP_LATENCY_HISTOGRAM};
 use anyhow::Result;
 
 use std::sync::Arc;
@@ -333,7 +333,7 @@ async fn execute_verify_proof_routine(
         if res.is_ok() {
             let elapsed = started_at.elapsed().unwrap_or_default().as_secs_f64();
             if elapsed > 0.0 {
-                ZKVERIFY_LATENCY_HISTOGRAM.observe(elapsed);
+                ZKVERIFY_OP_LATENCY_HISTOGRAM.observe(elapsed);
             }
         }
 

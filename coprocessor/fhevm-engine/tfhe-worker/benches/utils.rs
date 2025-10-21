@@ -105,9 +105,9 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         coprocessor_private_key: "./coprocessor.key".to_string(),
         service_name: "coprocessor".to_string(),
         log_level: Level::INFO,
-        health_check_port: 8080,
-        metric_fhe_latency: MetricsConfig::default(),
-        metric_rerand_latency: MetricsConfig::default(),
+        health_check_port: 8080, 
+        metric_rerand_batch_latency: MetricsConfig::default(),
+        metric_fhe_batch_latency: MetricsConfig::default(),
     };
 
     std::thread::spawn(move || {

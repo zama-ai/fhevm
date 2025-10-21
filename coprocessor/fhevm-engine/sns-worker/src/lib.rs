@@ -551,11 +551,11 @@ pub async fn run_all(
     Ok(())
 }
 
-pub static SNS_LATENCY_HISTOGRAM_CONF: OnceLock<MetricsConfig> = OnceLock::new();
-pub static SNS_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+pub static SNS_LATENCY_OP_HISTOGRAM_CONF: OnceLock<MetricsConfig> = OnceLock::new();
+pub static SNS_LATENCY_OP_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
     register_histogram(
-        SNS_LATENCY_HISTOGRAM_CONF.get(),
-        "coprocessor_sns_latency_seconds",
+        SNS_LATENCY_OP_HISTOGRAM_CONF.get(),
+        "coprocessor_sns_op_latency_seconds",
         "Squash_noise computation latencies in seconds",
     )
 });
