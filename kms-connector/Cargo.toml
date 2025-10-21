@@ -27,10 +27,10 @@ tfhe = "=1.4.0-alpha.3"
 #                       External dependencies                       #
 #####################################################################
 actix-web = "=4.11.0"
-alloy = { version = "=1.0.38", default-features = false, features = [
+alloy = { version = "=1.0.41", default-features = false, features = [
     "essentials",
+    "json-rpc",
     "provider-debug-api",
-    "provider-ws",
     "reqwest-rustls-tls",
     "signer-aws",
     "std",

@@ -23,7 +23,6 @@ tracing.workspace = true
 tracing-opentelemetry.workspace = true
 
 [dev-dependencies]
-alloy = { workspace = true, features = ["json-rpc"] }
 bc2wrap.workspace = true
 connector-utils = { workspace = true, features = ["tests"] }
 rstest.workspace = true
