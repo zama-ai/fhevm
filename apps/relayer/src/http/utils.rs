@@ -68,3 +68,10 @@ pub fn validate_hex_string_no_prefix(hex_str: &str) -> Result<(), ValidationErro
     }
     Ok(())
 }
+
+pub fn validate_extra_data_field(extra_data: &str) -> Result<(), ValidationError> {
+    if extra_data != "0x00" {
+        return Err(ValidationError::new("must_be_0x00"));
+    }
+    Ok(())
+}
