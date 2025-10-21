@@ -70,6 +70,8 @@ jobs:
 
       - name: Set up chart-testing
         uses: helm/chart-testing-action@5aa1c68405a43a57240a9b2869379324b2bec0fc #v2.7.0
+        with:
+          yamale_version: "6.0.0"
 
       - name: Run chart-testing (list-changed)
         id: list-changed

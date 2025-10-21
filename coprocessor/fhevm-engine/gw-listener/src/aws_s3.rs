@@ -6,6 +6,7 @@ use aws_sdk_s3::config::{Builder, ProvideCredentials};
 use aws_sdk_s3::Client;
 use tokio_util::bytes;
 use tracing::{error, info, warn};
+use url::Url;
 
 #[derive(Clone, Debug, Default)]
 pub struct S3Policy {
@@ -66,19 +67,51 @@ pub async fn create_s3_client(
 #[derive(Clone)]
 pub struct AwsS3Client {}
 
+pub async fn find_key(
+    client: &Client,
+    url: &str,
+    bucket: &str,
+    key_suffix: &str,
+) -> anyhow::Result<String> {
+    let mut keys = client
+        .list_objects_v2()
+        .bucket(bucket)
+        .send()
+        .await?
+        .contents
+        .unwrap_or_default();
+
+    keys.sort_by(|a, b| a.key.cmp(&b.key));
+
+    for obj in keys {
+        if let Some(candidate) = obj.key {
+            if candidate.ends_with(key_suffix) {
+                info!(
+                    bucket,
+                    key_suffix, candidate, "Found matching key in bucket"
+                );
+                return Ok(candidate);
+            }
+        }
+    }
+    anyhow::bail!("Key {key_suffix} not found in bucket {bucket} at {url}");
+}
+
 #[async_trait]
 impl AwsS3Interface for AwsS3Client {
     async fn get_bucket_key(
         &self,
         url: &str,
         bucket: &str,
-        key: &str,
+        key_suffix: &str,
     ) -> anyhow::Result<bytes::Bytes> {
-        Ok(create_s3_client(&S3Policy::DEFAULT, url)
-            .await?
+        // pick the right key from all keys
+        let s3_client = create_s3_client(&S3Policy::DEFAULT, url).await?;
+        let full_key = find_key(&s3_client, url, bucket, key_suffix).await?;
+        Ok(s3_client
             .get_object()
             .bucket(bucket)
-            .key(key)
+            .key(full_key)
             .send()
             .await?
             .body
@@ -98,29 +131,56 @@ pub trait AwsS3Interface: Send + Sync {
     ) -> anyhow::Result<bytes::Bytes>;
 }
 
+fn bucket_from_domain(url: &Url) -> anyhow::Result<String> {
+    let Some(domain) = url.domain() else {
+        anyhow::bail!("Cannot deduce the bucket name from url {:?}", url);
+    };
+    let domain_parts = domain.split('.').collect::<Vec<&str>>();
+    if domain_parts.len() < 2 {
+        anyhow::bail!("Cannot deduce the bucket name from url {:?}", url);
+    }
+    Ok(domain_parts[0].to_owned())
+}
+
 fn split_url(s3_bucket_url: &String) -> anyhow::Result<(String, String)> {
-    let parsed_url_and_bucket = url::Url::parse(s3_bucket_url)?;
-    let bucket = parsed_url_and_bucket.path();
-    let host = s3_bucket_url
-        .replace(bucket, "")
-        .trim_end_matches('/')
-        .to_owned();
-    let host = if host.contains("minio:9000") {
+    // e.g BBBBBB.s3.bla.bli.amazonaws.blu, the bucket is part of the domain
+    let s3_bucket_url = if s3_bucket_url.contains("minio:9000") {
         // TODO: replace by docker configuration
         warn!(s3_bucket_url, "Using localhost for minio access");
-        host.replace("minio:9000", "172.17.0.1:9000")
+        s3_bucket_url
+            .replace("minio:9000", "172.17.0.1:9000")
+            .to_owned()
     } else {
-        host.to_owned()
+        s3_bucket_url.to_owned()
     };
-    let bucket = bucket.trim_start_matches('/');
-    info!(s3_bucket_url, host, bucket, "Parsed S3 url");
-    Ok((host.to_owned(), bucket.to_owned()))
+    let parsed_url_and_bucket = url::Url::parse(&s3_bucket_url)?;
+    let mut bucket = parsed_url_and_bucket
+        .path()
+        .trim_start_matches('/')
+        .to_owned();
+    if bucket.is_empty() {
+        // e.g BBBBBB.s3.eu-west-1.amazonaws.com, the bucket is part of the domain
+        bucket = bucket_from_domain(&parsed_url_and_bucket)?;
+        let url = s3_bucket_url
+            .replace(&(bucket.clone() + "."), "")
+            .trim_end_matches('/')
+            .to_owned();
+        info!(s3_bucket_url, url, bucket, "Bucket from domain");
+        Ok((url, bucket))
+    } else {
+        let url = s3_bucket_url
+            .replace(&bucket, "")
+            .trim_end_matches('/')
+            .to_owned();
+        info!(s3_bucket_url, url, bucket, "Parsed S3 url");
+        Ok((url, bucket))
+    }
 }
 
 pub async fn download_key_from_s3<A: AwsS3Interface>(
     s3_client: &A,
     s3_bucket_urls: &[String],
-    key_path: String,
+    key_path_suffix: String,
     offset_bucket: usize, // to not ask the same bucket first
 ) -> anyhow::Result<bytes::Bytes> {
     let nb_urls = s3_bucket_urls.len();
@@ -129,21 +189,38 @@ pub async fn download_key_from_s3<A: AwsS3Interface>(
         let url_index = (i_s3_bucket_url + offset_bucket) % s3_bucket_urls.len();
         let s3_bucket_url = &s3_bucket_urls[url_index];
         info!(
-            key_path,
+            key_path_suffix,
             s3_bucket_url, i_s3_bucket_url, nb_urls, url_index, "Try downloading"
         );
         let Ok((url, bucket)) = split_url(s3_bucket_url) else {
             error!(s3_bucket_url, "Failed to parse S3 url");
             continue;
         };
-        let result = s3_client.get_bucket_key(&url, &bucket, &key_path).await;
+        let result = s3_client
+            .get_bucket_key(&url, &bucket, &key_path_suffix)
+            .await;
         let Ok(result) = result else {
-            error!(s3_bucket_url, key_path, result = ?result, "Downloading failed");
+            error!(s3_bucket_url, key_path_suffix, result = ?result, "Downloading failed");
             continue;
         };
-        info!(key_path, "Downloaded");
+        info!(key_path_suffix, "Downloaded");
         return Ok(result);
     }
-    error!(key_path, "Failed to download key from all S3 buckets");
-    anyhow::bail!("Failed to download key {key_path} from all S3 buckets");
+    error!(
+        key_path_suffix,
+        "Failed to download key from all S3 buckets"
+    );
+    anyhow::bail!("Failed to download key {key_path_suffix} from all S3 buckets");
+}
+
+mod test {
+    #[test]
+    fn test_split_devnet_url() {
+        let (url, bucket) = super::split_url(
+            &"https://zama-zws-dev-tkms-b6q87.s3.eu-west-1.amazonaws.com/".to_string(),
+        )
+        .unwrap();
+        assert_eq!(url.as_str(), "https://s3.eu-west-1.amazonaws.com");
+        assert_eq!(bucket.as_str(), "zama-zws-dev-tkms-b6q87");
+    }
 }
