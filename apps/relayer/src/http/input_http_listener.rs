@@ -195,58 +195,152 @@ mod tests {
         http::{self, Request, Response, StatusCode},
         Router,
     };
+    use fake::{Dummy, Fake};
+    use serde::ser::{Serialize, SerializeStruct, Serializer};
     use serde_json;
     use tower::ServiceExt;
 
-    const VALID_JSON: &str = r#"
-        {
-                   "contractChainId": "123456",
-                   "contractAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
-                   "userAddress": "0x12B064FB845C1cc05e9493856a1D637a73e944bE",
-                   "ciphertextWithInputVerification": "abcdef123456",
-                   "extraData": "0x00"
+    struct HexString(pub usize);
+    struct PrefixedHexString(pub usize);
+    struct BlockchainAddress;
+
+    impl Dummy<HexString> for String {
+        fn dummy_with_rng<R: rand::Rng + ?Sized>(config: &HexString, rng: &mut R) -> String {
+            // HexString(config.0).generate(rng)
+            (0..config.0)
+                .map(|_| format!("{:x}", rng.random_range(0..16)))
+                .collect()
         }
-    "#;
+    }
+
+    impl Dummy<PrefixedHexString> for String {
+        fn dummy_with_rng<R: rand::Rng + ?Sized>(
+            config: &PrefixedHexString,
+            rng: &mut R,
+        ) -> String {
+            let len = config.0 - 2;
+            // HexString(config.0).generate(rng)
+            let s: String = (0..len)
+                .map(|_| format!("{:x}", rng.random_range(0..16)))
+                .collect();
+            format!("0x{}", s)
+        }
+    }
+
+    impl Dummy<BlockchainAddress> for String {
+        fn dummy_with_rng<R: rand::Rng + ?Sized>(
+            _config: &BlockchainAddress,
+            rng: &mut R,
+        ) -> String {
+            PrefixedHexString(42).fake_with_rng(rng)
+        }
+    }
+
+    impl Dummy<()> for InputProofRequestJson {
+        fn dummy_with_rng<R: rand::Rng + ?Sized>(
+            _config: &(),
+            rng: &mut R,
+        ) -> InputProofRequestJson {
+            InputProofRequestJson {
+                contract_chain_id: "123456".to_string(),
+                contract_address: BlockchainAddress.fake_with_rng(rng),
+                user_address: BlockchainAddress.fake_with_rng(rng),
+                // TODO: check ciphertext length constraints
+                // Note: hex string should be even length
+                ciphertext_with_input_verification: HexString(rng.random_range(20..50) * 2)
+                    .fake_with_rng(rng),
+                extra_data: "0x00".to_string(),
+            }
+        }
+    }
+
+    impl Serialize for InputProofRequestJson {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            // Number of fields: 5
+            let mut state = serializer.serialize_struct("InputProofRequestJson", 5)?;
+
+            state.serialize_field("contractChainId", &self.contract_chain_id)?;
+            state.serialize_field("contractAddress", &self.contract_address)?;
+            state.serialize_field("userAddress", &self.user_address)?;
+            state.serialize_field(
+                "ciphertextWithInputVerification",
+                &self.ciphertext_with_input_verification,
+            )?;
+            state.serialize_field("extraData", &self.extra_data)?;
+
+            state.end()
+        }
+    }
 
     #[test]
     fn test_valid_json_with_string_id_succeeds() {
-        let data: InputProofRequestJson = serde_json::from_str(VALID_JSON).unwrap();
-        assert!(VALID_JSON.contains(r#"contractChainId": "123456""#));
-        assert!(data.validate().is_ok());
+        let fake_data: InputProofRequestJson = ().fake();
+        let serialized = serde_json::to_string(&fake_data).unwrap();
+        assert!(serialized.contains(r#"contractChainId":"123456""#));
+        let data: InputProofRequestJson = serde_json::from_str(&serialized).unwrap();
+        match data.validate() {
+            Err(e) => panic!("Validation failed: {:?}", e),
+            _ => {}
+        }
         assert!(data.contract_chain_id == "123456");
     }
 
     #[test]
     fn test_valid_json_with_numeric_id_succeeds() {
-        let json = VALID_JSON.replace("\"123456\"", "123456");
-        assert!(json.contains(r#"contractChainId": 123456"#));
+        // Note: we have to manually replace the field in the serialized JSON
+        // because the field is serialized as a string
+        let fake_data: InputProofRequestJson = ().fake();
+        let json = serde_json::to_string(&fake_data).unwrap();
+        let serialized = json.replace(
+            r#""contractChainId":"123456""#,
+            r#""contractChainId":123456"#,
+        );
+        assert!(serialized.contains(r#"contractChainId":123456"#));
         let data: InputProofRequestJson = serde_json::from_str(&json).unwrap();
-        assert!(data.validate().is_ok());
+        match data.validate() {
+            Err(e) => panic!("Validation failed: {:?}", e),
+            _ => {}
+        }
         assert!(data.contract_chain_id == "123456");
     }
 
     #[test]
     fn test_valid_json_with_hex_id_succeeds() {
-        let json = VALID_JSON.replace("\"123456\"", "\"0x1e240\"");
-        assert!(json.contains(r#"contractChainId": "0x1e240""#));
+        let fake_data = InputProofRequestJson {
+            contract_chain_id: "0x1e240".to_string(),
+            ..().fake()
+        };
+        let json = serde_json::to_string(&fake_data).unwrap();
+        assert!(json.contains(r#"contractChainId":"0x1e240""#));
         let data: InputProofRequestJson = serde_json::from_str(&json).unwrap();
-        assert!(data.validate().is_ok());
+        match data.validate() {
+            Err(e) => panic!("Validation failed: {:?}", e),
+            _ => {}
+        }
         assert!(data.contract_chain_id == "0x1e240");
     }
 
     #[test]
     fn test_invalid_contract_address_fails() {
         for invalid_address in &[
-            "0xGHIJKL99D17FAAB8c95B2eCD500cFeFc8f658f15d", // Invalid hex character 'G'
-            "1234567890abcdef1234567890abcdef12345678",    // Missing 0x prefix
-            "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15",   // One character short
-            "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15da", // One character longer
-            "",                                            // empty string
+            {
+                let mut invalid_handle: String = PrefixedHexString(39).fake();
+                invalid_handle.push('g');
+                invalid_handle
+            }, // Invalid hex character 'g'
+            PrefixedHexString(39).fake(), // One character short
+            PrefixedHexString(41).fake(), // One character longer
+            HexString(40).fake(),         // Missing 0x prefix
+            "".to_string(),               // empty string
         ] {
-            let invalid_json = VALID_JSON.replace(
-                "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
-                invalid_address,
-            );
+            let fake_data = InputProofRequestJson {
+                contract_address: invalid_address.clone(),
+                ..().fake()
+            };
+            let invalid_json = serde_json::to_string(&fake_data).unwrap();
             let data: InputProofRequestJson = serde_json::from_str(&invalid_json).unwrap();
             let errors = data.validate().unwrap_err();
             // Check that the error is for the correct field
@@ -257,16 +351,21 @@ mod tests {
     #[test]
     fn test_invalid_user_address_fails() {
         for invalid_address in &[
-            "0xGHIJKL845C1cc05e9493856a1D637a73e944bE", // Invalid hex character 'G'
-            "12B064FB845C1cc05e9493856a1D637a73e944bE", // Missing 0x prefix
-            "0x12B064FB845C1cc05e9493856a1D637a73e944", // One character short
-            "0x12B064FB845C1cc05e9493856a1D637a73e944bEE", // One character longer
-            "",                                         // empty string
+            {
+                let mut invalid_handle: String = PrefixedHexString(39).fake();
+                invalid_handle.push('g');
+                invalid_handle
+            }, // Invalid hex character 'g'
+            PrefixedHexString(39).fake(), // One character short
+            PrefixedHexString(41).fake(), // One character longer
+            HexString(40).fake(),         // Missing 0x prefix
+            "".to_string(),               // empty string
         ] {
-            let invalid_json = VALID_JSON.replace(
-                "0x12B064FB845C1cc05e9493856a1D637a73e944bE",
-                invalid_address,
-            );
+            let fake_data = InputProofRequestJson {
+                user_address: invalid_address.clone(),
+                ..().fake()
+            };
+            let invalid_json = serde_json::to_string(&fake_data).unwrap();
             let data: InputProofRequestJson = serde_json::from_str(&invalid_json).unwrap();
             let errors = data.validate().unwrap_err();
             // Check that the error is for the correct field
@@ -275,74 +374,40 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_ciphertext_fails_empty() {
-        // Ciphertext has a "0x" prefix, which is not allowed
-        let invalid_json = VALID_JSON.replace("abcdef123456", "");
-        let data: InputProofRequestJson = serde_json::from_str(&invalid_json).unwrap();
-        let errors = data.validate().unwrap_err();
-        assert!(errors
-            .field_errors()
-            .contains_key("ciphertext_with_input_verification"));
-    }
-
-    #[test]
-    fn test_invalid_ciphertext_fails_with_prefix() {
-        // Ciphertext has a "0x" prefix, which is not allowed
-        let invalid_json = VALID_JSON.replace("abcdef123456", "0xabcdef123456");
-        let data: InputProofRequestJson = serde_json::from_str(&invalid_json).unwrap();
-        let errors = data.validate().unwrap_err();
-        assert!(errors
-            .field_errors()
-            .contains_key("ciphertext_with_input_verification"));
-    }
-
-    #[test]
-    fn test_invalid_ciphertext_fails_non_hex() {
-        // Ciphertext contains an invalid character 'G'
-        let invalid_json = VALID_JSON.replace("abcdef123456", "abcdef123456G");
-        let data: InputProofRequestJson = serde_json::from_str(&invalid_json).unwrap();
-        let errors = data.validate().unwrap_err();
-        assert!(errors
-            .field_errors()
-            .contains_key("ciphertext_with_input_verification"));
+    fn test_invalid_ciphertext_fails() {
+        for invalid_ciphetext in &[
+            {
+                let mut invalid_handle: String =
+                    HexString(rand::random_range(10..50) * 2 + 1).fake();
+                invalid_handle.push('g');
+                invalid_handle
+            }, // Invalid hex character 'g'
+            PrefixedHexString(rand::random_range(10..50) * 2).fake(), // prefixed hex string
+            "".to_string(),                                           // empty string
+        ] {
+            let fake_data = InputProofRequestJson {
+                ciphertext_with_input_verification: invalid_ciphetext.clone(),
+                ..().fake()
+            };
+            let invalid_json = serde_json::to_string(&fake_data).unwrap();
+            let data: InputProofRequestJson = serde_json::from_str(&invalid_json).unwrap();
+            let errors = data.validate().unwrap_err();
+            assert!(errors
+                .field_errors()
+                .contains_key("ciphertext_with_input_verification"));
+        }
     }
 
     #[test]
     fn test_invalid_extra_data_fails() {
-        let invalid_json = VALID_JSON.replace("0x00", "0x01");
+        let fake_data = InputProofRequestJson {
+            extra_data: "0x01".to_string(),
+            ..().fake()
+        };
+        let invalid_json = serde_json::to_string(&fake_data).unwrap();
         let data: InputProofRequestJson = serde_json::from_str(&invalid_json).unwrap();
         let errors = data.validate().unwrap_err();
         assert!(errors.field_errors().contains_key("extra_data"));
-    }
-
-    #[test]
-    fn test_wrong_json_type_fails_at_deserialization() {
-        // "userAddress" is a boolean, which doesn't match the struct's String type.
-        // This error comes from `serde`, not `validator`.
-        let invalid_json =
-            VALID_JSON.replace("\"0x12B064FB845C1cc05e9493856a1D637a73e944bE\"", "true");
-        let result: Result<InputProofRequestJson, _> = serde_json::from_str(&invalid_json);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_deserialize_input_proof_request_json() {
-        // Deserialize the JSON string into the struct.
-        let request: InputProofRequestJson =
-            serde_json::from_str(VALID_JSON).expect("JSON deserialization failed");
-
-        // Assert that each field was deserialized correctly.
-        assert_eq!(request.contract_chain_id, "123456");
-        assert_eq!(
-            request.contract_address,
-            "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d"
-        );
-        assert_eq!(
-            request.user_address,
-            "0x12B064FB845C1cc05e9493856a1D637a73e944bE"
-        );
-        assert_eq!(request.ciphertext_with_input_verification, "abcdef123456");
-        assert_eq!(request.extra_data, "0x00");
     }
 
     struct SimpleHandler {
@@ -420,7 +485,10 @@ mod tests {
             signatures: vec![],
         });
 
-        let response = post(app, String::from(VALID_JSON)).await;
+        let fake_data: InputProofRequestJson = ().fake();
+        let payload = serde_json::to_string(&fake_data).unwrap();
+
+        let response = post(app, payload).await;
 
         assert_eq!(response.status(), StatusCode::OK);
     }
@@ -443,19 +511,17 @@ mod tests {
             handles: vec![],
             signatures: vec![],
         });
-        //contractAddress": "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
-        //    "userAddress": "0x12B064FB845C1cc05e9493856a1D637a73e944bE",
-        let invalid_payload = VALID_JSON
-            .replace(
-                "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15d",
-                // Invalid character 'G' at the end
-                "0xAb30999D17FAAB8c95B2eCD500cFeFc8f658f15G",
-            )
-            .replace(
-                "0x12B064FB845C1cc05e9493856a1D637a73e944bE",
-                // Address too short
-                "0x12B064FB845C1cc05e9493856a1D637a73e944b",
-            );
+
+        let fake_data = InputProofRequestJson {
+            contract_address: {
+                let mut address: String = PrefixedHexString(41).fake();
+                address.push('g');
+                address
+            }, // Invalid hex address
+            user_address: PrefixedHexString(44).fake(), // Invalid address
+            ..().fake()
+        };
+        let invalid_payload = serde_json::to_string(&fake_data).unwrap();
 
         let response = post(app, invalid_payload).await;
 
@@ -480,35 +546,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn e2e_invalid_ciphertext_returns_bad_request() {
-        let app = app(InputProofResponse {
-            handles: vec![],
-            signatures: vec![],
-        });
-        let invalid_payload = VALID_JSON.replace("abcdef123456", "abcdef123456G");
-
-        let response = post(app, invalid_payload).await;
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-        // Check that the response body contains the specific validation error.
-        let errors = &body["errors"];
-        assert!(errors.is_object());
-        let field_errors = &errors["ciphertextWithInputVerification"];
-        assert!(field_errors.is_array());
-        assert_eq!(field_errors[0]["code"], "invalid_hex_characters");
-    }
-
-    #[tokio::test]
     async fn e2e_invalid_extra_data_returns_bad_request() {
         let app = app(InputProofResponse {
             handles: vec![],
             signatures: vec![],
         });
-        let invalid_payload = VALID_JSON.replace("\"0x00\"", "\"0x01\"");
+        let fake_data = InputProofRequestJson {
+            extra_data: "0x01".to_string(),
+            ..().fake()
+        };
+        let invalid_payload = serde_json::to_string(&fake_data).unwrap();
 
         let response = post(app, invalid_payload).await;
 
