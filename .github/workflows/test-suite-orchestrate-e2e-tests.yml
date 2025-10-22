@@ -33,7 +33,40 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const workflows = ['test-suite-docker-build.yml'];
+            const workflows = [
+              'coprocessor-db-migration-docker-build.yml',
+              'coprocessor-gw-listener-docker-build.yml',
+              'coprocessor-host-listener-docker-build.yml',
+              'coprocessor-sns-worker-docker-build.yml',
+              'coprocessor-tfhe-worker-docker-build.yml',
+              'coprocessor-tx-sender-docker-build.yml',
+              'coprocessor-zkproof-worker-docker-build.yml',
+              'gateway-contracts-docker-build.yml',
+              'host-contracts-docker-build.yml',
+              'kms-connector-db-migration-docker-build.yml',
+              'kms-connector-gw-listener-docker-build.yml',
+              'kms-connector-kms-worker-docker-build.yml',
+              'kms-connector-tx-sender-docker-build.yml',
+              'test-suite-docker-build.yml'
+            ];
+            
+            // Map workflow files to component version names
+            const workflowToImageName = {
+              'coprocessor-db-migration-docker-build.yml': 'db_migration_version',
+              'coprocessor-gw-listener-docker-build.yml': 'gateway_listener_version',
+              'coprocessor-host-listener-docker-build.yml': 'host_listener_version',
+              'coprocessor-sns-worker-docker-build.yml': 'sns_worker_version',
+              'coprocessor-tfhe-worker-docker-build.yml': 'tfhe_worker_version',
+              'coprocessor-tx-sender-docker-build.yml': 'tx_sender_version',
+              'coprocessor-zkproof-worker-docker-build.yml': 'zkproof_worker_version',
+              'gateway-contracts-docker-build.yml': 'gateway_version',
+              'host-contracts-docker-build.yml': 'host_version',
+              'kms-connector-db-migration-docker-build.yml': 'connector_db_migration_version',
+              'kms-connector-gw-listener-docker-build.yml': 'connector_gw_listener_version',
+              'kms-connector-kms-worker-docker-build.yml': 'connector_kms_worker_version',
+              'kms-connector-tx-sender-docker-build.yml': 'connector_tx_sender_version',
+              'test-suite-docker-build.yml': 'test_suite_version'
+            };
             
             // Determine target ref
             let ref;
@@ -126,9 +159,14 @@ jobs:
                         const buildSha = recentRun.head_sha;
                         const tag = buildSha.substring(0, 7);
                         
-                        currentBuiltImages.push('test_suite_version');
-                        currentImageTag = tag;
-                        console.log(`   ✅ ${workflowName} built image: test_suite_version with tag: ${tag} (from SHA: ${buildSha})`);
+                        const imageName = workflowToImageName[workflowName];
+                        if (imageName) {
+                          currentBuiltImages.push(imageName);
+                          currentImageTag = tag;
+                          console.log(`   ✅ ${workflowName} built image: ${imageName} with tag: ${tag} (from SHA: ${buildSha})`);
+                        } else {
+                          console.log(`   ⚠️ ${workflowName} has no image mapping`);
+                        }
                       } else if (outputJob && outputJob.conclusion === 'failure') {
                         console.log(`   🔶 ${workflowName} completed but output-build-status indicates no image was built`);
                       } else {
@@ -239,10 +277,11 @@ jobs:
               'zkproof_worker_version': { type: 'coprocessor', index: 6 },
               'gateway_version': { type: 'gateway' },
               'host_version': { type: 'host' },
-              'connector_version': { type: 'connector', index: 'all' }, // Special case for all connector components
-              'test_suite_version': { type: 'test-suite' },
-              'relayer_version': { type: 'relayer' },
-              'kms_core_version': { type: 'kms-core' }
+              'connector_db_migration_version': { type: 'connector', index: 0 },
+              'connector_gw_listener_version': { type: 'connector', index: 1 },
+              'connector_tx_sender_version': { type: 'connector', index: 2 },
+              'connector_kms_worker_version': { type: 'connector', index: 3 },
+              'test_suite_version': { type: 'test-suite' }
             };
 
             // Initialize arrays - but only add to inputs if we have actual built images
@@ -253,8 +292,6 @@ jobs:
             let hasGatewayBuild = false;
             let hasHostBuild = false;
             let hasTestSuiteBuild = false;
-            let hasRelayerBuild = false;
-            let hasKmsCoreBuild = false;
 
             // Map built images to components
             for (const builtImage of builtImages) {
@@ -274,23 +311,11 @@ jobs:
                     hasHostBuild = true;
                     break;
                   case 'connector':
-                    if (mapping.index === 'all') {
-                      // Set all 4 connector components: [db_migration, gw_listener, tx_sender, kms_worker]
-                      connectorArray.fill(imageTag);
-                      hasConnectorBuilds = true;
-                    } else {
-                      connectorArray[mapping.index] = imageTag;
-                      hasConnectorBuilds = true;
-                    }
+                    connectorArray[mapping.index] = imageTag;
+                    hasConnectorBuilds = true;
                     break;
                   case 'test-suite':
                     hasTestSuiteBuild = true;
-                    break;
-                  case 'relayer':
-                    hasRelayerBuild = true;
-                    break;
-                  case 'kms-core':
-                    hasKmsCoreBuild = true;
                     break;
                 }
               } else {
@@ -300,46 +325,29 @@ jobs:
 
             // Only add inputs for components that were actually built
             
-            // 1. coprocessor: array of 7 elements - only if at least one coprocessor component was built
             if (hasCoprocessorBuilds) {
               inputs.coprocessor = JSON.stringify(coprocessorArray);
               console.log(`📝 Input 1 - coprocessor: ${inputs.coprocessor}`);
             }
             
-            // 2. gateway: string - only if gateway was built
             if (hasGatewayBuild) {
               inputs.gateway = imageTag;
               console.log(`📝 Input 2 - gateway: ${imageTag}`);
             }
             
-            // 3. host: string - only if host was built
             if (hasHostBuild) {
               inputs.host = imageTag;
               console.log(`📝 Input 3 - host: ${imageTag}`);
             }
             
-            // 4. connector: array of 4 elements - only if at least one connector component was built
             if (hasConnectorBuilds) {
               inputs.connector = JSON.stringify(connectorArray);
               console.log(`📝 Input 4 - connector: ${inputs.connector}`);
             }
             
-            // 5. test-suite: string - only if test-suite was built
             if (hasTestSuiteBuild) {
               inputs['test-suite'] = imageTag;
               console.log(`📝 Input 5 - test-suite: ${imageTag}`);
-            }
-            
-            // 6. relayer: string - only if relayer was built
-            if (hasRelayerBuild) {
-              inputs.relayer = imageTag;
-              console.log(`📝 Input 6 - relayer: ${imageTag}`);
-            }
-            
-            // 7. kms-core: string - only if kms-core was built
-            if (hasKmsCoreBuild) {
-              inputs['kms-core'] = imageTag;
-              console.log(`📝 Input 7 - kms-core: ${imageTag}`);
             }
 
             // Determine target ref
@@ -351,14 +359,8 @@ jobs:
             }
             
             console.log(`🚀 Dispatching E2E tests on ref: ${ref}`);
-            console.log(`📝 Final inputs (${Object.keys(inputs).length}/7 possible):`, inputs);
-
-            // Always dispatch E2E tests
-            if (Object.keys(inputs).length === 0) {
-              console.log('🔍 No built images found, dispatching E2E tests with all fhevm-cli defaults');
-            } else {
-              console.log(`📊 Dispatching with ${Object.keys(inputs).length} component overrides, others will use fhevm-cli defaults`);
-            }
+            console.log(`📝 Final inputs (${Object.keys(inputs).length}/5 possible):`, inputs);
+            console.log(`📊 Dispatching with ${Object.keys(inputs).length} component overrides, others will use fhevm-cli defaults`);
 
             try {
               await github.rest.actions.createWorkflowDispatch({
@@ -371,16 +373,11 @@ jobs:
 
               console.log('✅ E2E tests workflow dispatched successfully!');
               
-              // Log what versions will be used
-              if (Object.keys(inputs).length > 0) {
-                console.log('📋 E2E tests will use these overridden versions:');
-                Object.entries(inputs).forEach(([key, value]) => {
-                  console.log(`   ${key}: ${value}`);
-                });
-                console.log('📋 All other components will use fhevm-cli defaults');
-              } else {
-                console.log('📋 E2E tests will use all fhevm-cli defaults');
-              }
+              console.log('📋 E2E tests will use these overridden versions:');
+              Object.entries(inputs).forEach(([key, value]) => {
+                console.log(`   ${key}: ${value}`);
+              });
+              console.log('📋 All other components will use fhevm-cli defaults');
               
             } catch (error) {
               console.log(`❌ Failed to dispatch E2E tests: ${error.message}`);
@@ -389,7 +386,7 @@ jobs:
                 console.log('💡 The E2E workflow rejected some inputs.');
                 console.log('🔍 This indicates a mismatch between input names.');
                 console.log('📋 Attempted inputs:', Object.keys(inputs));
-                console.log('📋 Expected inputs: coprocessor, gateway, host, connector, test-suite, relayer, kms-core');
+                console.log('📋 Expected inputs: coprocessor, gateway, host, connector, test-suite');
               }
               
               core.setFailed(`Failed to dispatch E2E tests: ${error.message}`);
