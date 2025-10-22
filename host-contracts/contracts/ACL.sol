@@ -226,13 +226,13 @@ contract ACL is
      */
     function allowTransient(bytes32 handle, address account) public virtual whenNotPaused {
         if (msg.sender != fhevmExecutorAddress) {
+            if (isAccountDenied(msg.sender)) {
+                revert SenderDenied(msg.sender);
+            }
+
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
             }
-        }
-
-        if (isAccountDenied(msg.sender)) {
-            revert SenderDenied(msg.sender);
         }
 
         bytes32 key = keccak256(abi.encodePacked(handle, account));
