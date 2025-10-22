@@ -42,4 +42,12 @@ contract ACLEvents {
         uint64 delegationCounter,
         uint64 oldExpiryDate
     );
+
+    /// @notice Emitted when an account is added to the deny list.
+    /// @param account The address of the account that is blocked.
+    event BlockedAccount(address indexed account);
+
+    /// @notice Emitted when an account is removed from the deny list.
+    /// @param account The address of the account that is unblocked.
+    event UnblockedAccount(address indexed account);
 }

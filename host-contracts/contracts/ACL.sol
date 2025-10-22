@@ -25,18 +25,6 @@ contract ACL is
     MulticallUpgradeable
 {
     /**
-     * @notice Emitted when an account is added to the deny list.
-     * @param account The address of the account that is blocked.
-     */
-    event BlockedAccount(address account);
-
-    /**
-     * @notice Emitted when an account is removed from the deny list.
-     * @param account The address of the account that is unblocked.
-     */
-    event UnblockedAccount(address account);
-
-    /**
      * @notice Returned if an account is already in the deny list.
      * @param account The address of the account that is already blocked.
      */
