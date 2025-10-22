@@ -22,8 +22,6 @@ contract MockACL is ACL {
     }
 }
 
-import {console} from "forge-std/Console.sol";
-
 contract ACLTest is Test {
     MockACL internal acl;
     PauserSet internal pauserSet;
