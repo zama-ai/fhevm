@@ -730,13 +730,13 @@ contract ACLTest is Test {
     // Deny List
     ////////////////////////////////////////////////////////////////////////////
 
-    function _oneRandomAddress() internal returns (address randomAddress) {
+    function _oneRandomAddress() internal view returns (address randomAddress) {
         randomAddress = vm.randomAddress();
         vm.assume(randomAddress != owner);
         vm.assume(randomAddress != pauser);
     }
 
-    function _twoRandomAddresses() internal returns (address randomAddress1, address randomAddress2) {
+    function _twoRandomAddresses() internal view returns (address randomAddress1, address randomAddress2) {
         randomAddress1 = vm.randomAddress();
         randomAddress2 = vm.randomAddress();
 
@@ -793,8 +793,7 @@ contract ACLTest is Test {
     function test_OwnerCanBlockAccount() public {
         _upgradeProxy();
 
-        address randomAccount = vm.randomAddress();
-        vm.assume(randomAccount != owner);
+        address randomAccount = _oneRandomAddress();
 
         assertEq(acl.isAccountDenied(randomAccount), false);
 
@@ -810,8 +809,7 @@ contract ACLTest is Test {
     function test_OwnerCanUnblockAccount() public {
         _upgradeProxy();
 
-        address randomAccount = vm.randomAddress();
-        vm.assume(randomAccount != owner);
+        address randomAccount = _oneRandomAddress();
 
         assertEq(acl.isAccountDenied(randomAccount), false);
 
@@ -872,7 +870,7 @@ contract ACLTest is Test {
     function test_DeniedAccountCannotAllowForDecryption() public {
         _upgradeProxy();
 
-        (address randomAccount, address randomUser) = _twoRandomAddresses();
+        address randomAccount = _oneRandomAddress();
 
         vm.prank(acl.owner());
         acl.blockAccount(randomAccount);
