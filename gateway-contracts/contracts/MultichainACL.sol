@@ -15,6 +15,8 @@ import { UserDecryptionDelegation } from "./shared/Structs.sol";
 /**
  * @title MultichainACL smart contract
  * @notice See {IMultichainACL}
+ * @dev This contract implements MulticallUpgradeable to allow batching multiple calls in a single
+ * transaction, e.g., for bundling user decryption delegations of multiple contracts.
  */
 contract MultichainACL is
     IMultichainACL,
@@ -62,8 +64,8 @@ contract MultichainACL is
         mapping(bytes32 allowHash => address[] coprocessorTxSenderAddresses) allowConsensusTxSenders;
         /// @notice Allowed public decryptions.
         mapping(bytes32 allowHash => bool isAllowed) isAllowed;
-        /// @notice The coprocessor transaction senders involved in a consensus for delegating or revoking user decryption.
-        mapping(bytes32 delegateUserDecryptionHash => address[] coprocessorTxSenderAddresses) delegateOrRevokeUserDecryptionTxSenders;
+        /// @notice DEPRECATED: to remove in a state reset.
+        mapping(bytes32 delegateAccountHash => address[] coprocessorTxSenderAddresses) delegateAccountConsensusTxSenders;
         // ----------------------------------------------------------------------------------------------
         // Coprocessor context state variables:
         // ----------------------------------------------------------------------------------------------
@@ -73,12 +75,21 @@ contract MultichainACL is
         // Delegation state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The computed delegate user decryption hash that has already reached consensus for delegation or revocation.
-        mapping(bytes32 delegateUserDecryptionHash => bool isDelegated) delegatedOrRevokedUserDecryptionHashes;
+        mapping(bytes32 delegateUserDecryptionHash => bool isDelegatedOrRevoked) delegatedOrRevokedUserDecryptionHashes;
+        /// @notice The coprocessor transaction senders involved in a consensus for delegating user decryption.
+        mapping(bytes32 delegateUserDecryptionHash => address[] coprocessorTxSenderAddresses) delegateUserDecryptionTxSenders;
+        /// @notice The coprocessor transaction senders involved in a consensus for revoking user decryption.
+        mapping(bytes32 delegateUserDecryptionHash => address[] coprocessorTxSenderAddresses) revokeUserDecryptionTxSenders;
         // prettier-ignore
-        /// @notice The coprocessors that have already delegated or revoked delegation for user decryption.
+        /// @notice The coprocessors that have already delegated for user decryption.
         mapping(bytes32 delegateUserDecryptionHash =>
             mapping(address coprocessorTxSenderAddress => bool hasDelegated))
-                alreadyDelegatedOrRevokedUserDecryptionCoprocessors;
+                alreadyDelegatedUserDecryptionCoprocessors;
+        // prettier-ignore
+        /// @notice The coprocessors that have already revoked delegation for user decryption.
+        mapping(bytes32 delegateUserDecryptionHash =>
+            mapping(address coprocessorTxSenderAddress => bool hasRevoked))
+                alreadyRevokedUserDecryptionCoprocessors;
         // prettier-ignore
         /// @notice The user decryption delegation info after reaching consensus for delegation or revocation.
         mapping(uint256 chainId => mapping(address delegator =>
@@ -212,11 +223,24 @@ contract MultichainACL is
         );
 
         mapping(address => bool) storage alreadyDelegatedUserDecryptionCoprocessors = $
-            .alreadyDelegatedOrRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
+            .alreadyDelegatedUserDecryptionCoprocessors[delegateUserDecryptionHash];
 
-        /// @dev Check if the coprocessor has already delegated the user decryption.
+        // Check if the coprocessor has already delegated the user decryption.
         if (alreadyDelegatedUserDecryptionCoprocessors[msg.sender]) {
-            revert CoprocessorAlreadyDelegatedOrRevokedUserDecryption(
+            revert CoprocessorAlreadyDelegatedUserDecryption(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                expirationDate,
+                msg.sender
+            );
+        }
+
+        // Also check if the coprocessor has already revoked the user decryption delegation.
+        if ($.alreadyRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash][msg.sender]) {
+            revert CoprocessorAlreadyRevokedUserDecryption(
                 chainId,
                 delegator,
                 delegate,
@@ -232,19 +256,28 @@ contract MultichainACL is
 
         // Store the coprocessor transaction sender address for the delegate user decryption hash.
         // A "late" valid coprocessor transaction sender address will still be added in the list.
-        $.delegateOrRevokeUserDecryptionTxSenders[delegateUserDecryptionHash].push(msg.sender);
+        $.delegateUserDecryptionTxSenders[delegateUserDecryptionHash].push(msg.sender);
 
-        // Send the event only if the consensus is reached in the current call.
+        emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter);
+
+        // Send the consensus reached event only if the consensus is reached in the current call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted.
         if (
             !$.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] &&
-            _isConsensusReached($.delegateOrRevokeUserDecryptionTxSenders[delegateUserDecryptionHash].length)
+            _isConsensusReached($.delegateUserDecryptionTxSenders[delegateUserDecryptionHash].length)
         ) {
             UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[chainId][delegator][
                 delegate
             ][contractAddress];
 
-            // Check that the delegation counter is greater than a previous one.
+            /**
+             * @dev Check that the delegation counter is strictly greater than the previous one.
+             *
+             * This check must be performed only after consensus is reached to guarantee correct ordering
+             * of delegation operations among multiple coprocessors. Performing this check outside of the
+             * consensus branch could lead to incorrect reverts in cases where multiple delegation or
+             * revocation transactions are processed in parallel.
+             */
             if (delegationCounter <= userDecryptionDelegation.delegationCounter) {
                 revert UserDecryptionDelegationCounterTooLow(delegationCounter);
             }
@@ -257,7 +290,7 @@ contract MultichainACL is
             // Mark the delegate user decryption hash as having reached consensus for delegation.
             $.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] = true;
 
-            emit DelegateUserDecryption(
+            emit DelegateUserDecryptionConsensusReached(
                 chainId,
                 delegator,
                 delegate,
@@ -289,11 +322,24 @@ contract MultichainACL is
         );
 
         mapping(address => bool) storage alreadyRevokedUserDecryptionCoprocessors = $
-            .alreadyDelegatedOrRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
+            .alreadyRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
 
-        /// @dev Check if the coprocessor has already revoked the user decryption delegation.
+        // Check if the coprocessor has already revoked the user decryption delegation.
         if (alreadyRevokedUserDecryptionCoprocessors[msg.sender]) {
-            revert CoprocessorAlreadyDelegatedOrRevokedUserDecryption(
+            revert CoprocessorAlreadyRevokedUserDecryption(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                expirationDate,
+                msg.sender
+            );
+        }
+
+        // Also check if the coprocessor has already delegated the user decryption.
+        if ($.alreadyDelegatedUserDecryptionCoprocessors[delegateUserDecryptionHash][msg.sender]) {
+            revert CoprocessorAlreadyDelegatedUserDecryption(
                 chainId,
                 delegator,
                 delegate,
@@ -307,21 +353,30 @@ contract MultichainACL is
         // Mark the coprocessor has already revoked for the delegate user decryption hash.
         alreadyRevokedUserDecryptionCoprocessors[msg.sender] = true;
 
-        // Store the coprocessor transaction sender address for the delegate user decryption hash.
+        // Store the revoking coprocessor transaction sender address for the delegate user decryption hash.
         // A "late" valid coprocessor transaction sender address will still be added in the list.
-        $.delegateOrRevokeUserDecryptionTxSenders[delegateUserDecryptionHash].push(msg.sender);
+        $.revokeUserDecryptionTxSenders[delegateUserDecryptionHash].push(msg.sender);
 
-        // Send the event if and only if the consensus is reached in the current call.
+        emit RevokeUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter);
+
+        // Send the consensus reached event only if the consensus is reached in the current call.
         // This means a "late" response will not be reverted, just ignored and no event will be emitted.
         if (
             !$.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] &&
-            _isConsensusReached($.delegateOrRevokeUserDecryptionTxSenders[delegateUserDecryptionHash].length)
+            _isConsensusReached($.revokeUserDecryptionTxSenders[delegateUserDecryptionHash].length)
         ) {
             UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[chainId][delegator][
                 delegate
             ][contractAddress];
 
-            // Check that the delegation counter is greater than a previous one.
+            /**
+             * @dev Check that the delegation counter is strictly greater than the previous one.
+             *
+             * This check must be performed only after consensus is reached to guarantee correct ordering
+             * of revocation operations among multiple coprocessors. Performing this check outside of the
+             * consensus branch could lead to incorrect reverts in cases where multiple delegation or
+             * revocation transactions are processed in parallel.
+             */
             if (delegationCounter <= userDecryptionDelegation.delegationCounter) {
                 revert UserDecryptionDelegationCounterTooLow(delegationCounter);
             }
@@ -334,7 +389,7 @@ contract MultichainACL is
             // Mark the delegate user decryption hash as having reached consensus for revocation.
             $.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] = true;
 
-            emit RevokeUserDecryption(
+            emit RevokeUserDecryptionConsensusReached(
                 chainId,
                 delegator,
                 delegate,
