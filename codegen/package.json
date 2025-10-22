@@ -20,6 +20,8 @@
     }
   },
   "scripts": {
+    "prettier:check": "prettier --config ./.prettierrc.json --check \"**/*.{js,json,md,sol,ts,yml}\"",
+    "prettier:write": "prettier --config ./.prettierrc.json --write \"**/*.{js,json,md,sol,ts,yml}\"",
     "rebuild": "npm run clean && npm run build",
     "clean": "rm -rf ./dist",
     "build": "tsc --project ./tsconfig.json",
