@@ -1,0 +1,17 @@
+# directories
+dist
+node_modules
+
+.coverage_artifacts
+.coverage_cache
+.coverage_contracts
+
+# files
+*.env
+*.log
+.DS_Store
+.pnp.*
+coverage.json
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
