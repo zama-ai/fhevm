@@ -1,0 +1,29 @@
+{
+  "name": "codegen",
+  "type": "module",
+  "bin": "./dist/_esm/index.js",
+  "dependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "commander": "^14.0.1",
+    "prettier": "^3.3.3",
+    "prettier-plugin-solidity": "^1.1.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": ">=8.0.0",
+    "typescript": ">=5.0.4"
+  },
+  "imports": {
+    "#lib": {
+      "types": "./dist/_types/index.d.ts",
+      "import": "./dist/_esm/index.js"
+    }
+  },
+  "scripts": {
+    "rebuild": "npm run clean && npm run build",
+    "clean": "rm -rf ./dist",
+    "build": "tsc --project ./tsconfig.json",
+    "tsc": "tsc --project ./tsconfig.json --noEmit",
+    "codegen": "node ./dist/_esm/index.js"
+  }
+}
