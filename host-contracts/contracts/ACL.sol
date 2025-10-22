@@ -39,6 +39,18 @@ contract ACL is
     event UnblockedAccount(address indexed caller, address indexed account);
 
     /**
+     * @notice Returned if an account is already in the deny list.
+     * @param account The address of the account that is already blocked.
+     */
+    error AccountAlreadyBlocked(address account);
+
+    /**
+     * @notice Returned if an account is not in the deny list.
+     * @param account The address of the account that is not blocked.
+     */
+    error AccountNotBlocked(address account);
+
+    /**
      * @notice Returned if a delegation or revoke has already been done in a same block.
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
@@ -506,6 +518,9 @@ contract ACL is
      */
     function blockAccount(address account) public virtual onlyOwner {
         ACLStorage storage $ = _getACLStorage();
+        if ($.denyList[account]) {
+            revert AccountAlreadyBlocked(account);
+        }
         $.denyList[account] = true;
         emit BlockedAccount(msg.sender, account);
     }
@@ -516,6 +531,9 @@ contract ACL is
      */
     function unblockAccount(address account) public virtual onlyOwner {
         ACLStorage storage $ = _getACLStorage();
+        if (!$.denyList[account]) {
+            revert AccountNotBlocked(account);
+        }
         $.denyList[account] = false;
         emit UnblockedAccount(msg.sender, account);
     }

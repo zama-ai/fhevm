@@ -831,6 +831,63 @@ contract ACLTest is Test {
     }
 
     /**
+     * @dev Tests that the owner cannot block an already blocked account
+     */
+    function test_OwnerCannotBlockAccountTwice() public {
+        _upgradeProxy();
+
+        address randomAccount = _oneRandomAddress();
+        address ownerAddress = acl.owner();
+
+        vm.prank(ownerAddress);
+        acl.blockAccount(randomAccount);
+
+        vm.prank(ownerAddress);
+        vm.expectRevert(abi.encodeWithSelector(ACL.AccountAlreadyBlocked.selector, randomAccount));
+        acl.blockAccount(randomAccount);
+
+        assertEq(acl.isAccountDenied(randomAccount), true);
+    }
+
+    /**
+     * @dev Tests that the owner cannot unblock an account that is not blocked
+     */
+    function test_OwnerCannotUnblockAccountIfNotBlocked() public {
+        _upgradeProxy();
+
+        address randomAccount = _oneRandomAddress();
+        address ownerAddress = acl.owner();
+
+        vm.prank(ownerAddress);
+        vm.expectRevert(abi.encodeWithSelector(ACL.AccountNotBlocked.selector, randomAccount));
+        acl.unblockAccount(randomAccount);
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+    }
+
+    /**
+     * @dev Tests that the owner cannot unblock an account twice
+     */
+    function test_OwnerCannotUnblockAccountTwice() public {
+        _upgradeProxy();
+
+        address randomAccount = _oneRandomAddress();
+        address ownerAddress = acl.owner();
+
+        vm.prank(ownerAddress);
+        acl.blockAccount(randomAccount);
+
+        vm.prank(ownerAddress);
+        acl.unblockAccount(randomAccount);
+
+        vm.prank(ownerAddress);
+        vm.expectRevert(abi.encodeWithSelector(ACL.AccountNotBlocked.selector, randomAccount));
+        acl.unblockAccount(randomAccount);
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+    }
+
+    /**
      * @dev Tests that a denied account cannot allow
      */
     function test_DeniedAccountCannotAllow() public {
