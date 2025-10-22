@@ -17,6 +17,7 @@ import "./tasks/blockExplorerVerify";
 import "./tasks/deployment";
 import "./tasks/generateKmsMaterials";
 import "./tasks/getters";
+import "./tasks/ownership";
 import "./tasks/pauseContracts";
 import "./tasks/safeSmartAccounts";
 import "./tasks/upgradeContracts";
