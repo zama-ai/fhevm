@@ -490,7 +490,7 @@ contract ACL is
      * @notice Adds `account` to the deny list
      * @param account Address of the account.
      */
-    function blockAccount(address account) public virtual whenNotPaused onlyOwner {
+    function blockAccount(address account) public virtual onlyOwner {
         ACLStorage storage $ = _getACLStorage();
         $.denyList[account] = true;
     }
@@ -499,7 +499,7 @@ contract ACL is
      * @notice Removes `account` from the deny list
      * @param account Address of the account.
      */
-    function unblockAccount(address account) public virtual whenNotPaused onlyOwner {
+    function unblockAccount(address account) public virtual onlyOwner {
         ACLStorage storage $ = _getACLStorage();
         $.denyList[account] = false;
     }

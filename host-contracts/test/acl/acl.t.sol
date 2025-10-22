@@ -754,46 +754,6 @@ contract ACLTest is Test {
     }
 
     /**
-     * @dev Tests that blockAccount() cannot be called if the contract is paused.
-     */
-    function test_CannotBlockAccountIfPaused() public {
-        _upgradeProxy();
-
-        address randomAccount = _oneRandomAddress();
-
-        assertEq(acl.isAccountDenied(randomAccount), false);
-
-        vm.prank(pauser);
-        acl.pause();
-
-        assertEq(acl.paused(), true);
-
-        vm.prank(owner);
-        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
-        acl.blockAccount(randomAccount);
-    }
-
-    /**
-     * @dev Tests that unblockAccount() cannot be called if the contract is paused.
-     */
-    function test_CannotUnblockAccountIfPaused() public {
-        _upgradeProxy();
-
-        address randomAccount = _oneRandomAddress();
-
-        assertEq(acl.isAccountDenied(randomAccount), false);
-
-        vm.prank(pauser);
-        acl.pause();
-
-        assertEq(acl.paused(), true);
-
-        vm.prank(owner);
-        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
-        acl.unblockAccount(randomAccount);
-    }
-
-    /**
      * @dev Tests that a non-owner cannot block an account
      */
     function test_NonOwnerCannotBlockAccount() public {
