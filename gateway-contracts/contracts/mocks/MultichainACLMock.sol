@@ -12,12 +12,28 @@ contract MultichainACLMock {
         address delegator,
         address delegate,
         address contractAddress,
+        uint64 delegationCounter
+    );
+
+    event DelegateUserDecryptionConsensusReached(
+        uint256 indexed chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
         uint64 delegationCounter,
         uint64 oldExpirationDate,
         uint64 newExpirationDate
     );
 
     event RevokeUserDecryption(
+        uint256 indexed chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter
+    );
+
+    event RevokeUserDecryptionConsensusReached(
         uint256 indexed chainId,
         address delegator,
         address delegate,
@@ -45,7 +61,9 @@ contract MultichainACLMock {
         uint64 oldExpirationDate;
         uint64 newExpirationDate;
 
-        emit DelegateUserDecryption(
+        emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter);
+
+        emit DelegateUserDecryptionConsensusReached(
             chainId,
             delegator,
             delegate,
@@ -66,6 +84,15 @@ contract MultichainACLMock {
     ) external {
         uint64 oldExpirationDate;
 
-        emit RevokeUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter, oldExpirationDate);
+        emit RevokeUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter);
+
+        emit RevokeUserDecryptionConsensusReached(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            oldExpirationDate
+        );
     }
 }

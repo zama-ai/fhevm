@@ -330,7 +330,7 @@ describe("Mock contracts", function () {
         .withArgs(DefaultBytes32, DefaultAddress);
     });
 
-    it("Should emit DelegateUserDecryption event on delegate user decryption call", async function () {
+    it("Should emit delegation and consensus events on delegate user decryption call", async function () {
       await expect(
         multichainACLMock.delegateUserDecryption(
           DefaultUint256,
@@ -342,6 +342,8 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(multichainACLMock, "DelegateUserDecryption")
+        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256)
+        .to.emit(multichainACLMock, "DelegateUserDecryptionConsensusReached")
         .withArgs(
           DefaultUint256,
           DefaultAddress,
@@ -353,7 +355,7 @@ describe("Mock contracts", function () {
         );
     });
 
-    it("Should emit RevokeUserDecryption event on revoke user decryption delegation call", async function () {
+    it("Should emit revocation and consensus events on revoke user decryption delegation call", async function () {
       await expect(
         multichainACLMock.revokeUserDecryption(
           DefaultUint256,
@@ -365,6 +367,8 @@ describe("Mock contracts", function () {
         ),
       )
         .to.emit(multichainACLMock, "RevokeUserDecryption")
+        .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256)
+        .to.emit(multichainACLMock, "RevokeUserDecryptionConsensusReached")
         .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256, DefaultUint256);
     });
   });
