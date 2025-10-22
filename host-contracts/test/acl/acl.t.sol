@@ -794,10 +794,13 @@ contract ACLTest is Test {
         _upgradeProxy();
 
         address randomAccount = _oneRandomAddress();
+        address ownerAddress = acl.owner();
 
         assertEq(acl.isAccountDenied(randomAccount), false);
 
-        vm.prank(acl.owner());
+        vm.prank(ownerAddress);
+        vm.expectEmit(true, true, true, true, address(acl));
+        emit ACL.BlockedAccount(ownerAddress, randomAccount);
         acl.blockAccount(randomAccount);
 
         assertEq(acl.isAccountDenied(randomAccount), true);
@@ -810,15 +813,18 @@ contract ACLTest is Test {
         _upgradeProxy();
 
         address randomAccount = _oneRandomAddress();
+        address ownerAddress = acl.owner();
 
         assertEq(acl.isAccountDenied(randomAccount), false);
 
-        vm.prank(acl.owner());
+        vm.prank(ownerAddress);
         acl.blockAccount(randomAccount);
 
         assertEq(acl.isAccountDenied(randomAccount), true);
 
-        vm.prank(acl.owner());
+        vm.prank(ownerAddress);
+        vm.expectEmit(true, true, true, true, address(acl));
+        emit ACL.UnblockedAccount(ownerAddress, randomAccount);
         acl.unblockAccount(randomAccount);
 
         assertEq(acl.isAccountDenied(randomAccount), false);

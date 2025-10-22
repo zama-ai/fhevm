@@ -24,6 +24,21 @@ contract ACL is
     ACLEvents,
     MulticallUpgradeable
 {
+
+    /**
+     * @notice Emitted when an account is added to the deny list.
+     * @param caller The address initiating the block.
+     * @param account The account that is being blocked.
+     */
+    event BlockedAccount(address indexed caller, address indexed account);
+
+    /**
+     * @notice Emitted when an account is removed from the deny list.
+     * @param caller The address initiating the unblock.
+     * @param account The account that is being unblocked.
+     */
+    event UnblockedAccount(address indexed caller, address indexed account);
+
     /**
      * @notice Returned if a delegation or revoke has already been done in a same block.
      * @param delegator The address of the account that delegates access to its handles.
@@ -493,6 +508,7 @@ contract ACL is
     function blockAccount(address account) public virtual onlyOwner {
         ACLStorage storage $ = _getACLStorage();
         $.denyList[account] = true;
+        emit BlockedAccount(msg.sender, account);
     }
 
     /**
@@ -502,6 +518,7 @@ contract ACL is
     function unblockAccount(address account) public virtual onlyOwner {
         ACLStorage storage $ = _getACLStorage();
         $.denyList[account] = false;
+        emit UnblockedAccount(msg.sender, account);
     }
 
     /**
