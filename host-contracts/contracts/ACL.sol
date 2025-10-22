@@ -501,9 +501,9 @@ contract ACL is
     }
 
     /**
-     * @notice Returns `true` if address `a` is denied and `false` otherwise.
+     * @notice Returns `true` if `account` is deny-listed and `false` otherwise.
      * @param account Address of the account.
-     * @return isAccountDenied Whether the account is denied.
+     * @return isAccountDenied Whether the account is on the deny list.
      */
     function isAccountDenied(address account) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
