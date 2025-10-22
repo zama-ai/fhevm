@@ -139,11 +139,11 @@ struct Conf {
     pub service_name: String,
 
     /// Prometheus metrics: coprocessor_l1_txn_latency_seconds
-    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    #[arg(long, default_value = "0.1:60.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_l1_txn_latency: MetricsConfig,
 
     /// Prometheus metrics: coprocessor_zkproof_txn_latency_seconds
-    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    #[arg(long, default_value = "0.1:60.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_zkproof_txn_latency: MetricsConfig,
 }
 

@@ -67,7 +67,7 @@ pub struct Args {
     pub metrics_addr: Option<String>,
 
     /// Prometheus metrics: "coprocessor_zkverify_op_latency_seconds",
-    #[arg(long, default_value = "0.1:2.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
+    #[arg(long, default_value = "0.01:2.0:0.01", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_zkverify_op_latency: MetricsConfig,
 }
 

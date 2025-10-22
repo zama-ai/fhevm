@@ -125,7 +125,7 @@ pub struct Args {
     pub schedule_policy: SchedulePolicy,
 
     /// Prometheus metrics: coprocessor_sns_op_latency_seconds
-    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    #[arg(long, default_value = "0.1:10.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_sns_op_latency: MetricsConfig,
 }
 

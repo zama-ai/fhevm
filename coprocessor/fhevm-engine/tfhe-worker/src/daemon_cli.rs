@@ -93,11 +93,11 @@ pub struct Args {
     pub health_check_port: u16,
 
     /// Prometheus metrics: coprocessor_rerand_batch_latency_seconds
-    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    #[arg(long, default_value = "0.1:5.0:0.01", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_rerand_batch_latency: MetricsConfig,
 
     /// Prometheus metrics: coprocessor_fhe_batch_latency_seconds
-    #[arg(long, default_value = "0.1:10.0:0.5", value_parser = clap::value_parser!(MetricsConfig))]
+    #[arg(long, default_value = "0.2:5.0:0.05", value_parser = clap::value_parser!(MetricsConfig))]
     pub metric_fhe_batch_latency: MetricsConfig,
 }
 
