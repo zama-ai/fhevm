@@ -102,7 +102,9 @@ data:
     done;
 
     {{- if .Values.scDeploy.verifyContracts }}
-    npx --no-install hardhat verify:verify || true
+    {{- range .Values.scDeploy.verifyCommands }}
+    {{ . | nindent 4 }}
+    {{- end }}
     {{- end }}
     echo "adding the current contracts version to the configmap"
     kubectl patch configmap "${CONFIGMAP_NAME}" -p="{\"data\": {\"contracts.version\": \"{{ .Values.scDeploy.image.tag }}\"}}"
