@@ -526,21 +526,21 @@ impl TryFrom<UserDecryptRequestJson> for UserDecryptRequest {
         }
 
         // Parse duration days - first try as number, then as string
-        let duration_days = match value.request_validity.durationDays.parse::<u64>() {
+        let duration_days = match value.request_validity.duration_days.parse::<u64>() {
             Ok(num) => U256::from(num),
             Err(_) => {
                 // Try parsing as hex if it starts with 0x
-                if value.request_validity.durationDays.starts_with("0x") {
-                    U256::from_str(&value.request_validity.durationDays)?
+                if value.request_validity.duration_days.starts_with("0x") {
+                    U256::from_str(&value.request_validity.duration_days)?
                 } else {
                     // Otherwise try as decimal string
-                    U256::from_str_radix(&value.request_validity.durationDays, 10)?
+                    U256::from_str_radix(&value.request_validity.duration_days, 10)?
                 }
             }
         };
 
         let request_validity = RequestValidity {
-            start_timestamp: U256::from_str(&value.request_validity.startTimestamp)?,
+            start_timestamp: U256::from_str(&value.request_validity.start_timestamp)?,
             duration_days,
         };
 

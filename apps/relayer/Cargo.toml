@@ -78,3 +78,4 @@ aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
 tempfile = "3.10.1"
 ethereum_rpc_mock = { path = "test-support/ethereum_rpc_mock" }
 tower = { version = "0.5.2", features = ["util"] }
+fake = "4.4.0"

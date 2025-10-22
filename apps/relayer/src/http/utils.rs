@@ -1,4 +1,5 @@
 use crate::orchestrator::traits::{Event, EventHandler};
+use alloy::primitives::U256;
 use axum::{
     http::StatusCode,
     response::{IntoResponse, Response},
@@ -6,6 +7,7 @@ use axum::{
 };
 use serde::{de, Deserialize, Deserializer};
 use serde_json::Value;
+use std::str::FromStr;
 use std::{borrow::Cow, collections::HashMap, sync::Mutex};
 use tokio::sync::oneshot;
 use validator::ValidationError;
@@ -65,6 +67,13 @@ pub fn validate_blockchain_address(address: &str) -> Result<(), ValidationError>
     Ok(())
 }
 
+pub fn validate_blockchain_addresses(addresses: &Vec<String>) -> Result<(), ValidationError> {
+    for address in addresses {
+        validate_blockchain_address(address)?;
+    }
+    Ok(())
+}
+
 // Custom validation function for a hex string that must NOT have a "0x" prefix.
 pub fn validate_hex_string_no_prefix(hex_str: &str) -> Result<(), ValidationError> {
     if hex_str.starts_with("0x") {
@@ -78,12 +87,68 @@ pub fn validate_hex_string_no_prefix(hex_str: &str) -> Result<(), ValidationErro
     Ok(())
 }
 
+pub fn validate_hex_string_prefix(hex_str: &str) -> Result<(), ValidationError> {
+    if !hex_str.starts_with("0x") {
+        return Err(ValidationError::new("must_start_with_0x")
+            .with_message("it should start with 0x".into()));
+    }
+    if hex::decode(&hex_str[2..]).is_err() {
+        return Err(ValidationError::new("invalid_hex_characters")
+            .with_message("invalid hex string".into()));
+    }
+    Ok(())
+}
+
+// Custom validation function for a hex string that must NOT have a "0x" prefix.
+pub fn validate_hex_string(hex_str: &str) -> Result<(), ValidationError> {
+    // Allow both with and without "0x" prefix
+    let hex_str = if hex_str.starts_with("0x") {
+        &hex_str[2..]
+    } else {
+        hex_str
+    };
+
+    if hex::decode(hex_str).is_err() {
+        return Err(ValidationError::new("invalid_hex_characters")
+            .with_message("invalid hex string".into()));
+    }
+    Ok(())
+}
+
 pub fn validate_extra_data_field(extra_data: &str) -> Result<(), ValidationError> {
     if extra_data != "0x00" {
         return Err(ValidationError::new("invalid_value")
             .with_message("the only allow value is 0x00".into()));
     }
     Ok(())
+}
+
+pub fn validate_u32_string(value: &str) -> Result<(), ValidationError> {
+    if value.parse::<u32>().is_err() {
+        return Err(ValidationError::new("invalid_u32_string")
+            .with_message("the value is not a valid u32 string".into()));
+    }
+    Ok(())
+}
+
+pub fn validate_u64_string(value: &str) -> Result<(), ValidationError> {
+    if value.parse::<u64>().is_err() {
+        return Err(ValidationError::new("invalid_u64_string")
+            .with_message("the value is not a valid u64 string".into()));
+    }
+    Ok(())
+}
+
+pub fn validate_u256_string(value: &str) -> Result<(), ValidationError> {
+    if U256::from_str(value).is_err() {
+        return Err(ValidationError::new("invalid_u256_string")
+            .with_message("the value is not a valid U256 string".into()));
+    }
+    Ok(())
+}
+
+pub fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
+    hex::encode(vec)
 }
 
 /// A generic enum to handle various API response types.
