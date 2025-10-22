@@ -146,8 +146,9 @@ const config: HardhatUserConfig = {
       },
     ],
   },
-  // We use 0.8.24 to align with the solidity compiler version used in the host chain smart contracts
   solidity: {
+    // We use 0.8.24 to align with the solidity compiler version used in the host chain smart contracts
+    // Currently, we measured that using the latest version (`0.8.30`) does not decrease gas consumption.
     version: "0.8.24",
     settings: {
       metadata: {
@@ -155,13 +156,14 @@ const config: HardhatUserConfig = {
         // https://github.com/paulrberg/hardhat-template/issues/31
         bytecodeHash: "none",
       },
-      // Disable the optimizer when debugging
-      // https://hardhat.org/hardhat-network/#solidity-optimizer-support
+      // The `runs` value is currently optimal, as we measured that setting it to MAX_UINT32 only 
+      // decreases gas consumptions for few methods by at best 0.02%
       optimizer: {
         enabled: true,
         runs: 800,
       },
       evmVersion: "cancun",
+      // Currently, we measured that enabling `viaIR` does not decrease gas consumption.
       viaIR: false,
     },
   },
