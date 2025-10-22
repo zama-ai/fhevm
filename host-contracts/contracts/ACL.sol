@@ -173,7 +173,7 @@ contract ACL is
 
     /**
      * @notice Allows the use of `handle` for the address `account`.
-     * @dev The caller must be allowed and not denied to use `handle` for allow() to succeed. If not, allow() reverts.
+     * @dev The caller must not be in the deny list and must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
      * @param handle Handle.
      * @param account Address of the account.
      */
@@ -191,7 +191,7 @@ contract ACL is
 
     /**
      * @notice Allows a list of handles to be decrypted.
-     * @dev The caller must be allowed and not denied to use `handlesList[i]` for allowForDecryption() to succeed.
+     * @dev The caller must not be in the deny list and must be allowed to use `handlesList[i]` for allowForDecryption() to succeed.
      *      If not, allowForDecryption() reverts.
      * @param handlesList List of handles.
      */
@@ -218,7 +218,7 @@ contract ACL is
 
     /**
      * @notice Allows the use of `handle` by address `account` for this transaction.
-     * @dev The caller must be allowed and not denied to use `handle` for allowTransient() to succeed.
+     * @dev The caller must not be in the deny list and must be allowed to use `handle` for allowTransient() to succeed.
      *      If not, allowTransient() reverts. The Coprocessor contract can always `allowTransient`,
      *      contrarily to `allow`.
      * @param handle Handle.
