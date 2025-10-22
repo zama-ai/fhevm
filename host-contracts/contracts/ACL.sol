@@ -24,7 +24,6 @@ contract ACL is
     ACLEvents,
     MulticallUpgradeable
 {
-
     /**
      * @notice Emitted when an account is added to the deny list.
      * @param caller The address initiating the block.
