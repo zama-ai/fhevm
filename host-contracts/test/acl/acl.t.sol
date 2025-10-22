@@ -800,7 +800,7 @@ contract ACLTest is Test {
 
         vm.prank(ownerAddress);
         vm.expectEmit(true, true, true, true, address(acl));
-        emit ACL.BlockedAccount(ownerAddress, randomAccount);
+        emit ACL.BlockedAccount(randomAccount);
         acl.blockAccount(randomAccount);
 
         assertEq(acl.isAccountDenied(randomAccount), true);
@@ -824,7 +824,7 @@ contract ACLTest is Test {
 
         vm.prank(ownerAddress);
         vm.expectEmit(true, true, true, true, address(acl));
-        emit ACL.UnblockedAccount(ownerAddress, randomAccount);
+        emit ACL.UnblockedAccount(randomAccount);
         acl.unblockAccount(randomAccount);
 
         assertEq(acl.isAccountDenied(randomAccount), false);

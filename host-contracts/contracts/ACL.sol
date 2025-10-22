@@ -26,17 +26,15 @@ contract ACL is
 {
     /**
      * @notice Emitted when an account is added to the deny list.
-     * @param caller The address initiating the block.
-     * @param account The account that is being blocked.
+     * @param account The address of the account that is blocked.
      */
-    event BlockedAccount(address indexed caller, address indexed account);
+    event BlockedAccount(address account);
 
     /**
      * @notice Emitted when an account is removed from the deny list.
-     * @param caller The address initiating the unblock.
-     * @param account The account that is being unblocked.
+     * @param account The address of the account that is unblocked.
      */
-    event UnblockedAccount(address indexed caller, address indexed account);
+    event UnblockedAccount(address account);
 
     /**
      * @notice Returned if an account is already in the deny list.
@@ -522,7 +520,7 @@ contract ACL is
             revert AccountAlreadyBlocked(account);
         }
         $.denyList[account] = true;
-        emit BlockedAccount(msg.sender, account);
+        emit BlockedAccount(account);
     }
 
     /**
@@ -535,7 +533,7 @@ contract ACL is
             revert AccountNotBlocked(account);
         }
         $.denyList[account] = false;
-        emit UnblockedAccount(msg.sender, account);
+        emit UnblockedAccount(account);
     }
 
     /**
