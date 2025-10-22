@@ -1,0 +1,17 @@
+{
+  "directories": {
+    "baseDir": "../__tmp_codegen_to_be_removed/library-solidity"
+  },
+  "solidity": {
+    "outDir": "./examples/tests",
+    "imports": [["CoprocessorSetup", "../CoprocessorSetup.sol"]]
+  },
+  "typescript": {
+    "outDir": "./test/fhevmOperations",
+    "imports": [
+      ["instance", "../instance"],
+      ["signers", "../signers"],
+      ["typechain", "../../types"]
+    ]
+  }
+}

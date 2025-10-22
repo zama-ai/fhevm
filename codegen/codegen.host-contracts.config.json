@@ -1,0 +1,22 @@
+{
+  "numberOfTestSplits": 12,
+  "generateHCULimit": true,
+  "directories": {
+    "baseDir": "../__tmp_codegen_to_be_removed/host-contracts",
+    "typesDir": "./contracts/shared",
+    "libDir": "./lib",
+    "contractsDir": "./contracts"
+  },
+  "solidity": {
+    "outDir": "./examples/tests",
+    "imports": [["CoprocessorSetup", "../../lib/CoprocessorSetup.sol"]]
+  },
+  "typescript": {
+    "outDir": "./test/fhevmOperations",
+    "imports": [
+      ["instance", "../instance"],
+      ["signers", "../signers"],
+      ["typechain", "../../types"]
+    ]
+  }
+}

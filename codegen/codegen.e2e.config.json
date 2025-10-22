@@ -1,0 +1,26 @@
+{
+  "numberOfTestSplits": 96,
+  "noLib": true,
+  "publicDecrypt": true,
+  "shuffle": false,
+  "shuffleWithPseuseRand": true,
+  "directories": {
+    "baseDir": "../__tmp_codegen_to_be_removed/e2e"
+  },
+  "solidity": {
+    "outDir": "./contracts/operations",
+    "imports": ["@fhevm/solidity/lib/FHE.sol", ["E2ECoprocessorConfig", "../E2ECoprocessorConfigLocal.sol"]],
+    "parentContract": {
+      "name": "E2ECoprocessorConfig",
+      "solidityFile": "../E2ECoprocessorConfigLocal.sol"
+    }
+  },
+  "typescript": {
+    "outDir": "./test/fhevmOperations",
+    "imports": [
+      ["instance", "../instance"],
+      ["signers", "../signers"],
+      ["typechain", "../../types"]
+    ]
+  }
+}
