@@ -33,6 +33,7 @@ const chainIds = {
   staging: 54321,
   devnet: 10900,
   testnet: 10901,
+  mainnet: 261131,
 };
 
 // If the mnemonic is not set, use a default one
@@ -118,6 +119,15 @@ const config: HardhatUserConfig = {
       chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.testnet,
       url: rpcUrl,
     },
+    mainnet: {
+      accounts: {
+        count: NUM_ACCOUNTS,
+        mnemonic,
+        path: "m/44'/60'/0'/0",
+      },
+      chainId: process.env.CHAIN_ID_GATEWAY ? Number(process.env.CHAIN_ID_GATEWAY) : chainIds.mainnet,
+      url: rpcUrl,
+    },
   },
   sourcify: {
     enabled: false,
@@ -126,6 +136,7 @@ const config: HardhatUserConfig = {
     apiKey: {
       devnet: "empty",
       testnet: "empty",
+      mainnet: "empty",
     },
     customChains: [
       {
@@ -142,6 +153,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: "https://explorer.testnet.zama.cloud/api",
           browserURL: "https://explorer.testnet.zama.cloud/",
+        },
+      },
+      {
+        network: "mainnet",
+        chainId: chainIds.mainnet,
+        urls: {
+          apiURL: "https://explorer-zama-gateway-mainnet.t.conduit.xyz/api",
+          browserURL: "https://explorer-zama-gateway-mainnet.t.conduit.xyz",
         },
       },
     ],
