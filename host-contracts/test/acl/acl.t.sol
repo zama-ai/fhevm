@@ -22,6 +22,8 @@ contract MockACL is ACL {
     }
 }
 
+import {console} from "forge-std/Console.sol";
+
 contract ACLTest is Test {
     MockACL internal acl;
     PauserSet internal pauserSet;
@@ -724,5 +726,207 @@ contract ACLTest is Test {
     function test_OnlyOwnerCanAuthorizeUpgrade() public {
         /// @dev It does not revert since it called by the owner.
         UnsafeUpgrades.upgradeProxy(proxy, address(new EmptyUUPSProxyACL()), "", owner);
+    }
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Deny List
+    ////////////////////////////////////////////////////////////////////////////
+
+    function _oneRandomAddress() internal returns (address randomAddress) {
+        randomAddress = vm.randomAddress();
+        vm.assume(randomAddress != owner);
+        vm.assume(randomAddress != pauser);
+    }
+
+    function _twoRandomAddresses() internal returns (address randomAddress1, address randomAddress2) {
+        randomAddress1 = vm.randomAddress();
+        randomAddress2 = vm.randomAddress();
+
+        vm.assume(randomAddress1 != owner);
+        vm.assume(randomAddress2 != owner);
+        vm.assume(randomAddress1 != pauser);
+        vm.assume(randomAddress2 != pauser);
+    }
+
+    function _cheatAllowTransient(bytes32 handle, address account) internal {
+        address fhevmExecutorAddress = acl.getFHEVMExecutorAddress();
+        vm.prank(fhevmExecutorAddress);
+        acl.allowTransient(handle, account);
+        assertEq(acl.allowedTransient(handle, account), true);
+    }
+
+    /**
+     * @dev Tests that blockAccount() cannot be called if the contract is paused.
+     */
+    function test_CannotBlockAccountIfPaused() public {
+        _upgradeProxy();
+
+        address randomAccount = _oneRandomAddress();
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+
+        vm.prank(pauser);
+        acl.pause();
+
+        assertEq(acl.paused(), true);
+
+        vm.prank(owner);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        acl.blockAccount(randomAccount);
+    }
+
+    /**
+     * @dev Tests that unblockAccount() cannot be called if the contract is paused.
+     */
+    function test_CannotUnblockAccountIfPaused() public {
+        _upgradeProxy();
+
+        address randomAccount = _oneRandomAddress();
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+
+        vm.prank(pauser);
+        acl.pause();
+
+        assertEq(acl.paused(), true);
+
+        vm.prank(owner);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        acl.unblockAccount(randomAccount);
+    }
+
+    /**
+     * @dev Tests that a non-owner cannot block an account
+     */
+    function test_NonOwnerCannotBlockAccount() public {
+        _upgradeProxy();
+
+        (address randomCaller, address randomAccount) = _twoRandomAddresses();
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+
+        vm.prank(randomCaller);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, randomCaller));
+        acl.blockAccount(randomAccount);
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+    }
+
+    /**
+     * @dev Tests that a non-owner cannot unblock an account
+     */
+    function test_NonOwnerCannotUnblockAccount() public {
+        _upgradeProxy();
+
+        (address randomCaller, address randomAccount) = _twoRandomAddresses();
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+
+        vm.prank(randomCaller);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, randomCaller));
+        acl.unblockAccount(randomAccount);
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+    }
+
+    /**
+     * @dev Tests that the owner can block an account
+     */
+    function test_OwnerCanBlockAccount() public {
+        _upgradeProxy();
+
+        address randomAccount = vm.randomAddress();
+        vm.assume(randomAccount != owner);
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+
+        vm.prank(acl.owner());
+        acl.blockAccount(randomAccount);
+
+        assertEq(acl.isAccountDenied(randomAccount), true);
+    }
+
+    /**
+     * @dev Tests that the owner can unblock an account
+     */
+    function test_OwnerCanUnblockAccount() public {
+        _upgradeProxy();
+
+        address randomAccount = vm.randomAddress();
+        vm.assume(randomAccount != owner);
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+
+        vm.prank(acl.owner());
+        acl.blockAccount(randomAccount);
+
+        assertEq(acl.isAccountDenied(randomAccount), true);
+
+        vm.prank(acl.owner());
+        acl.unblockAccount(randomAccount);
+
+        assertEq(acl.isAccountDenied(randomAccount), false);
+    }
+
+    /**
+     * @dev Tests that a denied account cannot allow
+     */
+    function test_DeniedAccountCannotAllow() public {
+        _upgradeProxy();
+
+        (address randomAccount, address randomUser) = _twoRandomAddresses();
+
+        vm.prank(acl.owner());
+        acl.blockAccount(randomAccount);
+
+        bytes32 handle = bytes32(vm.randomUint());
+
+        _cheatAllowTransient(handle, randomAccount);
+
+        vm.prank(randomAccount);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderDenied.selector, randomAccount));
+        acl.allow(handle, randomUser);
+    }
+
+    /**
+     * @dev Tests that a denied account cannot allowTransient
+     */
+    function test_DeniedAccountCannotAllowTransient() public {
+        _upgradeProxy();
+
+        (address randomAccount, address randomUser) = _twoRandomAddresses();
+
+        vm.prank(acl.owner());
+        acl.blockAccount(randomAccount);
+
+        bytes32 handle = bytes32(vm.randomUint());
+
+        _cheatAllowTransient(handle, randomAccount);
+
+        vm.prank(randomAccount);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderDenied.selector, randomAccount));
+        acl.allowTransient(handle, randomUser);
+    }
+
+    /**
+     * @dev Tests that a denied account cannot allowForDecryption
+     */
+    function test_DeniedAccountCannotAllowForDecryption() public {
+        _upgradeProxy();
+
+        (address randomAccount, address randomUser) = _twoRandomAddresses();
+
+        vm.prank(acl.owner());
+        acl.blockAccount(randomAccount);
+
+        bytes32 handle = bytes32(vm.randomUint());
+        bytes32[] memory handlesList = new bytes32[](1);
+        handlesList[0] = handle;
+
+        _cheatAllowTransient(handle, randomAccount);
+
+        vm.prank(randomAccount);
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderDenied.selector, randomAccount));
+        acl.allowForDecryption(handlesList);
     }
 }
