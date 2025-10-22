@@ -122,10 +122,13 @@ jobs:
                       );
                       
                       if (outputJob && outputJob.conclusion === 'success') {
-                        // The output-build-status job succeeded, which means an image was built
+                        // Get the actual SHA from the workflow run to determine the correct tag
+                        const buildSha = recentRun.head_sha;
+                        const tag = buildSha.substring(0, 7);
+                        
                         currentBuiltImages.push('test_suite_version');
-                        currentImageTag = context.sha.substring(0, 7);
-                        console.log(`   ✅ ${workflowName} built image: test_suite_version with tag: ${currentImageTag}`);
+                        currentImageTag = tag;
+                        console.log(`   ✅ ${workflowName} built image: test_suite_version with tag: ${tag} (from SHA: ${buildSha})`);
                       } else if (outputJob && outputJob.conclusion === 'failure') {
                         console.log(`   🔶 ${workflowName} completed but output-build-status indicates no image was built`);
                       } else {
