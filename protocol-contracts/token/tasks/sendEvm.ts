@@ -133,8 +133,8 @@ export async function sendEvm(
         }
 
         for (let i = 0; i < extraLzReceiveOptions.length; i += 2) {
-            const gas = Number(extraLzReceiveOptions[i])
-            const value = Number(extraLzReceiveOptions[i + 1]) || 0
+            const gas = extraLzReceiveOptions[i]
+            const value = extraLzReceiveOptions[i + 1] ?? 0
             options = options.addExecutorLzReceiveOption(gas, value)
             logger.info(`Added lzReceive option: ${gas} gas, ${value} value`)
         }
@@ -151,8 +151,8 @@ export async function sendEvm(
 
         for (let i = 0; i < extraLzComposeOptions.length; i += 3) {
             const index = Number(extraLzComposeOptions[i])
-            const gas = Number(extraLzComposeOptions[i + 1])
-            const value = Number(extraLzComposeOptions[i + 2]) || 0
+            const gas = extraLzComposeOptions[i + 1]
+            const value = extraLzComposeOptions[i + 2] ?? 0
             options = options.addExecutorComposeOption(index, gas, value)
             logger.info(`Added lzCompose option: index ${index}, ${gas} gas, ${value} value`)
         }

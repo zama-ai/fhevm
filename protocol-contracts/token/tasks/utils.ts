@@ -1,8 +1,5 @@
-import { createLogger } from '@layerzerolabs/io-devtools'
 import { endpointIdToNetwork } from '@layerzerolabs/lz-definitions'
 import { Options } from '@layerzerolabs/lz-v2-utilities'
-
-const logger = createLogger()
 
 export const deploymentMetadataUrl = 'https://metadata.layerzero-api.com/v1/metadata/deployments'
 
@@ -14,7 +11,7 @@ export async function getBlockExplorerLink(srcEid: number, txHash: string): Prom
     const network = endpointIdToNetwork(srcEid) // e.g. "ethereum-mainnet"
     const res = await fetch(deploymentMetadataUrl)
     if (!res.ok) return
-    const all = (await res.json()) as Record<string, any>
+    const all = (await res.json()) as Record<string, { blockExplorers?: { url: string }[] }>
     const meta = all[network]
     const explorer = meta?.blockExplorers?.[0]?.url
     if (explorer) {
