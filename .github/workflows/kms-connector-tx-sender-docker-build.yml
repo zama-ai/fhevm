@@ -1,6 +1,18 @@
 name: kms-connector-tx-sender-docker-build
 
 on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch/ref to build'
+        required: false
+        default: 'main'
+        type: string
+      trigger_source:
+        description: 'Source that triggered this workflow'
+        required: false
+        default: 'manual'
+        type: string
   pull_request:
   push:
     branches:
@@ -66,3 +78,27 @@ jobs:
       image-name: "fhevm/kms-connector/tx-sender"
       docker-file: "./kms-connector/crates/tx-sender/Dockerfile"
       app-cache-dir: "fhevm-kms-connector-tx-sender"
+  output-build-status:
+    name: kms-connector-tx-sender-docker-build/output-build-status
+    needs: [check-changes, build]
+    if: always()
+    permissions:
+      contents: 'read'
+    runs-on: ubuntu-latest
+    outputs:
+      image-built: ${{ steps.check-build.outputs.image-built }}
+      image-tag: ${{ steps.check-build.outputs.image-tag }}
+    steps:
+      - name: Check if image was built
+        id: check-build
+        run: |
+          # Check if docker build job ran and succeeded
+          if [[ "${{ needs.build.result }}" == "success" ]]; then
+            echo "image-built=true" >> "$GITHUB_OUTPUT"
+            echo "image-tag=${{ github.sha }}" >> "$GITHUB_OUTPUT"
+            echo "✅ Image was built successfully"
+          else
+            echo "image-built=false" >> "$GITHUB_OUTPUT"
+            echo "image-tag=" >> "$GITHUB_OUTPUT"
+            echo "⏭️ Image was not built (result: ${{ needs.build.result }})"
+          fi
