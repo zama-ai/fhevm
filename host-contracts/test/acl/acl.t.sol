@@ -146,7 +146,7 @@ contract ACLTest is Test {
         address account
     ) public {
         _upgradeProxy();
-        vm.assume(sender!=fhevmExecutorAdd); // fhevmExecutor is privileged for transientAllow
+        vm.assume(sender != fhevmExecutorAdd); // fhevmExecutor is privileged for transientAllow
         vm.prank(sender);
         vm.expectRevert(abi.encodeWithSelector(ACL.SenderNotAllowed.selector, sender));
         acl.allowTransient(handle, account);
