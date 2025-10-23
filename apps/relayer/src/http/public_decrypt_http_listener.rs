@@ -152,7 +152,7 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
                 decrypt_response,
             }) => {
                 let response_json = PublicDecryptResponseJson::from(decrypt_response);
-                info!("Sending success reponse to public");
+                info!("Sending success response to public");
                 PublicDecryptResponse::success(response_json).into_response()
             },
                             _ => {
