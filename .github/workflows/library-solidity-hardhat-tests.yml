@@ -49,4 +49,4 @@ jobs:
       - run: cp ./library-solidity/.env.example ./library-solidity/.env
       - run: npm --workspace=library-solidity ci --include=optional
       - name: "Run JS/TS tests"
-        run: npm --workspace=library-solidity run test:mock
+        run: npm --workspace=library-solidity run test
