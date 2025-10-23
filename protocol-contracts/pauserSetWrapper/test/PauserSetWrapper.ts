@@ -19,7 +19,7 @@ describe("PauserSetWrapper", function () {
     const PauserSetWrapper = await hre.ethers.getContractFactory("PauserSetWrapper");
     const tokenAddress = await tokenMock.getAddress()
     const pauserSetAddress = await pauserSetMock.getAddress()
-    const pauserSetWrapper = await PauserSetWrapper.deploy(tokenAddress, pauserSetAddress);
+    const pauserSetWrapper = await PauserSetWrapper.deploy(tokenAddress, "pauseMinting()", pauserSetAddress);
 
     const pauserSetWrapperAddress = await pauserSetWrapper.getAddress();
     const mintingPauserRole = await tokenMock.MINTING_PAUSER_ROLE();
@@ -32,20 +32,20 @@ describe("PauserSetWrapper", function () {
   describe("Deployment", function () {
     it("Should set the right PAUSER_SET address", async function () {
       const { tokenMock, pauserSetMock, pauserSetWrapper } = await loadFixture(deployPauserSetMockAndWrapper);
-      expect(await pauserSetWrapper.PAUSABLE_TOKEN()).to.equal(await tokenMock.getAddress());
+      expect(await pauserSetWrapper.CONTRACT_TARGET()).to.equal(await tokenMock.getAddress());
       expect(await pauserSetWrapper.PAUSER_SET()).to.equal(await pauserSetMock.getAddress());
     });
   });
 
   describe("Execution", function () {
     it("Only pauser from PauserSet could pause minting", async function () {
-      const { tokenMock, pauserSetMock, pauserSetWrapper, alice, bob } = await loadFixture(deployPauserSetMockAndWrapper);
+      const { tokenMock, pauserSetMock, pauserSetWrapper, alice } = await loadFixture(deployPauserSetMockAndWrapper);
 
       await pauserSetMock.addPauser(alice.address); // owner adds alice as a pauser
       expect(await pauserSetMock.isPauser(alice.address)).to.be.true;
 
       // expected to revert since owner is not a pauser
-      await expect(pauserSetWrapper.pauseMinting()).to.be.revertedWithCustomError(
+      await expect(pauserSetWrapper.callFunction('0x')).to.be.revertedWithCustomError(
         pauserSetWrapper,
         "SenderNotPauser",
       );
@@ -53,7 +53,7 @@ describe("PauserSetWrapper", function () {
       expect(await tokenMock.paused()).to.be.false;
 
       // expected to succeed since alice is indeed a pauser
-      await expect(pauserSetWrapper.connect(alice).pauseMinting()).not.be.reverted;
+      await expect(pauserSetWrapper.connect(alice).callFunction('0x')).not.be.reverted;
       expect(await tokenMock.paused()).to.be.true;
     });
   });
