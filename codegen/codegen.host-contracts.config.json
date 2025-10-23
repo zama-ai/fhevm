@@ -2,7 +2,7 @@
   "numberOfTestSplits": 12,
   "generateHCULimit": true,
   "directories": {
-    "baseDir": "../__tmp_codegen_to_be_removed/host-contracts",
+    "baseDir": "../host-contracts",
     "typesDir": "./contracts/shared",
     "libDir": "./lib",
     "contractsDir": "./contracts"
