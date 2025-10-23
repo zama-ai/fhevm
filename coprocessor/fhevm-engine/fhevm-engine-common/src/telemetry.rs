@@ -20,12 +20,12 @@ use tracing::{debug, info, warn};
 
 pub const TXN_ID_ATTR_KEY: &str = "txn_id";
 
-pub static L1_TXN_LATENCY_CONFIG: OnceLock<MetricsConfig> = OnceLock::new();
-pub(crate) static L1_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+pub static HOST_TXN_LATENCY_CONFIG: OnceLock<MetricsConfig> = OnceLock::new();
+pub(crate) static HOST_TXN_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
     register_histogram(
-        L1_TXN_LATENCY_CONFIG.get(),
-        "coprocessor_l1_txn_latency_seconds",
-        "L1 transaction latencies in seconds",
+        HOST_TXN_LATENCY_CONFIG.get(),
+        "coprocessor_host_txn_latency_seconds",
+        "Host transaction latencies in seconds",
     )
 });
 
@@ -491,7 +491,7 @@ pub async fn try_end_l1_transaction(
 
     if transaction_completed {
         if let Err(e) = TXN_METRICS_MANAGER
-            .end_transaction(pool, transaction_id, &L1_TXN_LATENCY_HISTOGRAM)
+            .end_transaction(pool, transaction_id, &HOST_TXN_LATENCY_HISTOGRAM)
             .await
         {
             warn!(%e, "Failed to end transaction");

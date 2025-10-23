@@ -138,9 +138,9 @@ struct Conf {
     #[arg(long, default_value = "txn-sender")]
     pub service_name: String,
 
-    /// Prometheus metrics: coprocessor_l1_txn_latency_seconds
+    /// Prometheus metrics: coprocessor_host_txn_latency_seconds
     #[arg(long, default_value = "0.1:60.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
-    pub metric_l1_txn_latency: MetricsConfig,
+    pub metric_host_txn_latency: MetricsConfig,
 
     /// Prometheus metrics: coprocessor_zkproof_txn_latency_seconds
     #[arg(long, default_value = "0.1:60.0:0.1", value_parser = clap::value_parser!(MetricsConfig))]
@@ -164,7 +164,7 @@ fn install_signal_handlers(cancel_token: CancellationToken) -> anyhow::Result<()
 fn parse_args() -> Conf {
     let args = Conf::parse();
     // Set global configs from args
-    let _ = telemetry::L1_TXN_LATENCY_CONFIG.set(args.metric_l1_txn_latency);
+    let _ = telemetry::HOST_TXN_LATENCY_CONFIG.set(args.metric_host_txn_latency);
     let _ = telemetry::ZKPROOF_TXN_LATENCY_CONFIG.set(args.metric_zkproof_txn_latency);
     args
 }
