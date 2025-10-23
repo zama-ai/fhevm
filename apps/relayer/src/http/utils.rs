@@ -99,7 +99,7 @@ pub fn validate_hex_strings(hex_strs: &Vec<String>) -> Result<(), ValidationErro
 pub fn validate_extra_data_field(extra_data: &str) -> Result<(), ValidationError> {
     if extra_data != "0x00" {
         return Err(ValidationError::new("invalid_value")
-            .with_message("the only allow value is 0x00".into()));
+            .with_message("the only allowed value is 0x00".into()));
     }
     Ok(())
 }
