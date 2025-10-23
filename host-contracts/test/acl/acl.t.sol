@@ -10,6 +10,9 @@ import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {ACLEvents} from "../../contracts/ACLEvents.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
 import {fhevmExecutorAdd, pauserSetAdd, aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import "../../lib/FHE.sol";
+import {CoprocessorConfig} from "../../lib/Impl.sol";
+import {FheType} from "../../contracts/shared/FheType.sol";
 
 contract MockACL is ACL {
     function getUserDecryptionDelegation(
@@ -19,6 +22,69 @@ contract MockACL is ACL {
     ) public view returns (UserDecryptionDelegation memory) {
         ACLStorage storage $ = _getACLStorage();
         return $.userDecryptionDelegations[delegator][delegate][contractAddress];
+    }
+}
+
+/**
+ * @dev Minimal replacement for the on-chain FHEVMExecutor used in these tests.
+ * It deliberately skips all production logic (upgrade flows, HCU checks, ACL gating)
+ * and only mints deterministic handles so we can focus on deny-list behaviour.
+ */
+contract MockFHEVMExecutorForDenyList {
+    ACL public acl;
+
+    function setACL(address aclAddress) external {
+        acl = ACL(aclAddress);
+    }
+
+    function fheAdd(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result) {
+        result = keccak256(abi.encodePacked(lhs, rhs, scalarByte, "add"));
+        acl.allowTransient(result, msg.sender);
+    }
+
+    function fheSub(bytes32 lhs, bytes32 rhs, bytes1 scalarByte) external returns (bytes32 result) {
+        result = keccak256(abi.encodePacked(lhs, rhs, scalarByte, "sub"));
+        acl.allowTransient(result, msg.sender);
+    }
+
+    function trivialEncrypt(uint256 pt, FheType toType) external returns (bytes32 result) {
+        result = keccak256(abi.encodePacked(pt, toType, "trivial"));
+        acl.allowTransient(result, msg.sender);
+    }
+}
+
+/**
+ * @dev Helper contract that routes calls through the FHE library in the context of the mocked executor.
+ * Keeping the caller separate from the test contract mirrors a regular integration and makes deny-list
+ * expectations clearer.
+ */
+contract FHELibCaller {
+    constructor(address aclAddress) {
+        CoprocessorConfig memory config = CoprocessorConfig({
+            ACLAddress: aclAddress,
+            CoprocessorAddress: fhevmExecutorAdd,
+            DecryptionOracleAddress: address(0),
+            KMSVerifierAddress: address(0)
+        });
+        FHE.setCoprocessor(config);
+    }
+
+    function encrypt(uint64 value) external returns (bytes32 handle) {
+        euint64 encrypted = FHE.asEuint64(value);
+        FHE.allowThis(encrypted);
+        handle = euint64.unwrap(encrypted);
+    }
+
+    function add(bytes32 lhs, bytes32 rhs) external returns (bytes32 handle) {
+        euint64 result = FHE.add(euint64.wrap(lhs), euint64.wrap(rhs));
+        FHE.allowThis(result);
+        handle = euint64.unwrap(result);
+    }
+
+    function sub(bytes32 lhs, bytes32 rhs) external returns (bytes32 handle) {
+        euint64 result = FHE.sub(euint64.wrap(lhs), euint64.wrap(rhs));
+        FHE.allowThis(result);
+        handle = euint64.unwrap(result);
     }
 }
 
@@ -78,6 +144,13 @@ contract ACLTest is Test {
         pauserSet = PauserSet(pauserSetAdd);
         vm.prank(owner);
         pauserSet.addPauser(pauser);
+    }
+
+    function _deployFHELibCaller() internal returns (FHELibCaller caller) {
+        MockFHEVMExecutorForDenyList executor = new MockFHEVMExecutorForDenyList();
+        vm.etch(fhevmExecutor, address(executor).code);
+        MockFHEVMExecutorForDenyList(fhevmExecutor).setACL(address(acl));
+        caller = new FHELibCaller(address(acl));
     }
 
     /**
@@ -947,5 +1020,45 @@ contract ACLTest is Test {
         vm.prank(randomAccount);
         vm.expectRevert(abi.encodeWithSelector(ACL.SenderDenied.selector, randomAccount));
         acl.allowForDecryption(handlesList);
+    }
+
+    function test_BlockingAccountPreventsFHEAddCompute() public {
+        _upgradeProxy();
+        FHELibCaller caller = _deployFHELibCaller();
+
+        bytes32 lhs = caller.encrypt(7);
+        bytes32 rhs = caller.encrypt(11);
+        caller.add(lhs, rhs);
+
+        vm.prank(acl.owner());
+        acl.blockAccount(address(caller));
+
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderDenied.selector, address(caller)));
+        caller.add(lhs, rhs);
+
+        vm.prank(acl.owner());
+        acl.unblockAccount(address(caller));
+
+        caller.add(lhs, rhs);
+    }
+
+    function test_BlockingAccountPreventsFHESubCompute() public {
+        _upgradeProxy();
+        FHELibCaller caller = _deployFHELibCaller();
+
+        bytes32 lhs = caller.encrypt(20);
+        bytes32 rhs = caller.encrypt(5);
+        caller.sub(lhs, rhs);
+
+        vm.prank(acl.owner());
+        acl.blockAccount(address(caller));
+
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderDenied.selector, address(caller)));
+        caller.sub(lhs, rhs);
+
+        vm.prank(acl.owner());
+        acl.unblockAccount(address(caller));
+
+        caller.sub(lhs, rhs);
     }
 }
