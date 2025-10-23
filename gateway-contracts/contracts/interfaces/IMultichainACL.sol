@@ -287,7 +287,7 @@ interface IMultichainACL {
      * @param delegationCounter A counter specific to the (delegator, delegate, contract) triple tied to the delegation.
      * @param expirationDate The UNIX timestamp when the user decryption delegation expires.
      */
-    function getRevokeUserDecryptionConsensusTxSenders(
+    function getRevokeUserDecryptionDelegationConsensusTxSenders(
         uint256 chainId,
         address delegator,
         address delegate,

@@ -615,14 +615,15 @@ describe("MultichainACL", function () {
       // Get the coprocessor transaction sender that answered first, before the consensus is reached.
       // Since the consensus is directly made in the "request" call, the list represents the coprocessor
       // transaction sender that answered, and is accessible before the consensus is reached.
-      const revokeUserDecryptionConsensusTxSenders1 = await multichainACL.getRevokeUserDecryptionConsensusTxSenders(
-        hostChainId,
-        delegator,
-        delegate,
-        contractAddress,
-        revokeDelegationCounter,
-        expirationDate,
-      );
+      const revokeUserDecryptionConsensusTxSenders1 =
+        await multichainACL.getRevokeUserDecryptionDelegationConsensusTxSenders(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          revokeDelegationCounter,
+          expirationDate,
+        );
       expect(revokeUserDecryptionConsensusTxSenders1).to.deep.equal(expectedCoprocessorTxSenders1);
 
       // Trigger a revoke user decryption delegation call using the second coprocessor transaction sender.
@@ -641,14 +642,15 @@ describe("MultichainACL", function () {
 
       // Check that the coprocessor transaction senders that were involved in the consensus are the
       // first 2 coprocessor transaction senders, at the moment the consensus is reached.
-      const revokeUserDecryptionConsensusTxSenders2 = await multichainACL.getRevokeUserDecryptionConsensusTxSenders(
-        hostChainId,
-        delegator,
-        delegate,
-        contractAddress,
-        revokeDelegationCounter,
-        expirationDate,
-      );
+      const revokeUserDecryptionConsensusTxSenders2 =
+        await multichainACL.getRevokeUserDecryptionDelegationConsensusTxSenders(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          revokeDelegationCounter,
+          expirationDate,
+        );
       expect(revokeUserDecryptionConsensusTxSenders2).to.deep.equal(expectedCoprocessorTxSenders2);
 
       // Trigger a revoke user decryption delegation call using the third coprocessor transaction sender
@@ -667,14 +669,15 @@ describe("MultichainACL", function () {
 
       // Check that the coprocessor transaction senders that were involved in the consensus are the 3
       // coprocessor transaction senders, after the consensus is reached
-      const revokeUserDecryptionConsensusTxSenders3 = await multichainACL.getRevokeUserDecryptionConsensusTxSenders(
-        hostChainId,
-        delegator,
-        delegate,
-        contractAddress,
-        revokeDelegationCounter,
-        expirationDate,
-      );
+      const revokeUserDecryptionConsensusTxSenders3 =
+        await multichainACL.getRevokeUserDecryptionDelegationConsensusTxSenders(
+          hostChainId,
+          delegator,
+          delegate,
+          contractAddress,
+          revokeDelegationCounter,
+          expirationDate,
+        );
       expect(revokeUserDecryptionConsensusTxSenders3).to.deep.equal(expectedCoprocessorTxSenders3);
     });
 

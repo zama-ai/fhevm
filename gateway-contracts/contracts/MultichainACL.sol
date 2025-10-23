@@ -449,9 +449,9 @@ contract MultichainACL is
     }
 
     /**
-     * @notice See {IMultichainACL-getRevokeUserDecryptionConsensusTxSenders}.
+     * @notice See {IMultichainACL-getRevokeUserDecryptionDelegationConsensusTxSenders}.
      */
-    function getRevokeUserDecryptionConsensusTxSenders(
+    function getRevokeUserDecryptionDelegationConsensusTxSenders(
         uint256 chainId,
         address delegator,
         address delegate,
