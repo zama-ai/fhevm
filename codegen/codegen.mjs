@@ -3,7 +3,7 @@
 // How to run:
 // ===========
 //
-// ./codegen.mjs --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --debug
+// ./codegen.mjs --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --verbose
 //
 import { generateAllFiles } from "#lib";
 import { Command } from "commander";
@@ -11,7 +11,7 @@ import { Command } from "commander";
 const program = new Command();
 program.option("--config <path to config.json>", "Config json file");
 program.option("--overloads <path to overloads.json>", "Overloads json file");
-program.option("--debug", "output extra debugging");
+program.option("--verbose", "output extra debugging");
 program.option("--dry-run", "Dry run mode");
 
 globalThis.program = program;

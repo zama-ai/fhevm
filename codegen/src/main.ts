@@ -97,12 +97,6 @@ export async function writeOverloadsIfChanged(
   }
 }
 
-// function readOperatorsPrices(): PriceData {
-//   const p = path.resolve('./src/operatorsPrices.json');
-//   const jsonContent = readFileSync(p, 'utf8');
-//   return JSON.parse(jsonContent) as PriceData;
-// }
-
 /**
  * Generates all necessary files including Solidity contracts and TypeScript test files.
  *
@@ -120,12 +114,6 @@ export async function generateAllFiles() {
   const userOverloadsJson = getUserOverloadsFile();
   const config = resolveUserConfig(userConfig);
   const absConfig = toAbsulteConfig(config);
-
-  // if (existsSync(absConfig.directories.baseDir)) {
-  //   if (!isDirectoryEmpty(absConfig.directories.baseDir)) {
-  //     throw new Error(`Directory ${absConfig.directories.baseDir} already exists and is not empty.`);
-  //   }
-  // }
 
   generatePrettierConfig(absConfig.directories.baseDir);
 
