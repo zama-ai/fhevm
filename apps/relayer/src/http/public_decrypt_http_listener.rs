@@ -243,8 +243,7 @@ mod tests {
         ) -> PublicDecryptRequestJson {
             let size = rng.random_range(1..5);
             PublicDecryptRequestJson {
-                ciphertext_handles: [1..size]
-                    .iter()
+                ciphertext_handles: (0..size)
                     .map(|_| HexString(rng.random_range(10..50) * 2).fake_with_rng(rng))
                     .collect(),
                 extra_data: "0x00".to_string(),
