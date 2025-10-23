@@ -118,6 +118,10 @@ export function isDryRun(): boolean {
   return getProgram().opts().dryRun === true;
 }
 
+export function getUserOverloadsFile(): string | undefined {
+  return getProgram().opts().overloads;
+}
+
 export function debugLog(s: string) {
   if (isDebug()) {
     console.log(s);
@@ -126,10 +130,6 @@ export function debugLog(s: string) {
 
 export function debugLogDirectoriesUserConfig(config: DirectoriesUserConfig) {
   debugLog(JSON.stringify(config, null, 2));
-}
-
-export function getUserOverloadsFile(opts: any): string | undefined {
-  return opts.overloads;
 }
 
 function assertDirectoriesConfig(resolved: DirectoriesConfig) {

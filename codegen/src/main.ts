@@ -114,9 +114,9 @@ function readOperatorsPrices(): PriceData {
  * 6. Generates TypeScript test code for the split overloads and writes them to the test directory.
  *
  */
-export async function generateAllFiles(options: any) {
+export async function generateAllFiles() {
   const userConfig = getUserConfig();
-  const userOverloadsJson = getUserOverloadsFile(options);
+  const userOverloadsJson = getUserOverloadsFile();
   const config = resolveUserConfig(userConfig);
   const absConfig = toAbsulteConfig(config);
 
