@@ -5,7 +5,7 @@ OUT_BASE_DIR=$(jq -r '.directories.baseDir' ./codegen.library-solidity.config.js
 SOL_REL_DIR=$(jq -r '.solidity.outDir' ./codegen.library-solidity.config.json)
 TS_REL_DIR=$(jq -r '.typescript.outDir' ./codegen.library-solidity.config.json)
 
-npm run build && ./codegen.mjs lib --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --debug 
+npm run build && ./codegen.mjs --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --debug 
 
 SOL_DIR="${FHEVM_DIR}/library-solidity/examples/tests"
 TS_DIR="${FHEVM_DIR}/library-solidity/test/fhevmOperations"
