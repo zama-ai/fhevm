@@ -3,13 +3,16 @@ mod blockchain;
 mod cli;
 mod config;
 mod db;
-mod decryption;
+mod gateway;
+mod relayer;
+mod utils;
 
 use crate::{
-    blockchain::GatewayTestManager,
     cli::{Cli, Subcommands},
     config::Config,
     db::manager::DatabaseTestManager,
+    gateway::GatewayTestManager,
+    relayer::RelayerTestManager,
 };
 use clap::Parser;
 use std::process::ExitCode;
@@ -47,6 +50,14 @@ async fn run() -> anyhow::Result<()> {
         }
         Subcommands::BenchDb(args) => {
             let test_manager = DatabaseTestManager::connect(config).await?;
+            test_manager.decryption_benchmark(args).await?
+        }
+        Subcommands::Relayer(args) => {
+            let test_manager = RelayerTestManager::connect(config).await?;
+            test_manager.stress_test(args).await?
+        }
+        Subcommands::BenchRelayer(args) => {
+            let test_manager = RelayerTestManager::connect(config).await?;
             test_manager.decryption_benchmark(args).await?
         }
     }

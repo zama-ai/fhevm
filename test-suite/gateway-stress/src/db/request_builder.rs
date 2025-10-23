@@ -1,6 +1,6 @@
 use crate::{
+    blockchain::types::{DecryptionRequest, DecryptionType},
     config::CiphertextConfig,
-    decryption::types::{DecryptionRequest, DecryptionType},
 };
 use alloy::primitives::{Address, Bytes, U256};
 use fhevm_gateway_bindings::decryption::Decryption::{

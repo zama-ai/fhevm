@@ -18,19 +18,19 @@ parallel_requests = 1
 
 # The ciphertexts to use for user decryptions
 [[user_ct]]
-# The handle used of the ciphertext
-handle = "0xc07ece86473ba540de4dbef63889f0233f5481dd7dff00000000000030390500"
-# The digest of the ciphertext
+# The handle used of the ciphertext (required)
+handle = "0xbd46436419572e6bab197c6fcfb2b07524d38a323bff00000000000030390500"
+# The digest of the ciphertext (required only for database tests)
 digest = "0x134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
 
 # The ciphertexts to use for public decryptions
 [[public_ct]]
-# The handle used of the ciphertext
-handle = "0x57539e394a6ae1dc4b4f1b00248777ce265eb6d08bff00000000000030390500"
-# The digest of the ciphertext
+# The handle used of the ciphertext (required)
+handle = "0x772a7b6d92b0241d5b7877d3e4019ee1fd62c91111ff00000000000030390500"
+# The digest of the ciphertext (required only for database tests)
 digest = "0x134b4f97e70be0e71a26e38304e096fd370188b5c11b89feb8a61176b73d1b5a"
 
-# Configuration section for stress test using the Gateway chain
+# Configuration section for stress test using the Gateway chain (optional)
 [blockchain]
 # Gateway WebSocket RPC URL endpoint (required)
 gateway_url = "http://localhost:8546"
@@ -48,7 +48,7 @@ decryption_address = "0xF0bFB159C7381F7CB332586004d8247252C5b816"
 private_key = "24af7cb5f6cd0f29df22c6f3e2f18ee5b3949f5a489a14b0674bef8fd89bfe91"
 
 
-# Configuration section for stress test using the Connectors' DBs
+# Configuration section for stress test using the Connectors' DBs (optional)
 [database]
 # The URLs of the Connectors' DBs
 urls = [
@@ -72,3 +72,11 @@ key_id = "1809251394333065553493296640760748560207343510400633813116524750123642
 # decryption requests, to be used by the KMS Workers to fetch the S3 URL from the Gateway before
 # retrieving SnsCiphertextMaterial from S3.
 copro_tx_sender_addr = "0x6254a198f67ad40290a2e7b48adb2d19b71f67bd"
+
+# Configuration section for stress test using the Relayer (optional)
+[relayer]
+# Relayer URL endpoint (required)
+url = "http://localhost:3000"
+
+# User address used in user decryption requests (required)
+user_address = "0x885B871b70335f1A8111F4B2BEB533821Ef4b86C"

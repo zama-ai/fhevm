@@ -1,4 +1,4 @@
-use crate::decryption::types::DecryptionType;
+use crate::blockchain::types::DecryptionType;
 use clap::{Args, Parser, Subcommand, command};
 use std::{path::PathBuf, str::FromStr, time::Duration};
 
@@ -44,6 +44,12 @@ pub enum Subcommands {
 
     /// Perform decryption benchmark by inserting decryption requests directly in connectors' DB
     BenchDb(DbBenchmarkArgs),
+
+    /// Perform decryption stress tests using the Relayer
+    Relayer(RelayerTestArgs),
+
+    /// Perform decryption benchmark using the Relayer
+    BenchRelayer(RelayerBenchmarkArgs),
 }
 
 #[derive(Args, Debug)]
@@ -87,6 +93,29 @@ pub struct DbBenchmarkArgs {
     #[arg(long, default_value = "false")]
     pub skip_clear_db: bool,
 
+    /// CSV input file describing the benchmarks to run
+    #[arg(short, long)]
+    pub input: PathBuf,
+
+    /// CSV output file containing the benchmarks results summary
+    #[arg(short, long)]
+    pub output: PathBuf,
+
+    /// Optional CSV output file containing the full benchmarks results
+    #[arg(short, long)]
+    pub results: Option<PathBuf>,
+}
+
+#[derive(Args, Debug)]
+pub struct RelayerTestArgs {
+    /// Sets the type of decryption for the test session
+    #[arg(short = 't', long)]
+    #[clap(value_parser = DecryptionType::from_str, default_value = "public")]
+    pub decryption_type: DecryptionType,
+}
+
+#[derive(Args)]
+pub struct RelayerBenchmarkArgs {
     /// CSV input file describing the benchmarks to run
     #[arg(short, long)]
     pub input: PathBuf,

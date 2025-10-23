@@ -1,17 +1,18 @@
 use crate::{
     bench::{BenchAverageResult, BenchBurstResult, BenchRecordInput},
     blockchain::{
-        provider::{FillersWithoutNonceManagement, NonceManagedProvider},
-        wallet::Wallet,
-    },
-    cli::{GwBenchmarkArgs, GwTestArgs},
-    config::Config,
-    decryption::{
         EVENT_LISTENER_POLLING, init_public_decryption_response_listener,
         init_user_decryption_response_listener, public::PublicDecryptThresholdEvent,
         public_decryption_burst, types::DecryptionType, user::UserDecryptThresholdEvent,
         user_decryption_burst,
     },
+    cli::{GwBenchmarkArgs, GwTestArgs},
+    config::Config,
+    gateway::{
+        provider::{FillersWithoutNonceManagement, NonceManagedProvider},
+        wallet::Wallet,
+    },
+    utils::install_crypto_provider,
 };
 use alloy::{
     network::EthereumWallet,
@@ -26,7 +27,7 @@ use fhevm_gateway_bindings::decryption::Decryption::{self, DecryptionInstance};
 use futures::Stream;
 use gateway_sdk::{FhevmSdk, FhevmSdkBuilder};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use std::sync::{Arc, Once};
+use std::sync::Arc;
 use tokio::{
     sync::Mutex,
     task::JoinSet,
@@ -61,12 +62,7 @@ pub struct GatewayTestManager {
 impl GatewayTestManager {
     /// Connects the tool to the Gateway.
     pub async fn connect(config: Config) -> anyhow::Result<Self> {
-        INSTALL_CRYPTO_PROVIDER_ONCE.call_once(|| {
-            rustls::crypto::aws_lc_rs::default_provider()
-                .install_default()
-                .map_err(|e| anyhow!("Failed to install AWS-LC crypto provider: {e:?}"))
-                .unwrap()
-        });
+        install_crypto_provider();
 
         let Some(blockchain_config) = config.blockchain.as_ref() else {
             return Err(anyhow!("Missing [blockchain] section in config file"));
@@ -140,16 +136,19 @@ impl GatewayTestManager {
                     )
                     .in_current_span(),
                 ),
-                DecryptionType::User => burst_tasks.spawn(user_decryption_burst(
-                    burst_index,
-                    self.config.clone(),
-                    self.decryption_contract.clone(),
-                    Arc::clone(&self.sdk),
-                    self.wallet.address(),
-                    user_response_listener.clone(),
-                    requests_pb,
-                    responses_pb,
-                )),
+                DecryptionType::User => burst_tasks.spawn(
+                    user_decryption_burst(
+                        burst_index,
+                        self.config.clone(),
+                        self.decryption_contract.clone(),
+                        Arc::clone(&self.sdk),
+                        self.wallet.address(),
+                        user_response_listener.clone(),
+                        requests_pb,
+                        responses_pb,
+                    )
+                    .in_current_span(),
+                ),
             };
 
             burst_index += 1;
@@ -285,7 +284,7 @@ impl GatewayTestManager {
 /// - One is used to track when requests are received by the Gateway (tx receipt was received).
 /// - The other is used to track when responses are received by the Gateway (response event was
 ///   catched).
-fn init_progress_bars(
+pub fn init_progress_bars(
     config: &Config,
     progress_tracker: &MultiProgress,
     burst_index: usize,
@@ -312,5 +311,3 @@ fn init_progress_bars(
 
     Ok((requests_pb, responses_pb))
 }
-
-static INSTALL_CRYPTO_PROVIDER_ONCE: Once = Once::new();

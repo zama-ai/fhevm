@@ -1,9 +1,8 @@
 use crate::{
-    blockchain::manager::AppProvider,
+    bench::BurstResult,
+    blockchain::{EVENT_LISTENER_POLLING, extract_id_from_receipt, send_tx_with_retries},
     config::Config,
-    decryption::{
-        BurstResult, EVENT_LISTENER_POLLING, extract_id_from_receipt, send_tx_with_retries,
-    },
+    gateway::manager::AppProvider,
 };
 use alloy::{
     primitives::{FixedBytes, U256},

@@ -1,6 +1,5 @@
-use crate::decryption::{
-    BurstResult,
-    types::{DecryptionType, decryption_type_from_str, decryption_type_serialize},
+use crate::blockchain::types::{
+    DecryptionType, decryption_type_from_str, decryption_type_serialize,
 };
 use serde::{Deserialize, Serialize, Serializer};
 
@@ -104,4 +103,9 @@ pub fn std_deviation(data: &[f64]) -> f64 {
         / (len as f64);
 
     variance.sqrt()
+}
+
+pub struct BurstResult {
+    pub latency: f64,
+    pub throughput: f64,
 }
