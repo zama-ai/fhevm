@@ -106,6 +106,32 @@ describe('ZamaERC20 - Unit Test', () => {
                 zamaERC20.connect(bob).grantRole(MINTING_PAUSER_ROLE, alice.address)
             ).to.be.revertedWithCustomError(zamaERC20, 'AccessControlUnauthorizedAccount')
         })
+
+        it('should remove privileges when role is revoked', async () => {
+            await zamaERC20.connect(admin).grantRole(MINTING_PAUSER_ROLE, bob.address)
+            expect(await zamaERC20.hasRole(MINTING_PAUSER_ROLE, bob.address)).to.be.true
+            await expect(zamaERC20.connect(admin).revokeRole(MINTING_PAUSER_ROLE, bob.address))
+                .to.emit(zamaERC20, 'RoleRevoked')
+                .withArgs(MINTING_PAUSER_ROLE, bob.address, admin.address)
+            expect(await zamaERC20.hasRole(MINTING_PAUSER_ROLE, bob.address)).to.be.false
+            await expect(zamaERC20.connect(bob).pauseMinting()).to.be.revertedWithCustomError(
+                zamaERC20,
+                'AccessControlUnauthorizedAccount'
+            )
+        })
+
+        it('should remove privileges when role is renounced', async () => {
+            await zamaERC20.connect(admin).grantRole(MINTING_PAUSER_ROLE, bob.address)
+            expect(await zamaERC20.hasRole(MINTING_PAUSER_ROLE, bob.address)).to.be.true
+            await expect(zamaERC20.connect(bob).renounceRole(MINTING_PAUSER_ROLE, bob.address))
+                .to.emit(zamaERC20, 'RoleRevoked')
+                .withArgs(MINTING_PAUSER_ROLE, bob.address, bob.address)
+            expect(await zamaERC20.hasRole(MINTING_PAUSER_ROLE, bob.address)).to.be.false
+            await expect(zamaERC20.connect(bob).pauseMinting()).to.be.revertedWithCustomError(
+                zamaERC20,
+                'AccessControlUnauthorizedAccount'
+            )
+        })
     })
 
     describe('Mint', () => {
