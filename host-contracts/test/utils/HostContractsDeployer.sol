@@ -4,8 +4,10 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ACL} from "../../contracts/ACL.sol";
+import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
+import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 /**
  * @dev Thin wrapper so `deployCodeTo` can load locally compiled bytecode for the OZ proxy.
@@ -41,5 +43,30 @@ abstract contract HostContractsDeployer is Test {
         );
 
         aclProxy = ACL(aclAdd);
+    }
+
+    function _deployFHEVMExecutor(address owner)
+        internal
+        returns (FHEVMExecutor fhevmExecutorProxy, address fhevmExecutorImplementation)
+    {
+        address emptyProxyImplementation = address(new EmptyUUPSProxy());
+
+        deployCodeTo(
+            "test/utils/HostContractsDeployer.sol:DeployableERC1967Proxy",
+            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            fhevmExecutorAdd
+        );
+        vm.label(fhevmExecutorAdd, "FHEVMExecutor Proxy");
+
+        fhevmExecutorImplementation = address(new FHEVMExecutor());
+        vm.label(fhevmExecutorImplementation, "FHEVMExecutor Implementation");
+
+        vm.prank(owner);
+        EmptyUUPSProxy(fhevmExecutorAdd).upgradeToAndCall(
+            fhevmExecutorImplementation,
+            abi.encodeCall(FHEVMExecutor.initializeFromEmptyProxy, ())
+        );
+
+        fhevmExecutorProxy = FHEVMExecutor(fhevmExecutorAdd);
     }
 }
