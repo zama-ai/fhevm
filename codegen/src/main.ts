@@ -18,8 +18,9 @@ import {
   writeFile,
 } from './config.js';
 import { type OverloadTests, generateOverloads } from './generateOverloads.js';
-import { type PriceData, generateSolidityHCULimit } from './hcuLimitGenerator.js';
+import { generateSolidityHCULimit } from './hcuLimitGenerator.js';
 import { ALL_OPERATORS } from './operators.js';
+import operatorsPrices from './operatorsPrices.json' with { type: 'json' };
 import { generateSolidityFHELib, generateSolidityFheType, generateSolidityImplLib } from './templates.js';
 import {
   type TypescriptTestGroupImports,
@@ -29,7 +30,7 @@ import {
   splitOverloadsToShards,
 } from './testgen.js';
 import { ALL_FHE_TYPES } from './types.js';
-import { fromDirToFile, fromFileToFile, isDirectoryEmpty } from './utils/paths.js';
+import { fromDirToFile, fromFileToFile } from './utils/paths.js';
 
 export function validate() {
   // Validate the FHE types
@@ -96,11 +97,11 @@ export async function writeOverloadsIfChanged(
   }
 }
 
-function readOperatorsPrices(): PriceData {
-  const p = path.resolve('./src/operatorsPrices.json');
-  const jsonContent = readFileSync(p, 'utf8');
-  return JSON.parse(jsonContent) as PriceData;
-}
+// function readOperatorsPrices(): PriceData {
+//   const p = path.resolve('./src/operatorsPrices.json');
+//   const jsonContent = readFileSync(p, 'utf8');
+//   return JSON.parse(jsonContent) as PriceData;
+// }
 
 /**
  * Generates all necessary files including Solidity contracts and TypeScript test files.
@@ -120,11 +121,11 @@ export async function generateAllFiles() {
   const config = resolveUserConfig(userConfig);
   const absConfig = toAbsulteConfig(config);
 
-  if (existsSync(absConfig.directories.baseDir)) {
-    if (!isDirectoryEmpty(absConfig.directories.baseDir)) {
-      throw new Error(`Directory ${absConfig.directories.baseDir} already exists and is not empty.`);
-    }
-  }
+  // if (existsSync(absConfig.directories.baseDir)) {
+  //   if (!isDirectoryEmpty(absConfig.directories.baseDir)) {
+  //     throw new Error(`Directory ${absConfig.directories.baseDir} already exists and is not empty.`);
+  //   }
+  // }
 
   generatePrettierConfig(absConfig.directories.baseDir);
 
@@ -165,7 +166,7 @@ export async function generateAllFiles() {
   const implCode = generateSolidityImplLib(ALL_OPERATORS, implRelFheTypesDotSol);
   const fheCode = generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPES, fheRelFheTypesDotSol, fheRelImplDotSol);
 
-  const operatorsPrices = readOperatorsPrices();
+  //const operatorsPrices = readOperatorsPrices();
   const hcuCode = generateSolidityHCULimit(operatorsPrices);
 
   if (isDebug()) {

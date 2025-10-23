@@ -5,7 +5,7 @@
   "shuffle": false,
   "shuffleWithPseuseRand": true,
   "directories": {
-    "baseDir": "../__tmp_codegen_to_be_removed/e2e"
+    "baseDir": "../test-suite/e2e"
   },
   "solidity": {
     "outDir": "./contracts/operations",

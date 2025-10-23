@@ -858,7 +858,6 @@ function handleSolidityTFHECustomCastBetweenEboolAndEuint(fheType: AdjustedFheTy
 
   if (fheType.type.startsWith('Uint')) {
     res.push(`
-    /**
     /** 
      * @dev Converts an 'ebool' to an 'e${fheType.type.toLowerCase()}'.
      */
