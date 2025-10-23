@@ -36,11 +36,22 @@ describe('ZamaERC20 - Unit Test', () => {
 
     describe('Initialization', () => {
         it('should properly be initialized', async () => {
+            // Number of decimals
+            expect(await zamaERC20.decimals()).to.eq(18)
+
+            // Name
+            expect(await zamaERC20.name()).to.eq('ZAMAERC20')
+
+            // Symbol
+            expect(await zamaERC20.symbol()).to.eq('ZAMA')
+
             // Check that owner has the initial supply
             const expectedTokenAmount = ethers.utils.parseEther('11000000000')
             const ownerBalance = await zamaERC20.balanceOf(owner.address)
-
             expect(ownerBalance).eql(expectedTokenAmount)
+
+            // Total Supply
+            expect(await zamaERC20.totalSupply()).to.eq(expectedTokenAmount)
 
             // Check that admin has DEFAULT_ADMIN_ROLE
             const hasAdminRole = await zamaERC20.hasRole(DEFAULT_ADMIN_ROLE, admin.address)
@@ -246,13 +257,135 @@ describe('ZamaERC20 - Unit Test', () => {
     })
 
     describe('Burn', () => {
-        describe('burn', () => {})
-        describe('burnFrom', () => {})
+        beforeEach(async () => {
+            // Grant alice the MINTER_ROLE
+            // Grant bob the MINTING_PAUSER_ROLE
+            // charlie has no roles
+            await zamaERC20.connect(admin).grantRole(MINTER_ROLE, admin.address)
+            await zamaERC20.connect(admin).grantRole(MINTING_PAUSER_ROLE, admin.address)
+
+            // The contract is unpaused by default
+            const isPaused = await zamaERC20.paused()
+            expect(isPaused).to.be.false
+        })
+
+        describe('burn', () => {
+            it('should burn token within balance', async () => {
+                const TOKENS_TO_MINT = ethers.utils.parseEther('10')
+                const TOKENS_TO_BURN = ethers.utils.parseEther('5')
+                // Mint 10 $ZAMA to alice
+                await zamaERC20.connect(admin).mint(alice.address, TOKENS_TO_MINT)
+                expect(await zamaERC20.balanceOf(alice.address)).to.eq(TOKENS_TO_MINT)
+                // Burn 5 tokens
+                await zamaERC20.connect(alice).burn(TOKENS_TO_BURN)
+                expect(await zamaERC20.balanceOf(alice.address)).to.eq(TOKENS_TO_MINT.sub(TOKENS_TO_BURN))
+            })
+            it('should not burn more token than available balance', async () => {
+                const TOKENS_TO_MINT = ethers.utils.parseEther('10')
+                const TOKENS_TO_BURN = ethers.utils.parseEther('100')
+                // Mint 10 $ZAMA to alice
+                await zamaERC20.connect(admin).mint(alice.address, TOKENS_TO_MINT)
+                expect(await zamaERC20.balanceOf(alice.address)).to.eq(TOKENS_TO_MINT)
+                // Try burning 100 $ZAMA
+                await expect(zamaERC20.connect(alice).burn(TOKENS_TO_BURN)).to.be.revertedWithCustomError(
+                    zamaERC20,
+                    'ERC20InsufficientBalance'
+                )
+            })
+        })
+        describe('burnFrom', () => {
+            const TOKENS_TO_MINT = ethers.utils.parseEther('10')
+            const TOKENS_TO_BURN = ethers.utils.parseEther('2')
+            const ALLOWANCE = ethers.utils.parseEther('2')
+            const SMALL_ALLOWANCE = ethers.utils.parseEther('1')
+            let totalSupply: BigNumber
+
+            beforeEach(async () => {
+                // Mint 10 $ZAMA to alice and bob
+                await zamaERC20.connect(admin).mint(alice.address, TOKENS_TO_MINT)
+                await zamaERC20.connect(admin).mint(bob.address, TOKENS_TO_MINT)
+                totalSupply = await zamaERC20.totalSupply()
+            })
+
+            it('should let alice burn from its own address with allowance', async () => {
+                await zamaERC20.connect(alice).approve(alice.address, ALLOWANCE)
+                const allowanceBefore = await zamaERC20.allowance(alice.address, alice.address)
+                const balanceBefore = await zamaERC20.balanceOf(alice.address)
+
+                await zamaERC20.connect(alice).burnFrom(alice.address, TOKENS_TO_BURN)
+
+                const allowanceAfter = await zamaERC20.allowance(alice.address, alice.address)
+                const balanceAfter = await zamaERC20.balanceOf(alice.address)
+
+                expect(await zamaERC20.totalSupply()).to.eq(totalSupply.sub(TOKENS_TO_BURN))
+                expect(allowanceAfter).to.eq(allowanceBefore.sub(TOKENS_TO_BURN))
+                expect(balanceAfter).to.eq(balanceBefore.sub(TOKENS_TO_BURN))
+            })
+
+            it('should let alice burn bob tokens with max allowance', async () => {
+                await zamaERC20.connect(bob).approve(alice.address, ethers.constants.MaxUint256)
+                const allowanceBefore = await zamaERC20.allowance(bob.address, alice.address)
+                const balanceBefore = await zamaERC20.balanceOf(bob.address)
+
+                await zamaERC20.connect(alice).burnFrom(bob.address, TOKENS_TO_BURN)
+
+                const allowanceAfter = await zamaERC20.allowance(bob.address, alice.address)
+                const balanceAfter = await zamaERC20.balanceOf(bob.address)
+
+                expect(await zamaERC20.totalSupply()).to.eq(totalSupply.sub(TOKENS_TO_BURN))
+                expect(allowanceAfter).to.eq(allowanceBefore)
+                expect(balanceAfter).to.eq(balanceBefore.sub(TOKENS_TO_BURN))
+            })
+
+            it('should let alice burn bob tokens within allowance', async () => {
+                await zamaERC20.connect(bob).approve(alice.address, ALLOWANCE)
+                const allowanceBefore = await zamaERC20.allowance(bob.address, alice.address)
+                const balanceBefore = await zamaERC20.balanceOf(bob.address)
+
+                await zamaERC20.connect(alice).burnFrom(bob.address, TOKENS_TO_BURN)
+
+                const allowanceAfter = await zamaERC20.allowance(bob.address, alice.address)
+                const balanceAfter = await zamaERC20.balanceOf(bob.address)
+
+                expect(await zamaERC20.totalSupply()).to.eq(totalSupply.sub(TOKENS_TO_BURN))
+                expect(allowanceAfter).to.eq(allowanceBefore.sub(TOKENS_TO_BURN))
+                expect(balanceAfter).to.eq(balanceBefore.sub(TOKENS_TO_BURN))
+            })
+
+            it('should not let alice burn from its own address without allowance', async () => {
+                await expect(
+                    zamaERC20.connect(alice).burnFrom(alice.address, TOKENS_TO_BURN)
+                ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InsufficientAllowance')
+            })
+
+            it('should not let alice burn bob tokens without allowance', async () => {
+                await expect(
+                    zamaERC20.connect(alice).burnFrom(bob.address, TOKENS_TO_BURN)
+                ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InsufficientAllowance')
+            })
+
+            it('should not let alice burn bob tokens besides bob allowance', async () => {
+                // Bob allows alice to burn 1 $ZAMA
+                await zamaERC20.connect(bob).approve(alice.address, SMALL_ALLOWANCE)
+                // Alice tries to burn 2 $ZAMA from Bob
+                await expect(
+                    zamaERC20.connect(alice).burnFrom(bob.address, TOKENS_TO_BURN)
+                ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InsufficientAllowance')
+            })
+
+            it('should not let privileged addresses burn tokens without allowance', async () => {
+                await expect(
+                    zamaERC20.connect(admin).burnFrom(alice.address, TOKENS_TO_BURN)
+                ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InsufficientAllowance')
+            })
+        })
     })
 
     describe('Transfer', () => {
         describe('Transfer - ERC20', () => {
-            describe('transfer', () => {})
+            describe('transfer', () => {
+                it('', async () => {})
+            })
             describe('transferFrom', () => {})
         })
         describe('Transfer - ERC20Permit', () => {})
@@ -264,9 +397,40 @@ describe('ZamaERC20 - Unit Test', () => {
     })
 
     describe('AssetRecoverer', () => {
-        describe('recoverEther', () => {})
-        describe('recoverERC20', () => {})
-        describe('recoverERC721', () => {})
-        describe('recoverERC1155', () => {})
+        before(async () => {
+            // Deploy ERC20Mock, ERC721Mock, ERC1155Mock
+        })
+        describe('recoverEther', () => {
+            // Send Ether to the ZamaERC20 contract to simulate lost asset
+            beforeEach(async () => {})
+            it('should let DEFAULT_ADMIN_ROLE recover ether from contract', () => {})
+            it('should not let PAUSER_ROLE recover ether from contract', () => {})
+            it('should not let PAUSING_MINTER_ROLE recover ether from contract', () => {})
+            it('should not let generic address recover ether from contract', () => {})
+        })
+        describe('recoverERC20', () => {
+            // Send ERC20Mock to the ZamaERC20 contract to simulate lost asset
+            beforeEach(async () => {})
+            it('should let DEFAULT_ADMIN_ROLE recover ERC20 from contract', () => {})
+            it('should not let PAUSER_ROLE recover ERC20 from contract', () => {})
+            it('should not let PAUSING_MINTER_ROLE recover ERC20 from contract', () => {})
+            it('should not let generic address recover ERC20 from contract', () => {})
+        })
+        describe('recoverERC721', () => {
+            // Send ERC721Mock to the ZamaERC20 contract to simulate lost asset
+            beforeEach(async () => {})
+            it('should let DEFAULT_ADMIN_ROLE recover ERC721 from contract', () => {})
+            it('should not let PAUSER_ROLE recover ERC721 from contract', () => {})
+            it('should not let PAUSING_MINTER_ROLE recover ERC721 from contract', () => {})
+            it('should not let generic address recover ERC721 from contract', () => {})
+        })
+        describe('recoverERC1155', () => {
+            // Send ERC1155Mock to the ZamaERC20 contract to simulate lost asset
+            beforeEach(async () => {})
+            it('should let DEFAULT_ADMIN_ROLE recover ERC1155 from contract', () => {})
+            it('should not let PAUSER_ROLE recover ERC1155 from contract', () => {})
+            it('should not let PAUSING_MINTER_ROLE recover ERC1155 from contract', () => {})
+            it('should not let generic address recover ERC1155 from contract', () => {})
+        })
     })
 })
