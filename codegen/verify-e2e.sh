@@ -7,8 +7,8 @@ TS_REL_DIR=$(jq -r '.typescript.outDir' ./codegen.e2e.config.json)
 
 npm run build && ./codegen.mjs --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --debug 
 
-SOL_DIR="${FHEVM_DIR}/test-suite/e2e/${SOL_REL_DIR}"
-TS_DIR="${FHEVM_DIR}/test-suite/e2e/${TS_REL_DIR}"
+SOL_DIR="${FHEVM_DIR}/test-suite/e2e/${SOL_REL_DIR}-local.orig"
+TS_DIR="${FHEVM_DIR}/test-suite/e2e/${TS_REL_DIR}-local.orig"
 
 OUT_SOL_DIR="${OUT_BASE_DIR}/${SOL_REL_DIR}"
 OUT_TS_DIR="${OUT_BASE_DIR}/${TS_REL_DIR}"

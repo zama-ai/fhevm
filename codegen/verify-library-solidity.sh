@@ -7,8 +7,8 @@ TS_REL_DIR=$(jq -r '.typescript.outDir' ./codegen.library-solidity.config.json)
 
 npm run build && ./codegen.mjs --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --debug 
 
-SOL_DIR="${FHEVM_DIR}/library-solidity/examples/tests"
-TS_DIR="${FHEVM_DIR}/library-solidity/test/fhevmOperations"
+SOL_DIR="${FHEVM_DIR}/library-solidity/examples/tests-local.orig"
+TS_DIR="${FHEVM_DIR}/library-solidity/test/fhevmOperations-local.orig"
 
 OUT_SOL_DIR="${OUT_BASE_DIR}/${SOL_REL_DIR}"
 OUT_TS_DIR="${OUT_BASE_DIR}/${TS_REL_DIR}"

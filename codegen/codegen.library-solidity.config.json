@@ -1,6 +1,6 @@
 {
   "directories": {
-    "baseDir": "../__tmp_codegen_to_be_removed/library-solidity"
+    "baseDir": "../library-solidity"
   },
   "solidity": {
     "outDir": "./examples/tests",
