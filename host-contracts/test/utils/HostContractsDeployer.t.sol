@@ -4,12 +4,13 @@ pragma solidity ^0.8.24;
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 import {HostContractsDeployer} from "./HostContractsDeployer.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
 import {InputVerifier} from "../../contracts/InputVerifier.sol";
 import {HCULimit} from "../../contracts/HCULimit.sol";
+import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 contract HostContractsDeployerTest is HostContractsDeployer {
@@ -115,6 +116,20 @@ contract HostContractsDeployerTest is HostContractsDeployer {
         assertNotEq(hcuLimitImplementation, address(0), "Implementation not deployed");
         assertEq(hcuLimitProxy.getVersion(), "HCULimit v0.1.0", "Version mismatch");
         assertEq(_readImplementationSlot(hcuLimitAdd), hcuLimitImplementation, "Implementation slot mismatch");
+    }
+
+    function test_DeployPauserSet_UsesCanonicalAddress() public {
+        // PauserSet relies on ACL ownership checks; ensure ACL proxy is in place.
+        (ACL aclProxy,) = _deployACL(OWNER);
+        PauserSet pauserSet = _deployPauserSet();
+
+        assertEq(address(pauserSet), pauserSetAdd, "PauserSet address mismatch");
+        assertEq(pauserSet.getVersion(), "PauserSet v0.1.0", "Version mismatch");
+
+        address pauser = address(0xdead);
+        vm.prank(aclProxy.owner());
+        pauserSet.addPauser(pauser);
+        assertTrue(pauserSet.isPauser(pauser), "Pauser not added");
     }
 
     /**

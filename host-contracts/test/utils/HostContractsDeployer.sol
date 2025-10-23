@@ -8,9 +8,17 @@ import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
 import {InputVerifier} from "../../contracts/InputVerifier.sol";
 import {HCULimit} from "../../contracts/HCULimit.sol";
+import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {
+    aclAdd,
+    fhevmExecutorAdd,
+    hcuLimitAdd,
+    inputVerifierAdd,
+    kmsVerifierAdd,
+    pauserSetAdd
+} from "../../addresses/FHEVMHostAddresses.sol";
 
 /**
  * @dev Thin wrapper so `deployCodeTo` can load locally compiled bytecode for the OZ proxy.
@@ -155,5 +163,11 @@ abstract contract HostContractsDeployer is Test {
         );
 
         hcuLimitProxy = HCULimit(hcuLimitAdd);
+    }
+
+    function _deployPauserSet() internal returns (PauserSet pauserSet) {
+        vm.etch(pauserSetAdd, address(new PauserSet()).code);
+        vm.label(pauserSetAdd, "PauserSet");
+        pauserSet = PauserSet(pauserSetAdd);
     }
 }
