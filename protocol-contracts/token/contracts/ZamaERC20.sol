@@ -8,7 +8,6 @@ import { ERC1363 } from "@openzeppelin/contracts/token/ERC20/extensions/ERC1363.
 import { Pausable } from "@openzeppelin/contracts/utils/Pausable.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC721 } from "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import { IERC1155 } from "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { AccessControl } from "@openzeppelin/contracts/access/AccessControl.sol";
 
@@ -21,7 +20,6 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
     event EtherRecovered(address indexed recipient, uint256 amount);
     event ERC20Recovered(address indexed token, address indexed recipient, uint256 amount);
     event ERC721Recovered(address indexed token, uint256 tokenId, address indexed recipient);
-    event ERC1155Recovered(address indexed token, uint256 tokenId, address indexed recipient, uint256 amount);
 
     error FailedToSendEther();
 
@@ -98,19 +96,6 @@ contract ZamaERC20 is ERC20, ERC20Permit, ERC1363, ERC20Burnable, AccessControl,
     function recoverERC721(address token, uint256 tokenId, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
         IERC721(token).safeTransferFrom(address(this), recipient, tokenId);
         emit ERC721Recovered(token, tokenId, recipient);
-    }
-
-    /**
-     * @dev Allows the sender to recover ERC1155 tokens held by the contract.
-     * @param token The address of the ERC1155 token to recover.
-     * @param tokenId The token ID of the ERC1155 token to recover.
-     * @param recipient Receiver of the recovered ERC1155 token.
-     * Emits an ERC1155Recovered event upon success.
-     */
-    function recoverERC1155(address token, uint256 tokenId, address recipient) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        uint256 amount = IERC1155(token).balanceOf(address(this), tokenId);
-        IERC1155(token).safeTransferFrom({ from: address(this), to: recipient, id: tokenId, value: amount, data: "" });
-        emit ERC1155Recovered(token, tokenId, recipient, amount);
     }
 
     /**
