@@ -62,6 +62,12 @@ Once the `gateway-stress` binary has been built, you can run the following comma
 
 # Don't clear Connectors' DBs before and after running stress tests (not recommended)
 ./gateway-stress -c config/config.toml db -t public --skip_clear-db
+
+# Run public decryption stress test using the Relayer
+./gateway-stress -c config/config.toml relayer -t public
+
+# Run user decryption stress test using the Relayer
+./gateway-stress -c config/config.toml relayer -t user
 ```
 
 Or directly from `test-suite/gateway-stress` directory:
@@ -98,6 +104,13 @@ and throughput) for each burst in a CSV file.
 
 # Same, but also store each burst result in `tmp/full.csv`
 ./gateway-stress -c config/config.toml bench-db -i templates/small_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
+
+# Run a benchmarking session using `templates/small_bench.csv` as input and store the global
+# results in `/tmp/bench.csv` (decryption requests sent using the Relayer)
+./gateway-stress -c config/config.toml bench-relayer -i templates/small_bench.csv -o /tmp/bench.csv
+
+# Same, but also store each burst result in `tmp/full.csv`
+./gateway-stress -c config/config.toml bench-relayer -i templates/small_bench.csv -o /tmp/bench.csv -r /tmp/full.csv
 ```
 
 ## Tracing
