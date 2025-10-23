@@ -825,7 +825,8 @@ function handleSolidityTFHESelect(fheType: AdjustedFheType): string {
         ${checkInitialized('a', fheType.type)}
         ${checkInitialized('b', fheType.type)}
         return e${fheType.type.toLowerCase()}.wrap(Impl.select(ebool.unwrap(control), e${fheType.type.toLowerCase()}.unwrap(a), e${fheType.type.toLowerCase()}.unwrap(b)));
-    }`;
+    }
+    `;
   }
 
   return res;
@@ -858,6 +859,7 @@ function handleSolidityTFHECustomCastBetweenEboolAndEuint(fheType: AdjustedFheTy
 
   if (fheType.type.startsWith('Uint')) {
     res.push(`
+    /**
     /** 
      * @dev Converts an 'ebool' to an 'e${fheType.type.toLowerCase()}'.
      */
@@ -1165,7 +1167,7 @@ function generateSolidityDecryptionOracleMethods(fheTypes: AdjustedFheType[]): s
      * @dev clearTexts is the abi-encoding of the list of all decrypted values assiociated to handlesList, in same order.
      * @dev Only static native solidity types for clear values are supported, so clearTexts is the concatenation of all clear values appended to 32 bytes.
      * @dev decryptionProof contains KMS signatures corresponding to clearTexts and associated handlesList, and needed metadata for KMS context.
-     */
+     **/
     function verifySignatures(
         bytes32[] memory handlesList,
         bytes memory cleartexts,
