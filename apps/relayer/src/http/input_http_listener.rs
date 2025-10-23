@@ -281,7 +281,7 @@ mod tests {
             r#""contractChainId":123456"#,
         );
         assert!(serialized.contains(r#"contractChainId":123456"#));
-        let data: InputProofRequestJson = serde_json::from_str(&json).unwrap();
+        let data: InputProofRequestJson = serde_json::from_str(&serialized).unwrap();
         if let Err(e) = data.validate() {
             panic!("Validation failed: {:?}", e);
         }
