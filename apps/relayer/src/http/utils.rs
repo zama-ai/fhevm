@@ -89,6 +89,13 @@ pub fn validate_hex_string(hex_str: &str) -> Result<(), ValidationError> {
     Ok(())
 }
 
+pub fn validate_hex_strings(hex_strs: &Vec<String>) -> Result<(), ValidationError> {
+    for hex_str in hex_strs {
+        validate_hex_string(hex_str)?;
+    }
+    Ok(())
+}
+
 pub fn validate_extra_data_field(extra_data: &str) -> Result<(), ValidationError> {
     if extra_data != "0x00" {
         return Err(ValidationError::new("invalid_value")

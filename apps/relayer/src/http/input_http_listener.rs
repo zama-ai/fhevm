@@ -264,9 +264,8 @@ mod tests {
         let serialized = serde_json::to_string(&fake_data).unwrap();
         assert!(serialized.contains(r#"contractChainId":"123456""#));
         let data: InputProofRequestJson = serde_json::from_str(&serialized).unwrap();
-        match data.validate() {
-            Err(e) => panic!("Validation failed: {:?}", e),
-            _ => {}
+        if let Err(e) = data.validate() {
+            panic!("Validation failed: {:?}", e);
         }
         assert!(data.contract_chain_id == "123456");
     }
@@ -283,9 +282,8 @@ mod tests {
         );
         assert!(serialized.contains(r#"contractChainId":123456"#));
         let data: InputProofRequestJson = serde_json::from_str(&json).unwrap();
-        match data.validate() {
-            Err(e) => panic!("Validation failed: {:?}", e),
-            _ => {}
+        if let Err(e) = data.validate() {
+            panic!("Validation failed: {:?}", e);
         }
         assert!(data.contract_chain_id == "123456");
     }
@@ -299,9 +297,8 @@ mod tests {
         let json = serde_json::to_string(&fake_data).unwrap();
         assert!(json.contains(r#"contractChainId":"0x1e240""#));
         let data: InputProofRequestJson = serde_json::from_str(&json).unwrap();
-        match data.validate() {
-            Err(e) => panic!("Validation failed: {:?}", e),
-            _ => {}
+        if let Err(e) = data.validate() {
+            panic!("Validation failed: {:?}", e);
         }
         assert!(data.contract_chain_id == "0x1e240");
     }

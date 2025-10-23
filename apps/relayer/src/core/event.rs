@@ -619,15 +619,8 @@ impl TryFrom<PublicDecryptRequestJson> for PublicDecryptRequest {
             ct_handles.push(ct_handle.to_be_bytes());
         }
 
-        // Validate and parse extraData
-        let extra_data = if value.extra_data == Bytes::from(&[0x00]) {
-            value.extra_data
-        } else {
-            return Err(anyhow::anyhow!(
-                "extraData must be 0x00, got: {:#x}",
-                value.extra_data
-            ));
-        };
+        // Note: we validate extraData to be 0x00 in the http listener.
+        let extra_data = Bytes::from_str(&value.extra_data)?;
 
         Ok(PublicDecryptRequest {
             ct_handles,

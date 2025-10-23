@@ -19,7 +19,7 @@ use utoipa::ToSchema;
 use validator::Validate;
 
 /// Represents the payload coming into the endpoint for user decrypt.
-#[derive(Debug, Deserialize, Clone, Serialize, ToSchema, Validate)]
+#[derive(Debug, Deserialize, Clone, ToSchema, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct UserDecryptRequestJson {
     #[validate(length(
@@ -105,7 +105,7 @@ pub struct UserDecryptResponsePayloadJson {
     pub extra_data: Bytes,
 }
 
-pub type UserDecryptResponse = AppResponse<UserDecryptRequestJson>;
+pub type UserDecryptResponse = AppResponse<UserDecryptResponseJson>;
 
 /// Represents the error response from the endpoint for user decrypt.
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
@@ -144,13 +144,13 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> UserDecry
                 // TODO: this should not happen anymore as we validate the payload.
                 error!("Conversion failed: {}", error);
                 // Try to identify exactly where it's failing
-                if let Err(e) = serde_json::to_string(&payload) {
-                    error!("Cannot serialize payload: {}", e);
-                }
-                // Try parsing individual fields
-                if let Err(e) = payload.request_validity.duration_days.parse::<u32>() {
-                    error!("Failed to parse durationDays: {}", e);
-                }
+                // if let Err(e) = serde_json::to_string(&payload) {
+                //     error!("Cannot serialize payload: {}", e);
+                // }
+                // // Try parsing individual fields
+                // if let Err(e) = payload.request_validity.duration_days.parse::<u32>() {
+                //     error!("Failed to parse durationDays: {}", e);
+                // }
 
                 return UserDecryptResponse::unprocessable(format!(
                     "failed to parse request: {error}"
@@ -337,15 +337,32 @@ mod tests {
         }
     }
 
+    impl Serialize for UserDecryptRequestJson {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let mut state = serializer.serialize_struct("UserDecryptRequestJson", 7)?;
+            state.serialize_field("handleContractPairs", &self.handle_contract_pairs)?;
+            state.serialize_field("requestValidity", &self.request_validity)?;
+            state.serialize_field("contractsChainId", &self.contracts_chain_id)?;
+            state.serialize_field("contractAddresses", &self.contract_addresses)?;
+            state.serialize_field("userAddress", &self.user_address)?;
+            state.serialize_field("signature", &self.signature)?;
+            state.serialize_field("publicKey", &self.public_key)?;
+            state.serialize_field("extraData", &self.extra_data)?;
+            state.end()
+        }
+    }
+
     #[test]
     fn test_valid_json_with_string_id_succeeds() {
         let fake_data: UserDecryptRequestJson = ().fake();
         let serialized = serde_json::to_string(&fake_data).unwrap();
         let data: UserDecryptRequestJson = serde_json::from_str(&serialized).unwrap();
         assert!(serialized.contains(r#"contractsChainId":"123456""#));
-        match data.validate() {
-            Err(e) => panic!("Validation failed: {:?}", e),
-            _ => {}
+        if let Err(e) = data.validate() {
+            panic!("Validation failed: {:?}", e);
         }
         assert_eq!(data.contracts_chain_id, "123456");
     }
@@ -362,9 +379,8 @@ mod tests {
         );
         assert!(serialized.contains(r#"contractsChainId":123456"#));
         let data: UserDecryptRequestJson = serde_json::from_str(&serialized).unwrap();
-        match data.validate() {
-            Err(e) => panic!("Validation failed: {:?}", e),
-            _ => {}
+        if let Err(e) = data.validate() {
+            panic!("Validation failed: {:?}", e);
         }
         assert!(data.contracts_chain_id == "123456");
     }
@@ -378,9 +394,8 @@ mod tests {
         let serialized = serde_json::to_string(&fake_data).unwrap();
         assert!(serialized.contains(r#"contractsChainId":"0x1e240""#));
         let data: UserDecryptRequestJson = serde_json::from_str(&serialized).unwrap();
-        match data.validate() {
-            Err(e) => panic!("Validation failed: {:?}", e),
-            _ => {}
+        if let Err(e) = data.validate() {
+            panic!("Validation failed: {:?}", e);
         }
         assert!(data.contracts_chain_id == "0x1e240");
     }

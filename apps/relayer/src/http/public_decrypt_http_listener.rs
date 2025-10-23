@@ -2,7 +2,7 @@ use crate::core::event::{
     ApiVersion, PublicDecryptEventData, PublicDecryptEventId, PublicDecryptRequest, RelayerEvent,
     RelayerEventData,
 };
-use crate::http::utils::OnceHandler;
+use crate::http::utils::{AppResponse, OnceHandler};
 use crate::orchestrator::traits::{EventDispatcher, HandlerRegistry};
 use crate::orchestrator::Orchestrator;
 use alloy::primitives::Bytes;
@@ -10,34 +10,32 @@ use axum::{extract::Json, http::StatusCode, response::IntoResponse};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::oneshot;
-use tracing::info;
-use tracing::{error, instrument, span, Level};
+use tracing::{debug, error, info, instrument, span, Level};
 use utoipa::ToSchema;
+use validator::Validate;
 
 /// Represents the payload coming into the '/input-proof' endpoint.
-#[derive(Debug, Deserialize, Clone, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, Validate, Clone, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PublicDecryptRequestJson {
+    #[validate(
+        length(min = 1, message = "ciphertext_handles cannot be empty"),
+        custom(function = "crate::http::utils::validate_hex_strings")
+    )]
     pub ciphertext_handles: Vec<String>,
     /// Extra data field, always set to 0x00
     #[schema(value_type = String, example = "0x00")]
-    pub extra_data: Bytes,
-}
-
-impl PublicDecryptRequestJson {
-    fn validate(&self) -> Result<(), String> {
-        // Add other validations here.
-        Ok(())
-    }
+    #[validate(custom(function = "crate::http::utils::validate_extra_data_field"))]
+    pub extra_data: String,
 }
 
 /// Represents the response from the '/input-proof' endpoint.
-#[derive(Debug, Serialize, Deserialize, Clone, ToSchema)]
+#[derive(Debug, Serialize, Clone, ToSchema)]
 pub struct PublicDecryptResponseJson {
     pub response: Vec<PublicDecryptResponsePayloadJson>,
 }
 
-#[derive(Debug, Deserialize, Clone, ToSchema)]
+#[derive(Debug, Clone, ToSchema)]
 pub struct PublicDecryptResponsePayloadJson {
     #[schema(value_type = String)]
     pub decrypted_value: Bytes,
@@ -46,6 +44,8 @@ pub struct PublicDecryptResponsePayloadJson {
     #[schema(value_type = String)]
     pub extra_data: Bytes,
 }
+
+pub type PublicDecryptResponse = AppResponse<PublicDecryptResponseJson>;
 
 /// Represents the error response from the '/input-proof' endpoint.
 #[derive(Debug, Serialize, Clone, Deserialize, ToSchema)]
@@ -73,24 +73,20 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
     pub async fn handle(&self, Json(payload): Json<PublicDecryptRequestJson>) -> impl IntoResponse {
         info!("Handling public decryption request in http listener");
         // Validate the payload
-        if let Err(message) = payload.validate() {
-            let error_response = PublicDecryptErrorResponseJson { message };
-            return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+        if let Err(errors) = payload.validate() {
+            debug!("Validation errors: {:?}", errors);
+            return PublicDecryptResponse::bad_request(errors).into_response();
         }
 
         let public_decrypt_request = match PublicDecryptRequest::try_from(payload.clone()) {
             Ok(request) => request,
             Err(error) => {
                 error!("Conversion failed: {}", error);
-                // Try to identify exactly where it's failing
-                if let Err(e) = serde_json::to_string(&payload) {
-                    error!("Cannot serialize payload: {}", e);
-                }
 
-                let error_response = PublicDecryptErrorResponseJson {
-                    message: format!("parsing request data: {error}"),
-                };
-                return (StatusCode::BAD_REQUEST, Json(error_response)).into_response();
+                return PublicDecryptResponse::unprocessable(format!(
+                    "failed to parse request: {error}"
+                ))
+                .into_response();
             }
         };
 
@@ -157,13 +153,12 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> PublicDec
             }) => {
                 let response_json = PublicDecryptResponseJson::from(decrypt_response);
                 info!("Sending success reponse to public");
-                (StatusCode::OK, Json(response_json)).into_response()
+                PublicDecryptResponse::success(response_json).into_response()
             },
                             _ => {
-                                let error_response = PublicDecryptErrorResponseJson {
-                                    message: "unexpected error".to_string(),
-                                };
-                                (StatusCode::INTERNAL_SERVER_ERROR, Json(error_response)).into_response()
+                                let msg = "Unexpected event data type received";
+                                error!(msg);
+                                PublicDecryptResponse::internal_server_error(msg).into_response()
                             }
                         }
                     }
@@ -226,6 +221,89 @@ fn serialize_vec_as_hex(vec: &Vec<u8>) -> String {
 mod tests {
     use super::*;
     use serde_json;
+
+    use fake::{Dummy, Fake};
+    use validator::ValidationErrorsKind;
+
+    struct HexString(pub usize);
+
+    impl Dummy<HexString> for String {
+        fn dummy_with_rng<R: rand::Rng + ?Sized>(config: &HexString, rng: &mut R) -> String {
+            // HexString(config.0).generate(rng)
+            (0..config.0)
+                .map(|_| format!("{:x}", rng.random_range(0..16)))
+                .collect()
+        }
+    }
+
+    impl Dummy<()> for PublicDecryptRequestJson {
+        fn dummy_with_rng<R: rand::Rng + ?Sized>(
+            _config: &(),
+            rng: &mut R,
+        ) -> PublicDecryptRequestJson {
+            let size = rng.random_range(1..5);
+            PublicDecryptRequestJson {
+                ciphertext_handles: [1..size]
+                    .iter()
+                    .map(|_| HexString(rng.random_range(10..50) * 2).fake_with_rng(rng))
+                    .collect(),
+                extra_data: "0x00".to_string(),
+            }
+        }
+    }
+
+    impl Serialize for PublicDecryptRequestJson {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let mut state = serializer.serialize_struct("PublicDecryptRequestJson", 2)?;
+            state.serialize_field("ciphertextHandles", &self.ciphertext_handles)?;
+            state.serialize_field("extraData", &self.extra_data)?;
+            state.end()
+        }
+    }
+
+    #[test]
+    fn test_valid_json_succeeds() {
+        let fake_data: PublicDecryptRequestJson = ().fake();
+        let payload = serde_json::to_string(&fake_data).unwrap();
+        let deserialized: PublicDecryptRequestJson = serde_json::from_str(&payload).unwrap();
+        if let Err(e) = deserialized.validate() {
+            panic!("Validation failed: {:?}", e);
+        }
+    }
+
+    #[test]
+    fn test_empty_ciphertext_handles_fails() {
+        let fake_data = PublicDecryptRequestJson {
+            ciphertext_handles: vec![],
+            ..().fake()
+        };
+        let payload = serde_json::to_string(&fake_data).unwrap();
+        let deserialized: PublicDecryptRequestJson = serde_json::from_str(&payload).unwrap();
+        let errors = deserialized.validate().unwrap_err();
+        println!("Errors: {:?}", errors);
+        assert!(errors.errors().contains_key("ciphertext_handles"));
+        match errors.errors()["ciphertext_handles"].clone() {
+            ValidationErrorsKind::Field(errors) => {
+                assert_eq!(errors[0].code, "length");
+            }
+            _ => panic!("Expected Field type for ciphertext_handles errors"),
+        }
+    }
+
+    #[test]
+    fn test_invalid_extra_data_fails() {
+        let fake_data = PublicDecryptRequestJson {
+            extra_data: "0x01".to_string(),
+            ..().fake()
+        };
+        let payload = serde_json::to_string(&fake_data).unwrap();
+        let deserialized: PublicDecryptRequestJson = serde_json::from_str(&payload).unwrap();
+        let errors = deserialized.validate().unwrap_err();
+        assert!(errors.field_errors().contains_key("extra_data"));
+    }
 
     #[test]
     fn test_public_decrypt_response_json_serialization() {
