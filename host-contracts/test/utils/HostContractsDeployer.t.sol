@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: UNLICENSED
+pragma solidity ^0.8.24;
+
+import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
+
+import {HostContractsDeployer} from "./HostContractsDeployer.sol";
+import {aclAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {ACL} from "../../contracts/ACL.sol";
+import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
+
+contract HostContractsDeployerTest is HostContractsDeployer {
+    address private constant OWNER = address(0xBEEF);
+
+    function test_DeployACL_DeploysProxyAndUpgradesImplementation() public {
+        (ACL aclProxy, address aclImplementation) = _deployACL(OWNER);
+
+        assertEq(address(aclProxy), aclAdd, "ACL proxy address mismatch");
+        assertNotEq(aclImplementation, address(0), "Implementation not deployed");
+        assertEq(aclProxy.owner(), OWNER, "Owner mismatch");
+        assertEq(aclProxy.getVersion(), "ACL v0.2.0", "Version mismatch");
+        assertEq(_readImplementationSlot(), aclImplementation, "Implementation slot mismatch");
+    }
+
+    /**
+     * @dev Mirrors how clients read the current implementation in production by peeking at the ERC-1967 slot.
+     * Using the library constant avoids hard-coding the slot value here.
+     */
+    function _readImplementationSlot() private view returns (address) {
+        return address(uint160(uint256(vm.load(aclAdd, ERC1967Utils.IMPLEMENTATION_SLOT))));
+    }
+}
