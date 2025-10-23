@@ -7,9 +7,10 @@ import {ACL} from "../../contracts/ACL.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
 import {InputVerifier} from "../../contracts/InputVerifier.sol";
+import {HCULimit} from "../../contracts/HCULimit.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {aclAdd, fhevmExecutorAdd, inputVerifierAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 /**
  * @dev Thin wrapper so `deployCodeTo` can load locally compiled bytecode for the OZ proxy.
@@ -132,5 +133,27 @@ abstract contract HostContractsDeployer is Test {
         );
 
         inputVerifierProxy = InputVerifier(inputVerifierAdd);
+    }
+
+    function _deployHCULimit(address owner) internal returns (HCULimit hcuLimitProxy, address hcuLimitImplementation) {
+        address emptyProxyImplementation = address(new EmptyUUPSProxy());
+
+        deployCodeTo(
+            "test/utils/HostContractsDeployer.sol:DeployableERC1967Proxy",
+            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            hcuLimitAdd
+        );
+        vm.label(hcuLimitAdd, "HCULimit Proxy");
+
+        hcuLimitImplementation = address(new HCULimit());
+        vm.label(hcuLimitImplementation, "HCULimit Implementation");
+
+        vm.prank(owner);
+        EmptyUUPSProxy(hcuLimitAdd).upgradeToAndCall(
+            hcuLimitImplementation,
+            abi.encodeCall(HCULimit.initializeFromEmptyProxy, ())
+        );
+
+        hcuLimitProxy = HCULimit(hcuLimitAdd);
     }
 }

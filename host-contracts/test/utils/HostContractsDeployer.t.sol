@@ -4,11 +4,12 @@ pragma solidity ^0.8.24;
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 import {HostContractsDeployer} from "./HostContractsDeployer.sol";
-import {aclAdd, fhevmExecutorAdd, inputVerifierAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, hcuLimitAdd, inputVerifierAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
 import {InputVerifier} from "../../contracts/InputVerifier.sol";
+import {HCULimit} from "../../contracts/HCULimit.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 contract HostContractsDeployerTest is HostContractsDeployer {
@@ -103,6 +104,17 @@ contract HostContractsDeployerTest is HostContractsDeployer {
             inputVerifierImplementation,
             "Implementation slot mismatch"
         );
+    }
+
+    function test_DeployHCULimit_UsesProxyUpgradeFlow() public {
+        // HCULimit needs the ACL owner context for upgrade authorization.
+        _deployACL(OWNER);
+        (HCULimit hcuLimitProxy, address hcuLimitImplementation) = _deployHCULimit(OWNER);
+
+        assertEq(address(hcuLimitProxy), hcuLimitAdd, "HCULimit proxy address mismatch");
+        assertNotEq(hcuLimitImplementation, address(0), "Implementation not deployed");
+        assertEq(hcuLimitProxy.getVersion(), "HCULimit v0.1.0", "Version mismatch");
+        assertEq(_readImplementationSlot(hcuLimitAdd), hcuLimitImplementation, "Implementation slot mismatch");
     }
 
     /**
