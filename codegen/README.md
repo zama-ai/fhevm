@@ -36,3 +36,7 @@ cd codegen
 # Dry Run
 
 Use the `--dry-run --debug` options to check code generation in dry run mode.
+
+# Verification scripts
+
+`verify-e2e.sh`, `verify-host-contracts.sh`, `verify-library-solidity.sh` are meant to be deleted. These are temporary test scripts to make sure generated code is identical to the current codegen setup.

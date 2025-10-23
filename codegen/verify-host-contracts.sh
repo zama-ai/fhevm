@@ -34,7 +34,7 @@ done
 
 # Only host-contracts
 # HCULimit.sol
-FILE_A="${FHEVM_DIR}/host-contracts/contracts/HCULimit.sol"
+FILE_A="${FHEVM_DIR}/host-contracts/contracts/HCULimit-local.sol.orig"
 FILE_B="${OUT_BASE_DIR}/contracts/HCULimit.sol"
 diff "${FILE_A}" "${FILE_B}" 
 if [ $? -eq 0 ]; then

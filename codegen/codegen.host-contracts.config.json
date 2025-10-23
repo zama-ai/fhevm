@@ -3,9 +3,7 @@
   "generateHCULimit": true,
   "directories": {
     "baseDir": "../host-contracts",
-    "typesDir": "./contracts/shared",
-    "libDir": "./lib",
-    "contractsDir": "./contracts"
+    "fheTypeDir": "./contracts/shared"
   },
   "solidity": {
     "outDir": "./examples/tests",
