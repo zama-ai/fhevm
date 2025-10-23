@@ -25,6 +25,18 @@ contract ACL is
     MulticallUpgradeable
 {
     /**
+     * @notice Returned if an account is already in the deny list.
+     * @param account The address of the account that is already blocked.
+     */
+    error AccountAlreadyBlocked(address account);
+
+    /**
+     * @notice Returned if an account is not in the deny list.
+     * @param account The address of the account that is not blocked.
+     */
+    error AccountNotBlocked(address account);
+
+    /**
      * @notice Returned if a delegation or revoke has already been done in a same block.
      * @param delegator The address of the account that delegates access to its handles.
      * @param delegate The address of the account that receives the delegation.
@@ -94,7 +106,13 @@ contract ACL is
     error SenderNotAllowed(address sender);
 
     /**
-     * @notice Struct that represents a user decryption delegation.
+     * @notice Returned if the sender address is in the deny list.
+     * @param sender The address of the account that is denied.
+     */
+    error SenderDenied(address sender);
+
+    /**
+     * @notice Struct that represents a delegation.
      * @dev The `delegationCounter` is incremented at each delegation or revocation
      *      to allow off-chain clients to track changes.
      */
@@ -115,6 +133,7 @@ contract ACL is
         mapping(address account =>
             mapping(address delegate => mapping(address contractAddress => UserDecryptionDelegation delegation)))
                 userDecryptionDelegations;
+        mapping(address account => bool isDenied) denyList;
     }
 
     /// @notice Name of the contract.
@@ -166,27 +185,36 @@ contract ACL is
 
     /**
      * @notice Allows the use of `handle` for the address `account`.
-     * @dev The caller must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
+     * @dev The caller must not be in the deny list and must be allowed to use `handle` for allow() to succeed. If not, allow() reverts.
      * @param handle Handle.
      * @param account Address of the account.
      */
     function allow(bytes32 handle, address account) public virtual whenNotPaused {
-        ACLStorage storage $ = _getACLStorage();
+        if (isAccountDenied(msg.sender)) {
+            revert SenderDenied(msg.sender);
+        }
         if (!isAllowed(handle, msg.sender)) {
             revert SenderNotAllowed(msg.sender);
         }
+        ACLStorage storage $ = _getACLStorage();
         $.persistedAllowedPairs[handle][account] = true;
         emit Allowed(msg.sender, account, handle);
     }
 
     /**
      * @notice Allows a list of handles to be decrypted.
+     * @dev The caller must not be in the deny list and must be allowed to use `handlesList[i]` for allowForDecryption() to succeed.
+     *      If not, allowForDecryption() reverts.
      * @param handlesList List of handles.
      */
     function allowForDecryption(bytes32[] memory handlesList) public virtual whenNotPaused {
         uint256 lenHandlesList = handlesList.length;
         if (lenHandlesList == 0) {
             revert HandlesListIsEmpty();
+        }
+
+        if (isAccountDenied(msg.sender)) {
+            revert SenderDenied(msg.sender);
         }
 
         ACLStorage storage $ = _getACLStorage();
@@ -202,17 +230,23 @@ contract ACL is
 
     /**
      * @notice Allows the use of `handle` by address `account` for this transaction.
-     * @dev The caller must be allowed to use `handle` for allowTransient() to succeed.
-     * If not, allowTransient() reverts. The Coprocessor contract can always `allowTransient`, contrarily to `allow`.
+     * @dev The caller must not be in the deny list and must be allowed to use `handle` for allowTransient() to succeed.
+     *      If not, allowTransient() reverts. The Coprocessor contract can always `allowTransient`,
+     *      contrarily to `allow`.
      * @param handle Handle.
      * @param account Address of the account.
      */
     function allowTransient(bytes32 handle, address account) public virtual whenNotPaused {
         if (msg.sender != fhevmExecutorAddress) {
+            if (isAccountDenied(msg.sender)) {
+                revert SenderDenied(msg.sender);
+            }
+
             if (!isAllowed(handle, msg.sender)) {
                 revert SenderNotAllowed(msg.sender);
             }
         }
+
         bytes32 key = keccak256(abi.encodePacked(handle, account));
         assembly {
             tstore(key, 1)
@@ -452,6 +486,42 @@ contract ACL is
     function persistAllowed(bytes32 handle, address account) public view virtual returns (bool) {
         ACLStorage storage $ = _getACLStorage();
         return $.persistedAllowedPairs[handle][account];
+    }
+
+    /**
+     * @notice Returns `true` if `account` is deny-listed and `false` otherwise.
+     * @param account Address of the account.
+     * @return isAccountDenied Whether the account is on the deny list.
+     */
+    function isAccountDenied(address account) public view virtual returns (bool) {
+        ACLStorage storage $ = _getACLStorage();
+        return $.denyList[account];
+    }
+
+    /**
+     * @notice Adds `account` to the deny list
+     * @param account Address of the account.
+     */
+    function blockAccount(address account) public virtual onlyOwner {
+        ACLStorage storage $ = _getACLStorage();
+        if ($.denyList[account]) {
+            revert AccountAlreadyBlocked(account);
+        }
+        $.denyList[account] = true;
+        emit BlockedAccount(account);
+    }
+
+    /**
+     * @notice Removes `account` from the deny list
+     * @param account Address of the account.
+     */
+    function unblockAccount(address account) public virtual onlyOwner {
+        ACLStorage storage $ = _getACLStorage();
+        if (!$.denyList[account]) {
+            revert AccountNotBlocked(account);
+        }
+        $.denyList[account] = false;
+        emit UnblockedAccount(account);
     }
 
     /**
