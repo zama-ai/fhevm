@@ -42,7 +42,7 @@ pub struct UserDecryptRequestJson {
     #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
     pub user_address: String,
     #[validate(
-        length(equal = 132, message = "Signature must be 132 characters long"),
+        length(equal = 130, message = "Signature must be 130 characters long"),
         custom(function = "crate::http::utils::validate_hex_string")
     )]
     pub signature: String,
@@ -59,8 +59,8 @@ pub struct UserDecryptRequestJson {
 #[serde(rename_all = "camelCase")]
 pub struct HandleContractPairJson {
     #[validate(
-        length(equal = 66, message = "Handle must be 66 characters long"),
-        custom(function = "crate::http::utils::validate_hex_string_prefix")
+        length(equal = 64, message = "Handle must be 64 characters long"),
+        custom(function = "crate::http::utils::validate_hex_string")
     )]
     pub handle: String,
     #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
@@ -300,7 +300,7 @@ mod tests {
     impl Dummy<()> for HandleContractPairJson {
         fn dummy_with_rng<R: rand::Rng + ?Sized>(_config: &(), rng: &mut R) -> Self {
             HandleContractPairJson {
-                handle: PrefixedHexString(66).fake_with_rng(rng),
+                handle: HexString(64).fake_with_rng(rng),
                 contract_address: BlockchainAddress.fake_with_rng(rng),
             }
         }
@@ -329,9 +329,9 @@ mod tests {
                 contracts_chain_id: "123456".to_string(),
                 contract_addresses: vec![BlockchainAddress.fake_with_rng(rng)],
                 user_address: BlockchainAddress.fake_with_rng(rng),
-                signature: PrefixedHexString(132).fake_with_rng(rng),
+                signature: HexString(130).fake_with_rng(rng),
                 // Note: hex string should be even length
-                public_key: PrefixedHexString(rng.random_range(10..50) * 2).fake_with_rng(rng),
+                public_key: HexString(rng.random_range(10..50) * 2).fake_with_rng(rng),
                 extra_data: "0x00".to_string(),
             }
         }
@@ -440,13 +440,13 @@ mod tests {
     fn test_invalid_handle_fails() {
         for invalid_handle in &[
             {
-                let mut invalid_handle: String = PrefixedHexString(66).fake();
+                let mut invalid_handle: String = HexString(63).fake();
                 invalid_handle.push('g');
                 invalid_handle
             }, // Invalid hex character 'g'
-            PrefixedHexString(65).fake(), // One character short
-            PrefixedHexString(67).fake(), // One character longer
-            HexString(66).fake(),         // Missing 0x prefix
+            HexString(63).fake(),         // One character short
+            HexString(65).fake(),         // One character longer
+            PrefixedHexString(64).fake(), // 0x prefix
             "".to_string(),               // empty string
         ] {
             let fake_data = UserDecryptRequestJson {

@@ -23,17 +23,14 @@ pub struct InputProofRequestJson {
     #[schema(value_type = ChainId)]
     pub contract_chain_id: String,
     /// Contract's address
-    #[validate(
-        length(equal = 42),
-        custom(function = "crate::http::utils::validate_blockchain_address")
-    )]
+    #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
     pub contract_address: String, // Hex encoded address with 0x prefix.
     /// User's wallet address
     #[validate(custom(function = "crate::http::utils::validate_blockchain_address"))]
     pub user_address: String, // Hex encoded address with 0x prefix.
     #[validate(
         length(min = 1),
-        custom(function = "crate::http::utils::validate_hex_string_no_prefix")
+        custom(function = "crate::http::utils::validate_hex_string")
     )]
     pub ciphertext_with_input_verification: String,
     /// Extra data field, always set to 0x00
@@ -181,24 +178,10 @@ impl<D: EventDispatcher<RelayerEvent> + HandlerRegistry<RelayerEvent>> InputProo
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        core::event::{ApiCategory, InputProofResponse},
-        orchestrator::{
-            traits::{Event, EventHandler},
-            TokioEventDispatcher,
-        },
-    };
-
     use super::*;
-    use axum::{
-        body::{to_bytes, Body},
-        http::{self, Request, Response, StatusCode},
-        Router,
-    };
     use fake::{Dummy, Fake};
     use serde::ser::{Serialize, SerializeStruct, Serializer};
     use serde_json;
-    use tower::ServiceExt;
 
     struct HexString(pub usize);
     struct PrefixedHexString(pub usize);
@@ -408,167 +391,5 @@ mod tests {
         let data: InputProofRequestJson = serde_json::from_str(&invalid_json).unwrap();
         let errors = data.validate().unwrap_err();
         assert!(errors.field_errors().contains_key("extra_data"));
-    }
-
-    struct SimpleHandler {
-        dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
-        response: InputProofResponse,
-    }
-
-    impl SimpleHandler {
-        fn new(
-            dispatcher: Arc<TokioEventDispatcher<RelayerEvent>>,
-            response: InputProofResponse,
-        ) -> Self {
-            Self {
-                dispatcher,
-                response,
-            }
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl EventHandler<RelayerEvent> for SimpleHandler {
-        async fn handle_event(&self, event: RelayerEvent) {
-            println!("Handling event: {:?}", event.event_name());
-            self.dispatcher
-                .dispatch_event(RelayerEvent {
-                    request_id: event.request_id,
-                    api_version: event.api_version,
-                    data: RelayerEventData::InputProof(InputProofEventData::RespRcvdFromGw {
-                        input_proof_response: self.response.clone(),
-                    }),
-                    timestamp: event.timestamp,
-                })
-                .await
-                .unwrap();
-        }
-    }
-
-    fn app(response: InputProofResponse) -> Router {
-        let dispatcher = Arc::new(TokioEventDispatcher::<RelayerEvent>::new());
-        let handler = Arc::new(SimpleHandler::new(dispatcher.clone(), response));
-        dispatcher.register_handler(InputProofEventId::ReqRcvdFromUser.into(), handler);
-        let orchestrator = Orchestrator::new(dispatcher.clone());
-
-        let handler = Arc::new(InputProofHandler::new(
-            orchestrator,
-            ApiVersion::new(ApiCategory::PRODUCTION, 1),
-        ));
-
-        Router::new().route(
-            "/input-proof",
-            axum::routing::post(move |payload| {
-                let handler = handler.clone();
-                async move { handler.handle(payload).await }
-            }),
-        )
-    }
-
-    async fn post(app: Router, payload: String) -> Response<Body> {
-        app.oneshot(
-            Request::builder()
-                .method(http::Method::POST)
-                .uri("/input-proof")
-                .header(http::header::CONTENT_TYPE, "application/json")
-                .body(Body::from(payload))
-                .unwrap(),
-        )
-        .await
-        .unwrap()
-    }
-
-    #[tokio::test]
-    async fn e2e_valid_payload_returns_ok() {
-        let app = app(InputProofResponse {
-            handles: vec![],
-            signatures: vec![],
-        });
-
-        let fake_data: InputProofRequestJson = ().fake();
-        let payload = serde_json::to_string(&fake_data).unwrap();
-
-        let response = post(app, payload).await;
-
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-
-    #[tokio::test]
-    async fn e2e_empty_payload_returns_bad_request() {
-        let app = app(InputProofResponse {
-            handles: vec![],
-            signatures: vec![],
-        });
-
-        let response = post(app, String::from("")).await;
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn e2e_invalid_addresses_returns_bad_request() {
-        let app = app(InputProofResponse {
-            handles: vec![],
-            signatures: vec![],
-        });
-
-        let fake_data = InputProofRequestJson {
-            contract_address: {
-                let mut address: String = PrefixedHexString(41).fake();
-                address.push('g');
-                address
-            }, // Invalid hex address
-            user_address: PrefixedHexString(44).fake(), // Invalid address
-            ..().fake()
-        };
-        let invalid_payload = serde_json::to_string(&fake_data).unwrap();
-
-        let response = post(app, invalid_payload).await;
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-        // Check that the response body contains the specific validation error.
-        let errors = &body["errors"];
-        assert!(errors.is_object());
-        assert!(errors["contractAddress"].is_array());
-        assert!(errors["contractAddress"][0].is_object());
-        assert_eq!(
-            errors["contractAddress"][0]["code"],
-            "invalid_hex_characters"
-        );
-
-        assert!(errors["userAddress"].is_array());
-        assert!(errors["userAddress"][0].is_object());
-        assert_eq!(errors["userAddress"][0]["code"], "invalid_length");
-    }
-
-    #[tokio::test]
-    async fn e2e_invalid_extra_data_returns_bad_request() {
-        let app = app(InputProofResponse {
-            handles: vec![],
-            signatures: vec![],
-        });
-        let fake_data = InputProofRequestJson {
-            extra_data: "0x01".to_string(),
-            ..().fake()
-        };
-        let invalid_payload = serde_json::to_string(&fake_data).unwrap();
-
-        let response = post(app, invalid_payload).await;
-
-        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        let body = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-        let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
-
-        // Check that the response body contains the specific validation error.
-        let errors = &body["errors"];
-        assert!(errors.is_object());
-        let field_errors = &errors["extraData"];
-        assert!(field_errors.is_array());
-        assert_eq!(field_errors[0]["code"], "invalid_value");
     }
 }

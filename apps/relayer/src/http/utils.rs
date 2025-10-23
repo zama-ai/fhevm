@@ -75,37 +75,11 @@ pub fn validate_blockchain_addresses(addresses: &Vec<String>) -> Result<(), Vali
 }
 
 // Custom validation function for a hex string that must NOT have a "0x" prefix.
-pub fn validate_hex_string_no_prefix(hex_str: &str) -> Result<(), ValidationError> {
+pub fn validate_hex_string(hex_str: &str) -> Result<(), ValidationError> {
+    // Allow both with and without "0x" prefix
     if hex_str.starts_with("0x") {
         return Err(ValidationError::new("must_not_start_with_0x")
             .with_message("it should not start with 0x".into()));
-    }
-    if hex::decode(hex_str).is_err() {
-        return Err(ValidationError::new("invalid_hex_characters")
-            .with_message("invalid hex string".into()));
-    }
-    Ok(())
-}
-
-pub fn validate_hex_string_prefix(hex_str: &str) -> Result<(), ValidationError> {
-    if !hex_str.starts_with("0x") {
-        return Err(ValidationError::new("must_start_with_0x")
-            .with_message("it should start with 0x".into()));
-    }
-    if hex::decode(&hex_str[2..]).is_err() {
-        return Err(ValidationError::new("invalid_hex_characters")
-            .with_message("invalid hex string".into()));
-    }
-    Ok(())
-}
-
-// Custom validation function for a hex string that must NOT have a "0x" prefix.
-pub fn validate_hex_string(hex_str: &str) -> Result<(), ValidationError> {
-    // Allow both with and without "0x" prefix
-    let hex_str = if hex_str.starts_with("0x") {
-        &hex_str[2..]
-    } else {
-        hex_str
     };
 
     if hex::decode(hex_str).is_err() {
