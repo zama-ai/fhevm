@@ -7,6 +7,7 @@ TS_REL_DIR=$(jq -r '.typescript.outDir' ./codegen.library-solidity.config.json)
 
 npm run build && ./codegen.mjs --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --verbose 
 
+LIB_DIR="${FHEVM_DIR}/library-solidity/lib-local.orig"
 SOL_DIR="${FHEVM_DIR}/library-solidity/examples/tests-local.orig"
 TS_DIR="${FHEVM_DIR}/library-solidity/test/fhevmOperations-local.orig"
 
@@ -30,3 +31,27 @@ for i in {1..13}; do
         echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"
     fi
 done
+
+# Check FHE.sol
+FILE_A="${LIB_DIR}/FHE.sol"
+FILE_B="${OUT_BASE_DIR}/lib/FHE.sol"
+diff "${FILE_A}" "${FILE_B}" 
+if [ $? -eq 0 ]; then
+    echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"
+fi
+
+# Check Impl.sol
+FILE_A="${LIB_DIR}/Impl.sol"
+FILE_B="${OUT_BASE_DIR}/lib/Impl.sol"
+diff "${FILE_A}" "${FILE_B}" 
+if [ $? -eq 0 ]; then
+    echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"
+fi
+
+# Check FheType.sol
+FILE_A="${LIB_DIR}/FheType.sol"
+FILE_B="${OUT_BASE_DIR}/lib/FheType.sol"
+diff "${FILE_A}" "${FILE_B}" 
+if [ $? -eq 0 ]; then
+    echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"
+fi

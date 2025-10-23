@@ -30,3 +30,4 @@ for i in {1..105}; do
         echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"
     fi
 done
+

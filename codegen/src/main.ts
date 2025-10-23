@@ -122,7 +122,7 @@ export async function generateAllFiles() {
 
   validate();
 
-  const fheTypesDotSol = `${path.join(absConfig.directories.typesDir, 'FheType.sol')}`;
+  const fheTypesDotSol = `${path.join(absConfig.directories.fheTypeDir, 'FheType.sol')}`;
   const implDotSol = `${path.join(absConfig.directories.libDir, 'Impl.sol')}`;
   const fheDotSol = `${path.join(absConfig.directories.libDir, 'FHE.sol')}`;
   const hcuLimitDotSol = `${path.join(absConfig.directories.contractsDir, 'HCULimit.sol')}`;
@@ -137,7 +137,7 @@ export async function generateAllFiles() {
 
   debugLog(`numberOfTestSplits: ${absConfig.numberOfTestSplits}`);
   debugLog(`basePath:           ${absConfig.directories.baseDir}`);
-  debugLog(`typesDir:           ${absConfig.directories.typesDir}`);
+  debugLog(`typesDir:           ${absConfig.directories.fheTypeDir}`);
   debugLog(`libDir:             ${absConfig.directories.libDir}`);
   debugLog(`FheType.sol:        ${fheTypesDotSol}`);
   debugLog(`FheType.sol:        ${implRelFheTypesDotSol} (relative to Impl.sol)`);

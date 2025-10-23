@@ -64,7 +64,7 @@ export type ResolvedConfig = {
 
 export type DirectoriesUserConfig = {
   baseDir?: string;
-  typesDir?: string;
+  fheTypeDir?: string;
   libDir?: string;
   overloadsDir?: string;
   contractsDir?: string;
@@ -77,8 +77,8 @@ export type ContractConfig = {
 
 export type DirectoriesConfig = {
   baseDir: string;
-  typesDir: string;
-  libDir: string;
+  fheTypeDir: string; // directory where the FheType.sol file is located
+  libDir: string; // directory where the FHE.sol and Impl.sol files are located
   overloadsDir: string;
   contractsDir: string;
 };
@@ -111,7 +111,7 @@ export function getUserConfig(): UserConfig | undefined {
 }
 
 export function isDebug(): boolean {
-  return getProgram().opts().debug === true;
+  return getProgram().opts().verbose === true;
 }
 
 export function isDryRun(): boolean {
@@ -134,7 +134,7 @@ export function debugLogDirectoriesUserConfig(config: DirectoriesUserConfig) {
 
 function assertDirectoriesConfig(resolved: DirectoriesConfig) {
   assertAbsolute(resolved.baseDir);
-  assertRelative(resolved.typesDir);
+  assertRelative(resolved.fheTypeDir);
   assertRelative(resolved.libDir);
   assertRelative(resolved.overloadsDir);
   assertRelative(resolved.contractsDir);
@@ -188,10 +188,11 @@ function resolveDirectoriesConfig(userDirs: DirectoriesUserConfig | undefined): 
   if (!path.isAbsolute(baseDir)) {
     baseDir = path.normalize(path.join(process.cwd(), baseDir));
   }
+  const libDir = userDirs?.libDir ?? './lib';
   const p: DirectoriesConfig = {
     baseDir,
-    typesDir: userDirs?.typesDir ?? './lib',
-    libDir: userDirs?.libDir ?? './lib',
+    fheTypeDir: userDirs?.fheTypeDir ?? libDir,
+    libDir,
     overloadsDir: userDirs?.overloadsDir ?? './overloads',
     contractsDir: userDirs?.contractsDir ?? './contracts',
   };
@@ -226,7 +227,7 @@ export function toAbsulteConfig(resolved: ResolvedConfig): ResolvedConfig {
 function toAbsultePaths(resolved: DirectoriesConfig): DirectoriesConfig {
   return {
     baseDir: resolved.baseDir,
-    typesDir: toAbsoluteDirectory(resolved.typesDir, resolved.baseDir),
+    fheTypeDir: toAbsoluteDirectory(resolved.fheTypeDir, resolved.baseDir),
     libDir: toAbsoluteDirectory(resolved.libDir, resolved.baseDir),
     overloadsDir: toAbsoluteDirectory(resolved.overloadsDir, resolved.baseDir),
     contractsDir: toAbsoluteDirectory(resolved.contractsDir, resolved.baseDir),
