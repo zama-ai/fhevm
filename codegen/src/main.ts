@@ -137,12 +137,12 @@ export async function generateAllFiles() {
 
   debugLog(`numberOfTestSplits: ${absConfig.numberOfTestSplits}`);
   debugLog(`basePath:           ${absConfig.directories.baseDir}`);
-  debugLog(`typesDir:           ${absConfig.directories.fheTypeDir}`);
+  debugLog(`fheTypeDir:         ${absConfig.directories.fheTypeDir}`);
   debugLog(`libDir:             ${absConfig.directories.libDir}`);
-  debugLog(`FheType.sol:        ${fheTypesDotSol}`);
-  debugLog(`FheType.sol:        ${implRelFheTypesDotSol} (relative to Impl.sol)`);
   debugLog(`Impl.sol:           ${implDotSol}`);
   debugLog(`FHE.sol:            ${fheDotSol}`);
+  debugLog(`FheType.sol (absolute):             ${fheTypesDotSol}`);
+  debugLog(`FheType.sol (relative to Impl.sol): ${implRelFheTypesDotSol}`);
   debugLog(`HCULimit.sol:       ${hcuLimitDotSol}`);
   debugLog(`solidityDir:        ${absConfig.solidity?.outDir ?? 'N/A'}`);
   debugLog(`typescriptDir:      ${absConfig.typescript?.outDir ?? 'N/A'}`);
@@ -153,8 +153,6 @@ export async function generateAllFiles() {
   const fheTypesCode = generateSolidityFheType(ALL_FHE_TYPES);
   const implCode = generateSolidityImplLib(ALL_OPERATORS, implRelFheTypesDotSol);
   const fheCode = generateSolidityFHELib(ALL_OPERATORS, ALL_FHE_TYPES, fheRelFheTypesDotSol, fheRelImplDotSol);
-
-  //const operatorsPrices = readOperatorsPrices();
   const hcuCode = generateSolidityHCULimit(operatorsPrices);
 
   if (isDebug()) {
