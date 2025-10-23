@@ -6,9 +6,10 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 import {ACL} from "../../contracts/ACL.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
+import {InputVerifier} from "../../contracts/InputVerifier.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, inputVerifierAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 /**
  * @dev Thin wrapper so `deployCodeTo` can load locally compiled bytecode for the OZ proxy.
@@ -100,5 +101,36 @@ abstract contract HostContractsDeployer is Test {
         );
 
         kmsVerifierProxy = KMSVerifier(kmsVerifierAdd);
+    }
+
+    function _deployInputVerifier(
+        address owner,
+        address verifyingContractSource,
+        uint64 chainIDSource,
+        address[] memory initialSigners,
+        uint256 initialThreshold
+    ) internal returns (InputVerifier inputVerifierProxy, address inputVerifierImplementation) {
+        address emptyProxyImplementation = address(new EmptyUUPSProxy());
+
+        deployCodeTo(
+            "test/utils/HostContractsDeployer.sol:DeployableERC1967Proxy",
+            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            inputVerifierAdd
+        );
+        vm.label(inputVerifierAdd, "InputVerifier Proxy");
+
+        inputVerifierImplementation = address(new InputVerifier());
+        vm.label(inputVerifierImplementation, "InputVerifier Implementation");
+
+        vm.prank(owner);
+        EmptyUUPSProxy(inputVerifierAdd).upgradeToAndCall(
+            inputVerifierImplementation,
+            abi.encodeCall(
+                InputVerifier.initializeFromEmptyProxy,
+                (verifyingContractSource, chainIDSource, initialSigners, initialThreshold)
+            )
+        );
+
+        inputVerifierProxy = InputVerifier(inputVerifierAdd);
     }
 }

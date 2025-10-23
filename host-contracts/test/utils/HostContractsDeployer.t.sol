@@ -4,14 +4,17 @@ pragma solidity ^0.8.24;
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 import {HostContractsDeployer} from "./HostContractsDeployer.sol";
-import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, inputVerifierAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
 import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
+import {InputVerifier} from "../../contracts/InputVerifier.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 contract HostContractsDeployerTest is HostContractsDeployer {
     address private constant OWNER = address(0xBEEF);
+    address private constant GATEWAY_SOURCE_CONTRACT = address(0x1234);
+    uint64 private constant GATEWAY_CHAIN_ID = 31337;
 
     function test_DeployACL_DeploysProxyAndUpgradesImplementation() public {
         (ACL aclProxy, address aclImplementation) = _deployACL(OWNER);
@@ -41,8 +44,6 @@ contract HostContractsDeployerTest is HostContractsDeployer {
     function test_DeployKMSVerifier_UsesProxyUpgradeFlow() public {
         // KMSVerifier inherits ACLOwnable as well, ensuring the ACL proxy is in place avoids upgrade reverts.
         _deployACL(OWNER);
-        address verifyingContractSource = address(0x1234);
-        uint64 chainIDSource = 31337;
         address[] memory initialSigners = new address[](2);
         initialSigners[0] = address(0x1111);
         initialSigners[1] = address(0x2222);
@@ -50,8 +51,8 @@ contract HostContractsDeployerTest is HostContractsDeployer {
 
         (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) = _deployKMSVerifier(
             OWNER,
-            verifyingContractSource,
-            chainIDSource,
+            GATEWAY_SOURCE_CONTRACT,
+            GATEWAY_CHAIN_ID,
             initialSigners,
             initialThreshold
         );
@@ -67,6 +68,39 @@ contract HostContractsDeployerTest is HostContractsDeployer {
         assertEq(
             _readImplementationSlot(kmsVerifierAdd),
             kmsVerifierImplementation,
+            "Implementation slot mismatch"
+        );
+    }
+
+    function test_DeployInputVerifier_UsesProxyUpgradeFlow() public {
+        // InputVerifier is also ACLOwnable; seed ACL proxy to ensure upgrade authorization succeeds.
+        _deployACL(OWNER);
+        address[] memory initialSigners = new address[](3);
+        initialSigners[0] = address(0xaaaa);
+        initialSigners[1] = address(0xbbbb);
+        initialSigners[2] = address(0xcccc);
+        uint256 initialThreshold = 2;
+
+        (InputVerifier inputVerifierProxy, address inputVerifierImplementation) = _deployInputVerifier(
+            OWNER,
+            GATEWAY_SOURCE_CONTRACT,
+            GATEWAY_CHAIN_ID,
+            initialSigners,
+            initialThreshold
+        );
+
+        assertEq(address(inputVerifierProxy), inputVerifierAdd, "InputVerifier proxy address mismatch");
+        assertNotEq(inputVerifierImplementation, address(0), "Implementation not deployed");
+        assertEq(inputVerifierProxy.getVersion(), "InputVerifier v0.2.0", "Version mismatch");
+        assertEq(inputVerifierProxy.getThreshold(), initialThreshold, "Threshold mismatch");
+        address[] memory storedSigners = inputVerifierProxy.getCoprocessorSigners();
+        assertEq(storedSigners.length, initialSigners.length, "Signers length mismatch");
+        assertEq(storedSigners[0], initialSigners[0], "Signer[0] mismatch");
+        assertEq(storedSigners[1], initialSigners[1], "Signer[1] mismatch");
+        assertEq(storedSigners[2], initialSigners[2], "Signer[2] mismatch");
+        assertEq(
+            _readImplementationSlot(inputVerifierAdd),
+            inputVerifierImplementation,
             "Implementation slot mismatch"
         );
     }
