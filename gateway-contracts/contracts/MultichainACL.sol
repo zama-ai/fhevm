@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { gatewayConfigAddress } from "../addresses/GatewayAddresses.sol";
+import { MulticallUpgradeable } from "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import { Strings } from "@openzeppelin/contracts/utils/Strings.sol";
 import { IMultichainACL } from "./interfaces/IMultichainACL.sol";
 import { ICiphertextCommits } from "./interfaces/ICiphertextCommits.sol";
@@ -9,12 +10,21 @@ import { IGatewayConfig } from "./interfaces/IGatewayConfig.sol";
 import { UUPSUpgradeableEmptyProxy } from "./shared/UUPSUpgradeableEmptyProxy.sol";
 import { GatewayConfigChecks } from "./shared/GatewayConfigChecks.sol";
 import { GatewayOwnable } from "./shared/GatewayOwnable.sol";
+import { UserDecryptionDelegation } from "./shared/Structs.sol";
 
 /**
  * @title MultichainACL smart contract
  * @notice See {IMultichainACL}
+ * @dev This contract implements MulticallUpgradeable to allow batching multiple calls in a single
+ * transaction, e.g., for bundling user decryption delegations of multiple contracts.
  */
-contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwnable, GatewayConfigChecks {
+contract MultichainACL is
+    IMultichainACL,
+    UUPSUpgradeableEmptyProxy,
+    GatewayOwnable,
+    GatewayConfigChecks,
+    MulticallUpgradeable
+{
     /**
      * @notice The address of the GatewayConfig contract for protocol state calls.
      */
@@ -36,7 +46,7 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -54,13 +64,37 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         mapping(bytes32 allowHash => address[] coprocessorTxSenderAddresses) allowConsensusTxSenders;
         /// @notice Allowed public decryptions.
         mapping(bytes32 allowHash => bool isAllowed) isAllowed;
-        /// @notice The coprocessor transaction senders involved in a consensus for delegating an account.
+        /// @notice DEPRECATED: to remove in a state reset.
         mapping(bytes32 delegateAccountHash => address[] coprocessorTxSenderAddresses) delegateAccountConsensusTxSenders;
         // ----------------------------------------------------------------------------------------------
         // Coprocessor context state variables:
         // ----------------------------------------------------------------------------------------------
         /// @notice The context ID for the allow consensus.
         mapping(bytes32 allowHash => uint256 contextId) allowContextId;
+        // ----------------------------------------------------------------------------------------------
+        // Delegation state variables:
+        // ----------------------------------------------------------------------------------------------
+        /// @notice The computed delegate user decryption hash that has already reached consensus for delegation or revocation.
+        mapping(bytes32 delegateUserDecryptionHash => bool isDelegatedOrRevoked) delegatedOrRevokedUserDecryptionHashes;
+        /// @notice The coprocessor transaction senders involved in a consensus for delegating user decryption.
+        mapping(bytes32 delegateUserDecryptionHash => address[] coprocessorTxSenderAddresses) delegateUserDecryptionTxSenders;
+        /// @notice The coprocessor transaction senders involved in a consensus for revoking user decryption.
+        mapping(bytes32 delegateUserDecryptionHash => address[] coprocessorTxSenderAddresses) revokeUserDecryptionTxSenders;
+        // prettier-ignore
+        /// @notice The coprocessors that have already delegated for user decryption.
+        mapping(bytes32 delegateUserDecryptionHash =>
+            mapping(address coprocessorTxSenderAddress => bool hasDelegated))
+                alreadyDelegatedUserDecryptionCoprocessors;
+        // prettier-ignore
+        /// @notice The coprocessors that have already revoked delegation for user decryption.
+        mapping(bytes32 delegateUserDecryptionHash =>
+            mapping(address coprocessorTxSenderAddress => bool hasRevoked))
+                alreadyRevokedUserDecryptionCoprocessors;
+        // prettier-ignore
+        /// @notice The user decryption delegation info after reaching consensus for delegation or revocation.
+        mapping(uint256 chainId => mapping(address delegator =>
+            mapping(address delegate => mapping(address contractAddress => UserDecryptionDelegation delegation))))
+                userDecryptionDelegations;
     }
 
     /**
@@ -89,7 +123,7 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
      */
     /// @custom:oz-upgrades-unsafe-allow missing-initializer-call
     /// @custom:oz-upgrades-validate-as-initializer
-    // function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
+    function reinitializeV2() public virtual reinitializer(REINITIALIZER_VERSION) {}
 
     /**
      * @notice See {IMultichainACL-allowPublicDecrypt}.
@@ -169,6 +203,165 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
         }
     }
 
+    /// @dev See {IMultichainACL-delegateUserDecryption}.
+    function delegateUserDecryption(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) external virtual onlyCoprocessorTxSender {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+        bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate
+        );
+
+        _checkAlreadyDelegatedOrRevokedUserDecryptionDelegation(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate,
+            delegateUserDecryptionHash
+        );
+
+        mapping(address => bool) storage alreadyDelegatedUserDecryptionCoprocessors = $
+            .alreadyDelegatedUserDecryptionCoprocessors[delegateUserDecryptionHash];
+
+        // Mark the coprocessor has already delegated for the user decryption hash.
+        alreadyDelegatedUserDecryptionCoprocessors[msg.sender] = true;
+
+        // Store the coprocessor transaction sender address for the delegate user decryption hash.
+        // A "late" valid coprocessor transaction sender address will still be added in the list.
+        $.delegateUserDecryptionTxSenders[delegateUserDecryptionHash].push(msg.sender);
+
+        emit DelegateUserDecryption(chainId, delegator, delegate, contractAddress, delegationCounter);
+
+        // Send the consensus reached event only if the consensus is reached in the current call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted.
+        if (
+            !$.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] &&
+            _isConsensusReached($.delegateUserDecryptionTxSenders[delegateUserDecryptionHash].length)
+        ) {
+            UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[chainId][delegator][
+                delegate
+            ][contractAddress];
+
+            // Check that the delegation counter is strictly greater than the previous one.
+            // This check must be performed only after consensus is reached to guarantee correct ordering
+            // of delegation operations among multiple coprocessors. Performing this check outside of the
+            // consensus branch could lead to incorrect reverts in cases where multiple delegation or
+            // revocation transactions are processed in parallel.
+            if (delegationCounter <= userDecryptionDelegation.delegationCounter) {
+                revert UserDecryptionDelegationCounterTooLow(delegationCounter);
+            }
+
+            // Update the user decryption delegation information.
+            uint64 oldExpirationDate = userDecryptionDelegation.expirationDate;
+            userDecryptionDelegation.delegationCounter = delegationCounter;
+            userDecryptionDelegation.expirationDate = expirationDate;
+
+            // Mark the delegate user decryption hash as having reached consensus for delegation.
+            $.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] = true;
+
+            emit DelegateUserDecryptionConsensusReached(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                oldExpirationDate,
+                expirationDate
+            );
+        }
+    }
+
+    /// @dev See {IMultichainACL-revokeUserDecryptionDelegation}.
+    function revokeUserDecryptionDelegation(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) external virtual onlyCoprocessorTxSender {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+        bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate
+        );
+
+        _checkAlreadyDelegatedOrRevokedUserDecryptionDelegation(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate,
+            delegateUserDecryptionHash
+        );
+
+        mapping(address => bool) storage alreadyRevokedUserDecryptionCoprocessors = $
+            .alreadyRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
+
+        // Mark the coprocessor has already revoked for the delegate user decryption hash.
+        alreadyRevokedUserDecryptionCoprocessors[msg.sender] = true;
+
+        // Store the revoking coprocessor transaction sender address for the delegate user decryption hash.
+        // A "late" valid coprocessor transaction sender address will still be added in the list.
+        $.revokeUserDecryptionTxSenders[delegateUserDecryptionHash].push(msg.sender);
+
+        emit RevokeUserDecryptionDelegation(chainId, delegator, delegate, contractAddress, delegationCounter);
+
+        // Send the consensus reached event only if the consensus is reached in the current call.
+        // This means a "late" response will not be reverted, just ignored and no event will be emitted.
+        if (
+            !$.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] &&
+            _isConsensusReached($.revokeUserDecryptionTxSenders[delegateUserDecryptionHash].length)
+        ) {
+            UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[chainId][delegator][
+                delegate
+            ][contractAddress];
+
+            // Check that the delegation counter is strictly greater than the previous one.
+            // This check must be performed only after consensus is reached to guarantee correct ordering
+            // of revocation operations among multiple coprocessors. Performing this check outside of the
+            // consensus branch could lead to incorrect reverts in cases where multiple delegation or
+            // revocation transactions are processed in parallel.
+            if (delegationCounter <= userDecryptionDelegation.delegationCounter) {
+                revert UserDecryptionDelegationCounterTooLow(delegationCounter);
+            }
+
+            // Update the user decryption delegation information.
+            uint64 oldExpirationDate = userDecryptionDelegation.expirationDate;
+            userDecryptionDelegation.delegationCounter = delegationCounter;
+            userDecryptionDelegation.expirationDate = 0;
+
+            // Mark the delegate user decryption hash as having reached consensus for revocation.
+            $.delegatedOrRevokedUserDecryptionHashes[delegateUserDecryptionHash] = true;
+
+            emit RevokeUserDecryptionDelegationConsensusReached(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                oldExpirationDate
+            );
+        }
+    }
+
     /**
      * @notice See {IMultichainACL-isPublicDecryptAllowed}.
      */
@@ -186,6 +379,24 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
 
         bytes32 allowHash = _getAllowAccountHash(ctHandle, accountAddress);
         return $.isAllowed[allowHash];
+    }
+
+    /**
+     * @notice See {IMultichainACL-isUserDecryptionDelegated}.
+     */
+    function isUserDecryptionDelegated(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress
+    ) external view returns (bool) {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+
+        UserDecryptionDelegation storage userDecryptionDelegation = $.userDecryptionDelegations[chainId][delegator][
+            delegate
+        ][contractAddress];
+
+        return userDecryptionDelegation.expirationDate >= block.timestamp;
     }
 
     /**
@@ -210,6 +421,56 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
 
         bytes32 allowHash = _getAllowAccountHash(ctHandle, accountAddress);
         return $.allowConsensusTxSenders[allowHash];
+    }
+
+    /**
+     * @notice See {IMultichainACL-getDelegateUserDecryptionConsensusTxSenders}.
+     */
+    function getDelegateUserDecryptionConsensusTxSenders(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) external view returns (address[] memory) {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+
+        bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate
+        );
+
+        return $.delegateUserDecryptionTxSenders[delegateUserDecryptionHash];
+    }
+
+    /**
+     * @notice See {IMultichainACL-getRevokeUserDecryptionDelegationConsensusTxSenders}.
+     */
+    function getRevokeUserDecryptionDelegationConsensusTxSenders(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) external view returns (address[] memory) {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+
+        bytes32 delegateUserDecryptionHash = _getDelegateUserDecryptionHash(
+            chainId,
+            delegator,
+            delegate,
+            contractAddress,
+            delegationCounter,
+            expirationDate
+        );
+
+        return $.revokeUserDecryptionTxSenders[delegateUserDecryptionHash];
     }
 
     /**
@@ -251,6 +512,67 @@ contract MultichainACL is IMultichainACL, UUPSUpgradeableEmptyProxy, GatewayOwna
      */
     function _getAllowAccountHash(bytes32 ctHandle, address accountAddress) internal pure virtual returns (bytes32) {
         return keccak256(abi.encode(ctHandle, accountAddress));
+    }
+
+    /**
+     * @notice Returns the hash of a delegate user decryption information.
+     */
+    function _getDelegateUserDecryptionHash(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate
+    ) internal pure virtual returns (bytes32) {
+        return keccak256(abi.encode(chainId, delegator, delegate, contractAddress, delegationCounter, expirationDate));
+    }
+
+    /**
+     * @notice Checks if the coprocessor has already delegated or revoked the user decryption delegation.
+     */
+    function _checkAlreadyDelegatedOrRevokedUserDecryptionDelegation(
+        uint256 chainId,
+        address delegator,
+        address delegate,
+        address contractAddress,
+        uint64 delegationCounter,
+        uint64 expirationDate,
+        bytes32 delegateUserDecryptionHash
+    ) internal view virtual {
+        MultichainACLStorage storage $ = _getMultichainACLStorage();
+
+        mapping(address => bool) storage alreadyDelegatedUserDecryptionCoprocessors = $
+            .alreadyDelegatedUserDecryptionCoprocessors[delegateUserDecryptionHash];
+
+        mapping(address => bool) storage alreadyRevokedUserDecryptionCoprocessors = $
+            .alreadyRevokedUserDecryptionCoprocessors[delegateUserDecryptionHash];
+
+        // Check if the coprocessor has already delegated the user decryption.
+        if (alreadyDelegatedUserDecryptionCoprocessors[msg.sender]) {
+            revert CoprocessorAlreadyDelegatedUserDecryption(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                expirationDate,
+                msg.sender
+            );
+        }
+
+        // Check if the coprocessor has already revoked the user decryption delegation.
+        if (alreadyRevokedUserDecryptionCoprocessors[msg.sender]) {
+            revert CoprocessorAlreadyRevokedUserDecryption(
+                chainId,
+                delegator,
+                delegate,
+                contractAddress,
+                delegationCounter,
+                expirationDate,
+                msg.sender
+            );
+        }
     }
 
     /**

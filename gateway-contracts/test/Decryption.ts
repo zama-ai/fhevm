@@ -17,7 +17,6 @@ import {
 // as this type is defined as a shared structs instead of directly in the IDecryption interface
 import {
   CtHandleContractPairStruct,
-  DelegationAccountsStruct,
   SnsCiphertextMaterialStruct,
 } from "../typechain-types/contracts/interfaces/IDecryption";
 import {
@@ -106,7 +105,7 @@ describe("Decryption", function () {
 
   let gatewayConfig: GatewayConfig;
   let kmsGeneration: KMSGeneration;
-  let MultichainACL: MultichainACL;
+  let multichainACL: MultichainACL;
   let ciphertextCommits: CiphertextCommits;
   let decryption: Decryption;
   let owner: Wallet;
@@ -182,12 +181,12 @@ describe("Decryption", function () {
     // Allow handles for public decryption
     async function preparePublicDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
-      const { MultichainACL, decryption, kmsSigners, coprocessorTxSenders } = fixtureData;
+      const { multichainACL, decryption, kmsSigners, coprocessorTxSenders } = fixtureData;
 
       // Allow public decryption
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await MultichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle, extraDataV0);
+          await multichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(ctHandle, extraDataV0);
         }
       }
 
@@ -212,7 +211,7 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(preparePublicDecryptEIP712Fixture);
       gatewayConfig = fixtureData.gatewayConfig;
       kmsGeneration = fixtureData.kmsGeneration;
-      MultichainACL = fixtureData.MultichainACL;
+      multichainACL = fixtureData.multichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
@@ -296,7 +295,7 @@ describe("Decryption", function () {
       // have been allowed for public decryption
       for (const newCtHandle of newCtHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await MultichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
+          await multichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
         }
       }
 
@@ -363,7 +362,7 @@ describe("Decryption", function () {
             .connect(coprocessorTxSenders[i])
             .addCiphertextMaterial(newCtHandle, newKeyId, ciphertextDigest, snsCiphertextDigest);
 
-          await MultichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
+          await multichainACL.connect(coprocessorTxSenders[i]).allowPublicDecrypt(newCtHandle, extraDataV0);
         }
       }
 
@@ -682,13 +681,13 @@ describe("Decryption", function () {
     // Allow access the the handles for the user and the contract
     async function prepareUserDecryptEIP712Fixture() {
       const fixtureData = await loadFixture(prepareAddCiphertextFixture);
-      const { decryption, MultichainACL, kmsSigners, coprocessorTxSenders } = fixtureData;
+      const { decryption, multichainACL, kmsSigners, coprocessorTxSenders } = fixtureData;
 
       // Allow user decryption for the user and contract address over all handles
       for (const ctHandle of ctHandles) {
         for (let i = 0; i < coprocessorTxSenders.length; i++) {
-          await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, user.address, extraDataV0);
-          await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress, extraDataV0);
+          await multichainACL.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, user.address, extraDataV0);
+          await multichainACL.connect(coprocessorTxSenders[i]).allowAccount(ctHandle, contractAddress, extraDataV0);
         }
       }
 
@@ -739,7 +738,7 @@ describe("Decryption", function () {
       const fixtureData = await loadFixture(prepareUserDecryptEIP712Fixture);
       gatewayConfig = fixtureData.gatewayConfig;
       kmsGeneration = fixtureData.kmsGeneration;
-      MultichainACL = fixtureData.MultichainACL;
+      multichainACL = fixtureData.multichainACL;
       ciphertextCommits = fixtureData.ciphertextCommits;
       decryption = fixtureData.decryption;
       owner = fixtureData.owner;
@@ -1092,8 +1091,8 @@ describe("Decryption", function () {
       // We need to do this because `userDecryptionRequest` first checks if the accounts have access
       // to the handle
       for (let i = 0; i < coprocessorTxSenders.length; i++) {
-        await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
-        await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
+        await multichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
+        await multichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
       }
 
       await expect(
@@ -1212,8 +1211,8 @@ describe("Decryption", function () {
         await ciphertextCommits
           .connect(coprocessorTxSenders[i])
           .addCiphertextMaterial(newCtHandle, newKeyId, ciphertextDigest, snsCiphertextDigest);
-        await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
-        await MultichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
+        await multichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, user.address, extraDataV0);
+        await multichainACL.connect(coprocessorTxSenders[i]).allowAccount(newCtHandle, contractAddress, extraDataV0);
       }
 
       // Request user decryption with ctMaterials tied to different key IDs
