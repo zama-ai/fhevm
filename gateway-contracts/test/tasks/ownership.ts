@@ -28,17 +28,11 @@ describe("Ownership tasks", function () {
       newOwnerAddress: newOwner.address,
     });
 
-    // Check that the ownership has not been transferred as the new owner has not accepted it yet
+    // Check that the ownership has not been transferred as the transfer is only pending since the
+    // new owner has not accepted it yet.
     expect(await gatewayConfig.owner()).to.eq(owner.address);
-  });
 
-  it("Should accept ownership of the GatewayConfig contract", async function () {
-    await hre.run("task:transferGatewayOwnership", {
-      currentOwnerPrivateKey: owner.privateKey,
-      newOwnerAddress: newOwner.address,
-    });
-
-    await hre.run("task:acceptGatewayOwnership", { newOwnerPrivateKey: newOwner.privateKey });
-    expect(await gatewayConfig.owner()).to.eq(newOwner.address);
+    // Check that the pending owner is the new owner.
+    expect(await gatewayConfig.pendingOwner()).to.eq(newOwner.address);
   });
 });

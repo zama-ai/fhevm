@@ -52,6 +52,6 @@ jobs:
       - run: cp ./host-contracts/.env.example ./host-contracts/.env
       - run: npm --workspace=host-contracts ci --include=optional
       - name: "Run JS/TS tests"
-        run: npm --workspace=host-contracts run test:mock
+        run: npm --workspace=host-contracts run test
       - name: "Run forge tests"
         run: "cd host-contracts && forge install foundry-rs/forge-std && forge test"
