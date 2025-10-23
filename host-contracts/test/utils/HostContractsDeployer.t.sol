@@ -136,6 +136,40 @@ contract HostContractsDeployerTest is HostContractsDeployer {
      * @dev Mirrors how clients read the current implementation in production by peeking at the ERC-1967 slot.
      * Using the library constant avoids hard-coding the slot value here.
      */
+    function test_EndToEndSetup_AllContractsWireTogether() public {
+        (ACL aclProxy,) = _deployACL(OWNER);
+        PauserSet pauserSet = _deployPauserSet();
+        (FHEVMExecutor fhevmExecutorProxy,) = _deployFHEVMExecutor(OWNER);
+        _deployHCULimit(OWNER);
+        _deployKMSVerifier(OWNER, GATEWAY_SOURCE_CONTRACT, GATEWAY_CHAIN_ID, _singleAddress(0x7777), 1);
+        _deployInputVerifier(OWNER, GATEWAY_SOURCE_CONTRACT, GATEWAY_CHAIN_ID, _singleAddress(0x8888), 1);
+
+        assertEq(fhevmExecutorProxy.getACLAddress(), aclAdd, "FHEVMExecutor ACL wiring mismatch");
+        assertEq(fhevmExecutorProxy.getHCULimitAddress(), hcuLimitAdd, "FHEVMExecutor HCULimit wiring mismatch");
+        assertEq(aclProxy.getPauserSetAddress(), pauserSetAdd, "ACL PauserSet address mismatch");
+
+        address pauser = address(0xbeef);
+        vm.prank(OWNER);
+        pauserSet.addPauser(pauser);
+        vm.prank(pauser);
+        aclProxy.pause();
+        assertTrue(aclProxy.paused(), "ACL not paused by pauser");
+        vm.prank(pauser);
+        aclProxy.unpause();
+
+        vm.expectRevert(abi.encodeWithSelector(ACL.SenderNotAllowed.selector, address(this)));
+        aclProxy.allowTransient(bytes32(uint256(1)), address(this));
+
+        vm.prank(fhevmExecutorAdd);
+        aclProxy.allowTransient(bytes32(uint256(1)), address(this));
+        assertTrue(aclProxy.allowedTransient(bytes32(uint256(1)), address(this)), "Transient allow failed");
+    }
+
+    function _singleAddress(uint160 signer) private pure returns (address[] memory signers) {
+        signers = new address[](1);
+        signers[0] = address(signer);
+    }
+
     function _readImplementationSlot(address proxy) private view returns (address) {
         return address(uint160(uint256(vm.load(proxy, ERC1967Utils.IMPLEMENTATION_SLOT))));
     }
