@@ -4,9 +4,10 @@ pragma solidity ^0.8.24;
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 import {HostContractsDeployer} from "./HostContractsDeployer.sol";
-import {aclAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
+import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 
 contract HostContractsDeployerTest is HostContractsDeployer {
@@ -33,6 +34,39 @@ contract HostContractsDeployerTest is HostContractsDeployer {
         assertEq(
             _readImplementationSlot(fhevmExecutorAdd),
             fhevmExecutorImplementation,
+            "Implementation slot mismatch"
+        );
+    }
+
+    function test_DeployKMSVerifier_UsesProxyUpgradeFlow() public {
+        // KMSVerifier inherits ACLOwnable as well, ensuring the ACL proxy is in place avoids upgrade reverts.
+        _deployACL(OWNER);
+        address verifyingContractSource = address(0x1234);
+        uint64 chainIDSource = 31337;
+        address[] memory initialSigners = new address[](2);
+        initialSigners[0] = address(0x1111);
+        initialSigners[1] = address(0x2222);
+        uint256 initialThreshold = 1;
+
+        (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) = _deployKMSVerifier(
+            OWNER,
+            verifyingContractSource,
+            chainIDSource,
+            initialSigners,
+            initialThreshold
+        );
+
+        assertEq(address(kmsVerifierProxy), kmsVerifierAdd, "KMSVerifier proxy address mismatch");
+        assertNotEq(kmsVerifierImplementation, address(0), "Implementation not deployed");
+        assertEq(kmsVerifierProxy.getVersion(), "KMSVerifier v0.1.0", "Version mismatch");
+        assertEq(kmsVerifierProxy.getThreshold(), initialThreshold, "Threshold mismatch");
+        address[] memory storedSigners = kmsVerifierProxy.getKmsSigners();
+        assertEq(storedSigners.length, initialSigners.length, "Signers length mismatch");
+        assertEq(storedSigners[0], initialSigners[0], "Signer[0] mismatch");
+        assertEq(storedSigners[1], initialSigners[1], "Signer[1] mismatch");
+        assertEq(
+            _readImplementationSlot(kmsVerifierAdd),
+            kmsVerifierImplementation,
             "Implementation slot mismatch"
         );
     }

@@ -5,9 +5,10 @@ import {Test} from "forge-std/Test.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ACL} from "../../contracts/ACL.sol";
 import {FHEVMExecutor} from "../../contracts/FHEVMExecutor.sol";
+import {KMSVerifier} from "../../contracts/KMSVerifier.sol";
 import {EmptyUUPSProxy} from "../../contracts/emptyProxy/EmptyUUPSProxy.sol";
 import {EmptyUUPSProxyACL} from "../../contracts/emptyProxyACL/EmptyUUPSProxyACL.sol";
-import {aclAdd, fhevmExecutorAdd} from "../../addresses/FHEVMHostAddresses.sol";
+import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
 /**
  * @dev Thin wrapper so `deployCodeTo` can load locally compiled bytecode for the OZ proxy.
@@ -68,5 +69,36 @@ abstract contract HostContractsDeployer is Test {
         );
 
         fhevmExecutorProxy = FHEVMExecutor(fhevmExecutorAdd);
+    }
+
+    function _deployKMSVerifier(
+        address owner,
+        address verifyingContractSource,
+        uint64 chainIDSource,
+        address[] memory initialSigners,
+        uint256 initialThreshold
+    ) internal returns (KMSVerifier kmsVerifierProxy, address kmsVerifierImplementation) {
+        address emptyProxyImplementation = address(new EmptyUUPSProxy());
+
+        deployCodeTo(
+            "test/utils/HostContractsDeployer.sol:DeployableERC1967Proxy",
+            abi.encode(emptyProxyImplementation, abi.encodeCall(EmptyUUPSProxy.initialize, ())),
+            kmsVerifierAdd
+        );
+        vm.label(kmsVerifierAdd, "KMSVerifier Proxy");
+
+        kmsVerifierImplementation = address(new KMSVerifier());
+        vm.label(kmsVerifierImplementation, "KMSVerifier Implementation");
+
+        vm.prank(owner);
+        EmptyUUPSProxy(kmsVerifierAdd).upgradeToAndCall(
+            kmsVerifierImplementation,
+            abi.encodeCall(
+                KMSVerifier.initializeFromEmptyProxy,
+                (verifyingContractSource, chainIDSource, initialSigners, initialThreshold)
+            )
+        );
+
+        kmsVerifierProxy = KMSVerifier(kmsVerifierAdd);
     }
 }
