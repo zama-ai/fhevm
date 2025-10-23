@@ -597,6 +597,18 @@ impl Database {
                     "unhandled Acl::Unpaused event"
                 );
             }
+            AclContractEvents::BlockedAccount(blocked_account) => {
+                warn!(
+                    event = ?blocked_account,
+                    "unhandled Acl::BlockedAccount event"
+                );
+            }
+            AclContractEvents::UnblockedAccount(unblocked_account) => {
+                warn!(
+                    event = ?unblocked_account,
+                    "unhandled Acl::UnblockedAccount event"
+                );
+            }
         }
         self.tick.update();
         Ok(())
@@ -787,6 +799,8 @@ pub fn acl_result_handles(event: &Log<AclContractEvents>) -> Vec<Handle> {
         | AclContractEvents::RevokedDelegationForUserDecryption(_)
         | AclContractEvents::Upgraded(_)
         | AclContractEvents::Paused(_)
-        | AclContractEvents::Unpaused(_) => vec![],
+        | AclContractEvents::Unpaused(_)
+        | AclContractEvents::BlockedAccount(_)
+        | AclContractEvents::UnblockedAccount(_) => vec![],
     }
 }
