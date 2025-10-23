@@ -37,7 +37,7 @@ impl<P: Provider<Ethereum> + Clone + 'static> TransactionSender<P> {
     ) -> anyhow::Result<Self> {
         let db_pool = sqlx::postgres::PgPoolOptions::new()
             .max_connections(conf.database_pool_size)
-            .connect(&conf.database_url)
+            .connect(conf.database_url.as_str())
             .await?;
 
         let operations: Vec<Arc<dyn ops::TransactionOperation<P>>> = vec![

@@ -81,7 +81,7 @@ impl TestEnvironment {
 
         let db_pool = PgPoolOptions::new()
             .max_connections(1)
-            .connect(&conf.database_url)
+            .connect(conf.database_url.as_str())
             .await?;
 
         Self::truncate_tables(

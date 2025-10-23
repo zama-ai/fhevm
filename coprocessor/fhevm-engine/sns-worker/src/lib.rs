@@ -21,7 +21,7 @@ use fhevm_engine_common::{
     pg_pool::{PostgresPoolManager, ServiceError},
     telemetry::{self, OtelTracer},
     types::FhevmError,
-    utils::compact_hex,
+    utils::{compact_hex, DatabaseURL},
 };
 use futures::join;
 use serde::{Deserialize, Serialize};
@@ -55,7 +55,7 @@ pub struct KeySet {
 
 #[derive(Clone)]
 pub struct DBConfig {
-    pub url: String,
+    pub url: DatabaseURL,
     pub listen_channels: Vec<String>,
     pub notify_channel: String,
     pub batch_limit: u32,
