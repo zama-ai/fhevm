@@ -65,8 +65,13 @@ const config: HardhatUserConfig = {
             url: process.env.SEPOLIA_RPC_URL,
             accounts,
             oftAdapter: {
-                tokenAddress: '0x0', // Set the token address for the OFT adapter
+              tokenAddress: "0x9F93AE78e7Fa356e9E786a8229568142F933C007",
             },
+        },
+        'gateway-testnet': {
+            eid: EndpointId.ZAMA_TESTNET,
+            url: process.env.RPC_URL_ZAMA_GATEWAY_TESTNET,
+            accounts,
         },
         hardhat: {
             // Need this for testing because TestHelperOz5.sol is exceeding the compiled contract size limit

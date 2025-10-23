@@ -173,7 +173,7 @@ fi
 
 # Step 6: Wire contracts
 info "Wire ZamaOFTAdapter (Ethereum Sepolia) with ZamaOFT (Arbitrum Sepolia)"
-note "Running lz:oapp:wire in CI mode using layerzero.config.ts."
-npx hardhat lz:oapp:wire --ci --oapp-config layerzero.config.ts
+note "Running lz:oapp:wire in CI mode using layerzero.config.arbitrumtestnet.ts."
+npx hardhat lz:oapp:wire --ci --oapp-config layerzero.config.arbitrumtestnet.ts
 
 info "Deployment flow complete"

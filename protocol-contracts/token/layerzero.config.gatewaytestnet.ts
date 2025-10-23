@@ -10,13 +10,13 @@ const sepoliaContract: OmniPointHardhat = {
     contractName: 'ZamaOFTAdapter',
 }
 
-const arbitrumSepoliaContract: OmniPointHardhat = {
-    eid: EndpointId.ARBSEP_V2_TESTNET,
+const zamaTestnetContract: OmniPointHardhat = {
+    eid: EndpointId.ZAMA_TESTNET,
     contractName: 'ZamaOFT',
 }
 
 // To connect all the above chains to each other, we need the following pathways:
-// ArbitrumSepolia <-> Sepolia
+// ZamaGatewayTestnet <-> Sepolia
 
 // For this example's simplicity, we will use the same enforced options values for sending to all chains
 // For production, you should ensure `gas` is set to the correct value through profiling the gas usage of calling OFT._lzReceive(...) on the destination chain
@@ -35,10 +35,11 @@ const EVM_ENFORCED_OPTIONS: OAppEnforcedOption[] = [
 const pathways: TwoWayConfig[] = [
     [
         sepoliaContract, // Chain A contract
-        arbitrumSepoliaContract, // Chain B contract
+        zamaTestnetContract, // Chain B contract
         // TODO: Add custom ZAMA DVN in next line?
         [['LayerZero Labs'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
-        [15, 100], // [A to B confirmations, B to A confirmations]
+        // TODO: IMPORTANT for zamamainnet change next line to [15,20]
+        [1, 1], // [A to B confirmations, B to A confirmations]
         [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain B enforcedOptions, Chain A enforcedOptions
     ],
 ]
@@ -47,7 +48,7 @@ export default async function () {
     // Generate the connections config based on the pathways
     const connections = await generateConnectionsConfig(pathways)
     return {
-        contracts: [{ contract: arbitrumSepoliaContract }, { contract: sepoliaContract }],
+        contracts: [{ contract: zamaTestnetContract }, { contract: sepoliaContract }],
         connections,
     }
 }
