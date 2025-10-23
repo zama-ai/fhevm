@@ -1,5 +1,4 @@
-import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
-import { loadFixture, time } from "@nomicfoundation/hardhat-toolbox/network-helpers";
+import { loadFixture } from "@nomicfoundation/hardhat-toolbox/network-helpers";
 import { expect } from "chai";
 import hre from "hardhat";
 
@@ -11,40 +10,51 @@ describe("PauserSetWrapper", function () {
     // Contracts are deployed using the first signer/account by default
     const [owner, alice, bob] = await hre.ethers.getSigners();
 
+    const TokenMock = await hre.ethers.getContractFactory("TokenMock");
+    const tokenMock = await TokenMock.deploy();
+
     const PauserSetMock = await hre.ethers.getContractFactory("PauserSetMock");
     const pauserSetMock = await PauserSetMock.deploy();
 
     const PauserSetWrapper = await hre.ethers.getContractFactory("PauserSetWrapper");
-    const pauserSetWrapper = await PauserSetWrapper.deploy(await pauserSetMock.getAddress());
+    const tokenAddress = await tokenMock.getAddress()
+    const pauserSetAddress = await pauserSetMock.getAddress()
+    const pauserSetWrapper = await PauserSetWrapper.deploy(tokenAddress, "pauseMinting()", pauserSetAddress);
 
-    return { pauserSetMock, pauserSetWrapper, owner, alice, bob };
+    const pauserSetWrapperAddress = await pauserSetWrapper.getAddress();
+    const mintingPauserRole = await tokenMock.MINTING_PAUSER_ROLE();
+    // token admin grants the MINTING_PAUSER_ROLE to pauserSetWrapper contract
+    await tokenMock.grantRole(mintingPauserRole, pauserSetWrapperAddress);
+
+    return { tokenMock, pauserSetMock, pauserSetWrapper, owner, alice, bob };
   }
 
   describe("Deployment", function () {
     it("Should set the right PAUSER_SET address", async function () {
-      const { pauserSetMock, pauserSetWrapper } = await loadFixture(deployPauserSetMockAndWrapper);
-
+      const { tokenMock, pauserSetMock, pauserSetWrapper } = await loadFixture(deployPauserSetMockAndWrapper);
+      expect(await pauserSetWrapper.CONTRACT_TARGET()).to.equal(await tokenMock.getAddress());
       expect(await pauserSetWrapper.PAUSER_SET()).to.equal(await pauserSetMock.getAddress());
     });
   });
 
   describe("Execution", function () {
-    it("Only pauser from PauserSet could execute", async function () {
-      const { pauserSetMock, pauserSetWrapper, alice, bob } = await loadFixture(deployPauserSetMockAndWrapper);
+    it("Only pauser from PauserSet could pause minting", async function () {
+      const { tokenMock, pauserSetMock, pauserSetWrapper, alice } = await loadFixture(deployPauserSetMockAndWrapper);
 
       await pauserSetMock.addPauser(alice.address); // owner adds alice as a pauser
       expect(await pauserSetMock.isPauser(alice.address)).to.be.true;
 
-      // empty tx to bob made by the owner via the wrapper
       // expected to revert since owner is not a pauser
-      await expect(pauserSetWrapper.execute(bob, "0x")).to.be.revertedWithCustomError(
+      await expect(pauserSetWrapper.callFunction('0x')).to.be.revertedWithCustomError(
         pauserSetWrapper,
         "SenderNotPauser",
       );
 
-      // empty tx to bob made by alice via the wrapper
+      expect(await tokenMock.paused()).to.be.false;
+
       // expected to succeed since alice is indeed a pauser
-      await expect(pauserSetWrapper.connect(alice).execute(bob, "0x")).not.be.reverted;
+      await expect(pauserSetWrapper.connect(alice).callFunction('0x')).not.be.reverted;
+      expect(await tokenMock.paused()).to.be.true;
     });
   });
 });
