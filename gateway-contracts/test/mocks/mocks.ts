@@ -357,7 +357,7 @@ describe("Mock contracts", function () {
 
     it("Should emit revocation and consensus events on revoke user decryption delegation call", async function () {
       await expect(
-        multichainACLMock.revokeUserDecryption(
+        multichainACLMock.revokeUserDecryptionDelegation(
           DefaultUint256,
           DefaultAddress,
           DefaultAddress,
@@ -366,9 +366,9 @@ describe("Mock contracts", function () {
           DefaultUint256,
         ),
       )
-        .to.emit(multichainACLMock, "RevokeUserDecryption")
+        .to.emit(multichainACLMock, "RevokeUserDecryptionDelegation")
         .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256)
-        .to.emit(multichainACLMock, "RevokeUserDecryptionConsensusReached")
+        .to.emit(multichainACLMock, "RevokeUserDecryptionDelegationConsensusReached")
         .withArgs(DefaultUint256, DefaultAddress, DefaultAddress, DefaultAddress, DefaultUint256, DefaultUint256);
     });
   });

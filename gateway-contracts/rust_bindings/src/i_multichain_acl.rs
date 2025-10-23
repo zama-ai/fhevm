@@ -15,19 +15,21 @@ interface IMultichainACL {
     event AllowPublicDecrypt(bytes32 indexed ctHandle);
     event DelegateUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter);
     event DelegateUserDecryptionConsensusReached(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate, uint64 newExpirationDate);
-    event RevokeUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter);
-    event RevokeUserDecryptionConsensusReached(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate);
+    event RevokeUserDecryptionDelegation(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter);
+    event RevokeUserDecryptionDelegationConsensusReached(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate);
 
     function allowAccount(bytes32 ctHandle, address accountAddress, bytes memory extraData) external;
     function allowPublicDecrypt(bytes32 ctHandle, bytes memory extraData) external;
     function delegateUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external;
     function getAllowAccountConsensusTxSenders(bytes32 ctHandle, address accountAddress) external view returns (address[] memory);
     function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view returns (address[] memory);
+    function getDelegateUserDecryptionConsensusTxSenders(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external view returns (address[] memory);
+    function getRevokeUserDecryptionConsensusTxSenders(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external view returns (address[] memory);
     function getVersion() external pure returns (string memory);
     function isAccountAllowed(bytes32 ctHandle, address accountAddress) external view returns (bool);
     function isPublicDecryptAllowed(bytes32 ctHandle) external view returns (bool);
     function isUserDecryptionDelegated(uint256 chainId, address delegator, address delegate, address contractAddress) external view returns (bool);
-    function revokeUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external;
+    function revokeUserDecryptionDelegation(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external;
 }
 ```
 
@@ -158,6 +160,94 @@ interface IMultichainACL {
   },
   {
     "type": "function",
+    "name": "getDelegateUserDecryptionConsensusTxSenders",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "delegator",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "delegate",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "contractAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "delegationCounter",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "expirationDate",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getRevokeUserDecryptionConsensusTxSenders",
+    "inputs": [
+      {
+        "name": "chainId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "delegator",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "delegate",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "contractAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "delegationCounter",
+        "type": "uint64",
+        "internalType": "uint64"
+      },
+      {
+        "name": "expirationDate",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]",
+        "internalType": "address[]"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getVersion",
     "inputs": [],
     "outputs": [
@@ -248,7 +338,7 @@ interface IMultichainACL {
   },
   {
     "type": "function",
-    "name": "revokeUserDecryption",
+    "name": "revokeUserDecryptionDelegation",
     "inputs": [
       {
         "name": "chainId",
@@ -404,7 +494,7 @@ interface IMultichainACL {
   },
   {
     "type": "event",
-    "name": "RevokeUserDecryption",
+    "name": "RevokeUserDecryptionDelegation",
     "inputs": [
       {
         "name": "chainId",
@@ -441,7 +531,7 @@ interface IMultichainACL {
   },
   {
     "type": "event",
-    "name": "RevokeUserDecryptionConsensusReached",
+    "name": "RevokeUserDecryptionDelegationConsensusReached",
     "inputs": [
       {
         "name": "chainId",
@@ -1925,9 +2015,9 @@ event DelegateUserDecryptionConsensusReached(uint256 indexed chainId, address de
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `RevokeUserDecryption(uint256,address,address,address,uint64)` and selector `0x8174ec3af9025df732386b78ec23d2d20d7c79f9892e7c624f62d2eb7422c8e3`.
+    /**Event with signature `RevokeUserDecryptionDelegation(uint256,address,address,address,uint64)` and selector `0x6bbcd208635ba20c07d3d4215914946012e47141a5702207b5ae953669f81a55`.
 ```solidity
-event RevokeUserDecryption(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter);
+event RevokeUserDecryptionDelegation(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -1936,7 +2026,7 @@ event RevokeUserDecryption(uint256 indexed chainId, address delegator, address d
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct RevokeUserDecryption {
+    pub struct RevokeUserDecryptionDelegation {
         #[allow(missing_docs)]
         pub chainId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -1957,7 +2047,7 @@ event RevokeUserDecryption(uint256 indexed chainId, address delegator, address d
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for RevokeUserDecryption {
+        impl alloy_sol_types::SolEvent for RevokeUserDecryptionDelegation {
             type DataTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
@@ -1971,11 +2061,11 @@ event RevokeUserDecryption(uint256 indexed chainId, address delegator, address d
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "RevokeUserDecryption(uint256,address,address,address,uint64)";
+            const SIGNATURE: &'static str = "RevokeUserDecryptionDelegation(uint256,address,address,address,uint64)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                129u8, 116u8, 236u8, 58u8, 249u8, 2u8, 93u8, 247u8, 50u8, 56u8, 107u8,
-                120u8, 236u8, 35u8, 210u8, 210u8, 13u8, 124u8, 121u8, 249u8, 137u8, 46u8,
-                124u8, 98u8, 79u8, 98u8, 210u8, 235u8, 116u8, 34u8, 200u8, 227u8,
+                107u8, 188u8, 210u8, 8u8, 99u8, 91u8, 162u8, 12u8, 7u8, 211u8, 212u8,
+                33u8, 89u8, 20u8, 148u8, 96u8, 18u8, 228u8, 113u8, 65u8, 165u8, 112u8,
+                34u8, 7u8, 181u8, 174u8, 149u8, 54u8, 105u8, 248u8, 26u8, 85u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -2046,7 +2136,7 @@ event RevokeUserDecryption(uint256 indexed chainId, address delegator, address d
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::private::IntoLogData for RevokeUserDecryption {
+        impl alloy_sol_types::private::IntoLogData for RevokeUserDecryptionDelegation {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -2055,18 +2145,21 @@ event RevokeUserDecryption(uint256 indexed chainId, address delegator, address d
             }
         }
         #[automatically_derived]
-        impl From<&RevokeUserDecryption> for alloy_sol_types::private::LogData {
+        impl From<&RevokeUserDecryptionDelegation>
+        for alloy_sol_types::private::LogData {
             #[inline]
-            fn from(this: &RevokeUserDecryption) -> alloy_sol_types::private::LogData {
+            fn from(
+                this: &RevokeUserDecryptionDelegation,
+            ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
         }
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Event with signature `RevokeUserDecryptionConsensusReached(uint256,address,address,address,uint64,uint64)` and selector `0xd146a38bc0ca04bbcb2e88f153559cfcbee8ee19ffaf7ce28ea9b82d62fe7454`.
+    /**Event with signature `RevokeUserDecryptionDelegationConsensusReached(uint256,address,address,address,uint64,uint64)` and selector `0x4e1c15318255f558eb94913a6bb98bad89424a46f9a5214767283f3a85e31e26`.
 ```solidity
-event RevokeUserDecryptionConsensusReached(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate);
+event RevokeUserDecryptionDelegationConsensusReached(uint256 indexed chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 oldExpirationDate);
 ```*/
     #[allow(
         non_camel_case_types,
@@ -2075,7 +2168,7 @@ event RevokeUserDecryptionConsensusReached(uint256 indexed chainId, address dele
         clippy::style
     )]
     #[derive(Clone)]
-    pub struct RevokeUserDecryptionConsensusReached {
+    pub struct RevokeUserDecryptionDelegationConsensusReached {
         #[allow(missing_docs)]
         pub chainId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -2098,7 +2191,8 @@ event RevokeUserDecryptionConsensusReached(uint256 indexed chainId, address dele
     const _: () = {
         use alloy::sol_types as alloy_sol_types;
         #[automatically_derived]
-        impl alloy_sol_types::SolEvent for RevokeUserDecryptionConsensusReached {
+        impl alloy_sol_types::SolEvent
+        for RevokeUserDecryptionDelegationConsensusReached {
             type DataTuple<'a> = (
                 alloy::sol_types::sol_data::Address,
                 alloy::sol_types::sol_data::Address,
@@ -2113,11 +2207,11 @@ event RevokeUserDecryptionConsensusReached(uint256 indexed chainId, address dele
                 alloy_sol_types::sol_data::FixedBytes<32>,
                 alloy::sol_types::sol_data::Uint<256>,
             );
-            const SIGNATURE: &'static str = "RevokeUserDecryptionConsensusReached(uint256,address,address,address,uint64,uint64)";
+            const SIGNATURE: &'static str = "RevokeUserDecryptionDelegationConsensusReached(uint256,address,address,address,uint64,uint64)";
             const SIGNATURE_HASH: alloy_sol_types::private::B256 = alloy_sol_types::private::B256::new([
-                209u8, 70u8, 163u8, 139u8, 192u8, 202u8, 4u8, 187u8, 203u8, 46u8, 136u8,
-                241u8, 83u8, 85u8, 156u8, 252u8, 190u8, 232u8, 238u8, 25u8, 255u8, 175u8,
-                124u8, 226u8, 142u8, 169u8, 184u8, 45u8, 98u8, 254u8, 116u8, 84u8,
+                78u8, 28u8, 21u8, 49u8, 130u8, 85u8, 245u8, 88u8, 235u8, 148u8, 145u8,
+                58u8, 107u8, 185u8, 139u8, 173u8, 137u8, 66u8, 74u8, 70u8, 249u8, 165u8,
+                33u8, 71u8, 103u8, 40u8, 63u8, 58u8, 133u8, 227u8, 30u8, 38u8,
             ]);
             const ANONYMOUS: bool = false;
             #[allow(unused_variables)]
@@ -2193,7 +2287,7 @@ event RevokeUserDecryptionConsensusReached(uint256 indexed chainId, address dele
         }
         #[automatically_derived]
         impl alloy_sol_types::private::IntoLogData
-        for RevokeUserDecryptionConsensusReached {
+        for RevokeUserDecryptionDelegationConsensusReached {
             fn to_log_data(&self) -> alloy_sol_types::private::LogData {
                 From::from(self)
             }
@@ -2202,11 +2296,11 @@ event RevokeUserDecryptionConsensusReached(uint256 indexed chainId, address dele
             }
         }
         #[automatically_derived]
-        impl From<&RevokeUserDecryptionConsensusReached>
+        impl From<&RevokeUserDecryptionDelegationConsensusReached>
         for alloy_sol_types::private::LogData {
             #[inline]
             fn from(
-                this: &RevokeUserDecryptionConsensusReached,
+                this: &RevokeUserDecryptionDelegationConsensusReached,
             ) -> alloy_sol_types::private::LogData {
                 alloy_sol_types::SolEvent::encode_log_data(this)
             }
@@ -3094,6 +3188,457 @@ function getAllowPublicDecryptConsensusTxSenders(bytes32 ctHandle) external view
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getDelegateUserDecryptionConsensusTxSenders(uint256,address,address,address,uint64,uint64)` and selector `0x29a4370d`.
+```solidity
+function getDelegateUserDecryptionConsensusTxSenders(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getDelegateUserDecryptionConsensusTxSendersCall {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub delegator: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub delegate: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub contractAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub delegationCounter: u64,
+        #[allow(missing_docs)]
+        pub expirationDate: u64,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getDelegateUserDecryptionConsensusTxSenders(uint256,address,address,address,uint64,uint64)`](getDelegateUserDecryptionConsensusTxSendersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getDelegateUserDecryptionConsensusTxSendersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Uint<64>,
+                alloy::sol_types::sol_data::Uint<64>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+                alloy::sol_types::private::Address,
+                alloy::sol_types::private::Address,
+                alloy::sol_types::private::Address,
+                u64,
+                u64,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getDelegateUserDecryptionConsensusTxSendersCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getDelegateUserDecryptionConsensusTxSendersCall) -> Self {
+                    (
+                        value.chainId,
+                        value.delegator,
+                        value.delegate,
+                        value.contractAddress,
+                        value.delegationCounter,
+                        value.expirationDate,
+                    )
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getDelegateUserDecryptionConsensusTxSendersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        chainId: tuple.0,
+                        delegator: tuple.1,
+                        delegate: tuple.2,
+                        contractAddress: tuple.3,
+                        delegationCounter: tuple.4,
+                        expirationDate: tuple.5,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getDelegateUserDecryptionConsensusTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(
+                    value: getDelegateUserDecryptionConsensusTxSendersReturn,
+                ) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getDelegateUserDecryptionConsensusTxSendersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall
+        for getDelegateUserDecryptionConsensusTxSendersCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Uint<64>,
+                alloy::sol_types::sol_data::Uint<64>,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getDelegateUserDecryptionConsensusTxSenders(uint256,address,address,address,uint64,uint64)";
+            const SELECTOR: [u8; 4] = [41u8, 164u8, 55u8, 13u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.delegator,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.delegate,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.contractAddress,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.expirationDate),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getDelegateUserDecryptionConsensusTxSendersReturn = r
+                            .into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getDelegateUserDecryptionConsensusTxSendersReturn = r
+                            .into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Function with signature `getRevokeUserDecryptionConsensusTxSenders(uint256,address,address,address,uint64,uint64)` and selector `0xfbe93675`.
+```solidity
+function getRevokeUserDecryptionConsensusTxSenders(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external view returns (address[] memory);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getRevokeUserDecryptionConsensusTxSendersCall {
+        #[allow(missing_docs)]
+        pub chainId: alloy::sol_types::private::primitives::aliases::U256,
+        #[allow(missing_docs)]
+        pub delegator: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub delegate: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub contractAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub delegationCounter: u64,
+        #[allow(missing_docs)]
+        pub expirationDate: u64,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    ///Container type for the return parameters of the [`getRevokeUserDecryptionConsensusTxSenders(uint256,address,address,address,uint64,uint64)`](getRevokeUserDecryptionConsensusTxSendersCall) function.
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct getRevokeUserDecryptionConsensusTxSendersReturn {
+        #[allow(missing_docs)]
+        pub _0: alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Uint<64>,
+                alloy::sol_types::sol_data::Uint<64>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::primitives::aliases::U256,
+                alloy::sol_types::private::Address,
+                alloy::sol_types::private::Address,
+                alloy::sol_types::private::Address,
+                u64,
+                u64,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getRevokeUserDecryptionConsensusTxSendersCall>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getRevokeUserDecryptionConsensusTxSendersCall) -> Self {
+                    (
+                        value.chainId,
+                        value.delegator,
+                        value.delegate,
+                        value.contractAddress,
+                        value.delegationCounter,
+                        value.expirationDate,
+                    )
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getRevokeUserDecryptionConsensusTxSendersCall {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self {
+                        chainId: tuple.0,
+                        delegator: tuple.1,
+                        delegate: tuple.2,
+                        contractAddress: tuple.3,
+                        delegationCounter: tuple.4,
+                        expirationDate: tuple.5,
+                    }
+                }
+            }
+        }
+        {
+            #[doc(hidden)]
+            type UnderlyingSolTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            #[doc(hidden)]
+            type UnderlyingRustTuple<'a> = (
+                alloy::sol_types::private::Vec<alloy::sol_types::private::Address>,
+            );
+            #[cfg(test)]
+            #[allow(dead_code, unreachable_patterns)]
+            fn _type_assertion(
+                _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+            ) {
+                match _t {
+                    alloy_sol_types::private::AssertTypeEq::<
+                        <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                    >(_) => {}
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<getRevokeUserDecryptionConsensusTxSendersReturn>
+            for UnderlyingRustTuple<'_> {
+                fn from(value: getRevokeUserDecryptionConsensusTxSendersReturn) -> Self {
+                    (value._0,)
+                }
+            }
+            #[automatically_derived]
+            #[doc(hidden)]
+            impl ::core::convert::From<UnderlyingRustTuple<'_>>
+            for getRevokeUserDecryptionConsensusTxSendersReturn {
+                fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                    Self { _0: tuple.0 }
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolCall for getRevokeUserDecryptionConsensusTxSendersCall {
+            type Parameters<'a> = (
+                alloy::sol_types::sol_data::Uint<256>,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Address,
+                alloy::sol_types::sol_data::Uint<64>,
+                alloy::sol_types::sol_data::Uint<64>,
+            );
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            type Return = alloy::sol_types::private::Vec<
+                alloy::sol_types::private::Address,
+            >;
+            type ReturnTuple<'a> = (
+                alloy::sol_types::sol_data::Array<alloy::sol_types::sol_data::Address>,
+            );
+            type ReturnToken<'a> = <Self::ReturnTuple<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "getRevokeUserDecryptionConsensusTxSenders(uint256,address,address,address,uint64,uint64)";
+            const SELECTOR: [u8; 4] = [251u8, 233u8, 54u8, 117u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Uint<
+                        256,
+                    > as alloy_sol_types::SolType>::tokenize(&self.chainId),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.delegator,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.delegate,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.contractAddress,
+                    ),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.delegationCounter),
+                    <alloy::sol_types::sol_data::Uint<
+                        64,
+                    > as alloy_sol_types::SolType>::tokenize(&self.expirationDate),
+                )
+            }
+            #[inline]
+            fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
+                (
+                    <alloy::sol_types::sol_data::Array<
+                        alloy::sol_types::sol_data::Address,
+                    > as alloy_sol_types::SolType>::tokenize(ret),
+                )
+            }
+            #[inline]
+            fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence(data)
+                    .map(|r| {
+                        let r: getRevokeUserDecryptionConsensusTxSendersReturn = r
+                            .into();
+                        r._0
+                    })
+            }
+            #[inline]
+            fn abi_decode_returns_validate(
+                data: &[u8],
+            ) -> alloy_sol_types::Result<Self::Return> {
+                <Self::ReturnTuple<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(|r| {
+                        let r: getRevokeUserDecryptionConsensusTxSendersReturn = r
+                            .into();
+                        r._0
+                    })
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Function with signature `getVersion()` and selector `0x0d8e6e2c`.
 ```solidity
 function getVersion() external pure returns (string memory);
@@ -3756,13 +4301,13 @@ function isUserDecryptionDelegated(uint256 chainId, address delegator, address d
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
-    /**Function with signature `revokeUserDecryption(uint256,address,address,address,uint64,uint64)` and selector `0xe8283595`.
+    /**Function with signature `revokeUserDecryptionDelegation(uint256,address,address,address,uint64,uint64)` and selector `0xb455c75c`.
 ```solidity
-function revokeUserDecryption(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external;
+function revokeUserDecryptionDelegation(uint256 chainId, address delegator, address delegate, address contractAddress, uint64 delegationCounter, uint64 expirationDate) external;
 ```*/
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct revokeUserDecryptionCall {
+    pub struct revokeUserDecryptionDelegationCall {
         #[allow(missing_docs)]
         pub chainId: alloy::sol_types::private::primitives::aliases::U256,
         #[allow(missing_docs)]
@@ -3776,10 +4321,10 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
         #[allow(missing_docs)]
         pub expirationDate: u64,
     }
-    ///Container type for the return parameters of the [`revokeUserDecryption(uint256,address,address,address,uint64,uint64)`](revokeUserDecryptionCall) function.
+    ///Container type for the return parameters of the [`revokeUserDecryptionDelegation(uint256,address,address,address,uint64,uint64)`](revokeUserDecryptionDelegationCall) function.
     #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
     #[derive(Clone)]
-    pub struct revokeUserDecryptionReturn {}
+    pub struct revokeUserDecryptionDelegationReturn {}
     #[allow(
         non_camel_case_types,
         non_snake_case,
@@ -3820,9 +4365,9 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<revokeUserDecryptionCall>
+            impl ::core::convert::From<revokeUserDecryptionDelegationCall>
             for UnderlyingRustTuple<'_> {
-                fn from(value: revokeUserDecryptionCall) -> Self {
+                fn from(value: revokeUserDecryptionDelegationCall) -> Self {
                     (
                         value.chainId,
                         value.delegator,
@@ -3836,7 +4381,7 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for revokeUserDecryptionCall {
+            for revokeUserDecryptionDelegationCall {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {
                         chainId: tuple.0,
@@ -3867,32 +4412,32 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
             }
             #[automatically_derived]
             #[doc(hidden)]
-            impl ::core::convert::From<revokeUserDecryptionReturn>
+            impl ::core::convert::From<revokeUserDecryptionDelegationReturn>
             for UnderlyingRustTuple<'_> {
-                fn from(value: revokeUserDecryptionReturn) -> Self {
+                fn from(value: revokeUserDecryptionDelegationReturn) -> Self {
                     ()
                 }
             }
             #[automatically_derived]
             #[doc(hidden)]
             impl ::core::convert::From<UnderlyingRustTuple<'_>>
-            for revokeUserDecryptionReturn {
+            for revokeUserDecryptionDelegationReturn {
                 fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
                     Self {}
                 }
             }
         }
-        impl revokeUserDecryptionReturn {
+        impl revokeUserDecryptionDelegationReturn {
             fn _tokenize(
                 &self,
-            ) -> <revokeUserDecryptionCall as alloy_sol_types::SolCall>::ReturnToken<
+            ) -> <revokeUserDecryptionDelegationCall as alloy_sol_types::SolCall>::ReturnToken<
                 '_,
             > {
                 ()
             }
         }
         #[automatically_derived]
-        impl alloy_sol_types::SolCall for revokeUserDecryptionCall {
+        impl alloy_sol_types::SolCall for revokeUserDecryptionDelegationCall {
             type Parameters<'a> = (
                 alloy::sol_types::sol_data::Uint<256>,
                 alloy::sol_types::sol_data::Address,
@@ -3904,13 +4449,13 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
             type Token<'a> = <Self::Parameters<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            type Return = revokeUserDecryptionReturn;
+            type Return = revokeUserDecryptionDelegationReturn;
             type ReturnTuple<'a> = ();
             type ReturnToken<'a> = <Self::ReturnTuple<
                 'a,
             > as alloy_sol_types::SolType>::Token<'a>;
-            const SIGNATURE: &'static str = "revokeUserDecryption(uint256,address,address,address,uint64,uint64)";
-            const SELECTOR: [u8; 4] = [232u8, 40u8, 53u8, 149u8];
+            const SIGNATURE: &'static str = "revokeUserDecryptionDelegation(uint256,address,address,address,uint64,uint64)";
+            const SELECTOR: [u8; 4] = [180u8, 85u8, 199u8, 92u8];
             #[inline]
             fn new<'a>(
                 tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
@@ -3942,7 +4487,7 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
             }
             #[inline]
             fn tokenize_returns(ret: &Self::Return) -> Self::ReturnToken<'_> {
-                revokeUserDecryptionReturn::_tokenize(ret)
+                revokeUserDecryptionDelegationReturn::_tokenize(ret)
             }
             #[inline]
             fn abi_decode_returns(data: &[u8]) -> alloy_sol_types::Result<Self::Return> {
@@ -3979,6 +4524,14 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
             getAllowPublicDecryptConsensusTxSendersCall,
         ),
         #[allow(missing_docs)]
+        getDelegateUserDecryptionConsensusTxSenders(
+            getDelegateUserDecryptionConsensusTxSendersCall,
+        ),
+        #[allow(missing_docs)]
+        getRevokeUserDecryptionConsensusTxSenders(
+            getRevokeUserDecryptionConsensusTxSendersCall,
+        ),
+        #[allow(missing_docs)]
         getVersion(getVersionCall),
         #[allow(missing_docs)]
         isAccountAllowed(isAccountAllowedCall),
@@ -3987,7 +4540,7 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
         #[allow(missing_docs)]
         isUserDecryptionDelegated(isUserDecryptionDelegatedCall),
         #[allow(missing_docs)]
-        revokeUserDecryption(revokeUserDecryptionCall),
+        revokeUserDecryptionDelegation(revokeUserDecryptionDelegationCall),
     }
     #[automatically_derived]
     impl IMultichainACLCalls {
@@ -4002,19 +4555,21 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
             [13u8, 142u8, 110u8, 44u8],
             [39u8, 136u8, 186u8, 66u8],
             [41u8, 74u8, 135u8, 5u8],
+            [41u8, 164u8, 55u8, 13u8],
             [77u8, 122u8, 179u8, 144u8],
             [151u8, 196u8, 154u8, 64u8],
             [174u8, 149u8, 49u8, 134u8],
+            [180u8, 85u8, 199u8, 92u8],
             [198u8, 82u8, 143u8, 105u8],
             [217u8, 7u8, 36u8, 181u8],
-            [232u8, 40u8, 53u8, 149u8],
+            [251u8, 233u8, 54u8, 117u8],
         ];
     }
     #[automatically_derived]
     impl alloy_sol_types::SolInterface for IMultichainACLCalls {
         const NAME: &'static str = "IMultichainACLCalls";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 10usize;
+        const COUNT: usize = 12usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -4033,6 +4588,12 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                 Self::getAllowPublicDecryptConsensusTxSenders(_) => {
                     <getAllowPublicDecryptConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
                 }
+                Self::getDelegateUserDecryptionConsensusTxSenders(_) => {
+                    <getDelegateUserDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
+                Self::getRevokeUserDecryptionConsensusTxSenders(_) => {
+                    <getRevokeUserDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::SELECTOR
+                }
                 Self::getVersion(_) => {
                     <getVersionCall as alloy_sol_types::SolCall>::SELECTOR
                 }
@@ -4045,8 +4606,8 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                 Self::isUserDecryptionDelegated(_) => {
                     <isUserDecryptionDelegatedCall as alloy_sol_types::SolCall>::SELECTOR
                 }
-                Self::revokeUserDecryption(_) => {
-                    <revokeUserDecryptionCall as alloy_sol_types::SolCall>::SELECTOR
+                Self::revokeUserDecryptionDelegation(_) => {
+                    <revokeUserDecryptionDelegationCall as alloy_sol_types::SolCall>::SELECTOR
                 }
             }
         }
@@ -4112,6 +4673,19 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                     allowAccount
                 },
                 {
+                    fn getDelegateUserDecryptionConsensusTxSenders(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
+                        <getDelegateUserDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                IMultichainACLCalls::getDelegateUserDecryptionConsensusTxSenders,
+                            )
+                    }
+                    getDelegateUserDecryptionConsensusTxSenders
+                },
+                {
                     fn delegateUserDecryption(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLCalls> {
@@ -4147,6 +4721,17 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                     getAllowAccountConsensusTxSenders
                 },
                 {
+                    fn revokeUserDecryptionDelegation(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
+                        <revokeUserDecryptionDelegationCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                                data,
+                            )
+                            .map(IMultichainACLCalls::revokeUserDecryptionDelegation)
+                    }
+                    revokeUserDecryptionDelegation
+                },
+                {
                     fn isAccountAllowed(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLCalls> {
@@ -4169,15 +4754,17 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                     allowPublicDecrypt
                 },
                 {
-                    fn revokeUserDecryption(
+                    fn getRevokeUserDecryptionConsensusTxSenders(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLCalls> {
-                        <revokeUserDecryptionCall as alloy_sol_types::SolCall>::abi_decode_raw(
+                        <getRevokeUserDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw(
                                 data,
                             )
-                            .map(IMultichainACLCalls::revokeUserDecryption)
+                            .map(
+                                IMultichainACLCalls::getRevokeUserDecryptionConsensusTxSenders,
+                            )
                     }
-                    revokeUserDecryption
+                    getRevokeUserDecryptionConsensusTxSenders
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -4244,6 +4831,19 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                     allowAccount
                 },
                 {
+                    fn getDelegateUserDecryptionConsensusTxSenders(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
+                        <getDelegateUserDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                IMultichainACLCalls::getDelegateUserDecryptionConsensusTxSenders,
+                            )
+                    }
+                    getDelegateUserDecryptionConsensusTxSenders
+                },
+                {
                     fn delegateUserDecryption(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLCalls> {
@@ -4279,6 +4879,17 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                     getAllowAccountConsensusTxSenders
                 },
                 {
+                    fn revokeUserDecryptionDelegation(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<IMultichainACLCalls> {
+                        <revokeUserDecryptionDelegationCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(IMultichainACLCalls::revokeUserDecryptionDelegation)
+                    }
+                    revokeUserDecryptionDelegation
+                },
+                {
                     fn isAccountAllowed(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLCalls> {
@@ -4301,15 +4912,17 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                     allowPublicDecrypt
                 },
                 {
-                    fn revokeUserDecryption(
+                    fn getRevokeUserDecryptionConsensusTxSenders(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<IMultichainACLCalls> {
-                        <revokeUserDecryptionCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
+                        <getRevokeUserDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_decode_raw_validate(
                                 data,
                             )
-                            .map(IMultichainACLCalls::revokeUserDecryption)
+                            .map(
+                                IMultichainACLCalls::getRevokeUserDecryptionConsensusTxSenders,
+                            )
                     }
-                    revokeUserDecryption
+                    getRevokeUserDecryptionConsensusTxSenders
                 },
             ];
             let Ok(idx) = Self::SELECTORS.binary_search(&selector) else {
@@ -4350,6 +4963,16 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                         inner,
                     )
                 }
+                Self::getDelegateUserDecryptionConsensusTxSenders(inner) => {
+                    <getDelegateUserDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::getRevokeUserDecryptionConsensusTxSenders(inner) => {
+                    <getRevokeUserDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encoded_size(inner)
                 }
@@ -4368,8 +4991,8 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                         inner,
                     )
                 }
-                Self::revokeUserDecryption(inner) => {
-                    <revokeUserDecryptionCall as alloy_sol_types::SolCall>::abi_encoded_size(
+                Self::revokeUserDecryptionDelegation(inner) => {
+                    <revokeUserDecryptionDelegationCall as alloy_sol_types::SolCall>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -4408,6 +5031,18 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                         out,
                     )
                 }
+                Self::getDelegateUserDecryptionConsensusTxSenders(inner) => {
+                    <getDelegateUserDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::getRevokeUserDecryptionConsensusTxSenders(inner) => {
+                    <getRevokeUserDecryptionConsensusTxSendersCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::getVersion(inner) => {
                     <getVersionCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
@@ -4432,8 +5067,8 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                         out,
                     )
                 }
-                Self::revokeUserDecryption(inner) => {
-                    <revokeUserDecryptionCall as alloy_sol_types::SolCall>::abi_encode_raw(
+                Self::revokeUserDecryptionDelegation(inner) => {
+                    <revokeUserDecryptionDelegationCall as alloy_sol_types::SolCall>::abi_encode_raw(
                         inner,
                         out,
                     )
@@ -4830,9 +5465,11 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
         #[allow(missing_docs)]
         DelegateUserDecryptionConsensusReached(DelegateUserDecryptionConsensusReached),
         #[allow(missing_docs)]
-        RevokeUserDecryption(RevokeUserDecryption),
+        RevokeUserDecryptionDelegation(RevokeUserDecryptionDelegation),
         #[allow(missing_docs)]
-        RevokeUserDecryptionConsensusReached(RevokeUserDecryptionConsensusReached),
+        RevokeUserDecryptionDelegationConsensusReached(
+            RevokeUserDecryptionDelegationConsensusReached,
+        ),
     }
     #[automatically_derived]
     impl IMultichainACLEvents {
@@ -4864,14 +5501,14 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                 237u8, 72u8, 42u8, 225u8, 16u8, 92u8, 135u8, 22u8, 46u8, 144u8,
             ],
             [
-                129u8, 116u8, 236u8, 58u8, 249u8, 2u8, 93u8, 247u8, 50u8, 56u8, 107u8,
-                120u8, 236u8, 35u8, 210u8, 210u8, 13u8, 124u8, 121u8, 249u8, 137u8, 46u8,
-                124u8, 98u8, 79u8, 98u8, 210u8, 235u8, 116u8, 34u8, 200u8, 227u8,
+                78u8, 28u8, 21u8, 49u8, 130u8, 85u8, 245u8, 88u8, 235u8, 148u8, 145u8,
+                58u8, 107u8, 185u8, 139u8, 173u8, 137u8, 66u8, 74u8, 70u8, 249u8, 165u8,
+                33u8, 71u8, 103u8, 40u8, 63u8, 58u8, 133u8, 227u8, 30u8, 38u8,
             ],
             [
-                209u8, 70u8, 163u8, 139u8, 192u8, 202u8, 4u8, 187u8, 203u8, 46u8, 136u8,
-                241u8, 83u8, 85u8, 156u8, 252u8, 190u8, 232u8, 238u8, 25u8, 255u8, 175u8,
-                124u8, 226u8, 142u8, 169u8, 184u8, 45u8, 98u8, 254u8, 116u8, 84u8,
+                107u8, 188u8, 210u8, 8u8, 99u8, 91u8, 162u8, 12u8, 7u8, 211u8, 212u8,
+                33u8, 89u8, 20u8, 148u8, 96u8, 18u8, 228u8, 113u8, 65u8, 165u8, 112u8,
+                34u8, 7u8, 181u8, 174u8, 149u8, 54u8, 105u8, 248u8, 26u8, 85u8,
             ],
         ];
     }
@@ -4919,22 +5556,22 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                         .map(Self::DelegateUserDecryptionConsensusReached)
                 }
                 Some(
-                    <RevokeUserDecryption as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                    <RevokeUserDecryptionDelegation as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
-                    <RevokeUserDecryption as alloy_sol_types::SolEvent>::decode_raw_log(
+                    <RevokeUserDecryptionDelegation as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                         )
-                        .map(Self::RevokeUserDecryption)
+                        .map(Self::RevokeUserDecryptionDelegation)
                 }
                 Some(
-                    <RevokeUserDecryptionConsensusReached as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
+                    <RevokeUserDecryptionDelegationConsensusReached as alloy_sol_types::SolEvent>::SIGNATURE_HASH,
                 ) => {
-                    <RevokeUserDecryptionConsensusReached as alloy_sol_types::SolEvent>::decode_raw_log(
+                    <RevokeUserDecryptionDelegationConsensusReached as alloy_sol_types::SolEvent>::decode_raw_log(
                             topics,
                             data,
                         )
-                        .map(Self::RevokeUserDecryptionConsensusReached)
+                        .map(Self::RevokeUserDecryptionDelegationConsensusReached)
                 }
                 _ => {
                     alloy_sol_types::private::Err(alloy_sol_types::Error::InvalidLog {
@@ -4966,10 +5603,10 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                 Self::DelegateUserDecryptionConsensusReached(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::RevokeUserDecryption(inner) => {
+                Self::RevokeUserDecryptionDelegation(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
-                Self::RevokeUserDecryptionConsensusReached(inner) => {
+                Self::RevokeUserDecryptionDelegationConsensusReached(inner) => {
                     alloy_sol_types::private::IntoLogData::to_log_data(inner)
                 }
             }
@@ -4988,10 +5625,10 @@ function revokeUserDecryption(uint256 chainId, address delegator, address delega
                 Self::DelegateUserDecryptionConsensusReached(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::RevokeUserDecryption(inner) => {
+                Self::RevokeUserDecryptionDelegation(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
-                Self::RevokeUserDecryptionConsensusReached(inner) => {
+                Self::RevokeUserDecryptionDelegationConsensusReached(inner) => {
                     alloy_sol_types::private::IntoLogData::into_log_data(inner)
                 }
             }
@@ -5237,6 +5874,56 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
+        ///Creates a new call builder for the [`getDelegateUserDecryptionConsensusTxSenders`] function.
+        pub fn getDelegateUserDecryptionConsensusTxSenders(
+            &self,
+            chainId: alloy::sol_types::private::primitives::aliases::U256,
+            delegator: alloy::sol_types::private::Address,
+            delegate: alloy::sol_types::private::Address,
+            contractAddress: alloy::sol_types::private::Address,
+            delegationCounter: u64,
+            expirationDate: u64,
+        ) -> alloy_contract::SolCallBuilder<
+            &P,
+            getDelegateUserDecryptionConsensusTxSendersCall,
+            N,
+        > {
+            self.call_builder(
+                &getDelegateUserDecryptionConsensusTxSendersCall {
+                    chainId,
+                    delegator,
+                    delegate,
+                    contractAddress,
+                    delegationCounter,
+                    expirationDate,
+                },
+            )
+        }
+        ///Creates a new call builder for the [`getRevokeUserDecryptionConsensusTxSenders`] function.
+        pub fn getRevokeUserDecryptionConsensusTxSenders(
+            &self,
+            chainId: alloy::sol_types::private::primitives::aliases::U256,
+            delegator: alloy::sol_types::private::Address,
+            delegate: alloy::sol_types::private::Address,
+            contractAddress: alloy::sol_types::private::Address,
+            delegationCounter: u64,
+            expirationDate: u64,
+        ) -> alloy_contract::SolCallBuilder<
+            &P,
+            getRevokeUserDecryptionConsensusTxSendersCall,
+            N,
+        > {
+            self.call_builder(
+                &getRevokeUserDecryptionConsensusTxSendersCall {
+                    chainId,
+                    delegator,
+                    delegate,
+                    contractAddress,
+                    delegationCounter,
+                    expirationDate,
+                },
+            )
+        }
         ///Creates a new call builder for the [`getVersion`] function.
         pub fn getVersion(
             &self,
@@ -5284,8 +5971,8 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
                 },
             )
         }
-        ///Creates a new call builder for the [`revokeUserDecryption`] function.
-        pub fn revokeUserDecryption(
+        ///Creates a new call builder for the [`revokeUserDecryptionDelegation`] function.
+        pub fn revokeUserDecryptionDelegation(
             &self,
             chainId: alloy::sol_types::private::primitives::aliases::U256,
             delegator: alloy::sol_types::private::Address,
@@ -5293,9 +5980,9 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
             contractAddress: alloy::sol_types::private::Address,
             delegationCounter: u64,
             expirationDate: u64,
-        ) -> alloy_contract::SolCallBuilder<&P, revokeUserDecryptionCall, N> {
+        ) -> alloy_contract::SolCallBuilder<&P, revokeUserDecryptionDelegationCall, N> {
             self.call_builder(
-                &revokeUserDecryptionCall {
+                &revokeUserDecryptionDelegationCall {
                     chainId,
                     delegator,
                     delegate,
@@ -5343,17 +6030,21 @@ the bytecode concatenated with the constructor's ABI-encoded arguments.*/
         ) -> alloy_contract::Event<&P, DelegateUserDecryptionConsensusReached, N> {
             self.event_filter::<DelegateUserDecryptionConsensusReached>()
         }
-        ///Creates a new event filter for the [`RevokeUserDecryption`] event.
-        pub fn RevokeUserDecryption_filter(
+        ///Creates a new event filter for the [`RevokeUserDecryptionDelegation`] event.
+        pub fn RevokeUserDecryptionDelegation_filter(
             &self,
-        ) -> alloy_contract::Event<&P, RevokeUserDecryption, N> {
-            self.event_filter::<RevokeUserDecryption>()
+        ) -> alloy_contract::Event<&P, RevokeUserDecryptionDelegation, N> {
+            self.event_filter::<RevokeUserDecryptionDelegation>()
         }
-        ///Creates a new event filter for the [`RevokeUserDecryptionConsensusReached`] event.
-        pub fn RevokeUserDecryptionConsensusReached_filter(
+        ///Creates a new event filter for the [`RevokeUserDecryptionDelegationConsensusReached`] event.
+        pub fn RevokeUserDecryptionDelegationConsensusReached_filter(
             &self,
-        ) -> alloy_contract::Event<&P, RevokeUserDecryptionConsensusReached, N> {
-            self.event_filter::<RevokeUserDecryptionConsensusReached>()
+        ) -> alloy_contract::Event<
+            &P,
+            RevokeUserDecryptionDelegationConsensusReached,
+            N,
+        > {
+            self.event_filter::<RevokeUserDecryptionDelegationConsensusReached>()
         }
     }
 }
