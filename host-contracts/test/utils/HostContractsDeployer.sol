@@ -29,9 +29,18 @@ contract DeployableERC1967Proxy is ERC1967Proxy {
 }
 
 /**
- * @dev Helper used in tests to mirror the production deployment flow for host contracts.
- * It deploys the empty ACL implementation behind an ERC-1967 proxy at the canonical address,
- * then upgrades that proxy to the full ACL logic.
+ * @dev Test harness that reconstructs the on-chain host stack inside Foundry.
+ *
+ * Host contracts (ACL, FHEVMExecutor, KMS/Input verifiers, HCULimit, PauserSet) are deployed on mainnet
+ * behind deterministic UUPS proxies anchored at addresses defined in `FHEVMHostAddresses.sol`. Rather than
+ * mocking behaviours piecemeal, this helper redeploys each proxy + implementation pair exactly how production
+ * does:
+ *  - write the appropriate empty proxy runtime to the canonical address using `deployCodeTo`;
+ *  - perform the privileged upgrade calls with the expected initializer payloads;
+ *  - label the proxy and implementation for nicer traces.
+ *
+ * Tests that inherit this contract can call the `_deploy*` helpers to stitch together a realistic environment
+ * where cross-contract permission checks (ACLOwnable, slot reads, etc.) behave the same as on-chain.
  */
 abstract contract HostContractsDeployer is Test {
     function _deployACL(address owner) internal returns (ACL aclProxy, address aclImplementation) {
