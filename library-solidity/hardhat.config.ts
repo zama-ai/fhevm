@@ -91,7 +91,6 @@ function getChainConfig(chain: keyof typeof chainIds): NetworkUserConfig {
 }
 
 const config: HardhatUserConfig = {
-  defaultNetwork: 'sepolia',
   namedAccounts: {
     deployer: 0,
   },

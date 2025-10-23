@@ -15,9 +15,8 @@
     "lint:ts": "eslint --ignore-path ./.eslintignore --ext .js,.ts .",
     "prettier:check": "prettier --check \"**/*.{js,json,md,sol,ts,yml}\"",
     "prettier": "prettier --write \"**/*.{js,json,md,sol,ts,yml}\"",
-    "test:parallel": "HARDHAT_PARALLEL=1 hardhat test --parallel",
     "test": "hardhat test",
-    "coverage:mock": "SOLIDITY_COVERAGE=true hardhat coverage",
+    "coverage": "SOLIDITY_COVERAGE=true hardhat coverage",
     "codegen": "npx ts-node codegen/main.ts && npm run prettier",
     "test:gas": "hardhat test --grep Gas"
   },
