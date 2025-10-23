@@ -335,6 +335,13 @@ interface IACL {
      * @return isDecryptable    Whether the handle can be publicly decrypted.
      */
     function isAllowedForDecryption(bytes32 handle) external view returns (bool);
+
+    /**
+     * @notice                  Returns whether the account is on the deny list.
+     * @param account           Address of the account.
+     * @return isAccountDenied  Whether the account is on the deny list.
+     */
+    function isAccountDenied(address account) external view returns (bool);
 }
 
 /**
@@ -742,5 +749,15 @@ library Impl {
     function isPubliclyDecryptable(bytes32 handle) internal view returns (bool) {
         CoprocessorConfig storage $ = getCoprocessorConfig();
         return IACL($.ACLAddress).isAllowedForDecryption(handle);
+    }
+
+    /**
+     * @notice                  Returns whether the account is on the deny list.
+     * @param account           Address of the account.
+     * @return isAccountDenied  Whether the account is on the deny list.
+     */
+    function isAccountDenied(address account) internal view returns (bool) {
+        CoprocessorConfig storage $ = getCoprocessorConfig();
+        return IACL($.ACLAddress).isAccountDenied(account);
     }
 }

@@ -7937,7 +7937,7 @@ library FHE {
     }
 
     /**
-    /** 
+    /**
      * @dev Converts an 'ebool' to an 'euint8'.
      */
     function asEuint8(ebool b) internal returns (euint8) {
@@ -7987,7 +7987,7 @@ library FHE {
     }
 
     /**
-    /** 
+    /**
      * @dev Converts an 'ebool' to an 'euint16'.
      */
     function asEuint16(ebool b) internal returns (euint16) {
@@ -8037,7 +8037,7 @@ library FHE {
     }
 
     /**
-    /** 
+    /**
      * @dev Converts an 'ebool' to an 'euint32'.
      */
     function asEuint32(ebool b) internal returns (euint32) {
@@ -8087,7 +8087,7 @@ library FHE {
     }
 
     /**
-    /** 
+    /**
      * @dev Converts an 'ebool' to an 'euint64'.
      */
     function asEuint64(ebool b) internal returns (euint64) {
@@ -8137,7 +8137,7 @@ library FHE {
     }
 
     /**
-    /** 
+    /**
      * @dev Converts an 'ebool' to an 'euint128'.
      */
     function asEuint128(ebool b) internal returns (euint128) {
@@ -8187,7 +8187,7 @@ library FHE {
     }
 
     /**
-    /** 
+    /**
      * @dev Converts an 'ebool' to an 'euint256'.
      */
     function asEuint256(ebool b) internal returns (euint256) {
@@ -9110,5 +9110,12 @@ library FHE {
      */
     function toBytes32(euint256 value) internal pure returns (bytes32 ct) {
         ct = euint256.unwrap(value);
+    }
+
+    /**
+     * @dev Returns whether the account is on the deny list.
+     */
+    function isAccountDenied(address account) internal view returns (bool) {
+        return Impl.isAccountDenied(account);
     }
 }
