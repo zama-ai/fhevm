@@ -1,10 +1,13 @@
 #!/bin/bash
 FHEVM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ ! -d "${FHEVM_DIR}/.github" ]; then
   echo "Error: invalid FHEVM repo root directory." >&2
   exit 1
 fi
+
+cd "${SCRIPT_DIR}"
 
 OUT_BASE_DIR=$(jq -r '.directories.baseDir' ./codegen.e2e.config.json)
 SOL_REL_DIR=$(jq -r '.solidity.outDir' ./codegen.e2e.config.json)
