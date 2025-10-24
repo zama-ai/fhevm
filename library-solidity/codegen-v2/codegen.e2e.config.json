@@ -12,10 +12,7 @@
   "solidity": {
     "outDir": "./contracts/operations",
     "imports": ["@fhevm/solidity/lib/FHE.sol", ["E2ECoprocessorConfig", "../E2ECoprocessorConfigLocal.sol"]],
-    "parentContract": {
-      "name": "E2ECoprocessorConfig",
-      "solidityFile": "../E2ECoprocessorConfigLocal.sol"
-    }
+    "parentContractName": "E2ECoprocessorConfig"
   },
   "typescript": {
     "outDir": "./test/fhevmOperations",
