@@ -7,12 +7,14 @@ interface MultichainACL {
     error ContractsMaxLengthExceeded(uint256 maxLength, uint256 actualLength);
     error CoprocessorAlreadyAllowedAccount(bytes32 ctHandle, address account, address txSender);
     error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender);
+    error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
     error ERC1967InvalidImplementation(address implementation);
     error ERC1967NonPayable();
     error EmptyContractAddresses();
     error FailedCall();
     error HostChainNotRegistered(uint256 chainId);
     error InvalidInitialization();
+    error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
     error NotCoprocessorSigner(address signerAddress);
     error NotCoprocessorTxSender(address txSenderAddress);
     error NotCustodianSigner(address signerAddress);
@@ -369,6 +371,22 @@ interface MultichainACL {
   },
   {
     "type": "error",
+    "name": "CoprocessorSignerDoesNotMatchTxSender",
+    "inputs": [
+      {
+        "name": "signerAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "txSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "ERC1967InvalidImplementation",
     "inputs": [
       {
@@ -408,6 +426,22 @@ interface MultichainACL {
     "type": "error",
     "name": "InvalidInitialization",
     "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "KmsSignerDoesNotMatchTxSender",
+    "inputs": [
+      {
+        "name": "signerAddress",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "txSenderAddress",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
   },
   {
     "type": "error",
@@ -922,6 +956,102 @@ error CoprocessorAlreadyAllowedPublicDecrypt(bytes32 ctHandle, address txSender)
     };
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `CoprocessorSignerDoesNotMatchTxSender(address,address)` and selector `0xe134bf62`.
+```solidity
+error CoprocessorSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct CoprocessorSignerDoesNotMatchTxSender {
+        #[allow(missing_docs)]
+        pub signerAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub txSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Address,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::Address,
+            alloy::sol_types::private::Address,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<CoprocessorSignerDoesNotMatchTxSender>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: CoprocessorSignerDoesNotMatchTxSender) -> Self {
+                (value.signerAddress, value.txSenderAddress)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for CoprocessorSignerDoesNotMatchTxSender {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    signerAddress: tuple.0,
+                    txSenderAddress: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for CoprocessorSignerDoesNotMatchTxSender {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "CoprocessorSignerDoesNotMatchTxSender(address,address)";
+            const SELECTOR: [u8; 4] = [225u8, 52u8, 191u8, 98u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.signerAddress,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSenderAddress,
+                    ),
+                )
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
     /**Custom error with signature `ERC1967InvalidImplementation(address)` and selector `0x4c9c8ce3`.
 ```solidity
 error ERC1967InvalidImplementation(address implementation);
@@ -1366,6 +1496,102 @@ error InvalidInitialization();
             #[inline]
             fn tokenize(&self) -> Self::Token<'_> {
                 ()
+            }
+            #[inline]
+            fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
+                <Self::Parameters<
+                    '_,
+                > as alloy_sol_types::SolType>::abi_decode_sequence_validate(data)
+                    .map(Self::new)
+            }
+        }
+    };
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Default, Debug, PartialEq, Eq, Hash)]
+    /**Custom error with signature `KmsSignerDoesNotMatchTxSender(address,address)` and selector `0x0d86f521`.
+```solidity
+error KmsSignerDoesNotMatchTxSender(address signerAddress, address txSenderAddress);
+```*/
+    #[allow(non_camel_case_types, non_snake_case, clippy::pub_underscore_fields)]
+    #[derive(Clone)]
+    pub struct KmsSignerDoesNotMatchTxSender {
+        #[allow(missing_docs)]
+        pub signerAddress: alloy::sol_types::private::Address,
+        #[allow(missing_docs)]
+        pub txSenderAddress: alloy::sol_types::private::Address,
+    }
+    #[allow(
+        non_camel_case_types,
+        non_snake_case,
+        clippy::pub_underscore_fields,
+        clippy::style
+    )]
+    const _: () = {
+        use alloy::sol_types as alloy_sol_types;
+        #[doc(hidden)]
+        type UnderlyingSolTuple<'a> = (
+            alloy::sol_types::sol_data::Address,
+            alloy::sol_types::sol_data::Address,
+        );
+        #[doc(hidden)]
+        type UnderlyingRustTuple<'a> = (
+            alloy::sol_types::private::Address,
+            alloy::sol_types::private::Address,
+        );
+        #[cfg(test)]
+        #[allow(dead_code, unreachable_patterns)]
+        fn _type_assertion(
+            _t: alloy_sol_types::private::AssertTypeEq<UnderlyingRustTuple>,
+        ) {
+            match _t {
+                alloy_sol_types::private::AssertTypeEq::<
+                    <UnderlyingSolTuple as alloy_sol_types::SolType>::RustType,
+                >(_) => {}
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<KmsSignerDoesNotMatchTxSender>
+        for UnderlyingRustTuple<'_> {
+            fn from(value: KmsSignerDoesNotMatchTxSender) -> Self {
+                (value.signerAddress, value.txSenderAddress)
+            }
+        }
+        #[automatically_derived]
+        #[doc(hidden)]
+        impl ::core::convert::From<UnderlyingRustTuple<'_>>
+        for KmsSignerDoesNotMatchTxSender {
+            fn from(tuple: UnderlyingRustTuple<'_>) -> Self {
+                Self {
+                    signerAddress: tuple.0,
+                    txSenderAddress: tuple.1,
+                }
+            }
+        }
+        #[automatically_derived]
+        impl alloy_sol_types::SolError for KmsSignerDoesNotMatchTxSender {
+            type Parameters<'a> = UnderlyingSolTuple<'a>;
+            type Token<'a> = <Self::Parameters<
+                'a,
+            > as alloy_sol_types::SolType>::Token<'a>;
+            const SIGNATURE: &'static str = "KmsSignerDoesNotMatchTxSender(address,address)";
+            const SELECTOR: [u8; 4] = [13u8, 134u8, 245u8, 33u8];
+            #[inline]
+            fn new<'a>(
+                tuple: <Self::Parameters<'a> as alloy_sol_types::SolType>::RustType,
+            ) -> Self {
+                tuple.into()
+            }
+            #[inline]
+            fn tokenize(&self) -> Self::Token<'_> {
+                (
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.signerAddress,
+                    ),
+                    <alloy::sol_types::sol_data::Address as alloy_sol_types::SolType>::tokenize(
+                        &self.txSenderAddress,
+                    ),
+                )
             }
             #[inline]
             fn abi_decode_raw_validate(data: &[u8]) -> alloy_sol_types::Result<Self> {
@@ -4999,6 +5225,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         #[allow(missing_docs)]
         CoprocessorAlreadyAllowedPublicDecrypt(CoprocessorAlreadyAllowedPublicDecrypt),
         #[allow(missing_docs)]
+        CoprocessorSignerDoesNotMatchTxSender(CoprocessorSignerDoesNotMatchTxSender),
+        #[allow(missing_docs)]
         ERC1967InvalidImplementation(ERC1967InvalidImplementation),
         #[allow(missing_docs)]
         ERC1967NonPayable(ERC1967NonPayable),
@@ -5010,6 +5238,8 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         HostChainNotRegistered(HostChainNotRegistered),
         #[allow(missing_docs)]
         InvalidInitialization(InvalidInitialization),
+        #[allow(missing_docs)]
+        KmsSignerDoesNotMatchTxSender(KmsSignerDoesNotMatchTxSender),
         #[allow(missing_docs)]
         NotCoprocessorSigner(NotCoprocessorSigner),
         #[allow(missing_docs)]
@@ -5042,6 +5272,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
         ///
         /// Prefer using `SolInterface` methods instead.
         pub const SELECTORS: &'static [[u8; 4usize]] = &[
+            [13u8, 134u8, 245u8, 33u8],
             [14u8, 86u8, 207u8, 61u8],
             [38u8, 205u8, 117u8, 220u8],
             [42u8, 124u8, 110u8, 246u8],
@@ -5061,6 +5292,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             [214u8, 189u8, 162u8, 117u8],
             [215u8, 230u8, 188u8, 248u8],
             [224u8, 124u8, 141u8, 186u8],
+            [225u8, 52u8, 191u8, 98u8],
             [249u8, 36u8, 160u8, 207u8],
             [249u8, 46u8, 232u8, 169u8],
         ];
@@ -5069,7 +5301,7 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
     impl alloy_sol_types::SolInterface for MultichainACLErrors {
         const NAME: &'static str = "MultichainACLErrors";
         const MIN_DATA_LENGTH: usize = 0usize;
-        const COUNT: usize = 21usize;
+        const COUNT: usize = 23usize;
         #[inline]
         fn selector(&self) -> [u8; 4] {
             match self {
@@ -5084,6 +5316,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::CoprocessorAlreadyAllowedPublicDecrypt(_) => {
                     <CoprocessorAlreadyAllowedPublicDecrypt as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::CoprocessorSignerDoesNotMatchTxSender(_) => {
+                    <CoprocessorSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::ERC1967InvalidImplementation(_) => {
                     <ERC1967InvalidImplementation as alloy_sol_types::SolError>::SELECTOR
@@ -5102,6 +5337,9 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::InvalidInitialization(_) => {
                     <InvalidInitialization as alloy_sol_types::SolError>::SELECTOR
+                }
+                Self::KmsSignerDoesNotMatchTxSender(_) => {
+                    <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::SELECTOR
                 }
                 Self::NotCoprocessorSigner(_) => {
                     <NotCoprocessorSigner as alloy_sol_types::SolError>::SELECTOR
@@ -5155,6 +5393,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             static DECODE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<MultichainACLErrors>] = &[
+                {
+                    fn KmsSignerDoesNotMatchTxSender(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MultichainACLErrors> {
+                        <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(MultichainACLErrors::KmsSignerDoesNotMatchTxSender)
+                    }
+                    KmsSignerDoesNotMatchTxSender
+                },
                 {
                     fn NotGatewayOwner(
                         data: &[u8],
@@ -5363,6 +5612,19 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     UUPSUnauthorizedCallContext
                 },
                 {
+                    fn CoprocessorSignerDoesNotMatchTxSender(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MultichainACLErrors> {
+                        <CoprocessorSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw(
+                                data,
+                            )
+                            .map(
+                                MultichainACLErrors::CoprocessorSignerDoesNotMatchTxSender,
+                            )
+                    }
+                    CoprocessorSignerDoesNotMatchTxSender
+                },
+                {
                     fn NotCustodianTxSender(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<MultichainACLErrors> {
@@ -5404,6 +5666,17 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
             static DECODE_VALIDATE_SHIMS: &[fn(
                 &[u8],
             ) -> alloy_sol_types::Result<MultichainACLErrors>] = &[
+                {
+                    fn KmsSignerDoesNotMatchTxSender(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MultichainACLErrors> {
+                        <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(MultichainACLErrors::KmsSignerDoesNotMatchTxSender)
+                    }
+                    KmsSignerDoesNotMatchTxSender
+                },
                 {
                     fn NotGatewayOwner(
                         data: &[u8],
@@ -5616,6 +5889,19 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                     UUPSUnauthorizedCallContext
                 },
                 {
+                    fn CoprocessorSignerDoesNotMatchTxSender(
+                        data: &[u8],
+                    ) -> alloy_sol_types::Result<MultichainACLErrors> {
+                        <CoprocessorSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_decode_raw_validate(
+                                data,
+                            )
+                            .map(
+                                MultichainACLErrors::CoprocessorSignerDoesNotMatchTxSender,
+                            )
+                    }
+                    CoprocessorSignerDoesNotMatchTxSender
+                },
+                {
                     fn NotCustodianTxSender(
                         data: &[u8],
                     ) -> alloy_sol_types::Result<MultichainACLErrors> {
@@ -5671,6 +5957,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         inner,
                     )
                 }
+                Self::CoprocessorSignerDoesNotMatchTxSender(inner) => {
+                    <CoprocessorSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
                 Self::ERC1967InvalidImplementation(inner) => {
                     <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
@@ -5696,6 +5987,11 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::InvalidInitialization(inner) => {
                     <InvalidInitialization as alloy_sol_types::SolError>::abi_encoded_size(
+                        inner,
+                    )
+                }
+                Self::KmsSignerDoesNotMatchTxSender(inner) => {
+                    <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_encoded_size(
                         inner,
                     )
                 }
@@ -5781,6 +6077,12 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                         out,
                     )
                 }
+                Self::CoprocessorSignerDoesNotMatchTxSender(inner) => {
+                    <CoprocessorSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
                 Self::ERC1967InvalidImplementation(inner) => {
                     <ERC1967InvalidImplementation as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
@@ -5810,6 +6112,12 @@ function upgradeToAndCall(address newImplementation, bytes memory data) external
                 }
                 Self::InvalidInitialization(inner) => {
                     <InvalidInitialization as alloy_sol_types::SolError>::abi_encode_raw(
+                        inner,
+                        out,
+                    )
+                }
+                Self::KmsSignerDoesNotMatchTxSender(inner) => {
+                    <KmsSignerDoesNotMatchTxSender as alloy_sol_types::SolError>::abi_encode_raw(
                         inner,
                         out,
                     )

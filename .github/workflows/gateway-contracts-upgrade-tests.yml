@@ -142,7 +142,6 @@ jobs:
       #  See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade Decryption contract
         working-directory: current-fhevm/gateway-contracts
-        if: false
         env:
           DOTENV_CONFIG_PATH: .env
           HARDHAT_NETWORK: staging
@@ -176,7 +175,6 @@ jobs:
       #  See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade InputVerification contract
         working-directory: current-fhevm/gateway-contracts
-        if: false
         env:
           DOTENV_CONFIG_PATH: .env
           HARDHAT_NETWORK: staging
@@ -210,7 +208,6 @@ jobs:
       # See https://github.com/zama-ai/fhevm-internal/issues/379
       - name: Upgrade KMSGeneration contract
         working-directory: current-fhevm/gateway-contracts
-        if: false
         env:
           DOTENV_CONFIG_PATH: .env
           HARDHAT_NETWORK: staging

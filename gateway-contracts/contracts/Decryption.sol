@@ -176,7 +176,7 @@ contract Decryption is
      */
     string private constant CONTRACT_NAME = "Decryption";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
@@ -185,7 +185,7 @@ contract Decryption is
      * This constant does not represent the number of time a specific contract have been upgraded,
      * as a contract deployed from version VX will have a REINITIALIZER_VERSION > 2.
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     /**
      * @notice The contract's variable storage struct (@dev see ERC-7201)
@@ -630,8 +630,8 @@ contract Decryption is
         DecryptionStorage storage $ = _getDecryptionStorage();
         address signer = ECDSA.recover(digest, signature);
 
-        // Check that the signer is a KMS signer.
-        _checkIsKmsSigner(signer);
+        // Check that the signer is a KMS signer, and that it corresponds to the transaction sender of the same KMS node.
+        _checkKmsSignerMatchesTxSender(signer, msg.sender);
 
         // Check that the signer has not already responded to the user decryption request.
         if ($.kmsNodeAlreadySigned[decryptionId][signer]) {

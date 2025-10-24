@@ -102,14 +102,14 @@ contract KMSGeneration is
      */
     string private constant CONTRACT_NAME = "KMSGeneration";
     uint256 private constant MAJOR_VERSION = 0;
-    uint256 private constant MINOR_VERSION = 1;
+    uint256 private constant MINOR_VERSION = 2;
     uint256 private constant PATCH_VERSION = 0;
 
     /**
      * @dev Constant used for making sure the version number using in the `reinitializer` modifier
      * is identical between `initializeFromEmptyProxy` and the reinitializeVX` method
      */
-    uint64 private constant REINITIALIZER_VERSION = 2;
+    uint64 private constant REINITIALIZER_VERSION = 3;
 
     // ----------------------------------------------------------------------------------------------
     // Contract storage:
@@ -540,8 +540,8 @@ contract KMSGeneration is
         // Recover the signer address from the signature
         address signer = ECDSA.recover(digest, signature);
 
-        // Check that the signer is a KMS signer
-        _checkIsKmsSigner(signer);
+        // Check that the signer is a KMS signer, and that it corresponds to the transaction sender of the same KMS node.
+        _checkKmsSignerMatchesTxSender(signer, msg.sender);
 
         return signer;
     }
