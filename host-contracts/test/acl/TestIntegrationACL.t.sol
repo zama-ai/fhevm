@@ -6,6 +6,7 @@ import {HostContractsDeployerTestUtils} from "../utils/HostContractsDeployerTest
 import {ACL} from "../../contracts/ACL.sol";
 import {PauserSet} from "../../contracts/immutable/PauserSet.sol";
 import {FHE} from "../../lib/FHE.sol";
+import {FHEEvents} from "../../contracts/FHEEvents.sol";
 import {CoprocessorConfig} from "../../lib/Impl.sol";
 import {aclAdd, fhevmExecutorAdd, kmsVerifierAdd, pauserSetAdd} from "../../addresses/FHEVMHostAddresses.sol";
 
@@ -67,7 +68,12 @@ contract TestIntegrationACL is HostContractsDeployerTestUtils {
         caller.sub(lhs, rhs);
     }
 
-    function test_BlockingAccountDoesNotPreventAddWithoutAllowing() public {
+    // A denied account can still call the FHEVM Executor and emit Computation events.
+    // However, these events are most likely ignored on the coprocessor side.
+    // This happens because every single handle resulting from these computations will not be ACL-persistent.
+    // On the coprocessor side, any computation branch leading to a non-ACL-persistent handle (using allow/allowForDecryption)
+    // will ultimately be automatically discarded.
+    function test_BlockingAccountDoesNotPreventAddEventEmission() public {
         bytes32 lhs = caller.trivialEncrypt(7);
         bytes32 rhs = caller.trivialEncrypt(11);
         caller.addWithoutAllowing(lhs, rhs);
@@ -75,6 +81,9 @@ contract TestIntegrationACL is HostContractsDeployerTestUtils {
         vm.prank(OWNER);
         acl.blockAccount(address(caller));
 
+        // Only check for the event emission and topic, not the exact event data
+        vm.expectEmit(true, false, false, false);
+        emit FHEEvents.FheAdd(address(caller), lhs, rhs, bytes1(0x00), bytes32(0));
         caller.addWithoutAllowing(lhs, rhs);
     }
 }
