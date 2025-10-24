@@ -14,7 +14,7 @@ RUN apk add --no-cache \
     ln -sf /usr/bin/gcc /usr/bin/cc && \
     rm -rf /var/cache/apk/*
 
-RUN mkdir /app && \
+RUN mkdir -p /app && \
     chown -R fhevm:fhevm /app &&\
     mkdir -p /install/host-contracts && \
     chown -R fhevm:fhevm /home/fhevm && \
