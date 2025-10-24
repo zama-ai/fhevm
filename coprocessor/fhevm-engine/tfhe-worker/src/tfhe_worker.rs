@@ -9,8 +9,8 @@ use opentelemetry::trace::{Span, TraceContextExt, Tracer};
 use opentelemetry::KeyValue;
 use prometheus::{register_int_counter, IntCounter};
 use scheduler::dfg::types::{DFGTxInput, SchedulerError};
+use scheduler::dfg::{build_component_nodes, DFGOp, DFTxGraph, TxNode};
 use scheduler::dfg::{scheduler::Scheduler, types::DFGTaskInput};
-use scheduler::dfg::{DFGOp, DFTxGraph, TxNode};
 use sqlx::Postgres;
 use sqlx::{postgres::PgListener, query, Acquire};
 use std::{
@@ -397,9 +397,8 @@ FOR UPDATE SKIP LOCKED            ",
                     is_allowed: w.is_allowed,
                 });
             }
-            let mut txn = TxNode::default();
-            txn.build(ops, transaction_id)?;
-            tenant_transactions.push(txn);
+            let mut components = build_component_nodes(ops, transaction_id)?;
+            tenant_transactions.append(&mut components);
         }
         transactions.push((*tenant_id, tenant_transactions));
     }
@@ -457,10 +456,10 @@ async fn upload_transaction_graph_results<'a>(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Get computation results
     let graph_results = tx_graph.get_results();
+    let handles_to_update = tx_graph.get_handles();
 
     // Traverse computations that have been scheduled and
     // upload their results/errors
-    let mut handles_to_update = tx_graph.get_intermediate_handles();
     let mut cts_to_insert = vec![];
     let mut uncomputable = vec![];
     for result in graph_results.into_iter() {
@@ -473,7 +472,6 @@ async fn upload_transaction_graph_results<'a>(
                         (db_bytes, (current_ciphertext_version(), db_type)),
                     ),
                 ));
-                handles_to_update.push((result.handle.clone(), result.transaction_id.clone()));
                 WORK_ITEMS_PROCESSED_COUNTER.inc();
             }
             Err(mut err) => {

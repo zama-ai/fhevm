@@ -1,6 +1,7 @@
 use anyhow::Result;
 use fhevm_engine_common::types::{Handle, SupportedFheCiphertexts};
 
+pub type TaskResult = Result<(SupportedFheCiphertexts, i16, Vec<u8>, bool)>;
 pub struct DFGTxResult {
     pub handle: Handle,
     pub transaction_id: Handle,

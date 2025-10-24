@@ -33,7 +33,10 @@ fn test_random_contract_address() -> String {
 
 fn main() {
     let ecfg = EnvConfig::new();
-    let mut c = Criterion::default().sample_size(10).configure_from_args();
+    let mut c = Criterion::default()
+        .sample_size(10)
+        .measurement_time(std::time::Duration::from_secs(1000))
+        .configure_from_args();
     let bench_name = "synthetic";
     let bench_optimization_target = if cfg!(feature = "latency") {
         "opt_latency"
@@ -210,7 +213,7 @@ async fn counter_increment(
             })
             .await;
             std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
         });
 
@@ -355,7 +358,7 @@ async fn tree_reduction(
             })
             .await;
             std::time::Duration::from_micros(
-                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters,
+                TIMING.swap(0, std::sync::atomic::Ordering::SeqCst) * iters.max(1),
             )
         });
 
