@@ -10,7 +10,7 @@ import {
   KMSGenerationMock,
   MultichainACLMock,
 } from "../../typechain-types";
-import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getKeyId, getPrepKeygenId, toValues } from "../utils";
+import { KeyTypeEnum, ParamsTypeEnum, getCrsId, getEpochId, getKeyId, getPrepKeygenId, toValues } from "../utils";
 
 describe("Mock contracts", function () {
   // Mock contracts
@@ -302,7 +302,7 @@ describe("Mock contracts", function () {
     const prepKeygenId = getPrepKeygenId(1);
     const keyId = getKeyId(1);
     const crsgenId = getCrsId(1);
-    const epochId = 0;
+    const epochId = getEpochId(1);
 
     it("Should emit PrepKeygenRequest event on keygen request", async function () {
       await expect(kmsGenerationMock.keygen(DefaultParamsType))

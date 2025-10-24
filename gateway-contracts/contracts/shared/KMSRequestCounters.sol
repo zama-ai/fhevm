@@ -12,7 +12,8 @@ enum RequestType {
     UserDecrypt, // 2
     PrepKeygen, // 3
     Keygen, // 4
-    Crsgen // 5
+    Crsgen, // 5
+    Epoch // 6
 }
 
 // Bit position to left shift for initializing the counters
@@ -35,3 +36,6 @@ uint256 constant KEY_COUNTER_BASE = uint256(RequestType.Keygen) << REQUEST_TYPE_
 
 // CRS generation requestId format in bytes: [0000 0101 | counter_1..31]
 uint256 constant CRS_COUNTER_BASE = uint256(RequestType.Crsgen) << REQUEST_TYPE_SHIFT;
+
+// Key resharing epochId format in bytes: [0000 0110 | counter_1..31]
+uint256 constant EPOCH_COUNTER_BASE = uint256(RequestType.Epoch) << REQUEST_TYPE_SHIFT;
