@@ -1,11 +1,16 @@
 #!/bin/bash
-FHEVM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+FHEVM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+if [ ! -d "${FHEVM_DIR}/.github" ]; then
+  echo "Error: invalid FHEVM repo root directory." >&2
+  exit 1
+fi
 
 OUT_BASE_DIR=$(jq -r '.directories.baseDir' ./codegen.e2e.config.json)
 SOL_REL_DIR=$(jq -r '.solidity.outDir' ./codegen.e2e.config.json)
 TS_REL_DIR=$(jq -r '.typescript.outDir' ./codegen.e2e.config.json)
 
-npm run build && ./codegen.mjs --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --verbose 
+npm run build && ./codegen.mjs lib --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --verbose 
 
 SOL_DIR="${FHEVM_DIR}/test-suite/e2e/${SOL_REL_DIR}-local.orig"
 TS_DIR="${FHEVM_DIR}/test-suite/e2e/${TS_REL_DIR}-local.orig"
