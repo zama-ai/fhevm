@@ -34,8 +34,8 @@ contract TestIntegrationACL is HostContractsDeployerTestUtils {
     }
 
     function test_BlockingAccountPreventsFHEAddCompute() public {
-        bytes32 lhs = caller.encrypt(7);
-        bytes32 rhs = caller.encrypt(11);
+        bytes32 lhs = caller.trivialEncrypt(7);
+        bytes32 rhs = caller.trivialEncrypt(11);
         caller.add(lhs, rhs);
 
         vm.prank(OWNER);
@@ -51,8 +51,8 @@ contract TestIntegrationACL is HostContractsDeployerTestUtils {
     }
 
     function test_BlockingAccountPreventsFHESubCompute() public {
-        bytes32 lhs = caller.encrypt(20);
-        bytes32 rhs = caller.encrypt(5);
+        bytes32 lhs = caller.trivialEncrypt(20);
+        bytes32 rhs = caller.trivialEncrypt(5);
         caller.sub(lhs, rhs);
 
         vm.prank(OWNER);
@@ -65,6 +65,17 @@ contract TestIntegrationACL is HostContractsDeployerTestUtils {
         acl.unblockAccount(address(caller));
 
         caller.sub(lhs, rhs);
+    }
+
+    function test_BlockingAccountDoesNotPreventAddWithoutAllowing() public {
+        bytes32 lhs = caller.trivialEncrypt(7);
+        bytes32 rhs = caller.trivialEncrypt(11);
+        caller.addWithoutAllowing(lhs, rhs);
+
+        vm.prank(OWNER);
+        acl.blockAccount(address(caller));
+
+        caller.addWithoutAllowing(lhs, rhs);
     }
 }
 
@@ -79,7 +90,7 @@ contract FHELibCaller {
         FHE.setCoprocessor(config);
     }
 
-    function encrypt(uint64 value) external returns (bytes32 handle) {
+    function trivialEncrypt(uint64 value) external returns (bytes32 handle) {
         euint64 encrypted = FHE.asEuint64(value);
         FHE.allowThis(encrypted);
         handle = euint64.unwrap(encrypted);
@@ -88,6 +99,11 @@ contract FHELibCaller {
     function add(bytes32 lhs, bytes32 rhs) external returns (bytes32 handle) {
         euint64 result = FHE.add(euint64.wrap(lhs), euint64.wrap(rhs));
         FHE.allowThis(result);
+        handle = euint64.unwrap(result);
+    }
+
+    function addWithoutAllowing(bytes32 lhs, bytes32 rhs) external returns (bytes32 handle) {
+        euint64 result = FHE.add(euint64.wrap(lhs), euint64.wrap(rhs));
         handle = euint64.unwrap(result);
     }
 
