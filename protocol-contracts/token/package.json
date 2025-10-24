@@ -17,7 +17,7 @@
     "test:hardhat": "hardhat test",
     "verify:etherscan:ethereum:sepolia": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n ethereum-testnet -u https://api.etherscan.io/v2/api?chainid=11155111 -k $ETHERSCAN_API'",
     "verify:etherscan:arbitrum:sepolia": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n arbitrum-testnet -u https://api.etherscan.io/v2/api?chainid=421614 -k $ETHERSCAN_API'",
-    "verify:etherscan:gateway:testnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n arbitrum-testnet -u $BLOCKSCOUT_API'"
+    "verify:etherscan:gateway:testnet": "dotenv -e .env --  bash -c 'npx @layerzerolabs/verify-contract verify-contract -d ./deployments -n gateway-testnet -u $BLOCKSCOUT_API'"
   },
   "resolutions": {
     "ethers": "^5.7.2",

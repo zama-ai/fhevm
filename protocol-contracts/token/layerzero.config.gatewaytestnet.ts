@@ -11,7 +11,7 @@ const sepoliaContract: OmniPointHardhat = {
 }
 
 const zamaTestnetContract: OmniPointHardhat = {
-    eid: EndpointId.ZAMA_TESTNET,
+    eid: EndpointId.ZAMA_V2_TESTNET,
     contractName: 'ZamaOFT',
 }
 
