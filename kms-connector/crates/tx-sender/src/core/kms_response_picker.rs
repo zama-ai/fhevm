@@ -10,7 +10,7 @@ use sqlx::{
 };
 use std::{future::Future, time::Duration};
 use tokio::select;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Interface used to pick KMS Core's responses from some storage.
 pub trait KmsResponsePicker {
@@ -95,7 +95,7 @@ impl KmsResponsePicker for DbKmsResponsePicker {
                 },
                 _ = tokio::time::sleep(self.polling_timeout) => {
                     debug!("Polling timeout, rechecking for responses");
-                    self.pick_any_responses().await.inspect_err(|_| RESPONSE_RECEIVED_ERRORS.inc())?
+                    self.pick_any_responses().await
                 },
             };
 
@@ -127,15 +127,25 @@ impl DbKmsResponsePicker {
         .map_err(anyhow::Error::from)
     }
 
-    async fn pick_any_responses(&self) -> anyhow::Result<Vec<KmsResponse>> {
-        Ok([
-            self.pick_public_decryption_responses().await?,
-            self.pick_user_decryption_responses().await?,
-            self.pick_prep_keygen_responses().await?,
-            self.pick_keygen_responses().await?,
-            self.pick_crsgen_responses().await?,
+    async fn pick_any_responses(&self) -> Vec<KmsResponse> {
+        let mut all_responses = vec![];
+        [
+            self.pick_public_decryption_responses().await,
+            self.pick_user_decryption_responses().await,
+            self.pick_prep_keygen_responses().await,
+            self.pick_keygen_responses().await,
+            self.pick_crsgen_responses().await,
         ]
-        .concat())
+        .into_iter()
+        .for_each(|res| match res {
+            Ok(events) => all_responses.extend(events),
+            Err(e) => {
+                warn!("Failed to fetch responses from one of the DB tables: {e}");
+                RESPONSE_RECEIVED_ERRORS.inc();
+            }
+        });
+
+        all_responses
     }
 
     async fn pick_public_decryption_responses(&self) -> sqlx::Result<Vec<KmsResponse>> {
