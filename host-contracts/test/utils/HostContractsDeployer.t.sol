@@ -132,25 +132,36 @@ contract HostContractsDeployerTest is HostContractsDeployer {
         assertTrue(pauserSet.isPauser(pauser), "Pauser not added");
     }
 
-    /**
-     * @dev Mirrors how clients read the current implementation in production by peeking at the ERC-1967 slot.
-     * Using the library constant avoids hard-coding the slot value here.
-     */
-    function test_EndToEndSetup_AllContractsWireTogether() public {
-        (ACL aclProxy,) = _deployACL(OWNER);
-        PauserSet pauserSet = _deployPauserSet();
-        (FHEVMExecutor fhevmExecutorProxy,) = _deployFHEVMExecutor(OWNER);
-        _deployHCULimit(OWNER);
-        _deployKMSVerifier(OWNER, GATEWAY_SOURCE_CONTRACT, GATEWAY_CHAIN_ID, _singleAddress(0x7777), 1);
-        _deployInputVerifier(OWNER, GATEWAY_SOURCE_CONTRACT, GATEWAY_CHAIN_ID, _singleAddress(0x8888), 1);
-
-        assertEq(fhevmExecutorProxy.getACLAddress(), aclAdd, "FHEVMExecutor ACL wiring mismatch");
-        assertEq(fhevmExecutorProxy.getHCULimitAddress(), hcuLimitAdd, "FHEVMExecutor HCULimit wiring mismatch");
-        assertEq(aclProxy.getPauserSetAddress(), pauserSetAdd, "ACL PauserSet address mismatch");
-
+    function test_DeployFullHostStack_DeploysAndWiresAllContracts() public {
+        address[] memory kmsSigners = new address[](1);
+        kmsSigners[0] = address(0x7777);
+        address[] memory inputSigners = new address[](1);
+        inputSigners[0] = address(0x8888);
         address pauser = address(0xbeef);
-        vm.prank(OWNER);
-        pauserSet.addPauser(pauser);
+
+        _deployFullHostStack(
+            OWNER,
+            pauser,
+            GATEWAY_SOURCE_CONTRACT,
+            GATEWAY_SOURCE_CONTRACT,
+            GATEWAY_CHAIN_ID,
+            kmsSigners,
+            1,
+            inputSigners,
+            1
+        );
+
+        ACL aclProxy = ACL(aclAdd);
+        FHEVMExecutor fheExecutor = FHEVMExecutor(fhevmExecutorAdd);
+
+        assertEq(aclProxy.getPauserSetAddress(), pauserSetAdd, "ACL PauserSet wiring mismatch");
+        assertEq(fheExecutor.getACLAddress(), aclAdd, "Executor ACL wiring mismatch");
+        assertEq(fheExecutor.getHCULimitAddress(), hcuLimitAdd, "Executor HCULimit wiring mismatch");
+        assertEq(KMSVerifier(kmsVerifierAdd).getThreshold(), 1, "KMSVerifier threshold mismatch");
+        assertEq(InputVerifier(inputVerifierAdd).getThreshold(), 1, "InputVerifier threshold mismatch");
+        assertTrue(PauserSet(pauserSetAdd).isPauser(pauser), "Pauser not registered");
+        assertFalse(aclProxy.isAllowed(bytes32(uint256(1)), address(this)), "Unexpected ACL allow");
+
         vm.prank(pauser);
         aclProxy.pause();
         assertTrue(aclProxy.paused(), "ACL not paused by pauser");
@@ -163,11 +174,6 @@ contract HostContractsDeployerTest is HostContractsDeployer {
         vm.prank(fhevmExecutorAdd);
         aclProxy.allowTransient(bytes32(uint256(1)), address(this));
         assertTrue(aclProxy.allowedTransient(bytes32(uint256(1)), address(this)), "Transient allow failed");
-    }
-
-    function _singleAddress(uint160 signer) private pure returns (address[] memory signers) {
-        signers = new address[](1);
-        signers[0] = address(signer);
     }
 
     function _readImplementationSlot(address proxy) private view returns (address) {

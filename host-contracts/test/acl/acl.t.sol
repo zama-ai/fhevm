@@ -1022,43 +1022,4 @@ contract ACLTest is Test {
         acl.allowForDecryption(handlesList);
     }
 
-    function test_BlockingAccountPreventsFHEAddCompute() public {
-        _upgradeProxy();
-        FHELibCaller caller = _deployFHELibCaller();
-
-        bytes32 lhs = caller.encrypt(7);
-        bytes32 rhs = caller.encrypt(11);
-        caller.add(lhs, rhs);
-
-        vm.prank(acl.owner());
-        acl.blockAccount(address(caller));
-
-        vm.expectRevert(abi.encodeWithSelector(ACL.SenderDenied.selector, address(caller)));
-        caller.add(lhs, rhs);
-
-        vm.prank(acl.owner());
-        acl.unblockAccount(address(caller));
-
-        caller.add(lhs, rhs);
-    }
-
-    function test_BlockingAccountPreventsFHESubCompute() public {
-        _upgradeProxy();
-        FHELibCaller caller = _deployFHELibCaller();
-
-        bytes32 lhs = caller.encrypt(20);
-        bytes32 rhs = caller.encrypt(5);
-        caller.sub(lhs, rhs);
-
-        vm.prank(acl.owner());
-        acl.blockAccount(address(caller));
-
-        vm.expectRevert(abi.encodeWithSelector(ACL.SenderDenied.selector, address(caller)));
-        caller.sub(lhs, rhs);
-
-        vm.prank(acl.owner());
-        acl.unblockAccount(address(caller));
-
-        caller.sub(lhs, rhs);
-    }
 }

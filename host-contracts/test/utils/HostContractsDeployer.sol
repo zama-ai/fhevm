@@ -174,6 +174,34 @@ abstract contract HostContractsDeployer is Test {
         hcuLimitProxy = HCULimit(hcuLimitAdd);
     }
 
+    function _deployFullHostStack(
+        address owner,
+        address pauser,
+        address kmsVerifyingSource,
+        address inputVerifyingSource,
+        uint64 chainIDSource,
+        address[] memory kmsSigners,
+        uint256 kmsThreshold,
+        address[] memory inputSigners,
+        uint256 inputThreshold
+    ) internal {
+        (ACL aclProxy,) = _deployACL(owner);
+        PauserSet pauserSet = _deployPauserSet();
+        (FHEVMExecutor fheExecutor,) = _deployFHEVMExecutor(owner);
+        _deployHCULimit(owner);
+        _deployKMSVerifier(owner, kmsVerifyingSource, chainIDSource, kmsSigners, kmsThreshold);
+        _deployInputVerifier(owner, inputVerifyingSource, chainIDSource, inputSigners, inputThreshold);
+
+        vm.prank(owner);
+        pauserSet.addPauser(pauser);
+
+        require(fheExecutor.getACLAddress() == aclAdd, "executor ACL wiring");
+        require(fheExecutor.getHCULimitAddress() == hcuLimitAdd, "executor HCU wiring");
+        require(aclProxy.getPauserSetAddress() == pauserSetAdd, "ACL PauserSet wiring");
+        require(KMSVerifier(kmsVerifierAdd).getThreshold() == kmsThreshold, "KMS threshold wiring");
+        require(InputVerifier(inputVerifierAdd).getThreshold() == inputThreshold, "Input threshold wiring");
+    }
+
     function _deployPauserSet() internal returns (PauserSet pauserSet) {
         vm.etch(pauserSetAdd, address(new PauserSet()).code);
         vm.label(pauserSetAdd, "PauserSet");
