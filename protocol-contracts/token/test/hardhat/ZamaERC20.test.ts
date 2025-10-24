@@ -136,6 +136,7 @@ describe('ZamaERC20 - Unit Test', () => {
 
     describe('Mint', () => {
         const TOKENS_TO_MINT = ethers.utils.parseEther('10')
+
         beforeEach(async () => {
             // Grant alice the MINTER_ROLE
             // Grant bob the MINTING_PAUSER_ROLE
@@ -150,137 +151,143 @@ describe('ZamaERC20 - Unit Test', () => {
             expect(isPaused).to.be.false
         })
 
-        it('should let MINTING_PAUSER_ROLE pause the minting', async () => {
-            await zamaERC20.connect(bob).pauseMinting()
+        describe('Minting AccessControl', () => {
+            it('should let MINTING_PAUSER_ROLE pause the minting', async () => {
+                await zamaERC20.connect(bob).pauseMinting()
 
-            const isPaused = await zamaERC20.paused()
-            expect(isPaused).to.be.true
+                const isPaused = await zamaERC20.paused()
+                expect(isPaused).to.be.true
+            })
+
+            it('should not let DEFAULT_ADMIN_ROLE pause the minting', async () => {
+                await expect(zamaERC20.connect(admin).pauseMinting()).to.be.revertedWithCustomError(
+                    zamaERC20,
+                    'AccessControlUnauthorizedAccount'
+                )
+            })
+
+            it('should not let MINTER_ROLE pause the minting', async () => {
+                await expect(zamaERC20.connect(alice).pauseMinting()).to.be.revertedWithCustomError(
+                    zamaERC20,
+                    'AccessControlUnauthorizedAccount'
+                )
+            })
+
+            it('should not let generic user pause the minting', async () => {
+                await expect(zamaERC20.connect(charlie).pauseMinting()).to.be.revertedWithCustomError(
+                    zamaERC20,
+                    'AccessControlUnauthorizedAccount'
+                )
+            })
+
+            it('should let DEFAULT_ADMIN_ROLE unpause the minting', async () => {
+                await zamaERC20.connect(bob).pauseMinting()
+                let isPaused = await zamaERC20.paused()
+                expect(isPaused).to.be.true
+
+                await zamaERC20.connect(admin).unpauseMinting()
+
+                isPaused = await zamaERC20.paused()
+                expect(isPaused).to.be.false
+            })
+
+            it('should not let MINTER_ROLE unpause the minting', async () => {
+                await expect(zamaERC20.connect(alice).unpauseMinting()).to.be.revertedWithCustomError(
+                    zamaERC20,
+                    'AccessControlUnauthorizedAccount'
+                )
+            })
+
+            it('should not let MINTING_PAUSER_ROLE unpause the minting', async () => {
+                await expect(zamaERC20.connect(bob).unpauseMinting()).to.be.revertedWithCustomError(
+                    zamaERC20,
+                    'AccessControlUnauthorizedAccount'
+                )
+            })
+
+            it('should not let generic user unpause the minting', async () => {
+                await expect(zamaERC20.connect(charlie).unpauseMinting()).to.be.revertedWithCustomError(
+                    zamaERC20,
+                    'AccessControlUnauthorizedAccount'
+                )
+            })
         })
 
-        it('should not let DEFAULT_ADMIN_ROLE pause the minting', async () => {
-            await expect(zamaERC20.connect(admin).pauseMinting()).to.be.revertedWithCustomError(
-                zamaERC20,
-                'AccessControlUnauthorizedAccount'
-            )
+        describe('Unpaused', () => {
+            it('should let MINTER_ROLE mint $ZAMA while unpaused', async () => {
+                const aliceBalanceBefore = await zamaERC20.balanceOf(alice.address)
+                const totalSupplyBefore = await zamaERC20.totalSupply()
+
+                await zamaERC20.connect(alice).mint(alice.address, TOKENS_TO_MINT)
+
+                const aliceBalanceAfter: BigNumber = await zamaERC20.balanceOf(alice.address)
+                const totalSupplyAfter = await zamaERC20.totalSupply()
+
+                expect(aliceBalanceAfter).to.eql(aliceBalanceBefore.add(TOKENS_TO_MINT))
+                expect(totalSupplyAfter).to.eq(totalSupplyBefore.add(TOKENS_TO_MINT))
+            })
+
+            it('should not let DEFAULT_ADMIN_ROLE mint $ZAMA while unpaused', async () => {
+                await expect(
+                    zamaERC20.connect(admin).mint(admin.address, TOKENS_TO_MINT)
+                ).to.be.revertedWithCustomError(zamaERC20, 'AccessControlUnauthorizedAccount')
+            })
+
+            it('should not let MINTING_PAUSER_ROLE mint $ZAMA while unpaused', async () => {
+                await expect(zamaERC20.connect(bob).mint(bob.address, TOKENS_TO_MINT)).to.be.revertedWithCustomError(
+                    zamaERC20,
+                    'AccessControlUnauthorizedAccount'
+                )
+            })
+
+            it('should not let generic address mint $ZAMA while unpaused', async () => {
+                await expect(
+                    zamaERC20.connect(charlie).mint(charlie.address, TOKENS_TO_MINT)
+                ).to.be.revertedWithCustomError(zamaERC20, 'AccessControlUnauthorizedAccount')
+            })
         })
 
-        it('should not let MINTER_ROLE pause the minting', async () => {
-            await expect(zamaERC20.connect(alice).pauseMinting()).to.be.revertedWithCustomError(
-                zamaERC20,
-                'AccessControlUnauthorizedAccount'
-            )
-        })
+        describe('Paused', () => {
+            it('should not let MINTER_ROLE mint $ZAMA while paused', async () => {
+                await zamaERC20.connect(bob).pauseMinting()
+                const isPaused = await zamaERC20.paused()
+                expect(isPaused).to.be.true
 
-        it('should not let generic user pause the minting', async () => {
-            await expect(zamaERC20.connect(charlie).pauseMinting()).to.be.revertedWithCustomError(
-                zamaERC20,
-                'AccessControlUnauthorizedAccount'
-            )
-        })
+                await expect(
+                    zamaERC20.connect(alice).mint(alice.address, TOKENS_TO_MINT)
+                ).to.be.revertedWithCustomError(zamaERC20, 'EnforcedPause')
+            })
 
-        it('should let DEFAULT_ADMIN_ROLE unpause the minting', async () => {
-            await zamaERC20.connect(bob).pauseMinting()
-            let isPaused = await zamaERC20.paused()
-            expect(isPaused).to.be.true
+            it('should not let DEFAULT_ADMIN_ROLE mint $ZAMA while paused', async () => {
+                await zamaERC20.connect(bob).pauseMinting()
+                const isPaused = await zamaERC20.paused()
+                expect(isPaused).to.be.true
 
-            await zamaERC20.connect(admin).unpauseMinting()
+                await expect(
+                    zamaERC20.connect(admin).mint(admin.address, TOKENS_TO_MINT)
+                ).to.be.revertedWithCustomError(zamaERC20, 'AccessControlUnauthorizedAccount')
+            })
 
-            isPaused = await zamaERC20.paused()
-            expect(isPaused).to.be.false
-        })
+            it('should not let MINTING_PAUSER_ROLE mint $ZAMA while paused', async () => {
+                await zamaERC20.connect(bob).pauseMinting()
+                const isPaused = await zamaERC20.paused()
+                expect(isPaused).to.be.true
 
-        it('should not let MINTER_ROLE unpause the minting', async () => {
-            await expect(zamaERC20.connect(alice).unpauseMinting()).to.be.revertedWithCustomError(
-                zamaERC20,
-                'AccessControlUnauthorizedAccount'
-            )
-        })
+                await expect(zamaERC20.connect(bob).mint(bob.address, TOKENS_TO_MINT)).to.be.revertedWithCustomError(
+                    zamaERC20,
+                    'AccessControlUnauthorizedAccount'
+                )
+            })
 
-        it('should not let MINTING_PAUSER_ROLE unpause the minting', async () => {
-            await expect(zamaERC20.connect(bob).unpauseMinting()).to.be.revertedWithCustomError(
-                zamaERC20,
-                'AccessControlUnauthorizedAccount'
-            )
-        })
+            it('should not let generic address mint $ZAMA while paused', async () => {
+                await zamaERC20.connect(bob).pauseMinting()
+                const isPaused = await zamaERC20.paused()
+                expect(isPaused).to.be.true
 
-        it('should not let generic user unpause the minting', async () => {
-            await expect(zamaERC20.connect(charlie).unpauseMinting()).to.be.revertedWithCustomError(
-                zamaERC20,
-                'AccessControlUnauthorizedAccount'
-            )
-        })
-
-        it('should let MINTER_ROLE mint $ZAMA while unpaused', async () => {
-            const aliceBalanceBefore: BigNumber = await zamaERC20.balanceOf(alice.address)
-
-            await zamaERC20.connect(alice).mint(alice.address, TOKENS_TO_MINT)
-
-            const aliceBalanceAfter: BigNumber = await zamaERC20.balanceOf(alice.address)
-
-            expect(aliceBalanceAfter.sub(aliceBalanceBefore)).eql(TOKENS_TO_MINT)
-        })
-
-        it('should not let DEFAULT_ADMIN_ROLE mint $ZAMA while unpaused', async () => {
-            await expect(zamaERC20.connect(admin).mint(admin.address, TOKENS_TO_MINT)).to.be.revertedWithCustomError(
-                zamaERC20,
-                'AccessControlUnauthorizedAccount'
-            )
-        })
-
-        it('should not let MINTING_PAUSER_ROLE mint $ZAMA while unpaused', async () => {
-            await expect(zamaERC20.connect(bob).mint(bob.address, TOKENS_TO_MINT)).to.be.revertedWithCustomError(
-                zamaERC20,
-                'AccessControlUnauthorizedAccount'
-            )
-        })
-
-        it('should not let generic address mint $ZAMA while unpaused', async () => {
-            await expect(
-                zamaERC20.connect(charlie).mint(charlie.address, TOKENS_TO_MINT)
-            ).to.be.revertedWithCustomError(zamaERC20, 'AccessControlUnauthorizedAccount')
-        })
-
-        it('should not let MINTER_ROLE mint $ZAMA while paused', async () => {
-            await zamaERC20.connect(bob).pauseMinting()
-            const isPaused = await zamaERC20.paused()
-            expect(isPaused).to.be.true
-
-            await expect(zamaERC20.connect(alice).mint(alice.address, TOKENS_TO_MINT)).to.be.revertedWithCustomError(
-                zamaERC20,
-                'EnforcedPause'
-            )
-        })
-
-        it('should not let DEFAULT_ADMIN_ROLE mint $ZAMA while paused', async () => {
-            await zamaERC20.connect(bob).pauseMinting()
-            const isPaused = await zamaERC20.paused()
-            expect(isPaused).to.be.true
-
-            await expect(zamaERC20.connect(admin).mint(admin.address, TOKENS_TO_MINT)).to.be.revertedWithCustomError(
-                zamaERC20,
-                'AccessControlUnauthorizedAccount'
-            )
-        })
-
-        it('should not let MINTING_PAUSER_ROLE mint $ZAMA while paused', async () => {
-            await zamaERC20.connect(bob).pauseMinting()
-            const isPaused = await zamaERC20.paused()
-            expect(isPaused).to.be.true
-
-            await expect(zamaERC20.connect(bob).mint(bob.address, TOKENS_TO_MINT)).to.be.revertedWithCustomError(
-                zamaERC20,
-                'AccessControlUnauthorizedAccount'
-            )
-        })
-
-        it('should not let generic address mint $ZAMA while paused', async () => {
-            await zamaERC20.connect(bob).pauseMinting()
-            const isPaused = await zamaERC20.paused()
-            expect(isPaused).to.be.true
-
-            await expect(
-                zamaERC20.connect(charlie).mint(charlie.address, TOKENS_TO_MINT)
-            ).to.be.revertedWithCustomError(zamaERC20, 'AccessControlUnauthorizedAccount')
+                await expect(
+                    zamaERC20.connect(charlie).mint(charlie.address, TOKENS_TO_MINT)
+                ).to.be.revertedWithCustomError(zamaERC20, 'AccessControlUnauthorizedAccount')
+            })
         })
     })
 
@@ -412,13 +419,130 @@ describe('ZamaERC20 - Unit Test', () => {
     })
 
     describe('Transfer', () => {
+        const TRANSFER_AMOUNT = ethers.utils.parseEther('10')
+
+        beforeEach(async () => {
+            // Grant alice the MINTER_ROLE
+            // Grant bob the MINTING_PAUSER_ROLE
+            // charlie has no roles
+            await zamaERC20.connect(admin).grantRole(MINTER_ROLE, admin.address)
+            await zamaERC20.connect(admin).grantRole(MINTING_PAUSER_ROLE, admin.address)
+            expect(await zamaERC20.hasRole(MINTER_ROLE, admin.address)).to.be.true
+            expect(await zamaERC20.hasRole(MINTING_PAUSER_ROLE, admin.address)).to.be.true
+
+            // The contract is unpaused by default
+            const isPaused = await zamaERC20.paused()
+            expect(isPaused).to.be.false
+        })
+
         describe('Transfer - ERC20', () => {
             describe('transfer', () => {
-                it('', async () => {})
+                it('should fail when transfering to address(0)', async () => {
+                    await expect(
+                        zamaERC20.connect(alice).transfer(ethers.constants.AddressZero, TRANSFER_AMOUNT)
+                    ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InvalidReceiver')
+                })
+
+                it('should fail when transfering more token than available', async () => {
+                    // ERC20InsufficientBalance
+                    expect(await zamaERC20.balanceOf(alice.address)).to.be.lt(TRANSFER_AMOUNT)
+                    await expect(
+                        zamaERC20.connect(alice).transfer(bob.address, TRANSFER_AMOUNT)
+                    ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InsufficientBalance')
+                })
+
+                it('should let owner transfer to itself', async () => {
+                    const balanceBefore = await zamaERC20.balanceOf(owner.address)
+
+                    await expect(zamaERC20.connect(owner).transfer(owner.address, TRANSFER_AMOUNT)).to.not.be.reverted
+
+                    const balanceAfter = await zamaERC20.balanceOf(owner.address)
+
+                    expect(balanceAfter).to.eql(balanceBefore)
+                })
+
+                it('should let owner transfer token to alice', async () => {
+                    const balanceOwnerBefore = await zamaERC20.balanceOf(owner.address)
+                    const balanceAliceBefore = await zamaERC20.balanceOf(alice.address)
+
+                    await expect(zamaERC20.connect(owner).transfer(alice.address, TRANSFER_AMOUNT)).to.not.be.reverted
+
+                    const balanceOwnerAfter = await zamaERC20.balanceOf(owner.address)
+                    const balanceAliceAfter = await zamaERC20.balanceOf(alice.address)
+
+                    expect(balanceOwnerAfter).to.eql(balanceOwnerBefore.sub(TRANSFER_AMOUNT))
+                    expect(balanceAliceAfter).to.eql(balanceAliceBefore.add(TRANSFER_AMOUNT))
+                })
+
+                it('should let owner transfer 0 token to alice', async () => {
+                    const balanceOwnerBefore = await zamaERC20.balanceOf(owner.address)
+                    const balanceAliceBefore = await zamaERC20.balanceOf(alice.address)
+
+                    await expect(zamaERC20.connect(owner).transfer(alice.address, 0)).to.not.be.reverted
+
+                    const balanceOwnerAfter = await zamaERC20.balanceOf(owner.address)
+                    const balanceAliceAfter = await zamaERC20.balanceOf(alice.address)
+
+                    expect(balanceOwnerAfter).to.eql(balanceOwnerBefore)
+                    expect(balanceAliceAfter).to.eql(balanceAliceBefore)
+                })
             })
-            describe('transferFrom', () => {})
+
+            describe('transferFrom', () => {
+                const MINT_AMOUNT = ethers.utils.parseEther('10')
+                const SMALL_MINT_AMOUNT = ethers.utils.parseEther('1')
+                const TRANSFER_AMOUNT = ethers.utils.parseEther('2')
+                const ALLOWANCE = ethers.utils.parseEther('2')
+                const SMALL_ALLOWANCE = ethers.utils.parseEther('1')
+
+                beforeEach(async () => {
+                    await zamaERC20.connect(admin).mint(alice.address, MINT_AMOUNT)
+                    await zamaERC20.connect(admin).mint(bob.address, SMALL_MINT_AMOUNT)
+                })
+
+                it('should fail when transfering with no allowance', async () => {
+                    await expect(
+                        zamaERC20.transferFrom(alice.address, bob.address, TRANSFER_AMOUNT)
+                    ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InsufficientAllowance')
+                })
+
+                it('should fail when transfering more than available allowance', async () => {
+                    await zamaERC20.connect(alice).approve(bob.address, SMALL_ALLOWANCE)
+                    await expect(
+                        zamaERC20.connect(bob).transferFrom(alice.address, charlie.address, TRANSFER_AMOUNT)
+                    ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InsufficientAllowance')
+                })
+
+                it('should fail when transfering more than available token', async () => {
+                    await zamaERC20.connect(alice).approve(bob.address, ethers.constants.MaxUint256)
+                    await expect(
+                        zamaERC20.connect(bob).transferFrom(alice.address, charlie.address, MINT_AMOUNT.mul(2))
+                    ).to.be.revertedWithCustomError(zamaERC20, 'ERC20InsufficientBalance')
+                })
+
+                it('should let alice transfer from owner to bob within available allowance', async () => {
+                    const allowanceBefore = await zamaERC20.allowance(alice.address, bob.address)
+                    await zamaERC20.connect(alice).approve(bob.address, ALLOWANCE)
+                    expect(await zamaERC20.allowance(alice.address, bob.address)).to.eql(allowanceBefore.add(ALLOWANCE))
+
+                    await zamaERC20.connect(bob).transferFrom(alice.address, charlie.address, TRANSFER_AMOUNT)
+
+                    expect(await zamaERC20.allowance(alice.address, bob.address)).to.eql(allowanceBefore)
+                })
+
+                it('should let alice transfer from owner to bob with max allowance', async () => {
+                    await zamaERC20.connect(alice).approve(bob.address, ethers.constants.MaxUint256)
+                    expect(await zamaERC20.allowance(alice.address, bob.address)).to.eql(ethers.constants.MaxUint256)
+
+                    await zamaERC20.connect(bob).transferFrom(alice.address, charlie.address, TRANSFER_AMOUNT)
+
+                    expect(await zamaERC20.allowance(alice.address, bob.address)).to.eql(ethers.constants.MaxUint256)
+                })
+            })
         })
+
         describe('Transfer - ERC20Permit', () => {})
+
         describe('Transfer - ERC1363', () => {
             describe('transferAndCall', () => {})
             describe('transferFromAndCall', () => {})
@@ -731,24 +855,24 @@ describe('ZamaERC20 - Unit Test', () => {
                     expect(await zamaERC20.paused()).to.be.true
                 })
 
-                it('should let DEFAULT_ADMIN_ROLE recover ERC721Mock from contract while unpaused', async () => {
+                it('should let DEFAULT_ADMIN_ROLE recover ERC721Mock from contract while paused', async () => {
                     await zamaERC20.connect(admin).recoverERC721(ERC721Mock.address, TOKEN_ID, alice.address)
                     expect(await ERC721Mock.ownerOf(TOKEN_ID)).to.eq(alice.address)
                 })
 
-                it('should not let MINTER_ROLE recover ERC721Mock from contract while unpaused', async () => {
+                it('should not let MINTER_ROLE recover ERC721Mock from contract while paused', async () => {
                     await expect(
                         zamaERC20.connect(alice).recoverERC721(ERC721Mock.address, TOKEN_ID, alice.address)
                     ).to.be.revertedWithCustomError(zamaERC20, 'AccessControlUnauthorizedAccount')
                 })
 
-                it('should not let MINTING_PAUSER_ROLE recover ERC721Mock from contract while unpaused', async () => {
+                it('should not let MINTING_PAUSER_ROLE recover ERC721Mock from contract while paused', async () => {
                     await expect(
                         zamaERC20.connect(bob).recoverERC721(ERC721Mock.address, TOKEN_ID, alice.address)
                     ).to.be.revertedWithCustomError(zamaERC20, 'AccessControlUnauthorizedAccount')
                 })
 
-                it('should not let generic address recover ERC721Mock from contract while unpaused', async () => {
+                it('should not let generic address recover ERC721Mock from contract while paused', async () => {
                     await expect(
                         zamaERC20.connect(charlie).recoverERC721(ERC721Mock.address, TOKEN_ID, alice.address)
                     ).to.be.revertedWithCustomError(zamaERC20, 'AccessControlUnauthorizedAccount')
