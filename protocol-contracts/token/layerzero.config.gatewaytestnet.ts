@@ -38,8 +38,7 @@ const pathways: TwoWayConfig[] = [
         zamaTestnetContract, // Chain B contract
         // TODO: Add custom ZAMA DVN in next line?
         [['LayerZero Labs'], []], // [ requiredDVN[], [ optionalDVN[], threshold ] ]
-        // TODO: IMPORTANT for zamamainnet change next line to [15,20]
-        [1, 1], // [A to B confirmations, B to A confirmations]
+        [15, 20], // [A to B confirmations, B to A confirmations]
         [EVM_ENFORCED_OPTIONS, EVM_ENFORCED_OPTIONS], // Chain B enforcedOptions, Chain A enforcedOptions
     ],
 ]
