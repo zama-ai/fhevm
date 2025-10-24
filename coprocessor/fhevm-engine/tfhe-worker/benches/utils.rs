@@ -1,3 +1,4 @@
+use fhevm_engine_common::telemetry::MetricsConfig;
 use fhevm_engine_common::utils::safe_deserialize_key;
 use rand::Rng;
 use sqlx::query;
@@ -98,13 +99,15 @@ async fn start_coprocessor(rx: Receiver<bool>, app_port: u16, db_url: &str) {
         tokio_threads: 32,
         pg_pool_max_connections: 2,
         server_addr: format!("127.0.0.1:{app_port}"),
-        metrics_addr: "".to_string(),
+        metrics_addr: None,
         database_url: Some(db_url.to_string()),
         maximum_compact_inputs_upload: 10,
         coprocessor_private_key: "./coprocessor.key".to_string(),
         service_name: "coprocessor".to_string(),
         log_level: Level::INFO,
         health_check_port: 8080,
+        metric_rerand_batch_latency: MetricsConfig::default(),
+        metric_fhe_batch_latency: MetricsConfig::default(),
     };
 
     std::thread::spawn(move || {

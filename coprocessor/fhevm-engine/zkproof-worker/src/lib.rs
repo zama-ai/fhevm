@@ -4,9 +4,18 @@ pub mod auxiliary;
 mod tests;
 
 pub mod verifier;
-use std::{io, time::Duration};
+use std::{
+    io,
+    sync::{LazyLock, OnceLock},
+    time::Duration,
+};
 
-use fhevm_engine_common::{pg_pool::ServiceError, types::FhevmError};
+use fhevm_engine_common::{
+    pg_pool::ServiceError,
+    telemetry::{register_histogram, MetricsConfig},
+    types::FhevmError,
+};
+use prometheus::Histogram;
 use thiserror::Error;
 
 /// The highest index of an input is 254,
@@ -78,3 +87,12 @@ pub struct Config {
 
     pub worker_thread_count: u32,
 }
+
+pub static ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF: OnceLock<MetricsConfig> = OnceLock::new();
+pub static ZKVERIFY_OP_LATENCY_HISTOGRAM: LazyLock<Histogram> = LazyLock::new(|| {
+    register_histogram(
+        ZKVERIFY_OP_LATENCY_HISTOGRAM_CONF.get(),
+        "coprocessor_zkverify_op_latency_seconds",
+        "ZK verification latencies in seconds",
+    )
+});
