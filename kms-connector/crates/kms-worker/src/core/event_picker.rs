@@ -10,7 +10,7 @@ use sqlx::{
 };
 use std::time::Duration;
 use tokio::select;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Interface used to pick Gateway's events from some storage.
 pub trait EventPicker {
@@ -99,7 +99,7 @@ impl EventPicker for DbEventPicker {
                 },
                 _ = tokio::time::sleep(self.polling_timeout) => {
                     debug!("Polling timeout, rechecking for events");
-                    self.pick_any_events().await.inspect_err(|_| EVENT_RECEIVED_ERRORS.inc())?
+                    self.pick_any_events().await
                 },
             };
 
@@ -131,15 +131,25 @@ impl DbEventPicker {
         .map_err(anyhow::Error::from)
     }
 
-    async fn pick_any_events(&self) -> anyhow::Result<Vec<GatewayEvent>> {
-        Ok([
-            self.pick_public_decryption_requests().await?,
-            self.pick_user_decryption_requests().await?,
-            self.pick_prep_keygen_requests().await?,
-            self.pick_keygen_requests().await?,
-            self.pick_crsgen_requests().await?,
+    async fn pick_any_events(&self) -> Vec<GatewayEvent> {
+        let mut all_events = vec![];
+        [
+            self.pick_public_decryption_requests().await,
+            self.pick_user_decryption_requests().await,
+            self.pick_prep_keygen_requests().await,
+            self.pick_keygen_requests().await,
+            self.pick_crsgen_requests().await,
         ]
-        .concat())
+        .into_iter()
+        .for_each(|res| match res {
+            Ok(events) => all_events.extend(events),
+            Err(e) => {
+                warn!("Failed to fetch events from one of the DB tables: {e}");
+                EVENT_RECEIVED_ERRORS.inc();
+            }
+        });
+
+        all_events
     }
 
     async fn pick_public_decryption_requests(&self) -> sqlx::Result<Vec<GatewayEvent>> {
