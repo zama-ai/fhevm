@@ -15,6 +15,7 @@ import { EndpointId } from '@layerzerolabs/lz-definitions'
 
 import './type-extensions'
 import './tasks/sendOFT'
+import './tasks/validateEVMAddress'
 
 // Set your preferred authentication method
 //
