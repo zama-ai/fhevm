@@ -1,7 +1,7 @@
 {
   "__comment": "All relative paths are resolved against directories.baseDir",
   "numberOfTestSplits": 96,
-  "overloads": "../library-solidity/codegen-v2/overloads/e2e.json",
+  "overloads": "../library-solidity/codegen/overloads/e2e.json",
   "noLib": true,
   "publicDecrypt": true,
   "shuffle": false,

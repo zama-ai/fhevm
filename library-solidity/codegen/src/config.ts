@@ -102,8 +102,8 @@ export function getUserConfig(): UserConfig | undefined {
   return undefined;
 }
 
-export function isDebug(): boolean {
-  return getProgram().opts().verbose === true;
+export function isVerbose(): boolean {
+  return getProgram().opts().verbose === true || isDryRun();
 }
 
 export function isDryRun(): boolean {
@@ -115,9 +115,15 @@ export function getUserOverloadsFile(options: any): string | undefined {
 }
 
 export function debugLog(s: string) {
-  if (isDebug()) {
+  if (isVerbose()) {
     console.log(s);
   }
+}
+
+export function errorLog(s: string) {
+  const RED_COLOR = '\x1b[31m';
+  const RESET_COLOR = '\x1b[0m';
+  console.error(RED_COLOR + s + RESET_COLOR);
 }
 
 export function debugLogDirectoriesUserConfig(config: DirectoriesUserConfig) {
@@ -278,7 +284,7 @@ export async function writeFile(file: string, content: string) {
   if (!path.isAbsolute(file)) {
     throw new Error(`Path ${file} is not absolute.`);
   }
-  debugLog(`generate file ${file}`);
+  debugLog(`format file ${file}`);
   const res = await formatFileUsingPrettier(file, content);
   if (!isDryRun()) {
     debugLog(`write file ${file}`);
@@ -287,6 +293,8 @@ export async function writeFile(file: string, content: string) {
       mkDir(dir);
     }
     writeFileSync(file, res.fromattedCode);
+  } else {
+    debugLog(`Skip write file ${file} (dry-run)`);
   }
 }
 
@@ -319,7 +327,7 @@ async function formatFileUsingPrettier(
   // const input = readFileSync(filePath, "utf8");
   const prettierConfig = await prettier.resolveConfig(filePath);
 
-  const output = await prettier.format(content, { ...prettierConfig, filepath: filePath });
+  const output = prettier.format(content, { ...prettierConfig, filepath: filePath });
 
   if (output === content) {
     return { result: 'unchanged', fromattedCode: output };

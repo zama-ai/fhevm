@@ -6,6 +6,7 @@ import { validateFHETypes, validateOperators } from './common.js';
 import {
   type TestGroup,
   debugLog,
+  errorLog,
   generatePrettierConfig,
   getUserConfig,
   getUserOverloadsFile,
@@ -79,15 +80,11 @@ export async function writeOverloadsIfChanged(
       }),
     );
   } else {
-    debugLog(`Overloads is unchanged.`);
+    debugLog(`Overloads file is unchanged.`);
   }
 }
 
-export async function forceRegenerateOverloads(outputFile: string) {
-  if (!outputFile || typeof outputFile !== "string" || outputFile.trim().length === 0) {
-    throw new Error(`Missing output file.`);
-  }
-
+export async function commandRegenerateOverloads(outputFile: string, options: any) {
   if (isDirectory(outputFile)) {
     outputFile = path.join(outputFile, "overloads.json");
   }
@@ -98,13 +95,45 @@ export async function forceRegenerateOverloads(outputFile: string) {
   const absConfig = toAbsulteConfig(config);
 
   const defaultOverloadsJsonFile = absConfig.overloads;
-
-  const overloadsJsonFile = userOverloadsJson
+  const resolvedOverloadsJsonFile = userOverloadsJson
     ? toAbsoluteFileWithExtension(userOverloadsJson, '.json', process.cwd())
     : defaultOverloadsJsonFile;
 
-  const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPES, {});
-  await writeOverloadsIfChanged(overloadTests, {}, overloadsJsonFile);
+  debugLog(`overloads.json (default):  ${defaultOverloadsJsonFile}`);
+  debugLog(`overloads.json (resolved): ${resolvedOverloadsJsonFile}`);
+
+  if (existsSync(resolvedOverloadsJsonFile)) {
+    if (options.force !== true) {
+      errorLog(`File ${resolvedOverloadsJsonFile} already exists. Use the --force option to overwrite it.`);
+      process.exit(1);
+    }
+  }
+
+  const update = options.update === true;
+  const existingOverloadTests: OverloadTests = update ? readOverloads(resolvedOverloadsJsonFile) ?? {} : {};
+  const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPES, existingOverloadTests);
+
+  await writeOverloadsIfChanged(overloadTests, existingOverloadTests, resolvedOverloadsJsonFile);
+
+  /*
+    const existingOverloadTests: OverloadTests = readOverloads(resolvedOverloadsJsonFile) ?? {};
+  // Generates a list of Overload Tests.
+  // 1. if one test one test already exists, keep it.
+  // 2. if one test does not exist, generate it.
+  // overloadTests === { existing tests } U { missing tests }
+  const overloadTests: OverloadTests = generateOverloads(ALL_FHE_TYPES, existingOverloadTests);
+  if (!userOverloadsJson) {
+    // No `--overloads` option: save the new overloads tests if changed
+    await writeOverloadsIfChanged(overloadTests, existingOverloadTests, defaultOverloadsJsonFile);
+  } else {
+    // With `--overloads` option: we expect Card({ missing tests }) == 0
+    if (!isDeepStrictEqual(overloadTests, existingOverloadTests)) {
+      throw new Error(`Invalid overloads.json file at ${resolvedOverloadsJsonFile}. Please regenerate 'overloads.json'. Type "codegen overloads --help" for more info.`);
+    }
+  }
+
+
+  */
 }
 
 /**
@@ -119,7 +148,7 @@ export async function forceRegenerateOverloads(outputFile: string) {
  * 6. Generates TypeScript test code for the split overloads and writes them to the test directory.
  *
  */
-export async function generateAllFiles(options: any) {
+export async function commandGenerateAllFiles(options: any) {
   const userConfig = getUserConfig();
   const userOverloadsJson = getUserOverloadsFile(options);
   const config = resolveUserConfig(userConfig);

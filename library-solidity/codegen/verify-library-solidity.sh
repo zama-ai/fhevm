@@ -1,20 +1,23 @@
 #!/bin/bash
 FHEVM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [ ! -d "${FHEVM_DIR}/.github" ]; then
   echo "Error: invalid FHEVM repo root directory." >&2
   exit 1
 fi
 
-OUT_BASE_DIR=$(jq -r '.directories.baseDir' ./codegen.host-contracts.config.json)
-SOL_REL_DIR=$(jq -r '.solidity.outDir' ./codegen.host-contracts.config.json)
-TS_REL_DIR=$(jq -r '.typescript.outDir' ./codegen.host-contracts.config.json)
+cd "${SCRIPT_DIR}"
 
-npm run build && ./codegen.mjs lib --overloads ./overloads/host-contracts.json --config ./codegen.host-contracts.config.json --verbose
+OUT_BASE_DIR=$(jq -r '.directories.baseDir' ./codegen.library-solidity.config.json)
+SOL_REL_DIR=$(jq -r '.solidity.outDir' ./codegen.library-solidity.config.json)
+TS_REL_DIR=$(jq -r '.typescript.outDir' ./codegen.library-solidity.config.json)
 
-LIB_DIR="${FHEVM_DIR}/host-contracts/lib-local.orig"
-SOL_DIR="${FHEVM_DIR}/host-contracts/examples/tests-local.orig"
-TS_DIR="${FHEVM_DIR}/host-contracts/test/fhevmOperations-local.orig"
+npm run build && ./codegen.mjs lib --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --verbose 
+
+LIB_DIR="${FHEVM_DIR}/library-solidity/lib-local.orig"
+SOL_DIR="${FHEVM_DIR}/library-solidity/examples/tests-local.orig"
+TS_DIR="${FHEVM_DIR}/library-solidity/test/fhevmOperations-local.orig"
 
 OUT_SOL_DIR="${OUT_BASE_DIR}/${SOL_REL_DIR}"
 OUT_TS_DIR="${OUT_BASE_DIR}/${TS_REL_DIR}"
@@ -43,17 +46,6 @@ for i in {1..13}; do
     fi
 done
 
-# Only host-contracts
-# HCULimit.sol
-FILE_A="${FHEVM_DIR}/host-contracts/contracts/HCULimit-local.sol.orig"
-FILE_B="${OUT_BASE_DIR}/contracts/HCULimit.sol"
-diff "${FILE_A}" "${FILE_B}" 
-if [ $? -eq 0 ]; then
-    echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"
-else
-    FAILED=1
-fi
-
 # Check FHE.sol
 FILE_A="${LIB_DIR}/FHE.sol"
 FILE_B="${OUT_BASE_DIR}/lib/FHE.sol"
@@ -75,8 +67,8 @@ else
 fi
 
 # Check FheType.sol
-FILE_A="${FHEVM_DIR}/host-contracts/contracts/shared/FheType-local.sol.orig"
-FILE_B="${OUT_BASE_DIR}/contracts/shared/FheType.sol"
+FILE_A="${LIB_DIR}/FheType.sol"
+FILE_B="${OUT_BASE_DIR}/lib/FheType.sol"
 diff "${FILE_A}" "${FILE_B}" 
 if [ $? -eq 0 ]; then
     echo "✅ Files are identical: '${FILE_A}' and '${FILE_B}'"

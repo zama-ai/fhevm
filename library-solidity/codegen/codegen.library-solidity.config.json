@@ -1,15 +1,13 @@
 {
   "__comment": "All relative paths are resolved against directories.baseDir",
   "numberOfTestSplits": 12,
-  "generateHCULimit": true,
-  "overloads": "../library-solidity/codegen-v2/overloads/host-contracts.json",
+  "overloads": "./codegen/overloads/library-solidity.json",
   "directories": {
-    "baseDir": "../../host-contracts",
-    "fheTypeDir": "./contracts/shared"
+    "baseDir": "../../library-solidity"
   },
   "solidity": {
     "outDir": "./examples/tests",
-    "imports": [["CoprocessorSetup", "../../lib/CoprocessorSetup.sol"]]
+    "imports": [["CoprocessorSetup", "../CoprocessorSetup.sol"]]
   },
   "typescript": {
     "outDir": "./test/fhevmOperations",
