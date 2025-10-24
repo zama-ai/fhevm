@@ -7,6 +7,7 @@ publish.workspace = true
 version.workspace = true
 
 [dependencies]
+bc2wrap.workspace = true
 connector-utils.workspace = true
 fhevm_gateway_bindings.workspace = true
 
@@ -27,6 +28,7 @@ tokio-util.workspace = true
 tonic.workspace = true
 tonic-health.workspace = true
 tracing.workspace = true
+tracing-opentelemetry.workspace = true
 tracing-subscriber.workspace = true
 
 [dev-dependencies]

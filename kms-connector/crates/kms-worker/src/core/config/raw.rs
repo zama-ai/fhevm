@@ -12,17 +12,6 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 use tracing::info;
 
-/// Configuration for S3 ciphertext storage.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-pub struct S3Config {
-    /// AWS S3 region for ciphertext storage.
-    pub region: String,
-    /// AWS S3 bucket for ciphertext storage.
-    pub bucket: String,
-    /// AWS S3 endpoint URL for ciphertext storage.
-    pub endpoint: Option<String>,
-}
-
 /// Deserializable representation of the `KmsWorker` configuration.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct RawConfig {
@@ -51,8 +40,6 @@ pub struct RawConfig {
     pub user_decryption_timeout_secs: u64,
     #[serde(default = "default_grpc_poll_interval")]
     pub grpc_poll_interval_secs: u64,
-    #[serde(default)]
-    pub s3_config: Option<S3Config>,
     #[serde(default = "default_s3_ciphertext_retrieval_retries")]
     pub s3_ciphertext_retrieval_retries: u8,
     #[serde(default = "default_s3_connect_timeout")]
@@ -166,7 +153,6 @@ impl Default for RawConfig {
             grpc_poll_interval_secs: 5,
             s3_ciphertext_retrieval_retries: 3,
             s3_connect_timeout: 2,
-            s3_config: None,
             task_limit: default_task_limit(),
             monitoring_endpoint: default_monitoring_endpoint(),
             healthcheck_timeout_secs: default_healthcheck_timeout_secs(),
