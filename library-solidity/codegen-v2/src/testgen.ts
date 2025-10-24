@@ -415,7 +415,7 @@ export function generateTypeScriptTestCode(
   const numSolTest = shards.reduce((sum, os) => sum + os.overloads.length, 0);
   let idxTsTest = 0;
 
-  let listRes: string[] = [];
+  const listRes: string[] = [];
 
   const sizeTsShard = Math.floor(numSolTest / numTsSplits);
 
@@ -561,7 +561,7 @@ export function generateSolidityUnitTestContracts(
 ): string {
   const res: string[] = [];
 
-  let c = importsCode.length > 0 ? importsCode.join(';\n') + ';' : '';
+  const c = importsCode.length > 0 ? importsCode.join(';\n') + ';' : '';
   const isStatement = parentContract ? `is ${parentContract}` : '';
 
   const constructor = parentContract
@@ -699,10 +699,8 @@ function signatureContractArguments(s: OverloadSignature): string {
  */
 function signatureContractEncryptedSignature(s: OverloadSignature): string {
   const res: string[] = [];
-  let argumentCharCode = 97; // letter 'a' in ascii
   s.arguments.forEach((a) => {
     res.push(`${functionTypeToString(a)}`);
-    argumentCharCode++;
   });
 
   const joined = res.join(', ');

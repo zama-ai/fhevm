@@ -240,7 +240,7 @@ export const generateOverloads = (fheTypes: FheType[], existingOverloads: Overlo
     fheTypes.forEach((lhsFheType: FheType) => {
       if (lhsFheType.type.startsWith('Uint') && lhsFheType.supportedOperators.includes(functionName)) {
         if (test.unary) {
-          let lhsBigInt: bigint = generateRandomBigInt(lhsFheType.bitLength);
+          const lhsBigInt: bigint = generateRandomBigInt(lhsFheType.bitLength);
           const encryptedTestName = [functionName, `e${lhsFheType.type.toLowerCase()}`].join('_');
           if (existingOverloads[encryptedTestName]) {
             generatedTests[encryptedTestName] = existingOverloads[encryptedTestName];

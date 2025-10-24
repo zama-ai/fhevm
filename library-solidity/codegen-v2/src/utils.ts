@@ -43,3 +43,17 @@ export const generateRandomNumber = (bits: number, minValue: bigint = 5n): bigin
   const subtract = findMaximumValueInBigIntArray(BigInt(Math.floor(Math.random() * Number(maxRange))), minValue);
   return findMaximumValueInBigIntArray(power - subtract, minValue);
 };
+
+export function toBigInt(x: unknown): bigint | undefined {
+  if (typeof x === 'bigint') return x;
+  if (typeof x === 'number') return BigInt(x);
+  if (typeof x === 'string') {
+    const s = x.endsWith('n') ? x.slice(0, -1) : x; // strip trailing 'n'
+    try {
+      return BigInt(s);
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}

@@ -1,11 +1,19 @@
 import { existsSync, readdirSync, statSync } from 'fs';
 import * as path from 'path';
 
+export function isDirectory(p: string): boolean {
+  if (!existsSync(p)) {
+    return false;
+  }
+  const stats = statSync(p);
+  return stats.isDirectory();
+}
+
 export function assertDirectoryExists(p: string) {
   if (!existsSync(p)) {
     throw new Error(`Path '${p}' directory does not exist`);
   }
-  let stats = statSync(p);
+  const stats = statSync(p);
   if (!stats.isDirectory()) {
     throw new Error(`Path '${p}' is not a directory`);
   }

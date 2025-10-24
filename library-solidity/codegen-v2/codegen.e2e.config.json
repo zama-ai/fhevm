@@ -5,7 +5,7 @@
   "shuffle": false,
   "shuffleWithPseuseRand": true,
   "directories": {
-    "baseDir": "../test-suite/e2e"
+    "baseDir": "../../test-suite/e2e"
   },
   "solidity": {
     "outDir": "./contracts/operations",

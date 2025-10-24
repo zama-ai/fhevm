@@ -21,5 +21,6 @@ let counter = 0;
 export function rndBit(): 1 | 0 {
   const i = (counter / 128) % RND.length;
   const j = counter % 128;
+  counter++;
   return ((RND[i] >> BigInt(j)) & 1n) === 1n ? 1 : 0;
 }

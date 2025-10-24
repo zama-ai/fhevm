@@ -45,7 +45,7 @@ export function generateSolidityFheType(fheTypes: FheType[]): string {
  * - The `clearMatchingTypeAlias` property is included for aliases to reference the original clear matching type.
  */
 function generateAdjustedFheTypeArray(fheTypes: FheType[]): AdjustedFheType[] {
-  let adjustedFheTypes: AdjustedFheType[] = [];
+  const adjustedFheTypes: AdjustedFheType[] = [];
 
   for (let i = 0; i < fheTypes.length; i++) {
     const fheType = fheTypes[i];
@@ -571,7 +571,7 @@ function handleSolidityTFHEEncryptedOperatorForTwoEncryptedTypes(
     const scalarFlag = operator.hasEncrypted && operator.hasScalar ? ', false' : '';
     const leftExpr = castLeftToRight ? `asEuint${outputBits}(a)` : 'a';
     const rightExpr = castRightToLeft ? `asEuint${outputBits}(b)` : 'b';
-    let implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
+    const implExpression = `Impl.${operator.name}(euint${outputBits}.unwrap(${leftExpr}), euint${outputBits}.unwrap(${rightExpr})${scalarFlag})`;
 
     res.push(`
     /**
