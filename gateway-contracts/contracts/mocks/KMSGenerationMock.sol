@@ -33,7 +33,7 @@ contract KMSGenerationMock {
 
     uint256 prepKeygenCounter = 3 << 248;
     uint256 keyCounter = 4 << 248;
-    uint256 epochCounter = 0;
+    uint256 epochCounter = 6 << 248;
     uint256 crsCounter = 5 << 248;
 
     function keygen(ParamsType paramsType) external {
