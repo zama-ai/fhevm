@@ -37,7 +37,7 @@ cd codegen-v2
 
 ```sh
 cd codegen-v2
-./codegen.mjs lib --overloads ./overloads/host-contracts.json --config ./codegen.host-contracts.config.json --debug
+./codegen.mjs lib --overloads ./overloads/host-contracts.json --config ./codegen.host-contracts.config.json --verbose
 ```
 
 or
@@ -51,7 +51,7 @@ npm run codegen:host-contracts
 
 ```sh
 cd codegen-v2
-./codegen.mjs lib --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --debug
+./codegen.mjs lib --overloads ./overloads/library-solidity.json --config ./codegen.library-solidity.config.json --verbose
 ```
 
 or
@@ -65,7 +65,7 @@ npm run codegen:library-solidity
 
 ```sh
 cd codegen-v2
-./codegen.mjs lib --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --debug
+./codegen.mjs lib --overloads ./overloads/e2e.json --config ./codegen.e2e.config.json --verbose
 ```
 
 or
@@ -77,7 +77,7 @@ npm run codegen:e2e
 
 # Dry Run
 
-Use the `--dry-run --debug` options to check code generation in dry run mode.
+Use the `--dry-run --verbose` options to check code generation in dry run mode.
 
 # Verification scripts
 
