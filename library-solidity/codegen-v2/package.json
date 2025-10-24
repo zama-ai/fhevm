@@ -29,6 +29,7 @@
     "tsc": "tsc --project ./tsconfig.json --noEmit",
     "codegen:e2e": "npm run build && ./codegen.mjs lib --config ./codegen.e2e.config.json --verbose",
     "codegen:host-contracts": "npm run build && ./codegen.mjs lib --config ./codegen.host-contracts.config.json --verbose",
-    "codegen:library-solidity": "npm run build && ./codegen.mjs lib --config ./codegen.library-solidity.config.json --verbose"
+    "codegen:library-solidity": "npm run build && ./codegen.mjs lib --config ./codegen.library-solidity.config.json --verbose",
+    "test": "echo 'no ci test yet'"
   }
 }
