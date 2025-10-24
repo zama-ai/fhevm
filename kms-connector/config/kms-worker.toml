@@ -99,16 +99,6 @@ address = "0x5ffdaAB0373E62E2ea2944776209aEf29E631A64"
 # ENV: KMS_CONNECTOR_S3_CONNECT_TIMEOUT
 # s3_connect_timeout = 2
 
-# S3 configuration for ciphertext storage (optional)
-# This is used for fallback ciphertext retrieval when coprocessor URLs are unavailable
-# [s3_config]
-# ENV: KMS_CONNECTOR_S3_CONFIG__REGION
-# region = "us-east-1"
-# ENV: KMS_CONNECTOR_S3_CONFIG__BUCKET
-# bucket = "my-ciphertext-bucket"
-# ENV: KMS_CONNECTOR_S3_CONFIG__ENDPOINT
-# endpoint = "http://localhost:9876"
-
 # The maximum number of tasks to process events/responses concurrently (optional, defaults to 1000)
 # ENV: KMS_CONNECTOR_TASK_LIMIT
 # task_limit = 1000

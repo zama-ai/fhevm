@@ -1,4 +1,7 @@
-use crate::types::{GatewayEvent, KmsGrpcResponse, db::KeyDigestDbItem};
+use crate::{
+    monitoring::otlp::PropagationContext,
+    types::{KmsGrpcResponse, db::KeyDigestDbItem, gw_event},
+};
 use alloy::{hex, primitives::U256};
 use anyhow::anyhow;
 use kms_grpc::{
@@ -14,7 +17,37 @@ use std::fmt::Display;
 use tracing::debug;
 
 #[derive(Clone, Debug, PartialEq)]
-pub enum KmsResponse {
+pub struct KmsResponse {
+    pub kind: KmsResponseKind,
+    pub otlp_context: PropagationContext,
+}
+
+impl KmsResponse {
+    pub fn new(kind: KmsResponseKind, otlp_context: PropagationContext) -> Self {
+        Self { kind, otlp_context }
+    }
+
+    /// Sets the `under_process` field of the event associated to this response as `FALSE` in the
+    /// database.
+    pub async fn mark_associated_event_as_pending(&self, db: &Pool<Postgres>) {
+        match &self.kind {
+            KmsResponseKind::PublicDecryption(r) => {
+                gw_event::mark_public_decryption_as_pending(db, r.decryption_id).await
+            }
+            KmsResponseKind::UserDecryption(r) => {
+                gw_event::mark_user_decryption_as_pending(db, r.decryption_id).await
+            }
+            KmsResponseKind::PrepKeygen(r) => {
+                gw_event::mark_prep_keygen_as_pending(db, r.prep_keygen_id).await
+            }
+            KmsResponseKind::Keygen(r) => gw_event::mark_keygen_as_pending(db, r.key_id).await,
+            KmsResponseKind::Crsgen(r) => gw_event::mark_crsgen_as_pending(db, r.crs_id).await,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum KmsResponseKind {
     PublicDecryption(PublicDecryptionResponse),
     UserDecryption(UserDecryptionResponse),
     PrepKeygen(PrepKeygenResponse),
@@ -58,7 +91,7 @@ pub struct CrsgenResponse {
     pub signature: Vec<u8>,
 }
 
-impl KmsResponse {
+impl KmsResponseKind {
     /// Processes a KMS GRPC response into a `KmsResponse` enum.
     pub fn process(response: KmsGrpcResponse) -> anyhow::Result<Self> {
         match response {
@@ -83,65 +116,62 @@ impl KmsResponse {
             }
         }
     }
+}
 
-    pub fn from_public_decryption_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        Ok(KmsResponse::PublicDecryption(PublicDecryptionResponse {
+pub fn from_public_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    Ok(KmsResponse {
+        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        kind: KmsResponseKind::PublicDecryption(PublicDecryptionResponse {
             decryption_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             decrypted_result: row.try_get("decrypted_result")?,
             signature: row.try_get("signature")?,
             extra_data: row.try_get("extra_data")?,
-        }))
-    }
+        }),
+    })
+}
 
-    pub fn from_user_decryption_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        Ok(KmsResponse::UserDecryption(UserDecryptionResponse {
+pub fn from_user_decryption_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    Ok(KmsResponse {
+        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        kind: KmsResponseKind::UserDecryption(UserDecryptionResponse {
             decryption_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("decryption_id")?),
             user_decrypted_shares: row.try_get("user_decrypted_shares")?,
             signature: row.try_get("signature")?,
             extra_data: row.try_get("extra_data")?,
-        }))
-    }
+        }),
+    })
+}
 
-    pub fn from_prep_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        Ok(KmsResponse::PrepKeygen(PrepKeygenResponse {
+pub fn from_prep_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    Ok(KmsResponse {
+        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        kind: KmsResponseKind::PrepKeygen(PrepKeygenResponse {
             prep_keygen_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("prep_keygen_id")?),
             signature: row.try_get("signature")?,
-        }))
-    }
+        }),
+    })
+}
 
-    pub fn from_keygen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        Ok(KmsResponse::Keygen(KeygenResponse {
+pub fn from_keygen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    Ok(KmsResponse {
+        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        kind: KmsResponseKind::Keygen(KeygenResponse {
             key_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("key_id")?),
             key_digests: row.try_get("key_digests")?,
             signature: row.try_get("signature")?,
-        }))
-    }
+        }),
+    })
+}
 
-    pub fn from_crsgen_row(row: &PgRow) -> Result<Self, sqlx::Error> {
-        Ok(KmsResponse::Crsgen(CrsgenResponse {
+pub fn from_crsgen_row(row: &PgRow) -> anyhow::Result<KmsResponse> {
+    Ok(KmsResponse {
+        otlp_context: bc2wrap::deserialize(&row.try_get::<Vec<u8>, _>("otlp_context")?)?,
+        kind: KmsResponseKind::Crsgen(CrsgenResponse {
             crs_id: U256::from_le_bytes(row.try_get::<[u8; 32], _>("crs_id")?),
             crs_digest: row.try_get("crs_digest")?,
             signature: row.try_get("signature")?,
-        }))
-    }
-
-    /// Sets the `under_process` field of the event associated to this response as `FALSE` in the
-    /// database.
-    pub async fn mark_associated_event_as_pending(&self, db: &Pool<Postgres>) {
-        match self {
-            KmsResponse::PublicDecryption(r) => {
-                GatewayEvent::mark_public_decryption_as_pending(db, r.decryption_id).await
-            }
-            KmsResponse::UserDecryption(r) => {
-                GatewayEvent::mark_user_decryption_as_pending(db, r.decryption_id).await
-            }
-            KmsResponse::PrepKeygen(r) => {
-                GatewayEvent::mark_prep_keygen_as_pending(db, r.prep_keygen_id).await
-            }
-            KmsResponse::Keygen(r) => GatewayEvent::mark_keygen_as_pending(db, r.key_id).await,
-            KmsResponse::Crsgen(r) => GatewayEvent::mark_crsgen_as_pending(db, r.crs_id).await,
-        }
-    }
+        }),
+    })
 }
 
 impl PublicDecryptionResponse {
@@ -273,22 +303,22 @@ impl CrsgenResponse {
     }
 }
 
-impl Display for KmsResponse {
+impl Display for KmsResponseKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            KmsResponse::PublicDecryption(r) => {
+            KmsResponseKind::PublicDecryption(r) => {
                 write!(f, "PublicDecryptionResponse #{}", r.decryption_id)
             }
-            KmsResponse::UserDecryption(r) => {
+            KmsResponseKind::UserDecryption(r) => {
                 write!(f, "UserDecryptionResponse #{}", r.decryption_id)
             }
-            KmsResponse::PrepKeygen(r) => {
+            KmsResponseKind::PrepKeygen(r) => {
                 write!(f, "PrepKeygenResponse #{}", r.prep_keygen_id)
             }
-            KmsResponse::Keygen(r) => {
+            KmsResponseKind::Keygen(r) => {
                 write!(f, "KeygenResponse #{}", r.key_id)
             }
-            KmsResponse::Crsgen(r) => {
+            KmsResponseKind::Crsgen(r) => {
                 write!(f, "CrsgenResponse #{}", r.crs_id)
             }
         }

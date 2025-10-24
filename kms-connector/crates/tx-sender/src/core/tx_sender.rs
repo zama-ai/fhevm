@@ -24,8 +24,8 @@ use connector_utils::{
     provider::NonceManagedProvider,
     tasks::spawn_with_limit,
     types::{
-        CrsgenResponse, KeygenResponse, KmsResponse, PrepKeygenResponse, PublicDecryptionResponse,
-        UserDecryptionResponse,
+        CrsgenResponse, KeygenResponse, KmsResponse, KmsResponseKind, PrepKeygenResponse,
+        PublicDecryptionResponse, UserDecryptionResponse,
     },
 };
 use fhevm_gateway_bindings::{
@@ -37,6 +37,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// Struct sending stored KMS Core's responses to the Gateway.
 pub struct TransactionSender<L, F, P, R>
@@ -84,12 +85,12 @@ where
         info!("TransactionSender stopped successfully!");
     }
 
-    /// Runs the KMS Core's responses processing loop.
+    /// Runs the KMS Core's responses forwarding loop.
     async fn run(mut self, cancel_token: &CancellationToken) {
         loop {
             match self.response_picker.pick_responses().await {
                 Ok(responses) => {
-                    self.spawn_response_handling_tasks(responses, cancel_token)
+                    self.spawn_response_forwarding_tasks(responses, cancel_token)
                         .await
                 }
                 Err(e) => warn!("Error while picking responses: {e}"),
@@ -97,8 +98,8 @@ where
         }
     }
 
-    /// Spawns a new task to handle each response.
-    async fn spawn_response_handling_tasks(
+    /// Spawns a new task to forward each response to the Gateway.
+    async fn spawn_response_forwarding_tasks(
         &self,
         responses: Vec<KmsResponse>,
         cancel_token: &CancellationToken,
@@ -108,20 +109,23 @@ where
             let response_remover = self.response_remover.clone();
             let cloned_cancel_token = cancel_token.clone();
             spawn_with_limit(async move {
-                Self::handle_response(inner, response_remover, response, cloned_cancel_token).await
+                Self::forward_response(inner, response_remover, response, cloned_cancel_token).await
             })
             .await;
         }
     }
 
     /// Handles a response coming from the  KMS Core.
-    #[tracing::instrument(skip(inner, response_remover, cancel_token), fields(response = %response))]
-    async fn handle_response(
+    #[tracing::instrument(skip(inner, response_remover, cancel_token), fields(response = %response.kind))]
+    async fn forward_response(
         inner: TransactionSenderInner<F, P>,
         response_remover: R,
         response: KmsResponse,
         cancel_token: CancellationToken,
     ) {
+        tracing::Span::current().set_parent(response.otlp_context.extract());
+        let response = response.kind;
+
         match inner.send_to_gateway(response.clone()).await {
             Err(Error::Recoverable(_)) => response_remover.mark_response_as_pending(response).await,
             Err(Error::Irrecoverable(_)) | Ok(()) => {
@@ -220,18 +224,18 @@ where
     }
 
     #[tracing::instrument(skip_all)]
-    async fn send_to_gateway(&self, response: KmsResponse) -> Result<(), Error> {
+    async fn send_to_gateway(&self, response: KmsResponseKind) -> Result<(), Error> {
         info!("Sending response to the Gateway: {response:?}");
         let tx_result = match response {
-            KmsResponse::PublicDecryption(response) => {
+            KmsResponseKind::PublicDecryption(response) => {
                 self.send_public_decryption_response(response).await
             }
-            KmsResponse::UserDecryption(response) => {
+            KmsResponseKind::UserDecryption(response) => {
                 self.send_user_decryption_response(response).await
             }
-            KmsResponse::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
-            KmsResponse::Keygen(response) => self.send_keygen_response(response).await,
-            KmsResponse::Crsgen(response) => self.send_crsgen_response(response).await,
+            KmsResponseKind::PrepKeygen(response) => self.send_prep_keygen_response(response).await,
+            KmsResponseKind::Keygen(response) => self.send_keygen_response(response).await,
+            KmsResponseKind::Crsgen(response) => self.send_crsgen_response(response).await,
         };
 
         let receipt = tx_result.inspect_err(|e| {
@@ -548,7 +552,7 @@ mod tests {
             },
         );
         inner_sender
-            .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
+            .send_to_gateway(KmsResponseKind::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
                 signature: rand_signature(),
@@ -626,7 +630,7 @@ mod tests {
             },
         );
         let error = inner_sender
-            .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
+            .send_to_gateway(KmsResponseKind::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
                 signature: rand_signature(),
@@ -680,7 +684,7 @@ mod tests {
             },
         );
         let error = inner_sender
-            .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
+            .send_to_gateway(KmsResponseKind::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
                 signature: rand_signature(),
@@ -734,7 +738,7 @@ mod tests {
             },
         );
         let error = inner_sender
-            .send_to_gateway(KmsResponse::UserDecryption(UserDecryptionResponse {
+            .send_to_gateway(KmsResponseKind::UserDecryption(UserDecryptionResponse {
                 decryption_id: rand_u256(),
                 user_decrypted_shares: vec![],
                 signature: rand_signature(),
